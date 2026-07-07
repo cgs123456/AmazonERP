@@ -7,15 +7,66 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build:
+  # Job 1: 静态检查（最快，5s 级别）
+  checkstyle:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
-      - name: Build with Maven
-        run: mvn -B compile -DskipTests
+      - name: Run Checkstyle (Google Checks)
+        run: mvn -B checkstyle:check -Dcheckstyle.config.location=google_checks.xml
+
+  # Job 2: 测试 + 编译
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+      - name: Compile all modules
+        run: mvn -B compile
+      - name: Run unit tests (spapi + common)
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+        run: mvn -B test -pl amz-common,amz-service/amz-service-spapi
+
+  # Job 3: 构建 Docker 镜像（仅 master 分支）
+  docker:
+    if: github.ref == 'refs/heads/master'
+    needs: [ checkstyle, test ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        run: docker build -t amazon-erp:latest .

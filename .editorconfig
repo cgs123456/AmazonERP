@@ -1,0 +1,21 @@
+# EditorConfig is awesome: https://editorconfig.org
+# 统一 IDE（IDEA / VS Code / Vim）编码风格，免额外配置
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{js,ts,jsx,tsx,vue,html,css,scss,json,yml,yaml,md}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

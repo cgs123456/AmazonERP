@@ -1,0 +1,39 @@
+# Git 换行符与 diff 统一配置
+# https://git-scm.com/docs/gitattributes
+
+# 默认自动识别文本/二进制
+* text=auto
+
+# Java / 配置文件统一 LF（Linux 容器一致）
+*.java        text eol=lf
+*.xml         text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.properties  text eol=lf
+*.sql         text eol=lf
+*.md          text eol=lf
+*.sh          text eol=lf
+*.ts          text eol=lf
+*.tsx         text eol=lf
+*.js          text eol=lf
+*.vue         text eol=lf
+*.json        text eol=lf
+*.css         text eol=lf
+*.html        text eol=lf
+
+# Windows 专用脚本保留 CRLF
+*.bat         text eol=crlf
+*.cmd         text eol=crlf
+*.ps1         text eol=crlf
+
+# 二进制文件（避免误改）
+*.jar         binary
+*.class       binary
+*.png         binary
+*.jpg         binary
+*.jpeg        binary
+*.gif         binary
+*.ico         binary
+*.pdf         binary
+*.zip         binary
+*.tar.gz      binary
