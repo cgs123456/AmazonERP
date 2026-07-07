@@ -5,6 +5,12 @@ import org.springframework.amqp.core.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * RabbitMQ 配置。
+ * <p>
+ * 已清理社交场景的关注/点赞/收藏队列绑定，
+ * 保留登录通知队列。
+ */
 @Configuration
 public class MqConfig {
 
@@ -24,55 +30,10 @@ public class MqConfig {
     }
 
     @Bean
-    public Queue attentionNoticeQueue() {
-        return QueueBuilder
-                .durable(MqConstant.ATTENTION_NOTICE_QUEUE)
-                .build();
-    }
-
-    @Bean
-    public Queue likeNoticeQueue() {
-        return QueueBuilder
-                .durable(MqConstant.LIKE_NOTICE_QUEUE)
-                .build();
-    }
-
-    @Bean
-    public Queue collectionNoticeQueue() {
-        return QueueBuilder
-                .durable(MqConstant.COLLECTION_NOTICE_QUEUE)
-                .build();
-    }
-
-    @Bean
     public Binding loginBinding() {
         return BindingBuilder
                 .bind(loginNoticeQueue())
                 .to(messageNoticeExchange())
                 .with(MqConstant.LOGIN_KEY);
-    }
-
-    @Bean
-    public Binding attentionNoticeBinding() {
-        return BindingBuilder
-                .bind(attentionNoticeQueue())
-                .to(messageNoticeExchange())
-                .with(MqConstant.ATTENTION_KEY);
-    }
-
-    @Bean
-    public Binding likeNoticeBinding() {
-        return BindingBuilder
-                .bind(likeNoticeQueue())
-                .to(messageNoticeExchange())
-                .with(MqConstant.LIKE_KEY);
-    }
-
-    @Bean
-    public Binding collectionNoticeBinding() {
-        return BindingBuilder
-                .bind(collectionNoticeQueue())
-                .to(messageNoticeExchange())
-                .with(MqConstant.COLLECTION_KEY);
     }
 }

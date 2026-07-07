@@ -9,18 +9,17 @@
     <!-- 主内容区 -->
     <main class="main-content">
       <div class="notification-container">
-        <!-- 通知内容 -->
         <div class="notification-content">
           <!-- WebSocket 连接状态 -->
           <div class="connection-status" v-if="!isConnected">
             <Icon icon="mdi:wifi-off" width="16" />
             <span>消息服务未连接，正在重连...</span>
           </div>
-          
+
           <!-- 标签切换 -->
           <div class="content-tabs">
-            <button 
-              v-for="tab in tabs" 
+            <button
+              v-for="tab in tabs"
               :key="tab.id"
               class="tab-item"
               :class="{ active: activeTab === tab.id }"
@@ -32,79 +31,50 @@
 
           <!-- 通知列表 -->
           <div class="notification-list">
-            <div 
-              v-for="notification in filteredNotifications" 
+            <div
+              v-for="notification in filteredNotifications"
               :key="notification.id"
               class="notification-item"
-              :class="{ 'like-collect-item': notification.type === 'like' || notification.type === 'collect' }"
             >
-              <img :src="notification.avatar" :alt="notification.username" class="user-avatar" />
-              
+              <div class="notification-icon" :class="`icon-${notification.type}`">
+                <Icon :icon="getIcon(notification.type)" width="20" />
+              </div>
+
               <div class="notification-main">
-                <!-- 点赞和收藏类型的布局 -->
-                <template v-if="notification.type === 'like' || notification.type === 'collect'">
-                  <div class="like-collect-content">
-                    <div class="user-action">
-                      <span class="username">{{ notification.username }}</span>
-                      <Icon v-if="notification.type === 'like'" icon="mdi:heart" width="14" class="action-icon like-icon" />
-                      <Icon v-else icon="mdi:star" width="14" class="action-icon collect-icon" />
-                    </div>
-                    <div class="action-with-time">
-                      <span class="action-text">{{ notification.content }}</span>
-                      <span class="time">{{ notification.time }}</span>
-                    </div>
-                    <p v-if="notification.noteTitle" class="note-reference">
-                      {{ notification.noteTitle }}
-                    </p>
-                  </div>
-                </template>
-                
-                <!-- 其他类型的布局 -->
-                <template v-else>
-                  <div class="notification-header">
-                    <span class="username">{{ notification.username }}</span>
-                    <span class="time">{{ notification.time }}</span>
-                  </div>
-                  
-                  <div class="notification-body">
-                    <p class="notification-text">{{ notification.content }}</p>
-                    <p v-if="notification.noteTitle" class="note-reference">
-                      {{ notification.noteTitle }}
-                    </p>
-                  </div>
-                  
-                  <div class="notification-actions">
-                    <button class="action-btn-reply">
-                      <Icon icon="mdi:reply" width="16" />
-                      回复
-                    </button>
-                    <button class="action-btn-like">
-                      <Icon icon="mdi:heart-outline" width="16" />
-                    </button>
-                  </div>
-                </template>
+                <div class="notification-header">
+                  <span class="notification-title">{{ notification.title }}</span>
+                  <span class="notification-tag" :class="`tag-${notification.type}`">
+                    {{ getTypeLabel(notification.type) }}
+                  </span>
+                  <span class="time">{{ notification.time }}</span>
+                </div>
+
+                <div class="notification-body">
+                  <p class="notification-text">{{ notification.content }}</p>
+                  <p v-if="notification.shopName" class="notification-meta">
+                    <Icon icon="mdi:store-outline" width="12" />
+                    {{ notification.shopName }}
+                    <template v-if="notification.sku"> · SKU: {{ notification.sku }}</template>
+                  </p>
+                </div>
+
+                <div class="notification-actions">
+                  <button class="action-btn" @click="handleView(notification)">
+                    <Icon icon="mdi:eye-outline" width="14" />
+                    查看
+                  </button>
+                  <button class="action-btn" @click="handleDismiss(notification)">
+                    <Icon icon="mdi:check" width="14" />
+                    忽略
+                  </button>
+                </div>
               </div>
-              
-              <!-- 点赞和收藏类型显示笔记图片和更多按钮 -->
-              <div v-if="notification.type === 'like' || notification.type === 'collect'" class="notification-right">
-                <img 
-                  v-if="notification.noteImage" 
-                  :src="notification.noteImage" 
-                  :alt="notification.noteTitle" 
-                  class="note-thumbnail" 
-                />
-                <button class="more-btn">
-                  <Icon icon="mdi:dots-horizontal" width="20" />
-                </button>
-              </div>
-              
-              <!-- 其他类型显示原有的右侧内容 -->
-              <div v-else class="notification-right">
-                <span class="time">{{ notification.time }}</span>
-                <button class="more-btn">
-                  <Icon icon="mdi:dots-horizontal" width="20" />
-                </button>
-              </div>
+            </div>
+
+            <!-- 空状态 -->
+            <div v-if="filteredNotifications.length === 0" class="empty-state">
+              <Icon icon="mdi:bell-off-outline" width="48" />
+              <p>暂无通知</p>
             </div>
           </div>
         </div>
@@ -119,247 +89,153 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { getLikeList, type LikeVo } from '@/api/note'
+
+// 通知类型对齐后端 MessageTypeEnum：
+// INVENTORY_ALERT(0) / ORDER_EXCEPTION(1) / REPLENISH_SUGGEST(2) / NEGATIVE_REVIEW(3) / PRICE_CHANGE(4)
+type NoticeType =
+  | 'inventory_alert'
+  | 'order_exception'
+  | 'replenish_suggest'
+  | 'negative_review'
+  | 'price_change'
+  | 'system'
 
 interface Notification {
   id: string
-  type: string
-  avatar: string
-  username: string
-  time: string
+  type: NoticeType
+  title: string
   content: string
-  noteTitle?: string
-  noteImage?: string
+  time: string
+  shopName?: string
+  sku?: string
+  read?: boolean
 }
 
 const tabs = ref([
-  { id: 'system', name: '赞和收藏' },
-  { id: 'mention', name: '新增关注' },
-  { id: 'all', name: '评论和@' }
+  { id: 'all', name: '全部通知' },
+  { id: 'inventory_alert', name: '库存预警' },
+  { id: 'order_exception', name: '订单异常' },
+  { id: 'replenish_suggest', name: '补货建议' },
+  { id: 'negative_review', name: '差评告警' },
+  { id: 'price_change', name: '价格异动' }
 ])
 
-const activeTab = ref('system')
+const activeTab = ref('all')
 
-// 初始化通知数据
-const notifications = ref<Notification[]>([])
+// 初始化通知数据（示例数据，生产环境通过 WebSocket / 接口获取）
+const notifications = ref<Notification[]>([
+  {
+    id: '1',
+    type: 'inventory_alert',
+    title: 'FBA 库存不足预警',
+    content: 'SKU「iPhone15-Black-128G」可售天数仅剩 6 天，建议尽快补货。',
+    time: '5 分钟前',
+    shopName: '美国站-主店铺',
+    sku: 'iPhone15-Black-128G'
+  },
+  {
+    id: '2',
+    type: 'order_exception',
+    title: '订单异常告警',
+    content: '订单 114-1234567-8901234 已申请退货，退款金额 $129.99，请及时处理。',
+    time: '23 分钟前',
+    shopName: '美国站-主店铺'
+  },
+  {
+    id: '3',
+    type: 'replenish_suggest',
+    title: '补货建议',
+    content: '基于近 30 天销量预测，建议为 SKU「USB-C-HUB-7in1」补货 500 件。',
+    time: '1 小时前',
+    shopName: '欧洲站-德国店铺',
+    sku: 'USB-C-HUB-7in1'
+  },
+  {
+    id: '4',
+    type: 'negative_review',
+    title: '差评告警',
+    content: '产品 ASIN B0XXXXXXXX 收到 1 星差评：「充电器使用一周后损坏」，请跟进处理。',
+    time: '2 小时前',
+    shopName: '美国站-主店铺'
+  },
+  {
+    id: '5',
+    type: 'price_change',
+    title: '价格异动提醒',
+    content: '竞品 ASIN B0YYYYYYYY 调整价格至 $89.99（下降 $10），建议关注 Buy Box 变化。',
+    time: '4 小时前',
+    shopName: '美国站-主店铺'
+  }
+])
 
 // 使用 WebSocket
 const { isConnected, onMessage } = useWebSocket()
 
-// 格式化时间
-const formatTime = (timestamp?: number | string | Date): string => {
-  if (!timestamp) {
-    return '刚刚'
+// 类型 → 图标映射
+const getIcon = (type: NoticeType): string => {
+  const map: Record<NoticeType, string> = {
+    inventory_alert: 'mdi:package-variant-closed',
+    order_exception: 'mdi:alert-circle-outline',
+    replenish_suggest: 'mdi:cart-plus',
+    negative_review: 'mdi:star-off-outline',
+    price_change: 'mdi:currency-usd-off',
+    system: 'mdi:bell-outline'
   }
-  
-  let date: Date
-  if (typeof timestamp === 'string') {
-    date = new Date(timestamp)
-  } else if (typeof timestamp === 'number') {
-    date = new Date(timestamp)
-  } else {
-    date = timestamp
-  }
-  
-  const now = Date.now()
-  const diff = now - date.getTime()
-  const seconds = Math.floor(diff / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-  
-  if (seconds < 60) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  if (days < 7) return `${days}天前`
-  
-  return `${date.getMonth() + 1}-${date.getDate()}`
+  return map[type] || 'mdi:bell-outline'
 }
 
-// 获取点赞列表
-const fetchLikeList = async () => {
-  try {
-    const response = await getLikeList()
-    if (response.code === 200 && response.data) {
-      // 将后端数据转换为前端通知格式
-      const likeNotifications: Notification[] = response.data.map((item: LikeVo) => ({
-        id: String(item.like.id),
-        type: 'like',
-        avatar: item.user?.image || 'https://i.pravatar.cc/150?img=1',
-        username: item.user?.nickname || item.user?.username || '未知用户',
-        time: formatTime(item.like.createTime),
-        content: '赞了你的笔记',
-        noteTitle: item.note?.title || item.note?.content?.substring(0, 20) || '无标题',
-        noteImage: item.note?.image?.split(',')[0] || ''
-      }))
-      
-      // 合并到通知列表
-      notifications.value = [...likeNotifications, ...notifications.value]
-    }
-  } catch (error) {
-    // 获取点赞列表失败
+// 类型 → 标签映射
+const getTypeLabel = (type: NoticeType): string => {
+  const map: Record<NoticeType, string> = {
+    inventory_alert: '库存预警',
+    order_exception: '订单异常',
+    replenish_suggest: '补货建议',
+    negative_review: '差评告警',
+    price_change: '价格异动',
+    system: '系统通知'
   }
+  return map[type] || '通知'
 }
 
-// 格式化时间（原有的，保留用于WebSocket消息）
-const formatTimeFromTimestamp = (timestamp?: number): string => {
-  if (!timestamp) {
-    return '刚刚'
+// WebSocket 消息 → 通知类型映射（对齐后端 MessageTypeEnum 序号）
+const mapMessageType = (type: number | string | undefined): NoticeType => {
+  if (type === undefined || type === null) return 'system'
+  const num = typeof type === 'number' ? type : parseInt(String(type), 10)
+  const map: Record<number, NoticeType> = {
+    0: 'inventory_alert',
+    1: 'order_exception',
+    2: 'replenish_suggest',
+    3: 'negative_review',
+    4: 'price_change'
   }
-  
-  const now = Date.now()
-  const diff = now - timestamp
-  const seconds = Math.floor(diff / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  const days = Math.floor(hours / 24)
-  
-  if (seconds < 60) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  if (days < 7) return `${days}天前`
-  
-  const date = new Date(timestamp)
-  return `${date.getMonth() + 1}月${date.getDate()}日`
+  return map[num] || (typeof type === 'string' ? (type as NoticeType) : 'system')
 }
 
 // 处理接收到的 WebSocket 消息
 const handleWebSocketMessage = (data: unknown) => {
   try {
-    // 后端格式：{ type: 0, noticeId: 3, obj: { like, note, user } }
     const msgData = data as Record<string, any>
-    if (msgData.type !== undefined && msgData.noticeId && msgData.obj) {
-      const obj = msgData.obj as Record<string, any>
-      let notificationType = ''
-      let content = ''
-      let avatar = ''
-      let username = ''
-      let noteTitle = ''
-      let noteImage = ''
-      let notificationId = String(Date.now())
-      let createTime: string | undefined
-      
-      // type: 0 表示点赞
-      if (msgData.type === 0 && obj.like && obj.note && obj.user) {
-        notificationType = 'like'
-        content = '赞了你的笔记'
-        avatar = obj.user.image || 'https://i.pravatar.cc/150?img=10'
-        username = obj.user.nickname || obj.user.phone || '未知用户'
-        noteTitle = obj.note.title || obj.note.content?.substring(0, 20) || '无标题'
-        noteImage = obj.note.image?.split(',')[0] || ''
-        notificationId = String(obj.like.id)
-        createTime = obj.like.createTime
-      }
-      // type: 1 表示收藏
-      else if (msgData.type === 1 && obj.collection && obj.note && obj.user) {
-        notificationType = 'collect'
-        content = '收藏了你的笔记'
-        avatar = obj.user.image || 'https://i.pravatar.cc/150?img=10'
-        username = obj.user.nickname || obj.user.phone || '未知用户'
-        noteTitle = obj.note.title || obj.note.content?.substring(0, 20) || '无标题'
-        noteImage = obj.note.image?.split(',')[0] || ''
-        notificationId = String(obj.collection.id)
-        createTime = obj.collection.createTime
-      }
-      // type: 2 表示关注
-      else if (msgData.type === 2 && obj.attention && obj.user) {
-        notificationType = 'follow'
-        content = '关注了你'
-        avatar = obj.user.image || 'https://i.pravatar.cc/150?img=10'
-        username = obj.user.nickname || obj.user.phone || '未知用户'
-        notificationId = String(obj.attention.id)
-        createTime = obj.attention.createTime
-      }
-      
-      if (notificationType) {
-        const newNotification: Notification = {
-          id: notificationId,
-          type: notificationType,
-          avatar: avatar,
-          username: username,
-          time: formatTime(createTime),
-          content: content,
-          noteTitle: noteTitle,
-          noteImage: noteImage
-        }
-        
-        // 添加到通知列表最前方
-        notifications.value.unshift(newNotification)
-        
-        // 可选：显示浏览器通知
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('新消息', {
-            body: `${newNotification.username}: ${newNotification.content}`,
-            icon: newNotification.avatar
-          })
-        }
-      }
+    if (!msgData) return
+
+    const type = mapMessageType(msgData.type)
+    const newNotification: Notification = {
+      id: String(msgData.id || msgData.noticeId || Date.now()),
+      type,
+      title: msgData.title || getTypeLabel(type),
+      content: msgData.content || msgData.message || '',
+      time: msgData.time || '刚刚',
+      shopName: msgData.shopName,
+      sku: msgData.sku,
+      read: false
     }
-    // 新格式：NotificationMessageDTO
-    else if (msgData.type && msgData.actionUserId && msgData.noticeUserId) {
-      let content = ''
-      if (msgData.type === 'like') {
-        content = '赞了你的笔记'
-      } else if (msgData.type === 'collect') {
-        content = '收藏了你的笔记'
-      } else if (msgData.type === 'follow') {
-        content = '关注了你'
-      } else if (msgData.type === 'comment') {
-        content = msgData.commentContent || '评论了你的笔记'
-      }
-      
-      const newNotification: Notification = {
-        id: String(msgData.timestamp || Date.now()),
-        type: msgData.type,
-        avatar: msgData.actionUserAvatar || 'https://i.pravatar.cc/150?img=10',
-        username: msgData.actionUserNickname || '未知用户',
-        time: formatTimeFromTimestamp(msgData.timestamp || Date.now()),
-        content: content,
-        noteTitle: msgData.noteTitle || msgData.noteContent || '无标题',
-        noteImage: msgData.noteImage || ''
-      }
-      
-      notifications.value.unshift(newNotification)
-      
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('新消息', {
-          body: `${newNotification.username}: ${newNotification.content}`,
-          icon: newNotification.avatar
-        })
-      }
-    }
-    // 兼容旧格式
-    else if (msgData.type === 'notification' || msgData.type === 'comment' || msgData.type === 'like' || msgData.type === 'follow' || msgData.type === 'collect') {
-      let content = msgData.content || msgData.message || ''
-      if (msgData.type === 'like') {
-        content = '赞了你的笔记'
-      } else if (msgData.type === 'collect') {
-        content = '收藏了你的笔记'
-      } else if (msgData.type === 'follow') {
-        content = '关注了你'
-      } else if (msgData.type === 'comment') {
-        content = msgData.content || msgData.message || '评论了你的笔记'
-      }
-      
-      const newNotification: Notification = {
-        id: msgData.id || String(Date.now()),
-        type: msgData.type || 'comment',
-        avatar: msgData.avatar || msgData.userAvatar || msgData.userImage || 'https://i.pravatar.cc/150?img=10',
-        username: msgData.username || msgData.userName || msgData.nickname || '未知用户',
-        time: formatTimeFromTimestamp(msgData.timestamp || msgData.time || Date.now()),
-        content: content,
-        noteTitle: msgData.noteTitle || msgData.title || msgData.noteContent,
-        noteImage: msgData.noteImage || msgData.image || (msgData.noteImages ? msgData.noteImages.split(',')[0] : '')
-      }
-      
-      notifications.value.unshift(newNotification)
-      
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('新消息', {
-          body: `${newNotification.username}: ${newNotification.content}`,
-          icon: newNotification.avatar
-        })
-      }
+
+    notifications.value.unshift(newNotification)
+
+    // 浏览器通知
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification(newNotification.title, {
+        body: newNotification.content
+      })
     }
   } catch (error) {
     // 处理 WebSocket 消息失败
@@ -374,27 +250,26 @@ const requestNotificationPermission = () => {
 }
 
 onMounted(() => {
-  // 获取点赞列表
-  fetchLikeList()
-  
-  // 监听 WebSocket 消息
   onMessage(handleWebSocketMessage)
-  
-  // 请求通知权限
   requestNotificationPermission()
 })
 
+// 按标签过滤
 const filteredNotifications = computed(() => {
-  // 可以根据 activeTab 来过滤通知
-  if (activeTab.value === 'system') {
-    return notifications.value.filter(n => n.type === 'like' || n.type === 'collect')
-  } else if (activeTab.value === 'mention') {
-    return notifications.value.filter(n => n.type === 'follow')
-  } else if (activeTab.value === 'all') {
-    return notifications.value.filter(n => n.type === 'comment')
-  }
-  return notifications.value
+  if (activeTab.value === 'all') return notifications.value
+  return notifications.value.filter(n => n.type === activeTab.value)
 })
+
+// 操作
+const handleView = (notification: Notification) => {
+  notification.read = true
+  // 实际项目中可跳转到对应详情页
+  console.log('查看通知:', notification.id)
+}
+
+const handleDismiss = (notification: Notification) => {
+  notifications.value = notifications.value.filter(n => n.id !== notification.id)
+}
 </script>
 
 <style scoped>
@@ -404,12 +279,10 @@ const filteredNotifications = computed(() => {
   background: #fafafa;
 }
 
-/* 主内容区 */
 .main-content {
   margin-left: 220px;
   padding-top: 64px;
   min-height: 100vh;
-  height: 100%;
   width: calc(100% - 220px);
 }
 
@@ -418,14 +291,13 @@ const filteredNotifications = computed(() => {
   padding: 24px;
 }
 
-/* 通知内容 */
 .notification-content {
   background: white;
   border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
-/* WebSocket 连接状态 */
 .connection-status {
   display: flex;
   align-items: center;
@@ -441,10 +313,11 @@ const filteredNotifications = computed(() => {
   display: flex;
   border-bottom: 1px solid #f0f0f0;
   padding: 0 24px;
+  overflow-x: auto;
 }
 
 .tab-item {
-  padding: 16px 24px;
+  padding: 16px 20px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -452,14 +325,15 @@ const filteredNotifications = computed(() => {
   color: #666;
   position: relative;
   transition: all 0.2s;
+  white-space: nowrap;
 }
 
 .tab-item:hover {
-  color: #333;
+  color: #4f46e5;
 }
 
 .tab-item.active {
-  color: #ff2442;
+  color: #4f46e5;
   font-weight: 600;
 }
 
@@ -471,19 +345,18 @@ const filteredNotifications = computed(() => {
   transform: translateX(-50%);
   width: 40px;
   height: 3px;
-  background: #ff2442;
+  background: #4f46e5;
   border-radius: 2px 2px 0 0;
 }
 
-/* 通知列表 */
 .notification-list {
-  padding: 16px 24px;
+  padding: 8px 24px;
 }
 
 .notification-item {
   display: flex;
   gap: 16px;
-  padding: 20px 0;
+  padding: 18px 0;
   border-bottom: 1px solid #f7f7f7;
 }
 
@@ -491,13 +364,23 @@ const filteredNotifications = computed(() => {
   border-bottom: none;
 }
 
-.user-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  object-fit: cover;
+.notification-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  color: white;
 }
+
+.icon-inventory_alert { background: #f56c6c; }
+.icon-order_exception { background: #e6a23c; }
+.icon-replenish_suggest { background: #409eff; }
+.icon-negative_review { background: #909399; }
+.icon-price_change { background: #9c27b0; }
+.icon-system { background: #4f46e5; }
 
 .notification-main {
   flex: 1;
@@ -507,19 +390,35 @@ const filteredNotifications = computed(() => {
 .notification-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 8px;
+  flex-wrap: wrap;
 }
 
-.username {
+.notification-title {
   font-size: 14px;
   font-weight: 600;
   color: #333;
 }
 
+.notification-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.tag-inventory_alert { background: #fef0f0; color: #f56c6c; }
+.tag-order_exception { background: #fdf6ec; color: #e6a23c; }
+.tag-replenish_suggest { background: #ecf5ff; color: #409eff; }
+.tag-negative_review { background: #f4f4f5; color: #909399; }
+.tag-price_change { background: #f3e5f5; color: #9c27b0; }
+.tag-system { background: #eef2ff; color: #4f46e5; }
+
 .time {
   font-size: 12px;
   color: #999;
+  margin-left: auto;
 }
 
 .notification-body {
@@ -528,130 +427,32 @@ const filteredNotifications = computed(() => {
 
 .notification-text {
   font-size: 14px;
-  color: #666;
+  color: #555;
   line-height: 1.6;
-  margin: 0 0 8px 0;
+  margin: 0 0 6px 0;
 }
 
-.note-reference {
-  font-size: 13px;
+.notification-meta {
+  font-size: 12px;
   color: #999;
   margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  text-align: left;
-}
-
-/* 点赞和收藏通知样式 */
-.like-collect-item {
-  align-items: flex-start;
-}
-
-.like-collect-content {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 4px;
-  align-items: flex-start;
-}
-
-.user-action {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  justify-content: flex-start;
-}
-
-.action-icon {
-  flex-shrink: 0;
-}
-
-.like-icon {
-  color: #ff2442;
-}
-
-.collect-icon {
-  color: #ffa500;
-}
-
-.action-text {
-  font-size: 13px;
-  color: #666;
-  margin: 0;
-  text-align: left;
-}
-
-.action-with-time {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.action-with-time .action-text {
-  margin: 0;
-}
-
-.action-with-time .time {
-  font-size: 12px;
-  color: #999;
-  white-space: nowrap;
-}
-
-.notification-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.like-collect-item .notification-right {
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-}
-
-.notification-right .time {
-  font-size: 12px;
-  color: #999;
-  white-space: nowrap;
-}
-
-.like-collect-item .notification-right .note-thumbnail {
-  order: -1;
-}
-
-.more-btn {
-  padding: 4px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: #999;
-  transition: color 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.more-btn:hover {
-  color: #333;
 }
 
 .notification-actions {
   display: flex;
-  gap: 16px;
+  gap: 12px;
 }
 
-.action-btn-reply,
-.action-btn-like {
+.action-btn {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 12px;
+  padding: 5px 12px;
   border: 1px solid #e5e5e5;
-  border-radius: 16px;
+  border-radius: 4px;
   background: white;
   cursor: pointer;
   font-size: 13px;
@@ -659,25 +460,25 @@ const filteredNotifications = computed(() => {
   transition: all 0.2s;
 }
 
-.action-btn-reply:hover {
-  border-color: #ff2442;
-  color: #ff2442;
+.action-btn:hover {
+  border-color: #4f46e5;
+  color: #4f46e5;
 }
 
-.action-btn-like:hover {
-  border-color: #ff2442;
-  color: #ff2442;
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  color: #bbb;
 }
 
-.note-thumbnail {
-  width: 80px;
-  height: 80px;
-  border-radius: 8px;
-  object-fit: cover;
-  flex-shrink: 0;
+.empty-state p {
+  margin-top: 12px;
+  font-size: 14px;
 }
 
-/* 响应式 */
 @media (max-width: 1024px) {
   .main-content {
     margin-left: 80px;
@@ -688,19 +489,9 @@ const filteredNotifications = computed(() => {
   .main-content {
     margin-left: 0;
   }
-  
+
   .notification-container {
     padding: 16px;
-  }
-}
-
-@media (max-width: 600px) {
-  .main-content {
-    padding-top: 56px;
-  }
-  
-  .notification-container {
-    padding: 12px;
   }
 }
 </style>

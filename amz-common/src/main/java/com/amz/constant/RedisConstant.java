@@ -1,14 +1,16 @@
 package com.amz.constant;
 
+/**
+ * Redis Key 常量。
+ * <p>
+ * 已清理社交场景的 NOTE/LIKE/COLLECTION 相关 key，
+ * 替换为 ERP 商品搜索相关 key。
+ */
 public class RedisConstant {
     public static final String PHONE_CODE = "amz:user:phone_code:";
-    public static final String ATTENTION_CACHE = "amz:user:attention_cache:";
-    public static final String NOTE_GEO = "amz:note:note_geo:";
-    public static final String NOTE_DETAIL_CACHE = "amz:note:note_detail_cache:";
-    public static final String NOTE_SCORE = "amz:note:note_score:";
-    public static final String LIKE_SET_CACHE = "amz:note:like_set_cache:";
-    public static final String COLLECTION_SET_CACHE = "amz:note:collection_set_cache:";
-    public static final String USER_BLOOM_FILTER = "amz:note:user_bloom_filter:";
+    public static final String PRODUCT_SCORE = "amz:product:product_score:";
+    public static final String PRODUCT_DETAIL_CACHE = "amz:product:product_detail_cache:";
+    public static final String USER_BLOOM_FILTER = "amz:user:user_bloom_filter:";
     public static final String PRODUCT_STOCK_CACHE = "amz:product:stock:cache:";
 
     // ===== Shopping Agent 相关 =====

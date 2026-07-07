@@ -1,25 +1,37 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomePage from '../views/HomePage.vue'
-import NotificationPage from '../views/NotificationPage.vue'
-import ShoppingPage from '../views/ShoppingPage.vue'
 
 const router = createRouter({
     history: createWebHistory(),
     routes: [
         {
             path: '/',
-            name: 'Home',
-            component: HomePage
+            name: 'Dashboard',
+            component: () => import('../views/Dashboard.vue')
+        },
+        {
+            path: '/orders',
+            name: 'Orders',
+            component: () => import('../views/OrderList.vue')
+        },
+        {
+            path: '/inventory',
+            name: 'Inventory',
+            component: () => import('../views/InventoryMonitor.vue')
+        },
+        {
+            path: '/ads',
+            name: 'Ads',
+            component: () => import('../views/AdManager.vue')
+        },
+        {
+            path: '/profit',
+            name: 'Profit',
+            component: () => import('../views/ProfitReport.vue')
         },
         {
             path: '/notifications',
             name: 'Notifications',
-            component: NotificationPage
-        },
-        {
-            path: '/shopping',
-            name: 'Shopping',
-            component: ShoppingPage
+            component: () => import('../views/NotificationPage.vue')
         },
         {
             path: '/:pathMatch(.*)*',
@@ -29,12 +41,10 @@ const router = createRouter({
     ]
 })
 
-// 全局前置守卫
+// 全局前置守卫：除首页外均需登录
 router.beforeEach((to, _from, next) => {
     const token = localStorage.getItem('token')
-    // 需要登录的页面
-    const authPages = ['/notifications', '/shopping']
-    if (authPages.includes(to.path) && !token) {
+    if (to.path !== '/' && !token) {
         next('/')
     } else {
         next()

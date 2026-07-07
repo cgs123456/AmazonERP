@@ -16,7 +16,7 @@ class AmzServiceSearchApplicationTests {
 
     @Test
     void testRedis() {
-        Set<Object> hots = redisTemplate.opsForZSet().reverseRange(RedisConstant.NOTE_SCORE, 0, 9);
+        Set<Object> hots = redisTemplate.opsForZSet().reverseRange(RedisConstant.PRODUCT_SCORE, 0, 9);
     }
 
 }

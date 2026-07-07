@@ -4,48 +4,36 @@
       <div class="header-content">
         <div class="logo" @click="goHome">
           <div class="logo-icon">
-            <Icon icon="mdi:book-open-page-variant" width="28" color="#ff2442" />
+            <Icon icon="mdi:amazon" width="28" color="#ff9900" />
           </div>
           <span class="logo-text">Amazon ERP</span>
         </div>
-        
-        <div class="search-bar">
-          <Icon icon="mdi:magnify" width="20" class="search-icon" />
-          <input 
-            v-model="searchKeyword" 
-            type="text" 
-            placeholder="搜索你感兴趣的内容" 
-            @keyup.enter="handleSearch"
-          />
-        </div>
-        
+
+        <nav class="nav-menu">
+          <router-link to="/" class="nav-link">仪表盘</router-link>
+          <router-link to="/orders" class="nav-link">订单</router-link>
+          <router-link to="/inventory" class="nav-link">库存</router-link>
+          <router-link to="/ads" class="nav-link">广告</router-link>
+          <router-link to="/profit" class="nav-link">利润</router-link>
+          <router-link to="/notifications" class="nav-link">消息</router-link>
+        </nav>
+
         <div class="header-actions">
-          <button class="action-btn create-btn" @click="showCreateModal = true">
-            <Icon icon="mdi:pencil" width="18" />
-            <span>创作中心</span>
-          </button>
-          
-          <!-- 未登录状态 -->
           <button v-if="!userInfo" class="action-btn login-btn-header" @click="showLoginModal = true">
-            登录/注册
+            登录 / 注册
           </button>
-          
-          <!-- 已登录状态 -->
           <div v-else class="user-menu">
-            <img 
-              :src="userInfo.image || 'https://i.pravatar.cc/150?img=1'" 
+            <img
+              :src="userInfo.image || 'https://i.pravatar.cc/150?img=1'"
               :alt="userInfo.nickname || '用户'"
               class="user-avatar"
               @click="toggleUserMenu"
             />
-            
-            <!-- 用户下拉菜单 -->
             <Transition name="dropdown">
               <div v-if="showUserMenu" class="user-dropdown" @click.stop>
                 <div class="user-info-section">
-                  <img 
-                    :src="userInfo.image || 'https://i.pravatar.cc/150?img=1'" 
-                    :alt="userInfo.nickname || '用户'"
+                  <img
+                    :src="userInfo.image || 'https://i.pravatar.cc/150?img=1'"
                     class="dropdown-avatar"
                   />
                   <div class="user-details">
@@ -53,15 +41,6 @@
                     <div class="user-id">ID: {{ userInfo.number || userInfo.id }}</div>
                   </div>
                 </div>
-                <div class="menu-divider"></div>
-                <button class="menu-item" @click="goToProfile">
-                  <Icon icon="mdi:account" width="18" />
-                  <span>个人主页</span>
-                </button>
-                <button class="menu-item" @click="goToSettings">
-                  <Icon icon="mdi:cog" width="18" />
-                  <span>设置</span>
-                </button>
                 <div class="menu-divider"></div>
                 <button class="menu-item logout-item" @click="handleLogout">
                   <Icon icon="mdi:logout" width="18" />
@@ -74,14 +53,6 @@
       </div>
     </div>
 
-    <!-- 创作中心弹窗 -->
-    <CreateNoteModal
-      :visible="showCreateModal"
-      @update:visible="showCreateModal = $event"
-      @success="handleCreateSuccess"
-    />
-
-    <!-- 登录弹窗 -->
     <LoginModal
       :visible="showLoginModal"
       @update:visible="showLoginModal = $event"
@@ -94,48 +65,39 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRouter } from 'vue-router'
-import CreateNoteModal from './CreateNoteModal.vue'
 import LoginModal from './LoginModal.vue'
 import { getUserInfo, type UserVo } from '../api/auth'
 import { websocketManager } from '../utils/websocket'
 
 const router = useRouter()
-const showCreateModal = ref(false)
 const showLoginModal = ref(false)
 const userInfo = ref<UserVo | null>(null)
 const showUserMenu = ref(false)
-const searchKeyword = ref('')
 
-// 加载用户信息
 const loadUserInfo = async () => {
   const token = localStorage.getItem('token')
   if (!token) {
     userInfo.value = null
     return
   }
-  
   try {
     const response = await getUserInfo()
     if (response.code === 200 && response.data && response.data.user) {
       userInfo.value = response.data.user
     } else {
-      // token 无效，清除
       localStorage.removeItem('token')
       userInfo.value = null
     }
-  } catch (error) {
-    // 获取用户信息失败
+  } catch {
     localStorage.removeItem('token')
     userInfo.value = null
   }
 }
 
-// 切换用户菜单
 const toggleUserMenu = () => {
   showUserMenu.value = !showUserMenu.value
 }
 
-// 点击外部关闭菜单
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   if (!target.closest('.user-menu')) {
@@ -143,25 +105,10 @@ const handleClickOutside = (event: MouseEvent) => {
   }
 }
 
-// 登录成功回调
 const handleLoginSuccess = () => {
-  // 重新加载用户信息
   loadUserInfo()
 }
 
-// 跳转到个人主页
-const goToProfile = () => {
-  showUserMenu.value = false
-  router.push('/profile')
-}
-
-// 跳转到设置
-const goToSettings = () => {
-  showUserMenu.value = false
-  router.push('/settings')
-}
-
-// 退出登录
 const handleLogout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('token_expiry')
@@ -173,19 +120,6 @@ const handleLogout = () => {
 
 const goHome = () => {
   router.push('/')
-}
-
-// 搜索功能
-const handleSearch = () => {
-  const keyword = searchKeyword.value.trim()
-  if (keyword) {
-    router.push({ path: '/search', query: { keyword } })
-  }
-}
-
-const handleCreateSuccess = () => {
-  // 发布成功后刷新页面
-  window.location.reload()
 }
 
 onMounted(() => {
@@ -222,7 +156,7 @@ onUnmounted(() => {
 
 .header-content {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1400px;
   height: 100%;
   display: flex;
   align-items: center;
@@ -240,9 +174,7 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.logo:hover {
-  transform: scale(1.05);
-}
+.logo:hover { transform: scale(1.05); }
 
 .logo-icon {
   display: flex;
@@ -250,52 +182,41 @@ onUnmounted(() => {
   justify-content: center;
   width: 36px;
   height: 36px;
-  background: linear-gradient(135deg, #fff0f0 0%, #ffe0e0 100%);
+  background: linear-gradient(135deg, #fff4e0 0%, #ffe0b0 100%);
   border-radius: 10px;
 }
 
 .logo-text {
   font-size: 20px;
   font-weight: 700;
-  color: #ff2442;
+  color: #1a1a2e;
   letter-spacing: 0.5px;
 }
 
-.search-bar {
+.nav-menu {
   flex: 1;
-  max-width: 500px;
   display: flex;
-  align-items: center;
-  background: #f7f7f7;
-  border-radius: 24px;
-  padding: 10px 20px;
-  gap: 10px;
-  transition: all 0.3s;
-  border: 2px solid transparent;
+  gap: 4px;
 }
 
-.search-bar:focus-within {
-  background: white;
-  border-color: #ff2442;
-  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.1);
-}
-
-.search-icon {
-  color: #999;
-  flex-shrink: 0;
-}
-
-.search-bar input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
+.nav-link {
+  padding: 8px 16px;
+  border-radius: 8px;
   font-size: 14px;
-  color: #333;
+  font-weight: 500;
+  color: #666;
+  text-decoration: none;
+  transition: all 0.2s;
 }
 
-.search-bar input::placeholder {
-  color: #999;
+.nav-link:hover {
+  background: #f0f0f5;
+  color: #1a1a2e;
+}
+
+.nav-link.router-link-exact-active {
+  background: #4f46e5;
+  color: #fff;
 }
 
 .header-actions {
@@ -306,45 +227,25 @@ onUnmounted(() => {
 }
 
 .action-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
   padding: 10px 20px;
   border: none;
-  border-radius: 20px;
+  border-radius: 8px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.3s;
-  white-space: nowrap;
-}
-
-.create-btn {
-  background: linear-gradient(135deg, #ff2442 0%, #ff4d6d 100%);
-  color: white;
-  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.2);
-}
-
-.create-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(255, 36, 66, 0.3);
 }
 
 .login-btn-header {
-  background: white;
-  color: #333;
-  border: 1px solid #e5e5e5;
+  background: #4f46e5;
+  color: white;
 }
 
 .login-btn-header:hover {
-  border-color: #ff2442;
-  color: #ff2442;
+  background: #4338ca;
 }
 
-/* 用户菜单 */
-.user-menu {
-  position: relative;
-}
+.user-menu { position: relative; }
 
 .user-avatar {
   width: 40px;
@@ -357,7 +258,7 @@ onUnmounted(() => {
 }
 
 .user-avatar:hover {
-  border-color: #ff2442;
+  border-color: #4f46e5;
   transform: scale(1.05);
 }
 
@@ -378,7 +279,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: linear-gradient(135deg, #fff0f0 0%, #ffe0e0 100%);
+  background: #f9fafb;
 }
 
 .dropdown-avatar {
@@ -388,31 +289,11 @@ onUnmounted(() => {
   object-fit: cover;
 }
 
-.user-details {
-  flex: 1;
-  min-width: 0;
-}
+.user-details { flex: 1; min-width: 0; }
+.user-nickname { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 4px; }
+.user-id { font-size: 12px; color: #999; }
 
-.user-nickname {
-  font-size: 15px;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-id {
-  font-size: 12px;
-  color: #999;
-}
-
-.menu-divider {
-  height: 1px;
-  background: #f0f0f0;
-  margin: 8px 0;
-}
+.menu-divider { height: 1px; background: #f0f0f0; margin: 8px 0; }
 
 .menu-item {
   width: 100%;
@@ -429,63 +310,14 @@ onUnmounted(() => {
   text-align: left;
 }
 
-.menu-item:hover {
-  background: #f7f7f7;
-}
+.menu-item:hover { background: #f7f7f7; }
+.logout-item { color: #ef4444; }
+.logout-item:hover { background: #fee2e2; }
 
-.logout-item {
-  color: #ff2442;
-}
-
-.logout-item:hover {
-  background: #fff0f0;
-}
-
-/* 下拉菜单动画 */
-.dropdown-enter-active,
-.dropdown-leave-active {
-  transition: all 0.2s ease;
-}
-
-.dropdown-enter-from,
-.dropdown-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-/* 响应式 */
-@media (max-width: 900px) {
-  .header-content {
-    padding: 0 20px;
-    gap: 16px;
-  }
-  
-  .logo-text {
-    display: none;
-  }
-  
-  .create-btn span {
-    display: none;
-  }
-}
+.dropdown-enter-active, .dropdown-leave-active { transition: all 0.2s ease; }
+.dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-8px); }
 
 @media (max-width: 768px) {
-  .header-content {
-    padding: 0 16px;
-  }
-  
-  .action-btn {
-    padding: 8px 16px;
-  }
-}
-
-@media (max-width: 600px) {
-  .header {
-    height: 56px;
-  }
-  
-  .login-btn-header {
-    display: none;
-  }
+  .nav-menu { display: none; }
 }
 </style>
