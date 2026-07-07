@@ -1,0 +1,32 @@
+server:
+  port: 8096
+spring:
+  application:
+    name: amz-service-spapi
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://121.37.250.15:3306/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:your_db_password}
+  data:
+    redis:
+      host: 121.37.250.15
+      port: 6379
+      password: ${REDIS_PASSWORD:your_redis_password}
+      database: 0
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: auto
+spapi:
+  aws-access-key: ${AWS_ACCESS_KEY:}
+  aws-secret-key: ${AWS_SECRET_KEY:}
+  region: ${AWS_REGION:us-east-1}
+  lwa-endpoint: https://api.amazon.com/auth/o2/token

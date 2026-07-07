@@ -1,0 +1,52 @@
+server:
+  port: 8095
+spring:
+  application:
+    name: amz-service-product
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://121.37.250.15:3306/rb_product?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:your_db_password}
+  redis:
+    host: 121.37.250.15
+    port: 6379
+    password: ${REDIS_PASSWORD:your_redis_password}
+  rabbitmq:
+    host: 123.206.101.247
+    port: 5672
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:your_rabbitmq_password}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+  data:
+    mongodb:
+      host: 123.206.101.247
+      port: 27017
+      database: amz
+      username: ${MONGO_USERNAME:root}
+      password: ${MONGO_PASSWORD:your_mongo_password}
+      authentication-database: admin
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+# Shopping Agent 配置
+agent:
+  # AI 服务 agent/chat 接口地址（通过网关访问）
+  ai-chat-url: ${AGENT_AI_CHAT_URL:http://localhost:10010/ai/agent/chat}
+
+# DeepSeek 翻译 API 配置
+deepseek:
+  api_url: https://api.deepseek.com/v1
+  api_key: ${DEEPSEEK_API_KEY:}
+

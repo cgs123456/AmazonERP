@@ -1,0 +1,37 @@
+server:
+  port: 8105
+spring:
+  application:
+    name: amz-service-order
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://121.37.250.15:3306/rb_order?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:your_db_password}
+  redis:
+    host: 121.37.250.15
+    port: 6379
+    password: ${REDIS_PASSWORD:your_redis_password}
+  rabbitmq:
+    host: 123.206.101.247
+    port: 5672
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:your_rabbitmq_password}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 1
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: auto

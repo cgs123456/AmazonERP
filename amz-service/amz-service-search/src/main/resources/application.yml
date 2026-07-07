@@ -1,0 +1,44 @@
+server:
+  port: 8090
+spring:
+  application:
+    name: amz-service-search
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://121.37.250.15:3306/rb_search?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:your_db_password}
+  data:
+    redis:
+      host: 121.37.250.15
+      port: 6379
+      password: ${REDIS_PASSWORD:your_redis_password}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+  elasticsearch:
+    uris: http://121.37.250.15:9200
+# Embedding 向量化服务（用于 ES 混合检索 dense_vector 查询生成）
+# 默认禁用，需通过环境变量 EMBEDDING_ENABLED=true 开启
+embedding:
+  enabled: ${EMBEDDING_ENABLED:false}
+  api_url: ${EMBEDDING_API_URL:https://api.openai.com/v1}
+  api_key: ${EMBEDDING_API_KEY:your-embedding-api-key}
+  model: ${EMBEDDING_MODEL:text-embedding-v3}
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+

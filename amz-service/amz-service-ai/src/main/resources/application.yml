@@ -1,0 +1,12 @@
+server:
+  port: 8091
+spring:
+  application:
+    name: amz-service-ai
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+deepseek:
+  api_url: https://api.deepseek.com/v1
+  api_key: ${DEEPSEEK_API_KEY:}

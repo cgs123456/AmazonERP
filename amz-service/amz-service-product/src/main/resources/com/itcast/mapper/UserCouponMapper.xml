@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.itcast.mapper.UserCouponMapper">
+
+    <select id="getCouponsByUserId" resultType="com.itcast.model.pojo.Coupon">
+        select * from rb_coupon left join rb_user_coupon on rb_coupon.id = rb_user_coupon.coupon_id where rb_user_coupon.user_id = #{userId};
+    </select>
+
+
+</mapper>

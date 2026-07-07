@@ -1,0 +1,54 @@
+server:
+  port: 10010
+spring:
+  application:
+    name: amz-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+    gateway:
+      routes:
+        # 用户服务路由
+        - id: amz-service-user
+          uri: lb://amz-service-user
+          predicates:
+            - Path=/user/**
+        # 笔记服务路由
+        - id: amz-service-note
+          uri: lb://amz-service-note
+          predicates:
+            - Path=/note/**
+        # 商品服务路由
+        - id: amz-service-product
+          uri: lb://amz-service-product
+          predicates:
+            - Path=/product/**
+        # 订单服务路由
+        - id: amz-service-order
+          uri: lb://amz-service-order
+          predicates:
+            - Path=/order/**
+        # 评论服务路由
+        - id: amz-service-comment
+          uri: lb://amz-service-comment
+          predicates:
+            - Path=/comment/**
+        # 搜索服务路由
+        - id: amz-service-search
+          uri: lb://amz-service-search
+          predicates:
+            - Path=/search/**
+        # AI服务路由
+        - id: amz-service-ai
+          uri: lb://amz-service-ai
+          predicates:
+            - Path=/ai/**
+        # WebSocket服务路由（使用Nacos服务发现）
+        - id: amz-netty-websocket
+          uri: lb://amz-netty-websocket
+          predicates:
+            - Path=/ws/**
+          filters:
+            # WebSocket路径映射：网关 /ws/socket -> 后端 /socket
+            - RewritePath=/ws/(?<segment>.*), /${segment}
