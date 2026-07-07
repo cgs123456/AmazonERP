@@ -7,6 +7,32 @@ spring:
     nacos:
       discovery:
         server-addr: 123.206.101.247:8848
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://121.37.250.15:3306/amz_ai?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:your_db_password}
+  data:
+    redis:
+      host: 121.37.250.15
+      port: 6379
+      password: ${REDIS_PASSWORD:your_redis_password}
+      database: 0
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: auto
 deepseek:
   api_url: https://api.deepseek.com/v1
   api_key: ${DEEPSEEK_API_KEY:}
+# Agent 配置
+agent:
+  # 主动提醒触发阈值
+  reminder:
+    inventory-days-threshold: 7        # 库存可售天数 < 7 触发提醒
+    sales-drop-ratio-threshold: 0.20   # 销量环比下降 > 20% 触发提醒
+  # 每日报告推送时间
+  daily-report-cron: "0 0 8 * * ?"

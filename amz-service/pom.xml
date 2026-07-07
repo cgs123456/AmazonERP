@@ -22,6 +22,14 @@
         <module>amz-service-message</module>
         <module>amz-service-ai</module>
         <module>amz-service-spapi</module>
+        <module>amz-service-ad</module>
+        <module>amz-service-procurement</module>
+        <module>amz-service-customer</module>
+        <module>amz-service-logistics</module>
+        <module>amz-service-ops</module>
+        <module>amz-service-report</module>
+        <module>amz-service-finance</module>
+        <module>amz-service-multiplatform</module>
     </modules>
 
     <properties>

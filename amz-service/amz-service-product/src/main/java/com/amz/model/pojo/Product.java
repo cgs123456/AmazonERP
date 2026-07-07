@@ -10,7 +10,7 @@ import java.io.Serializable;
 import java.math.BigDecimal;
 
 @Data
-@TableName("rb_product")
+@TableName("amz_product")
 public class Product implements Serializable {
     private static final long serialVersionUID = 1L;
 

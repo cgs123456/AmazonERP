@@ -35,8 +35,8 @@ public class OssUtil {
                 ossClient.shutdown();
             }
         }
-        // https://redbook512.oss-cn-beijing.aliyuncs.com/default.png
-        return "https://redbook512.oss-cn-beijing.aliyuncs.com/" + fileName;
+        // https://amz-erp.oss-cn-hangzhou.aliyuncs.com/default.png
+        return "https://amz-erp.oss-cn-hangzhou.aliyuncs.com/" + fileName;
     }
 
     /**

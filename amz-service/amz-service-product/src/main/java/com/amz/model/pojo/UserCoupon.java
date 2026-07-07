@@ -7,7 +7,7 @@ import lombok.Data;
 import java.io.Serializable;
 
 @Data
-@TableName("rb_user_coupon")
+@TableName("amz_user_coupon")
 public class UserCoupon implements Serializable {
     /**
      * 用户id

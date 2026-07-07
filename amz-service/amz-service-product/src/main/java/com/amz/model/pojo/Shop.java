@@ -9,7 +9,7 @@ import lombok.Data;
 import java.io.Serializable;
 
 @Data
-@TableName("rb_shop")
+@TableName("amz_shop")
 public class Shop implements Serializable {
     private static final long serialVersionUID = 1L;
 

@@ -9,7 +9,7 @@ import lombok.Data;
 import java.io.Serializable;
 
 @Data
-@TableName("rb_user")
+@TableName("amz_user")
 public class User implements Serializable {
 
     private static final long serialVersionUID = 1L;
@@ -39,7 +39,7 @@ public class User implements Serializable {
     private String image;
 
     /**
-     * 小红书号
+     * 用户号
      */
     @TableField("number")
     private Long number;

@@ -1,0 +1,10 @@
+server:
+  port: 8102
+spring:
+  application:
+    name: amz-service-report
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+# 数据报表服务无独立数据库，通过 Feign 聚合各微服务数据

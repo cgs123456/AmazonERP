@@ -7,9 +7,10 @@ import lombok.Getter;
  */
 @Getter
 public enum MessageTypeEnum {
-    LIKE(0, "点赞"),
-    COLLECTION(1, "收藏"),
-    ATTENTION(2, "关注");
+    INVENTORY_WARNING(0, "库存预警"),
+    ORDER_EXCEPTION(1, "订单异常"),
+    REPLENISHMENT_SUGGESTION(2, "补货建议"),
+    ATTENTION(3, "关注");
 
     private final int code;
     private final String type;

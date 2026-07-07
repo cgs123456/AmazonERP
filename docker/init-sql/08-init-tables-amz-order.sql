@@ -1,6 +1,6 @@
 -- Amazon ERP 订单表改造 SQL
 -- 数据库: amz_order
--- 在原有 rb_order 基础上重命名 + 新增多店铺/Amazon同步字段
+-- 在原有 amz_order 基础上重命名 + 新增多店铺/Amazon同步字段
 
 CREATE TABLE IF NOT EXISTS amz_order (
     id BIGINT PRIMARY KEY,

@@ -16,7 +16,7 @@ import java.time.Duration;
 
 /**
  * EmbeddingService 实现：调用 OpenAI 兼容的 /v1/embeddings 接口。
- * 使用 JDK HttpClient + Gson（与 redbook-common 现有风格一致）。
+ * 使用 JDK HttpClient + Gson（与 amz-common 现有风格一致）。
  * 默认禁用，需通过 embedding.enabled=true 开启。
  */
 @Service

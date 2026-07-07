@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 @Data
-@TableName("rb_order_attribute")
+@TableName("amz_order_attribute")
 public class OrderAttribute {
     /**
      * 主键

@@ -1,0 +1,32 @@
+server:
+  port: 8097
+spring:
+  application:
+    name: amz-service-ad
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 123.206.101.247:8848
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://121.37.250.15:3306/amz_ad?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:your_db_password}
+  data:
+    redis:
+      host: 121.37.250.15
+      port: 6379
+      password: ${REDIS_PASSWORD:your_redis_password}
+      database: 0
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+  global-config:
+    db-config:
+      id-type: auto
+# Amazon Advertising API 配置（独立于 SP-API，需单独申请广告 API 权限）
+advertising:
+  api-endpoint: https://advertising-api.amazon.com
+  profile-id: ${AD_PROFILE_ID:}
+  # LWA Token 复用 SP-API 的刷新机制，通过 Feign 调用 amz-service-spapi 获取

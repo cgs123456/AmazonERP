@@ -3,7 +3,7 @@ package com.amz.util;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * 小红书号工具类
+ * 用户号工具类
  */
 public class NumberUtil {
     public static Long getNumber() {

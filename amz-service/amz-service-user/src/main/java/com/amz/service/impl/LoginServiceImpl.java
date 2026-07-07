@@ -70,8 +70,8 @@ public class LoginServiceImpl implements LoginService {
             User user = new User();
             user.setPhone(loginDto.getPhone());
             user.setNickname("普通用户");
-            user.setImage("https://redbook512.oss-cn-beijing.aliyuncs.com/default.png");
-            // 5.2 生成小红书号
+            user.setImage("https://i.pravatar.cc/150?img=0");
+            // 5.2 生成用户号
             Long number = NumberUtil.getNumber();
             user.setNumber(number);
             userMapper.insert(user);

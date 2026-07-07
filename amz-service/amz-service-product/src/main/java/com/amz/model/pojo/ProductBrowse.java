@@ -7,7 +7,7 @@ import lombok.Data;
 import java.io.Serializable;
 
 @Data
-@TableName("rb_product_browse")
+@TableName("amz_product_browse")
 public class ProductBrowse implements Serializable {
     private static final long serialVersionUID = 1L;
 

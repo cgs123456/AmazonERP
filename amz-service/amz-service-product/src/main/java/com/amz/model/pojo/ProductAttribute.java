@@ -8,7 +8,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.util.List;
 
 @Data
-@Document("rb_product_attribute")
+@Document("amz_product_attribute")
 public class ProductAttribute {
 
     @Id

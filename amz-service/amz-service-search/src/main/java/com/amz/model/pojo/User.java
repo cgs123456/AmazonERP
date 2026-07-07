@@ -30,7 +30,7 @@ public class User implements Serializable {
     private String image;
 
     /**
-     * 小红书号
+     * 用户号
      */
     private Long number;
 

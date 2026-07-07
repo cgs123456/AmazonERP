@@ -132,7 +132,7 @@ public class SearchServiceImpl implements SearchService {
                 .withMaxResults(BM25_TOP)
                 .build();
         SearchHits<Note> bm25Hits = elasticsearchOperations.search(
-                bm25Query, Note.class, IndexCoordinates.of("rb_note"));
+                bm25Query, Note.class, IndexCoordinates.of("amz_note"));
 
         // 3.kNN 向量检索 Top50
         List<Float> vector = toFloatList(queryEmbedding);
@@ -145,7 +145,7 @@ public class SearchServiceImpl implements SearchService {
                 .withMaxResults(KNN_TOP)
                 .build();
         SearchHits<Note> knnHits = elasticsearchOperations.search(
-                knnQuery, Note.class, IndexCoordinates.of("rb_note"));
+                knnQuery, Note.class, IndexCoordinates.of("amz_note"));
 
         // 4.RRF 融合：score = sum(1 / (k + rank))
         Map<Long, Double> rrfScores = new HashMap<>();
@@ -189,7 +189,7 @@ public class SearchServiceImpl implements SearchService {
                 .withMaxResults(size)
                 .build();
         SearchHits<Note> hits = elasticsearchOperations.search(
-                query, Note.class, IndexCoordinates.of("rb_note"));
+                query, Note.class, IndexCoordinates.of("amz_note"));
         return hits.getSearchHits().stream()
                 .map(SearchHit::getContent)
                 .collect(Collectors.toList());

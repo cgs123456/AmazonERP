@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.util.Date;
 
 @Data
-@TableName("rb_coupon")
+@TableName("amz_coupon")
 public class Coupon implements Serializable {
     private static final long serialVersionUID = 1L;
 

@@ -5,7 +5,7 @@
 <mapper namespace="com.itcast.mapper.UserCouponMapper">
 
     <select id="getCouponsByUserId" resultType="com.itcast.model.pojo.Coupon">
-        select * from rb_coupon left join rb_user_coupon on rb_coupon.id = rb_user_coupon.coupon_id where rb_user_coupon.user_id = #{userId};
+        select * from amz_coupon left join amz_user_coupon on amz_coupon.id = amz_user_coupon.coupon_id where amz_user_coupon.user_id = #{userId};
     </select>
 
 

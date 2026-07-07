@@ -7,7 +7,7 @@ import lombok.Data;
 import java.io.Serializable;
 
 @Data
-@TableName("rb_history")
+@TableName("amz_history")
 public class History implements Serializable {
 
     private static final long serialVersionUID = 1L;

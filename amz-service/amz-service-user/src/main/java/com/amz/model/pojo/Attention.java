@@ -9,7 +9,7 @@ import lombok.Data;
 import java.io.Serializable;
 
 @Data
-@TableName("rb_attention")
+@TableName("amz_attention")
 public class Attention implements Serializable {
     private static final long serialVersionUID = 1L;
 

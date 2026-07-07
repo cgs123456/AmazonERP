@@ -11,7 +11,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rb_cart")
+@TableName("amz_cart")
 public class Cart implements Serializable {
     private static final long serialVersionUID = 1L;
 

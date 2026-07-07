@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
 @Component
-@FeignClient("redbook-service-product")
+@FeignClient("amz-service-product")
 public interface ProductClient {
 
     @GetMapping("/product/getProduct/{productId}")
