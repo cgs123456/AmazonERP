@@ -29,7 +29,8 @@ COPY amz-service ./amz-service
 RUN mvn -B -q clean package -DskipTests -pl amz-service/amz-service-spapi -am
 
 # ---------- Stage 2: JRE 运行 ----------
-FROM openjdk:17-slim
+# openjdk 官方镜像已下架，改用 Eclipse Temurin（Adoptium 官方维护）
+FROM eclipse-temurin:17-jre
 
 LABEL org.opencontainers.image.title="AmazonERP"
 LABEL org.opencontainers.image.description="Amazon ERP 微服务跨境电商管理平台"
