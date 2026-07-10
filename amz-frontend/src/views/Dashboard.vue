@@ -51,7 +51,7 @@
 
       <!-- Agent 快捷入口 -->
       <div class="agent-entry">
-        <div class="agent-card" @click="openAgent">
+        <div class="agent-card" @click="agentVisible = true">
           <Icon icon="mdi:robot" width="32" color="#4f46e5" />
           <div>
             <div class="agent-title">运营助手</div>
@@ -61,17 +61,20 @@
         </div>
       </div>
     </main>
+
+    <!-- 运营助手 AI 聊天浮窗 -->
+    <AgentChat v-model:visible="agentVisible" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import { Icon } from '@iconify/vue'
-import { useRouter } from 'vue-router'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import AgentChat from '../components/AgentChat.vue'
 
-const router = useRouter()
+const agentVisible = ref(false)
 
 const kpiData = ref([
   { label: '今日订单', value: '23', trend: 15, icon: 'mdi:cart', color: '#4f46e5' },
@@ -97,10 +100,6 @@ const shopDist = ref([
   { name: 'Shop C (DE)', percent: 15, color: '#f59e0b' },
   { name: 'Shop D (JP)', percent: 10, color: '#ef4444' }
 ])
-
-const openAgent = () => {
-  router.push('/notifications')
-}
 </script>
 
 <style scoped>
