@@ -96,4 +96,22 @@ public class ReplenishmentSuggestion {
      */
     @TableField("urgency_level")
     private String urgencyLevel;
+
+    /**
+     * ML 预测需求量（null 表示未使用 ML）。
+     */
+    @TableField("ml_predicted_demand")
+    private Double mlPredictedDemand;
+
+    /**
+     * ML 置信度（0.0-1.0，null 表示未使用 ML）。
+     */
+    @TableField("ml_confidence")
+    private Double mlConfidence;
+
+    /**
+     * 混合策略描述：RULE_ONLY / HYBRID_ML_70_RULE_30。
+     */
+    @TableField("blend_strategy")
+    private String blendStrategy;
 }

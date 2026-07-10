@@ -39,7 +39,29 @@
         <oss.version>3.17.4</oss.version>
         <elasticsearch.version>8.15.3</elasticsearch.version>
         <redisson.version>3.37.0</redisson.version>
+        <langchain4j.version>0.36.2</langchain4j.version>
+        <onnxruntime.version>1.18.2</onnxruntime.version>
     </properties>
+
+    <build>
+        <plugins>
+            <!-- JDK 21 下 Lombok 注解处理器需显式声明到 annotationProcessorPaths，
+                 否则 maven-compiler-plugin 不会触发 Lombok 代码生成。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 
     <dependencyManagement>
         <dependencies>
@@ -105,6 +127,25 @@
                 <groupId>com.aliyun.oss</groupId>
                 <artifactId>aliyun-sdk-oss</artifactId>
                 <version>${oss.version}</version>
+            </dependency>
+
+            <!-- LangChain4j（Agent 编排框架） -->
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j</artifactId>
+                <version>${langchain4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-open-ai</artifactId>
+                <version>${langchain4j.version}</version>
+            </dependency>
+
+            <!-- ONNX Runtime（LightGBM 模型推理） -->
+            <dependency>
+                <groupId>com.microsoft.onnxruntime</groupId>
+                <artifactId>onnxruntime</artifactId>
+                <version>${onnxruntime.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

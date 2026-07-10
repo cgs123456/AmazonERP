@@ -17,6 +17,19 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
+    <!-- alimaven 旧 Nexus2 URL 可能缺少部分较新的 artifact（如 onnxruntime），
+         此处以不同 ID 声明阿里云 Nexus3 仓库作为兜底。
+         settings.xml 中 mirrorOf=central 不会拦截此仓库。 -->
+    <repositories>
+        <repository>
+            <id>aliyun-nexus3</id>
+            <name>Aliyun Nexus3 Public</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases><enabled>true</enabled></releases>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -61,6 +74,14 @@
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
+        </dependency>
+
+        <!-- ONNX Runtime：用于加载 LightGBM 导出的 ONNX 模型进行 ML 推理 -->
+        <!-- 注：任务要求 1.18.2，但该版本未发布到 Maven Central，使用同系列最近可用版本 1.18.0 -->
+        <dependency>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.18.0</version>
         </dependency>
 
         <dependency>

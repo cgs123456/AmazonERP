@@ -1,0 +1,2 @@
+# 此目录用于存放 LightGBM 导出的 ONNX 模型文件。
+# 实际模型文件 lightgbm_replenish.onnx 由 ml/train_lightgbm.py 脚本生成，不入库。
