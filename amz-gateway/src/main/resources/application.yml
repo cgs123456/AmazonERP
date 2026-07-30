@@ -6,19 +6,17 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: 123.206.101.247:8848
+        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
     gateway:
+      httpclient:
+        connect-timeout: 5000
+        response-timeout: 30s
       routes:
         # 用户服务路由
         - id: amz-service-user
           uri: lb://amz-service-user
           predicates:
             - Path=/user/**
-        # 笔记服务路由
-        - id: amz-service-note
-          uri: lb://amz-service-note
-          predicates:
-            - Path=/note/**
         # 商品服务路由
         - id: amz-service-product
           uri: lb://amz-service-product
@@ -29,11 +27,6 @@ spring:
           uri: lb://amz-service-order
           predicates:
             - Path=/order/**
-        # 评论服务路由
-        - id: amz-service-comment
-          uri: lb://amz-service-comment
-          predicates:
-            - Path=/comment/**
         # 搜索服务路由
         - id: amz-service-search
           uri: lb://amz-service-search
@@ -44,11 +37,62 @@ spring:
           uri: lb://amz-service-ai
           predicates:
             - Path=/ai/**
+        # SP-API服务路由
+        - id: amz-service-spapi
+          uri: lb://amz-service-spapi
+          predicates:
+            - Path=/spapi/**
+        # 广告服务路由
+        - id: amz-service-ad
+          uri: lb://amz-service-ad
+          predicates:
+            - Path=/ad/**
+        # 客户服务路由
+        - id: amz-service-customer
+          uri: lb://amz-service-customer
+          predicates:
+            - Path=/customer/**
+        # 财务服务路由
+        - id: amz-service-finance
+          uri: lb://amz-service-finance
+          predicates:
+            - Path=/finance/**
+        # 物流服务路由
+        - id: amz-service-logistics
+          uri: lb://amz-service-logistics
+          predicates:
+            - Path=/logistics/**
+        # 多平台服务路由
+        - id: amz-service-multiplatform
+          uri: lb://amz-service-multiplatform
+          predicates:
+            - Path=/multiplatform/**
+        # 运营服务路由
+        - id: amz-service-ops
+          uri: lb://amz-service-ops
+          predicates:
+            - Path=/ops/**
+        # 采购服务路由
+        - id: amz-service-procurement
+          uri: lb://amz-service-procurement
+          predicates:
+            - Path=/procurement/**
+        # 报表服务路由
+        - id: amz-service-report
+          uri: lb://amz-service-report
+          predicates:
+            - Path=/report/**
         # WebSocket服务路由（使用Nacos服务发现）
         - id: amz-netty-websocket
-          uri: lb://amz-netty-websocket
+          uri: lb://amz-service-message
           predicates:
             - Path=/ws/**
           filters:
             # WebSocket路径映射：网关 /ws/socket -> 后端 /socket
             - RewritePath=/ws/(?<segment>.*), /${segment}
+
+# JWT security config
+jwt:
+  secret-key: ${JWT_SECRET_KEY:}
+  issuer: ${JWT_ISSUER:amz-erp}
+  audience: ${JWT_AUDIENCE:amz-erp-client}

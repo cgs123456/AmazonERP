@@ -327,9 +327,13 @@ export EMBEDDING_API_KEY=your_embedding_api_key
 
 ### 3. 启动基础设施
 
+项目根目录提供 `docker-compose.yml`，一键拉起 Nacos、MySQL（主+从）、Redis、RabbitMQ、MongoDB、Elasticsearch 等全部依赖：
+
 ```bash
 docker-compose up -d
 ```
+
+> 若不使用 docker-compose，也可指向外部已有的 Nacos/MySQL/Redis/RabbitMQ/MongoDB/ES 实例，仅需在后端服务启动时通过环境变量（见下文 `NACOS_ADDR`、`MYSQL_HOST` 等）覆盖默认连接地址即可。
 
 ### 4. 启动后端服务
 
@@ -337,6 +341,58 @@ docker-compose up -d
 mvn compile
 # 按顺序启动各微服务
 ```
+
+#### 4.1 微服务启动顺序
+
+微服务存在注册与鉴权依赖，**必须按以下顺序启动**，否则后启动的服务可能因注册中心或鉴权服务未就绪而启动失败：
+
+1. **nacos**（基础设施，已在步骤 3 拉起）
+2. **amz-gateway**（API 网关，端口 10010，对外统一入口）
+3. **amz-service-user**（用户与鉴权服务，提供 JWT 校验，gateway 依赖）
+4. **其他业务服务**（按需启动）：
+   - `amz-service-spapi`（SP-API 集成，订单同步、FBA 库存、补货引擎，端口 8096）
+   - `amz-service-product` / `amz-service-order` / `amz-service-ad` / `amz-service-procurement`
+   - `amz-service-customer` / `amz-service-logistics` / `amz-service-finance` / `amz-service-report`
+   - `amz-service-search` / `amz-service-ai` / `amz-service-ops` / `amz-service-multiplatform` / `amz-service-message`
+
+每个服务为一个独立的 Spring Boot 进程，可在 IDE 中分别运行各服务的 `*Application.java` 主类，或通过 `mvn -pl <module> spring-boot:run` 启动。
+
+#### 4.2 mock / real profile 切换
+
+业务服务支持两套 Spring Profile，用于在「内置 Mock 数据」与「真实 Amazon SP-API」之间切换：
+
+| Profile | 命令参数 | 适用场景 |
+| ------- | -------- | -------- |
+| `mock`（默认） | `-Dspring.profiles.active=mock` | 本地开发/演示，无需真实 SP-API 凭证，服务返回内置样例数据 |
+| `real` | `-Dspring.profiles.active=real` | 对接真实 Amazon SP-API，需配置 `AWS_ACCESS_KEY` / `AWS_SECRET_KEY` / `AWS_REGION` 等凭证，且需可访问 Amazon 服务 |
+
+示例：
+
+```bash
+# 默认 mock 模式
+mvn -pl amz-service/amz-service-spapi spring-boot:run
+
+# 切换到 real 模式（需提供真实 SP-API 凭证）
+mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=real
+```
+
+#### 4.3 环境变量
+
+各微服务通过以下环境变量覆盖默认的中间件连接地址，**未设置时使用各服务 `application.yml` 中的默认值**。指向外部基础设施（非 docker-compose 网络）时通常需要显式设置：
+
+| 环境变量 | 说明 | 默认值参考 |
+| -------- | ---- | ---------- |
+| `NACOS_ADDR` | Nacos 注册/配置中心地址 | `127.0.0.1:8848` |
+| `MYSQL_HOST` | MySQL 主库（写节点）地址 | `127.0.0.1` |
+| `MYSQL_PORT` | MySQL 主库端口 | `3307`（docker 映射）/ `3306` |
+| `REDIS_HOST` | Redis 地址 | `127.0.0.1` |
+| `REDIS_PORT` | Redis 端口 | `6379` |
+| `RABBITMQ_HOST` | RabbitMQ 地址 | `127.0.0.1` |
+| `RABBITMQ_PORT` | RabbitMQ AMQP 端口 | `5672` |
+| `ES_URIS` | Elasticsearch 地址（逗号分隔） | `http://127.0.0.1:9200` |
+| `MONGO_HOST` | MongoDB 地址 | `127.0.0.1` |
+
+> 此外，凭证类环境变量（`DB_USERNAME` / `DB_PASSWORD` / `REDIS_PASSWORD` / `RABBITMQ_USERNAME` / `RABBITMQ_PASSWORD` / `MONGO_USERNAME` / `MONGO_PASSWORD` / `JWT_SECRET_KEY` / `AWS_ACCESS_KEY` / `AWS_SECRET_KEY` 等）需在步骤 2 中提前配置。
 
 ## 数据库初始化
 

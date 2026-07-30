@@ -1,21 +1,20 @@
 package com.amz.config;
 
-import com.amz.constant.MqConstant;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import jakarta.annotation.PostConstruct;
 
+@Slf4j
 @Configuration
 public class MqConfig implements RabbitTemplate.ConfirmCallback, RabbitTemplate.ReturnsCallback {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
-
 
     /**
      * 构造方法执行结束后立刻执行此方法。即初始化逻辑。
@@ -33,11 +32,9 @@ public class MqConfig implements RabbitTemplate.ConfirmCallback, RabbitTemplate.
      */
     @Override
     public void returnedMessage(ReturnedMessage returned) {
-        System.out.println("交换器 : " + returned.getExchange());
-        System.out.println("路由键 : " + returned.getRoutingKey());
-        System.out.println("路由失败编码 : " + returned.getReplyCode());
-        System.out.println("路由失败描述 : " + returned.getReplyText());
-        System.out.println("消息 : " + returned.getMessage());
+        log.error("交换器={} 路由键={} 路由失败编码={} 路由失败描述={} 消息={}",
+                returned.getExchange(), returned.getRoutingKey(),
+                returned.getReplyCode(), returned.getReplyText(), returned.getMessage());
     }
 
     /**
@@ -48,27 +45,10 @@ public class MqConfig implements RabbitTemplate.ConfirmCallback, RabbitTemplate.
      */
     @Override
     public void confirm(CorrelationData correlationData, boolean ack, String cause) {
-        System.out.println("消息唯一标记 : " + correlationData);
-        System.out.println("是否确认到达交换器 : " + ack);
-        System.out.println("不能到达交换器的原因 : " + cause);
+        if (ack) {
+            log.info("消息确认到达交换器 correlationData={}", correlationData);
+        } else {
+            log.error("消息未能到达交换器 correlationData={} cause={}", correlationData, cause);
+        }
     }
-
-    // 声明交换机
-    @Bean
-    public DirectExchange updateStockExchange() {
-        return new DirectExchange(MqConstant.UPDATE_PRODUCT_STOCK_EXCHANGE);
-    }
-
-    // 声明队列
-    @Bean
-    public Queue updateStockQueue() {
-        return new Queue(MqConstant.UPDATE_PRODUCT_STOCK_QUEUE);
-    }
-
-    // 使用routing key将队列绑定到交换机
-    @Bean
-    public Binding binding(Queue updateStockQueue, DirectExchange updateStockExchange) {
-        return BindingBuilder.bind(updateStockQueue).to(updateStockExchange).with("");
-    }
-
 }

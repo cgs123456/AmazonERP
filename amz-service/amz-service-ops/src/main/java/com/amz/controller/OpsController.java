@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.ShopScoped;
 import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
 import com.amz.model.NegativeReviewAlert;
@@ -26,6 +27,7 @@ public class OpsController {
      * 手动触发差评扫描。
      * POST /ops/review/scan/{shopId}
      */
+    @ShopScoped
     @PostMapping("/review/scan/{shopId}")
     public Result<Integer> scanReviews(@PathVariable Long shopId) {
         return Result.success(opsService.scanNegativeReviews(shopId));
@@ -35,6 +37,7 @@ public class OpsController {
      * 查询差评告警列表。
      * GET /ops/review/list/{shopId}?status=
      */
+    @ShopScoped
     @GetMapping("/review/list/{shopId}")
     public Result<List<NegativeReviewAlert>> listReviewAlerts(
             @PathVariable Long shopId,
@@ -57,6 +60,7 @@ public class OpsController {
      * 手动触发跟卖扫描。
      * POST /ops/hijack/scan/{shopId}
      */
+    @ShopScoped
     @PostMapping("/hijack/scan/{shopId}")
     public Result<Integer> scanHijacks(@PathVariable Long shopId) {
         return Result.success(opsService.scanHijackers(shopId));
@@ -66,6 +70,7 @@ public class OpsController {
      * 查询跟卖告警列表。
      * GET /ops/hijack/list/{shopId}?status=
      */
+    @ShopScoped
     @GetMapping("/hijack/list/{shopId}")
     public Result<List<HijackAlert>> listHijackAlerts(
             @PathVariable Long shopId,
@@ -79,6 +84,7 @@ public class OpsController {
      * 手动触发关键词排名抓取。
      * POST /ops/rank/capture/{shopId}
      */
+    @ShopScoped
     @PostMapping("/rank/capture/{shopId}")
     public Result<Integer> captureRanks(@PathVariable Long shopId) {
         return Result.success(opsService.captureKeywordRanks(shopId));
@@ -88,6 +94,7 @@ public class OpsController {
      * 查询关键词排名趋势。
      * GET /ops/rank/trend?shopId=&keyword=&asin=
      */
+    @ShopScoped
     @GetMapping("/rank/trend")
     public Result<List<KeywordRankRecord>> getRankTrend(
             @RequestParam Long shopId,

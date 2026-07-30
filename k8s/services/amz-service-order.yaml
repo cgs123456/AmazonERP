@@ -1,0 +1,78 @@
+# amz-service-order —— 订单微服务（端口 8105，DB: amz_order，读写分离）
+# 注：MYSQL_SLAVE_HOST 由 ConfigMap 提供，DataSourceConfig 中根据 @DS("slave") 注解路由读流量
+apiVersion: v1
+kind: Service
+metadata:
+  name: amz-service-order
+  namespace: amz-erp
+  labels: { app: amz-service-order, tier: service }
+spec:
+  type: ClusterIP
+  ports:
+    - { name: http, port: 8105, targetPort: 8105, protocol: TCP }
+  selector: { app: amz-service-order }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amz-service-order
+  namespace: amz-erp
+  labels: { app: amz-service-order, tier: service }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: amz-service-order } }
+  template:
+    metadata:
+      labels: { app: amz-service-order, tier: service }
+    spec:
+      containers:
+        - name: amz-service-order
+          image: amazon-erp/amz-service-order:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8105, protocol: TCP }
+          env:
+            - { name: NACOS_SERVER_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_SERVER_ADDR } } }
+            - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }
+            - { name: MYSQL_SLAVE_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_SLAVE_HOST } } }
+            - { name: MYSQL_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } } }
+            - { name: REDIS_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST } } }
+            - { name: REDIS_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_PORT } } }
+            - { name: RABBITMQ_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_HOST } } }
+            - { name: RABBITMQ_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_PORT } } }
+            - { name: DB_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } } }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } } }
+            - { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: REDIS_PASSWORD } } }
+            - { name: RABBITMQ_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_USERNAME } } }
+            - { name: RABBITMQ_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_PASSWORD } } }
+            - { name: JWT_SECRET_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: JWT_SECRET_KEY } } }
+            - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_ISSUER } } }
+            - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_AUDIENCE } } }
+            - { name: TZ, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: TZ } } }
+            - { name: JAVA_OPTS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS } } }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits: { cpu: "2000m", memory: "2Gi" }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8105 }
+            initialDelaySeconds: 50
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8105 }
+            initialDelaySeconds: 120
+            periodSeconds: 20
+            timeoutSeconds: 3
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: amz-service-order-hpa
+  namespace: amz-erp
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: amz-service-order }
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }

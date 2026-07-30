@@ -2,9 +2,12 @@ package com.amz.agent.langchain4j;
 
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -13,57 +16,64 @@ import java.time.Duration;
 /**
  * LangChain4j Agent 配置。
  * <p>
- * 将 DeepSeek（OpenAI 兼容 API）配置为 ChatLanguageModel，
- * 并通过 AiServices 构建 ErpAgentInterface 代理对象。
- * <p>
- * 对比旧版 AiServiceImpl（OkHttp 裸调 + 手动 JSON 解析）：
- * - 统一由 OpenAiChatModel 管理连接池、重试、超时
- * - 自动处理 Function Calling 的 tools/tool_calls 字段
- * - 支持 ChatMemory（对话上下文窗口）
+ * 当 deepseek.api_key 未配置时，chatLanguageModel 和 erpAgent Bean 不会被创建，
+ * 调用方需处理 Bean 不存在的情况（@Autowired(required = false)）。
  */
 @Slf4j
 @Configuration
 public class LangChain4jAgentConfig {
 
-    @Value("${deepseek.api_url:https://api.deepseek.com/v1}")
-    private String apiUrl;
-
-    @Value("${deepseek.api_key:}")
+    @Value("${deepseek.api-key:}")
     private String apiKey;
 
+    @Value("${deepseek.base-url:https://api.deepseek.com/v1}")
+    private String baseUrl;
+
+    @Value("${deepseek.model-name:deepseek-chat}")
+    private String modelName;
+
+    @Value("${deepseek.temperature:0.7}")
+    private double temperature;
+
+    @Value("${deepseek.timeout:60}")
+    private long timeoutSeconds;
+
+    @Autowired(required = false)
+    private ErpTools erpTools;
+
     /**
-     * DeepSeek 聊天模型（OpenAI 兼容）。
-     * DeepSeek API 完全兼容 OpenAI /v1/chat/completions 接口，
-     * 可直接使用 langchain4j-open-ai 模块。
+     * DeepSeek 兼容 OpenAI 接口的 ChatLanguageModel。
+     * 仅当 deepseek.api_key 非空时才创建 Bean。
      */
     @Bean
+    @ConditionalOnProperty(prefix = "deepseek", name = "api-key")
     public ChatLanguageModel chatLanguageModel() {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("DeepSeek API Key 未配置（deepseek.api_key 为空），LangChain4j Agent 将无法调用 LLM");
-        }
-        return dev.langchain4j.model.openai.OpenAiChatModel.builder()
-                .baseUrl(apiUrl.endsWith("/") ? apiUrl : apiUrl + "/")
-                .apiKey(apiKey != null && !apiKey.isBlank() ? apiKey : "dummy-key-for-init")
-                .modelName("deepseek-chat")
-                .temperature(0.7)
-                .timeout(Duration.ofSeconds(60))
+        log.info("初始化 LangChain4j OpenAiChatModel: baseUrl={}, model={}", baseUrl, modelName);
+        return OpenAiChatModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .modelName(modelName)
+                .temperature(temperature)
+                .timeout(Duration.ofSeconds(timeoutSeconds))
                 .build();
     }
 
     /**
-     * ERP Agent 代理对象。
-     * AiServices 内部完成：
-     * 1. 扫描 ErpTools 的 @Tool 注解 → 生成函数 schema
-     * 2. 调用 LLM 时自动附带 tools 字段
-     * 3. LLM 返回 tool_calls → 自动执行 → 结果注入 → 继续推理
-     * 4. ChatMemory 维护最近 20 条消息的上下文窗口
+     * ERP Agent AiServices 代理 Bean。
+     * 使用 chatMemoryProvider 按会话隔离，避免多用户串扰。
+     * 仅当 chatLanguageModel Bean 存在时才创建。
      */
     @Bean
-    public ErpAgentInterface erpAgent(ChatLanguageModel chatLanguageModel, ErpTools erpTools) {
+    @ConditionalOnProperty(prefix = "deepseek", name = "api-key")
+    public ErpAgentInterface erpAgent(ChatLanguageModel chatLanguageModel) {
+        log.info("初始化 LangChain4j ErpAgent (AiServices 代理)");
         return AiServices.builder(ErpAgentInterface.class)
                 .chatLanguageModel(chatLanguageModel)
                 .tools(erpTools)
-                .chatMemory(MessageWindowChatMemory.withMaxMessages(20))
+                .chatMemoryProvider(sessionId -> MessageWindowChatMemory.builder()
+                        .id(sessionId)
+                        .maxMessages(20)
+                        .build())
                 .build();
     }
 }

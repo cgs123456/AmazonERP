@@ -1,21 +1,27 @@
 package com.amz.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.amz.client.FinanceServiceFeignClient;
 import com.amz.client.ProductClient;
 import com.amz.constant.MqConstant;
 import com.amz.enums.OrderStatusEnum;
 import com.amz.mapper.OrderAttributeMapper;
 import com.amz.mapper.OrderMapper;
 import com.amz.model.dto.OrderDto;
+import com.amz.model.dto.OrderSyncDto;
 import com.amz.model.pojo.CustomAttribute;
 import com.amz.model.pojo.Order;
 import com.amz.model.pojo.OrderAttribute;
 import com.amz.model.pojo.Product;
 import com.amz.result.Result;
 import com.amz.service.OrderService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -23,7 +29,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -43,17 +51,30 @@ public class OrderServiceImpl implements OrderService {
     private ProductClient productClient;
 
     @Autowired
+    private FinanceServiceFeignClient financeServiceFeignClient;
+
+    @Autowired
     private OrderAttributeMapper orderAttributeMapper;
 
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Override
     public Result<Void> saveOrder(OrderDto orderDto) {
-        // 库存扣减已由 ProductServiceImpl.buyProduct 通过 Lua 脚本完成，这里只做订单保存
+        // B2C 购物车下单场景：本方法仅负责发送订单保存消息，库存扣减应由调用方在调用前完成
         try {
-            // 异步保存订单
-            rabbitTemplate.convertAndSend(MqConstant.SAVE_ORDER_EXCHANGE, "", orderDto);
+            // 异步保存订单：发送 JSON 文本消息（与 OrderConsumer 原始字节解析对齐），
+            // 同时设置 AMQP messageId，作为消费端缺少业务标识时的幂等 fallback。
+            String json = objectMapper.writeValueAsString(orderDto);
+            Message message = MessageBuilder
+                    .withBody(json.getBytes(StandardCharsets.UTF_8))
+                    .setContentType(MessageProperties.CONTENT_TYPE_TEXT_PLAIN)
+                    .setMessageId(UUID.randomUUID().toString())
+                    .build();
+            rabbitTemplate.send(MqConstant.SAVE_ORDER_EXCHANGE, "", message);
             return Result.success(null);
         } catch (Exception e) {
             log.error("保存订单失败", e);
@@ -69,16 +90,19 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalStateException("用户ID不能为空");
         }
 
-        // 幂等性检查：使用消息ID（消息ID在Consumer中已保证一定存在）
+        // 幂等性检查：使用消息ID（由 Consumer 设置：优先 amazonOrderId+shopId，其次 AMQP messageId）
         String messageId = orderDto.getMessageId();
-        
-        // 使用Redis原子操作setIfAbsent防止并发处理（Redis单线程保证原子性）
-        String processedKey = "order:message:processed:" + messageId;
 
-        // setIfAbsent是原子操作：如果key不存在则设置并返回true，如果已存在则返回false
-        Boolean isNew = redisTemplate.opsForValue().setIfAbsent(processedKey, "1", 30, TimeUnit.SECONDS);
+        // 使用Redis原子操作setIfAbsent防止并发/重复处理（Redis单线程保证原子性）
+        String processedKey = "order:message:processed:" + messageId;
+        // 失败次数计数 key：处理异常时递增，便于运维排查
+        String failCountKey = "order:message:failed:" + messageId;
+
+        // setIfAbsent 是原子操作：如果 key 不存在则设置并返回 true，如果已存在则返回 false
+        // TTL 24 小时：覆盖 RabbitMQ 消息重投窗口，避免 deliveryTag 失效后重复落库
+        Boolean isNew = redisTemplate.opsForValue().setIfAbsent(processedKey, "1", 24, TimeUnit.HOURS);
         if (Boolean.FALSE.equals(isNew)) {
-            // key已存在，说明消息已处理过或正在处理中
+            // key 已存在，说明消息已处理过或正在处理中
             log.warn("消息已处理过或正在处理中，跳过处理，messageId: {}", messageId);
             throw new IllegalStateException("消息已处理过，messageId: " + messageId);
         }
@@ -87,13 +111,75 @@ public class OrderServiceImpl implements OrderService {
             // 执行业务逻辑（订单保存）
             saveOrderInternal(orderDto, userId);
 
-            // 订单保存成功，删除临时标记
-            redisTemplate.delete(processedKey);
-
-            log.info("消息已标记为已处理，messageId: {}", messageId);
+            // 成功：保留 processedKey 作为 24h 幂等标记（不删除），防止 MQ 重投导致重复落库
+            log.info("订单处理成功，messageId: {}", messageId);
         } catch (Exception e) {
-            redisTemplate.delete(processedKey);
+            // 失败：不删除 processedKey（阻止 nack 重投触发无限重试），记录失败次数供运维排查
+            Long failCount = redisTemplate.opsForValue().increment(failCountKey);
+            if (failCount != null && failCount == 1L) {
+                redisTemplate.expire(failCountKey, 24, TimeUnit.HOURS);
+            }
+            log.error("订单处理失败，messageId: {}, 失败次数: {}", messageId, failCount, e);
             throw e;
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void syncAmazonOrder(OrderSyncDto syncDto) {
+        if (syncDto == null || syncDto.getAmazonOrderId() == null || syncDto.getAmazonOrderId().isEmpty()) {
+            log.warn("syncAmazonOrder 跳过：amazonOrderId 为空，syncDto={}", syncDto);
+            return;
+        }
+
+        // 幂等查重：按 amazonOrderId 查询（amz_order.uk_amazon_order 唯一索引保证）
+        Long existCount = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
+                .eq(Order::getAmazonOrderId, syncDto.getAmazonOrderId()));
+        if (existCount != null && existCount > 0) {
+            log.info("syncAmazonOrder 幂等跳过：amazonOrderId={} 已存在", syncDto.getAmazonOrderId());
+            return;
+        }
+
+        // 构造订单并落库
+        Order order = new Order();
+        order.setAmazonOrderId(syncDto.getAmazonOrderId());
+        order.setShopId(syncDto.getShopId());
+        order.setMarketplaceId(syncDto.getMarketplaceId());
+        order.setOrderStatus(syncDto.getOrderStatus());
+        order.setBuyerName(syncDto.getBuyerName());
+        order.setPurchaseDate(syncDto.getPurchaseDate());
+        order.setLastUpdateDate(syncDto.getLastUpdateDate());
+        order.setFulfillmentChannel(syncDto.getFulfillmentChannel());
+        order.setShipServiceLevel(syncDto.getShipServiceLevel());
+        // 订单总金额映射到 final_price 字段（订单级金额）
+        order.setFinalPrice(syncDto.getTotalAmount());
+        // sync_status=1 表示已同步本地
+        order.setSyncStatus(1);
+
+        try {
+            orderMapper.insert(order);
+            log.info("syncAmazonOrder 落库成功：amazonOrderId={}, shopId={}",
+                    syncDto.getAmazonOrderId(), syncDto.getShopId());
+            // 业财一体化：订单落库成功后触发凭证生成（借应收 / 贷收入 + 多币种换算）。
+            // 失败降级 warn 日志，不阻断订单落库主流程；凭证可后续按订单号补生成。
+            if (syncDto.getShopId() != null
+                    && syncDto.getTotalAmount() != null
+                    && syncDto.getCurrency() != null
+                    && !syncDto.getCurrency().isEmpty()) {
+                try {
+                    financeServiceFeignClient.generateOrderVoucher(
+                            syncDto.getShopId(),
+                            syncDto.getAmazonOrderId(),
+                            syncDto.getTotalAmount(),
+                            syncDto.getCurrency());
+                } catch (Exception feignEx) {
+                    log.warn("业财一体化凭证生成失败（不阻断订单落库）：amazonOrderId={}, shopId={}",
+                            syncDto.getAmazonOrderId(), syncDto.getShopId(), feignEx);
+                }
+            }
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发场景下唯一索引兜底：另一线程已插入，视为幂等成功
+            log.warn("syncAmazonOrder 并发幂等跳过：amazonOrderId={}", syncDto.getAmazonOrderId());
         }
     }
 
@@ -156,5 +242,17 @@ public class OrderServiceImpl implements OrderService {
         List<Order> orders = orderMapper.selectList(queryWrapper);
 
         return Result.success(orders);
+    }
+
+    @Override
+    public Result<Order> getOrderById(Long orderId) {
+        if (orderId == null) {
+            return Result.failure("订单ID不能为空");
+        }
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            return Result.failure("订单不存在：id=" + orderId);
+        }
+        return Result.success(order);
     }
 }

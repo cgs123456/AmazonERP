@@ -1,15 +1,12 @@
 package com.amz.client;
 
 import com.amz.model.AdKeyword;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Amazon Advertising API 模拟客户端。
+ * Amazon Advertising API 客户端接口。
  * <p>
  * 生产环境对接路径：
  * <ol>
@@ -20,11 +17,13 @@ import java.util.List;
  * </ol>
  * LWA Token 通过 Feign 调用 amz-service-spapi 复用刷新机制。
  * <p>
- * 当前为离线模拟实现，返回构造数据，保证项目可独立运行。
+ * 通过 Spring Profile 切换实现：
+ * <ul>
+ *   <li>{@code mock}：{@link AdvertisingApiMockClient} 离线模拟</li>
+ *   <li>{@code !mock}：{@link AdvertisingApiRealClient} 真实 API 对接骨架</li>
+ * </ul>
  */
-@Slf4j
-@Component
-public class AdvertisingApiClient {
+public interface AdvertisingApiClient {
 
     /**
      * 拉取店铺下某活动的关键词列表。
@@ -32,21 +31,7 @@ public class AdvertisingApiClient {
      * @param shopId     店铺 ID
      * @param campaignId 活动 ID（null 表示该店铺全部活动）
      */
-    public List<AdKeyword> listKeywords(Long shopId, String campaignId) {
-        // 模拟：实际应调用 GET /sp/keywords?campaignId=...
-        List<AdKeyword> list = new ArrayList<>();
-        AdKeyword kw = new AdKeyword();
-        kw.setId(1L);
-        kw.setCampaignId(campaignId != null ? campaignId : "mock-campaign-1");
-        kw.setShopId(shopId);
-        kw.setKeyword("wireless earbuds");
-        kw.setMatchType("EXACT");
-        kw.setBid(new BigDecimal("1.20"));
-        kw.setState("ENABLED");
-        list.add(kw);
-        log.debug("AdvertisingApiClient.listKeywords 模拟返回 {} 条", list.size());
-        return list;
-    }
+    List<AdKeyword> listKeywords(Long shopId, String campaignId);
 
     /**
      * 修改关键词竞价。
@@ -54,9 +39,5 @@ public class AdvertisingApiClient {
      * @param keywordId 关键词 ID
      * @param newBid    新竞价
      */
-    public boolean updateKeywordBid(Long keywordId, BigDecimal newBid) {
-        // 模拟：实际应调用 PUT /sp/keywords
-        log.info("AdvertisingApiClient.updateKeywordBid 模拟：keywordId={} newBid={}", keywordId, newBid);
-        return true;
-    }
+    boolean updateKeywordBid(Long keywordId, BigDecimal newBid);
 }

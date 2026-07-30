@@ -1,0 +1,143 @@
+# amz-gateway 微服务 —— API 网关（Spring Cloud Gateway）
+# 对外统一入口，端口 10010。配置 NodePort 30100 + Ingress。
+apiVersion: v1
+kind: Service
+metadata:
+  name: amz-gateway
+  namespace: amz-erp
+  labels:
+    app: amz-gateway
+    tier: gateway
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 10010
+      targetPort: 10010
+      nodePort: 30100
+      protocol: TCP
+  selector:
+    app: amz-gateway
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amz-gateway
+  namespace: amz-erp
+  labels:
+    app: amz-gateway
+    tier: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: amz-gateway
+  template:
+    metadata:
+      labels:
+        app: amz-gateway
+        tier: gateway
+    spec:
+      containers:
+        - name: amz-gateway
+          image: amazon-erp/amz-gateway:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 10010
+              protocol: TCP
+          env:
+            - name: NACOS_SERVER_ADDR
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: NACOS_SERVER_ADDR
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: REDIS_PORT
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: amz-erp-secret
+                  key: JWT_SECRET_KEY
+            - name: JWT_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: JWT_ISSUER
+            - name: JWT_AUDIENCE
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: JWT_AUDIENCE
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: amz-erp-secret
+                  key: REDIS_PASSWORD
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: TZ
+            - name: JAVA_OPTS
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: JAVA_OPTS_GATEWAY
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 10010
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 10010
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: amz-gateway-hpa
+  namespace: amz-erp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: amz-gateway
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

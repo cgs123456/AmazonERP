@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: amz-service-report
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+      config:
+        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+        file-extension: yaml
+        import-check:
+          enabled: false

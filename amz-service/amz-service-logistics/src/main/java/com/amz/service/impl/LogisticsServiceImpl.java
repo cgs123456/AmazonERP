@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
 import java.util.List;
@@ -52,6 +53,7 @@ public class LogisticsServiceImpl implements LogisticsService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Shipment syncShipmentStatus(Long shipmentId) {
         Shipment shipment = shipmentMapper.selectById(shipmentId);
         if (shipment == null) {

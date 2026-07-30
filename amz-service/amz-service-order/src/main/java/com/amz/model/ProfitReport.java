@@ -1,5 +1,7 @@
 package com.amz.model;
 
+import com.amz.annotation.FieldPermission;
+import com.amz.enums.ConfidentialLevel;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -32,16 +34,20 @@ public class ProfitReport {
 
     private BigDecimal revenue;
 
+    /** 采购成本（COGS），仅 ADMIN/OPERATOR 可见 */
     @TableField("product_cost")
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private BigDecimal productCost;
 
     @TableField("fba_fulfillment_fee")
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.INTERNAL)
     private BigDecimal fbaFulfillmentFee;
 
     @TableField("fba_storage_fee")
     private BigDecimal fbaStorageFee;
 
     @TableField("referral_fee")
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.INTERNAL)
     private BigDecimal referralFee;
 
     @TableField("ad_cost")
@@ -50,6 +56,7 @@ public class ProfitReport {
     private BigDecimal vat;
 
     @TableField("gross_profit")
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private BigDecimal grossProfit;
 
     @TableField("net_profit")
@@ -57,4 +64,10 @@ public class ProfitReport {
 
     @TableField("net_margin")
     private BigDecimal netMargin;
+
+    /**
+     * 数据是否完整：缺失采购成本或类目佣金率时为 false，提示该报告仅作估算。
+     */
+    @TableField("data_complete")
+    private Boolean dataComplete;
 }

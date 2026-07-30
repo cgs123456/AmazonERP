@@ -11,9 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 业财一体化服务实现。
@@ -49,7 +51,9 @@ public class FinanceServiceImpl implements FinanceService {
         BigDecimal rate = currencyConverter.getRate(currency);
 
         AccountingVoucher v = new AccountingVoucher();
-        v.setVoucherNo("V" + System.currentTimeMillis());
+        // 凭证编号：UUID 去横线，规避 "V"+System.currentTimeMillis() 在并发落库时
+        // 撞库触发 amz_accounting_voucher.uk_voucher_no 唯一约束的问题。
+        v.setVoucherNo("V" + UUID.randomUUID().toString().replace("-", ""));
         v.setShopId(shopId);
         v.setBizDate(LocalDate.now().format(FMT));
         v.setSummary("订单销售 - " + orderNo);
@@ -75,9 +79,13 @@ public class FinanceServiceImpl implements FinanceService {
         }
         try {
             String kingdeeNo = kingdeeClient.syncVoucher(v);
-            v.setKingdeeSyncStatus("SYNCED");
+            // 真实金蝶 API 未对接时 KingdeeRealClient 降级返回 KINGDEE_MOCK_ 前缀占位编号，
+            // 此时仅标记为 SYNCING（同步中），区别于真实已过账的 SYNCED，
+            // 避免 FAILED 误报，待真实 API 接入后自动转为 SYNCED。
+            boolean isMock = kingdeeNo != null && kingdeeNo.startsWith("KINGDEE_MOCK_");
+            v.setKingdeeSyncStatus(isMock ? "SYNCING" : "SYNCED");
             voucherMapper.updateById(v);
-            log.info("凭证同步金蝶成功：voucherId={} kingdeeNo={}", voucherId, kingdeeNo);
+            log.info("凭证同步金蝶完成：voucherId={} kingdeeNo={} status={}", voucherId, kingdeeNo, v.getKingdeeSyncStatus());
             return true;
         } catch (Exception e) {
             v.setKingdeeSyncStatus("FAILED");
@@ -100,28 +108,30 @@ public class FinanceServiceImpl implements FinanceService {
 
     @Override
     public BigDecimal calculateProfit(Long shopId, String startDate, String endDate) {
-        // 简化利润计算：收入(ORDER) - 费用(PLATFORM_FEE)
-        // 生产环境应按科目分类汇总借贷
-        LambdaQueryWrapper<AccountingVoucher> revenueWrapper = new LambdaQueryWrapper<>();
-        revenueWrapper.eq(AccountingVoucher::getShopId, shopId)
-                .eq(AccountingVoucher::getSourceType, "ORDER");
-        if (startDate != null) revenueWrapper.ge(AccountingVoucher::getBizDate, startDate);
-        if (endDate != null) revenueWrapper.le(AccountingVoucher::getBizDate, endDate);
-        List<AccountingVoucher> revenueVouchers = voucherMapper.selectList(revenueWrapper);
-        BigDecimal revenue = revenueVouchers.stream()
-                .map(AccountingVoucher::getCnyAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // 业财一体化利润汇总：按 sourceType 区分借贷方向加减
+        //   ORDER        借应收 / 贷主营业务收入        → 收入（贷方）         + cnyAmount
+        //   PROCUREMENT  借库存商品 / 贷应付账款        → 采购成本（借方）     - cnyAmount
+        //   PLATFORM_FEE 借销售费用 / 贷银行存款        → 平台费用（借方）     - cnyAmount
+        //   REFUND       借销售退回 / 贷应收账款        → 退款（借方冲减收入） - cnyAmount
+        // 其他类型忽略（向前兼容）
+        LambdaQueryWrapper<AccountingVoucher> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(AccountingVoucher::getShopId, shopId);
+        if (startDate != null) wrapper.ge(AccountingVoucher::getBizDate, startDate);
+        if (endDate != null) wrapper.le(AccountingVoucher::getBizDate, endDate);
+        List<AccountingVoucher> vouchers = voucherMapper.selectList(wrapper);
 
-        LambdaQueryWrapper<AccountingVoucher> feeWrapper = new LambdaQueryWrapper<>();
-        feeWrapper.eq(AccountingVoucher::getShopId, shopId)
-                .eq(AccountingVoucher::getSourceType, "PLATFORM_FEE");
-        if (startDate != null) feeWrapper.ge(AccountingVoucher::getBizDate, startDate);
-        if (endDate != null) feeWrapper.le(AccountingVoucher::getBizDate, endDate);
-        List<AccountingVoucher> feeVouchers = voucherMapper.selectList(feeWrapper);
-        BigDecimal fee = feeVouchers.stream()
-                .map(AccountingVoucher::getCnyAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        return revenue.subtract(fee);
+        BigDecimal profit = BigDecimal.ZERO;
+        for (AccountingVoucher v : vouchers) {
+            BigDecimal amount = v.getCnyAmount() == null ? BigDecimal.ZERO : v.getCnyAmount();
+            String sourceType = v.getSourceType();
+            if ("ORDER".equals(sourceType)) {
+                profit = profit.add(amount);
+            } else if ("PROCUREMENT".equals(sourceType)
+                    || "PLATFORM_FEE".equals(sourceType)
+                    || "REFUND".equals(sourceType)) {
+                profit = profit.subtract(amount);
+            }
+        }
+        return profit.setScale(2, RoundingMode.HALF_UP);
     }
 }

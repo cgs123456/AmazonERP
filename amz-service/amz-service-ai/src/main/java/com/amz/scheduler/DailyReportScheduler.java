@@ -1,6 +1,7 @@
 package com.amz.scheduler;
 
 import com.amz.agent.ProactiveReminderService;
+import com.amz.client.MessageServiceClient;
 import com.amz.mapper.UserPreferenceMapper;
 import com.amz.model.UserPreference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -10,7 +11,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Agent 定时任务调度器。
@@ -20,18 +23,24 @@ import java.util.List;
  *   <li>每日昨日运营报告推送（默认每天早 8 点）</li>
  *   <li>主动提醒扫描（每 4 小时一次，针对活跃用户）</li>
  * </ol>
- * 生产环境报告应通过 Feign 调用各业务模块聚合数据 + 推送到消息中心（amz-service-message），
- * 此处模拟报告生成流程并打印到日志，保证项目可独立运行。
+ * 生产环境报告通过 Feign 调用 amz-service-message 推送到用户消息中心，
+ * Feign 失败时降级为 warn 日志，不阻断调度。
  */
 @Slf4j
 @Component
 public class DailyReportScheduler {
+
+    /** 消息类型：参考 MessageTypeEnum，库存预警=0；此处使用通用业务通知默认值。 */
+    private static final int MSG_TYPE_DAILY_REPORT = 0;
 
     @Autowired
     private UserPreferenceMapper userPreferenceMapper;
 
     @Autowired
     private ProactiveReminderService proactiveReminderService;
+
+    @Autowired
+    private MessageServiceClient messageServiceClient;
 
     /**
      * 每日昨日运营报告（cron: 0 0 8 * * ?，每天早 8 点）。
@@ -48,13 +57,43 @@ public class DailyReportScheduler {
         wrapper.isNotNull(UserPreference::getLastActiveTime);
         List<UserPreference> users = userPreferenceMapper.selectList(wrapper);
 
+        int pushed = 0;
+        int failed = 0;
         for (UserPreference pref : users) {
             String report = buildReport(pref, yesterday);
             log.info("推送昨日运营报告至用户 {} (店铺 {})：\n{}",
                     pref.getUserId(), pref.getPreferredShopId(), report);
-            // TODO: 通过 Feign 调用 amz-service-message 推送到用户的消息中心
+
+            // 通过 Feign 调用 amz-service-message 推送到用户消息中心
+            boolean ok = sendToMessageService(pref, report);
+            if (ok) {
+                pushed++;
+            } else {
+                failed++;
+            }
         }
-        log.info("=== 每日运营报告推送完成：覆盖用户 {} 人 ===", users.size());
+        log.info("=== 每日运营报告推送完成：覆盖用户 {} 人，成功 {}，失败 {} ===",
+                users.size(), pushed, failed);
+    }
+
+    /**
+     * 通过 Feign 调用 message 服务推送通知。
+     * <p>
+     * 降级策略：调用失败时仅打印 warn 日志，不抛出异常，保证调度任务继续处理下一个用户。
+     */
+    private boolean sendToMessageService(UserPreference pref, String report) {
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("userId", pref.getUserId());
+            body.put("type", MSG_TYPE_DAILY_REPORT);
+            body.put("content", report);
+            messageServiceClient.notify(body);
+            return true;
+        } catch (Exception e) {
+            log.warn("Feign 调用 amz-service-message 推送失败，跳过该用户：userId={}, shopId={}, error={}",
+                    pref.getUserId(), pref.getPreferredShopId(), e.getMessage());
+            return false;
+        }
     }
 
     /**

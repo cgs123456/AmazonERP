@@ -6,17 +6,17 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: 123.206.101.247:8848
+        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://121.37.250.15:3306/amz_search?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:121.37.250.15}:${MYSQL_PORT:3306}/amz_search?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:your_db_password}
+    password: ${DB_PASSWORD:}
   data:
     redis:
-      host: 121.37.250.15
-      port: 6379
-      password: ${REDIS_PASSWORD:your_redis_password}
+      host: ${REDIS_HOST:121.37.250.15}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
       database: 0
       timeout: 3000ms
       lettuce:
@@ -25,7 +25,7 @@ spring:
           max-idle: 8
           min-idle: 0
   elasticsearch:
-    uris: http://121.37.250.15:9200
+    uris: ${ES_URIS:http://121.37.250.15:9200}
 # Embedding 向量化服务（用于 ES 混合检索 dense_vector 查询生成）
 # 默认禁用，需通过环境变量 EMBEDDING_ENABLED=true 开启
 embedding:
@@ -42,3 +42,21 @@ mybatis-plus:
       id-type: auto
 
 
+
+# JWT security config
+jwt:
+  secret-key: ${JWT_SECRET_KEY:}
+  issuer: ${JWT_ISSUER:amz-erp}
+  audience: ${JWT_AUDIENCE:amz-erp-client}
+---
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 10000
+spring:
+  cloud:
+    openfeign:
+      circuitbreaker:
+        enabled: true

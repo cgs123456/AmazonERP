@@ -4,18 +4,25 @@ import com.amz.mapper.ProfitReportMapper;
 import com.amz.model.ProfitReport;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rabbitmq.client.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 
 /**
  * 利润核算 MQ 消费者
+ * <p>
  * 监听订单同步消息，计算利润并落库。
  * 幂等：按 shopId + amazonOrderId + sku 去重。
- * 异常吞掉不重试，避免毒消息。
+ * <p>
+ * 手动 ack 模式：方法正常完成 basicAck；任何异常 basicNack(requeue=false)，
+ * 消息经 DLX 转入死信队列（{@link ProfitMQConfig#profitDlqQueue()}），避免毒消息无限重投或被静默丢弃。
  */
 @Slf4j
 @Component
@@ -49,11 +56,13 @@ public class ProfitMQConsumer {
     }
 
     @RabbitListener(queues = ProfitMQConfig.PROFIT_QUEUE)
-    public void onMessage(String message) {
+    public void onMessage(String message,
+                          Channel channel,
+                          @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
         try {
             ProfitMessage msg = objectMapper.readValue(message, ProfitMessage.class);
 
-            // 幂等性检查：已存在则跳过
+            // 幂等性检查：已存在则跳过（视为成功，直接 ack）
             Long count = profitReportMapper.selectCount(new LambdaQueryWrapper<ProfitReport>()
                     .eq(ProfitReport::getShopId, msg.shopId())
                     .eq(ProfitReport::getAmazonOrderId, msg.amazonOrderId())
@@ -61,6 +70,7 @@ public class ProfitMQConsumer {
             if (count != null && count > 0) {
                 log.info("利润报告已存在，跳过：shopId={}, order={}, sku={}",
                         msg.shopId(), msg.amazonOrderId(), msg.sku());
+                channel.basicAck(deliveryTag, false);
                 return;
             }
 
@@ -81,11 +91,14 @@ public class ProfitMQConsumer {
             );
 
             profitReportMapper.insert(report);
-            log.info("利润报告落库成功：shopId={}, order={}, sku={}, netProfit={}",
-                    msg.shopId(), msg.amazonOrderId(), msg.sku(), report.getNetProfit());
+            log.info("利润报告落库成功：shopId={}, order={}, sku={}, netProfit={}, dataComplete={}",
+                    msg.shopId(), msg.amazonOrderId(), msg.sku(), report.getNetProfit(), report.getDataComplete());
+
+            channel.basicAck(deliveryTag, false);
         } catch (Exception e) {
-            // 异常吞掉，消息会被 ack，不重试，避免毒消息
-            log.error("处理利润消息失败，丢弃消息（避免毒消息）：{}", message, e);
+            // 记录完整异常信息（含消息体），nack 不 requeue，消息经 DLX 转入死信队列
+            log.error("处理利润消息失败，消息转入 DLQ：{}", message, e);
+            channel.basicNack(deliveryTag, false, false);
         }
     }
 }

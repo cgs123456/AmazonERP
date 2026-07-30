@@ -85,7 +85,7 @@ public class AgentMemoryController {
     public Result<List<ConversationMemory>> history(@PathVariable Long userId,
                                                     @RequestParam(defaultValue = "10") int limit) {
         return Result.success(memoryService.listRecentMemories(
-                "sess-last-" + userId, limit));
+                "sess-" + userId, limit));
     }
 
     /**

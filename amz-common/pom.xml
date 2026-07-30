@@ -29,6 +29,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- AOP：支持 OperLogAspect 切面拦截 @OperLog 注解方法 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -52,6 +58,37 @@
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
+        </dependency>
+
+        <!-- MyBatis 核心：供 CryptoTypeHandler 编译使用；optional 避免强制传递给所有依赖 amz-common 的模块，
+             运行时由引用方的 mybatis-plus-spring-boot3-starter 传递提供。 -->
+        <dependency>
+            <groupId>org.mybatis</groupId>
+            <artifactId>mybatis</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Spring Data Redis：供 FieldPermissionService 缓存字段权限规则；optional，
+             运行时由引用方（order/procurement/finance/user 等服务）的 spring-boot-starter-data-redis 提供。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Spring JDBC：供 FieldPermissionService 启动时从 DB 加载权限规则；optional，
+             运行时由引用方的 mybatis-plus-spring-boot3-starter 传递提供。 -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- 测试依赖（JUnit 5 + Mockito + Spring Test），供 FieldPermissionAspect 等纯单元测试使用 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 

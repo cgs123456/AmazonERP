@@ -101,7 +101,7 @@ public class AgentEvalRunner {
             if ("v1".equalsIgnoreCase(agentVersion)) {
                 agentResult = erpAgentService.chat(evalCase.getQuestion());
             } else {
-                agentResult = langChain4jAgentService.chat(evalCase.getQuestion());
+                agentResult = langChain4jAgentService.chat(1L, evalCase.getQuestion());
             }
 
             long duration = System.currentTimeMillis() - start;

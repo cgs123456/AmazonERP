@@ -156,6 +156,30 @@ public class ErpTools {
                 Map.of("shopId", shopId, "asin", asin, "goal", goal)));
     }
 
+    @Tool("分析商品评论，返回情感得分、痛点聚类、改进建议和综合总结。reviewsJson 为评论数组的 JSON 字符串，每条包含 rating/title/content/date/verifiedPurchase 字段")
+    String analyzeProductReviews(
+            @P("店铺 ID") Long shopId,
+            @P("Amazon ASIN") String asin,
+            @P("评论列表 JSON 字符串，格式：[{\"rating\":1,\"title\":\"...\",\"content\":\"...\",\"date\":\"2026-07-01\",\"verifiedPurchase\":true}]") String reviewsJson) {
+        log.info("LangChain4j 工具调用: analyze_product_reviews shopId={} asin={} reviewsJsonLen={}",
+                shopId, asin, reviewsJson == null ? 0 : reviewsJson.length());
+        Map<String, Object> args = new HashMap<>();
+        args.put("shopId", shopId);
+        args.put("asin", asin);
+        args.put("reviewsJson", reviewsJson);
+        return toolExecutor.execute(buildCall("analyze_product_reviews", args));
+    }
+
+    @Tool("AI 选品分析，基于关键词与站点生成市场容量、竞争程度、趋势与是否进入市场的建议")
+    String analyzeProductSelection(
+            @P("待分析关键词，如 wireless earbuds") String keyword,
+            @P("站点代码，如 US/UK/DE/JP，默认 US") String marketplace) {
+        log.info("LangChain4j 工具调用: analyze_product_selection keyword={} marketplace={}",
+                keyword, marketplace);
+        return toolExecutor.execute(buildCall("analyze_product_selection",
+                Map.of("keyword", keyword, "marketplace", marketplace != null ? marketplace : "US")));
+    }
+
     // ===== 辅助方法 =====
 
     /**

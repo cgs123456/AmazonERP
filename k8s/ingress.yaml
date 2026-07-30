@@ -1,0 +1,53 @@
+# Ingress 路由 —— 域名 erp.amz.local → amz-gateway:10010
+# 使用前提：集群已安装 Ingress Controller（nginx-ingress / traefik）
+# 本地访问：在 hosts 文件添加 <node-ip> erp.amz.local
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: amz-erp-ingress
+  namespace: amz-erp
+  labels:
+    app.kubernetes.io/part-of: amazon-erp
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    # 启用 WebSocket（Agent 聊天 / SSE 流式响应）
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+    # 限流：每秒 50 请求 / 突发 100
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-burst: "100"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: erp.amz.local
+      http:
+        paths:
+          # API 接口路由到网关
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: amz-gateway
+                port:
+                  number: 10010
+          # 网关 actuator / 路由管理
+          - path: /actuator
+            pathType: Prefix
+            backend:
+              service:
+                name: amz-gateway
+                port:
+                  number: 10010
+          # 前端静态资源
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: amz-frontend
+                port:
+                  number: 80

@@ -5,6 +5,8 @@
 
 -- ============ 模块 1：FBA 库存同步（3 张表，amz_spapi 库）============
 
+USE amz_spapi;
+
 CREATE TABLE IF NOT EXISTS amz_fba_inventory (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     shop_id BIGINT NOT NULL COMMENT '店铺ID',
@@ -123,6 +125,8 @@ ON DUPLICATE KEY UPDATE multiplier=VALUES(multiplier);
 
 -- ============ 模块 3：财务利润核算（5 张表，amz_order 库）============
 
+USE amz_order;
+
 CREATE TABLE IF NOT EXISTS amz_product_cost (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     shop_id BIGINT NOT NULL,
@@ -187,6 +191,7 @@ CREATE TABLE IF NOT EXISTS amz_profit_report (
     gross_profit DECIMAL(12,2) COMMENT '毛利',
     net_profit DECIMAL(12,2) COMMENT '净利',
     net_margin DECIMAL(6,4) COMMENT '净利率',
+    data_complete TINYINT(1) DEFAULT 1 COMMENT '数据是否完整：0=缺失采购成本或类目佣金率，仅作估算',
     UNIQUE KEY uk_shop_order_sku (shop_id, amazon_order_id, sku),
     INDEX idx_date (stat_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单级利润报告';
@@ -205,6 +210,8 @@ GROUP BY shop_id, sku, DATE_FORMAT(stat_date, '%Y-%m');
 
 
 -- ============ 模块 4：跨站点 Listing 复制（3 张表，amz_product 库）============
+
+USE amz_product;
 
 CREATE TABLE IF NOT EXISTS amz_product (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,

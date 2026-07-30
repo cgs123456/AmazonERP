@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <Teleport to="body">
     <Transition name="chat-fade">
       <div v-if="visible" class="agent-chat-window">
@@ -22,10 +22,8 @@
             :key="i"
             :class="['message', msg.role]"
           >
-            <div class="message-content">{{ msg.content }}</div>
-          </div>
-          <div v-if="loading" class="message assistant">
-            <div class="message-content typing">正在思考...</div>
+            <div v-if="isThinking(i)" class="message-content typing">正在思考...</div>
+            <div v-else class="message-content">{{ msg.content }}</div>
           </div>
         </div>
 
@@ -71,6 +69,16 @@ const messages = ref<ChatMessage[]>([
   }
 ])
 
+// 最后一条 assistant 消息为空且正在加载时，显示"正在思考..."占位
+const isThinking = (i: number) => {
+  return (
+    loading.value &&
+    i === messages.value.length - 1 &&
+    messages.value[i].role === 'assistant' &&
+    !messages.value[i].content
+  )
+}
+
 const sendMessage = async () => {
   const text = inputText.value.trim()
   if (!text || loading.value) return
@@ -78,15 +86,77 @@ const sendMessage = async () => {
   messages.value.push({ role: 'user', content: text })
   inputText.value = ''
   loading.value = true
+
+  // 占位的 assistant 消息，流式内容会逐步追加
+  messages.value.push({ role: 'assistant', content: '' })
+  const assistantIndex = messages.value.length - 1
   await scrollToBottom()
 
-  // 模拟 Agent 回复（生产环境应调用后端 /agent/memory/chat 接口）
-  setTimeout(async () => {
+  try {
+    const response = await fetch('/api/ai/erp/agent/v2', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': localStorage.getItem('token') || ''
+      },
+      body: JSON.stringify({ message: text, userId: 1 })
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) {
+      throw new Error('ReadableStream not supported')
+    }
+
+    const decoder = new TextDecoder()
+    let acc = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      acc += parseSseChunk(decoder.decode(value, { stream: true }))
+      if (acc) {
+        messages.value[assistantIndex].content = acc
+        await scrollToBottom()
+      }
+    }
+
+    // 流结束后若没有任何内容，降级到 mock
+    if (!acc) {
+      throw new Error('Empty stream response')
+    }
+  } catch (e) {
+    // 降级到模拟回复
+    console.warn('[AgentChat] SSE 调用失败，使用模拟回复', e)
+    messages.value[assistantIndex].content = generateMockReply(text)
+  } finally {
     loading.value = false
-    const reply = generateMockReply(text)
-    messages.value.push({ role: 'assistant', content: reply })
     await scrollToBottom()
-  }, 1200)
+  }
+}
+
+// 解析 SSE 数据块：剥离 data: 前缀与 [DONE] 标记，兼容纯文本流
+const parseSseChunk = (raw: string): string => {
+  let result = ''
+  const matches = [...raw.matchAll(/data:\s*(.*)/g)]
+  if (matches.length > 0) {
+    for (const m of matches) {
+      const data = m[1].trim()
+      if (!data || data === '[DONE]') continue
+      try {
+        const parsed = JSON.parse(data)
+        result += parsed.content ?? parsed.text ?? parsed.delta ?? ''
+      } catch {
+        result += data
+      }
+    }
+    return result
+  }
+  // 非 SSE 格式，直接追加原文
+  return raw
 }
 
 const generateMockReply = (question: string): string => {

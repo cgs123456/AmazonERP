@@ -1,0 +1,89 @@
+# amz-frontend —— 前端 Deployment + Service（nginx 托管 dist，NodePort 30080）
+# 镜像构建：在 amz-frontend 目录执行 npm run build，然后 Dockerfile FROM nginx:1.27-alpine COPY dist /usr/share/nginx/html
+apiVersion: v1
+kind: Service
+metadata:
+  name: amz-frontend
+  namespace: amz-erp
+  labels:
+    app: amz-frontend
+    tier: frontend
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 30080
+      protocol: TCP
+  selector:
+    app: amz-frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amz-frontend
+  namespace: amz-erp
+  labels:
+    app: amz-frontend
+    tier: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: amz-frontend
+  template:
+    metadata:
+      labels:
+        app: amz-frontend
+        tier: frontend
+    spec:
+      containers:
+        - name: nginx
+          image: amazon-erp/amz-frontend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: amz-frontend-hpa
+  namespace: amz-erp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: amz-frontend
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

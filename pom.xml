@@ -30,6 +30,7 @@
         <springcloud.version>2023.0.3</springcloud.version>
         <springcloud-alibaba.version>2023.0.1.2</springcloud-alibaba.version>
         <mybatis.version>3.5.7</mybatis.version>
+        <mybatis-core.version>3.5.16</mybatis-core.version>
         <mysql.version>8.0.33</mysql.version>
         <lombok.version>1.18.34</lombok.version>
         <lang3.version>3.14.0</lang3.version>
@@ -41,6 +42,9 @@
         <redisson.version>3.37.0</redisson.version>
         <langchain4j.version>0.36.2</langchain4j.version>
         <onnxruntime.version>1.18.2</onnxruntime.version>
+        <sentinel.version>1.8.6</sentinel.version>
+        <!-- 动态数据源（读写分离）：与 MyBatis-Plus 3.5.7 + Spring Boot 3.x 兼容 -->
+        <dynamic-datasource.version>4.3.1</dynamic-datasource.version>
     </properties>
 
     <build>
@@ -85,6 +89,13 @@
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
                 <version>${mybatis.version}</version>
+            </dependency>
+
+            <!-- MyBatis 核心（供 amz-common 中 TypeHandler 编译使用，运行时由 mybatis-plus 传递提供） -->
+            <dependency>
+                <groupId>org.mybatis</groupId>
+                <artifactId>mybatis</artifactId>
+                <version>${mybatis-core.version}</version>
             </dependency>
 
             <dependency>
@@ -146,6 +157,22 @@
                 <groupId>com.microsoft.onnxruntime</groupId>
                 <artifactId>onnxruntime</artifactId>
                 <version>${onnxruntime.version}</version>
+            </dependency>
+
+            <!-- Sentinel 熔断限流（核心库版本固定 1.8.6） -->
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-core</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+
+            <!-- 动态数据源（读写分离）：与 MyBatis-Plus 3.5.7 + Spring Boot 3.x 兼容。
+                 用法：在 Service/Mapper 方法或类上加 @DS("slave") 即可路由到从库；
+                 不加注解默认走 master。 -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>dynamic-datasource-spring-boot3-starter</artifactId>
+                <version>${dynamic-datasource.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

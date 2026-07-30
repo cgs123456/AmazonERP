@@ -3,9 +3,18 @@ server:
 spring:
   application:
     name: amz-service-message
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
   rabbitmq:
-    host: 123.206.101.247
-    port: 5672
+    host: ${RABBITMQ_HOST:123.206.101.247}
+    port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:admin}
-    password: ${RABBITMQ_PASSWORD:your_rabbitmq_password}
+    password: ${RABBITMQ_PASSWORD:}
     virtual-host: /
+# JWT security config
+jwt:
+  secret-key: ${JWT_SECRET_KEY:}
+  issuer: ${JWT_ISSUER:amz-erp}
+  audience: ${JWT_AUDIENCE:amz-erp-client}

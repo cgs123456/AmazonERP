@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.ShopScoped;
 
 import com.amz.mapper.ListingCopyTaskMapper;
 import com.amz.model.ListingCopyTask;
@@ -67,6 +68,7 @@ public class ListingController {
     /**
      * 列出店铺所有复制任务。
      */
+    @ShopScoped
     @GetMapping("/tasks/{shopId}")
     public Result<List<ListingCopyTask>> listTasks(@PathVariable Long shopId) {
         QueryWrapper<ListingCopyTask> qw = new QueryWrapper<>();

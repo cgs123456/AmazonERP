@@ -1,5 +1,6 @@
 package com.amz.agent.langchain4j;
 
+import dev.langchain4j.service.MemoryId;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 
@@ -38,5 +39,5 @@ public interface ErpAgentInterface {
             - 如果用户未指定 shopId，默认使用 1
             - 回答应简洁专业，包含关键数据和结论
             """)
-    String chat(@UserMessage String message);
+    String chat(@MemoryId String sessionId, @UserMessage String message);
 }

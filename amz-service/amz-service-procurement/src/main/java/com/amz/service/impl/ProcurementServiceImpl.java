@@ -10,6 +10,7 @@ import com.amz.service.ProcurementService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -110,6 +111,7 @@ public class ProcurementServiceImpl implements ProcurementService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public QualityCheck submitQualityCheck(Long purchaseOrderId, Integer sampleCount,
                                            Integer failedCount, String defectDescription, String inspector) {
         PurchaseOrder order = mustGet(purchaseOrderId);

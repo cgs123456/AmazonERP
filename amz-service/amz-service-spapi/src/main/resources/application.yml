@@ -6,18 +6,51 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: 123.206.101.247:8848
+        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+    sentinel:
+      transport:
+        dashboard: localhost:8858
+      eager: true
+      datasource:
+        ds1:
+          nacos:
+            server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+            dataId: ${spring.application.name}-sentinel-rules
+            groupId: SENTINEL_GROUP
+            ruleType: flow
+  # ====== 动态数据源（读写分离）配置 ======
+  # 由 dynamic-datasource-spring-boot3-starter 自动装配。
+  # 默认数据源：master（写）。读流量通过 @DS("slave") 注解路由到从库。
+  # 当 MYSQL_SLAVE_HOST 未配置时回退到 master，避免单机环境启动失败。
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://121.37.250.15:3306/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:your_db_password}
+    dynamic:
+      primary: master
+      strict: false
+      datasource:
+        master:
+          driver-class-name: com.mysql.cj.jdbc.Driver
+          url: jdbc:mysql://${MYSQL_HOST:121.37.250.15}:${MYSQL_PORT:3306}/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+          username: ${DB_USERNAME:root}
+          password: ${DB_PASSWORD:}
+        slave:
+          driver-class-name: com.mysql.cj.jdbc.Driver
+          url: jdbc:mysql://${MYSQL_SLAVE_HOST:${MYSQL_HOST:121.37.250.15}}:${MYSQL_PORT:3306}/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+          username: ${DB_USERNAME:root}
+          password: ${DB_PASSWORD:}
   data:
     redis:
-      host: 121.37.250.15
-      port: 6379
-      password: ${REDIS_PASSWORD:your_redis_password}
+      host: ${REDIS_HOST:121.37.250.15}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
       database: 0
+  rabbitmq:
+    host: ${RABBITMQ_HOST:123.206.101.247}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:admin}
+    password: ${RABBITMQ_PASSWORD:}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
@@ -30,3 +63,13 @@ spapi:
   aws-secret-key: ${AWS_SECRET_KEY:}
   region: ${AWS_REGION:us-east-1}
   lwa-endpoint: https://api.amazon.com/auth/o2/token
+
+# JWT security config
+jwt:
+  secret-key: ${JWT_SECRET_KEY:}
+  issuer: ${JWT_ISSUER:amz-erp}
+  audience: ${JWT_AUDIENCE:amz-erp-client}
+
+# AES-256-GCM 加密密钥（32 字节 base64 编码），用于加密 SP-API 凭证
+crypto:
+  key: ${AMZ_CRYPTO_KEY:}

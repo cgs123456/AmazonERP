@@ -1,5 +1,7 @@
 package com.amz.model;
 
+import com.amz.annotation.FieldPermission;
+import com.amz.enums.ConfidentialLevel;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -36,6 +38,7 @@ public class AdCampaign implements Serializable {
     private String state;
 
     /** 日预算（美元） */
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.INTERNAL)
     private BigDecimal dailyBudget;
 
     /** 竞价策略：LEGACY_FOR_SALES / FOR_SALES / FOR_VISIBILITY */

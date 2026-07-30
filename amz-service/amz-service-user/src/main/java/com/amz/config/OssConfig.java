@@ -23,6 +23,9 @@ public class OssConfig {
     @Value("${oss.bucketName}")
     private String bucketName;
 
+    @Value("${oss.access-url:https://amz-erp.oss-cn-hangzhou.aliyuncs.com}")
+    private String accessUrl;
+
     @Bean
     public OssUtil ossUtil() {
         OssUtil ossUtil = new OssUtil();
@@ -30,6 +33,7 @@ public class OssConfig {
         ossUtil.setAccessKeySecret(accessKeySecret);
         ossUtil.setBucketName(bucketName);
         ossUtil.setEndpoint(endpoint);
+        ossUtil.setAccessUrl(accessUrl);
         return ossUtil;
     }
 }

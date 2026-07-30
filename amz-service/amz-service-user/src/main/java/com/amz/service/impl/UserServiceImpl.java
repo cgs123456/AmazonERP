@@ -105,8 +105,7 @@ public class UserServiceImpl implements UserService {
         if (dto.getSex() != null) updateWrapper.set(User::getSex, dto.getSex());
         if (dto.getBirthday() != null) updateWrapper.set(User::getBirthday, dto.getBirthday());
         if (dto.getAddress() != null) updateWrapper.set(User::getAddress, dto.getAddress());
-        if (dto.getSchool() != null) updateWrapper.set(User::getSchool, dto.getSchool());
-        if (dto.getIdentity() != null) updateWrapper.set(User::getIdentity, dto.getIdentity());
+        // school/identity 字段已从 User 实体删除, 不再更新
         userMapper.update(null, updateWrapper);
         return Result.success(null);
     }

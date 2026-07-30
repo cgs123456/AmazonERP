@@ -3,20 +3,23 @@ server:
 spring:
   application:
     name: amz-service-finance
+  # 默认启用 mock 模式（离线开发）。生产环境通过 SPRING_PROFILES_ACTIVE 环境变量切换为非 mock
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:mock}
   cloud:
     nacos:
       discovery:
-        server-addr: 123.206.101.247:8848
+        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://121.37.250.15:3306/amz_finance?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:121.37.250.15}:${MYSQL_PORT:3306}/amz_finance?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:your_db_password}
+    password: ${DB_PASSWORD:}
   data:
     redis:
-      host: 121.37.250.15
-      port: 6379
-      password: ${REDIS_PASSWORD:your_redis_password}
+      host: ${REDIS_HOST:121.37.250.15}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
       database: 0
 mybatis-plus:
   configuration:
@@ -36,3 +39,9 @@ kingdee:
     EUR: 7.85
     GBP: 9.20
     JPY: 0.046
+
+# JWT security config
+jwt:
+  secret-key: ${JWT_SECRET_KEY:}
+  issuer: ${JWT_ISSUER:amz-erp}
+  audience: ${JWT_AUDIENCE:amz-erp-client}

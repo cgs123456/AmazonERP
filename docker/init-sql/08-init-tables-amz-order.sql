@@ -2,6 +2,8 @@
 -- 数据库: amz_order
 -- 在原有 amz_order 基础上重命名 + 新增多店铺/Amazon同步字段
 
+USE amz_order;
+
 CREATE TABLE IF NOT EXISTS amz_order (
     id BIGINT PRIMARY KEY,
     product_id INT COMMENT '产品ID',

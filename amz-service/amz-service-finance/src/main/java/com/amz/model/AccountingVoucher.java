@@ -1,5 +1,7 @@
 package com.amz.model;
 
+import com.amz.annotation.FieldPermission;
+import com.amz.enums.ConfidentialLevel;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -48,7 +50,8 @@ public class AccountingVoucher implements Serializable {
     /** 贷方科目代码 */
     private String creditAccount;
 
-    /** 原币金额 */
+    /** 原币金额，仅 ADMIN 可见（VIEWER 隐藏） */
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private BigDecimal originalAmount;
 
     /** 原币币种：USD/EUR/GBP/JPY */
@@ -57,7 +60,8 @@ public class AccountingVoucher implements Serializable {
     /** 汇率（原币→CNY） */
     private BigDecimal exchangeRate;
 
-    /** 本位币金额（CNY） */
+    /** 本位币金额（CNY），仅 ADMIN 可见（VIEWER 隐藏） */
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private BigDecimal cnyAmount;
 
     /** 业务来源：ORDER/PROCUREMENT/PLATFORM_FEE/REFUND */

@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.ShopScoped;
 
 import com.amz.model.Shipment;
 import com.amz.model.TrackingEvent;
@@ -32,6 +33,7 @@ public class LogisticsController {
      * 查询店铺货件列表。
      * GET /logistics/shipment/list/{shopId}?status=
      */
+    @ShopScoped
     @GetMapping("/shipment/list/{shopId}")
     public Result<List<Shipment>> listShipments(
             @PathVariable Long shopId,

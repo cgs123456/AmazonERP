@@ -1,0 +1,99 @@
+# Nacos 2.3 服务注册与配置中心 Deployment + Service
+# 端口：8848 (HTTP API / 控制台)，9848 (gRPC 客户端)
+# 生产环境推荐 Nacos Cluster 模式（3 节点 + MySQL 持久化）
+apiVersion: v1
+kind: Service
+metadata:
+  name: nacos
+  namespace: amz-erp
+  labels:
+    app: nacos
+    tier: infra
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8848
+      targetPort: 8848
+      protocol: TCP
+    - name: grpc
+      port: 9848
+      targetPort: 9848
+      protocol: TCP
+    - name: grpc-raft
+      port: 9849
+      targetPort: 9849
+      protocol: TCP
+  selector:
+    app: nacos
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nacos
+  namespace: amz-erp
+  labels:
+    app: nacos
+    tier: infra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nacos
+  template:
+    metadata:
+      labels:
+        app: nacos
+        tier: infra
+    spec:
+      containers:
+        - name: nacos
+          image: nacos/nacos-server:v2.3.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8848
+              protocol: TCP
+            - name: grpc
+              containerPort: 9848
+              protocol: TCP
+            - name: grpc-raft
+              containerPort: 9849
+              protocol: TCP
+          env:
+            - name: MODE
+              value: "standalone"
+            - name: PREFER_HOST_MODE
+              value: "hostname"
+            - name: JVM_XMS
+              value: "256m"
+            - name: JVM_XMX
+              value: "512m"
+            - name: JVM_XMN
+              value: "128m"
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: TZ
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /nacos/v1/console/health/readiness
+              port: 8848
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /nacos/v1/console/health/liveness
+              port: 8848
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5

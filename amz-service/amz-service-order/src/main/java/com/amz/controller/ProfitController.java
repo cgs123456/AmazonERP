@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.ShopScoped;
 
 import com.amz.mapper.ProfitReportMapper;
 import com.amz.model.ProfitReport;
@@ -26,6 +27,7 @@ public class ProfitController {
     /**
      * 查询某订单利润
      */
+    @ShopScoped
     @GetMapping("/order/{shopId}/{amazonOrderId}")
     public Result<List<ProfitReport>> getByOrder(@PathVariable Long shopId,
                                                  @PathVariable String amazonOrderId) {
@@ -38,6 +40,7 @@ public class ProfitController {
     /**
      * 查询某 SKU 所有利润记录
      */
+    @ShopScoped
     @GetMapping("/sku/{shopId}/{sku}")
     public Result<List<ProfitReport>> getBySku(@PathVariable Long shopId,
                                                @PathVariable String sku) {
@@ -51,6 +54,7 @@ public class ProfitController {
     /**
      * 月度汇总（按 SKU 维度）
      */
+    @ShopScoped
     @GetMapping("/summary/{shopId}")
     public Result<List<Map<String, Object>>> summary(@PathVariable Long shopId) {
         return Result.success(profitReportMapper.selectMonthlySummary(shopId));

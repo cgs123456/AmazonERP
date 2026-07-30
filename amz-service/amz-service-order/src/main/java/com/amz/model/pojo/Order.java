@@ -1,5 +1,7 @@
 package com.amz.model.pojo;
 
+import com.amz.annotation.FieldPermission;
+import com.amz.enums.ConfidentialLevel;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -71,6 +73,7 @@ public class Order {
     private String orderStatus;             // Amazon 订单状态：Pending/Unshipped/Shipped/Canceled
 
     @TableField("buyer_name")
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private String buyerName;               // 买家姓名（PII，需权限）
 
     @TableField("purchase_date")

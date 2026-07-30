@@ -1,14 +1,21 @@
 package com.amz.controller;
 
+import com.amz.annotation.ShopScoped;
 import com.amz.client.OrdersClient;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.mapper.FbaInventoryMapper;
+import com.amz.mapper.ReplenishmentSuggestionMapper;
+import com.amz.model.FbaInventory;
+import com.amz.model.ReplenishmentSuggestion;
 import com.amz.result.Result;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,6 +48,12 @@ public class SpapiController {
     @Autowired
     private OrdersClient ordersClient;
 
+    @Autowired
+    private FbaInventoryMapper fbaInventoryMapper;
+
+    @Autowired
+    private ReplenishmentSuggestionMapper replenishmentSuggestionMapper;
+
     /**
      * 服务健康检查。
      */
@@ -64,6 +77,7 @@ public class SpapiController {
     /**
      * 手动触发指定店铺的订单同步（最近 7 天）。
      */
+    @ShopScoped
     @PostMapping("/sync/orders")
     public Result<Integer> syncOrders(@RequestParam Long shopId) {
         if (shopId == null) {
@@ -87,5 +101,56 @@ public class SpapiController {
             log.error("manual sync orders failed shopId={}", shopId, e);
             return Result.failure("sync failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * 查询指定店铺的 FBA 库存列表（供 Agent 工具调用）。
+     */
+    @ShopScoped
+    @GetMapping("/inventory/{shopId}")
+    public Result<List<FbaInventory>> getInventory(@PathVariable Long shopId) {
+        if (shopId == null) {
+            return Result.failure("shopId must not be null");
+        }
+        List<FbaInventory> list = fbaInventoryMapper.selectList(
+                new LambdaQueryWrapper<FbaInventory>()
+                        .eq(FbaInventory::getShopId, shopId));
+        return Result.success(list);
+    }
+
+    /**
+     * 查询库存健康度列表（供 Agent 工具调用）。
+     */
+    @ShopScoped
+    @GetMapping("/inventory/health")
+    public Result<List<FbaInventory>> getInventoryHealth(@RequestParam Long shopId) {
+        if (shopId == null) {
+            return Result.failure("shopId must not be null");
+        }
+        List<FbaInventory> list = fbaInventoryMapper.selectList(
+                new LambdaQueryWrapper<FbaInventory>()
+                        .eq(FbaInventory::getShopId, shopId)
+                        .orderByAsc(FbaInventory::getHealthStatus));
+        return Result.success(list);
+    }
+
+    /**
+     * 查询补货建议（供 Agent 工具调用）。
+     */
+    @ShopScoped
+    @GetMapping("/replenish/suggest")
+    public Result<List<ReplenishmentSuggestion>> getReplenishSuggest(
+            @RequestParam Long shopId,
+            @RequestParam(required = false) String sku) {
+        if (shopId == null) {
+            return Result.failure("shopId must not be null");
+        }
+        LambdaQueryWrapper<ReplenishmentSuggestion> qw = new LambdaQueryWrapper<ReplenishmentSuggestion>()
+                .eq(ReplenishmentSuggestion::getShopId, shopId)
+                .orderByDesc(ReplenishmentSuggestion::getUrgencyLevel);
+        if (sku != null && !sku.trim().isEmpty()) {
+            qw.eq(ReplenishmentSuggestion::getSku, sku);
+        }
+        return Result.success(replenishmentSuggestionMapper.selectList(qw));
     }
 }

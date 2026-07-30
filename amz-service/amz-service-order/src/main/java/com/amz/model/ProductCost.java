@@ -1,5 +1,7 @@
 package com.amz.model;
 
+import com.amz.annotation.FieldPermission;
+import com.amz.enums.ConfidentialLevel;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
@@ -25,6 +27,7 @@ public class ProductCost {
     private String sku;
 
     @TableField("unit_cost")
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private BigDecimal unitCost;
 
     @TableField("shipping_cost")

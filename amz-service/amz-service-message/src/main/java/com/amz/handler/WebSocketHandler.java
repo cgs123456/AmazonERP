@@ -28,7 +28,7 @@ public class WebSocketHandler extends SimpleChannelInboundHandler<TextWebSocketF
         // 处理token认证
         if (!StringUtils.isBlank(message)) {
             try {
-                Integer userId = Integer.valueOf(JwtUtil.parseToken(message));
+                Integer userId = Integer.valueOf(JwtUtil.getInstance().parseToken(message));
                 Session.bind(userId, ctx.channel());
                 ctx.channel().writeAndFlush(new TextWebSocketFrame("auth_success"));
                 log.info("用户登录，登录用户的ID为：{}", userId);

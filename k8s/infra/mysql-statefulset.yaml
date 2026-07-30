@@ -1,0 +1,101 @@
+# MySQL 8.0 主库（写节点）StatefulSet + Service + PVC
+# 生产环境建议使用 MySQL Operator / Vitess / TiDB 替代裸 StatefulSet，并配置主从复制
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: amz-erp
+  labels:
+    app: mysql
+    tier: infra
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless，便于 StatefulSet 稳定网络标识
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      protocol: TCP
+  selector:
+    app: mysql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: amz-erp
+  labels:
+    app: mysql
+    tier: infra
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+        tier: infra
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: amz-erp-secret
+                  key: DB_PASSWORD
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: TZ
+          args:
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_unicode_ci
+            - --default-authentication-plugin=mysql_native_password
+            - --max-connections=500
+            - --innodb-buffer-pool-size=512M
+            - --binlog-format=ROW
+            - --server-id=1
+            - --log-bin=mysql-bin
+            - --gtid-mode=ON
+            - --enforce-gtid-consistency=ON
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h 127.0.0.1 -uroot -p$MYSQL_ROOT_PASSWORD"]
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

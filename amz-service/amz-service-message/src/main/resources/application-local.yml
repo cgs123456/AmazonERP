@@ -6,4 +6,4 @@ spring:
     host: localhost
     port: 5672
     username: ${MQ_USERNAME:admin}
-    password: ${MQ_PASSWORD:your_mq_password}
+    password: ${MQ_PASSWORD:admin}

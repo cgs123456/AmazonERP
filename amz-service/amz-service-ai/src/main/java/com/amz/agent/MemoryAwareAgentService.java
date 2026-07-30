@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 带记忆 + 多语言的 ERP Agent 编排器。
@@ -65,10 +64,10 @@ public class MemoryAwareAgentService {
         UserPreference pref = memoryService.getOrCreatePreference(userId);
         LanguageEnum lang = LanguageEnum.fromCode(pref.getLanguage());
 
-        // 2. 生成 sessionId 并加载历史记忆
-        String sessionId = "sess-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+        // 2. 生成 sessionId 并加载历史记忆（保存与查询统一使用 "sess-" + userId）
+        String sessionId = "sess-" + userId;
         List<ConversationMemory> history = memoryService.listRecentMemories(
-                "sess-last-" + userId, MEMORY_INJECT_LIMIT);
+                sessionId, MEMORY_INJECT_LIMIT);
 
         // 3. 构建系统提示词（含偏好上下文 + 语言指令）
         String systemPrompt = buildContextualPrompt(pref, lang, history);
@@ -105,10 +104,9 @@ public class MemoryAwareAgentService {
 
             // Function Call → 执行工具
             log.info("Agent（记忆化）第{}轮调用工具: {}", round, call.getName());
-            String toolResult = toolExecutor.execute(call);
-
-            // 在 Function Call 场景下，用户偏好中的 shopId 可作为默认值注入下一轮
+            // 在 Function Call 执行前，将用户偏好中的 shopId 作为默认值注入
             injectDefaultShopIdIfNeeded(call, pref);
+            String toolResult = toolExecutor.execute(call);
 
             AgentChatDto.Message assistantMsg = new AgentChatDto.Message();
             assistantMsg.setRole("assistant");

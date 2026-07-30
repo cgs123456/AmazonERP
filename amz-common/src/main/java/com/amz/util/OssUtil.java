@@ -17,6 +17,8 @@ public class OssUtil {
     private String accessKeyId;
     private String accessKeySecret;
     private String bucketName;
+    /** OSS 公网访问域名（用于拼装上传后返回的 URL） */
+    private String accessUrl;
 
     /**
      * 上传图片
@@ -35,8 +37,8 @@ public class OssUtil {
                 ossClient.shutdown();
             }
         }
-        // https://amz-erp.oss-cn-hangzhou.aliyuncs.com/default.png
-        return "https://amz-erp.oss-cn-hangzhou.aliyuncs.com/" + fileName;
+        // accessUrl 由配置注入，默认 https://amz-erp.oss-cn-hangzhou.aliyuncs.com
+        return accessUrl + "/" + fileName;
     }
 
     /**

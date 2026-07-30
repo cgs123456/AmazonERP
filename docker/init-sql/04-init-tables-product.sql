@@ -1,9 +1,11 @@
 USE amz_product;
-CREATE TABLE IF NOT EXISTS amz_product (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(200) NOT NULL, price DECIMAL(10,2) NOT NULL DEFAULT 0, original_price DECIMAL(10,2) DEFAULT 0, description TEXT, image VARCHAR(500) DEFAULT '', images TEXT, stock INT DEFAULT 0, sales INT DEFAULT 0, shop_id BIGINT DEFAULT 0, custom_attribute TEXT, create_time DATETIME DEFAULT CURRENT_TIMESTAMP, update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-CREATE TABLE IF NOT EXISTS amz_shop (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(200) NOT NULL, address VARCHAR(500) DEFAULT '', description TEXT, image VARCHAR(500) DEFAULT '', create_time DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 说明：
+--   amz_product 主表已迁移至 09-init-tables-p0-modules.sql（新 schema：shop_id/sku/asin/marketplace_id/title）
+--   amz_shop   主表已迁移至 07-init-tables-shop.sql（新 schema：shop_name/marketplace_id/region/seller_id/spapi_*/status）
+-- 本脚本仅保留购物车、浏览、优惠券等辅助表，避免与 07/09 的同名表 schema 冲突。
+
 CREATE TABLE IF NOT EXISTS amz_cart (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_id BIGINT NOT NULL, product_id BIGINT NOT NULL, count INT DEFAULT 1, custom_attribute TEXT, create_time DATETIME DEFAULT CURRENT_TIMESTAMP, update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS amz_product_browse (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_id BIGINT NOT NULL, product_id BIGINT NOT NULL, create_time DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS amz_coupon (id BIGINT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL, discount DECIMAL(10,2) DEFAULT 0, `limit` DECIMAL(10,2) DEFAULT 0, create_time DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 CREATE TABLE IF NOT EXISTS amz_user_coupon (id BIGINT AUTO_INCREMENT PRIMARY KEY, user_id BIGINT NOT NULL, coupon_id BIGINT NOT NULL, create_time DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-INSERT IGNORE INTO amz_shop (id, name, description) VALUES (1, 'Amazon 官方店铺', 'Amazon 自营店铺');
-INSERT IGNORE INTO amz_product (id, name, price, original_price, description, image, stock, sales, shop_id) VALUES (1, '无线蓝牙耳机', 79.00, 99.00, '降噪蓝牙耳机，长续航', 'https://picsum.photos/300/300?random=101', 100, 50, 1), (2, '瑜伽垫加厚防滑', 25.00, 35.00, 'TPE 环保材质，运动健身', 'https://picsum.photos/300/300?random=102', 200, 150, 1);

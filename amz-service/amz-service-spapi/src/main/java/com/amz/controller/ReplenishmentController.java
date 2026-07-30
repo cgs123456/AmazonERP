@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.ShopScoped;
 
 import com.amz.mapper.ReplenishmentSuggestionMapper;
 import com.amz.model.ReplenishmentSuggestion;
@@ -44,6 +45,7 @@ public class ReplenishmentController {
      * @param shopId 店铺 ID
      * @return 补货建议列表
      */
+    @ShopScoped
     @GetMapping("/list/{shopId}")
     public Result<List<ReplenishmentSuggestion>> list(@PathVariable Long shopId) {
         if (shopId == null) {
@@ -62,6 +64,7 @@ public class ReplenishmentController {
      * @param shopId 店铺 ID
      * @return 本次生成的补货建议条数
      */
+    @ShopScoped
     @PostMapping("/calc/{shopId}")
     public Result<Integer> calc(@PathVariable Long shopId) {
         if (shopId == null) {
@@ -83,6 +86,7 @@ public class ReplenishmentController {
      * @param shopId 店铺 ID
      * @return 紧急补货建议列表
      */
+    @ShopScoped
     @GetMapping("/urgent/{shopId}")
     public Result<List<ReplenishmentSuggestion>> urgent(@PathVariable Long shopId) {
         if (shopId == null) {

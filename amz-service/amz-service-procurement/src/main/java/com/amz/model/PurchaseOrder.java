@@ -1,5 +1,7 @@
 package com.amz.model;
 
+import com.amz.annotation.FieldPermission;
+import com.amz.enums.ConfidentialLevel;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -46,10 +48,12 @@ public class PurchaseOrder implements Serializable {
     /** 采购数量 */
     private Integer quantity;
 
-    /** 采购单价（含税，CNY） */
+    /** 采购单价（含税，CNY），仅 ADMIN/OPERATOR 可见 */
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private BigDecimal unitPrice;
 
-    /** 总金额（CNY） */
+    /** 总金额（CNY），仅 ADMIN/OPERATOR 可见 */
+    @FieldPermission(sensitiveLevel = ConfidentialLevel.CONFIDENTIAL)
     private BigDecimal totalAmount;
 
     /** 状态：DRAFT/SUBMITTED/PAID/PRODUCING/SHIPPED/QC_PENDING/QC_PASSED/RECEIVED/COMPLETED/QC_FAILED/CANCELED */

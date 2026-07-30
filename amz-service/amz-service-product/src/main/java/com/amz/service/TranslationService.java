@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -105,7 +106,7 @@ public class TranslationService {
     /**
      * 调用 DeepSeek chat/completions 接口完成翻译。
      */
-    private String callDeepSeek(String sourceText, String sourceLang, String targetLang) throws Exception {
+    private String callDeepSeek(String sourceText, String sourceLang, String targetLang) throws IOException, InterruptedException {
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("model", "deepseek-chat");
 

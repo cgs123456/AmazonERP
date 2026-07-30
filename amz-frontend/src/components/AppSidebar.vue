@@ -3,7 +3,7 @@
     <div class="sidebar-nav">
       <div
         class="nav-item"
-        :class="{ active: currentRoute === '/' }"
+        :class="{ active: isActive('/') }"
         @click="navigateTo('/')"
       >
         <Icon icon="mdi:view-dashboard" class="nav-icon" width="24" />
@@ -11,7 +11,7 @@
       </div>
       <div
         class="nav-item"
-        :class="{ active: currentRoute === '/orders' }"
+        :class="{ active: isActive('/orders') }"
         @click="navigateTo('/orders')"
       >
         <Icon icon="mdi:cart-outline" class="nav-icon" width="24" />
@@ -19,7 +19,7 @@
       </div>
       <div
         class="nav-item"
-        :class="{ active: currentRoute === '/inventory' }"
+        :class="{ active: isActive('/inventory') }"
         @click="navigateTo('/inventory')"
       >
         <Icon icon="mdi:package-variant-closed" class="nav-icon" width="24" />
@@ -27,7 +27,15 @@
       </div>
       <div
         class="nav-item"
-        :class="{ active: currentRoute === '/ads' }"
+        :class="{ active: isActive('/warehouse') }"
+        @click="navigateTo('/warehouse')"
+      >
+        <Icon icon="mdi:warehouse" class="nav-icon" width="24" />
+        <span class="nav-text">海外仓</span>
+      </div>
+      <div
+        class="nav-item"
+        :class="{ active: isActive('/ads') }"
         @click="navigateTo('/ads')"
       >
         <Icon icon="mdi:chart-line" class="nav-icon" width="24" />
@@ -35,7 +43,7 @@
       </div>
       <div
         class="nav-item"
-        :class="{ active: currentRoute === '/profit' }"
+        :class="{ active: isActive('/profit') }"
         @click="navigateTo('/profit')"
       >
         <Icon icon="mdi:currency-usd" class="nav-icon" width="24" />
@@ -43,7 +51,23 @@
       </div>
       <div
         class="nav-item"
-        :class="{ active: currentRoute === '/notifications' }"
+        :class="{ active: isActive('/finance') }"
+        @click="navigateTo('/finance')"
+      >
+        <Icon icon="mdi:finance" class="nav-icon" width="24" />
+        <span class="nav-text">财务管理</span>
+      </div>
+      <div
+        class="nav-item"
+        :class="{ active: isActive('/selection') }"
+        @click="navigateTo('/selection')"
+      >
+        <Icon icon="mdi:compass-outline" class="nav-icon" width="24" />
+        <span class="nav-text">选品分析</span>
+      </div>
+      <div
+        class="nav-item"
+        :class="{ active: isActive('/notifications') }"
         @click="navigateTo('/notifications')"
       >
         <Icon icon="mdi:bell-outline" class="nav-icon" width="24" />
@@ -54,14 +78,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
 const route = useRoute()
 
-const currentRoute = computed(() => route.path)
+// 使用 startsWith 匹配子路由，例如 /orders/123 也高亮"订单管理"
+// 首页 '/' 需精确匹配，避免所有路由都被命中
+const isActive = (path: string) => {
+  if (path === '/') return route.path === '/'
+  return route.path === path || route.path.startsWith(path + '/')
+}
 
 const navigateTo = (path: string) => {
   router.push(path)

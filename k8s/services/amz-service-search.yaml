@@ -1,0 +1,108 @@
+# amz-service-search —— 搜索微服务（端口 8090，依赖 ES）
+apiVersion: v1
+kind: Service
+metadata:
+  name: amz-service-search
+  namespace: amz-erp
+  labels:
+    app: amz-service-search
+    tier: service
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+      protocol: TCP
+  selector:
+    app: amz-service-search
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: amz-service-search
+  namespace: amz-erp
+  labels:
+    app: amz-service-search
+    tier: service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: amz-service-search
+  template:
+    metadata:
+      labels:
+        app: amz-service-search
+        tier: service
+    spec:
+      containers:
+        - name: amz-service-search
+          image: amazon-erp/amz-service-search:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+              protocol: TCP
+          env:
+            - name: NACOS_SERVER_ADDR
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: NACOS_SERVER_ADDR }
+            - name: ELASTICSEARCH_HOST
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: ELASTICSEARCH_HOST }
+            - name: ELASTICSEARCH_PORT
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: ELASTICSEARCH_PORT }
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST }
+            - name: REDIS_PORT
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: REDIS_PORT }
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: amz-erp-secret, key: REDIS_PASSWORD }
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: amz-erp-secret, key: JWT_SECRET_KEY }
+            - name: JWT_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: JWT_ISSUER }
+            - name: JWT_AUDIENCE
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: JWT_AUDIENCE }
+            - name: TZ
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: TZ }
+            - name: JAVA_OPTS
+              valueFrom:
+                configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS }
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1000m", memory: "1536Mi" }
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8090 }
+            initialDelaySeconds: 40
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8090 }
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            timeoutSeconds: 3
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: amz-service-search-hpa
+  namespace: amz-erp
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: amz-service-search }
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

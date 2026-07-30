@@ -1,37 +1,22 @@
 <template>
   <Teleport to="body">
     <Transition name="toast">
-      <div v-if="visible" class="toast-container" :class="type">
+      <div v-if="toastVisible" class="toast-container" :class="toastType">
         <div class="toast-icon">
-          <span v-if="type === 'success'">✓</span>
-          <span v-else-if="type === 'error'">✕</span>
+          <span v-if="toastType === 'success'">✓</span>
+          <span v-else-if="toastType === 'error'">✕</span>
           <span v-else>ℹ</span>
         </div>
-        <span class="toast-message">{{ message }}</span>
+        <span class="toast-message">{{ toastMessage }}</span>
       </div>
     </Transition>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { useToast } from '../composables/useToast'
 
-const visible = ref(false)
-const message = ref('')
-const type = ref<'success' | 'error' | 'info'>('info')
-let timer: ReturnType<typeof setTimeout> | null = null
-
-const show = (msg: string, toastType: 'success' | 'error' | 'info' = 'info', duration = 3000) => {
-    message.value = msg
-    type.value = toastType
-    visible.value = true
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => {
-        visible.value = false
-    }, duration)
-}
-
-defineExpose({ show })
+const { toastVisible, toastMessage, toastType } = useToast()
 </script>
 
 <style scoped>
@@ -66,9 +51,9 @@ defineExpose({ show })
 }
 
 .toast-container.info {
-  background: #fff0f0;
-  border: 1px solid #ffa39e;
-  color: #ff2442;
+  background: #e6f4ff;
+  border: 1px solid #91caff;
+  color: #1677ff;
 }
 
 .toast-icon {

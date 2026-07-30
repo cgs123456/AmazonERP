@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.ShopScoped;
 
 import com.amz.mapper.FbaInventoryMapper;
 import com.amz.model.FbaInventory;
@@ -39,6 +40,7 @@ public class InventoryController {
      * @param shopId 店铺 ID
      * @return 库存健康度列表
      */
+    @ShopScoped
     @GetMapping("/health/{shopId}")
     public Result<List<FbaInventory>> health(@PathVariable Long shopId) {
         if (shopId == null) {
@@ -57,6 +59,7 @@ public class InventoryController {
      * @param shopId 店铺 ID
      * @return 本次同步落库的 SKU 数
      */
+    @ShopScoped
     @PostMapping("/sync/{shopId}")
     public Result<Integer> sync(@PathVariable Long shopId) {
         if (shopId == null) {

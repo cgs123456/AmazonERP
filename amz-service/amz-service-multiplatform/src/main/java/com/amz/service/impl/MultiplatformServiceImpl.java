@@ -13,7 +13,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 多平台订单聚合服务实现。
@@ -48,11 +51,28 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     public int syncAllPlatforms(Long shopId) {
-        int temu = syncByPlatform(shopId, "TEMU");
-        int tiktok = syncByPlatform(shopId, "TIKTOK");
-        int shein = syncByPlatform(shopId, "SHEIN");
+        // 每个平台独立 try-catch，单平台故障不影响其他平台同步（降级处理）
+        int temu = syncPlatformSafely(shopId, "TEMU");
+        int tiktok = syncPlatformSafely(shopId, "TIKTOK");
+        int shein = syncPlatformSafely(shopId, "SHEIN");
         log.info("多平台订单同步完成 shopId={}：Temu={} TikTok={} Shein={}", shopId, temu, tiktok, shein);
         return temu + tiktok + shein;
+    }
+
+    /**
+     * 单平台同步降级封装：出现异常时记录日志并返回 0，不向上抛出。
+     * <p>
+     * 修复：原 syncAllPlatforms 直接串行调用 syncByPlatform，
+     * 任一平台 API 异常会导致后续平台无法同步。
+     */
+    private int syncPlatformSafely(Long shopId, String platform) {
+        try {
+            return syncByPlatform(shopId, platform);
+        } catch (Exception e) {
+            log.error("多平台同步降级：shopId={} platform={} 同步失败，跳过该平台继续后续同步",
+                    shopId, platform, e);
+            return 0;
+        }
     }
 
     @Override
@@ -72,22 +92,64 @@ public class MultiplatformServiceImpl implements MultiplatformService {
                 throw new AttrIsNullException("不支持的平台：" + platform);
         }
 
+        // 批量去重：一次性查询本批次所有 platformOrderNo 已存在的记录，
+        // 避免循环内逐条 selectCount 导致 N+1 查询。
+        Set<String> existingKeys = loadExistingOrderKeys(fetched);
+
         int inserted = 0;
         for (UnifiedOrder o : fetched) {
-            // 去重：同 platformOrderNo 已存在则跳过
-            LambdaQueryWrapper<UnifiedOrder> dedup = new LambdaQueryWrapper<>();
-            dedup.eq(UnifiedOrder::getPlatform, o.getPlatform())
-                 .eq(UnifiedOrder::getPlatformOrderNo, o.getPlatformOrderNo());
-            if (unifiedOrderMapper.selectCount(dedup) > 0) {
+            // 内存去重：同 platform + platformOrderNo 已存在则跳过
+            String key = dedupKey(o.getPlatform(), o.getPlatformOrderNo());
+            if (key != null && existingKeys.contains(key)) {
                 continue;
             }
             // 生成统一订单号 + 折算 CNY
             o.setUnifiedOrderNo("UO" + System.currentTimeMillis() + inserted);
             o.setCnyAmount(currencyConverter.toCny(o.getOriginalAmount(), o.getCurrency()));
             unifiedOrderMapper.insert(o);
+            // 插入后加入集合，防止同批次内重复订单号重复入库
+            if (key != null) {
+                existingKeys.add(key);
+            }
             inserted++;
         }
         return inserted;
+    }
+
+    /**
+     * 批量加载已存在订单的 (platform + platformOrderNo) 组合键集合。
+     * <p>
+     * 修复：原实现循环内逐条 selectCount，N 条订单 N 次 SQL。
+     * 现改为单条 SQL：select platform_order_no from amz_unified_order
+     * where platform_order_no in (...)，再在内存组装去重键。
+     */
+    private Set<String> loadExistingOrderKeys(List<UnifiedOrder> fetched) {
+        Set<String> existingKeys = new HashSet<>();
+        if (fetched == null || fetched.isEmpty()) {
+            return existingKeys;
+        }
+        List<String> orderNoList = new ArrayList<>();
+        for (UnifiedOrder o : fetched) {
+            if (o.getPlatformOrderNo() != null && !o.getPlatformOrderNo().isEmpty()) {
+                orderNoList.add(o.getPlatformOrderNo());
+            }
+        }
+        if (orderNoList.isEmpty()) {
+            return existingKeys;
+        }
+        LambdaQueryWrapper<UnifiedOrder> dedupQuery = new LambdaQueryWrapper<>();
+        dedupQuery.in(UnifiedOrder::getPlatformOrderNo, orderNoList);
+        for (UnifiedOrder exist : unifiedOrderMapper.selectList(dedupQuery)) {
+            existingKeys.add(dedupKey(exist.getPlatform(), exist.getPlatformOrderNo()));
+        }
+        return existingKeys;
+    }
+
+    private String dedupKey(String platform, String platformOrderNo) {
+        if (platformOrderNo == null || platformOrderNo.isEmpty()) {
+            return null;
+        }
+        return platform + "|" + platformOrderNo;
     }
 
     @Override

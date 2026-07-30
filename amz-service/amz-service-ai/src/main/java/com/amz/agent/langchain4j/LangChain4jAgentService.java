@@ -4,6 +4,8 @@ import com.amz.result.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 
 /**
  * LangChain4j Agent 服务（替代 ErpAgentService 手写编排）。
@@ -22,22 +24,35 @@ import org.springframework.stereotype.Service;
 @Service
 public class LangChain4jAgentService {
 
-    @Autowired
+    @Autowired(required = false)
     private ErpAgentInterface erpAgent;
 
     /**
      * 执行 Agent 对话（LangChain4j 编排）。
      *
+     * @param userId      用户 ID，用于隔离 ChatMemory 会话
      * @param userMessage 用户输入
      * @return Agent 最终回复
      */
-    public Result<String> chat(String userMessage) {
+    @SentinelResource(value = "chat", fallback = "chatFallback")
+    public Result<String> chat(Long userId, String userMessage) {
+        if (erpAgent == null) {
+            return Result.failure("LangChain4j Agent 未启用：deepseek.api_key 未配置");
+        }
         try {
-            String response = erpAgent.chat(userMessage);
+            String sessionId = "sess-" + userId;
+            String response = erpAgent.chat(sessionId, userMessage);
             return Result.success(response);
         } catch (Exception e) {
             log.error("LangChain4j Agent 调用失败", e);
             return Result.failure("Agent 调用失败: " + e.getMessage());
         }
+    }
+    /**
+     * chat 的 fallback 方法：Agent 调用熔断或异常时返回友好提示。
+     */
+    public Result<String> chatFallback(Long userId, String userMessage, Throwable e) {
+        log.warn("chat fallback triggered userId={} err={}", userId, e.getMessage());
+        return Result.failure("服务繁忙，请稍后重试");
     }
 }

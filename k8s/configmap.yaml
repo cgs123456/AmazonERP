@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amz-erp-config
+  namespace: amz-erp
+  labels:
+    app.kubernetes.io/part-of: amazon-erp
+data:
+  # ====== 基础设施地址（K8s 集群内服务名） ======
+  NACOS_SERVER_ADDR: "nacos.amz-erp.svc.cluster.local:8848"
+  NACOS_ADDR: "nacos.amz-erp.svc.cluster.local:8848"
+  REDIS_HOST: "redis.amz-erp.svc.cluster.local"
+  REDIS_PORT: "6379"
+  MYSQL_HOST: "mysql.amz-erp.svc.cluster.local"
+  MYSQL_SLAVE_HOST: "mysql-slave.amz-erp.svc.cluster.local"
+  MYSQL_PORT: "3306"
+  RABBITMQ_HOST: "rabbitmq.amz-erp.svc.cluster.local"
+  RABBITMQ_PORT: "5672"
+  MONGODB_HOST: "mongodb.amz-erp.svc.cluster.local"
+  MONGODB_PORT: "27017"
+  ELASTICSEARCH_HOST: "elasticsearch.amz-erp.svc.cluster.local"
+  ELASTICSEARCH_PORT: "9200"
+
+  # ====== 数据库名称 ======
+  MYSQL_DB_USER: "amz_user"
+  MYSQL_DB_ORDER: "amz_order"
+  MYSQL_DB_SPAPI: "amz_spapi"
+  MYSQL_DB_PRODUCT: "amz_product"
+  MYSQL_DB_FINANCE: "amz_finance"
+  MYSQL_DB_LOGISTICS: "amz_logistics"
+  MYSQL_DB_REPORT: "amz_report"
+  MYSQL_DB_PROCUREMENT: "amz_procurement"
+  MYSQL_DB_AD: "amz_ad"
+  MYSQL_DB_CUSTOMER: "amz_customer"
+  MYSQL_DB_OPS: "amz_ops"
+  MYSQL_DB_MULTIPLATFORM: "amz_multiplatform"
+  MYSQL_DB_MESSAGE: "amz_message"
+
+  # ====== 业务非敏感配置 ======
+  JWT_ISSUER: "amz-erp"
+  JWT_AUDIENCE: "amz-erp-client"
+  AWS_REGION: "us-east-1"
+  AWS_LWA_ENDPOINT: "https://api.amazon.com/auth/o2/token"
+  TZ: "Asia/Shanghai"
+
+  # ====== JVM 参数 ======
+  JAVA_OPTS: "-Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError"
+  JAVA_OPTS_GATEWAY: "-Xms256m -Xmx512m -XX:+UseG1GC"

@@ -19,12 +19,26 @@
         </nav>
 
         <div class="header-actions">
+          <!-- 店铺选择器：登录后从 localStorage 的 shops 数组读取，
+               切换时更新 current_shop_id 并刷新当前页面数据 -->
+          <select
+            v-if="userInfo"
+            class="shop-selector"
+            :value="currentShopId"
+            @change="handleShopChange"
+            title="切换当前店铺"
+          >
+            <option value="" disabled>请选择店铺</option>
+            <option v-for="shop in shops" :key="shop.id" :value="String(shop.id)">
+              {{ shop.name }}
+            </option>
+          </select>
           <button v-if="!userInfo" class="action-btn login-btn-header" @click="showLoginModal = true">
             登录 / 注册
           </button>
           <div v-else class="user-menu">
             <img
-              :src="userInfo.image || 'https://i.pravatar.cc/150?img=1'"
+              :src="userInfo.image || defaultAvatar"
               :alt="userInfo.nickname || '用户'"
               class="user-avatar"
               @click="toggleUserMenu"
@@ -33,12 +47,12 @@
               <div v-if="showUserMenu" class="user-dropdown" @click.stop>
                 <div class="user-info-section">
                   <img
-                    :src="userInfo.image || 'https://i.pravatar.cc/150?img=1'"
+                    :src="userInfo.image || defaultAvatar"
                     class="dropdown-avatar"
                   />
                   <div class="user-details">
                     <div class="user-nickname">{{ userInfo.nickname || userInfo.username || '用户' }}</div>
-                    <div class="user-id">ID: {{ userInfo.number || userInfo.id }}</div>
+                    <div class="user-id">ID: {{ userInfo.id }}</div>
                   </div>
                 </div>
                 <div class="menu-divider"></div>
@@ -68,11 +82,39 @@ import { useRouter } from 'vue-router'
 import LoginModal from './LoginModal.vue'
 import { getUserInfo, type UserVo } from '../api/auth'
 import { websocketManager } from '../utils/websocket'
+import { getShops, getCurrentShopId, setCurrentShopId, type ShopOption } from '../utils/shop'
 
 const router = useRouter()
 const showLoginModal = ref(false)
 const userInfo = ref<UserVo | null>(null)
 const showUserMenu = ref(false)
+
+// 当前选中店铺与授权店铺列表（来源：localStorage 'shops' 数组）
+const shops = ref<ShopOption[]>([])
+const currentShopId = ref('')
+
+const refreshShops = () => {
+  shops.value = getShops()
+  currentShopId.value = getCurrentShopId()
+}
+
+// 切换店铺：更新 localStorage 并刷新当前页面数据
+const handleShopChange = (e: Event) => {
+  const value = (e.target as HTMLSelectElement).value
+  setCurrentShopId(value)
+  currentShopId.value = value
+  // 切换店铺影响所有页面的数据视图，整页刷新以重新拉取
+  window.location.reload()
+}
+
+// 本地 SVG 占位头像，避免依赖国外服务
+const defaultAvatar = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150">' +
+  '<rect width="150" height="150" fill="#e0e0e0"/>' +
+  '<circle cx="75" cy="55" r="28" fill="#bdbdbd"/>' +
+  '<path d="M30 130 Q75 95 120 130 L120 150 L30 150 Z" fill="#bdbdbd"/>' +
+  '</svg>'
+)
 
 const loadUserInfo = async () => {
   const token = localStorage.getItem('token')
@@ -84,6 +126,7 @@ const loadUserInfo = async () => {
     const response = await getUserInfo()
     if (response.code === 200 && response.data && response.data.user) {
       userInfo.value = response.data.user
+      refreshShops()
     } else {
       localStorage.removeItem('token')
       userInfo.value = null
@@ -225,6 +268,21 @@ onUnmounted(() => {
   gap: 16px;
   flex-shrink: 0;
 }
+
+.shop-selector {
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: #1a1a2e;
+  cursor: pointer;
+  max-width: 200px;
+  transition: border-color 0.2s;
+}
+
+.shop-selector:hover { border-color: #4f46e5; }
+.shop-selector:focus { outline: none; border-color: #4f46e5; }
 
 .action-btn {
   padding: 10px 20px;

@@ -1,23 +1,37 @@
 package com.amz.scheduler;
 
 import com.amz.client.OrdersClient;
+import com.amz.constant.MqConstant;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.core.Message;
+import org.springframework.amqp.core.MessageBuilder;
+import org.springframework.amqp.core.MessageProperties;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 订单定时同步调度器。
  * <p>
- * 每 15 分钟轮询一次活跃店铺，拉取最近 7 天订单并记录数量。
+ * 每 15 分钟轮询一次活跃店铺，从 SP-API 拉取最近 7 天订单：
+ * 1. 构造订单保存消息发送到 {@link MqConstant#SAVE_ORDER_EXCHANGE}，由 order 服务消费落库；
+ * 2. 构造利润核算消息发送到 {@link MqConstant#PROFIT_EXCHANGE}，由 ProfitMQConsumer 消费计算利润。
+ * <p>
  * 单店失败不影响其他店铺同步。
  */
 @Component
@@ -42,6 +56,11 @@ public class OrderSyncScheduler {
     @Autowired
     private OrdersClient ordersClient;
 
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+
+    private final Gson gson = new Gson();
+
     /**
      * 每 15 分钟执行一次（上一次执行结束后起算 fixedDelay）。
      */
@@ -62,14 +81,144 @@ public class OrderSyncScheduler {
                 log.warn("syncOrders skip shopId={}: credential or marketplaceId missing", shopId);
                 continue;
             }
+            String marketplaceId = credential.getMarketplaceId();
+            String region = ordersClient.mapMarketplaceToRegion(marketplaceId);
             try {
                 List<JsonObject> orders = ordersClient.fetchOrders(
-                        shopId, credential.getMarketplaceId(), createdAfter, DEFAULT_ORDER_STATUSES);
+                        shopId, marketplaceId, createdAfter, DEFAULT_ORDER_STATUSES);
                 log.info("syncOrders shopId={} fetched={} orders", shopId, orders.size());
+
+                for (JsonObject order : orders) {
+                    publishSaveMessage(shopId, marketplaceId, region, order);
+                    publishProfitMessage(shopId, region, order);
+                }
             } catch (Exception e) {
                 log.error("syncOrders failed shopId={}", shopId, e);
             }
         }
         log.info("syncOrders done");
+    }
+
+    /**
+     * 构造订单保存消息（JSON），发送到 order 服务的 save 交换机。
+     * <p>
+     * 消息体包含：amazonOrderId, shopId, marketplaceId, buyerInfo, orderItems,
+     * orderTotal, currency, purchaseDate, fulfillmentChannel, shipServiceLevel。
+     * <p>
+     * 注：SP-API Orders 列表接口不返回行级 orderItems，需另调 orderItems 接口拉取，
+     * 此处 orderItems 暂为空数组，由 order 服务后续补全。
+     */
+    private void publishSaveMessage(Long shopId, String marketplaceId, String region, JsonObject order) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("amazonOrderId", optString(order, "AmazonOrderId"));
+        body.put("shopId", shopId);
+        body.put("marketplaceId", marketplaceId);
+        body.put("region", region);
+        body.put("purchaseDate", optString(order, "PurchaseDate"));
+        body.put("lastUpdateDate", optString(order, "LastUpdateDate"));
+        body.put("orderStatus", optString(order, "OrderStatus"));
+        body.put("fulfillmentChannel", optString(order, "FulfillmentChannel"));
+        body.put("shipServiceLevel", optString(order, "ShipServiceLevel"));
+
+        JsonObject orderTotal = optObject(order, "OrderTotal");
+        body.put("orderTotal", orderTotal != null ? optString(orderTotal, "Amount") : null);
+        body.put("currency", orderTotal != null ? optString(orderTotal, "CurrencyCode") : null);
+
+        JsonObject buyerInfo = optObject(order, "BuyerInfo");
+        Map<String, Object> buyerMap = new HashMap<>();
+        if (buyerInfo != null) {
+            buyerMap.put("buyerEmail", optString(buyerInfo, "BuyerEmail"));
+            buyerMap.put("buyerName", optString(buyerInfo, "BuyerName"));
+            buyerMap.put("buyerCounty", optString(buyerInfo, "BuyerCounty"));
+        }
+        body.put("buyerInfo", buyerMap);
+        body.put("orderItems", List.of());
+
+        sendJson(MqConstant.SAVE_ORDER_EXCHANGE, "", body);
+    }
+
+    /**
+     * 构造利润核算消息（JSON），发送到 profit 交换机，由 ProfitMQConsumer 消费。
+     * <p>
+     * 消息体对齐 {@code ProfitMQConsumer.ProfitMessage}：
+     * shopId, amazonOrderId, sku, revenue, category, sizeTier, weightG, region。
+     * <p>
+     * 注：列表接口不含行级 SKU，此处暂以 amazonOrderId 作为订单级聚合标识，
+     * category/sizeTier/weightG 缺失，ProfitCalculator 会将 dataComplete 标记为 false。
+     */
+    private void publishProfitMessage(Long shopId, String region, JsonObject order) {
+        String amazonOrderId = optString(order, "AmazonOrderId");
+        JsonObject orderTotal = optObject(order, "OrderTotal");
+        BigDecimalHolder revenue = parseAmount(orderTotal);
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("shopId", shopId);
+        body.put("amazonOrderId", amazonOrderId);
+        // 列表接口未返回行级 SKU，使用 amazonOrderId 作为订单级标识，避免 sku NOT NULL 约束失败
+        body.put("sku", amazonOrderId);
+        body.put("revenue", revenue.value);
+        body.put("category", null);
+        body.put("sizeTier", null);
+        body.put("weightG", null);
+        body.put("region", region);
+
+        sendJson(MqConstant.PROFIT_EXCHANGE, MqConstant.PROFIT_ROUTING_KEY, body);
+    }
+
+    /**
+     * 将 body 序列化为 JSON 并通过 RabbitMQ 发送。
+     * 设置 messageId（UUID）便于消费端在缺少业务标识时做幂等 fallback。
+     * 使用 text/plain 内容类型，消费端按 String/原始字节解析。
+     */
+    private void sendJson(String exchange, String routingKey, Map<String, Object> body) {
+        try {
+            String json = gson.toJson(body);
+            Message message = MessageBuilder
+                    .withBody(json.getBytes(StandardCharsets.UTF_8))
+                    .setContentType(MessageProperties.CONTENT_TYPE_TEXT_PLAIN)
+                    .setMessageId(UUID.randomUUID().toString())
+                    .build();
+            rabbitTemplate.send(exchange, routingKey, message);
+        } catch (Exception e) {
+            log.error("sendJson failed exchange={} routingKey={} body={}", exchange, routingKey, body, e);
+        }
+    }
+
+    private String optString(JsonObject obj, String key) {
+        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) {
+            return null;
+        }
+        return obj.get(key).getAsString();
+    }
+
+    private JsonObject optObject(JsonObject obj, String key) {
+        if (obj == null || !obj.has(key) || !obj.get(key).isJsonObject()) {
+            return null;
+        }
+        return obj.getAsJsonObject(key);
+    }
+
+    /**
+     * 解析 OrderTotal.Amount 为 double；失败返回 0。
+     */
+    private BigDecimalHolder parseAmount(JsonObject orderTotal) {
+        if (orderTotal == null) {
+            return new BigDecimalHolder(0.0);
+        }
+        JsonElement amountEl = orderTotal.get("Amount");
+        if (amountEl == null || amountEl.isJsonNull()) {
+            return new BigDecimalHolder(0.0);
+        }
+        try {
+            return new BigDecimalHolder(amountEl.getAsDouble());
+        } catch (NumberFormatException e) {
+            return new BigDecimalHolder(0.0);
+        }
+    }
+
+    /**
+     * 简单的金额持有者（避免在 Gson 序列化时丢失精度信息，统一用 double 传输）。
+     */
+    private record BigDecimalHolder(double value) {
     }
 }

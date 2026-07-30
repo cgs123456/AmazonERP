@@ -39,12 +39,6 @@ public class User implements Serializable {
     private String image;
 
     /**
-     * 用户号
-     */
-    @TableField("number")
-    private Long number;
-
-    /**
      * 性别
      */
     @TableField("sex")
@@ -63,20 +57,8 @@ public class User implements Serializable {
     private String address;
 
     /**
-     * 身份
+     * 角色：ADMIN/OPERATOR/VIEWER，DB 默认 VIEWER，由 19-init-tables-field-permission.sql 维护。
      */
-    @TableField("identity")
-    private String identity;
-
-    /**
-     * 学校
-     */
-    @TableField("school")
-    private String school;
-
-    /**
-     * 注册时间
-     */
-    @TableField("time")
-    private String time;
+    @TableField("role")
+    private String role;
 }

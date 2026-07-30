@@ -1,6 +1,9 @@
 package com.amz.result;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
+
+import java.util.List;
 
 @Data
 public class Result<T> {
@@ -20,6 +23,13 @@ public class Result<T> {
      */
     private int code;
 
+    /**
+     * 被字段级权限切面置空的字段名列表，前端据此显示 {@code ***}。
+     * 无字段过滤时为 null（不输出到 JSON）。
+     */
+    @JsonProperty("_hiddenFields")
+    private List<String> hiddenFields;
+
     public Result(String message, int code, T data) {
         this.message = message;
         this.code = code;
@@ -34,4 +44,3 @@ public class Result<T> {
         return new Result<>(message, 400, null);
     }
 }
-

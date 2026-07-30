@@ -4,7 +4,7 @@ import Toast from './components/Toast.vue'
 
 <template>
   <router-view />
-  <Toast ref="toastRef" />
+  <Toast />
 </template>
 
 <style>

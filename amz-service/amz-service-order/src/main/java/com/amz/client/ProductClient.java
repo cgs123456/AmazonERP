@@ -2,6 +2,7 @@ package com.amz.client;
 
 import com.amz.model.pojo.Product;
 import com.amz.result.Result;
+import com.amz.client.fallback.ProductClientFallbackFactory;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,7 +11,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
 @Component
-@FeignClient("amz-service-product")
+@FeignClient(name = "amz-service-product", fallbackFactory = ProductClientFallbackFactory.class)
 public interface ProductClient {
 
     @GetMapping("/product/getProduct/{productId}")

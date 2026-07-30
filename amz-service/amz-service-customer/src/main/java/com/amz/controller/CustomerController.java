@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.ShopScoped;
 
 import com.amz.model.CustomerTicket;
 import com.amz.model.ReviewSolicitation;
@@ -41,6 +42,7 @@ public class CustomerController {
      * 查询店铺工单列表。
      * GET /customer/ticket/list/{shopId}?status=&category=
      */
+    @ShopScoped
     @GetMapping("/ticket/list/{shopId}")
     public Result<List<CustomerTicket>> listTickets(
             @PathVariable Long shopId,
@@ -53,6 +55,7 @@ public class CustomerController {
      * 批量发送索评请求。
      * POST /customer/review/solicit/{shopId}
      */
+    @ShopScoped
     @PostMapping("/review/solicit/{shopId}")
     public Result<Integer> solicitReviews(@PathVariable Long shopId) {
         return Result.success(customerService.sendReviewSolicitations(shopId));
@@ -62,6 +65,7 @@ public class CustomerController {
      * 查询索评记录。
      * GET /customer/review/list/{shopId}
      */
+    @ShopScoped
     @GetMapping("/review/list/{shopId}")
     public Result<List<ReviewSolicitation>> listSolicitations(@PathVariable Long shopId) {
         return Result.success(customerService.listSolicitations(shopId));

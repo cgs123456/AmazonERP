@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.ShopScoped;
 import com.amz.model.AccountingVoucher;
 import com.amz.result.Result;
 import com.amz.service.FinanceService;
@@ -23,6 +24,7 @@ public class FinanceController {
      * 根据订单自动生成会计凭证（多币种换算）。
      * POST /finance/voucher/order
      */
+    @ShopScoped
     @PostMapping("/voucher/order")
     public Result<AccountingVoucher> generateOrderVoucher(
             @RequestParam Long shopId,
@@ -45,6 +47,7 @@ public class FinanceController {
      * 查询凭证列表。
      * GET /finance/voucher/list/{shopId}?sourceType=
      */
+    @ShopScoped
     @GetMapping("/voucher/list/{shopId}")
     public Result<List<AccountingVoucher>> listVouchers(
             @PathVariable Long shopId,
@@ -56,6 +59,7 @@ public class FinanceController {
      * 查询店铺利润（CNY）。
      * GET /finance/profit/{shopId}?startDate=&endDate=
      */
+    @ShopScoped
     @GetMapping("/profit/{shopId}")
     public Result<BigDecimal> calculateProfit(
             @PathVariable Long shopId,

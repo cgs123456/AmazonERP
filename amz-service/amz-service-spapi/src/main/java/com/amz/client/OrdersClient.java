@@ -4,6 +4,7 @@ import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -11,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -89,6 +92,18 @@ public class OrdersClient {
     private ShopCredentialStore shopCredentialStore;
 
     /**
+     * SP-API 通用限流器：按 (shopId, endpoint) 维度滑动窗口，并支持根据
+     * x-amzn-RateLimit-Limit 响应头动态收紧窗口上限。
+     */
+    @Autowired
+    private SpiRateLimiter spiRateLimiter;
+
+    /**
+     * Orders 端点标识，用于限流维度与动态调整。
+     */
+    private static final String ORDERS_ENDPOINT = "orders";
+
+    /**
      * 拉取指定店铺在某 marketplace 下、createdAfter 之后的订单列表。
      *
      * @param shopId        店铺 ID
@@ -97,6 +112,7 @@ public class OrdersClient {
      * @param orderStatuses 订单状态过滤（如 Shipped/Unshipped），可为空
      * @return 订单原始 JSON 列表（每条为 payload.Orders 数组中的一个对象）
      */
+    @SentinelResource(value = "fetchOrders", fallback = "fetchOrdersFallback")
     public List<JsonObject> fetchOrders(Long shopId, String marketplaceId,
                                         Instant createdAfter, List<String> orderStatuses) {
         ShopCredential credential = shopCredentialStore.get(shopId);
@@ -118,6 +134,9 @@ public class OrdersClient {
         int pageCount = 0;
 
         do {
+            // 主动限流：按 (shopId, orders) 维度滑动窗口阻塞等待，避免触发 429
+            spiRateLimiter.acquire(shopId, ORDERS_ENDPOINT);
+
             TreeMap<String, String> params = new TreeMap<>();
             params.put("CreatedAfter", ISO_INSTANT.format(createdAfter));
             params.put("MarketplaceIds", marketplaceId);
@@ -142,7 +161,7 @@ public class OrdersClient {
             // LWA access_token 通过 x-amz-access-token 透传，不参与 Sig V4 签名
             builder.header("x-amz-access-token", accessToken);
 
-            HttpResponse<String> response = sendWithRetry(builder.build());
+            HttpResponse<String> response = sendWithRetry(builder.build(), ORDERS_ENDPOINT);
             if (response == null || response.statusCode() != 200) {
                 log.error("fetchOrders failed shopId={} status={} body={}", shopId,
                         response == null ? -1 : response.statusCode(),
@@ -168,11 +187,26 @@ public class OrdersClient {
         log.info("fetchOrders done shopId={} pages={} total={}", shopId, pageCount, allOrders.size());
         return allOrders;
     }
+    /**
+     * fetchOrders 的 fallback 方法：原方法抛出异常或被熔断时返回空列表，避免调用方整体失败。
+     */
+    public List<JsonObject> fetchOrdersFallback(Long shopId, String marketplaceId,
+                                                Instant createdAfter, List<String> orderStatuses,
+                                                Throwable e) {
+        log.warn("fetchOrders fallback triggered shopId={} marketplaceId={} err={}", shopId, marketplaceId, e.getMessage());
+        return List.of();
+    }
 
     /**
-     * 发送请求，遇到 429 限流时按指数退避重试。
+     * 发送请求，遇到 429 限流或 5xx 服务端错误时按指数退避重试。
+     * <p>
+     * 429 时读取 {@code x-amzn-RateLimit-Limit} 响应头，通过 {@link SpiRateLimiter#updateLimit}
+     * 动态收紧本地滑动窗口上限，使后续请求与 Amazon 实际配额对齐。
+     *
+     * @param request  已构建好的 HTTP 请求
+     * @param endpoint 端点标识（如 {@code "orders"}），用于限流维度动态调整
      */
-    private HttpResponse<String> sendWithRetry(HttpRequest request) {
+    private HttpResponse<String> sendWithRetry(HttpRequest request, String endpoint) {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -186,9 +220,23 @@ public class OrdersClient {
                 sleep((1L << attempt) * 1000L);
                 continue;
             }
-            if (response.statusCode() == 429) {
+            int code = response.statusCode();
+            if (code == 429) {
+                // 读取 x-amzn-RateLimit-Limit 响应头（req/s），动态收紧本地窗口
+                String rateLimitHeader = response.headers()
+                        .firstValue("x-amzn-RateLimit-Limit").orElse(null);
+                if (rateLimitHeader != null && !rateLimitHeader.isBlank()) {
+                    spiRateLimiter.updateLimit(endpoint, rateLimitHeader);
+                }
                 long backoff = (1L << attempt) * 1000L;
-                log.warn("Rate limited (429), retrying after {}ms attempt={}", backoff, attempt);
+                log.warn("Rate limited (429), limit={} retrying after {}ms attempt={}",
+                        rateLimitHeader, backoff, attempt);
+                sleep(backoff);
+                continue;
+            }
+            if (code >= 500 && code < 600) {
+                long backoff = (1L << attempt) * 1000L;
+                log.warn("Server error {} retrying after {}ms attempt={}", code, backoff, attempt);
                 sleep(backoff);
                 continue;
             }

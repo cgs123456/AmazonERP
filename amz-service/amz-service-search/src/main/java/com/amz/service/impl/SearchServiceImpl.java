@@ -92,7 +92,8 @@ public class SearchServiceImpl implements SearchService {
                 historyMapper.insert(history);
             }
         } catch (Exception e) {
-            log.info("用户搜索记录处理异常: {}", e.getMessage());
+            // 搜索记录为辅助功能，失败不应阻断主流程；但需记录完整堆栈便于排查
+            log.warn("用户搜索记录处理异常: userId={}, key={}", UserContext.getUserId(), key, e);
         }
 
         redisTemplate.opsForZSet().incrementScore(RedisConstant.PRODUCT_SCORE, key, 1);

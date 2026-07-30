@@ -1,7 +1,9 @@
 package com.amz.config;
 
-import com.amz.interceptor.BaseInterceptor;
+import com.amz.interceptor.BaseAuthInterceptor;
+import com.amz.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -12,9 +14,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 @Slf4j
 public class WebMvcConfig implements WebMvcConfigurer {
+
+    @Autowired
+    private JwtUtil jwtUtil;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         log.info("注册自定义拦截器");
-        registry.addInterceptor(new BaseInterceptor()).addPathPatterns("/**");
+        registry.addInterceptor(new BaseAuthInterceptor(jwtUtil)).addPathPatterns("/**");
     }
 }

@@ -1,6 +1,8 @@
 -- Amazon ERP 多店铺 RBAC 建表 SQL
 -- 数据库: amz_user
 
+USE amz_user;
+
 CREATE TABLE IF NOT EXISTS amz_shop (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     shop_name VARCHAR(100) NOT NULL COMMENT '店铺名称',

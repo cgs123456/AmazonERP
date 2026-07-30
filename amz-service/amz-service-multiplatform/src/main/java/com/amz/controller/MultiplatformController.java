@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.ShopScoped;
 
 import com.amz.model.UnifiedOrder;
 import com.amz.result.Result;
@@ -24,6 +25,7 @@ public class MultiplatformController {
      * 同步所有平台订单。
      * POST /multiplatform/sync/all/{shopId}
      */
+    @ShopScoped
     @PostMapping("/sync/all/{shopId}")
     public Result<Integer> syncAll(@PathVariable Long shopId) {
         return Result.success(multiplatformService.syncAllPlatforms(shopId));
@@ -33,6 +35,7 @@ public class MultiplatformController {
      * 同步指定平台订单。
      * POST /multiplatform/sync/{shopId}/{platform}
      */
+    @ShopScoped
     @PostMapping("/sync/{shopId}/{platform}")
     public Result<Integer> syncByPlatform(@PathVariable Long shopId,
                                           @PathVariable String platform) {
@@ -43,6 +46,7 @@ public class MultiplatformController {
      * 查询店铺所有平台订单。
      * GET /multiplatform/order/list/{shopId}
      */
+    @ShopScoped
     @GetMapping("/order/list/{shopId}")
     public Result<List<UnifiedOrder>> listOrders(@PathVariable Long shopId) {
         return Result.success(multiplatformService.listOrders(shopId));
@@ -52,6 +56,7 @@ public class MultiplatformController {
      * 按平台筛选订单。
      * GET /multiplatform/order/list/{shopId}/{platform}
      */
+    @ShopScoped
     @GetMapping("/order/list/{shopId}/{platform}")
     public Result<List<UnifiedOrder>> listByPlatform(@PathVariable Long shopId,
                                                      @PathVariable String platform) {

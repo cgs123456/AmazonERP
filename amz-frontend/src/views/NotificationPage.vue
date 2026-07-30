@@ -264,7 +264,6 @@ const filteredNotifications = computed(() => {
 const handleView = (notification: Notification) => {
   notification.read = true
   // 实际项目中可跳转到对应详情页
-  console.log('查看通知:', notification.id)
 }
 
 const handleDismiss = (notification: Notification) => {
@@ -274,7 +273,6 @@ const handleDismiss = (notification: Notification) => {
 
 <style scoped>
 .notification-page {
-  min-width: 1000px;
   min-height: 100vh;
   background: #fafafa;
 }

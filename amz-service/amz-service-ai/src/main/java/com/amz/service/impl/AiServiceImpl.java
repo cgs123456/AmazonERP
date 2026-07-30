@@ -5,13 +5,16 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.amz.result.Result;
 import com.amz.service.AiService;
+import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 public class AiServiceImpl implements AiService {
 
@@ -55,6 +58,7 @@ public class AiServiceImpl implements AiService {
 
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
+                log.warn("DeepSeek API 调用失败: status={}", response.code());
                 return Result.failure("DeepSeek API 调用失败: " + response.code());
             }
 
@@ -67,31 +71,38 @@ public class AiServiceImpl implements AiService {
 
             return Result.success(content);
         } catch (IOException e) {
+            log.error("DeepSeek API 调用异常", e);
             return Result.failure("DeepSeek API 调用异常: " + e.getMessage());
         }
     }
 
     @Override
     public Result<String> agentChat(com.amz.model.dto.AgentChatDto agentChatDto) {
+        // 防御性校验：messages 可能为 null（DTO 未加 @NotNull），直接遍历会 NPE
+        List<com.amz.model.dto.AgentChatDto.Message> messages = agentChatDto.getMessages();
+        if (messages == null || messages.isEmpty()) {
+            return Result.failure("messages 不能为空");
+        }
+
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("model", "deepseek-chat");
 
-        JsonArray messages = new JsonArray();
+        JsonArray msgArray = new JsonArray();
         // 如果提供了 systemPrompt，作为第一条 system 消息
         if (agentChatDto.getSystemPrompt() != null && !agentChatDto.getSystemPrompt().isEmpty()) {
             JsonObject sysMsg = new JsonObject();
             sysMsg.addProperty("role", "system");
             sysMsg.addProperty("content", agentChatDto.getSystemPrompt());
-            messages.add(sysMsg);
+            msgArray.add(sysMsg);
         }
         // 追加 messages 数组
-        for (com.amz.model.dto.AgentChatDto.Message msg : agentChatDto.getMessages()) {
+        for (com.amz.model.dto.AgentChatDto.Message msg : messages) {
             JsonObject m = new JsonObject();
             m.addProperty("role", msg.getRole());
             m.addProperty("content", msg.getContent());
-            messages.add(m);
+            msgArray.add(m);
         }
-        requestBody.add("messages", messages);
+        requestBody.add("messages", msgArray);
 
         RequestBody body = RequestBody.create(
                 requestBody.toString(),
@@ -107,6 +118,7 @@ public class AiServiceImpl implements AiService {
 
         try (Response response = client.newCall(request).execute()) {
             if (!response.isSuccessful()) {
+                log.warn("DeepSeek API 调用失败: status={}", response.code());
                 return Result.failure("DeepSeek API 调用失败: " + response.code());
             }
             String responseBody = response.body() != null ? response.body().string() : "";
@@ -117,6 +129,7 @@ public class AiServiceImpl implements AiService {
                     .get("content").getAsString();
             return Result.success(content);
         } catch (IOException e) {
+            log.error("DeepSeek API 调用异常", e);
             return Result.failure("DeepSeek API 调用异常: " + e.getMessage());
         }
     }

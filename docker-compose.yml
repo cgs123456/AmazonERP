@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # ==================== 基础设施 ====================
 
@@ -17,7 +15,10 @@ services:
       - "9848:9848"
     restart: unless-stopped
 
-  # MySQL 数据库
+  # MySQL 数据库（主库，写节点）
+  # 已开启 binlog + GTID，便于从库复制。复制账号需手动创建：
+  #   CREATE USER 'repl'@'%' IDENTIFIED BY '<pwd>';
+  #   GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'repl'@'%';
   mysql:
     image: mysql:8.0
     container_name: amz-mysql
@@ -29,7 +30,42 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
       - ./docker/init-sql:/docker-entrypoint-initdb.d
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command: >-
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+    restart: unless-stopped
+
+  # MySQL 只读副本（slave，读节点）
+  # 启动后需手动建立复制关系：
+  #   CHANGE MASTER TO MASTER_HOST='mysql', MASTER_USER='repl',
+  #     MASTER_PASSWORD='<pwd>', MASTER_AUTO_POSITION=1;
+  #   START REPLICA;
+  mysql-slave:
+    image: mysql:8.0
+    container_name: amz-mysql-slave
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:-root123}
+      - TZ=Asia/Shanghai
+    ports:
+      - "3317:3306"
+    volumes:
+      - mysql-slave-data:/var/lib/mysql
+    command: >-
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --server-id=2
+      --relay-log=relay-bin
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=ON
+      --super-read-only=ON
+    depends_on:
+      - mysql
     restart: unless-stopped
 
   # Redis 缓存
@@ -83,8 +119,83 @@ services:
       - es-data:/usr/share/elasticsearch/data
     restart: unless-stopped
 
+  # ==================== 业务服务 ====================
+
+  # API 网关（Spring Cloud Gateway，对外统一入口，端口 10010）
+  amz-gateway:
+    image: amazon-erp/amz-gateway:latest
+    container_name: amz-gateway
+    ports:
+      - "10010:10010"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-root123}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq123}
+      # 通过 compose 网络内服务名访问基础设施
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - redis
+    restart: unless-stopped
+
+  # SP-API 集成微服务（订单同步、FBA 库存、补货引擎，端口 8096）
+  amz-service-spapi:
+    build: .
+    image: amazon-erp/amz-service-spapi:latest
+    container_name: amz-service-spapi
+    ports:
+      - "8096:8096"
+    environment:
+      # JWT 鉴权密钥（必填，缺失时鉴权不可用）
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      # AES-256-GCM 加密密钥（32 字节 base64），用于加密 SP-API 凭证
+      - AMZ_CRYPTO_KEY=${AMZ_CRYPTO_KEY:-}
+      # AWS SP-API 凭证
+      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY:-}
+      - AWS_SECRET_KEY=${AWS_SECRET_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      # 基础设施连接
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-root123}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq123}
+      - NACOS_SERVER_ADDR=nacos:8848
+      # 读写分离：主库写、从库读
+      - MYSQL_HOST=mysql
+      - MYSQL_SLAVE_HOST=mysql-slave
+      - MYSQL_PORT=3306
+    depends_on:
+      - nacos
+      - mysql
+      - mysql-slave
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+
+  # 前端（Vue 3 + Vite，构建产物由 nginx 托管，端口 5173 -> 容器 80）
+  # 启动前需在 amz-frontend 目录执行 npm run build 生成 dist 目录
+  amz-frontend:
+    image: nginx:1.27-alpine
+    container_name: amz-frontend
+    ports:
+      - "5173:80"
+    volumes:
+      - ./amz-frontend/dist:/usr/share/nginx/html:ro
+    depends_on:
+      - amz-gateway
+    restart: unless-stopped
+
 volumes:
   mysql-data:
+  mysql-slave-data:
   redis-data:
   mongo-data:
   es-data:

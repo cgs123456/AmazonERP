@@ -9,6 +9,15 @@ import lombok.Data;
 import java.io.Serializable;
 import java.math.BigDecimal;
 
+/**
+ * 旧版商品实体（旧 schema：name/price/stock/sales）。
+ *
+ * @deprecated 该实体映射的旧 amz_product 表结构已废弃，新 schema
+ *             （shop_id/sku/asin/marketplace_id/title）请统一使用
+ *             {@link com.amz.model.AmzProduct}，对应建表脚本
+ *             09-init-tables-p0-modules.sql。
+ */
+@Deprecated
 @Data
 @TableName("amz_product")
 public class Product implements Serializable {

@@ -11,6 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import com.alibaba.csp.sentinel.annotation.SentinelResource;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -110,6 +112,7 @@ public class FbaInventoryClient {
      * @param marketplaceId Amazon Marketplace ID
      * @return 库存原始 JSON 列表（每条为 payload.inventorySummaries 数组中的一个对象）
      */
+    @SentinelResource(value = "fetchAllInventory", fallback = "fetchAllInventoryFallback")
     public List<JsonObject> fetchAllInventory(Long shopId, String marketplaceId) {
         ShopCredential credential = shopCredentialStore.get(shopId);
         if (credential == null) {
@@ -181,6 +184,14 @@ public class FbaInventoryClient {
 
         log.info("fetchAllInventory done shopId={} pages={} total={}", shopId, pageCount, allItems.size());
         return allItems;
+    }
+    /**
+     * fetchAllInventory 的 fallback 方法：原方法抛出异常或被熔断时返回空列表，避免调用方整体失败。
+     */
+    public List<JsonObject> fetchAllInventoryFallback(Long shopId, String marketplaceId,
+                                                     Throwable e) {
+        log.warn("fetchAllInventory fallback triggered shopId={} marketplaceId={} err={}", shopId, marketplaceId, e.getMessage());
+        return List.of();
     }
 
     /**

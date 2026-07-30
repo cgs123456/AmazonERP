@@ -57,18 +57,20 @@ public class AiController {
 
     /**
      * ERP 运营 Agent 端点（LangChain4j AiServices 编排，新版）。
-     * POST /ai/erp/agent/v2
+     * POST /ai/erp/agent/v2?userId=1
      * Body: {"message":"最近7天订单情况如何？"}
      * <p>
      * 使用 LangChain4j 原生 Function Calling 替代手写循环 + 正则解析 JSON，
      * 工具调用准确率更高，代码量减少约 60%。
+     * userId 用于按会话隔离 ChatMemory，避免多用户串扰。
      */
     @PostMapping("/erp/agent/v2")
-    public Result<String> erpAgentV2(@RequestBody ErpAgentRequest request) {
+    public Result<String> erpAgentV2(@RequestParam Long userId,
+                                     @RequestBody ErpAgentRequest request) {
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             return Result.failure("message 不能为空");
         }
-        return langChain4jAgentService.chat(request.getMessage());
+        return langChain4jAgentService.chat(userId, request.getMessage());
     }
 
     /**

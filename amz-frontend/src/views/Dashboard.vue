@@ -8,6 +8,8 @@
         <p class="subtitle">今日运营数据一览</p>
       </div>
 
+      <div v-if="loading" class="loading-mask">加载中...</div>
+
       <!-- KPI 卡片 -->
       <div class="kpi-grid">
         <div class="kpi-card" v-for="kpi in kpiData" :key="kpi.label">
@@ -68,22 +70,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import AgentChat from '../components/AgentChat.vue'
+import { getKpiData, getSalesTrend, getShopDistribution } from '@/api/dashboard'
+import type { KpiItem, SalesTrendItem, ShopDistItem } from '@/api/dashboard'
 
 const agentVisible = ref(false)
+const loading = ref(false)
 
-const kpiData = ref([
+// 降级用的 mock 数据
+const mockKpiData: KpiItem[] = [
   { label: '今日订单', value: '23', trend: 15, icon: 'mdi:cart', color: '#4f46e5' },
   { label: '销售额', value: '$1,234', trend: 12, icon: 'mdi:currency-usd', color: '#10b981' },
   { label: '库存预警', value: '3', trend: -8, icon: 'mdi:alert', color: '#ef4444' },
   { label: '广告 ACoS', value: '24.9%', trend: -3, icon: 'mdi:chart-line', color: '#f59e0b' }
-])
-
-const salesTrend = ref([
+]
+const mockSalesTrend: SalesTrendItem[] = [
   { day: '周一', value: 980 },
   { day: '周二', value: 1120 },
   { day: '周三', value: 1050 },
@@ -91,15 +96,64 @@ const salesTrend = ref([
   { day: '周五', value: 1180 },
   { day: '周六', value: 1420 },
   { day: '周日', value: 1234 }
-])
-const maxSales = Math.max(...salesTrend.value.map(i => i.value))
-
-const shopDist = ref([
+]
+const mockShopDist: ShopDistItem[] = [
   { name: 'Shop A (US)', percent: 45, color: '#4f46e5' },
   { name: 'Shop B (UK)', percent: 30, color: '#10b981' },
   { name: 'Shop C (DE)', percent: 15, color: '#f59e0b' },
   { name: 'Shop D (JP)', percent: 10, color: '#ef4444' }
-])
+]
+
+const kpiData = ref<KpiItem[]>([...mockKpiData])
+const salesTrend = ref<SalesTrendItem[]>([...mockSalesTrend])
+const shopDist = ref<ShopDistItem[]>([...mockShopDist])
+
+const maxSales = computed(() => {
+  if (!salesTrend.value.length) return 1
+  return Math.max(...salesTrend.value.map(i => i.value))
+})
+
+onMounted(async () => {
+  loading.value = true
+  // 并行请求三组数据，任一失败则该组降级到 mock
+  const tasks = [
+    {
+      fn: () => getKpiData(),
+      onSuccess: (data: KpiItem[]) => { kpiData.value = data },
+      mock: mockKpiData,
+      tag: 'getKpiData'
+    },
+    {
+      fn: () => getSalesTrend(7),
+      onSuccess: (data: SalesTrendItem[]) => { salesTrend.value = data },
+      mock: mockSalesTrend,
+      tag: 'getSalesTrend'
+    },
+    {
+      fn: () => getShopDistribution(),
+      onSuccess: (data: ShopDistItem[]) => { shopDist.value = data },
+      mock: mockShopDist,
+      tag: 'getShopDistribution'
+    }
+  ]
+
+  await Promise.all(
+    tasks.map(async (t) => {
+      try {
+        const res = await t.fn()
+        if (res?.code === 200 && res.data) {
+          t.onSuccess(res.data as any)
+        } else {
+          console.warn(`[Dashboard] ${t.tag} 返回数据异常，使用降级数据`, res)
+        }
+      } catch (e) {
+        console.warn(`[Dashboard] ${t.tag} 调用失败，使用降级数据`, e)
+      }
+    })
+  )
+
+  loading.value = false
+})
 </script>
 
 <style scoped>
@@ -107,6 +161,8 @@ const shopDist = ref([
 .main-content { margin-left: 220px; margin-top: 64px; padding: 24px 32px; }
 .page-header h1 { font-size: 24px; font-weight: 700; color: #1a1a2e; margin: 0; }
 .page-header .subtitle { color: #666; margin: 4px 0 24px; font-size: 14px; }
+
+.loading-mask { padding: 12px 16px; margin-bottom: 16px; background: #eef2ff; color: #4f46e5; border-radius: 8px; font-size: 14px; text-align: center; }
 
 .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 24px; }
 .kpi-card { background: #fff; border-radius: 12px; padding: 20px; display: flex; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
