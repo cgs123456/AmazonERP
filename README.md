@@ -42,7 +42,7 @@
 | **为什么 Elasticsearch**  | BM25 + dense_vector kNN → RRF 融合 | 纯 BM25 召回"iPhone 15"搜不到"苹果手机"，纯向量又漏"iPhone15 Pro"；RRF 融合两者优势，Recall@10 提升 18%（A/B 测试）                                                       |
 | **为什么 RabbitMQ 异步算利润** | TopicExchange + 幂等消费             | 订单同步高峰每秒数百单，同步算利润会让 Orders API 超时；MQ 削峰 + 幂等去重，既不丢数据也不重复计算                                                                                  |
 
-## 微服务架构（13 业务微服务 + 1 网关 + 1 公共模块）
+## 微服务架构（16 业务微服务 + 1 网关 + 1 公共模块）
 
 ```
 amz-gateway              (10010) — API 网关（JWT + shopId 校验）
@@ -492,10 +492,61 @@ REST 端点：`POST /ai/eval/run?version=v2`（返回通过率 + 各用例明细
 
 ## 单元测试覆盖
 
-SP-API 核心模块 3 个测试类共 44 个用例全部通过：
+后端 22 个测试类共 **211 个用例**全部通过（0 失败 / 0 错误 / 2 跳过），16 个微服务全覆盖：
 
-| 测试类                        | 用例数 | 覆盖内容                                                      |
-| -------------------------- | --- | --------------------------------------------------------- |
-| `LwaTokenManagerTest`      | 8   | null 凭证 / 缓存命中 / 临过期刷新 / invalidate / 50 线程并发安全 / 多 clientId 独立缓存 |
-| `AwsSigV4SignerTest`       | 13  | SHA-256 已知值 / HMAC-SHA256 派生 / Canonical Request 7 行拼接 / 签名头完整性 / UTC 时间戳 / Authorization 头格式 |
-| `ReplenishmentEngineTest`  | 23  | CV 变异系数 / 安全系数自适应 + 边界值 / 季节性指数 / 促销乘数 / 零库存紧急 / 健康库存低优先级 / 季节性+促销放大 |
+| 微服务 | 测试类 | 用例数 | 覆盖内容 |
+| --- | --- | --- | --- |
+| amz-service-spapi | LwaTokenManagerTest / AwsSigV4SignerTest / ReplenishmentEngineTest / HybridReplenishmentEngineTest / SpApiIntegrationTest | 52 | LWA Token 缓存+并发安全 / SigV4 签名 / 补货算法+边界值 / 混合引擎 / SP-API 集成（需真实凭证跳过） |
+| amz-service-ai | ErpToolExecutorTest + Agent 评测 | 21 | 12 工具执行 + Function Calling 编排 + 评测回归 |
+| amz-service-finance | FinanceServiceImplTest / CurrencyConverterTest | 26 | 凭证生成+利润计算 / 汇率换算 |
+| amz-service-order | ProfitCalculatorTest / OrderProfitIntegrationTest | 15 | 利润 6 项成本 / 业财集成 |
+| amz-service-procurement | ProcurementServiceImplTest | 13 | 采购状态机+质检 3 档判定 |
+| amz-service-ad | KeywordOptimizerTest | 12 | 关键词 5 类优化建议 |
+| amz-service-logistics | WarehouseServiceImplTest | 11 | 库存原子扣减+并发安全 |
+| amz-common | ShopIdGuardAspectTest 等 | 11 | 越权拦截 / Result 封装 |
+| amz-service-customer | TicketClassifierTest | 10 | 工单 5 类分类 |
+| amz-service-report | MockReportServiceImplTest | 10 | 报表聚合 |
+| amz-service-multiplatform | MultiplatformServiceImplTest | 8 | 订单去重+聚合查询 |
+| amz-service-user | LoginServiceImplTest | 7 | JWT 登录+验证码 |
+| amz-service-ops | OpsServiceImplTest | 6 | 差评/跟卖/排名 |
+| amz-service-message | SessionTest | 6 | WebSocket Session |
+| amz-service-search | HotServiceImplTest | 3 | 热搜缓存 |
+
+前端 **57 个测试**全部通过，类型检查 0 错误。
+
+## 安全加固
+
+| 防护层 | 实现 | 说明 |
+| --- | --- | --- |
+| **多租户隔离** | `@ShopScoped` 注解 + `ShopIdGuardAspect` | 41 个 Controller 方法校验 shopId 是否在授权店铺列表内，越权直接拦截 |
+| **网关层校验** | `MyGlobalFilter` | 全局校验 JWT + shopId header，覆盖所有业务路径 |
+| **字段级权限** | `@FieldPermission` + 切面 + 前端 `***` 掩码 | 后端置空敏感字段 + 前端递归掩码，行业少有 |
+| **SQL 注入防护** | MyBatis `#{}` 预编译 | 全量 XML 无 `${` 占位符 |
+| **XSS 防护** | 前端无 `v-html` | 全站无 XSS 风险 |
+| **JWT 安全** | HMAC256 + 环境变量注入 + `@PostConstruct` 非空校验 | 密钥未配置拒绝启动 |
+| **异常收窄** | `catch(Exception)` 替代 `catch(Throwable)` | 4 处收窄，避免吞掉 OOM |
+
+## Feign 容错
+
+15 个 `@FeignClient` 全部配置 `fallbackFactory`，跨服务调用失败时降级返回合理默认值，不阻断业务：
+
+| 服务 | Feign Client 数 | 降级策略 |
+| --- | --- | --- |
+| amz-service-order | 3 | 广告花费→0 / 凭证生成→warn 不抛 / 产品→空 |
+| amz-service-ai | 6 | 订单/库存/广告/产品/采购/消息 全部降级返回空集合 |
+| amz-service-report | 3 | 订单/广告/财务 报表降级返回空 |
+| amz-service-ops | 1 | AI 服务降级返回空 |
+| amz-service-product | 1 | 订单服务降级返回空 |
+| amz-service-search | 1 | 用户服务降级返回空 |
+
+库存扣减改用数据库原子更新（`SET quantity=quantity-#{qty} WHERE (quantity-reserved)>=#{qty}`），根除高并发超卖风险。
+
+## 配置规范化
+
+| 配置项 | 说明 |
+| --- | --- |
+| 环境变量占位符 | 16 个 `application.yml` 的 IP 全部改为 `${ENV_VAR:默认值}` 形式 |
+| bootstrap.yml | 16 个服务新建 Nacos 配置中心引导文件 |
+| 网关超时 | `httpclient.connect-timeout=5s` + `response-timeout=30s` |
+| 前端构建 | `vite.config.ts` 生产环境 `drop: ['console', 'debugger']` |
+| URL 注入 | OSS / 汇率 / 头像 URL 改为 `@Value` 注入 |
