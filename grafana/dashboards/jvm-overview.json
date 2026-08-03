@@ -1,0 +1,29 @@
+{
+  "title": "AMZ ERP JVM Overview",
+  "uid": "amz-erp-jvm",
+  "panels": [
+    {
+      "title": "CPU Usage",
+      "type": "graph",
+      "targets": [{"expr": "system_cpu_usage", "legendFormat": "{{instance}}"}]
+    },
+    {
+      "title": "Heap Memory",
+      "type": "graph",
+      "targets": [
+        {"expr": "jvm_memory_used_bytes{area=\"heap\"}", "legendFormat": "{{instance}} used"},
+        {"expr": "jvm_memory_max_bytes{area=\"heap\"}", "legendFormat": "{{instance}} max"}
+      ]
+    },
+    {
+      "title": "HTTP Request Rate",
+      "type": "graph",
+      "targets": [{"expr": "rate(http_server_requests_seconds_count[1m])", "legendFormat": "{{instance}} {{status}}"}]
+    },
+    {
+      "title": "P95 Response Time",
+      "type": "graph",
+      "targets": [{"expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[1m]))", "legendFormat": "{{instance}}"}]
+    }
+  ]
+}

@@ -35,6 +35,25 @@
             <artifactId>spring-boot-starter-aop</artifactId>
         </dependency>
 
+        <!-- Actuator：提供 /actuator/health/{liveness,readiness} 探针端点。
+             k8s/services/*.yaml 中全部 Deployment 的 readinessProbe / livenessProbe
+             均指向该路径，缺失该依赖会导致探针恒返回 404、Pod 永远 NotReady。
+             网关（webflux）与业务服务（servlet）共用，由各自 starter 自动适配。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- OpenFeign：供 FeignAuthRelayConfig 编译使用（透传 token/shopId 请求头）。
+             optional 避免强制传递给不使用 Feign 的模块（如网关）；
+             运行时由引用方自身声明的 spring-cloud-starter-openfeign 提供，
+             未声明时 FeignAuthRelayConfig 由 @ConditionalOnClass 自动跳过。 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -84,7 +103,27 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Seata 分布式事务（AT 模式）—— 所有微服务通过 amz-common 继承该依赖 -->
+        <dependency>
+            <groupId>io.seata</groupId>
+            <artifactId>seata-spring-boot-starter</artifactId>
+        </dependency>
+
         <!-- 测试依赖（JUnit 5 + Mockito + Spring Test），供 FieldPermissionAspect 等纯单元测试使用 -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- OpenAPI 3.0 / Swagger UI 文档（所有 MVC 微服务通过 amz-common 继承）。
+             optional 避免将 webmvc-ui 传递给非 Servlet 模块（如网关使用 webflux-ui），
+             运行时由各 MVC 微服务自身显式声明版本。 -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

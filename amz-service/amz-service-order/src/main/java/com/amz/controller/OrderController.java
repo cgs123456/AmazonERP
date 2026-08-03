@@ -3,6 +3,8 @@ package com.amz.controller;
 import com.amz.annotation.ShopScoped;
 import com.amz.context.UserContext;
 import com.amz.mapper.FbaFeeTableMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.amz.mapper.OrderMapper;
 import com.amz.mapper.ProfitReportMapper;
 import com.amz.model.FbaFeeTable;
@@ -29,6 +31,7 @@ import java.util.Map;
 @RequestMapping("/order")
 public class OrderController {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderController.class);
 
     @Autowired
     private OrderService orderService;
@@ -175,9 +178,21 @@ public class OrderController {
     /**
      * 查询订单详情。
      * GET /order/{orderId}
+     * <p>
+     * 越权防护（IDOR）：订单按 shopId 归属，必须校验目标订单的 shopId 属于当前登录用户
+     * 授权店铺，否则返回统一错误，防止任意登录用户遍历全平台订单。
      */
     @GetMapping("/{orderId}")
     public Result<Order> getOrderById(@PathVariable Long orderId) {
-        return orderService.getOrderById(orderId);
+        Result<Order> result = orderService.getOrderById(orderId);
+        if (result.getCode() == 200 && result.getData() != null) {
+            Order order = result.getData();
+            if (!UserContext.isShopAllowed(order.getShopId())) {
+                log.warn("订单详情越权拦截：orderId={}, orderShopId={}, userId={}",
+                        orderId, order.getShopId(), UserContext.getUserId());
+                return Result.failure("订单不存在或无权访问");
+            }
+        }
+        return result;
     }
 }

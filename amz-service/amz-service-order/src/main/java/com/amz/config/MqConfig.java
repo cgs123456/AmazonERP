@@ -61,16 +61,36 @@ public class MqConfig implements RabbitTemplate.ConfirmCallback, RabbitTemplate.
         return new DirectExchange(MqConstant.SAVE_ORDER_EXCHANGE);
     }
 
-    // 声明队列
+    // 声明队列（durable，绑定 DLX 防止毒消息无限重投）
     @Bean
     public Queue saveOrderQueue() {
-        return new Queue(MqConstant.SAVE_ORDER_QUEUE);
+        return QueueBuilder.durable(MqConstant.SAVE_ORDER_QUEUE)
+                .withArgument("x-dead-letter-exchange", MqConstant.SAVE_ORDER_DLX_EXCHANGE)
+                .withArgument("x-dead-letter-routing-key", MqConstant.SAVE_ORDER_DLQ_ROUTING_KEY)
+                .build();
     }
 
     // 使用routing key将队列绑定到交换机
     @Bean
     public Binding binding(Queue saveOrderQueue, DirectExchange saveOrderExchange) {
         return BindingBuilder.bind(saveOrderQueue).to(saveOrderExchange).with("");
+    }
+
+    // ===== 死信队列 =====
+    @Bean
+    public DirectExchange saveOrderDlxExchange() {
+        return new DirectExchange(MqConstant.SAVE_ORDER_DLX_EXCHANGE, true, false);
+    }
+
+    @Bean
+    public Queue saveOrderDlqQueue() {
+        return new Queue(MqConstant.SAVE_ORDER_DLQ_QUEUE, true);
+    }
+
+    @Bean
+    public Binding saveOrderDlqBinding(Queue saveOrderDlqQueue, DirectExchange saveOrderDlxExchange) {
+        return BindingBuilder.bind(saveOrderDlqQueue).to(saveOrderDlxExchange)
+                .with(MqConstant.SAVE_ORDER_DLQ_ROUTING_KEY);
     }
 
 }

@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -62,7 +63,7 @@ public class LoginServiceImpl implements LoginService {
     }
 
     @Override
-    public Result<String> verify(LoginDto loginDto) {
+    public Result<Map<String, String>> verify(LoginDto loginDto) {
         // 1.从redis获取验证码
         String cacheCode = redisTemplate.opsForValue().get(
                 RedisConstant.PHONE_CODE.concat(loginDto.getPhone()));
@@ -102,11 +103,35 @@ public class LoginServiceImpl implements LoginService {
 
         // 7.生成token（携带 shops + role claim）
         String token = jwtUtil.createToken(userId, shopIds, role);
+        String refreshToken = jwtUtil.createRefreshToken(userId);
 
         // 向mq中发送消息
         rabbitTemplate.convertAndSend(MqConstant.MESSAGE_NOTICE_EXCHANGE, MqConstant.LOGIN_KEY, userId);
 
-        // 8.返回token
-        return Result.success(token);
+        // 8.返回 token + refreshToken
+        Map<String, String> tokens = new java.util.HashMap<>();
+        tokens.put("token", token);
+        tokens.put("refreshToken", refreshToken);
+        return Result.success(tokens);
+    }
+
+    @Override
+    public LoginDto getUserById(Integer userId) {
+        User dbUser = userMapper.selectById(userId);
+        if (dbUser == null) {
+            return null;
+        }
+        LambdaQueryWrapper<UserShop> shopQuery = new LambdaQueryWrapper<>();
+        shopQuery.eq(UserShop::getUserId, userId.longValue());
+        List<UserShop> userShops = userShopMapper.selectList(shopQuery);
+        List<Long> shopIds = userShops.stream()
+                .map(UserShop::getShopId)
+                .collect(Collectors.toList());
+
+        LoginDto dto = new LoginDto();
+        dto.setPhone(dbUser.getPhone());
+        dto.setRole(dbUser.getRole() == null ? "VIEWER" : dbUser.getRole());
+        dto.setShops(shopIds);
+        return dto;
     }
 }

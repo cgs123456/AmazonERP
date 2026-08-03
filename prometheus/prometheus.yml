@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - 'rules/*.yml'
+
+scrape_configs:
+  - job_name: 'amz-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['amz-gateway:10010']
+  - job_name: 'amz-services'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets:
+        - 'amz-service-user:8086'
+        - 'amz-service-product:8087'
+        - 'amz-service-order:8105'
+        - 'amz-service-search:8090'
+        - 'amz-service-ai:8091'
+        - 'amz-service-spapi:8096'
+        - 'amz-service-ad:8097'
+        - 'amz-service-procurement:8098'
+        - 'amz-service-customer:8099'
+        - 'amz-service-logistics:8100'
+        - 'amz-service-ops:8101'
+        - 'amz-service-report:8102'
+        - 'amz-service-finance:8103'
+        - 'amz-service-multiplatform:8104'
+        - 'amz-service-message:8889'

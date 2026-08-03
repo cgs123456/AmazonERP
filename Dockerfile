@@ -51,6 +51,12 @@ COPY amz-service ./amz-service
 # 编译打包目标模块及其依赖（跳过测试，CI 已在 test 阶段执行）
 RUN mvn -B -q clean package -DskipTests -pl ${MODULE} -am
 
+# ---------- Stage 1.5: Skywalking Java Agent 下载 ----------
+FROM busybox:1.36 AS skywalking-downloader
+WORKDIR /skywalking
+ADD https://dlcdn.apache.org/skywalking/java-agent/9.3.0/apache-skywalking-java-agent-9.3.0.tgz /tmp/skywalking-agent.tgz
+RUN tar -xzf /tmp/skywalking-agent.tgz && mv /skywalking-agent skywalking-agent && rm /tmp/skywalking-agent.tgz
+
 # ---------- Stage 2: JRE 运行 ----------
 # openjdk 官方镜像已下架，改用 Eclipse Temurin（Adoptium 官方维护）
 FROM eclipse-temurin:17-jre
@@ -64,6 +70,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
+# 拷贝 Skywalking Java Agent
+COPY --from=skywalking-downloader /skywalking-agent /skywalking-agent
 
 # 创建非 root 运行用户，避免容器内以 root 身份运行 JVM（安全加固）
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
@@ -86,8 +95,12 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # 将 PORT 固化为环境变量，供 HEALTHCHECK 在 shell 形式下展开
 ENV SERVER_PORT=${PORT}
 
-# JVM 参数（容器环境优化）
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+# JVM 参数（容器环境优化，含 Skywalking Java Agent）
+# 通过环境变量 SW_AGENT_NAME 控制 Skywalking 上报的服务名（默认 amz-service）
+# JAVA_OPTS 运行时可覆盖：docker run -e JAVA_OPTS="..."
+ENV SW_AGENT_NAME=amz-service
+ENV SW_COLLECTOR=skywalking-oap:11800
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -javaagent:/skywalking-agent/skywalking-agent.jar"
 
 # 服务端口（与目标模块 application.yml 一致）
 EXPOSE ${PORT}

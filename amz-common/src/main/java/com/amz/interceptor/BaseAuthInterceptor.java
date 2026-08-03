@@ -22,7 +22,11 @@ public class BaseAuthInterceptor implements HandlerInterceptor {
             "/user/send",
             "/user/verify",
             // /internal/** 仅供服务间内部 Feign 调用（不带用户 JWT），网关未配置该路径前缀路由，不对外暴露
-            "/internal"
+            "/internal",
+            // /actuator/** 为 k8s 存活/就绪探针端点（kubelet 请求不携带 JWT），
+            // 必须放行，否则探针恒返回 401 导致 Pod 永远 NotReady。
+            // 该端点仅在集群内 ClusterIP 暴露，网关未配置对应路由，不对外暴露。
+            "/actuator"
     );
 
     private final JwtUtil jwtUtil;

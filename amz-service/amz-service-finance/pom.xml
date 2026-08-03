@@ -38,6 +38,16 @@
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
         </dependency>
+
+        <!-- Flyway 数据库迁移 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
@@ -55,7 +65,12 @@
             <artifactId>amz-common</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
-        <!-- 测试依赖（JUnit 5 + Mockito + AssertJ，纯 Mock 不依赖 Spring 容器） -->
+        <!-- 娴嬭瘯渚濊禆锛圝Unit 5 + Mockito + AssertJ锛岀函 Mock 涓嶄緷璧?Spring 瀹瑰櫒锛?-->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

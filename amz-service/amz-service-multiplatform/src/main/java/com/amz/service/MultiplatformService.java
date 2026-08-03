@@ -1,49 +1,74 @@
 package com.amz.service;
 
-import com.amz.model.UnifiedOrder;
+import com.amz.model.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
- * 多平台订单聚合服务接口。
+ * 多平台管理服务（Phase 3 升级版）。
  * <p>
- * 提供 Temu / TikTok Shop / Shein 订单的统一拉取、归一化存储、按平台/状态筛选等能力。
+ * 新增：
+ * <ul>
+ *   <li>平台账号管理（CRUD + 连接测试）</li>
+ *   <li>全平台商品同步与映射</li>
+ *   <li>多平台消息统一管理</li>
+ *   <li>多平台库存聚合视图</li>
+ *   <li>Webhook 事件接收与处理</li>
+ *   <li>OAuth 应用注册与 Token 发放</li>
+ * </ul>
  */
 public interface MultiplatformService {
 
-    /**
-     * 从所有平台拉取最新订单并落库。
-     *
-     * @param shopId 店铺 ID
-     * @return 新增的统一订单数
-     */
-    int syncAllPlatforms(Long shopId);
+    // ===== 平台账号管理 =====
 
-    /**
-     * 从指定平台拉取最新订单。
-     *
-     * @param shopId   店铺 ID
-     * @param platform 平台标识：TEMU / TIKTOK / SHEIN
-     * @return 新增的统一订单数
-     */
-    int syncByPlatform(Long shopId, String platform);
+    PlatformAccount createAccount(PlatformAccount account);
 
-    /**
-     * 查询店铺所有平台的订单列表。
-     */
-    List<UnifiedOrder> listOrders(Long shopId);
+    PlatformAccount updateAccount(Long id, PlatformAccount account);
 
-    /**
-     * 按平台筛选订单。
-     */
-    List<UnifiedOrder> listByPlatform(Long shopId, String platform);
+    List<PlatformAccount> listAccounts(Long shopId);
 
-    /**
-     * 向平台回传发货信息。
-     *
-     * @param orderId    统一订单 ID
-     * @param trackingNo 物流单号
-     * @return 是否回传成功
-     */
-    boolean markShipped(Long orderId, String trackingNo);
+    boolean deleteAccount(Long id);
+
+    boolean testConnection(Long accountId);
+
+    // ===== 商品同步与映射 =====
+
+    int syncProducts(Long shopId, String platform);
+
+    List<PlatformProduct> listProducts(Long shopId, String platform);
+
+    boolean mapProduct(Long platformProductId, String amazonAsin, String amazonSku);
+
+    // ===== 消息管理 =====
+
+    int syncMessages(Long shopId, String platform);
+
+    List<PlatformMessage> listMessages(Long shopId, String platform, Integer status);
+
+    boolean replyMessage(Long messageId, String replyContent);
+
+    boolean assignMessage(Long messageId, String assignedTo);
+
+    // ===== 库存聚合 =====
+
+    int syncInventory(Long shopId, String platform);
+
+    List<PlatformInventory> listPlatformInventory(Long shopId, String platform);
+
+    Map<String, Object> aggregatedInventory(Long shopId);
+
+    // ===== Webhook =====
+
+    WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload);
+
+    List<WebhookEvent> listWebhookEvents(Long shopId, String status);
+
+    // ===== OAuth 开放 API =====
+
+    OauthApp registerApp(OauthApp app);
+
+    List<OauthApp> listApps(Long ownerShopId);
+
+    OauthToken generateToken(String appKey, String appSecret, String[] scopes, Long shopId);
 }

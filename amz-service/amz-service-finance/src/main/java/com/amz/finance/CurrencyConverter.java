@@ -39,7 +39,7 @@ public class CurrencyConverter {
 
     private final RestTemplate restTemplate = new RestTemplate();
 
-    public CurrencyConverter(@Value("#{${kingdee.exchange-rates}}}") Map<String, BigDecimal> rates) {
+    public CurrencyConverter(@Value("#{${kingdee.exchange-rates}}") Map<String, BigDecimal> rates) {
         this.fallbackRates = rates != null ? new HashMap<>(rates) : new HashMap<>();
         this.exchangeRates = new HashMap<>(this.fallbackRates);
         log.info("多币种核算器初始化：兜底币种 {}", this.fallbackRates.keySet());

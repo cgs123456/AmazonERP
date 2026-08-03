@@ -1,7 +1,10 @@
+# WARNING: All credentials MUST be provided via .env file or environment variables.
+# No default passwords are set. The compose file will fail without proper credentials.
+
 services:
   # ==================== 基础设施 ====================
 
-  # Nacos 服务注册与发现
+  # Nacos - Service Discovery & Config Center
   nacos:
     image: nacos/nacos-server:v2.3.2
     container_name: amz-nacos
@@ -15,15 +18,15 @@ services:
       - "9848:9848"
     restart: unless-stopped
 
-  # MySQL 数据库（主库，写节点）
-  # 已开启 binlog + GTID，便于从库复制。复制账号需手动创建：
+  # MySQL Database (master, write node)
+  # binlog + GTID enabled for replica sync. Create replication user manually:
   #   CREATE USER 'repl'@'%' IDENTIFIED BY '<pwd>';
   #   GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'repl'@'%';
   mysql:
     image: mysql:8.0
     container_name: amz-mysql
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:-root123}
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:}
       - TZ=Asia/Shanghai
     ports:
       - "3307:3306"
@@ -40,8 +43,8 @@ services:
       --enforce-gtid-consistency=ON
     restart: unless-stopped
 
-  # MySQL 只读副本（slave，读节点）
-  # 启动后需手动建立复制关系：
+  # MySQL Read Replica (slave, read node)
+  # After startup, manually establish replication:
   #   CHANGE MASTER TO MASTER_HOST='mysql', MASTER_USER='repl',
   #     MASTER_PASSWORD='<pwd>', MASTER_AUTO_POSITION=1;
   #   START REPLICA;
@@ -49,7 +52,7 @@ services:
     image: mysql:8.0
     container_name: amz-mysql-slave
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:-root123}
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:}
       - TZ=Asia/Shanghai
     ports:
       - "3317:3306"
@@ -74,7 +77,7 @@ services:
     container_name: amz-redis
     ports:
       - "6379:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123} --appendonly yes
+    command: redis-server --requirepass ${REDIS_PASSWORD:} --appendonly yes
     volumes:
       - redis-data:/data
     restart: unless-stopped
@@ -85,7 +88,7 @@ services:
     container_name: amz-rabbitmq
     environment:
       - RABBITMQ_DEFAULT_USER=${MQ_USERNAME:-admin}
-      - RABBITMQ_DEFAULT_PASS=${MQ_PASSWORD:-rabbitmq123}
+      - RABBITMQ_DEFAULT_PASS=${MQ_PASSWORD:}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -97,7 +100,7 @@ services:
     container_name: amz-mongodb
     environment:
       - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME:-root}
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:-mongo123}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD:}
     ports:
       - "27017:27017"
     volumes:
@@ -119,9 +122,107 @@ services:
       - es-data:/usr/share/elasticsearch/data
     restart: unless-stopped
 
+  # Logstash（日志收集与转发）
+  logstash:
+    image: logstash:8.15.3
+    container_name: logstash
+    ports:
+      - "5044:5044"
+    volumes:
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf
+      - logstash-data:/usr/share/logstash/data
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # Kibana（Elasticsearch 可视化）
+  kibana:
+    image: kibana:8.15.3
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # ==================== Prometheus + Grafana 监控栈 ====================
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-data:/data
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/data'
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    restart: unless-stopped
+
+  # ==================== Skywalking 分布式链路追踪 ====================
+
+  skywalking-oap:
+    image: apache/skywalking-oap-server:10.1.0
+    container_name: skywalking-oap
+    ports:
+      - "11800:11800"   # gRPC agent port
+      - "12800:12800"   # HTTP query port
+    environment:
+      - SW_STORAGE=elasticsearch
+      - SW_STORAGE_ES_CLUSTER_NODES=elasticsearch:9200
+      - SW_HEALTH_CHECKER=default
+      - JAVA_OPTS=-Xms512m -Xmx512m
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  skywalking-ui:
+    image: apache/skywalking-ui:10.1.0
+    container_name: skywalking-ui
+    ports:
+      - "8081:8080"
+    environment:
+      - SW_OAP_ADDRESS=http://skywalking-oap:12800
+    depends_on:
+      - skywalking-oap
+    restart: unless-stopped
+
   # ==================== 业务服务 ====================
 
-  # API 网关（Spring Cloud Gateway，对外统一入口，端口 10010）
+  # API Gateway (Spring Cloud Gateway, unified entry point, port 10010)
   amz-gateway:
     image: amazon-erp/amz-gateway:latest
     container_name: amz-gateway
@@ -132,10 +233,10 @@ services:
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
       - DB_USERNAME=${DB_USERNAME:-root}
-      - DB_PASSWORD=${DB_PASSWORD:-root123}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq123}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
       # 通过 compose 网络内服务名访问基础设施
       - NACOS_SERVER_ADDR=nacos:8848
     depends_on:
@@ -143,7 +244,7 @@ services:
       - redis
     restart: unless-stopped
 
-  # SP-API 集成微服务（订单同步、FBA 库存、补货引擎，端口 8096）
+  # SP-API Integration Service (order sync, FBA inventory, replenishment engine, port 8096)
   amz-service-spapi:
     build: .
     image: amazon-erp/amz-service-spapi:latest
@@ -151,11 +252,11 @@ services:
     ports:
       - "8096:8096"
     environment:
-      # JWT 鉴权密钥（必填，缺失时鉴权不可用）
+      # JWT signing key (required, auth will fail without it)
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
-      # AES-256-GCM 加密密钥（32 字节 base64），用于加密 SP-API 凭证
+      # AES-256-GCM encryption key (32-byte base64), used to encrypt SP-API credentials
       - AMZ_CRYPTO_KEY=${AMZ_CRYPTO_KEY:-}
       # AWS SP-API 凭证
       - AWS_ACCESS_KEY=${AWS_ACCESS_KEY:-}
@@ -163,10 +264,10 @@ services:
       - AWS_REGION=${AWS_REGION:-us-east-1}
       # 基础设施连接
       - DB_USERNAME=${DB_USERNAME:-root}
-      - DB_PASSWORD=${DB_PASSWORD:-root123}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis123}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-rabbitmq123}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
       - NACOS_SERVER_ADDR=nacos:8848
       # 读写分离：主库写、从库读
       - MYSQL_HOST=mysql
@@ -180,8 +281,319 @@ services:
       - rabbitmq
     restart: unless-stopped
 
-  # 前端（Vue 3 + Vite，构建产物由 nginx 托管，端口 5173 -> 容器 80）
-  # 启动前需在 amz-frontend 目录执行 npm run build 生成 dist 目录
+  # User Management Service (users, roles, permissions, port 8086)
+  amz-service-user:
+    image: amazon-erp/amz-service-user:latest
+    container_name: amz-service-user
+    ports:
+      - "8086:8086"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Product Management Service (products, categories, brands, SPU/SKU, port 8087)
+  amz-service-product:
+    image: amazon-erp/amz-service-product:latest
+    container_name: amz-service-product
+    ports:
+      - "8087:8087"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+      - mongodb
+    restart: unless-stopped
+
+  # Order Management Service (orders, returns, reviews, port 8105)
+  amz-service-order:
+    image: amazon-erp/amz-service-order:latest
+    container_name: amz-service-order
+    ports:
+      - "8105:8105"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Search Service (Elasticsearch product search, port 8090)
+  amz-service-search:
+    image: amazon-erp/amz-service-search:latest
+    container_name: amz-service-search
+    ports:
+      - "8090:8090"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+      - elasticsearch
+    restart: unless-stopped
+
+  # AI Intelligence Service (smart recommendations, copy generation, port 8091)
+  amz-service-ai:
+    image: amazon-erp/amz-service-ai:latest
+    container_name: amz-service-ai
+    ports:
+      - "8091:8091"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Ad Management Service (SP/SB/SD ad campaigns & analytics, port 8097)
+  amz-service-ad:
+    image: amazon-erp/amz-service-ad:latest
+    container_name: amz-service-ad
+    ports:
+      - "8097:8097"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Procurement Service (purchase orders, suppliers, 1688 integration, port 8098)
+  amz-service-procurement:
+    image: amazon-erp/amz-service-procurement:latest
+    container_name: amz-service-procurement
+    ports:
+      - "8098:8098"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Customer Management Service (customer profiles, segmentation, follow-ups, port 8099)
+  amz-service-customer:
+    image: amazon-erp/amz-service-customer:latest
+    container_name: amz-service-customer
+    ports:
+      - "8099:8099"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Logistics Service (FBA/FBM, overseas warehouses, port 8100)
+  amz-service-logistics:
+    image: amazon-erp/amz-service-logistics:latest
+    container_name: amz-service-logistics
+    ports:
+      - "8100:8100"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Operations Service (flash sales, coupons, promotions, port 8101)
+  amz-service-ops:
+    image: amazon-erp/amz-service-ops:latest
+    container_name: amz-service-ops
+    ports:
+      - "8101:8101"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Reporting Service (sales/profit/inventory reports, port 8102)
+  amz-service-report:
+    image: amazon-erp/amz-service-report:latest
+    container_name: amz-service-report
+    ports:
+      - "8102:8102"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Finance Service (profit accounting, expenses, settlements, port 8103)
+  amz-service-finance:
+    image: amazon-erp/amz-service-finance:latest
+    container_name: amz-service-finance
+    ports:
+      - "8103:8103"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Multi-platform Service (eBay/Shopify/Walmart integrations, port 8104)
+  amz-service-multiplatform:
+    image: amazon-erp/amz-service-multiplatform:latest
+    container_name: amz-service-multiplatform
+    ports:
+      - "8104:8104"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+    restart: unless-stopped
+
+  # Message Service (WebSocket + RabbitMQ real-time push, port 8889)
+  amz-service-message:
+    image: amazon-erp/amz-service-message:latest
+    container_name: amz-service-message
+    ports:
+      - "8889:8889"
+    environment:
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      - NACOS_SERVER_ADDR=nacos:8848
+    depends_on:
+      - nacos
+      - mysql
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+
+  # Frontend (Vue 3 + Vite, served by nginx, host:5173 -> container:80)
+  # Before starting, run `npm run build` in amz-frontend to generate the dist directory
   amz-frontend:
     image: nginx:1.27-alpine
     container_name: amz-frontend
@@ -199,3 +611,7 @@ volumes:
   redis-data:
   mongo-data:
   es-data:
+  alertmanager-data:
+  prometheus-data:
+  grafana-data:
+  logstash-data:

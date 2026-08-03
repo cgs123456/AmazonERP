@@ -55,6 +55,11 @@ jwt:
   secret-key: ${JWT_SECRET_KEY:}
   issuer: ${JWT_ISSUER:amz-erp}
   audience: ${JWT_AUDIENCE:amz-erp-client}
+
+# Logging — traceId 注入（与 Skywalking 链路追踪关联）
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
 ---
 feign:
   client:
@@ -67,3 +72,36 @@ spring:
     openfeign:
       circuitbreaker:
         enabled: true
+---
+# ====== Actuator 健康探针 ======
+# k8s/services/*.yaml 中 readinessProbe / livenessProbe 指向
+# /actuator/health/readiness 与 /actuator/health/liveness，
+# 需显式开启 probes（非 k8s 环境不会自动启用）。
+# exposure 仅暴露 health/info，show-details=never 避免泄露数据源等内部细节。
+management:
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  show-actuator: false

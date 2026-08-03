@@ -1,0 +1,21 @@
+seata:
+  enabled: ${SEATA_ENABLED:false}
+  tx-service-group: amz-erp-tx-group
+  service:
+    vgroup-mapping:
+      amz-erp-tx-group: default
+    grouplist:
+      default: ${SEATA_SERVER:localhost:8091}
+  config:
+    type: nacos
+    nacos:
+      server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+      group: SEATA_GROUP
+      namespace: ""
+  registry:
+    type: nacos
+    nacos:
+      application: seata-server
+      server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+      group: SEATA_GROUP
+      namespace: ""

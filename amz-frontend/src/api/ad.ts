@@ -42,7 +42,8 @@ export const getAdReports = (shopId: number | string) => {
 
 // 获取关键词优化建议
 export const getKeywordOptimization = (shopId: number | string) => {
-  return request.get<void, ApiResponse<unknown>>('/ad/keywords/optimize', {
+  // 后端映射为 AdController#/ad/keyword/optimize（单数），此处须与之一致
+  return request.get<void, ApiResponse<unknown>>('/ad/keyword/optimize', {
     params: { shopId }
   })
 }

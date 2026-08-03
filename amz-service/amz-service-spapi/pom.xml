@@ -17,9 +17,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
-    <!-- alimaven 旧 Nexus2 URL 可能缺少部分较新的 artifact（如 onnxruntime），
-         此处以不同 ID 声明阿里云 Nexus3 仓库作为兜底。
-         settings.xml 中 mirrorOf=central 不会拦截此仓库。 -->
+    <!-- alimaven 鏃?Nexus2 URL 鍙兘缂哄皯閮ㄥ垎杈冩柊鐨?artifact锛堝 onnxruntime锛夛紝
+         姝ゅ浠ヤ笉鍚?ID 澹版槑闃块噷浜?Nexus3 浠撳簱浣滀负鍏滃簳銆?         settings.xml 涓?mirrorOf=central 涓嶄細鎷︽埅姝や粨搴撱€?-->
     <repositories>
         <repository>
             <id>aliyun-nexus3</id>
@@ -41,7 +40,7 @@
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
 
-        <!-- Sentinel：熔断限流，规则持久化到 Nacos -->
+        <!-- Sentinel锛氱啍鏂檺娴侊紝瑙勫垯鎸佷箙鍖栧埌 Nacos -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
@@ -62,7 +61,7 @@
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>
 
-        <!-- 动态数据源（读写分离）：master 写 / slave 读，配合 @DS 注解路由 -->
+        <!-- 鍔ㄦ€佹暟鎹簮锛堣鍐欏垎绂伙級锛歮aster 鍐?/ slave 璇伙紝閰嶅悎 @DS 娉ㄨВ璺敱 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>dynamic-datasource-spring-boot3-starter</artifactId>
@@ -73,12 +72,22 @@
             <artifactId>mysql-connector-j</artifactId>
         </dependency>
 
+        <!-- Flyway 数据库迁移 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
-        <!-- RabbitMQ：spapi 拉取订单后发送到 order 服务的 save/profit 交换机 -->
+        <!-- RabbitMQ锛歴papi 鎷夊彇璁㈠崟鍚庡彂閫佸埌 order 鏈嶅姟鐨?save/profit 浜ゆ崲鏈?-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
@@ -94,8 +103,8 @@
             <artifactId>commons-lang3</artifactId>
         </dependency>
 
-        <!-- ONNX Runtime：用于加载 LightGBM 导出的 ONNX 模型进行 ML 推理 -->
-        <!-- 注：任务要求 1.18.2，但该版本未发布到 Maven Central，使用同系列最近可用版本 1.18.0 -->
+        <!-- ONNX Runtime锛氱敤浜庡姞杞?LightGBM 瀵煎嚭鐨?ONNX 妯″瀷杩涜 ML 鎺ㄧ悊 -->
+        <!-- 娉細浠诲姟瑕佹眰 1.18.2锛屼絾璇ョ増鏈湭鍙戝竷鍒?Maven Central锛屼娇鐢ㄥ悓绯诲垪鏈€杩戝彲鐢ㄧ増鏈?1.18.0 -->
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
             <artifactId>onnxruntime</artifactId>
@@ -108,7 +117,12 @@
             <version>1.0-SNAPSHOT</version>
         </dependency>
 
-        <!-- 测试依赖（JUnit 5 + Mockito + Spring Test） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- 娴嬭瘯渚濊禆锛圝Unit 5 + Mockito + Spring Test锛?-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

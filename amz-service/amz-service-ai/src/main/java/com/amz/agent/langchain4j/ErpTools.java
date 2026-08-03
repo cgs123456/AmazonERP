@@ -180,6 +180,134 @@ public class ErpTools {
                 Map.of("keyword", keyword, "marketplace", marketplace != null ? marketplace : "US")));
     }
 
+    // ===== Phase 3 新增 14 个工具（Phase 1+2 模块联动） =====
+
+    @Tool("查询采购订单，可按状态筛选")
+    String queryPurchaseOrders(
+            @P("店铺 ID") Long shopId,
+            @P("订单状态：DRAFT/SUBMITTED/APPROVED/IN_PROCESS/COMPLETED，默认 ALL") String status) {
+        log.info("LangChain4j 工具调用: query_purchase_orders shopId={} status={}", shopId, status);
+        return toolExecutor.execute(buildCall("query_purchase_orders",
+                Map.of("shopId", shopId, "status", status != null ? status : "ALL")));
+    }
+
+    @Tool("查询供应商列表，支持关键词模糊搜索")
+    String querySuppliers(
+            @P("店铺 ID") Long shopId,
+            @P("搜索关键词") String keyword) {
+        log.info("LangChain4j 工具调用: query_suppliers shopId={} keyword={}", shopId, keyword);
+        return toolExecutor.execute(buildCall("query_suppliers",
+                Map.of("shopId", shopId, "keyword", keyword)));
+    }
+
+    @Tool("查询广告汇总数据，含花费、销售额和 ACoS")
+    String queryAdvertising(
+            @P("店铺 ID") Long shopId,
+            @P("查询天数，默认 7") Integer days) {
+        log.info("LangChain4j 工具调用: query_advertising shopId={} days={}", shopId, days);
+        return toolExecutor.execute(buildCall("query_advertising",
+                Map.of("shopId", shopId, "days", days != null ? days : 7)));
+    }
+
+    @Tool("物流轨迹查询，返回货运单号的最新物流状态和路由节点")
+    String trackShipment(
+            @P("店铺 ID") Long shopId,
+            @P("物流单号") String shipmentNo) {
+        log.info("LangChain4j 工具调用: track_shipment shopId={} shipmentNo={}", shopId, shipmentNo);
+        return toolExecutor.execute(buildCall("track_shipment",
+                Map.of("shopId", shopId, "shipmentNo", shipmentNo)));
+    }
+
+    @Tool("Listing 健康度分析，返回标题/五点/图片/搜索词各项得分和优化建议")
+    String analyzeListingHealth(
+            @P("店铺 ID") Long shopId,
+            @P("Amazon ASIN") String asin) {
+        log.info("LangChain4j 工具调用: analyze_listing_health shopId={} asin={}", shopId, asin);
+        return toolExecutor.execute(buildCall("analyze_listing_health",
+                Map.of("shopId", shopId, "asin", asin)));
+    }
+
+    @Tool("搜索词分析，识别出单词、浪费词并给出竞价优化建议")
+    String analyzeSearchTerms(
+            @P("店铺 ID") Long shopId,
+            @P("Amazon ASIN") String asin) {
+        log.info("LangChain4j 工具调用: analyze_search_terms shopId={} asin={}", shopId, asin);
+        return toolExecutor.execute(buildCall("analyze_search_terms",
+                Map.of("shopId", shopId, "asin", asin)));
+    }
+
+    @Tool("销售趋势深度分析，含环比增长、峰值时段、季节性预判")
+    String analyzeSalesTrend(
+            @P("店铺 ID") Long shopId,
+            @P("分析天数，默认 30") Integer days) {
+        log.info("LangChain4j 工具调用: analyze_sales_trend shopId={} days={}", shopId, days);
+        return toolExecutor.execute(buildCall("analyze_sales_trend",
+                Map.of("shopId", shopId, "days", days != null ? days : 30)));
+    }
+
+    @Tool("库龄分析与滞销预警，返回按库龄分组的库存数量和超 365 天滞销品处理建议")
+    String analyzeInventoryAging(
+            @P("店铺 ID") Long shopId) {
+        log.info("LangChain4j 工具调用: analyze_inventory_aging shopId={}", shopId);
+        return toolExecutor.execute(buildCall("analyze_inventory_aging",
+                Map.of("shopId", shopId)));
+    }
+
+    @Tool("广告优化建议，返回关键词调整/预算优化/否定关键词等动作")
+    String optimizeAdCampaign(
+            @P("店铺 ID") Long shopId,
+            @P("广告活动 ID") String campaignId) {
+        log.info("LangChain4j 工具调用: optimize_ad_campaign shopId={} campaignId={}", shopId, campaignId);
+        return toolExecutor.execute(buildCall("optimize_ad_campaign",
+                Map.of("shopId", shopId, "campaignId", campaignId)));
+    }
+
+    @Tool("Listing SEO 优化，检查缺失的关键词、标题优化点和后台搜索词建议")
+    String optimizeListingSeo(
+            @P("店铺 ID") Long shopId,
+            @P("Amazon ASIN") String asin) {
+        log.info("LangChain4j 工具调用: optimize_listing_seo shopId={} asin={}", shopId, asin);
+        return toolExecutor.execute(buildCall("optimize_listing_seo",
+                Map.of("shopId", shopId, "asin", asin)));
+    }
+
+    @Tool("根据订单目的地和库存分布推荐最优发货仓库和物流商")
+    String optimizeShippingRoute(
+            @P("店铺 ID") Long shopId,
+            @P("订单 ID") String orderId) {
+        log.info("LangChain4j 工具调用: optimize_shipping_route shopId={} orderId={}", shopId, orderId);
+        return toolExecutor.execute(buildCall("optimize_shipping_route",
+                Map.of("shopId", shopId, "orderId", orderId)));
+    }
+
+    @Tool("库存跨仓调拨建议，根据各仓库存水平和区域订单量给出调拨方案")
+    String optimizeInventoryDistribution(
+            @P("店铺 ID") Long shopId) {
+        log.info("LangChain4j 工具调用: optimize_inventory_distribution shopId={}", shopId);
+        return toolExecutor.execute(buildCall("optimize_inventory_distribution",
+                Map.of("shopId", shopId)));
+    }
+
+    @Tool("AI 创建采购计划，根据 SKU 和数量自动估算金额并生成计划编号")
+    String createPurchasePlan(
+            @P("店铺 ID") Long shopId,
+            @P("卖家 SKU") String sku,
+            @P("采购数量") Integer quantity) {
+        log.info("LangChain4j 工具调用: create_purchase_plan shopId={} sku={} quantity={}", shopId, sku, quantity);
+        return toolExecutor.execute(buildCall("create_purchase_plan",
+                Map.of("shopId", shopId, "sku", sku, "quantity", quantity != null ? quantity : 100)));
+    }
+
+    @Tool("AI 自动生成买家消息回复，智能识别退货/物流/通用场景并生成英文回信")
+    String autoReplyMessage(
+            @P("店铺 ID") Long shopId,
+            @P("消息 ID") String messageId,
+            @P("消息主题（用于判断场景类型）") String subject) {
+        log.info("LangChain4j 工具调用: auto_reply_message shopId={} messageId={}", shopId, messageId);
+        return toolExecutor.execute(buildCall("auto_reply_message",
+                Map.of("shopId", shopId, "messageId", messageId, "subject", subject != null ? subject : "Customer Inquiry")));
+    }
+
     // ===== 辅助方法 =====
 
     /**

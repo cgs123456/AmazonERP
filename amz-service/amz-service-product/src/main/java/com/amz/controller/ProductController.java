@@ -1,6 +1,7 @@
 package com.amz.controller;
 
 import com.amz.client.OrderServiceFeignClient;
+import com.amz.context.UserContext;
 import com.amz.model.dto.ProductDto;
 import com.amz.model.ListingCopyTask;
 import com.amz.model.pojo.Product;
@@ -82,6 +83,12 @@ public class ProductController {
 
         if (shopId == null || sku == null || sourceMarketplaceId == null || targetMarketplaceId == null) {
             return Result.failure("shopId/sku/sourceMarketplaceId/targetMarketplaceId 不能为空");
+        }
+        // 越权防护：shopId 来自 @RequestBody，@ShopScoped 切面（仅覆盖 @RequestParam/@PathVariable）
+        // 无法校验，故显式校验其属于当前登录用户授权店铺，防止伪造请求体越权在他人店铺创建复制任务。
+        if (!UserContext.isShopAllowed(shopId)) {
+            log.warn("Listing 复制越权拦截：shopId={}, userId={}", shopId, UserContext.getUserId());
+            return Result.failure("无权操作该店铺");
         }
         try {
             ListingCopyTask task = listingCopyService.createCopyTask(

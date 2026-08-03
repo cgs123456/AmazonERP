@@ -2,6 +2,7 @@ package com.amz.controller;
 
 import com.amz.annotation.ShopScoped;
 import com.amz.client.OrdersClient;
+import com.amz.context.UserContext;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.mapper.FbaInventoryMapper;
@@ -69,6 +70,13 @@ public class SpapiController {
     public Result<String> saveCredential(@RequestBody ShopCredential credential) {
         if (credential == null || credential.getShopId() == null) {
             return Result.failure("shopId must not be null");
+        }
+        // 越权防护：凭证写入属于高敏感操作（覆盖店铺 AWS AccessKey/SecretKey/LWA refreshToken），
+        // 必须校验请求体中的 shopId 属于当前登录用户授权店铺，防止越权篡改其他租户凭证。
+        // @ShopScoped 切面仅覆盖 @RequestParam/@PathVariable，无法校验 @RequestBody 内嵌 shopId，故显式校验。
+        if (!UserContext.isShopAllowed(credential.getShopId())) {
+            log.warn("凭证写入越权拦截：shopId={}, userId={}", credential.getShopId(), UserContext.getUserId());
+            return Result.failure("无权写入该店铺凭证");
         }
         shopCredentialStore.put(credential);
         return Result.success("credential stored for shopId=" + credential.getShopId());

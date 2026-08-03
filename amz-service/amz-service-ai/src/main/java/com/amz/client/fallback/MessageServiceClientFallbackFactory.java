@@ -6,6 +6,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -18,6 +20,11 @@ public class MessageServiceClientFallbackFactory implements FallbackFactory<Mess
         return new MessageServiceClient() {
             @Override
             public Result<Map<String, Object>> notify(Map<String, Object> request) {
+                return Result.failure("message service degraded: " + cause.getMessage());
+            }
+
+            @Override
+            public Result<List<Map<String, Object>>> listMessages(Long shopId, int page, int pageSize) {
                 return Result.failure("message service degraded: " + cause.getMessage());
             }
         };

@@ -26,9 +26,12 @@ public interface OrderServiceFeignClient {
 
     /**
      * 获取店铺月度利润汇总（含销售额、订单数等）。
-     * 对应 GET /profit/summary/{shopId}
+     * 对应 GET /order/profit/summary/{shopId}
+     * <p>
+     * 注：ProfitController 原类级映射为 {@code /profit}，因网关仅路由 {@code /order/**}
+     * 导致该端点外部不可达，已统一为 {@code /order/profit}，此处同步对齐。
      */
-    @GetMapping("/profit/summary/{shopId}")
+    @GetMapping("/order/profit/summary/{shopId}")
     Map<String, Object> getProfitSummary(@PathVariable("shopId") Long shopId);
 
     /**

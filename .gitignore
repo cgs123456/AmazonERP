@@ -42,3 +42,18 @@ buildNumber.properties
 # Node
 node_modules/
 .npm-cache/
+
+# Playwright E2E
+test-results/
+playwright-report/
+
+# IDE / workspace
+.workbuddy/
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+logs/

@@ -21,9 +21,11 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -143,11 +145,14 @@ class LoginServiceImplTest {
         when(userShopMapper.selectList(any())).thenReturn(List.of(us));
 
         when(jwtUtil.createToken(eq(1), any(), eq("ADMIN"))).thenReturn("jwt-token");
+        when(jwtUtil.createRefreshToken(eq(1))).thenReturn("refresh-jwt-token");
 
-        Result<String> result = loginService.verify(dto);
+        Result<Map<String, String>> result = loginService.verify(dto);
 
         assertEquals(200, result.getCode());
-        assertEquals("jwt-token", result.getData());
+        assertNotNull(result.getData());
+        assertEquals("jwt-token", result.getData().get("token"));
+        assertEquals("refresh-jwt-token", result.getData().get("refreshToken"));
         verify(redisTemplate).delete(RedisConstant.PHONE_CODE.concat("13800138000"));
         verify(rabbitTemplate).convertAndSend(
                 MqConstant.MESSAGE_NOTICE_EXCHANGE, MqConstant.LOGIN_KEY, 1);
@@ -174,11 +179,14 @@ class LoginServiceImplTest {
 
         when(userShopMapper.selectList(any())).thenReturn(List.of());
         when(jwtUtil.createToken(eq(2), any(), eq("VIEWER"))).thenReturn("new-token");
+        when(jwtUtil.createRefreshToken(eq(2))).thenReturn("new-refresh-token");
 
-        Result<String> result = loginService.verify(dto);
+        Result<Map<String, String>> result = loginService.verify(dto);
 
         assertEquals(200, result.getCode());
-        assertEquals("new-token", result.getData());
+        assertNotNull(result.getData());
+        assertEquals("new-token", result.getData().get("token"));
+        assertEquals("new-refresh-token", result.getData().get("refreshToken"));
         verify(userMapper).insert(any(User.class));
     }
 }

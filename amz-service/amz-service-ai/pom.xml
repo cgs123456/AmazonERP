@@ -28,7 +28,7 @@
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
 
-        <!-- Sentinel：熔断限流，规则持久化到 Nacos -->
+        <!-- Sentinel锛氱啍鏂檺娴侊紝瑙勫垯鎸佷箙鍖栧埌 Nacos -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
@@ -52,6 +52,16 @@
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
+        </dependency>
+
+        <!-- Flyway 数据库迁移 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
         </dependency>
 
         <dependency>
@@ -86,7 +96,7 @@
             <version>1.0-SNAPSHOT</version>
         </dependency>
 
-        <!-- LangChain4j（替代手写 Agent 编排循环） -->
+        <!-- LangChain4j锛堟浛浠ｆ墜鍐?Agent 缂栨帓寰幆锛?-->
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j</artifactId>
@@ -94,6 +104,11 @@
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
         <dependency>

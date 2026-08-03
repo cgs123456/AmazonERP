@@ -25,6 +25,7 @@ import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
+import io.seata.spring.annotation.GlobalTransactional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -125,6 +126,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @GlobalTransactional(timeoutMills = 300000, name = "amz-order-sync")
     @Transactional(rollbackFor = Exception.class)
     public void syncAmazonOrder(OrderSyncDto syncDto) {
         if (syncDto == null || syncDto.getAmazonOrderId() == null || syncDto.getAmazonOrderId().isEmpty()) {

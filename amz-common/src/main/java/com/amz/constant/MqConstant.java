@@ -13,6 +13,15 @@ public class MqConstant {
 
     public static final String SAVE_ORDER_EXCHANGE = "save.order.exchange";
     public static final String SAVE_ORDER_QUEUE = "save.order.queue";
+    /** 订单保存死信交换机/队列：消费失败（NACK requeue=false）的消息转入 DLQ */
+    public static final String SAVE_ORDER_DLX_EXCHANGE = "save.order.dlx.exchange";
+    public static final String SAVE_ORDER_DLQ_QUEUE = "save.order.dlq.queue";
+    public static final String SAVE_ORDER_DLQ_ROUTING_KEY = "save.order.dlq";
+
+    /** 登录通知死信交换机/队列 */
+    public static final String LOGIN_DLX_EXCHANGE = "login.notice.dlx.exchange";
+    public static final String LOGIN_DLQ_QUEUE = "login.notice.dlq.queue";
+    public static final String LOGIN_DLQ_ROUTING_KEY = "login.notice.dlq";
 
     // ===== 利润核算链路 =====
     /** 利润核算交换机（spapi 生产 -> ProfitMQConsumer 消费） */

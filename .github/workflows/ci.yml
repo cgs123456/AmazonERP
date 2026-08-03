@@ -45,6 +45,14 @@ jobs:
           --health-interval=10s
           --health-timeout=5s
           --health-retries=5
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+      rabbitmq:
+        image: rabbitmq:3.13-management
+        ports:
+          - 5672:5672
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -54,10 +62,15 @@ jobs:
           cache: maven
       - name: Compile all modules
         run: mvn -B compile
-      - name: Run unit tests (spapi + common)
+      - name: Run all unit tests
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
-        run: mvn -B test -pl amz-common,amz-service/amz-service-spapi
+          DB_USERNAME: root
+          REDIS_PASSWORD: ''
+          RABBITMQ_USERNAME: guest
+          RABBITMQ_PASSWORD: guest
+          NACOS_ADDR: ''
+        run: mvn -B test -pl amz-common,amz-service/amz-service-spapi,amz-service/amz-service-user,amz-service/amz-service-product,amz-service/amz-service-order,amz-service/amz-service-search,amz-service/amz-service-ai,amz-service/amz-service-ad,amz-service/amz-service-procurement,amz-service/amz-service-customer,amz-service/amz-service-logistics,amz-service/amz-service-ops,amz-service/amz-service-report,amz-service/amz-service-finance,amz-service/amz-service-multiplatform
 
   # Job 3: 构建 Docker 镜像（仅 master 分支）
   docker:

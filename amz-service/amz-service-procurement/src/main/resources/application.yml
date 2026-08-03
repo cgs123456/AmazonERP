@@ -40,3 +40,15 @@ jwt:
   secret-key: ${JWT_SECRET_KEY:}
   issuer: ${JWT_ISSUER:amz-erp}
   audience: ${JWT_AUDIENCE:amz-erp-client}
+
+# Logging — traceId 注入（与 Skywalking 链路追踪关联）
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  show-actuator: false

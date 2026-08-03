@@ -48,12 +48,22 @@
             <artifactId>mysql-connector-j</artifactId>
         </dependency>
 
+        <!-- Flyway 数据库迁移 -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>
 
-        <!-- 动态数据源（读写分离）：master 写 / slave 读，配合 @DS 注解路由 -->
+        <!-- 鍔ㄦ€佹暟鎹簮锛堣鍐欏垎绂伙級锛歮aster 鍐?/ slave 璇伙紝閰嶅悎 @DS 娉ㄨВ璺敱 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>dynamic-datasource-spring-boot3-starter</artifactId>
@@ -80,13 +90,18 @@
             <artifactId>amz-common</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
-        <!-- 测试依赖（JUnit 5 + Mockito + Spring Test + Awaitility） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- 娴嬭瘯渚濊禆锛圝Unit 5 + Mockito + Spring Test + Awaitility锛?-->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Testcontainers：集成测试启动 MySQL + RabbitMQ 容器 -->
+        <!-- Testcontainers锛氶泦鎴愭祴璇曞惎鍔?MySQL + RabbitMQ 瀹瑰櫒 -->
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>

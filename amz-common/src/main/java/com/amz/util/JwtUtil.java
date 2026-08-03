@@ -2,6 +2,7 @@ package com.amz.util;
 
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
+import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.interfaces.DecodedJWT;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,10 @@ public class JwtUtil {
     /** Token 过期时间（毫秒），默认 86400000 = 24 小时，可通过 jwt.expire-time 配置覆盖 */
     @Value("${jwt.expire-time:86400000}")
     private long expireTime;
+
+    /** Refresh Token 过期时间（毫秒），默认 604800000 = 7 天 */
+    @Value("${jwt.refresh-expire-time:604800000}")
+    private long refreshExpireTime;
 
     private static final String SHOPS_CLAIM = "shops";
     /** 角色 claim，值为 ADMIN/OPERATOR/VIEWER，未携带时默认 VIEWER（最小权限） */
@@ -133,5 +138,43 @@ public class JwtUtil {
                 .verify(token);
         String role = jwt.getClaim(ROLE_CLAIM).asString();
         return (role == null || role.isBlank()) ? DEFAULT_ROLE : role;
+    }
+
+    /**
+     * 生成 refresh token（仅含 userId + issuer + audience，不携带 shops/role 以减少泄露面）。
+     * refresh token 有效期显著长于 access token（默认 7 天 vs 24h）。
+     */
+    public String createRefreshToken(Integer userId) {
+        Algorithm algorithm = Algorithm.HMAC256(secretKey);
+        return JWT.create()
+                .withSubject("refresh:" + userId)
+                .withIssuer(issuer)
+                .withAudience(audience)
+                .withClaim("type", "refresh")
+                .withExpiresAt(new Date(System.currentTimeMillis() + refreshExpireTime))
+                .sign(algorithm);
+    }
+
+    /**
+     * 校验 refresh token 并返回 userId。
+     * 仅校验签名/issuer/audience/过期/type=refresh，不校验 shops/role claim。
+     * @return userId，失败抛异常
+     */
+    public Integer verifyRefreshToken(String refreshToken) {
+        Algorithm algorithm = Algorithm.HMAC256(secretKey);
+        DecodedJWT jwt = JWT.require(algorithm)
+                .withIssuer(issuer)
+                .withAudience(audience)
+                .build()
+                .verify(refreshToken);
+        String type = jwt.getClaim("type").asString();
+        if (!"refresh".equals(type)) {
+            throw new JWTDecodeException("非法的 refresh token type");
+        }
+        String subject = jwt.getSubject();
+        if (subject == null || !subject.startsWith("refresh:")) {
+            throw new JWTDecodeException("非法的 refresh token subject");
+        }
+        return Integer.valueOf(subject.substring("refresh:".length()));
     }
 }

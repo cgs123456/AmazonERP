@@ -4,6 +4,7 @@ import com.amz.client.KingdeeClient;
 import com.amz.finance.CurrencyConverter;
 import com.amz.mapper.AccountingVoucherMapper;
 import com.amz.model.AccountingVoucher;
+import com.amz.service.VatService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +45,9 @@ class FinanceServiceImplTest {
 
     @Mock
     private KingdeeClient kingdeeClient;
+
+    @Mock
+    private VatService vatService;
 
     @InjectMocks
     private FinanceServiceImpl financeService;

@@ -1,6 +1,8 @@
 package com.amz.client;
 
+import com.amz.model.AdCampaign;
 import com.amz.model.AdKeyword;
+import com.amz.model.AdReport;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -40,4 +42,20 @@ public interface AdvertisingApiClient {
      * @param newBid    新竞价
      */
     boolean updateKeywordBid(Long keywordId, BigDecimal newBid);
+
+    /**
+     * 拉取店铺下全部广告活动。
+     *
+     * @param shopId 店铺 ID
+     */
+    List<AdCampaign> listCampaigns(Long shopId);
+
+    /**
+     * 拉取店铺某时间段的广告报表。
+     *
+     * @param shopId    店铺 ID
+     * @param startDate 开始日期（ISO 格式）
+     * @param endDate   结束日期（ISO 格式）
+     */
+    List<AdReport> getReports(Long shopId, String startDate, String endDate);
 }

@@ -21,9 +21,15 @@ import java.util.List;
  * FBA 库存同步对外接口。
  * <p>
  * 提供库存健康度查询与手动触发同步两类能力。
+ * <p>
+ * 类级映射使用 {@code /spapi/inventory} 而非 {@code /inventory}：网关仅配置了
+ * {@code Path=/spapi/**} 路由到本服务，裸 {@code /inventory} 前缀外部不可达。
+ * 本类的 {@code /health/{shopId}}（路径变量）与 {@link SpapiController} 的
+ * {@code /inventory/health}（查询参数）为不同签名的两个端点，Spring 按字面量优先
+ * 匹配，不构成 Ambiguous mapping。
  */
 @RestController
-@RequestMapping("/inventory")
+@RequestMapping("/spapi/inventory")
 public class InventoryController {
 
     private static final Logger log = LoggerFactory.getLogger(InventoryController.class);

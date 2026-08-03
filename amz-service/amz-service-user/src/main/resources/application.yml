@@ -49,6 +49,18 @@ jwt:
   issuer: ${JWT_ISSUER:amz-erp}
   audience: ${JWT_AUDIENCE:amz-erp-client}
 
+# Logging — traceId 注入（与 Skywalking 链路追踪关联）
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
 # AES-256-GCM 加密密钥（32 字节 base64 编码），用于加密 SP-API 凭证
 crypto:
   key: ${AMZ_CRYPTO_KEY:}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+  show-actuator: false

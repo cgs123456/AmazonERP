@@ -54,6 +54,27 @@ public class UserContext {
         return shopsThreadLocal.get();
     }
 
+    /**
+     * 判断指定 shopId 是否在当前用户授权店铺列表内（供 {@code @RequestBody} 或非注解参数场景的二次校验）。
+     * <p>
+     * 信任模型与 {@link com.amz.aspect.ShopIdGuardAspect} 保持一致：
+     * 当 {@link #getShops()} 为 null 或空（内部调用 / 白名单 / 未携带 shops claim）时跳过校验并返回
+     * {@code true}，避免阻断内部或管理流；否则要求 shopId 非空且命中授权列表。
+     * <p>
+     * 用于 {@code @ShopScoped} 切面无法覆盖的 {@code @RequestBody} 内嵌 shopId（如凭证写入、Listing 复制），
+     * 防止请求体伪造店铺 id 越权访问其他租户数据。
+     *
+     * @param shopId 待校验店铺 id（可为 null）
+     * @return true 表示允许访问；false 表示越权
+     */
+    public static boolean isShopAllowed(Long shopId) {
+        List<Long> shops = getShops();
+        if (shops == null || shops.isEmpty()) {
+            return true;
+        }
+        return shopId != null && shops.contains(shopId);
+    }
+
     public static void clear() {
         userThreadLocal.remove();
         shopThreadLocal.remove();

@@ -12,23 +12,27 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 消息通知 REST 控制器。
+ * 消息通知 REST 控制器（<b>纯服务间内部端点</b>）。
  * <p>
  * 暴露 HTTP 端点供其他微服务（如 amz-service-ai 的 DailyReportScheduler）
  * 通过 Feign 调用，将业务消息推送到用户消息中心。
+ * <p>
+ * 路径前缀固定为 {@code /internal}：该前缀已在 {@code BaseAuthInterceptor} 白名单中放行，
+ * 且网关未配置对应路由、不对外暴露。这样调用方即便运行在无请求上下文的定时任务线程
+ * （无用户 JWT 可透传）也能正常调用，不会被鉴权拦截器 401 拒绝。
  * <p>
  * 内部使用 {@link Session} 绑定的 Netty Channel 通过 WebSocket 推送文本消息。
  * 用户未在线时记录 warn 日志并返回 success（不阻断调用方流程）。
  */
 @Slf4j
 @RestController
-@RequestMapping("/message")
+@RequestMapping("/internal/message")
 public class MessageNotifyController {
 
     /**
      * 推送通知到指定用户的 WebSocket 通道。
      * <p>
-     * POST /message/notify
+     * POST /internal/message/notify
      * <p>
      * 调用方应在请求体中提供 userId、消息类型（type）与消息内容（content）。
      * 服务端将 content 文本通过 WebSocket 推送给目标用户；

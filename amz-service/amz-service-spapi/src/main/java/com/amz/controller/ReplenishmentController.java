@@ -21,9 +21,12 @@ import java.util.List;
  * 智能补货建议对外接口。
  * <p>
  * 提供按店铺查询补货建议列表、手动触发补货计算、查询紧急补货建议三类能力。
+ * <p>
+ * 类级映射使用 {@code /spapi/replenish} 而非 {@code /replenish}：网关仅配置了
+ * {@code Path=/spapi/**} 路由到本服务，裸 {@code /replenish} 前缀外部不可达。
  */
 @RestController
-@RequestMapping("/replenish")
+@RequestMapping("/spapi/replenish")
 public class ReplenishmentController {
 
     private static final Logger log = LoggerFactory.getLogger(ReplenishmentController.class);

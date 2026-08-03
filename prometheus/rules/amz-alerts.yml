@@ -1,0 +1,62 @@
+groups:
+  - name: amz-erp-alerts
+    rules:
+      # Service down
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "服务 {{ $labels.instance }} 宕机"
+          description: "{{ $labels.instance }} 已宕机超过 2 分钟"
+
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "服务 {{ $labels.instance }} 高错误率"
+          description: "5xx 错误率 {{ $value | humanizePercentage }}"
+
+      # High response time
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "服务 {{ $labels.instance }} 响应慢"
+          description: "P95 延迟 {{ $value }}s"
+
+      # JVM heap usage
+      - alert: HighHeapUsage
+        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.instance }} JVM 堆使用率高"
+          description: "堆使用率 {{ $value | humanizePercentage }}"
+
+      # RabbitMQ queue depth
+      - alert: RabbitMQMessagesStuck
+        expr: rabbitmq_queue_messages_ready > 1000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RabbitMQ 队列 {{ $labels.queue }} 消息积压"
+          description: "队列积压 {{ $value }} 条消息"
+
+      # Disk space
+      - alert: LowDiskSpace
+        expr: (1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "节点 {{ $labels.instance }} 磁盘空间不足"
+          description: "磁盘使用率 {{ $value }}%"

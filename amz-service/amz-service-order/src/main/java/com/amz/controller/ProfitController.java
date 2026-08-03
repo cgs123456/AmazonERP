@@ -15,10 +15,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 利润报告查询接口
+ * 利润报告查询接口。
+ * <p>
+ * 类级映射使用 {@code /order/profit} 而非 {@code /profit}：网关仅配置了
+ * {@code Path=/order/**} 路由到本服务，裸 {@code /profit} 前缀在网关侧无匹配路由，
+ * 外部调用恒 404（前端 {@code /order/profit/summary/{shopId}} 即因此断链）。
  */
 @RestController
-@RequestMapping("/profit")
+@RequestMapping("/order/profit")
 public class ProfitController {
 
     @Autowired

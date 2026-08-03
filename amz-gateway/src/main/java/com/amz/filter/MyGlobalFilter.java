@@ -30,8 +30,16 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
     private static final List<String> WHITE_LIST = List.of(
             "/user/send",
             "/user/verify",
+            "/user/refresh",
             // /internal/** 仅供服务间内部 Feign 调用（不带用户 JWT），网关未配置该路径前缀路由，不对外暴露
-            "/internal"
+            "/internal",
+            // /actuator/** 为 k8s 存活/就绪探针端点（kubelet 请求不携带 JWT），必须放行，
+            // 否则网关自身探针恒返回 401 导致 Pod 永远 NotReady。
+            // 网关未配置 /actuator/** 的 lb 路由，故不会转发到下游业务服务。
+            "/actuator",
+            // Swagger UI / OpenAPI 文档（无需鉴权，仅内网访问）
+            "/swagger-ui",
+            "/v3/api-docs"
     );
 
     @Autowired

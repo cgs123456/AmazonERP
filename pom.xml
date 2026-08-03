@@ -43,8 +43,12 @@
         <langchain4j.version>0.36.2</langchain4j.version>
         <onnxruntime.version>1.18.2</onnxruntime.version>
         <sentinel.version>1.8.6</sentinel.version>
+        <seata.version>2.0.0</seata.version>
         <!-- 动态数据源（读写分离）：与 MyBatis-Plus 3.5.7 + Spring Boot 3.x 兼容 -->
         <dynamic-datasource.version>4.3.1</dynamic-datasource.version>
+        <flyway.version>10.20.0</flyway.version>
+        <micrometer.version>1.13.6</micrometer.version>
+        <springdoc.version>2.6.0</springdoc.version>
     </properties>
 
     <build>
@@ -166,6 +170,13 @@
                 <version>${sentinel.version}</version>
             </dependency>
 
+            <!-- Seata 分布式事务（AT 模式） -->
+            <dependency>
+                <groupId>io.seata</groupId>
+                <artifactId>seata-spring-boot-starter</artifactId>
+                <version>${seata.version}</version>
+            </dependency>
+
             <!-- 动态数据源（读写分离）：与 MyBatis-Plus 3.5.7 + Spring Boot 3.x 兼容。
                  用法：在 Service/Mapper 方法或类上加 @DS("slave") 即可路由到从库；
                  不加注解默认走 master。 -->
@@ -173,6 +184,30 @@
                 <groupId>com.baomidou</groupId>
                 <artifactId>dynamic-datasource-spring-boot3-starter</artifactId>
                 <version>${dynamic-datasource.version}</version>
+            </dependency>
+
+            <!-- Flyway 数据库迁移 -->
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-core</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-mysql</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>io.micrometer</groupId>
+                <artifactId>micrometer-registry-prometheus</artifactId>
+                <version>${micrometer.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+                <version>${springdoc.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

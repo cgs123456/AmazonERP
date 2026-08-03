@@ -135,6 +135,18 @@ public class OrderConsumer {
         }
     }
 
+    /**
+     * 将消息送入死信队列（nack 且 requeue=false，由 DLX 路由到 DLQ）。
+     * 用于消费异常时避免消息无限重投。
+     */
+    private void sendToDlq(Channel channel, long deliveryTag) {
+        try {
+            channel.basicNack(deliveryTag, false, false);
+        } catch (Exception ex) {
+            log.error("sendToDlq/basicNack 异常", ex);
+        }
+    }
+
     private String textOrNull(JsonNode node, String field) {
         JsonNode n = node.get(field);
         if (n == null || n.isNull()) {

@@ -45,6 +45,9 @@ public class FinanceServiceImpl implements FinanceService {
     @Autowired
     private KingdeeClient kingdeeClient;
 
+    @Autowired
+    private com.amz.service.VatService vatService;
+
     @Override
     public AccountingVoucher generateOrderVoucher(Long shopId, String orderNo, BigDecimal amount, String currency) {
         BigDecimal cnyAmount = currencyConverter.convertToCny(amount, currency);
@@ -121,17 +124,27 @@ public class FinanceServiceImpl implements FinanceService {
         List<AccountingVoucher> vouchers = voucherMapper.selectList(wrapper);
 
         BigDecimal profit = BigDecimal.ZERO;
+        BigDecimal totalVat = BigDecimal.ZERO;
         for (AccountingVoucher v : vouchers) {
             BigDecimal amount = v.getCnyAmount() == null ? BigDecimal.ZERO : v.getCnyAmount();
             String sourceType = v.getSourceType();
             if ("ORDER".equals(sourceType)) {
                 profit = profit.add(amount);
+                // VAT deduction: calculate VAT on original sales amount
+                BigDecimal originalAmount = v.getOriginalAmount() != null ? v.getOriginalAmount() : BigDecimal.ZERO;
+                BigDecimal vatAmount = vatService.calculateVat(originalAmount, v.getCurrency());
+                if (vatAmount != null) {
+                    totalVat = totalVat.add(vatAmount);
+                }
             } else if ("PROCUREMENT".equals(sourceType)
                     || "PLATFORM_FEE".equals(sourceType)
                     || "REFUND".equals(sourceType)) {
                 profit = profit.subtract(amount);
             }
         }
+        // Deduct total VAT from net profit
+        profit = profit.subtract(totalVat);
+        log.debug("利润计算 shopId={} 毛利润={} VAT扣除={} 净利润={}", shopId, profit.add(totalVat), totalVat, profit);
         return profit.setScale(2, RoundingMode.HALF_UP);
     }
 }

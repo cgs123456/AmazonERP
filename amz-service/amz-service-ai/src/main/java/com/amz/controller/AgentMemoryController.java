@@ -16,9 +16,13 @@ import java.util.List;
  * Agent 记忆化 / 多语言 / 主动提醒 REST 端点。
  * <p>
  * 提供带记忆的 Agent 对话、用户偏好管理、对话记忆查询、主动提醒扫描等能力。
+ * <p>
+ * 类级映射使用 {@code /ai/agent/memory} 而非 {@code /agent/memory}：网关仅配置了
+ * {@code Path=/ai/**} 路由到本服务，裸 {@code /agent} 前缀外部不可达。
+ * 与 {@code AiController#/ai/agent/chat} 层级不同，不构成 Ambiguous mapping。
  */
 @RestController
-@RequestMapping("/agent/memory")
+@RequestMapping("/ai/agent/memory")
 public class AgentMemoryController {
 
     @Autowired

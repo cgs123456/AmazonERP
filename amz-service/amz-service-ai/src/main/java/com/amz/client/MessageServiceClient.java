@@ -3,9 +3,9 @@ package com.amz.client;
 import com.amz.result.Result;
 import com.amz.client.fallback.MessageServiceClientFallbackFactory;
 import org.springframework.cloud.openfeign.FeignClient;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -19,10 +19,20 @@ public interface MessageServiceClient {
 
     /**
      * 推送通知到指定用户。
-     * 对应 POST /message/notify
+     * 对应 POST /internal/message/notify
+     * <p>
+     * 走 {@code /internal} 前缀：该端点由 DailyReportScheduler 在定时任务线程中调用，
+     * 无 HTTP 请求上下文可透传用户 JWT，需依赖下游鉴权白名单放行。
      * <p>
      * 请求体字段：{@code userId / type / content}
      */
-    @PostMapping("/message/notify")
+    @PostMapping("/internal/message/notify")
     Result<Map<String, Object>> notify(@RequestBody Map<String, Object> request);
+
+    /**
+     * 获取指定店铺的本地消息列表。
+     * 对应 GET /message/v2/list/{shopId}
+     */
+    @GetMapping("/message/v2/list/{shopId}")
+    Result<List<Map<String, Object>>> listMessages(@PathVariable Long shopId, @RequestParam int page, @RequestParam int pageSize);
 }
