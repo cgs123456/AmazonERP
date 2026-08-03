@@ -52,10 +52,10 @@ COPY amz-service ./amz-service
 RUN mvn -B -q clean package -DskipTests -pl ${MODULE} -am
 
 # ---------- Stage 1.5: Skywalking Java Agent 下载 ----------
+# 注：dlcdn 镜像不含旧版 Java Agent，改用 Apache Archive 官方存档
 FROM busybox:1.36 AS skywalking-downloader
-WORKDIR /skywalking
-ADD https://dlcdn.apache.org/skywalking/java-agent/9.3.0/apache-skywalking-java-agent-9.3.0.tgz /tmp/skywalking-agent.tgz
-RUN tar -xzf /tmp/skywalking-agent.tgz && mv /skywalking-agent skywalking-agent && rm /tmp/skywalking-agent.tgz
+ADD https://archive.apache.org/dist/skywalking/java-agent/9.3.0/apache-skywalking-java-agent-9.3.0.tgz /tmp/skywalking-agent.tgz
+RUN tar -xzf /tmp/skywalking-agent.tgz -C / && rm /tmp/skywalking-agent.tgz
 
 # ---------- Stage 2: JRE 运行 ----------
 # openjdk 官方镜像已下架，改用 Eclipse Temurin（Adoptium 官方维护）
