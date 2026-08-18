@@ -45,7 +45,7 @@ amz-service-multiplatform (8104)  — 多平台（Shopify/eBay/Walmart/Shopee/La
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
 
-> 共 51 张表、137+ REST 端点、AI Agent 28 工具 ｜ **改进计划（2026-08-17）全部 8 项已闭环，里程碑 A/B/C/D 已完成**
+> 共 51 张表、137+ REST 端点、AI Agent 28 工具 ｜ 
 
 ## 🤖 AI 运营 Agent（28 工具）
 
