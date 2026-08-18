@@ -1,6 +1,5 @@
 package com.amz.agent.eval;
 
-import com.amz.agent.ErpAgentService;
 import com.amz.agent.langchain4j.LangChain4jAgentService;
 import com.amz.result.Result;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +17,7 @@ import java.util.Locale;
  * 执行流程：
  * <ol>
  *   <li>加载全部标准评测用例（AgentEvalCases.all()）</li>
- *   <li>逐个将 question 发送给 Agent（v1 手写或 v2 LangChain4j）</li>
+ *   <li>逐个将 question 发送给 LangChain4j Agent</li>
  *   <li>检查 Agent 回复是否包含所有 expectedKeywords</li>
  *   <li>生成聚合报告 AgentEvalReport</li>
  * </ol>
@@ -32,32 +31,20 @@ import java.util.Locale;
 public class AgentEvalRunner {
 
     @Autowired
-    private ErpAgentService erpAgentService;
-
-    @Autowired
     private LangChain4jAgentService langChain4jAgentService;
 
     /**
-     * 运行全部评测用例（默认使用 v2 LangChain4j Agent）。
+     * 运行全部评测用例。
      */
     public AgentEvalReport runAll() {
-        return runAll("v2");
-    }
-
-    /**
-     * 运行全部评测用例。
-     *
-     * @param agentVersion "v1" 使用手写编排，"v2" 使用 LangChain4j
-     */
-    public AgentEvalReport runAll(String agentVersion) {
         List<AgentEvalCase> cases = AgentEvalCases.all();
         List<AgentEvalResult> results = new ArrayList<>(cases.size());
         long totalStart = System.currentTimeMillis();
 
-        log.info("===== Agent 评测开始（{}），共 {} 个用例 =====", agentVersion, cases.size());
+        log.info("===== Agent 评测开始，共 {} 个用例 =====", cases.size());
 
         for (AgentEvalCase evalCase : cases) {
-            AgentEvalResult result = runSingle(evalCase, agentVersion);
+            AgentEvalResult result = runSingle(evalCase);
             results.add(result);
 
             String status = result.isPassed() ? "✓ PASS" : "✗ FAIL";
@@ -83,27 +70,20 @@ public class AgentEvalRunner {
                 .passRate(passRate)
                 .totalDurationMs(totalDuration)
                 .results(results)
-                .agentVersion(agentVersion)
+                .agentVersion("v2")
                 .build();
     }
 
     /**
      * 运行单个评测用例。
      */
-    private AgentEvalResult runSingle(AgentEvalCase evalCase, String agentVersion) {
+    private AgentEvalResult runSingle(AgentEvalCase evalCase) {
         long start = System.currentTimeMillis();
         AgentEvalResult.AgentEvalResultBuilder builder = AgentEvalResult.builder()
                 .caseId(evalCase.getId());
 
         try {
-            // 调用 Agent
-            Result<String> agentResult;
-            if ("v1".equalsIgnoreCase(agentVersion)) {
-                agentResult = erpAgentService.chat(evalCase.getQuestion());
-            } else {
-                agentResult = langChain4jAgentService.chat(1L, evalCase.getQuestion());
-            }
-
+            Result<String> agentResult = langChain4jAgentService.chat(1L, evalCase.getQuestion());
             long duration = System.currentTimeMillis() - start;
             builder.durationMs(duration);
 
@@ -120,7 +100,6 @@ public class AgentEvalRunner {
             String response = agentResult.getData();
             builder.actualResponse(response);
 
-            // 关键词匹配（不区分大小写）
             String responseLower = response.toLowerCase(Locale.ROOT);
             List<String> matched = new ArrayList<>();
             List<String> missed = new ArrayList<>();

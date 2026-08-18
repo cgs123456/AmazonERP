@@ -19,14 +19,14 @@ import java.util.List;
 /**
  * 带记忆 + 多语言的 ERP Agent 编排器。
  * <p>
- * 在原 ErpAgentService 基础上扩展：
+ * 扩展功能：
  * <ol>
  *   <li>记忆化：从 MemoryService 加载用户偏好和历史对话记忆，自动注入 system prompt</li>
  *   <li>偏好提取：每次对话后从用户输入中提取偏好信号并更新</li>
  *   <li>多语言：根据用户语言偏好构建不同语言的系统提示词</li>
  *   <li>对话持久化：每轮 user/assistant 消息保存到 amz_conversation_memory 表</li>
  * </ol>
- * 编排流程与 ErpAgentService 一致（最多 5 轮 Function Calling）。
+ * 编排流程：最多 5 轮 Function Calling。
  */
 @Slf4j
 @Service

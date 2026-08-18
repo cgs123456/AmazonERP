@@ -250,7 +250,7 @@ def train_and_export():
     mae = mean_absolute_error(y_test, y_pred)
     r2 = r2_score(y_test, y_pred)
     print(f"  测试集 MAE: {mae:.2f}")
-    print(f"  测试集 R²:  {r2:.4f}")
+    print(f"  测试集 R2:  {r2:.4f}")
 
     # 5. 导出为 ONNX
     print("\n[4/5] 导出 ONNX 模型...")

@@ -8,8 +8,10 @@ import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
@@ -99,6 +101,12 @@ public class OrdersClient {
     private SpiRateLimiter spiRateLimiter;
 
     /**
+     * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
+     */
+    @Autowired(required = false)
+    private ObjectProvider<MeterRegistry> meterRegistryProvider;
+
+    /**
      * Orders 端点标识，用于限流维度与动态调整。
      */
     private static final String ORDERS_ENDPOINT = "orders";
@@ -163,10 +171,9 @@ public class OrdersClient {
 
             HttpResponse<String> response = sendWithRetry(builder.build(), ORDERS_ENDPOINT);
             if (response == null || response.statusCode() != 200) {
-                log.error("fetchOrders failed shopId={} status={} body={}", shopId,
-                        response == null ? -1 : response.statusCode(),
-                        response == null ? "" : response.body());
-                break;
+                throw new RuntimeException("fetchOrders failed shopId=" + shopId
+                        + " status=" + (response == null ? -1 : response.statusCode())
+                        + " body=" + (response == null ? "" : response.body()));
             }
 
             JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
@@ -193,8 +200,9 @@ public class OrdersClient {
     public List<JsonObject> fetchOrdersFallback(Long shopId, String marketplaceId,
                                                 Instant createdAfter, List<String> orderStatuses,
                                                 Throwable e) {
-        log.warn("fetchOrders fallback triggered shopId={} marketplaceId={} err={}", shopId, marketplaceId, e.getMessage());
-        return List.of();
+        // 不返回空列表伪装成功：降级 / 异常时抛出异常，由上游记录失败并告警
+        throw new RuntimeException("fetchOrders degraded (circuit-breaker/exception) shopId="
+                + shopId + " marketplaceId=" + marketplaceId, e);
     }
 
     /**
@@ -222,6 +230,7 @@ public class OrdersClient {
             }
             int code = response.statusCode();
             if (code == 429) {
+                recordThrottle(ORDERS_ENDPOINT);
                 // 读取 x-amzn-RateLimit-Limit 响应头（req/s），动态收紧本地窗口
                 String rateLimitHeader = response.headers()
                         .firstValue("x-amzn-RateLimit-Limit").orElse(null);
@@ -243,6 +252,27 @@ public class OrdersClient {
             return response;
         }
         return response;
+    }
+
+    /**
+     * 记录 SP-API 429 限流触发次数到 Micrometer，供 Prometheus 抓取。
+     * 软依赖：未引入指标注册表时不抛异常、不影响主链路。
+     *
+     * @param endpoint SP-API 资源标识（如 {@code "orders"}）
+     */
+    private void recordThrottle(String endpoint) {
+        if (meterRegistryProvider == null) {
+            return;
+        }
+        MeterRegistry registry = meterRegistryProvider.getIfAvailable();
+        if (registry == null) {
+            return;
+        }
+        try {
+            registry.counter("spapi.throttle.count", "endpoint", endpoint).increment();
+        } catch (Exception e) {
+            log.debug("SP-API throttle metric record failed: {}", e.getMessage());
+        }
     }
 
     private void sleep(long millis) {

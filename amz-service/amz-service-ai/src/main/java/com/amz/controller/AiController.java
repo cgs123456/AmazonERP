@@ -1,6 +1,5 @@
 package com.amz.controller;
 
-import com.amz.agent.ErpAgentService;
 import com.amz.agent.eval.AgentEvalReport;
 import com.amz.agent.eval.AgentEvalRunner;
 import com.amz.agent.langchain4j.LangChain4jAgentService;
@@ -15,9 +14,6 @@ public class AiController {
 
     @Autowired
     private AiService aiService;
-
-    @Autowired
-    private ErpAgentService erpAgentService;
 
     @Autowired
     private LangChain4jAgentService langChain4jAgentService;
@@ -43,30 +39,14 @@ public class AiController {
     }
 
     /**
-     * ERP 运营 Agent 端点（手写 Function Calling 编排，旧版）。
-     * POST /ai/erp/agent
+     * ERP 运营 Agent（LangChain4j AiServices 编排）。
+     * POST /ai/erp/agent?userId=1
      * Body: {"message":"最近7天订单情况如何？"}
      */
     @PostMapping("/erp/agent")
-    public Result<String> erpAgent(@RequestBody ErpAgentRequest request) {
-        if (request.getMessage() == null || request.getMessage().isBlank()) {
-            return Result.failure("message 不能为空");
-        }
-        return erpAgentService.chat(request.getMessage());
-    }
-
-    /**
-     * ERP 运营 Agent 端点（LangChain4j AiServices 编排，新版）。
-     * POST /ai/erp/agent/v2?userId=1
-     * Body: {"message":"最近7天订单情况如何？"}
-     * <p>
-     * 使用 LangChain4j 原生 Function Calling 替代手写循环 + 正则解析 JSON，
-     * 工具调用准确率更高，代码量减少约 60%。
-     * userId 用于按会话隔离 ChatMemory，避免多用户串扰。
-     */
-    @PostMapping("/erp/agent/v2")
-    public Result<String> erpAgentV2(@RequestParam Long userId,
-                                     @RequestBody ErpAgentRequest request) {
+    public Result<String> erpAgent(
+            @RequestParam(value = "userId", defaultValue = "1") Long userId,
+            @RequestBody ErpAgentRequest request) {
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             return Result.failure("message 不能为空");
         }
@@ -75,14 +55,13 @@ public class AiController {
 
     /**
      * Agent 评测端点 - 运行全部 12 个标准用例回归测试。
-     * POST /ai/eval/run?version=v2
+     * POST /ai/eval/run
      * <p>
      * 修改 prompt 后手动触发，验证 Agent 工具选择和响应质量未退化。
      */
     @PostMapping("/eval/run")
-    public Result<AgentEvalReport> runEval(
-            @RequestParam(value = "version", defaultValue = "v2") String version) {
-        AgentEvalReport report = agentEvalRunner.runAll(version);
+    public Result<AgentEvalReport> runEval() {
+        AgentEvalReport report = agentEvalRunner.runAll();
         return Result.success(report);
     }
 

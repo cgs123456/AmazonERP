@@ -8,16 +8,15 @@ import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 
 /**
- * LangChain4j Agent 服务（替代 ErpAgentService 手写编排）。
+ * LangChain4j Agent 服务。
  * <p>
- * 核心差异对比：
+ * 核心设计：
  * <table border="1">
- * <tr><th></th><th>旧版 ErpAgentService</th><th>本类 LangChain4jAgentService</th></tr>
- * <tr><td>编排方式</td><td>手写 for 循环 5 轮</td><td>AiServices 自动编排（最多 10 轮）</td></tr>
- * <tr><td>工具调用</td><td>正则解析 LLM 输出 JSON</td><td>原生 Function Calling（tool_calls 字段）</td></tr>
- * <tr><td>工具注册</td><td>switch 硬编码 12 个 case</td><td>@Tool 注解自动扫描注册</td></tr>
- * <tr><td>消息管理</td><td>手动追加 assistant/user 消息</td><td>ChatMemory 自动管理上下文窗口</td></tr>
- * <tr><td>代码量</td><td>~144 行（含 parseFunctionCall/extractJson）</td><td>~40 行（委托给 AiServices）</td></tr>
+ * <tr><th>维度</th><th>实现方式</th></tr>
+ * <tr><td>编排方式</td><td>AiServices 自动编排（最多 10 轮）</td></tr>
+ * <tr><td>工具调用</td><td>原生 Function Calling（tool_calls 字段）</td></tr>
+ * <tr><td>工具注册</td><td>@Tool 注解自动扫描注册</td></tr>
+ * <tr><td>消息管理</td><td>ChatMemory 自动管理上下文窗口</td></tr>
  * </table>
  */
 @Slf4j

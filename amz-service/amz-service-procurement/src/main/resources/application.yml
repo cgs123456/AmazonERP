@@ -32,6 +32,8 @@ mybatis-plus:
 alibaba:
   app-key: ${ALIBABA_APP_KEY:}
   app-secret: ${ALIBABA_APP_SECRET:}
+  # OAuth refresh_token：用于换取 access_token（TokenManager 缓存于 Redis）
+  refresh-token: ${ALIBABA_REFRESH_TOKEN:}
   # 1688 API 网关
   gateway: https://gw.open.1688.com/openapi
 

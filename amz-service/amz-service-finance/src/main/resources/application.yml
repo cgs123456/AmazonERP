@@ -33,12 +33,25 @@ kingdee:
   api-gateway: https://api.kingdee.com
   app-id: ${KINGDEE_APP_ID:}
   app-secret: ${KINGDEE_APP_SECRET:}
-  # 多币种汇率来源（固定参考汇率，生产应接 ECB/FED 汇率 API）
+
+# 共享汇率服务（amz-common GlobalExchangeRateService）离线兜底汇率。
+# 运行时每小时从 exchangerate.host 拉取实时汇率覆盖此表；拉取失败沿用此处配置。
+# 说明：原 kingdee.exchange-rates 已迁移至此 —— finance/product/multiplatform
+# 三套重复汇率实现合并为单一真相源，配置键随之统一为 amz.exchange-rates。
+amz:
   exchange-rates:
     USD: 7.25
     EUR: 7.85
     GBP: 9.20
     JPY: 0.046
+  # 出站 HTTP 弹性策略（超时 / 重试 / 熔断），未配置时使用组件内置默认值
+  http:
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000
+    max-attempts: 3
+    circuit:
+      failure-threshold: 5
+      open-duration-ms: 30000
 
 # JWT security config
 jwt:

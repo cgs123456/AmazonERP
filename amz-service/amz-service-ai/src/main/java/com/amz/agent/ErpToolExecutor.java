@@ -2,9 +2,11 @@ package com.amz.agent;
 
 import com.amz.client.AdServiceClient;
 import com.amz.client.InventoryServiceClient;
+import com.amz.client.LogisticsServiceClient;
 import com.amz.client.OrderServiceClient;
 import com.amz.client.ProcurementServiceClient;
 import com.amz.client.ProductServiceClient;
+import com.amz.client.ReportServiceClient;
 import com.amz.context.UserContext;
 import com.amz.result.Result;
 import com.google.gson.Gson;
@@ -24,10 +26,10 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * ERP 运营 Agent 工具调度器。
@@ -62,7 +64,13 @@ public class ErpToolExecutor {
     private ProductServiceClient productServiceClient;
 
     @Autowired(required = false)
+    private ReportServiceClient reportServiceClient;
+
+    @Autowired(required = false)
     private ProcurementServiceClient procurementServiceClient;
+
+    @Autowired(required = false)
+    private LogisticsServiceClient logisticsServiceClient;
 
     private final Gson gson = new Gson();
 
@@ -72,7 +80,7 @@ public class ErpToolExecutor {
      */
     private static final Set<String> TOOLS_IGNORING_SHOP_ID = Set.of(
             "estimate_fba_fees", "translate_listing", "analyze_product_reviews", "analyze_product_selection",
-            "analyze_sales_trend", "estimate_logistics_cost");
+            "estimate_logistics_cost");
 
     /**
      * 执行工具调用
@@ -591,26 +599,22 @@ public class ErpToolExecutor {
             return fail("关键词 keyword 不能为空");
         }
 
-        // 构造选品机会输入：优先透传 args 中已分析的字段，缺失字段使用合理基准值
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
-        long seed = (long) keyword.hashCode() + marketplace.hashCode();
-        rand.setSeed(seed);
-
+        // 仅透传 LLM 通过其它真实工具已获取的市场/竞争指标；未提供的字段保持 null，
+        // 由 SelectionAnalysisService 以「未知」兜底。严禁凭空伪造 avgPrice / searchVolume /
+        // opportunityScore 等市场数据（原实现用 ThreadLocalRandom.setSeed 既会抛异常，
+        // 又会编造虚假指标，已移除）。
         SelectionOpportunityInput input = new SelectionOpportunityInput();
-        input.setAsin(toStr(args.get("asin")) != null ? toStr(args.get("asin")) : "B0" + (10000000L + rand.nextInt(0, 90000000)));
-        input.setTitle(toStr(args.get("title")) != null ? toStr(args.get("title")) : keyword + " opportunity");
+        input.setAsin(toStr(args.get("asin")));
+        input.setTitle(toStr(args.get("title")));
         input.setCategory(toStr(args.get("category")));
         input.setMarketplace(marketplace);
-        input.setAvgPrice(args.get("avgPrice") != null ? new BigDecimal(toStr(args.get("avgPrice")))
-                : BigDecimal.valueOf(15 + rand.nextDouble(0, 60)).setScale(2, RoundingMode.HALF_UP));
-        input.setAvgReviews(args.get("avgReviews") != null ? toInt(args.get("avgReviews"), 100) : rand.nextInt(20, 400));
-        input.setAvgRating(args.get("avgRating") != null ? new BigDecimal(toStr(args.get("avgRating")))
-                : BigDecimal.valueOf(3.5 + rand.nextDouble(0, 1.4)).setScale(1, RoundingMode.HALF_UP));
-        input.setSearchVolume(args.get("searchVolume") != null ? toInt(args.get("searchVolume"), 10000) : 5000 + rand.nextInt(0, 50000));
-        input.setCompetitorCount(args.get("competitorCount") != null ? toInt(args.get("competitorCount"), 100) : 50 + rand.nextInt(0, 500));
+        input.setAvgPrice(args.get("avgPrice") != null ? new BigDecimal(toStr(args.get("avgPrice"))) : null);
+        input.setAvgReviews(args.get("avgReviews") != null ? toInt(args.get("avgReviews"), 0) : null);
+        input.setAvgRating(args.get("avgRating") != null ? new BigDecimal(toStr(args.get("avgRating"))) : null);
+        input.setSearchVolume(args.get("searchVolume") != null ? toInt(args.get("searchVolume"), 0) : null);
+        input.setCompetitorCount(args.get("competitorCount") != null ? toInt(args.get("competitorCount"), 0) : null);
         input.setReviewBarrier(toStr(args.get("reviewBarrier")));
-        input.setOpportunityScore(args.get("opportunityScore") != null ? new BigDecimal(toStr(args.get("opportunityScore")))
-                : BigDecimal.valueOf(50 + rand.nextDouble(0, 40)).setScale(1, RoundingMode.HALF_UP));
+        input.setOpportunityScore(args.get("opportunityScore") != null ? new BigDecimal(toStr(args.get("opportunityScore"))) : null);
         input.setTrend30d(toStr(args.get("trend30d")));
         input.setTrend90d(toStr(args.get("trend90d")));
 
@@ -636,6 +640,7 @@ public class ErpToolExecutor {
 
     /**
      * 工具 15：查询采购订单。
+     * 真实调用 amz-service-procurement 的 /procurement/order/list/{shopId}。
      */
     private String queryPurchaseOrders(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
@@ -645,9 +650,16 @@ public class ErpToolExecutor {
             return fail("采购服务客户端未启用");
         }
         try {
-            Result<Map<String, Object>> result = procurementServiceClient.getPromotionPlan(shopId, null, null);
-            return ok(String.format("采购订单查询完成 shopId=%d status=%s", shopId, status != null ? status : "ALL"),
-                    Map.of("shopId", shopId, "status", status, "count", result != null ? 5 : 0));
+            Result<List<Map<String, Object>>> result = procurementServiceClient.getPurchaseOrders(shopId);
+            if (!isSuccess(result)) {
+                return fail("采购订单查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> list = result.getData();
+            int count = (list == null) ? 0 : list.size();
+            return ok(String.format("采购订单查询完成 shopId=%d status=%s，共 %d 条",
+                            shopId, status != null ? status : "ALL", count),
+                    Map.of("shopId", shopId, "status", status != null ? status : "ALL",
+                            "count", count, "orders", list));
         } catch (Exception e) {
             log.error("query_purchase_orders Feign 调用失败", e);
             return fail("采购服务暂时不可用: " + e.getMessage());
@@ -656,14 +668,28 @@ public class ErpToolExecutor {
 
     /**
      * 工具 16：查询供应商列表。
+     * 真实调用 amz-service-procurement 的 /procurement/supplier/list/{shopId}。
      */
     private String querySuppliers(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String keyword = toStr(args.get("keyword"));
         log.info("工具调用 query_suppliers shopId={} keyword={}", shopId, keyword);
-        // supplier 数据在 procurement 模块中，通过 Feign 间接获取
-        return ok(String.format("供应商查询完成 shopId=%d keyword=%s", shopId, keyword),
-                Map.of("shopId", shopId, "keyword", keyword, "count", 3));
+        if (procurementServiceClient == null) {
+            return fail("采购服务客户端未启用");
+        }
+        try {
+            Result<List<Map<String, Object>>> result = procurementServiceClient.getSuppliers(shopId, keyword);
+            if (!isSuccess(result)) {
+                return fail("供应商查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> list = result.getData();
+            int count = (list == null) ? 0 : list.size();
+            return ok(String.format("供应商查询完成 shopId=%d keyword=%s，共 %d 家", shopId, keyword, count),
+                    Map.of("shopId", shopId, "keyword", keyword, "count", count, "suppliers", list));
+        } catch (Exception e) {
+            log.error("query_suppliers Feign 调用失败", e);
+            return fail("采购服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
@@ -687,171 +713,422 @@ public class ErpToolExecutor {
             return ok(String.format("广告汇总（近%d天）：花费$%.2f，销售额$%.2f，ACoS=%.1f%%", days, totalSpend, totalSales, acos * 100),
                     Map.of("adSpend", totalSpend, "adSales", totalSales, "acos", acos, "days", days));
         } catch (Exception e) {
+            log.error("query_advertising 调用广告服务失败 shopId={} days={}", shopId, days, e);
             return fail("广告服务暂时不可用: " + e.getMessage());
         }
     }
 
     /**
      * 工具 18：物流轨迹查询。
+     * 真实调用 amz-service-logistics 的 /logistics/shipment/{shipmentId}/tracking。
+     * 仅传入 shipmentNo 时，先按店铺反查 shipmentId。
      */
     private String trackShipment(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String shipmentNo = toStr(args.get("shipmentNo"));
-        log.info("工具调用 track_shipment shopId={} shipmentNo={}", shopId, shipmentNo);
-        // 模拟物流轨迹返回
-        List<Map<String, String>> tracking = List.of(
-                Map.of("time", LocalDate.now().minusDays(5).toString(), "location", "Shanghai, CN", "status", "发货"),
-                Map.of("time", LocalDate.now().minusDays(3).toString(), "location", "Hong Kong", "status", "离港"),
-                Map.of("time", LocalDate.now().minusDays(1).toString(), "location", "Los Angeles, US", "status", "清关中"),
-                Map.of("time", LocalDate.now().toString(), "location", "Amazon FBA-ON1", "status", "签收待入库")
-        );
-        return ok(String.format("物流单号 %s：最近轨迹【%s】%s，共 %d 条",
-                        shipmentNo, tracking.get(tracking.size() - 1).get("location"),
-                        tracking.get(tracking.size() - 1).get("status"), tracking.size()),
-                Map.of("shipmentNo", shipmentNo, "tracking", tracking));
+        Long shipmentId = toLong(args.get("shipmentId"));
+        log.info("工具调用 track_shipment shopId={} shipmentNo={} shipmentId={}", shopId, shipmentNo, shipmentId);
+
+        if (logisticsServiceClient == null) {
+            return fail("物流客户端未启用");
+        }
+        try {
+            // 仅提供 shipmentNo 时，先按店铺反查 shipmentId
+            if (shipmentId == null && shipmentNo != null && !shipmentNo.isBlank()) {
+                Result<List<Map<String, Object>>> listResult = logisticsServiceClient.listShipments(shopId, null);
+                if (isSuccess(listResult) && listResult.getData() != null) {
+                    shipmentId = listResult.getData().stream()
+                            .filter(s -> shipmentNo.equals(toStr(s.get("shipmentNo"))))
+                            .map(s -> toLong(s.get("id")))
+                            .findFirst()
+                            .orElse(null);
+                }
+            }
+            if (shipmentId == null) {
+                return fail("未找到对应的物流货件（shipmentId / shipmentNo 无效）");
+            }
+            Result<List<Map<String, Object>>> result = logisticsServiceClient.getTracking(shipmentId);
+            if (!isSuccess(result)) {
+                return fail("物流轨迹查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> tracking = result.getData();
+            int count = (tracking == null) ? 0 : tracking.size();
+            if (count == 0) {
+                return ok(String.format("货件 %s 暂无轨迹记录", shipmentId),
+                        Map.of("shipmentId", shipmentId, "tracking", List.of()));
+            }
+            Map<String, Object> latest = tracking.get(count - 1);
+            return ok(String.format("物流货件 %s：最新轨迹【%s】%s，共 %d 条",
+                            shipmentId, latest.get("location"), latest.get("description"), count),
+                    Map.of("shipmentId", shipmentId, "tracking", tracking));
+        } catch (Exception e) {
+            log.error("track_shipment Feign 调用失败", e);
+            return fail("物流服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 19：Listing 健康度分析。
+     * 演示/估算类工具标识前缀：当前 demo 缺少这些分析所需的真实数据后端，
+     * 返回值为硬编码的示例/估算，必须在对外文案中明确标注，避免被当作真实业务分析。
+     */
+    private static final String DEMO_DATA_NOTE = "[演示估算·非真实业务数据] ";
+
+    /**
+     * 自动草稿标识：模板/LLM 生成的文本草稿（非业务数据缺口），与 [演示估算] 区分，避免被误读为真实分析结果。
+     */
+    private static final String AUTO_DRAFT_NOTE = "[自动草稿·模板生成·非业务数据·需人工复核] ";
+
+    /**
+     * 工具 19：Listing 健康度分析（真实数据，来自 amz-service-product 的 Listing 监控）。
      */
     private String analyzeListingHealth(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String asin = toStr(args.get("asin"));
         log.info("工具调用 analyze_listing_health shopId={} asin={}", shopId, asin);
-        // 调用 product 服务的 listing monitor 接口
-        Map<String, Object> health = new HashMap<>();
-        health.put("asin", asin);
-        health.put("title_score", 85);
-        health.put("bullet_score", 90);
-        health.put("image_score", 100);
-        health.put("keyword_score", 65);
-        health.put("overall_score", 82);
-        health.put("suggestion", "建议在搜索词中添加长尾关键词如 wireles bluetooth earphone 以提升搜索词分");
-        return ok(String.format("ASIN %s Listing 健康度：综合分 82/100，搜索词是短板", asin), health);
+        if (productServiceClient == null) {
+            return fail("商品服务客户端未启用");
+        }
+        try {
+            Result<List<Map<String, Object>>> result = productServiceClient.getListingHealthList(shopId);
+            if (!isSuccess(result)) {
+                return fail("Listing 健康度查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> list = result.getData();
+            Map<String, Object> match = (list == null) ? null : list.stream()
+                    .filter(m -> asin != null && asin.equals(toStr(m.get("asin"))))
+                    .findFirst().orElse(null);
+            if (match == null) {
+                return ok(String.format("未查询到 ASIN %s 的 Listing 健康度记录（shopId=%s 共 %d 条）",
+                                asin, shopId, list == null ? 0 : list.size()),
+                        Map.of("asin", asin == null ? "" : asin, "found", false,
+                                "totalRecords", list == null ? 0 : list.size()));
+            }
+            Map<String, Object> health = new LinkedHashMap<>();
+            health.put("asin", match.get("asin"));
+            health.put("sku", match.get("sku"));
+            health.put("healthScore", match.get("healthScore"));
+            health.put("severity", match.get("severity"));
+            health.put("titleOk", match.get("titleOk"));
+            health.put("bulletPointsOk", match.get("bulletPointsOk"));
+            health.put("descriptionOk", match.get("descriptionOk"));
+            health.put("imagesOk", match.get("imagesOk"));
+            health.put("searchTermsOk", match.get("searchTermsOk"));
+            health.put("aplusOk", match.get("aplusOk"));
+            health.put("status", match.get("status"));
+            List<String> issues = new ArrayList<>();
+            if (Boolean.FALSE.equals(toBool(match.get("titleOk")))) issues.add("标题待优化");
+            if (Boolean.FALSE.equals(toBool(match.get("bulletPointsOk")))) issues.add("五点描述待优化");
+            if (Boolean.FALSE.equals(toBool(match.get("imagesOk")))) issues.add("图片数量不足");
+            if (Boolean.FALSE.equals(toBool(match.get("searchTermsOk")))) issues.add("后台搜索词缺失");
+            if (Boolean.FALSE.equals(toBool(match.get("aplusOk")))) issues.add("A+ 页面缺失");
+            health.put("issues", issues);
+            return ok(String.format("ASIN %s Listing 健康度：评分 %s，严重度 %s，问题项 %d 个（真实数据）",
+                            asin, match.get("healthScore"), match.get("severity"), issues.size()), health);
+        } catch (Exception e) {
+            log.error("analyze_listing_health Feign 调用失败 shopId={}", shopId, e);
+            return fail("商品服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 20：搜索词分析。
+     * 工具 20：搜索词分析（真实数据，来自 amz-service-ad 的搜索词综合分析）。
      */
     private String analyzeSearchTerms(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String asin = toStr(args.get("asin"));
-        log.info("工具调用 analyze_search_terms shopId={} asin={}", shopId, asin);
-        Map<String, Object> analysis = new HashMap<>();
-        analysis.put("asin", asin);
-        analysis.put("convertingTerms", 12);
-        analysis.put("wastedTerms", 5);
-        analysis.put("topTerms", List.of("wireless earbuds", "bluetooth earphone", "noise cancelling"));
-        analysis.put("suggestion", "建议暂停 wasted terms 曝光，增加 converting terms 竞价 15%");
-        return ok(String.format("ASIN %s 搜索词分析：出单词 12 个，浪费词 5 个", asin), analysis);
+        Integer days = toInt(args.get("days"), 7);
+        log.info("工具调用 analyze_search_terms shopId={} asin={} days={}", shopId, asin, days);
+        if (adServiceClient == null) return fail("广告服务客户端未启用");
+        try {
+            Result<Map<String, Object>> result = adServiceClient.analyzeSearchTerms(shopId, null, days);
+            if (!isSuccess(result)) {
+                return fail("搜索词分析失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            Map<String, Object> data = result.getData();
+            int converting = toInt(data.get("convertingTerms"), 0);
+            int waste = toInt(data.get("wasteTerms"), 0);
+            Object overallAcos = data.get("overallAcos");
+            return ok(String.format("搜索词分析（近%d天）：出单词 %d 个，浪费词 %d 个，整体 ACoS %s（真实数据）",
+                            days, converting, waste, overallAcos != null ? overallAcos : "0"), data);
+        } catch (Exception e) {
+            log.error("analyze_search_terms Feign 调用失败 shopId={}", shopId, e);
+            return fail("广告服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 21：销售趋势深度分析。
+     * 工具 21：销售趋势深度分析（真实数据，来自 amz-service-report 的日销售聚合）。
      */
     private String analyzeSalesTrend(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         Integer days = toInt(args.get("days"), 30);
         log.info("工具调用 analyze_sales_trend shopId={} days={}", shopId, days);
-        Map<String, Object> trend = new HashMap<>();
-        trend.put("shopId", shopId);
-        trend.put("days", days);
-        trend.put("trend", "UP");
-        trend.put("growthRate", "+12.5%");
-        trend.put("peakDay", "周五");
-        trend.put("seasonalFlag", "Q4 旺季临近，预计 11 月增长 30%+");
-        return ok(String.format("近%d天销售趋势：同比增长 +12.5%，呈上升态势", days), trend);
+        if (reportServiceClient == null) return fail("报表服务客户端未启用");
+        try {
+            Result<List<Map<String, Object>>> result = reportServiceClient.getSalesTrend(shopId, days);
+            if (!isSuccess(result)) {
+                return fail("销售趋势查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> trend = result.getData();
+            if (trend == null || trend.isEmpty()) {
+                return ok("暂无销售趋势数据（近" + days + "天无记录）", Map.of("days", days, "points", 0));
+            }
+            List<Double> values = trend.stream().map(m -> toDouble(m.get("value"))).toList();
+            double first = values.get(0);
+            double last = values.get(values.size() - 1);
+            double total = values.stream().mapToDouble(Double::doubleValue).sum();
+            String direction = last > first ? "UP" : (last < first ? "DOWN" : "FLAT");
+            double growth = first > 0 ? (last - first) / first * 100 : 0;
+            Map<String, Object> peak = trend.get(0);
+            for (Map<String, Object> p : trend) {
+                if (toDouble(p.get("value")) > toDouble(peak.get("value"))) peak = p;
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("shopId", shopId);
+            out.put("days", days);
+            out.put("points", trend.size());
+            out.put("direction", direction);
+            out.put("growthRateFirstToLast", String.format("%.1f%%", growth));
+            out.put("totalSales", total);
+            out.put("peakDay", peak.get("day"));
+            out.put("peakValue", peak.get("value"));
+            out.put("series", trend);
+            return ok(String.format("近%d天销售趋势：%s，首尾环比 %s，峰值 %s（真实数据）",
+                            days, direction, out.get("growthRateFirstToLast"), peak.get("day")), out);
+        } catch (Exception e) {
+            log.error("analyze_sales_trend Feign 调用失败 shopId={}", shopId, e);
+            return fail("报表服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 22：库龄分析与滞销预警。
+     * 工具 22：库龄分析与滞销预警（真实库存数据，库龄按可供天数代理估算）。
      */
     private String analyzeInventoryAging(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         log.info("工具调用 analyze_inventory_aging shopId={}", shopId);
-        Map<String, Object> aging = new LinkedHashMap<>();
-        aging.put("0_30_days", 345);
-        aging.put("30_90_days", 120);
-        aging.put("90_180_days", 45);
-        aging.put("180_365_days", 18);
-        aging.put("over_365_days", 7);
-        aging.put("deadStockCount", 7);
-        aging.put("deadStockValue", "$2,340");
-        aging.put("suggestion", "超 365 天库存 7 件建议清仓促销或销毁以降低长期仓储费");
-        return ok(String.format("库龄分析：健康库存(≤90天) 465 件，超 365 天滞销品 7 件需处理"), aging);
+        if (inventoryServiceClient == null) return fail("库存服务客户端未启用");
+        try {
+            Result<List<Map<String, Object>>> result = inventoryServiceClient.getInventory(shopId);
+            if (!isSuccess(result)) {
+                return fail("库存查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> list = result.getData();
+            if (list == null || list.isEmpty()) {
+                return ok("暂无库存数据", Map.of("shopId", shopId, "skuCount", 0));
+            }
+            Map<String, Integer> healthDist = new HashMap<>();
+            Map<String, Integer> ageBuckets = new LinkedHashMap<>();
+            ageBuckets.put("0_30_days", 0);
+            ageBuckets.put("30_90_days", 0);
+            ageBuckets.put("90_180_days", 0);
+            ageBuckets.put("180_365_days", 0);
+            ageBuckets.put("over_365_days", 0);
+            int slowMover = 0;
+            for (Map<String, Object> m : list) {
+                String hs = toStr(m.get("healthStatus"));
+                if (hs == null) hs = "UNKNOWN";
+                healthDist.merge(hs, 1, Integer::sum);
+                double avail = toDouble(m.get("availableQuantity"));
+                double avg30 = toDouble(m.get("avg30Days"));
+                double dos = (avg30 > 0) ? avail / avg30 : -1; // 可供天数；-1 表示无近 30 日销售速度
+                if (dos < 0) {
+                    ageBuckets.put("over_365_days", ageBuckets.get("over_365_days") + 1);
+                } else if (dos > 365) {
+                    ageBuckets.put("over_365_days", ageBuckets.get("over_365_days") + 1);
+                    slowMover++;
+                } else if (dos > 180) {
+                    ageBuckets.put("180_365_days", ageBuckets.get("180_365_days") + 1);
+                    slowMover++;
+                } else if (dos > 90) {
+                    ageBuckets.put("90_180_days", ageBuckets.get("90_180_days") + 1);
+                } else if (dos > 30) {
+                    ageBuckets.put("30_90_days", ageBuckets.get("30_90_days") + 1);
+                } else {
+                    ageBuckets.put("0_30_days", ageBuckets.get("0_30_days") + 1);
+                }
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("shopId", shopId);
+            out.put("skuCount", list.size());
+            out.put("healthDistribution", healthDist);
+            out.put("ageBucketsByDaysOfSupply", ageBuckets);
+            out.put("slowMoverCount", slowMover);
+            out.put("methodNote", "库龄按可供天数(availableQuantity/近30日日均销量)估算，非真实入库日期；无销售速度的 SKU 归入 over_365_days");
+            return ok(String.format("库龄分析（基于可供天数估算）：%d 个 SKU，滞销(可供>180天) %d 个（真实库存数据）",
+                            list.size(), slowMover), out);
+        } catch (Exception e) {
+            log.error("analyze_inventory_aging Feign 调用失败 shopId={}", shopId, e);
+            return fail("库存服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 23：广告优化建议。
+     * 工具 23：广告优化建议（当前 ACoS 来自真实广告报表，建议为基于阈值的规则推导）。
      */
     private String optimizeAdCampaign(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String campaignId = toStr(args.get("campaignId"));
-        log.info("工具调用 optimize_ad_campaign shopId={} campaignId={}", shopId, campaignId);
-        Map<String, Object> opts = new HashMap<>();
-        opts.put("campaignId", campaignId);
-        opts.put("currentAcos", 0.35);
-        opts.put("targetAcos", 0.25);
-        opts.put("suggestions", List.of(
-                "暂停 ACoS>50% 的 3 个关键词",
-                "将 2 个出单词竞价提高 20%",
-                "添加 5 个长尾否定关键词",
-                "日预算从 $50 提高到 $65"
-        ));
-        return ok(String.format("广告 campaign=%s 优化建议：当前 ACoS=35%%，4 条优化动作", campaignId), opts);
+        Integer days = toInt(args.get("days"), 7);
+        log.info("工具调用 optimize_ad_campaign shopId={} campaignId={} days={}", shopId, campaignId, days);
+        if (adServiceClient == null) return fail("广告服务客户端未启用");
+        try {
+            Result<List<Map<String, Object>>> result = adServiceClient.getReports(shopId);
+            if (!isSuccess(result)) {
+                return fail("广告报表查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> reports = result.getData();
+            if (reports == null || reports.isEmpty()) {
+                return ok("暂无广告报表数据", Map.of("shopId", shopId, "campaigns", List.of()));
+            }
+            List<Map<String, Object>> campaignAnalysis = new ArrayList<>();
+            for (Map<String, Object> r : reports) {
+                double cost = toDouble(r.get("cost"));
+                double sales = toDouble(r.get("sales"));
+                double acos = sales > 0 ? cost / sales : 0;
+                String cid = toStr(r.get("campaignId"));
+                if (campaignId != null && !campaignId.equals(cid)) continue;
+                Map<String, Object> a = new LinkedHashMap<>();
+                a.put("campaignId", cid);
+                a.put("currentAcos", String.format("%.1f%%", acos * 100));
+                List<String> sugg = new ArrayList<>();
+                if (acos > 0.4) sugg.add("ACoS 过高(>40%)，建议暂停高花费低转化关键词");
+                else if (acos < 0.15 && sales > 0) sugg.add("ACoS 健康(<15%)，建议适度提高出价扩量");
+                else sugg.add("ACoS 正常，维持观察");
+                a.put("suggestions", sugg);
+                campaignAnalysis.add(a);
+            }
+            if (campaignAnalysis.isEmpty()) {
+                return ok("未匹配到 campaignId=" + campaignId + " 的广告活动",
+                        Map.of("shopId", shopId, "campaignId", campaignId));
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("shopId", shopId);
+            out.put("days", days);
+            out.put("campaigns", campaignAnalysis);
+            out.put("methodNote", "当前 ACoS 由真实广告报表(cost/sales)计算；优化建议为基于阈值的规则建议，非关键词级精细调优");
+            return ok(String.format("广告优化建议：覆盖 %d 个广告活动（真实报表数据，建议为规则推导）",
+                            campaignAnalysis.size()), out);
+        } catch (Exception e) {
+            log.error("optimize_ad_campaign Feign 调用失败 shopId={}", shopId, e);
+            return fail("广告服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 24：Listing SEO 优化。
+     * 工具 24：Listing SEO 优化（建议由真实 Listing 健康度字段推导）。
      */
     private String optimizeListingSeo(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String asin = toStr(args.get("asin"));
         log.info("工具调用 optimize_listing_seo shopId={} asin={}", shopId, asin);
-        Map<String, Object> seo = new HashMap<>();
-        seo.put("asin", asin);
-        seo.put("missingKeywords", List.of("premium", "lightweight", "2024 edition"));
-        seo.put("titleOptimization", "在标题开头加入 premium 提升 CTR");
-        seo.put("backendKeywords", "建议添加：portable gift travel outdoor");
-        return ok(String.format("ASIN %s SEO 优化：缺 3 个高价值关键词，建议优化标题和后台搜索词", asin), seo);
+        if (productServiceClient == null) return fail("商品服务客户端未启用");
+        try {
+            Result<List<Map<String, Object>>> result = productServiceClient.getListingHealthList(shopId);
+            if (!isSuccess(result)) {
+                return fail("Listing 健康度查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> list = result.getData();
+            Map<String, Object> match = (list == null) ? null : list.stream()
+                    .filter(m -> asin != null && asin.equals(toStr(m.get("asin"))))
+                    .findFirst().orElse(null);
+            if (match == null) {
+                return ok(String.format("未查询到 ASIN %s 的 Listing 健康度记录，无法生成 SEO 建议", asin),
+                        Map.of("asin", asin == null ? "" : asin, "found", false));
+            }
+            List<String> seo = new ArrayList<>();
+            if (Boolean.FALSE.equals(toBool(match.get("titleOk")))) seo.add("优化标题：补充核心关键词至标题前部");
+            if (Boolean.FALSE.equals(toBool(match.get("searchTermsOk")))) seo.add("补充后台搜索词(backend search terms)以覆盖长尾流量");
+            if (Boolean.FALSE.equals(toBool(match.get("bulletPointsOk")))) seo.add("重写五点描述：突出卖点与关键词");
+            if (Boolean.FALSE.equals(toBool(match.get("imagesOk")))) seo.add("增加主图与附图数量，提升点击率");
+            if (Boolean.FALSE.equals(toBool(match.get("aplusOk")))) seo.add("补充 A+ 页面，提升转化");
+            if (seo.isEmpty()) seo.add("Listing 各项指标健康，建议持续监控搜索词排名");
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("asin", asin);
+            out.put("healthScore", match.get("healthScore"));
+            out.put("seoSuggestions", seo);
+            out.put("methodNote", "SEO 建议由真实 Listing 健康度字段(titleOk/searchTermsOk/...)推导，缺失的具体关键词列表需结合搜索词报表进一步补全");
+            return ok(String.format("ASIN %s SEO 优化建议：%d 条（基于真实健康度推导）", asin, seo.size()), out);
+        } catch (Exception e) {
+            log.error("optimize_listing_seo Feign 调用失败 shopId={}", shopId, e);
+            return fail("商品服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 25：最优发货路由。
+     * 工具 25：最优发货路由（真实物流报价，来自 amz-service-logistics）。
      */
     private String optimizeShippingRoute(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String orderId = toStr(args.get("orderId"));
         log.info("工具调用 optimize_shipping_route shopId={} orderId={}", shopId, orderId);
-        Map<String, Object> route = new LinkedHashMap<>();
-        route.put("orderId", orderId);
-        route.put("recommendedWarehouse", "FBA-ON1");
-        route.put("reason", "FBA Prime 2-day, 费用最低 $3.22");
-        route.put("alternatives", List.of(
-                Map.of("warehouse", "LAX-OVS", "cost", "$5.80", "days", "3-5"),
-                Map.of("warehouse", "SH-CN", "cost", "$4.50", "days", "7-12")
-        ));
-        return ok(String.format("订单 %s 最优路由：FBA-ON1 Prime 2日达 $3.22", orderId), route);
+        if (logisticsServiceClient == null) return fail("物流服务客户端未启用");
+        try {
+            Result<Map<String, Object>> result =
+                    logisticsServiceClient.compareShippingQuotes(shopId, "CN", "US", null, null);
+            if (!isSuccess(result) || result.getData() == null) {
+                return fail("物流报价查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            Map<String, Object> data = result.getData();
+            List<Map<String, Object>> options = new ArrayList<>();
+            Object rawOptions = data.get("options");
+            if (rawOptions instanceof List) {
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> opts = new ArrayList<>((List<Map<String, Object>>) rawOptions);
+                opts.sort((a, b) -> Double.compare(toDouble(a.get("cost")), toDouble(b.get("cost"))));
+                options = opts;
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("orderId", orderId);
+            out.put("recommended", options.isEmpty() ? null : options.get(0));
+            out.put("alternatives", options.size() > 1 ? options.subList(1, Math.min(3, options.size())) : List.of());
+            out.put("methodNote", "路由由真实物流报价 API 生成（amz-service-logistics compareShippingQuotes）");
+            Map<String, Object> rec = options.isEmpty() ? null : options.get(0);
+            String msg = rec != null
+                    ? String.format("订单 %s 最优路由：仓库 %s，费用 $%.2f，时效 %s（真实报价）",
+                            orderId, rec.get("warehouse"), toDouble(rec.get("cost")), rec.get("transitDays"))
+                    : String.format("订单 %s 路由：暂无可用报价（shopId=%s）", orderId, shopId);
+            return ok(msg, out);
+        } catch (Exception e) {
+            log.error("optimize_shipping_route Feign 调用失败 shopId={}", shopId, e);
+            return fail("物流服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 26：库存跨仓调拨建议。
+     * 工具 26：库存跨仓调拨建议（真实多仓视图，来自 amz-service-logistics）。
      */
     private String optimizeInventoryDistribution(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         log.info("工具调用 optimize_inventory_distribution shopId={}", shopId);
-        Map<String, Object> dist = new LinkedHashMap<>();
-        dist.put("transferSuggestions", List.of(
-                Map.of("sku", "SKU-A", "fromWarehouse", "LAX-OVS", "toWarehouse", "FBA-ON1", "qty", 30, "reason", "FBA 仓库存紧张"),
-                Map.of("sku", "SKU-B", "fromWarehouse", "SH-CN", "toWarehouse", "LAX-OVS", "qty", 50, "reason", "美国西海岸订单量上升")
-        ));
-        dist.put("totalTransferUnits", 80);
-        dist.put("estimatedSavings", "可节省 $450/月 仓储费");
-        return ok("库存调拨建议：2 条调拨指令共 80 件，可节省 $450/月", dist);
+        if (logisticsServiceClient == null) return fail("物流服务客户端未启用");
+        try {
+            Result<Map<String, Object>> result = logisticsServiceClient.getGlobalInventoryView(shopId);
+            if (!isSuccess(result) || result.getData() == null) {
+                return fail("多仓库存视图查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            Map<String, Object> data = result.getData();
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("shopId", shopId);
+            out.put("inventoryView", data);
+            out.put("methodNote", "调拨建议基于真实多仓库存视图（amz-service-logistics getGlobalInventoryView），"
+                    + "具体调拨决策需结合各仓订单量与补货周期人工复核");
+            int totalSku = toInt(data.get("totalSkuCount"), 0);
+            int lowStock = toInt(data.get("lowStockSkuCount"), 0);
+            String msg = String.format("跨仓调拨视图：%d 个 SKU，低库存预警 %d 个（真实多仓库存数据）", totalSku, lowStock);
+            return ok(msg, out);
+        } catch (Exception e) {
+            log.error("optimize_inventory_distribution Feign 调用失败 shopId={}", shopId, e);
+            return fail("物流服务暂时不可用: " + e.getMessage());
+        }
     }
 
     /**
-     * 工具 27：AI 创建采购计划。
+     * 工具 27：AI 创建采购计划（真实供应商比价，来自 amz-service-procurement）。
+     * <p>
+     * 当前 demo 无真实 1688 报价后端（Item2 依赖沙箱凭证），单价取确定性占位估算（非随机），
+     * 避免同一输入产生不同结果；对外文案标注为演示估算。若 ProcurementServiceClient
+     * compareSupplierPrices 可用则优先展示真实比价结果。
      */
     private String createPurchasePlan(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
@@ -859,8 +1136,39 @@ public class ErpToolExecutor {
         Integer quantity = toInt(args.get("quantity"), 100);
         log.info("工具调用 create_purchase_plan shopId={} sku={} quantity={}", shopId, sku, quantity);
         if (procurementServiceClient == null) return fail("采购服务客户端未启用");
+
         String planNo = "PL" + System.currentTimeMillis();
-        BigDecimal unitPrice = BigDecimal.valueOf(5 + ThreadLocalRandom.current().nextDouble(0, 15)).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal unitPrice = BigDecimal.valueOf(12.00).setScale(2, RoundingMode.HALF_UP);
+
+        // 尝试真实供应商比价（若有数据则覆盖占位单价）
+        try {
+            Result<List<Map<String, Object>>> compareResult =
+                    procurementServiceClient.compareSupplierPrices(shopId, sku);
+            if (isSuccess(compareResult) && compareResult.getData() != null
+                    && !compareResult.getData().isEmpty()) {
+                Map<String, Object> best = compareResult.getData().get(0);
+                Object priceObj = best.get("unitPrice");
+                if (priceObj instanceof Number) {
+                    unitPrice = new BigDecimal(priceObj.toString()).setScale(2, RoundingMode.HALF_UP);
+                }
+                String supplier = toStr(best.get("supplierName"));
+                Map<String, Object> plan = new LinkedHashMap<>();
+                plan.put("planNo", planNo);
+                plan.put("sku", sku);
+                plan.put("quantity", quantity);
+                plan.put("unitPrice", unitPrice);
+                plan.put("totalAmount", unitPrice.multiply(BigDecimal.valueOf(quantity)));
+                plan.put("status", "DRAFT");
+                plan.put("bestSupplier", supplier);
+                plan.put("methodNote", "单价来自真实供应商比价（compareSupplierPrices），推荐供应商 " + supplier);
+                return ok(String.format("已生成采购计划 %s：%s × %d，总金额 ¥%s（真实比价，供应商：%s）",
+                                planNo, sku, quantity, plan.get("totalAmount"), supplier), plan);
+            }
+        } catch (Exception e) {
+            log.warn("供应商比价失败，回退确定性占位：{}", e.getMessage());
+        }
+
+        // 占位路径（无比价数据时）
         Map<String, Object> plan = new LinkedHashMap<>();
         plan.put("planNo", planNo);
         plan.put("sku", sku);
@@ -868,8 +1176,9 @@ public class ErpToolExecutor {
         plan.put("unitPrice", unitPrice);
         plan.put("totalAmount", unitPrice.multiply(BigDecimal.valueOf(quantity)));
         plan.put("status", "DRAFT");
-        plan.put("suggestion", "建议选择优质供应商（评分 A），1688 货源价格 ¥" + unitPrice.multiply(BigDecimal.valueOf(0.85)).setScale(2, RoundingMode.HALF_UP));
-        return ok(String.format("已生成采购计划 %s：%s × %d，总金额 ¥%s", planNo, sku, quantity,
+        plan.put("suggestion", "建议选择优质供应商（评分 A），1688 货源价格 ¥"
+                + unitPrice.multiply(BigDecimal.valueOf(0.85)).setScale(2, RoundingMode.HALF_UP));
+        return ok(DEMO_DATA_NOTE + String.format("已生成采购计划 %s：%s × %d，总金额 ¥%s（单价/金额为演示估算）", planNo, sku, quantity,
                         plan.get("totalAmount")), plan);
     }
 
@@ -895,7 +1204,7 @@ public class ErpToolExecutor {
         Map<String, Object> reply = new LinkedHashMap<>();
         reply.put("messageId", messageId);
         reply.put("draftReply", draftReply);
-        return ok("已生成回复草稿", reply);
+        return ok(AUTO_DRAFT_NOTE + "已生成回复草稿（模板生成，非业务数据，需人工复核后发送）", reply);
     }
 
     // ===== 工具方法 =====
@@ -954,6 +1263,13 @@ public class ErpToolExecutor {
         if (obj == null) return 0;
         if (obj instanceof Number) return ((Number) obj).doubleValue();
         try { return Double.parseDouble(obj.toString()); } catch (Exception e) { return 0; }
+    }
+
+    private Boolean toBool(Object obj) {
+        if (obj == null) return null;
+        if (obj instanceof Boolean b) return b;
+        if (obj instanceof Number n) return n.intValue() != 0;
+        return Boolean.parseBoolean(obj.toString());
     }
 
     private String toStr(Object obj) {

@@ -4,7 +4,6 @@ import com.amz.model.TrackingEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.Collections;
 import java.util.List;
@@ -29,10 +28,9 @@ import java.util.List;
 @Profile("!mock")
 public class LogisticsTrackingRealClient implements LogisticsTrackingClient {
 
-    /**
-     * 真实实现中可注入 RestTemplate / OkHttp；当前为骨架，未配置 Bean 时不影响编译。
-     */
-    private final RestTemplate restTemplate = new RestTemplate();
+    // 说明：原此处持有一个从未被读取的 new RestTemplate()（死代码且无超时配置），已移除。
+    // 真实对接时请注入 com.amz.http.ResilientHttpClient（target=17track / 各承运商），
+    // 不要再自建 RestTemplate。
 
     @Override
     public List<TrackingEvent> queryTracking(String trackingNo, String carrier) {

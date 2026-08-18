@@ -109,3 +109,20 @@ springdoc:
     path: /swagger-ui.html
     enabled: true
   show-actuator: false
+
+# 共享汇率服务（amz-common GlobalExchangeRateService）离线兜底汇率。
+# ListingCopyService 跨站点搬家时用于价格换算；缺省会退化为 1:1 导致定价失真，故必须配置。
+amz:
+  exchange-rates:
+    USD: 7.25
+    EUR: 7.85
+    GBP: 9.20
+    JPY: 0.046
+  # 出站 HTTP 弹性策略（超时 / 重试 / 熔断），未配置时使用组件内置默认值
+  http:
+    connect-timeout-ms: 3000
+    read-timeout-ms: 10000
+    max-attempts: 3
+    circuit:
+      failure-threshold: 5
+      open-duration-ms: 30000

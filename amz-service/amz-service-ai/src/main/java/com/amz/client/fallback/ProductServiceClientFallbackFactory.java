@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -28,6 +29,11 @@ public class ProductServiceClientFallbackFactory implements FallbackFactory<Prod
 
             @Override
             public Result<Map<String, Object>> estimateFbaFees(String asin, Double price, Double weight, String sizeTier) {
+                return Result.failure("product service degraded: " + cause.getMessage());
+            }
+
+            @Override
+            public Result<List<Map<String, Object>>> getListingHealthList(Long shopId) {
                 return Result.failure("product service degraded: " + cause.getMessage());
             }
         };

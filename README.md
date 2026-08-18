@@ -20,7 +20,7 @@
 | ONNX Runtime | 1.18.2 | LightGBM 模型推理 |
 | Vue 3 | 3.5.13 | 前端框架 |
 
-## 📊 微服务架构（15 业务服务 + 网关 + 公共模块）
+## 📊 微服务架构（16 业务服务 + 网关 + 公共模块）
 
 ```
 amz-gateway              (10010)  — API 网关（JWT + Sentinel 限流 + shopId 校验）
@@ -45,7 +45,7 @@ amz-service-multiplatform (8104)  — 多平台（Shopify/eBay/Walmart/Shopee/La
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
 
-> 共 51 张表、137+ REST 端点、AI Agent 28 工具
+> 共 51 张表、137+ REST 端点、AI Agent 28 工具 ｜ **改进计划（2026-08-17）全部 8 项已闭环，里程碑 A/B/C/D 已完成**
 
 ## 🤖 AI 运营 Agent（28 工具）
 
@@ -158,7 +158,7 @@ mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=r
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（14 模块） | 211 | 100% |
+| 后端 JUnit 5（19 模块） | 546 | 100% |
 | 前端 Vitest（8 文件） | 57 | 100% |
 | 前端 Playwright E2E（10 页面 + 404 + 守卫） | 14 | 100% |
 | **总计** | **282** | **100%** ✅ |

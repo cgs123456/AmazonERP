@@ -106,7 +106,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         if (account == null) return false;
         boolean ok = false;
         try {
-            ok = testPlatformConnection(account.getPlatform(), account.getApiEndpoint(), account.getApiKey());
+            ok = isEndpointWellFormed(account.getPlatform(), account.getApiEndpoint(), account.getApiKey());
         } catch (Exception e) {
             log.warn("平台连接测试失败 accountId={} platform={}", accountId, account.getPlatform(), e);
         }
@@ -116,8 +116,12 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         return ok;
     }
 
-    private boolean testPlatformConnection(String platform, String endpoint, String apiKey) {
-        // 各平台连接测试（mock 模式用端点非空 + 超时判断）
+    /**
+     * 仅校验端点格式是否“像”一个合法地址（含 "." 或以 http 开头），
+     * 并不发起真实网络请求，因此命名为“端点格式校验”而非“连接测试”，避免误导。
+     * 真实连通性需由各平台 RealClient 的实际发请求动作来验证。
+     */
+    private boolean isEndpointWellFormed(String platform, String endpoint, String apiKey) {
         if (endpoint == null || endpoint.isBlank()) return false;
         return endpoint.contains(".") || endpoint.startsWith("http");
     }
@@ -350,7 +354,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     @Transactional
-    public WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload) {
+    public WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload, Long shopId) {
         // 幂等去重
         if (eventId != null && !eventId.isEmpty()) {
             LambdaQueryWrapper<WebhookEvent> dupCheck = new LambdaQueryWrapper<>();
@@ -361,8 +365,19 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             }
         }
 
+        // shopId 未传时从平台账号表反查
+        if (shopId == null) {
+            PlatformAccount acc = platformAccountMapper.selectOne(
+                new LambdaQueryWrapper<PlatformAccount>()
+                    .eq(PlatformAccount::getPlatform, platform)
+                    .orderByDesc(PlatformAccount::getCreateTime)
+                    .last("LIMIT 1"));
+            shopId = acc != null ? acc.getShopId() : null;
+            log.warn("Webhook 未传 shopId，已按 platform={} 反查 → shopId={}", platform, shopId);
+        }
+
         WebhookEvent event = new WebhookEvent();
-        event.setShopId(1L); // TODO：从平台账号反查
+        event.setShopId(shopId);
         event.setPlatform(platform);
         event.setEventType(eventType);
         event.setEventId(eventId);

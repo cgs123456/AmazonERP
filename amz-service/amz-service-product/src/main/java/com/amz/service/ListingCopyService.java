@@ -6,6 +6,7 @@ import com.amz.mapper.ListingCopyTaskMapper;
 import com.amz.model.AmzProduct;
 import com.amz.model.ListingCopyTask;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,12 @@ public class ListingCopyService {
     private static final long POLL_INTERVAL_MS = 15_000L;
     /** 轮询最长等待：5 分钟。 */
     private static final long POLL_MAX_DURATION_MS = 5 * 60_000L;
+
+    /**
+     * JSON_LISTINGS_FEED 默认 productType 占位。真实场景需按源 Listing 类目填充
+     * （如 LUGGAGE / SHOES / HOME），错误的 productType 会被 Amazon 判 FATAL。
+     */
+    private static final String DEFAULT_PRODUCT_TYPE = "PRODUCT";
 
     @Autowired
     private AmzProductMapper amzProductMapper;
@@ -255,12 +262,23 @@ public class ListingCopyService {
      * 构造提交给 SP-API 的 JSONL 内容（单行 JSON）。
      */
     private String buildJsonl(ListingCopyTask task, String targetCurrency) {
+        // 构造符合 JSON_LISTINGS_FEED 规范（v2021-06-30）的单条记录：
+        // 每行一个部分更新对象，包含 sku + productType + attributes（title / prices 数组）。
         JsonObject obj = new JsonObject();
         obj.addProperty("sku", task.getSku());
-        obj.addProperty("marketplaceId", task.getTargetMarketplaceId());
-        obj.addProperty("title", task.getTargetTitle());
-        obj.addProperty("price", task.getTargetPrice());
-        obj.addProperty("currency", targetCurrency);
+        obj.addProperty("productType", DEFAULT_PRODUCT_TYPE);
+        JsonObject attributes = new JsonObject();
+        JsonObject title = new JsonObject();
+        title.addProperty("value", task.getTargetTitle());
+        title.addProperty("language_tag", task.getTargetLanguage());
+        attributes.add("title", title);
+        JsonArray prices = new JsonArray();
+        JsonObject price = new JsonObject();
+        price.addProperty("currency", targetCurrency);
+        price.addProperty("amount", task.getTargetPrice());
+        prices.add(price);
+        attributes.add("prices", prices);
+        obj.add("attributes", attributes);
         return obj.toString();
     }
 }

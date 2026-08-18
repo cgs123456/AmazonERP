@@ -1,6 +1,5 @@
 package com.amz.agent.eval;
 
-import com.amz.agent.ErpAgentService;
 import com.amz.agent.langchain4j.LangChain4jAgentService;
 import com.amz.result.Result;
 import org.junit.jupiter.api.DisplayName;
@@ -21,18 +20,14 @@ import static org.mockito.Mockito.when;
 /**
  * Agent 评测回归测试（纯 Mockito，不依赖外部 AI API）。
  * <p>
- * 通过 mock {@link LangChain4jAgentService} 和 {@link ErpAgentService} 的返回结果，
+ * 通过 mock {@link LangChain4jAgentService} 的返回结果，
  * 验证 {@link AgentEvalRunner} 的评测聚合逻辑（关键词匹配、通过率统计、异常处理）。
  * <p>
- * 原版本依赖 DEEPSEEK_API_KEY 环境变量调用真实 AI，CI 中自动跳过；
  * 现改为 mock 测试，可在无 API Key 环境下验证评测框架本身的正确性。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Agent 评测框架单元测试")
 class AgentEvalTest {
-
-    @Mock
-    private ErpAgentService erpAgentService;
 
     @Mock
     private LangChain4jAgentService langChain4jAgentService;
@@ -56,7 +51,7 @@ class AgentEvalTest {
             return Result.success(String.join("，", evalCase.getExpectedKeywords()));
         });
 
-        AgentEvalReport report = evalRunner.runAll("v2");
+        AgentEvalReport report = evalRunner.runAll();
 
         assertNotNull(report, "评测报告不应为 null");
         assertEquals(12, report.getTotalCases(), "应有 12 个评测用例");
@@ -83,7 +78,7 @@ class AgentEvalTest {
         when(langChain4jAgentService.chat(anyLong(), anyString()))
                 .thenReturn(Result.success(""));
 
-        AgentEvalReport report = evalRunner.runAll("v2");
+        AgentEvalReport report = evalRunner.runAll();
 
         assertNotNull(report);
         assertEquals(12, report.getTotalCases());
@@ -107,7 +102,7 @@ class AgentEvalTest {
         when(langChain4jAgentService.chat(anyLong(), anyString()))
                 .thenReturn(Result.failure("服务繁忙"));
 
-        AgentEvalReport report = evalRunner.runAll("v2");
+        AgentEvalReport report = evalRunner.runAll();
 
         assertNotNull(report);
         assertEquals(12, report.getTotalCases());
@@ -120,31 +115,6 @@ class AgentEvalTest {
             assertFalse(r.getMissedKeywords().isEmpty(),
                     "用例 " + r.getCaseId() + " 应标记全部关键词为缺失");
         }
-    }
-
-    /**
-     * v1 版本使用 ErpAgentService（单参数 chat），验证其评测链路同样正确。
-     * 验证：agentVersion 正确标记为 v1，且通过率统计正确。
-     */
-    @Test
-    @DisplayName("v1 Agent 回复包含全部关键词 → 通过率 100%")
-    void testV1AgentPassRate() {
-        when(erpAgentService.chat(anyString())).thenAnswer(invocation -> {
-            String question = invocation.getArgument(0);
-            AgentEvalCase evalCase = AgentEvalCases.all().stream()
-                    .filter(c -> c.getQuestion().equals(question))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("未知用例: " + question));
-            return Result.success(String.join("，", evalCase.getExpectedKeywords()));
-        });
-
-        AgentEvalReport report = evalRunner.runAll("v1");
-
-        assertNotNull(report);
-        assertEquals(12, report.getTotalCases());
-        assertEquals(12, report.getPassedCount(), "v1 全部用例应通过");
-        assertEquals(1.0, report.getPassRate(), 0.0001, "v1 通过率应为 100%");
-        assertEquals("v1", report.getAgentVersion(), "Agent 版本应为 v1");
     }
 
     /**

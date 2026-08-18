@@ -29,22 +29,35 @@ mybatis-plus:
     db-config:
       id-type: auto
 # 各平台 API 配置
+# 说明：平台凭证（appKey/appSecret/accessToken）已改为按 (shopId, platform)
+# 从 amz_platform_account 表读取（多租户），不再以全局 @Value 注入；密钥不落仓库。
+# 汇率兜底见下方 amz.exchange-rates（已与 finance 模块对齐）。
 platform:
-  temu:
-    app-key: ${TEMU_APP_KEY:}
-    app-secret: ${TEMU_APP_SECRET:}
-  tiktok:
-    app-key: ${TIKTOK_APP_KEY:}
-    app-secret: ${TIKTOK_APP_SECRET:}
-  shein:
-    app-key: ${SHEIN_APP_KEY:}
-    app-secret: ${SHEIN_APP_SECRET:}
-  # 汇率：币种代码 → CNY
+  # 汇率：币种代码 → CNY（兜底；实时由 amz-common GlobalExchangeRateService 拉取）
   exchange-rates:
     USD: 7.25
     EUR: 7.85
     GBP: 9.20
     JPY: 0.045
+
+# 共享汇率服务兜底（amz-common GlobalExchangeRateService；离线时兜底，实时由 exchangerate.host 拉取）
+# 注：JPY 由 0.045 校正为 0.046，与 finance 模块对齐 —— 合并前两模块兜底值不一致，
+# 同一笔日元金额在两处折算会得到不同 CNY 结果。
+amz:
+  exchange-rates:
+    USD: 7.25
+    EUR: 7.85
+    GBP: 9.20
+    JPY: 0.046
+  # 出站 HTTP 弹性策略：第三方电商平台（Temu/TikTok/Shein）响应普遍慢于内部服务，
+  # 读超时放宽至 15s；熔断按 target=平台标识 独立隔离，单平台故障不影响其他平台。
+  http:
+    connect-timeout-ms: 3000
+    read-timeout-ms: 15000
+    max-attempts: 3
+    circuit:
+      failure-threshold: 5
+      open-duration-ms: 30000
 
 # JWT security config
 jwt:

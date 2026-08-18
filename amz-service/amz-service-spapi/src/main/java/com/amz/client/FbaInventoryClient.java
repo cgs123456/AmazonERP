@@ -7,8 +7,10 @@ import com.amz.credential.ShopCredentialStore;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
@@ -42,6 +44,9 @@ public class FbaInventoryClient {
     private static final Logger log = LoggerFactory.getLogger(FbaInventoryClient.class);
 
     private static final String INVENTORY_PATH = "/fba/inventory/v1/summaries";
+
+    /** FBA Inventory 端点标识，用于限流指标维度。 */
+    private static final String FBA_INVENTORY_ENDPOINT = "fba-inventory";
 
     /**
      * 429 限流重试次数上限。
@@ -105,6 +110,12 @@ public class FbaInventoryClient {
     private ShopCredentialStore shopCredentialStore;
 
     /**
+     * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
+     */
+    @Autowired(required = false)
+    private ObjectProvider<MeterRegistry> meterRegistryProvider;
+
+    /**
      * 拉取指定店铺在某 marketplace 下的全量 FBA 库存汇总。
      * 自动分页拉取所有 NextToken，details=true & granularityType=Marketplace。
      *
@@ -161,10 +172,9 @@ public class FbaInventoryClient {
 
             HttpResponse<String> response = sendWithRetry(builder.build());
             if (response == null || response.statusCode() != 200) {
-                log.error("fetchAllInventory failed shopId={} status={} body={}", shopId,
-                        response == null ? -1 : response.statusCode(),
-                        response == null ? "" : response.body());
-                break;
+                throw new RuntimeException("fetchAllInventory failed shopId=" + shopId
+                        + " status=" + (response == null ? -1 : response.statusCode())
+                        + " body=" + (response == null ? "" : response.body()));
             }
 
             JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
@@ -190,8 +200,9 @@ public class FbaInventoryClient {
      */
     public List<JsonObject> fetchAllInventoryFallback(Long shopId, String marketplaceId,
                                                      Throwable e) {
-        log.warn("fetchAllInventory fallback triggered shopId={} marketplaceId={} err={}", shopId, marketplaceId, e.getMessage());
-        return List.of();
+        // 不返回空列表伪装成功：降级 / 异常时抛出异常，由上游（InventorySyncScheduler）记录 FAILED 并告警
+        throw new RuntimeException("fetchAllInventory degraded (circuit-breaker/exception) shopId="
+                + shopId + " marketplaceId=" + marketplaceId, e);
     }
 
     /**
@@ -245,6 +256,7 @@ public class FbaInventoryClient {
                 continue;
             }
             if (response.statusCode() == 429) {
+                recordThrottle(FBA_INVENTORY_ENDPOINT);
                 long backoff = (1L << attempt) * 1000L;
                 log.warn("Rate limited (429), retrying after {}ms attempt={}", backoff, attempt);
                 sleep(backoff);
@@ -253,6 +265,27 @@ public class FbaInventoryClient {
             return response;
         }
         return response;
+    }
+
+    /**
+     * 记录 SP-API 429 限流触发次数到 Micrometer，供 Prometheus 抓取。
+     * 软依赖：未引入指标注册表时不抛异常、不影响主链路。
+     *
+     * @param endpoint SP-API 资源标识（如 {@code "fba-inventory"}）
+     */
+    private void recordThrottle(String endpoint) {
+        if (meterRegistryProvider == null) {
+            return;
+        }
+        MeterRegistry registry = meterRegistryProvider.getIfAvailable();
+        if (registry == null) {
+            return;
+        }
+        try {
+            registry.counter("spapi.throttle.count", "endpoint", endpoint).increment();
+        } catch (Exception e) {
+            log.debug("SP-API throttle metric record failed: {}", e.getMessage());
+        }
     }
 
     private void sleep(long millis) {

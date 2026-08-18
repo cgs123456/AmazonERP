@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestTemplate;
 
 /**
  * 金蝶云星空 API 真实客户端骨架。
@@ -37,10 +36,9 @@ public class KingdeeRealClient implements KingdeeClient {
     @Value("${kingdee.app-secret:}")
     private String appSecret;
 
-    /**
-     * 真实实现中可注入 RestTemplate / OkHttp；当前为骨架，未配置 Bean 时不影响编译。
-     */
-    private final RestTemplate restTemplate = new RestTemplate();
+    // 说明：原此处持有一个从未被读取的 new RestTemplate()（死代码且无超时配置），已移除。
+    // 真实对接时请注入 com.amz.http.ResilientHttpClient（target=kingdee），
+    // 不要再自建 RestTemplate。
 
     @Override
     public String syncVoucher(AccountingVoucher voucher) {

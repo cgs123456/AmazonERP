@@ -5,12 +5,12 @@ import lombok.Getter;
 @Getter
 public enum LogType {
     /**
-     * 笔记浏览
+     * 商品浏览
      */
     SCAN("scan"),
 
     /**
-     * 点赞
+     * 商品收藏
      */
     LIKE("like")
     ;

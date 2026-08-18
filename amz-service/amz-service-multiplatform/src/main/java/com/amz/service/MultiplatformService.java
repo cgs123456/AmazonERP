@@ -60,7 +60,7 @@ public interface MultiplatformService {
 
     // ===== Webhook =====
 
-    WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload);
+    WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload, Long shopId);
 
     List<WebhookEvent> listWebhookEvents(Long shopId, String status);
 

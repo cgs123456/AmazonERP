@@ -6,8 +6,10 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -37,4 +39,10 @@ public interface ProductServiceClient {
                                                 @RequestParam(value = "price", required = false) Double price,
                                                 @RequestParam(value = "weight", required = false) Double weight,
                                                 @RequestParam(value = "sizeTier", required = false) String sizeTier);
+
+    /**
+     * 查询店铺 Listing 健康度列表（真实数据，供 Agent 工具 19/24 使用）。
+     */
+    @GetMapping("/product/listing-monitor/health/list/{shopId}")
+    Result<List<Map<String, Object>>> getListingHealthList(@PathVariable("shopId") Long shopId);
 }

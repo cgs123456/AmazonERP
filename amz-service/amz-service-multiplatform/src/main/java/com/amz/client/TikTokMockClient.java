@@ -2,7 +2,6 @@ package com.amz.client;
 
 import com.amz.model.UnifiedOrder;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -22,12 +21,6 @@ import java.util.List;
 @Profile("mock")
 public class TikTokMockClient extends AbstractPlatformClient implements TikTokClient {
 
-    @Value("${platform.tiktok.app-key:}")
-    private String appKey;
-
-    @Value("${platform.tiktok.app-secret:}")
-    private String appSecret;
-
     @Override
     protected String getPlatform() {
         return PLATFORM_TIKTOK;
@@ -35,7 +28,7 @@ public class TikTokMockClient extends AbstractPlatformClient implements TikTokCl
 
     @Override
     public List<UnifiedOrder> fetchRecentOrders(Long shopId) {
-        log.info("TikTok Shop 订单拉取模拟：shopId={} appKey={}", shopId, mask(appKey));
+        log.info("TikTok Shop 订单拉取模拟：shopId={} appKey={}", shopId, mask(cred(shopId).getAppKey()));
         List<UnifiedOrder> orders = new ArrayList<>();
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 

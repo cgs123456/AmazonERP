@@ -26,6 +26,11 @@ public class AdServiceClientFallbackFactory implements FallbackFactory<AdService
             public Result<Map<String, Object>> getCompetitor(Long shopId, String asin) {
                 return Result.failure("ad service degraded: " + cause.getMessage());
             }
+
+            @Override
+            public Result<Map<String, Object>> analyzeSearchTerms(Long shopId, String campaignId, Integer days) {
+                return Result.failure("ad service degraded: " + cause.getMessage());
+            }
         };
     }
 }

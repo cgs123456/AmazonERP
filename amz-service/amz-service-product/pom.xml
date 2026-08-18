@@ -93,6 +93,12 @@
             <version>${redisson.version}</version>
         </dependency>
 
+        <!-- 三级缓存 L1：本地内存缓存 -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.amz</groupId>
             <artifactId>amz-common</artifactId>

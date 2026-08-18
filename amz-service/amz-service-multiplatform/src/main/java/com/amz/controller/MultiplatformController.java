@@ -134,7 +134,7 @@ public class MultiplatformController {
                                                 @PathVariable String eventType,
                                                 @RequestParam(required = false) String eventId,
                                                 @RequestBody(required = false) String payload) {
-        return Result.success(multiplatformService.receiveWebhook(platform, eventType, eventId, payload));
+        return Result.success(multiplatformService.receiveWebhook(platform, eventType, eventId, payload, null));
     }
 
     @ShopScoped

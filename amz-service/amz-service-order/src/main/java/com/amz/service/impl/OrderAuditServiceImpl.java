@@ -13,6 +13,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -165,10 +167,30 @@ public class OrderAuditServiceImpl implements OrderAuditService {
                 try { return new BigDecimal(fieldValue).compareTo(new BigDecimal(rule.getConditionValue())) <= 0; }
                 catch (NumberFormatException e) { return false; }
             case "REGEX":
-                try { return Pattern.compile(rule.getConditionValue()).matcher(fieldValue).find(); }
-                catch (Exception e) { return false; }
+                return safeRegexMatch(rule.getConditionValue(), fieldValue);
             default:
                 return false;
+        }
+    }
+
+    /**
+     * 安全执行正则匹配，防御店铺管理员可控正则带来的灾难性回溯（ReDoS）拒绝服务：
+     *  1. 限制正则长度，拒绝超长 / 畸形输入；
+     *  2. 在独立线程中执行匹配并加 500ms 墙钟超时，避免单条匹配长时间占满 CPU。
+     */
+    private boolean safeRegexMatch(String pattern, String fieldValue) {
+        if (pattern == null || pattern.length() > 256) {
+            log.warn("[safeRegexMatch] 正则过长或为空，跳过匹配 len={}", pattern == null ? -1 : pattern.length());
+            return false;
+        }
+        try {
+            Pattern compiled = Pattern.compile(pattern);
+            String input = fieldValue != null ? fieldValue : "";
+            return CompletableFuture.supplyAsync(() -> compiled.matcher(input).find())
+                    .orTimeout(500, TimeUnit.MILLISECONDS)
+                    .join();
+        } catch (Exception e) {
+            return false;
         }
     }
 
