@@ -1,6 +1,7 @@
 package com.amz.service.impl;
 
 import com.amz.client.AiServiceClient;
+import com.amz.context.UserContext;
 import com.amz.mapper.KeywordResearchMapper;
 import com.amz.mapper.SelectionOpportunityMapper;
 import com.amz.model.KeywordResearch;
@@ -66,8 +67,8 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         ThreadLocalRandom rand = ThreadLocalRandom.current();
         rand.setSeed(seed);
 
-        // 默认店铺 ID 为 1（无登录上下文时的占位，前端可带 shopId 参数覆盖）
-        Long shopId = 1L;
+        // 优先从当前用户上下文取 shopId，降级为默认值 1L
+        Long shopId = UserContext.getShopId() != null ? UserContext.getShopId() : 1L;
         String category = inferCategory(keyword);
 
         // 模拟市场基准值（基于品类）
@@ -198,7 +199,8 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         ThreadLocalRandom rand = ThreadLocalRandom.current();
         rand.setSeed((long) keyword.hashCode() + marketplace.hashCode());
 
-        Long shopId = 1L;
+        // 优先从当前用户上下文取 shopId，降级为默认值 1L
+        Long shopId = UserContext.getShopId() != null ? UserContext.getShopId() : 1L;
         int searchVolume = 1000 + rand.nextInt(0, 80000);
         int competitorCount = 30 + rand.nextInt(0, 400);
 

@@ -120,7 +120,7 @@ public class FieldPermissionAspect {
                 } catch (IllegalAccessException ex) {
                     log.debug("字段 {} 不可访问，跳过置空: {}", f.getName(), ex.getMessage());
                 } catch (Exception e) {
-                    // final 字段 / 安全管理器拦截等，跳过
+                    log.debug("字段 {} final/安全拦截，跳过置空: {}", f.getName(), e.getMessage());
                 }
             }
         }

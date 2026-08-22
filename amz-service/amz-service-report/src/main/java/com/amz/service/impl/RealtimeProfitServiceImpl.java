@@ -303,7 +303,9 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
                     if (val instanceof Number) {
                         total = total.add(new BigDecimal(val.toString()));
                     }
-                } catch (Exception ignored) { }
+                } catch (Exception e) {
+                    log.debug("解析成本分摊详情失败：shopId={} sku={} error={}", shopId, sku, e.getMessage());
+                }
             }
         }
         return total;

@@ -4,6 +4,7 @@ import com.amz.agent.selection.SelectionAnalysisResult;
 import com.amz.agent.selection.SelectionAnalysisService;
 import com.amz.agent.selection.SelectionOpportunityInput;
 import com.amz.result.Result;
+import com.amz.util.MapArgUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -70,19 +71,14 @@ public class SelectionAnalysisController {
     }
 
     private String asStr(Object obj) {
-        return obj == null ? null : obj.toString();
+        return MapArgUtils.toStr(obj);
     }
 
     private Integer asInt(Object obj) {
-        if (obj == null) return null;
-        if (obj instanceof Number) return ((Number) obj).intValue();
-        try { return Integer.valueOf(obj.toString()); } catch (Exception e) { return null; }
+        return MapArgUtils.toInt(obj);
     }
 
     private BigDecimal asBigDecimal(Object obj) {
-        if (obj == null) return null;
-        if (obj instanceof BigDecimal) return (BigDecimal) obj;
-        if (obj instanceof Number) return BigDecimal.valueOf(((Number) obj).doubleValue());
-        try { return new BigDecimal(obj.toString()); } catch (Exception e) { return null; }
+        return MapArgUtils.toBigDecimal(obj);
     }
 }

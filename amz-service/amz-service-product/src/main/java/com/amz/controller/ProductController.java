@@ -10,6 +10,7 @@ import com.amz.result.Result;
 import com.amz.service.ListingCopyService;
 import com.amz.service.ProductService;
 import com.amz.service.TranslationService;
+import com.amz.util.MapArgUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -230,17 +231,14 @@ public class ProductController {
     }
 
     private Long toLong(Object obj) {
-        if (obj == null) return null;
-        if (obj instanceof Number) return ((Number) obj).longValue();
-        try { return Long.valueOf(obj.toString()); } catch (Exception e) { return null; }
+        return MapArgUtils.toLong(obj);
     }
 
     private String toStr(Object obj) {
-        return obj == null ? null : obj.toString();
+        return MapArgUtils.toStr(obj);
     }
 
     private BigDecimal toBigDecimal(Object obj, BigDecimal defaultValue) {
-        if (obj == null) return defaultValue;
-        try { return new BigDecimal(obj.toString()); } catch (Exception e) { return defaultValue; }
+        return MapArgUtils.toBigDecimal(obj, defaultValue);
     }
 }
