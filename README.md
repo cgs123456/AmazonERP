@@ -95,16 +95,37 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | 防护层 | 实现 |
 |--------|------|
 | **多店铺 RBAC** | `@ShopScoped` + `ShopIdGuardAspect`（41 方法）+ 网关 JWT+shopId 校验 |
+| **接口级权限** | `@RequireRole` 注解 + AOP 切面（采购/运营等敏感端点 OPERATOR/ADMIN 校验） |
 | **字段级权限** | `@FieldPermission` + 切面 + 前端 `***` 掩码 |
 | **JWT 双 Token** | access_token(24h) + refresh_token(7d) |
-| **网关限流** | Sentinel 1.8.6 + Gateway 适配器 |
+| **LWA Token 隔离** | 缓存键 `clientId:sha256(refreshToken)`，杜绝跨租户 token 串号 |
+| **网关防伪造** | 全局过滤器剥离外部传入的 `userId`/`shopId` 请求头，身份仅取自 JWT |
+| **CORS 配置化** | 白名单经 `amz.cors.allowed-origins` 环境变量注入，默认仅本地 |
+| **网关限流** | Sentinel 1.8.6 + Nacos 规则数据源 + 基线 QPS 规则（user/ai/spapi） |
+| **SP-API 客户端限流** | 滑动窗口 + `x-amzn-RateLimit-Limit` 动态收紧，401/403 自动驱逐缓存 token |
 | **分布式事务** | Seata AT 2.0.0（条件启用 `SEATA_ENABLED=true`） |
 | **TLS 可选** | SSL 配置块（默认关闭，需证书） |
-| **MQ 死信队列** | save.order + login.notice → DLX/DLQ |
+| **MQ 死信队列** | save.order + login.notice → DLX/DLQ；消费幂等（Redis SETNX + 处理上限熔断） |
+| **调度防重** | `DistributedJobLock` Redis 分布式锁，多实例部署不重复执行 |
 | **SQL 注入防护** | 全 MyBatis `#{}` |
 | **全局异常处理器** | 统一 `@ControllerAdvice` 覆盖 16 服务 |
-| **数据库迁移** | Flyway 10.20.0（14 MySQL 服务 V1__init.sql） |
+| **数据库迁移** | Flyway 10.20.0（14 MySQL 服务 V1__init.sql，baseline-on-migrate 兼容存量库） |
 | **Docker 健康探针** | 16 服务 Actuator health/liveness/readiness |
+
+## 🛠 核心可靠性修复日志
+
+| 模块 | 问题 | 修复 |
+|------|------|------|
+| spapi/auth | LWA token 缓存按 clientId 共享，租户间可能串用 | 缓存键加入 refreshToken SHA-256，静态方法可测 |
+| spapi/engine | 补货 leadTimeDemand 公式倍数错误，补货量低估约 10 倍 | 修正为 `adjusted × leadTimeDays`，单测覆盖 |
+| order/mq | 订单消息重复消费、重启后 deliveryTag 误判已处理 | Redis SETNX 幂等 + UUID 交付标签 + 处理上限转 DLQ |
+| order/profit | 广告费全额计入当日、仓储费未摊销、VAT 按价外税计算 | 广告费按近 30 天订单数摊薄；仓储费 /30 日均；VAT 价内税还原 `revenue×r/(1+r)` |
+| finance | 凭证并发重复生成、金蝶同步无归属校验 | 库查重 + 唯一约束兜底；同步原子认领（乐观更新）+ 分段状态上报 |
+| procurement | 1688 下单失败本地状态已变更 | SUBMITTING 先持久化再调远程，失败回滚 DRAFT；质检入参边界校验 |
+| spapi/ai pom | 引用 Sentinel Nacos 数据源但缺依赖，启动即崩 | 补 `sentinel-datasource-nacos` |
+| gateway | CORS 硬编码、mutate 结果未转发、伪造头透传 | 配置化 origins + 修复链式 mutate + 剥离伪造头 |
+| common | 死代码拦截器残留 | 移除 BaseInterceptor/MyInterceptor（5 处） |
+| frontend | 列表页一次性拉全量、AgentChat 端点/响应解析错误 | `usePagination` 组合式函数；Agent 对话改 JSON POST + data 字段读取；WS 降级 URL 修正 |
 
 ## 🚀 快速开始
 
@@ -142,6 +163,8 @@ mvn -pl amz-service/amz-service-user spring-boot:run
 mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=real
 ```
 
+> **Windows 本地一键全栈**：仓库根目录提供 `.start-backend-final.bat`（14 微服务按依赖顺序拉起）与 `.start-vite.bat`（前端），配套 `.start-mysql.bat` 初始化本地 MySQL/Redis。
+
 ### 5. 访问
 
 | 服务 | 地址 |
@@ -159,9 +182,11 @@ mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=r
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
 | 后端 JUnit 5（19 模块） | 546 | 100% |
-| 前端 Vitest（8 文件） | 57 | 100% |
-| 前端 Playwright E2E（10 页面 + 404 + 守卫） | 14 | 100% |
-| **总计** | **282** | **100%** ✅ |
+| 前端 Vitest（8 文件） | 58 | 100% |
+| 前端 Playwright 全交互 E2E（连接真实后端栈：8 页导航 + KPI + Agent 对话 + 分页 + Tab 切换 + 弹窗 + 过滤 + 登录守卫 + 404） | 25 | 100% |
+| **总计** | **629** | **100%** ✅ |
+
+> E2E 通过 `.start-backend-final.bat` + `.start-vite.bat` 拉起本地全栈后运行 `npx playwright test`。
 
 ## 📐 项目结构
 
