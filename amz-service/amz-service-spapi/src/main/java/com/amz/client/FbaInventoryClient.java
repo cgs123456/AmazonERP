@@ -23,10 +23,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -78,23 +75,10 @@ public class FbaInventoryClient {
             Map.entry("A1VC38T7YXB528", "FE")   // 日本
     );
 
-    // ==================== 滑动窗口限流配置 ====================
-
-    /**
-     * 限流窗口大小：30 秒。
-     */
-    private static final Duration THROTTLE_WINDOW = Duration.ofSeconds(30);
-
-    /**
-     * 窗口内最大请求数：25 次。
-     */
-    private static final int THROTTLE_MAX_REQUESTS = 25;
-
-    /**
-     * 请求时间戳队列，用于实现滑动窗口限流。
-     * 通过 synchronized 方法保证线程安全。
-     */
-    private final Deque<Instant> requestTimestamps = new ArrayDeque<>();
+    // ==================== 限流（统一走 SpiRateLimiter） ====================
+    // 旧实现为本类私有 synchronized 滑动窗口：持锁 Thread.sleep 会阻塞所有店铺线程，
+    // 且窗口按客户端实例而非 (shopId, endpoint) 维度统计。现与 OrdersClient 对齐，
+    // 统一委托 SpiRateLimiter（按 shopId:endpoint 隔离 + x-amzn-RateLimit-Limit 动态收紧）。
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -108,6 +92,12 @@ public class FbaInventoryClient {
 
     @Autowired
     private ShopCredentialStore shopCredentialStore;
+
+    /**
+     * 统一滑动窗口限流器（fba-inventory 默认 25 req/30s，按店铺维度隔离）。
+     */
+    @Autowired
+    private com.amz.ratelimit.SpiRateLimiter spiRateLimiter;
 
     /**
      * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
@@ -144,8 +134,8 @@ public class FbaInventoryClient {
         int pageCount = 0;
 
         do {
-            // 发请求前先做滑动窗口限流
-            throttleIfNeeded();
+            // 发请求前按 (shopId, endpoint) 维度滑动窗口限流（与 OrdersClient 一致）
+            spiRateLimiter.acquire(shopId, FBA_INVENTORY_ENDPOINT);
 
             TreeMap<String, String> params = new TreeMap<>();
             params.put("details", "true");
@@ -172,8 +162,14 @@ public class FbaInventoryClient {
 
             HttpResponse<String> response = sendWithRetry(builder.build());
             if (response == null || response.statusCode() != 200) {
+                int status = response == null ? -1 : response.statusCode();
+                // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
+                if (status == 401 || status == 403) {
+                    lwaTokenManager.invalidate(credential);
+                    log.warn("fetchAllInventory got {} — LWA token cache invalidated shopId={}", status, shopId);
+                }
                 throw new RuntimeException("fetchAllInventory failed shopId=" + shopId
-                        + " status=" + (response == null ? -1 : response.statusCode())
+                        + " status=" + status
                         + " body=" + (response == null ? "" : response.body()));
             }
 
@@ -206,40 +202,8 @@ public class FbaInventoryClient {
     }
 
     /**
-     * 滑动窗口限流：保证 30 秒内最多 25 次请求，超过则 Thread.sleep 等待。
-     * <p>
-     * 通过 synchronized 保证多线程下窗口统计的一致性。
-     */
-    private synchronized void throttleIfNeeded() {
-        Instant now = Instant.now();
-        Instant windowStart = now.minus(THROTTLE_WINDOW);
-        // 移除窗口外的旧时间戳
-        while (!requestTimestamps.isEmpty() && requestTimestamps.peekFirst().isBefore(windowStart)) {
-            requestTimestamps.pollFirst();
-        }
-        if (requestTimestamps.size() >= THROTTLE_MAX_REQUESTS) {
-            Instant oldest = requestTimestamps.peekFirst();
-            long sleepMs = Duration.between(now, oldest.plus(THROTTLE_WINDOW)).toMillis();
-            if (sleepMs > 0) {
-                log.info("throttleIfNeeded: window full, sleeping {}ms", sleepMs);
-                try {
-                    Thread.sleep(sleepMs);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-            // 睡醒后再次清理过期时间戳
-            Instant after = Instant.now();
-            Instant newWindowStart = after.minus(THROTTLE_WINDOW);
-            while (!requestTimestamps.isEmpty() && requestTimestamps.peekFirst().isBefore(newWindowStart)) {
-                requestTimestamps.pollFirst();
-            }
-        }
-        requestTimestamps.addLast(Instant.now());
-    }
-
-    /**
-     * 发送请求，遇到 429 限流时按指数退避重试。
+     * 发送请求，遇到 429 限流时按指数退避重试，
+     * 并读取 {@code x-amzn-RateLimit-Limit} 头动态收紧本地窗口（与 OrdersClient 对齐）。
      */
     private HttpResponse<String> sendWithRetry(HttpRequest request) {
         HttpResponse<String> response = null;
@@ -257,6 +221,12 @@ public class FbaInventoryClient {
             }
             if (response.statusCode() == 429) {
                 recordThrottle(FBA_INVENTORY_ENDPOINT);
+                // 读取 x-amzn-RateLimit-Limit（req/s），收紧本地窗口，降低后续被限流概率
+                String rateLimitHeader = response.headers()
+                        .firstValue("x-amzn-RateLimit-Limit").orElse(null);
+                if (rateLimitHeader != null && !rateLimitHeader.isBlank()) {
+                    spiRateLimiter.updateLimit(FBA_INVENTORY_ENDPOINT, rateLimitHeader);
+                }
                 long backoff = (1L << attempt) * 1000L;
                 log.warn("Rate limited (429), retrying after {}ms attempt={}", backoff, attempt);
                 sleep(backoff);

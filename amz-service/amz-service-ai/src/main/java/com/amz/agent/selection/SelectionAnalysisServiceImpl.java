@@ -5,11 +5,11 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 选品分析服务实现：调用 DeepSeek 生成选品建议。
@@ -27,11 +27,9 @@ public class SelectionAnalysisServiceImpl implements SelectionAnalysisService {
     @Value("${deepseek.api_key}")
     private String apiKey;
 
-    private final OkHttpClient client = new OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build();
+    /** 共享 OkHttp 客户端（见 AiHttpClientConfig）。 */
+    @Autowired
+    private OkHttpClient client;
 
     private final Gson gson = new Gson();
 

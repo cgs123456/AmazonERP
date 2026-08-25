@@ -1,6 +1,7 @@
 package com.amz.mq.consumer;
 
 import com.amz.constant.MqConstant;
+import com.amz.exception.MessageProcessLimitExceededException;
 import com.amz.model.dto.OrderDto;
 import com.amz.model.dto.OrderSyncDto;
 import com.amz.model.pojo.CustomAttribute;
@@ -24,6 +25,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 订单保存消费者。
@@ -59,14 +61,17 @@ public class OrderConsumer {
             JsonNode shopIdNode = root.get("shopId");
             String shopId = (shopIdNode != null && !shopIdNode.isNull()) ? shopIdNode.asText() : null;
 
-            // 幂等键：优先 amazonOrderId + shopId；其次 AMQP messageId；最后 deliveryTag 兜底
+            // 幂等键：优先 amazonOrderId + shopId；其次 AMQP messageId。
+            // 两者皆缺失时生成一次性随机键：deliveryTag 是 channel 级且重启后回收复用，
+            // 用作幂等键会在重启后误判"已处理"导致丢单，随机键则保证每条消息都被真实处理
+            // （此场景本就无业务唯一标识可去重）。
             String messageId;
             if (amazonOrderId != null && !amazonOrderId.isEmpty()) {
                 messageId = (shopId != null && !shopId.isEmpty()) ? amazonOrderId + ":" + shopId : amazonOrderId;
             } else if (amqpMessageId != null && !amqpMessageId.isEmpty()) {
                 messageId = amqpMessageId;
             } else {
-                messageId = String.valueOf(deliveryTag);
+                messageId = "auto-" + UUID.randomUUID();
             }
 
             JsonNode userIdNode = root.get("userId");
@@ -113,6 +118,11 @@ public class OrderConsumer {
             // 幂等性跳过或参数校验失败：直接 ack，不重新入队
             log.warn("跳过消息处理（幂等或参数校验）：messageId={}, 错误: {}", amqpMessageId, e.getMessage());
             ack(channel, deliveryTag);
+        } catch (MessageProcessLimitExceededException e) {
+            // 连续失败达上限的毒消息：nack requeue=false，经 DLX 路由到死信队列，
+            // 阻断无限重投（修复：旧实现恒 requeue=true 导致 DLX 配置形同虚设）
+            log.error("消息处理重试耗尽，转入死信队列：messageId={}, 错误: {}", amqpMessageId, e.getMessage());
+            sendToDlq(channel, deliveryTag);
         } catch (Exception e) {
             log.error("处理订单消息异常，消息将重新入队：messageId={}", amqpMessageId, e);
             nack(channel, deliveryTag, true);

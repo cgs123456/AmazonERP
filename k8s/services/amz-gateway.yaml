@@ -87,6 +87,9 @@ spec:
                 configMapKeyRef:
                   name: amz-erp-config
                   key: TZ
+            # WebSocket 上游：/ws/** 路由 → message 服务 Netty 端口（Service 已暴露 ws:8888）
+            - name: WS_MESSAGE_UPSTREAM
+              value: http://amz-service-message:8888
             - name: JAVA_OPTS
               valueFrom:
                 configMapKeyRef:

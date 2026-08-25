@@ -5,6 +5,7 @@ import com.amz.client.FinanceServiceFeignClient;
 import com.amz.client.ProductClient;
 import com.amz.constant.MqConstant;
 import com.amz.enums.OrderStatusEnum;
+import com.amz.exception.MessageProcessLimitExceededException;
 import com.amz.mapper.OrderAttributeMapper;
 import com.amz.mapper.OrderMapper;
 import com.amz.model.dto.OrderDto;
@@ -38,6 +39,12 @@ import java.util.concurrent.TimeUnit;
 @Service
 @Slf4j
 public class OrderServiceImpl implements OrderService {
+
+    /**
+     * 单条消息最大处理尝试次数：超过后抛 MessageProcessLimitExceededException，
+     * 由消费者转死信队列（nack requeue=false），避免无限重投。
+     */
+    private static final int MAX_PROCESS_ATTEMPTS = 3;
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
@@ -103,7 +110,7 @@ public class OrderServiceImpl implements OrderService {
         // TTL 24 小时：覆盖 RabbitMQ 消息重投窗口，避免 deliveryTag 失效后重复落库
         Boolean isNew = redisTemplate.opsForValue().setIfAbsent(processedKey, "1", 24, TimeUnit.HOURS);
         if (Boolean.FALSE.equals(isNew)) {
-            // key 已存在，说明消息已处理过或正在处理中
+            // key 已存在，说明消息已处理成功过（失败时会释放占位），跳过重复处理
             log.warn("消息已处理过或正在处理中，跳过处理，messageId: {}", messageId);
             throw new IllegalStateException("消息已处理过，messageId: " + messageId);
         }
@@ -115,12 +122,21 @@ public class OrderServiceImpl implements OrderService {
             // 成功：保留 processedKey 作为 24h 幂等标记（不删除），防止 MQ 重投导致重复落库
             log.info("订单处理成功，messageId: {}", messageId);
         } catch (Exception e) {
-            // 失败：不删除 processedKey（阻止 nack 重投触发无限重试），记录失败次数供运维排查
+            // 失败：释放幂等占位，允许 MQ 重投后重新处理。
+            // （修复 at-most-once 丢单：旧实现失败后保留占位，重投消息被误判"已处理"而 ack，
+            //   瞬时 DB 故障会导致订单丢失长达 TTL 窗口）
+            redisTemplate.delete(processedKey);
             Long failCount = redisTemplate.opsForValue().increment(failCountKey);
             if (failCount != null && failCount == 1L) {
                 redisTemplate.expire(failCountKey, 24, TimeUnit.HOURS);
             }
             log.error("订单处理失败，messageId: {}, 失败次数: {}", messageId, failCount, e);
+            if (failCount != null && failCount >= MAX_PROCESS_ATTEMPTS) {
+                // 连续失败达上限：抛专用异常由 Consumer 转死信队列（nack requeue=false），
+                // 避免毒消息无限重投阻塞队列；死信可人工排查后补发
+                throw new MessageProcessLimitExceededException(
+                        "消息连续处理失败 " + failCount + " 次，转死信队列，messageId: " + messageId);
+            }
             throw e;
         }
     }

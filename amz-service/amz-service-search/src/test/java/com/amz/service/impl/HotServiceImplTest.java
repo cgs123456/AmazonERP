@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.data.redis.core.ZSetOperations.TypedTuple;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -28,7 +29,8 @@ import static org.mockito.Mockito.when;
  * <p>
  * 原 {@code AmzServiceSearchApplicationTests} 依赖 Redis 容器连接，CI 中被 {@code @Disabled} 跳过。
  * 现改为 mock {@link RedisTemplate} 的 ZSet 操作，验证 {@link HotServiceImpl} 的
- * 热搜聚合逻辑（reverseRange 取前 10、score 查询、空集合处理）。
+ * 热搜聚合逻辑。实现使用 {@code reverseRangeWithScores} 一次取回成员与分数
+ * （替代旧的 ZREVRANGE + N 次 ZSCORE），mock 口径与之对齐。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("热搜服务单元测试")
@@ -43,6 +45,26 @@ class HotServiceImplTest {
     @InjectMocks
     private HotServiceImpl hotService;
 
+    /** 构造 TypedTuple（默认 DefaultTuple 需要 byte 序列化器，此处用匿名实现）。 */
+    private TypedTuple<Object> tuple(Object value, Double score) {
+        return new TypedTuple<Object>() {
+            @Override
+            public int compareTo(TypedTuple<Object> o) {
+                return Double.compare(score, o == null ? null : o.getScore());
+            }
+
+            @Override
+            public Object getValue() {
+                return value;
+            }
+
+            @Override
+            public Double getScore() {
+                return score;
+            }
+        };
+    }
+
     /**
      * Redis 中存在热搜词时，应返回按分数排序的热搜列表。
      */
@@ -50,13 +72,11 @@ class HotServiceImplTest {
     @DisplayName("有热搜数据 → 返回前10名及对应分数")
     void testGetHotListWithResults() {
         when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        Set<Object> hots = new LinkedHashSet<>(List.of("蓝牙耳机", "手机壳"));
-        when(zSetOperations.reverseRange(eq(RedisConstant.PRODUCT_SCORE), eq(0L), eq(9L)))
-                .thenReturn(hots);
-        when(zSetOperations.score(eq(RedisConstant.PRODUCT_SCORE), eq("蓝牙耳机")))
-                .thenReturn(100.0);
-        when(zSetOperations.score(eq(RedisConstant.PRODUCT_SCORE), eq("手机壳")))
-                .thenReturn(80.5);
+        Set<TypedTuple<Object>> tuples = new LinkedHashSet<>(List.of(
+                tuple("蓝牙耳机", 100.0),
+                tuple("手机壳", 80.5)));
+        when(zSetOperations.reverseRangeWithScores(eq(RedisConstant.PRODUCT_SCORE), eq(0L), eq(9L)))
+                .thenReturn(tuples);
 
         Result<List<Map<String, Object>>> result = hotService.getHotList();
 
@@ -80,7 +100,7 @@ class HotServiceImplTest {
     @DisplayName("无热搜数据 → 返回 null data")
     void testGetHotListEmpty() {
         when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRange(eq(RedisConstant.PRODUCT_SCORE), eq(0L), eq(9L)))
+        when(zSetOperations.reverseRangeWithScores(eq(RedisConstant.PRODUCT_SCORE), eq(0L), eq(9L)))
                 .thenReturn(Collections.emptySet());
 
         Result<List<Map<String, Object>>> result = hotService.getHotList();
@@ -96,7 +116,7 @@ class HotServiceImplTest {
     @DisplayName("Redis 返回 null → 返回 null data 不抛异常")
     void testGetHotListNullFromRedis() {
         when(redisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.reverseRange(eq(RedisConstant.PRODUCT_SCORE), eq(0L), eq(9L)))
+        when(zSetOperations.reverseRangeWithScores(eq(RedisConstant.PRODUCT_SCORE), eq(0L), eq(9L)))
                 .thenReturn(null);
 
         Result<List<Map<String, Object>>> result = hotService.getHotList();

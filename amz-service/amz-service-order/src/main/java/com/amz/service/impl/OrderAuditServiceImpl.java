@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -174,23 +174,42 @@ public class OrderAuditServiceImpl implements OrderAuditService {
     }
 
     /**
+     * 正则匹配专用线程池：与 ForkJoinPool.commonPool 隔离。
+     * 旧实现跑在 commonPool 上，超时仅放弃等待并不取消任务，
+     * ReDoS 回溯线程会持续占用 JVM 公共池，殃及并行流等其他组件。
+     */
+    private static final java.util.concurrent.ExecutorService REGEX_EXECUTOR =
+            java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
+                Thread t = new Thread(r, "order-audit-regex");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /**
      * 安全执行正则匹配，防御店铺管理员可控正则带来的灾难性回溯（ReDoS）拒绝服务：
      *  1. 限制正则长度，拒绝超长 / 畸形输入；
-     *  2. 在独立线程中执行匹配并加 500ms 墙钟超时，避免单条匹配长时间占满 CPU。
+     *  2. 在专用小线程池中执行匹配并加 500ms 墙钟超时；
+     *  3. 超时/异常时 cancel(true) 中断匹配线程（Thread.interrupt 可打断部分
+     *     灾难性回溯循环），避免失控任务滞留线程池。
      */
     private boolean safeRegexMatch(String pattern, String fieldValue) {
         if (pattern == null || pattern.length() > 256) {
             log.warn("[safeRegexMatch] 正则过长或为空，跳过匹配 len={}", pattern == null ? -1 : pattern.length());
             return false;
         }
+        java.util.concurrent.Future<Boolean> future = null;
         try {
             Pattern compiled = Pattern.compile(pattern);
             String input = fieldValue != null ? fieldValue : "";
-            return CompletableFuture.supplyAsync(() -> compiled.matcher(input).find())
-                    .orTimeout(500, TimeUnit.MILLISECONDS)
-                    .join();
+            future = REGEX_EXECUTOR.submit(() -> compiled.matcher(input).find());
+            return future.get(500, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
             return false;
+        } finally {
+            if (future != null) {
+                // 无论成功失败都尝试中断：超时的回溯任务不应继续占用线程
+                future.cancel(true);
+            }
         }
     }
 

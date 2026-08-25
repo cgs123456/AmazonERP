@@ -18,6 +18,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 智能补货引擎。
@@ -25,12 +26,12 @@ import java.util.List;
  * 基于销量历史、变异系数、季节性指数、促销日历四大维度计算 SKU 补货建议。
  * <pre>
  * 算法：
- *   baseline       = 7天日均 × 0.7 + 30天日均 × 0.3
+ *   baseline       = 7天日均 × 0.7 + 30天日均 × 0.3（量纲：件/天）
  *   safetyFactor   = 1.10 / 1.20 / 1.35（CV &lt; 0.3 / 0.3-0.6 / &gt; 0.6）
  *   seasonalIndex  = amz_seasonal_index WHERE category=? AND month=当前月
  *   promoMultiplier= amz_promotion_calendar 未来14天是否有促销
- *   adjusted       = baseline × safetyFactor × seasonalIndex × promoMultiplier
- *   leadTimeDemand = adjusted × leadTimeDays / 14
+ *   adjusted       = baseline × safetyFactor × seasonalIndex × promoMultiplier（件/天）
+ *   leadTimeDemand = adjusted × leadTimeDays（日均需求 × 备货天数 = 备货期总需求，件）
  *   suggested      = max(0, ceil(adjusted + leadTimeDemand - currentTotalStock))
  *   stockoutDate   = today + ceil(currentTotalStock / baseline)
  *   urgencyLevel   = suggested==0 ? LOW
@@ -123,12 +124,15 @@ public class ReplenishmentEngine {
         suggestion.setStatDate(today);
         suggestion.setCurrentTotalStock(currentTotalStock);
 
+        // 1+2. 单次查询 30 天销量历史：同一份数据同时用于基线与 CV 计算（避免同数据重复 SQL）
+        List<SalesHistory> histories = queryLast30DaysHistory(shopId, sku);
+
         // 1. 基线需求 = 7天日均 × 0.7 + 30天日均 × 0.3
-        BigDecimal baseline = forecastNext14Days(shopId, sku);
+        BigDecimal baseline = computeBaseline(histories);
         suggestion.setBaselineDemand(baseline);
 
         // 2. CV 变异系数 → 安全系数
-        List<Integer> dailySales = queryLast30DaysDailySales(shopId, sku);
+        List<Integer> dailySales = extractDailyQuantities(histories);
         double cv = calculateCV(dailySales);
         BigDecimal safetyFactor = getSafetyFactor(cv);
         suggestion.setSafetyFactor(safetyFactor);
@@ -148,10 +152,12 @@ public class ReplenishmentEngine {
                 .multiply(promotionMultiplier)
                 .setScale(4, RoundingMode.HALF_UP);
 
-        // 6. 备货期内需求 = adjusted × leadTimeDays / 14
+        // 6. 备货期内需求 = adjusted × leadTimeDays
+        //    量纲推导：adjusted 为日均需求（件/天），×备货天数 = 备货期总需求（件）。
+        //    旧实现误除以 FORECAST_WINDOW_DAYS，导致补货量被系统性低估约 leadTimeDays/14 倍。
         BigDecimal leadTimeDemand = adjusted
                 .multiply(BigDecimal.valueOf(leadTimeDays))
-                .divide(BigDecimal.valueOf(FORECAST_WINDOW_DAYS), 4, RoundingMode.HALF_UP);
+                .setScale(4, RoundingMode.HALF_UP);
 
         // 7. 建议补货量 = max(0, ceil(adjusted + leadTimeDemand - currentTotalStock))
         long rawSuggested = (long) Math.ceil(
@@ -250,16 +256,35 @@ public class ReplenishmentEngine {
      * @return 基线日均需求；无数据返回 0
      */
     public BigDecimal forecastNext14Days(Long shopId, String sku) {
+        return computeBaseline(queryLast30DaysHistory(shopId, sku));
+    }
+
+    /**
+     * 查询最近 30 天的销量历史（供基线与 CV 共用，避免同数据重复 SQL）。
+     *
+     * @param shopId 店铺 ID
+     * @param sku    卖家 SKU
+     * @return 销量历史列表（可能为空）
+     */
+    private List<SalesHistory> queryLast30DaysHistory(Long shopId, String sku) {
         LocalDate today = LocalDate.now();
         LocalDate start30 = today.minusDays(30);
-        LocalDate start7 = today.minusDays(7);
-
-        List<SalesHistory> histories = salesHistoryMapper.selectList(
+        return salesHistoryMapper.selectList(
                 new LambdaQueryWrapper<SalesHistory>()
                         .eq(SalesHistory::getShopId, shopId)
                         .eq(SalesHistory::getSku, sku)
                         .ge(SalesHistory::getSaleDate, start30)
                         .le(SalesHistory::getSaleDate, today));
+    }
+
+    /**
+     * 从销量历史计算基线日均需求（7 天 0.7 权重 + 30 天 0.3 权重）。
+     * 缺失日期按 0 销量处理（分母为固定天数），与 Hybrid 引擎 computeDailyAvg 口径一致。
+     */
+    private BigDecimal computeBaseline(List<SalesHistory> histories) {
+        LocalDate today = LocalDate.now();
+        LocalDate start30 = today.minusDays(30);
+        LocalDate start7 = today.minusDays(7);
 
         int sum7 = 0;
         int sum30 = 0;
@@ -281,24 +306,26 @@ public class ReplenishmentEngine {
     }
 
     /**
-     * 查询最近 30 天的每日销量列表，用于 CV 计算。
-     *
-     * @param shopId 店铺 ID
-     * @param sku    卖家 SKU
-     * @return 每日销量列表
+     * 从销量历史提取每日销量列表（用于 CV 计算）。
+     * <p>
+     * <b>零填充口径：</b>以最近 30 天为窗口，缺失日期按 0 销量补齐。
+     * 若仅对"有记录的日子"计算 CV，会系统性低估波动（漏掉零销量日），
+     * 导致安全系数取档偏低、补货量不足。同日多条记录按累加合并。
      */
-    private List<Integer> queryLast30DaysDailySales(Long shopId, String sku) {
+    protected List<Integer> extractDailyQuantities(List<SalesHistory> histories) {
+        Map<LocalDate, Integer> byDate = new java.util.HashMap<>();
+        for (SalesHistory h : histories) {
+            if (h.getSaleDate() == null) {
+                continue;
+            }
+            int qty = h.getQuantity() == null ? 0 : h.getQuantity();
+            byDate.merge(h.getSaleDate(), qty, Integer::sum);
+        }
         LocalDate today = LocalDate.now();
         LocalDate start30 = today.minusDays(30);
-        List<SalesHistory> histories = salesHistoryMapper.selectList(
-                new LambdaQueryWrapper<SalesHistory>()
-                        .eq(SalesHistory::getShopId, shopId)
-                        .eq(SalesHistory::getSku, sku)
-                        .ge(SalesHistory::getSaleDate, start30)
-                        .le(SalesHistory::getSaleDate, today));
-        List<Integer> result = new ArrayList<>(histories.size());
-        for (SalesHistory h : histories) {
-            result.add(h.getQuantity() == null ? 0 : h.getQuantity());
+        List<Integer> result = new ArrayList<>(32);
+        for (LocalDate d = start30; !d.isAfter(today); d = d.plusDays(1)) {
+            result.add(byDate.getOrDefault(d, 0));
         }
         return result;
     }

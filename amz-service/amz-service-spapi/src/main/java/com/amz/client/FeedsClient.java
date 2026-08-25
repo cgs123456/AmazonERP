@@ -97,6 +97,13 @@ public class FeedsClient {
     private ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     /**
+     * 统一滑动窗口限流器（feeds 端点默认 30 req/30s 兜底，按店铺维度隔离）。
+     * SP-API Feeds 官方配额较紧（createFeed 约 0.0083 req/s），此处保守前置限流。
+     */
+    @Autowired
+    private com.amz.ratelimit.SpiRateLimiter spiRateLimiter;
+
+    /**
      * 提交 Listing Feed，返回 SP-API feedId。
      *
      * @param shopId        店铺 ID
@@ -107,6 +114,9 @@ public class FeedsClient {
     public String submitFeed(Long shopId, String marketplaceId, String content) {
         ResolvedShop shop = resolveShop(shopId, marketplaceId);
         String accessToken = lwaTokenManager.getToken(shop.credential);
+
+        // 前置滑动窗口限流（按 shopId + feeds 端点维度）
+        spiRateLimiter.acquire(shopId, FEEDS_ENDPOINT);
 
         // 1. 创建 Feed 文档
         JsonObject doc = createFeedDocument(shop, accessToken, CONTENT_TYPE);
@@ -149,8 +159,14 @@ public class FeedsClient {
 
         HttpResponse<String> response = sendWithRetry(builder.build());
         if (response == null || response.statusCode() != 200) {
+            int status = response == null ? -1 : response.statusCode();
+            // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
+            if (status == 401 || status == 403) {
+                lwaTokenManager.invalidate(shop.credential);
+                log.warn("getFeedStatus got {} — LWA token cache invalidated shopId={}", status, shopId);
+            }
             throw new RuntimeException("getFeedStatus failed feedId=" + feedId
-                    + " status=" + (response == null ? -1 : response.statusCode())
+                    + " status=" + status
                     + " body=" + (response == null ? "" : response.body()));
         }
         JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
@@ -291,6 +307,12 @@ public class FeedsClient {
             }
             if (response.statusCode() == 429) {
                 recordThrottle(FEEDS_ENDPOINT);
+                // 读取 x-amzn-RateLimit-Limit（req/s），收紧本地窗口
+                String rateLimitHeader = response.headers()
+                        .firstValue("x-amzn-RateLimit-Limit").orElse(null);
+                if (rateLimitHeader != null && !rateLimitHeader.isBlank()) {
+                    spiRateLimiter.updateLimit(FEEDS_ENDPOINT, rateLimitHeader);
+                }
                 long backoff = (1L << attempt) * 1000L;
                 log.warn("Rate limited (429), retrying after {}ms attempt={}", backoff, attempt);
                 sleep(backoff);

@@ -9,7 +9,7 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+        server-addr: ${NACOS_ADDR:localhost:8848}
 # 数据报表服务无独立数据库，通过 Feign 聚合各微服务数据
 
 # JWT security config
@@ -21,7 +21,8 @@ jwt:
 # Logging — traceId 注入（与 Skywalking 链路追踪关联）
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"---
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
+---
 feign:
   client:
     config:

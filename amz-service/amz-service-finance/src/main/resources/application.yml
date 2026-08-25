@@ -3,21 +3,23 @@ server:
 spring:
   application:
     name: amz-service-finance
-  # 默认启用 mock 模式（离线开发）。生产环境通过 SPRING_PROFILES_ACTIVE 环境变量切换为非 mock
+  # 默认非 mock（生产安全默认值）：KingdeeRealClient 未对接真实 API 时优雅降级，
+  # 凭证标记 SYNCING 并返回 KINGDEE_MOCK_ 占位号，不会伪造 SYNCED。
+  # 本地离线开发请显式设置 SPRING_PROFILES_ACTIVE=mock 启用 Mock 客户端
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:mock}
+    active: ${SPRING_PROFILES_ACTIVE:}
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+        server-addr: ${NACOS_ADDR:localhost:8848}
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_HOST:121.37.250.15}:${MYSQL_PORT:3306}/amz_finance?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/amz_finance?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
   data:
     redis:
-      host: ${REDIS_HOST:121.37.250.15}
+      host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: 0

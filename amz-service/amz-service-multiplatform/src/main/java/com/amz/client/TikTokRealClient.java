@@ -86,7 +86,7 @@ public class TikTokRealClient extends AbstractPlatformClient implements TikTokCl
             return ok;
         } catch (Exception e) {
             log.error("TikTok markShipped failed orderNo={}", platformOrderNo, e);
-            return false;
+            throw new RuntimeException("TikTok markShipped failed: " + e.getMessage(), e);
         }
     }
 
@@ -127,7 +127,7 @@ public class TikTokRealClient extends AbstractPlatformClient implements TikTokCl
                 if (amt != null) {
                     try {
                         uo.setOriginalAmount(new BigDecimal(amt));
-                    } catch (Exception ignore) {
+                    } catch (NumberFormatException e) {
                         log.debug("TikTok 订单金额解析失败 orderId={} amount={}", uo.getPlatformOrderNo(), amt);
                     }
                 }

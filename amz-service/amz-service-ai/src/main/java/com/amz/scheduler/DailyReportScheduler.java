@@ -31,7 +31,11 @@ import java.util.Map;
 public class DailyReportScheduler {
 
     /** 消息类型：参考 MessageTypeEnum，库存预警=0；此处使用通用业务通知默认值。 */
-    private static final int MSG_TYPE_DAILY_REPORT = 0;
+    /**
+     * 消息类型：5（前端 MessageTypeEnum 映射 0-4 为业务告警，
+     * 未匹配类型回退为 system —— 每日报告归为系统通知而非"库存预警"）。
+     */
+    private static final int MSG_TYPE_DAILY_REPORT = 5;
 
     @Autowired
     private UserPreferenceMapper userPreferenceMapper;
@@ -61,7 +65,10 @@ public class DailyReportScheduler {
         int failed = 0;
         for (UserPreference pref : users) {
             String report = buildReport(pref, yesterday);
-            log.info("推送昨日运营报告至用户 {} (店铺 {})：\n{}",
+            // 报告正文走 debug（旧实现 INFO 全量打印，N 用户 = N 份全文日志，日志量爆炸）
+            log.info("推送昨日运营报告至用户 {} (店铺 {})，长度 {} 字符",
+                    pref.getUserId(), pref.getPreferredShopId(), report.length());
+            log.debug("昨日运营报告内容 userId={} shopId={}：\n{}",
                     pref.getUserId(), pref.getPreferredShopId(), report);
 
             // 通过 Feign 调用 amz-service-message 推送到用户消息中心

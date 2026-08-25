@@ -6,15 +6,15 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+        server-addr: ${NACOS_ADDR:localhost:8848}
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_HOST:121.37.250.15}:${MYSQL_PORT:3306}/amz_search?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/amz_search?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
   data:
     redis:
-      host: ${REDIS_HOST:121.37.250.15}
+      host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: 0
@@ -25,7 +25,7 @@ spring:
           max-idle: 8
           min-idle: 0
   elasticsearch:
-    uris: ${ES_URIS:http://121.37.250.15:9200}
+    uris: ${ES_URIS:http://localhost:9200}
 # Embedding 向量化服务（用于 ES 混合检索 dense_vector 查询生成）
 # 默认禁用，需通过环境变量 EMBEDDING_ENABLED=true 开启
 embedding:
@@ -52,7 +52,8 @@ jwt:
 # Logging — traceId 注入（与 Skywalking 链路追踪关联）
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"---
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
+---
 feign:
   client:
     config:

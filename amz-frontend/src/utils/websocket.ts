@@ -302,7 +302,8 @@ class WebSocketManager {
 }
 
 // 创建单例实例
-const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws'
+// fallback 与 .env.development 的 VITE_WS_URL 保持一致（Netty WebSocket 端口 8888，路径 /socket）
+const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8888/socket'
 export const websocketManager = new WebSocketManager(wsUrl)
 
 export default WebSocketManager

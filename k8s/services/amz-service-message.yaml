@@ -1,4 +1,4 @@
-# amz-service-message —— 消息微服务（端口 8889，DB: amz_message）
+# amz-service-message —— 消息微服务（HTTP 8889，Netty WebSocket 8888，DB: amz_message）
 apiVersion: v1
 kind: Service
 metadata:
@@ -9,6 +9,8 @@ spec:
   type: ClusterIP
   ports:
     - { name: http, port: 8889, targetPort: 8889, protocol: TCP }
+    # Netty WebSocket 端口：网关 /ws/** 路由转发（WS_MESSAGE_UPSTREAM）
+    - { name: ws, port: 8888, targetPort: 8888, protocol: TCP }
   selector: { app: amz-service-message }
 ---
 apiVersion: apps/v1
@@ -30,6 +32,7 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - { name: http, containerPort: 8889, protocol: TCP }
+            - { name: ws, containerPort: 8888, protocol: TCP }
           env:
             - { name: NACOS_SERVER_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_SERVER_ADDR } } }
             - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }

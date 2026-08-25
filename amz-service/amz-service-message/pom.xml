@@ -57,6 +57,16 @@
             <artifactId>amz-common</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
+        <!-- amz-common 的 FieldPermissionServiceImpl 以 ObjectProvider 懒解析 Redis/JDBC 可选依赖，
+             但字段泛型签名仍引用相关类，需提供类本身（非 starter，不触发自动配置） -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>

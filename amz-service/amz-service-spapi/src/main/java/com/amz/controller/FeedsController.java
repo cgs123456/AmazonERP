@@ -53,7 +53,7 @@ public class FeedsController {
             return Result.success(feedId);
         } catch (Exception e) {
             log.error("FeedsController.submit failed shopId={}", request.getShopId(), e);
-            return Result.failure("feed submit failed: " + e.getMessage());
+            return Result.failure("feed submit failed");
         }
     }
 
@@ -79,7 +79,7 @@ public class FeedsController {
             return Result.success(map);
         } catch (Exception e) {
             log.error("FeedsController.status failed shopId={} feedId={}", shopId, feedId, e);
-            return Result.failure("feed status failed: " + e.getMessage());
+            return Result.failure("feed status failed");
         }
     }
 

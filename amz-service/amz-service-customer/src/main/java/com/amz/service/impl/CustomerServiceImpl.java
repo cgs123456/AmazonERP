@@ -9,6 +9,7 @@ import com.amz.service.CustomerService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -28,6 +29,9 @@ public class CustomerServiceImpl implements CustomerService {
 
     @Autowired
     private TicketClassifier classifier;
+
+    @Autowired
+    private Environment environment;
 
     @Override
     public CustomerTicket receiveMessage(CustomerTicket ticket) {
@@ -71,18 +75,25 @@ public class CustomerServiceImpl implements CustomerService {
     @Override
     public int sendReviewSolicitations(Long shopId) {
         // 合规筛选：已签收 + 30 天内 + 未发过索评
-        // 生产环境应通过 SP-API 拉取订单列表 + 调用 Request a Review 接口
+        // 生产实现需通过 SP-API 拉取订单列表 + 调用 Request a Review 接口。
+        // 非 mock 环境下诚实失败：伪造 SENT 记录会让运营误以为索评已发出（合规风险）
+        if (!isMockProfile()) {
+            throw new IllegalStateException(
+                    "索评依赖 SP-API 'Request a Review' 接口，尚未接入真实发送通道"
+                            + "（本地演示请启用 mock profile），shopId=" + shopId);
+        }
+
         LambdaQueryWrapper<ReviewSolicitation> sentWrapper = new LambdaQueryWrapper<>();
         sentWrapper.eq(ReviewSolicitation::getShopId, shopId);
         long sentCount = solicitationMapper.selectCount(sentWrapper);
-        log.info("索评助手：shopId={} 已发送 {} 条，模拟本次新增 5 条", shopId, sentCount);
+        log.warn("[MOCK] 索评助手：shopId={} 已发送 {} 条，本次为模拟数据新增 5 条（非真实发送）", shopId, sentCount);
 
         // 模拟：为 5 个未索评订单创建请求记录
         int created = 0;
         for (int i = 1; i <= 5; i++) {
             ReviewSolicitation r = new ReviewSolicitation();
             r.setShopId(shopId);
-            r.setAmazonOrderId("AMZ-" + System.currentTimeMillis() + "-" + i);
+            r.setAmazonOrderId("SIMULATED-" + System.currentTimeMillis() + "-" + i);
             r.setAsin("B0" + (1000000 + i));
             r.setChannel("OFFICIAL_BUTTON");
             r.setStatus("SENT");
@@ -90,6 +101,20 @@ public class CustomerServiceImpl implements CustomerService {
             created++;
         }
         return created;
+    }
+
+    /** 是否运行在 mock profile（模拟数据仅在 mock 环境允许生成）。 */
+    private boolean isMockProfile() {
+        try {
+            for (String p : environment.getActiveProfiles()) {
+                if ("mock".equals(p)) {
+                    return true;
+                }
+            }
+        } catch (Exception ignore) {
+            // 无环境上下文时按非 mock 处理（诚实失败）
+        }
+        return false;
     }
 
     @Override

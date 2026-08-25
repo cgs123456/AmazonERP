@@ -1,5 +1,7 @@
 package com.amz.util;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.math.BigDecimal;
 import java.util.Map;
 
@@ -15,6 +17,7 @@ import java.util.Map;
  * 若 ErpToolExecutor / ProductController 的对应私有方法自包含且测试依赖其行为，
  * 保留不动即可，待相关模块自然演进时再切换到本类。
  */
+@Slf4j
 public final class MapArgUtils {
 
     private MapArgUtils() {
@@ -35,7 +38,8 @@ public final class MapArgUtils {
         if (obj instanceof Number) return ((Number) obj).longValue();
         try {
             return Long.valueOf(obj.toString());
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
+            log.warn("Failed to convert {} to Long: {}", obj, e.getMessage());
             return null;
         }
     }
@@ -72,7 +76,8 @@ public final class MapArgUtils {
         if (obj instanceof Number) return ((Number) obj).intValue();
         try {
             return Integer.valueOf(obj.toString());
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
+            log.warn("Failed to convert {} to Integer: {}", obj, e.getMessage());
             return null;
         }
     }
@@ -108,7 +113,8 @@ public final class MapArgUtils {
         if (obj instanceof Number) return ((Number) obj).doubleValue();
         try {
             return Double.valueOf(obj.toString());
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
+            log.warn("Failed to convert {} to Double: {}", obj, e.getMessage());
             return null;
         }
     }
@@ -166,7 +172,8 @@ public final class MapArgUtils {
         if (obj instanceof BigDecimal) return (BigDecimal) obj;
         try {
             return new BigDecimal(obj.toString());
-        } catch (Exception e) {
+        } catch (NumberFormatException e) {
+            log.warn("Failed to convert {} to BigDecimal: {}", obj, e.getMessage());
             return null;
         }
     }

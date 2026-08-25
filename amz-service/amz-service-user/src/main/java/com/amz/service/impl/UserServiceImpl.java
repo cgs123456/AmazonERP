@@ -57,8 +57,8 @@ public class UserServiceImpl implements UserService {
                     age--;
                 }
                 userVo.setAge(age);
-            } catch (Exception e) {
-                log.error("解析生日日期失败: {}", user.getBirthday(), e);
+            } catch (java.text.ParseException e) {
+                log.error("解析生日日期格式失败: {}", user.getBirthday(), e);
                 userVo.setAge(0);
             }
         }

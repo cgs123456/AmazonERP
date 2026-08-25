@@ -94,19 +94,21 @@ class ProfitCalculatorTest {
 
         // referralFee = 100 × 0.15 = 15.00
         // grossProfit = 100 - 30 - 5 - 15 = 50.00
-        // adCost = 0, vat = 0（非欧盟）
-        // netProfit = 50 - 0 - 0 - 2 = 48.00
-        // netMargin = 48 / 100 = 0.4800
+        // adCost = 0（广告服务未注入，降级为 0），vat = 0（非欧盟）
+        // storageFee 按天分摊 = 月费2 ÷ 30 = 0.07
+        // netProfit = 50 - 0 - 0 - 0.07 = 49.93
+        // netMargin = 49.93 / 100 = 0.4993
         assertEquals(0, new BigDecimal("100.00").compareTo(r.getRevenue()));
         assertEquals(0, new BigDecimal("30").compareTo(r.getProductCost()));
         assertEquals(0, new BigDecimal("5.00").compareTo(r.getFbaFulfillmentFee()));
-        assertEquals(0, new BigDecimal("2").compareTo(r.getFbaStorageFee()));
+        assertEquals(0, new BigDecimal("0.07").compareTo(r.getFbaStorageFee()),
+                "月度仓储费应按天分摊（÷30）计入订单");
         assertEquals(0, new BigDecimal("15.00").compareTo(r.getReferralFee()));
         assertEquals(0, new BigDecimal("0.00").compareTo(r.getAdCost()));
         assertEquals(0, BigDecimal.ZERO.compareTo(r.getVat()), "非欧盟 VAT 应为 0");
         assertEquals(0, new BigDecimal("50.00").compareTo(r.getGrossProfit()));
-        assertEquals(0, new BigDecimal("48.00").compareTo(r.getNetProfit()));
-        assertEquals(0, new BigDecimal("0.4800").compareTo(r.getNetMargin()));
+        assertEquals(0, new BigDecimal("49.93").compareTo(r.getNetProfit()));
+        assertEquals(0, new BigDecimal("0.4993").compareTo(r.getNetMargin()));
         assertTrue(r.getDataComplete(), "成本与佣金率齐全时 dataComplete 应为 true");
     }
 
@@ -121,14 +123,15 @@ class ProfitCalculatorTest {
                 1L, "AMZ-EU", "SKU-EU", new BigDecimal("100"),
                 "Electronics", "small-standard", 250, "EU", true);
 
-        // vat = 100 × 0.20 = 20.00
+        // vat = 含税收入 100 × 0.20 / 1.20 = 16.67（价内税还原，非全额 20%）
         // grossProfit = 50.00（同非欧盟，VAT 不影响毛利）
-        // netProfit = 50 - 0 - 20 - 2 = 28.00
-        // netMargin = 28 / 100 = 0.2800
-        assertEquals(0, new BigDecimal("20.00").compareTo(r.getVat()), "欧盟 VAT 应为收入的 20%");
+        // netProfit = 50 - 0 - 16.67 - 0.07 = 33.26
+        // netMargin = 33.26 / 100 = 0.3326
+        assertEquals(0, new BigDecimal("16.67").compareTo(r.getVat()),
+                "欧盟 VAT 应按含税价还原税额（revenue × r/(1+r)）");
         assertEquals(0, new BigDecimal("50.00").compareTo(r.getGrossProfit()));
-        assertEquals(0, new BigDecimal("28.00").compareTo(r.getNetProfit()));
-        assertEquals(0, new BigDecimal("0.2800").compareTo(r.getNetMargin()));
+        assertEquals(0, new BigDecimal("33.26").compareTo(r.getNetProfit()));
+        assertEquals(0, new BigDecimal("0.3326").compareTo(r.getNetMargin()));
     }
 
     @Test
@@ -154,8 +157,9 @@ class ProfitCalculatorTest {
     void testNegativeProfit() {
         // revenue=10, cogs=20, fbaFee=5, referralRate=0.15 → referralFee=1.50
         // grossProfit = 10 - 20 - 5 - 1.50 = -16.50
-        // netProfit = -16.50 - 0 - 0 - 2 = -18.50
-        // netMargin = -18.50 / 10 = -1.8500
+        // storageFee 按天分摊 = 2 ÷ 30 = 0.07
+        // netProfit = -16.50 - 0 - 0 - 0.07 = -16.57
+        // netMargin = -16.57 / 10 = -1.6570
         when(productCostMapper.selectOne(any())).thenReturn(costOf(new BigDecimal("20")));
         when(fbaFeeTableMapper.selectOne(any())).thenReturn(fbaFeeOf(new BigDecimal("5"), new BigDecimal("2")));
         when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
@@ -167,8 +171,8 @@ class ProfitCalculatorTest {
         assertTrue(r.getGrossProfit().compareTo(BigDecimal.ZERO) < 0, "毛利应为负");
         assertTrue(r.getNetProfit().compareTo(BigDecimal.ZERO) < 0, "净利应为负");
         assertEquals(0, new BigDecimal("-16.50").compareTo(r.getGrossProfit()));
-        assertEquals(0, new BigDecimal("-18.50").compareTo(r.getNetProfit()));
-        assertEquals(0, new BigDecimal("-1.8500").compareTo(r.getNetMargin()));
+        assertEquals(0, new BigDecimal("-16.57").compareTo(r.getNetProfit()));
+        assertEquals(0, new BigDecimal("-1.6570").compareTo(r.getNetMargin()));
         assertTrue(r.getDataComplete());
     }
 
@@ -185,7 +189,7 @@ class ProfitCalculatorTest {
 
         // revenue=0 → referralFee=0×0.15=0, vat=0
         // grossProfit = 0 - 30 - 5 - 0 = -35.00
-        // netProfit = -35 - 0 - 0 - 2 = -37.00
+        // storageFee 按天分摊 = 0.07 → netProfit = -35 - 0 - 0 - 0.07 = -35.07
         // netMargin: revenue=0 时兜底返回 0
         assertEquals(0, BigDecimal.ZERO.compareTo(r.getRevenue()));
         assertEquals(0, new BigDecimal("0.00").compareTo(r.getReferralFee()));

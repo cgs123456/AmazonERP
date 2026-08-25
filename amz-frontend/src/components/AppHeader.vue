@@ -127,14 +127,28 @@ const loadUserInfo = async () => {
     if (response.code === 200 && response.data && response.data.user) {
       userInfo.value = response.data.user
       refreshShops()
+    } else if (response.code === 401) {
+      // 明确的鉴权失败才清除凭证
+      clearCredentials()
     } else {
-      localStorage.removeItem('token')
-      userInfo.value = null
+      // 业务异常（非鉴权）：保留登录态，避免瞬时故障误清 token
+      console.warn('[AppHeader] getUserInfo 业务异常，保留登录态', response)
     }
-  } catch {
-    localStorage.removeItem('token')
-    userInfo.value = null
+  } catch (e: unknown) {
+    // 仅 HTTP 401 清除凭证；网络抖动/超时等瞬时错误保持登录态
+    const status = (e as { response?: { status?: number } })?.response?.status
+    if (status === 401) {
+      clearCredentials()
+    } else {
+      console.warn('[AppHeader] getUserInfo 请求失败（非鉴权），保留登录态', e)
+    }
   }
+}
+
+const clearCredentials = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('token_expiry')
+  userInfo.value = null
 }
 
 const toggleUserMenu = () => {

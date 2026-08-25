@@ -72,10 +72,33 @@ jobs:
           NACOS_ADDR: ''
         run: mvn -B test -pl amz-common,amz-service/amz-service-spapi,amz-service/amz-service-user,amz-service/amz-service-product,amz-service/amz-service-order,amz-service/amz-service-search,amz-service/amz-service-ai,amz-service/amz-service-ad,amz-service/amz-service-procurement,amz-service/amz-service-customer,amz-service/amz-service-logistics,amz-service/amz-service-ops,amz-service/amz-service-report,amz-service/amz-service-finance,amz-service/amz-service-multiplatform
 
+  # Job 2.5: 前端类型检查 + 单元测试 + 构建
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: amz-frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: amz-frontend
+        run: npm ci
+      - name: Type check
+        working-directory: amz-frontend
+        run: npx vue-tsc --noEmit
+      - name: Unit tests (vitest)
+        working-directory: amz-frontend
+        run: npm run test:run
+      - name: Production build
+        working-directory: amz-frontend
+        run: npm run build
+
   # Job 3: 构建 Docker 镜像（仅 master 分支）
   docker:
     if: github.ref == 'refs/heads/master'
-    needs: [ checkstyle, test ]
+    needs: [ checkstyle, test, frontend ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

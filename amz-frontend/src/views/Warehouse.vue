@@ -66,7 +66,7 @@
               <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.warehouseName }}</option>
             </select>
             <input v-model="invFilter.sku" placeholder="按 SKU 筛选" />
-            <button class="primary-btn" @click="loadInventory">查询</button>
+            <button class="primary-btn" @click="() => { invPage.resetPage(); loadInventory() }">查询</button>
           </div>
         </div>
         <div class="table-card">
@@ -78,7 +78,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="inv in inventoryList" :key="inv.id">
+              <tr v-for="inv in pagedInventoryList" :key="inv.id">
                 <td>{{ inv.sku }}</td>
                 <td>{{ inv.asin || '-' }}</td>
                 <td>{{ inv.warehouseId }}</td>
@@ -92,6 +92,13 @@
               <tr v-if="!loading && inventoryList.length === 0"><td colspan="9" class="empty-row">暂无库存数据</td></tr>
             </tbody>
           </table>
+          <div v-if="invPage.total.value > invPage.size.value" class="table-pager">
+            <span class="page-info">第 {{ invPage.page.value }} 页 / 共 {{ invPage.totalPages.value }} 页（{{ invPage.total.value }} 条）</span>
+            <div class="page-actions">
+              <button class="page-btn" :disabled="invPage.page.value <= 1" @click="() => invPage.prevPage()">上一页</button>
+              <button class="page-btn" :disabled="invPage.page.value >= invPage.totalPages.value" @click="() => invPage.nextPage()">下一页</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -286,6 +293,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import * as WH from '@/api/warehouse'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder } from '@/api/warehouse'
+import { usePagination } from '@/composables/usePagination'
 
 const SHOP_ID = 1
 const loading = ref(false)
@@ -299,6 +307,10 @@ const tabs = [
 
 const warehouses = ref<Warehouse[]>([])
 const inventoryList = ref<WarehouseInventory[]>([])
+
+// 仓库库存客户端分页（每页 20 条）
+const invPage = usePagination<WarehouseInventory>(() => inventoryList.value, 20)
+const pagedInventoryList = invPage.paged
 const inboundOrders = ref<InboundOrder[]>([])
 const outboundOrders = ref<OutboundOrder[]>([])
 const invFilter = reactive<{ warehouseId?: number; sku?: string }>({})
@@ -496,6 +508,14 @@ onMounted(async () => {
 .helper { font-size: 13px; color: #6b7280; margin: 12px 0 8px; }
 .inline-row { display: flex; gap: 8px; margin-bottom: 8px; }
 .inline-row input { flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+
+/* 分页条 */
+.table-pager { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
+.page-info { font-size: 13px; color: #666; }
+.page-actions { display: flex; gap: 8px; }
+.page-btn { padding: 6px 16px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; cursor: pointer; font-size: 13px; color: #333; }
+.page-btn:hover:not(:disabled) { background: #f9fafb; border-color: #4f46e5; color: #4f46e5; }
+.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } }
 </style>

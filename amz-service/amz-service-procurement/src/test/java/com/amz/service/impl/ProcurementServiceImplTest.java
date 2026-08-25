@@ -96,7 +96,7 @@ class ProcurementServiceImplTest {
     }
 
     @Test
-    @DisplayName("提交 1688 - DRAFT 状态 → 调用 1688 下单并更新状态")
+    @DisplayName("提交 1688 - DRAFT 状态 → 先置 SUBMITTING 再下单落库 SUBMITTED")
     void testSubmitTo1688Normal() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
@@ -112,7 +112,26 @@ class ProcurementServiceImplTest {
 
         assertEquals("ALI-ORDER-001", result.getAlibabaOrderNo());
         assertEquals("SUBMITTED", result.getStatus());
-        verify(purchaseOrderMapper).updateById(order);
+        // outbox-lite：SUBMITTING 预写入 + 成功后 SUBMITTED 共两次持久化
+        verify(purchaseOrderMapper, org.mockito.Mockito.times(2)).updateById(order);
+    }
+
+    @Test
+    @DisplayName("提交 1688 - 远程下单失败 → 回滚为 DRAFT 并抛出异常")
+    void testSubmitTo1688RemoteFailsRollsBack() {
+        PurchaseOrder order = new PurchaseOrder();
+        order.setId(2L);
+        order.setStatus("DRAFT");
+        order.setSupplierOfferId("OFFER-002");
+        order.setQuantity(10);
+        order.setUnitPrice(new BigDecimal("1.00"));
+        when(purchaseOrderMapper.selectById(2L)).thenReturn(order);
+        when(alibaba1688Client.createOrder(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("1688 超时"));
+
+        assertThrows(IllegalStateException.class, () -> procurementService.submitTo1688(2L));
+        assertEquals("DRAFT", order.getStatus(), "远程失败应回滚为草稿以便重试");
     }
 
     @Test
@@ -202,18 +221,37 @@ class ProcurementServiceImplTest {
     }
 
     @Test
-    @DisplayName("取消采购单 - 已提交 1688 → 调用 closeOrder 并更新状态")
+    @DisplayName("取消采购单 - 已提交 1688 → 远程关闭成功后更新状态")
     void testCancelPurchaseOrderWithAlibaba() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
         order.setAlibabaOrderNo("ALI-001");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
+        // 新契约：远程关闭成功才允许本地状态迁移
+        when(alibaba1688Client.closeOrder("ALI-001")).thenReturn(true);
 
         boolean result = procurementService.cancelPurchaseOrder(1L);
 
         assertEquals(true, result);
         assertEquals("CANCELED", order.getStatus());
         verify(alibaba1688Client).closeOrder("ALI-001");
+    }
+
+    @Test
+    @DisplayName("取消采购单 - 1688 关闭失败 → 返回 false 且本地状态不变")
+    void testCancelPurchaseOrderRemoteCloseFails() {
+        PurchaseOrder order = new PurchaseOrder();
+        order.setId(1L);
+        order.setStatus("SUBMITTED");
+        order.setAlibabaOrderNo("ALI-002");
+        when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
+        when(alibaba1688Client.closeOrder("ALI-002")).thenReturn(false);
+
+        boolean result = procurementService.cancelPurchaseOrder(1L);
+
+        assertEquals(false, result, "远程关闭失败应中止本地取消");
+        assertEquals("SUBMITTED", order.getStatus(), "本地状态不得迁移");
+        verify(alibaba1688Client).closeOrder("ALI-002");
     }
 
     @Test

@@ -128,17 +128,20 @@ class HybridReplenishmentEngineTest {
     void testLowCVRuleOnly() {
         when(predictor.isModelLoaded()).thenReturn(true);
         LocalDate today = LocalDate.now();
-        // 全 10 的稳定销量 → CV=0
-        List<SalesHistory> stable = Arrays.asList(
-                hist(today, 10), hist(today.minusDays(1), 10),
-                hist(today.minusDays(2), 10), hist(today.minusDays(3), 10),
-                hist(today.minusDays(4), 10));
+        // 全 10 的稳定销量，覆盖完整 30 天窗口（CV 计算为零填充口径：
+        // 缺失日期按 0 计，稀疏记录会被判为高波动）
+        List<SalesHistory> stable = new java.util.ArrayList<>();
+        for (int i = 0; i <= 30; i++) {
+            stable.add(hist(today.minusDays(i), 10));
+        }
         when(salesHistoryMapper.selectList(any())).thenReturn(stable);
         when(seasonalIndexMapper.selectList(any())).thenReturn(Collections.emptyList());
         when(promotionCalendarMapper.selectList(any())).thenReturn(Collections.emptyList());
 
+        // 库存需显著高于备货期需求（日销 10 × safety × leadTime14 ≈ 160+），
+        // B2 量纲修复后 leadTimeDemand=日均×leadTimeDays，100 已不足以覆盖
         ReplenishmentSuggestion s = engine.generateSuggestion(
-                1L, "SKU-STABLE", "B0ST", "ELECTRONICS", 100, 14);
+                1L, "SKU-STABLE", "B0ST", "ELECTRONICS", 5_000, 14);
 
         assertEquals("RULE_ONLY", s.getBlendStrategy(), "CV 低应走纯规则路径");
         assertNull(s.getMlPredictedDemand());

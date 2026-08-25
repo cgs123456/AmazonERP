@@ -6,7 +6,7 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+        server-addr: ${NACOS_ADDR:localhost:8848}
     sentinel:
       transport:
         dashboard: localhost:8858
@@ -14,7 +14,7 @@ spring:
       datasource:
         ds1:
           nacos:
-            server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+            server-addr: ${NACOS_ADDR:localhost:8848}
             dataId: ${spring.application.name}-sentinel-rules
             groupId: SENTINEL_GROUP
             ruleType: flow
@@ -29,22 +29,22 @@ spring:
       datasource:
         master:
           driver-class-name: com.mysql.cj.jdbc.Driver
-          url: jdbc:mysql://${MYSQL_HOST:121.37.250.15}:${MYSQL_PORT:3306}/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+          url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
           username: ${DB_USERNAME:root}
           password: ${DB_PASSWORD:}
         slave:
           driver-class-name: com.mysql.cj.jdbc.Driver
-          url: jdbc:mysql://${MYSQL_SLAVE_HOST:${MYSQL_HOST:121.37.250.15}}:${MYSQL_PORT:3306}/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
+          url: jdbc:mysql://${MYSQL_SLAVE_HOST:${MYSQL_HOST:localhost}}:${MYSQL_PORT:3306}/amz_spapi?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
           username: ${DB_USERNAME:root}
           password: ${DB_PASSWORD:}
   data:
     redis:
-      host: ${REDIS_HOST:121.37.250.15}
+      host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
       database: 0
   rabbitmq:
-    host: ${RABBITMQ_HOST:123.206.101.247}
+    host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:admin}
     password: ${RABBITMQ_PASSWORD:}

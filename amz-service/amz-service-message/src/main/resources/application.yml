@@ -6,9 +6,9 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+        server-addr: ${NACOS_ADDR:localhost:8848}
   rabbitmq:
-    host: ${RABBITMQ_HOST:123.206.101.247}
+    host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:admin}
     password: ${RABBITMQ_PASSWORD:}

@@ -64,11 +64,23 @@ public class InventorySyncScheduler {
     @Autowired
     private InventorySyncLogMapper inventorySyncLogMapper;
 
+    @Autowired
+    private DistributedJobLock distributedJobLock;
+
     /**
      * 每 30 分钟执行一次（上一次执行结束后起算 fixedDelay）。
+     * 分布式锁互斥：多实例部署时仅一个实例同步，避免双倍消耗 SP-API 配额与重复写。
+     * 租期 29 分钟略小于 30 分钟调度周期。
      */
     @Scheduled(fixedDelay = 30 * 60 * 1000)
     public void syncInventory() {
+        distributedJobLock.runWithLock(
+                "amz:sched:inventory-sync",
+                29 * 60L,
+                this::doSyncInventory);
+    }
+
+    private void doSyncInventory() {
         Set<Long> shopIds = shopCredentialStore.getActiveShopIds();
         if (shopIds.isEmpty()) {
             log.info("syncInventory: no active shops, skipping");

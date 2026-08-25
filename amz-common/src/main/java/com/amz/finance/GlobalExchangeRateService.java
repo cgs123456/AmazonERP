@@ -40,6 +40,20 @@ public class GlobalExchangeRateService {
     @Value("${amz.exchange-rates-api-url:https://api.exchangerate.host/latest?base=USD}")
     private String exchangeRateApi;
 
+    /**
+     * 未知币种处理策略：
+     * <ul>
+     *   <li>false（默认）：按 1:1 兜底折算并 warn（兼容存量调用）；</li>
+     *   <li>true：抛出 IllegalArgumentException 拒绝核算——财务严格模式，
+     *       防止拼错币种把 JPY 当 CNY 记账。</li>
+     * </ul>
+     */
+    @Value("${amz.exchange.strict-unknown:false}")
+    private boolean strictUnknownCurrency;
+
+    /** 汇率刷新连续失败计数（达到阈值升级为 error 日志）。 */
+    private volatile int consecutiveRefreshFailures = 0;
+
     /** 兜底汇率（yml 配置），首次拉取失败时使用 */
     private final Map<String, BigDecimal> fallbackRates;
 
@@ -90,6 +104,11 @@ public class GlobalExchangeRateService {
         }
         BigDecimal rate = exchangeRates.get(currency.toUpperCase());
         if (rate == null) {
+            if (strictUnknownCurrency) {
+                throw new IllegalArgumentException(
+                        "币种 " + currency + " 无汇率配置（amz.exchange.strict-unknown=true 拒绝 1:1 兜底），"
+                                + "请补充 amz.exchange-rates 配置");
+            }
             log.warn("币种 {} 无汇率配置，按 1:1 兜底折算，金额可能失真，请补充 amz.exchange-rates 配置", currency);
             return originalAmount.setScale(2, RoundingMode.HALF_UP);
         }
@@ -174,9 +193,19 @@ public class GlobalExchangeRateService {
                 refreshed.putIfAbsent(e.getKey(), e.getValue());
             }
             exchangeRates = Collections.unmodifiableMap(refreshed);
+            consecutiveRefreshFailures = 0;
             log.info("汇率缓存刷新成功：共 {} 个币种（来源 exchangerate.host）", refreshed.size());
         } catch (Exception e) {
-            log.warn("exchangerate.host 汇率拉取失败，保留现有汇率缓存：{}", e.getMessage());
+            int failures = ++consecutiveRefreshFailures;
+            // 连续失败 ≥3 次升级为 error：此时生产已长期运行在静态兜底汇率上，
+            // 财务换算偏差需要被告警系统捕获，而非淹没在 warn 里
+            if (failures >= 3) {
+                log.error("汇率拉取连续失败 {} 次，当前运行在 yml 静态兜底汇率上，财务核算可能失真！原因: {}",
+                        failures, e.getMessage());
+            } else {
+                log.warn("exchangerate.host 汇率拉取失败（连续第 {} 次），保留现有汇率缓存：{}",
+                        failures, e.getMessage());
+            }
         }
     }
 

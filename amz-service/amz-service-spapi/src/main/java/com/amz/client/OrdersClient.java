@@ -112,6 +112,74 @@ public class OrdersClient {
     private static final String ORDERS_ENDPOINT = "orders";
 
     /**
+     * 订单行级接口路径前缀（/orders/v0/orders/{orderId}/orderItems）。
+     */
+    private static final String ORDER_ITEMS_PATH = "/orders/v0/orders/";
+
+    /**
+     * 拉取单个订单的行级明细（sellerSku / 数量 / 行金额）。
+     * <p>
+     * 供订单同步调度器为<b>新订单</b>补全利润核算所需的真实 SKU
+     * （列表接口不含行级数据，旧实现以 amazonOrderId 冒充 SKU 导致 COGS 恒缺失）。
+     * 复用 orders 端点限流桶；官方配额较紧，调用方应仅对新订单调用。
+     *
+     * @param shopId        店铺 ID
+     * @param marketplaceId Marketplace ID
+     * @param amazonOrderId Amazon 订单号
+     * @return payload.OrderItems 数组中的行对象列表；接口异常时返回空列表（由调用方降级）
+     */
+    public List<JsonObject> fetchOrderItems(Long shopId, String marketplaceId, String amazonOrderId) {
+        ShopCredential credential = shopCredentialStore.get(shopId);
+        if (credential == null) {
+            throw new IllegalArgumentException("No credential found for shopId=" + shopId);
+        }
+        String region = mapMarketplaceToRegion(marketplaceId);
+        String endpoint = SPAPI_ENDPOINTS.get(region);
+        if (endpoint == null) {
+            throw new IllegalArgumentException("No SP-API endpoint for region=" + region);
+        }
+        String host = endpoint.replace("https://", "");
+        String accessToken = lwaTokenManager.getToken(credential);
+
+        spiRateLimiter.acquire(shopId, ORDERS_ENDPOINT);
+
+        String path = ORDER_ITEMS_PATH + amazonOrderId + "/orderItems";
+        Map<String, String> signedHeaders = awsSigV4Signer.sign(
+                "GET", host, path, "", "",
+                credential.getAccessKey(), credential.getSecretKey(), region);
+
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create(endpoint + path))
+                .timeout(Duration.ofSeconds(30))
+                .GET();
+        signedHeaders.forEach(builder::header);
+        builder.header("x-amz-access-token", accessToken);
+
+        try {
+            HttpResponse<String> response = sendWithRetry(builder.build(), ORDERS_ENDPOINT);
+            if (response == null || response.statusCode() != 200) {
+                log.warn("fetchOrderItems failed orderId={} status={}",
+                        amazonOrderId, response == null ? -1 : response.statusCode());
+                return new ArrayList<>();
+            }
+            JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
+            JsonObject payload = body.has("payload") && body.get("payload").isJsonObject()
+                    ? body.getAsJsonObject("payload") : body;
+            List<JsonObject> items = new ArrayList<>();
+            if (payload.has("OrderItems") && payload.get("OrderItems").isJsonArray()) {
+                for (JsonElement e : payload.getAsJsonArray("OrderItems")) {
+                    items.add(e.getAsJsonObject());
+                }
+            }
+            return items;
+        } catch (Exception e) {
+            // 行级明细拉取失败不应阻断订单主流程：返回空列表由调度器降级为订单级消息
+            log.warn("fetchOrderItems error orderId={}: {}", amazonOrderId, e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
      * 拉取指定店铺在某 marketplace 下、createdAfter 之后的订单列表。
      *
      * @param shopId        店铺 ID
@@ -171,8 +239,15 @@ public class OrdersClient {
 
             HttpResponse<String> response = sendWithRetry(builder.build(), ORDERS_ENDPOINT);
             if (response == null || response.statusCode() != 200) {
+                int status = response == null ? -1 : response.statusCode();
+                // 401/403：access_token 失效或被吊销，主动驱逐缓存，
+                // 下次调用将重新走 LWA 刷新，避免在剩余 TTL 内持续 401
+                if (status == 401 || status == 403) {
+                    lwaTokenManager.invalidate(credential);
+                    log.warn("fetchOrders got {} — LWA token cache invalidated shopId={}", status, shopId);
+                }
                 throw new RuntimeException("fetchOrders failed shopId=" + shopId
-                        + " status=" + (response == null ? -1 : response.statusCode())
+                        + " status=" + status
                         + " body=" + (response == null ? "" : response.body()));
             }
 

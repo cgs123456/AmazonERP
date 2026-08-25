@@ -107,7 +107,7 @@ public class SpapiController {
             return Result.success(orders.size());
         } catch (Exception e) {
             log.error("manual sync orders failed shopId={}", shopId, e);
-            return Result.failure("sync failed: " + e.getMessage());
+            return Result.failure("sync failed");
         }
     }
 

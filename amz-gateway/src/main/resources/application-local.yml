@@ -6,3 +6,10 @@ spring:
     nacos:
       discovery:
         server-addr: localhost:8848
+
+# 本地开发启用 API 文档（生产默认关闭，见 application.yml）
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true

@@ -2,7 +2,6 @@ package com.amz.filter;
 
 import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.exceptions.TokenExpiredException;
-import com.amz.enums.ResponseEnum;
 import com.amz.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -63,9 +62,10 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
 
         // 2.判断是否是白名单接口
         String path = request.getURI().getPath();
-        log.info("请求接口为：{}", path);
+        if (log.isDebugEnabled()) {
+            log.debug("请求接口为：{}", path);
+        }
         if (isWhiteListed(path)) {
-            log.info("请求接口放行");
             return chain.filter(exchange);
         }
 
@@ -74,7 +74,7 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
 
         // 4.判断token是否为空
         if (StringUtils.isBlank(token)) {
-            response.setStatusCode(HttpStatus.valueOf(ResponseEnum.UNAUTHORIZED.getCode()));
+            response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return response.setComplete();
         }
 
@@ -83,16 +83,18 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
             String userId = jwtUtil.parseToken(token);
             List<Long> shops = jwtUtil.parseTokenShops(token);
 
-            // 6.向请求头添加userId
-            request.mutate().header("userId", userId);
+            // 6. 重写请求头：
+            //    a) 先剥离外部可能伪造的 userId 头，再写入从 JWT 解析出的权威值；
+            //       （旧实现 mutate() 结果被丢弃、且从不剥离入站 userId——一旦下游重新注册
+            //        信任该头的拦截器即构成完整身份伪造链路）
+            ServerHttpRequest.Builder headerBuilder = request.mutate()
+                    .headers(h -> h.remove("userId"))
+                    .header("userId", userId);
 
             // 7. 多店铺越权校验：只要请求携带 shopId header 即校验其是否属于当前用户授权店铺，
-            //    覆盖所有多租户业务路径（/finance/ /logistics/ /procurement/ /customer/ /ops/ /ad/
-            //    /report/ /warehouse/ /multiplatform/ /spapi/ /ai/ /selection/ /shop/ /product/ /order/ 等），
-            //    白名单路径（/user/send /user/verify /internal）已在上方放行。
+            //    覆盖所有多租户业务路径；白名单路径已在上方放行。
             String shopId = request.getHeaders().getFirst("shopId");
             if (StringUtils.isNotBlank(shopId)) {
-                // 校验 shopId 是否在用户授权的 shops 列表中
                 Long shopIdVal;
                 try {
                     shopIdVal = Long.valueOf(shopId);
@@ -106,13 +108,17 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
                     response.setStatusCode(HttpStatus.FORBIDDEN);
                     return response.setComplete();
                 }
-                // 透传 shopId 到下游服务
-                request.mutate().header("shopId", shopId);
+                // 校验通过后剥离旧值再写入，保持单值语义并透传到下游服务
+                headerBuilder.headers(h -> h.remove("shopId"))
+                        .header("shopId", shopId);
             }
 
-            return chain.filter(exchange);
+            // 8. 必须转发"变异后"的 exchange：mutate() 返回新对象，
+            //    直接透传原 exchange 会丢失所有头修改
+            ServerHttpRequest mutatedRequest = headerBuilder.build();
+            return chain.filter(exchange.mutate().request(mutatedRequest).build());
         } catch (TokenExpiredException | JWTDecodeException e2) {
-            response.setStatusCode(HttpStatus.valueOf(ResponseEnum.UNAUTHORIZED.getCode()));
+            response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return response.setComplete();
         }
     }

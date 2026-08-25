@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.AccountingVoucher;
 import com.amz.result.Result;
@@ -37,7 +38,10 @@ public class FinanceController {
     /**
      * 同步凭证到金蝶。
      * POST /finance/voucher/{voucherId}/sync
+     * <p>
+     * RBAC：写操作要求 OPERATOR 及以上；店铺归属在服务层校验。
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/voucher/{voucherId}/sync")
     public Result<Boolean> syncToKingdee(@PathVariable Long voucherId) {
         return Result.success(financeService.syncToKingdee(voucherId));

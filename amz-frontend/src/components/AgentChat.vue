@@ -83,6 +83,14 @@ const sendMessage = async () => {
   const text = inputText.value.trim()
   if (!text || loading.value) return
 
+  // 登录守卫：未登录时 userId 会错误落到占位值，且后端鉴权必然失败
+  const token = localStorage.getItem('token')
+  if (!token) {
+    messages.value.push({ role: 'assistant', content: '请先登录后再使用运营助手。' })
+    await scrollToBottom()
+    return
+  }
+
   messages.value.push({ role: 'user', content: text })
   inputText.value = ''
   loading.value = true
@@ -93,70 +101,43 @@ const sendMessage = async () => {
   await scrollToBottom()
 
   try {
-    const response = await fetch('/api/ai/erp/agent/v2', {
+    // 对齐后端 AiController：POST /ai/erp/agent?userId=（userId 为 query 参数，body 为 {message}）
+    // 后端返回 Result<String> JSON（非 SSE 流式），此处一次性读取并取 data 字段
+    const savedUserId = localStorage.getItem('user_id')
+    const response = await fetch(`/api/ai/erp/agent?userId=${encodeURIComponent(savedUserId || '1')}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'token': localStorage.getItem('token') || ''
+        'token': token
       },
-      body: JSON.stringify({ message: text, userId: 1 })
+      body: JSON.stringify({ message: text })
     })
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const reader = response.body?.getReader()
-    if (!reader) {
-      throw new Error('ReadableStream not supported')
-    }
-
-    const decoder = new TextDecoder()
-    let acc = ''
-
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      acc += parseSseChunk(decoder.decode(value, { stream: true }))
-      if (acc) {
-        messages.value[assistantIndex].content = acc
-        await scrollToBottom()
-      }
-    }
-
-    // 流结束后若没有任何内容，降级到 mock
-    if (!acc) {
-      throw new Error('Empty stream response')
+    const result = await response.json()
+    // Result 结构：{ code, message, data }
+    if (result?.code === 200 && typeof result.data === 'string' && result.data) {
+      messages.value[assistantIndex].content = result.data
+    } else {
+      throw new Error(result?.message || 'Empty agent response')
     }
   } catch (e) {
-    // 降级到模拟回复
-    console.warn('[AgentChat] SSE 调用失败，使用模拟回复', e)
-    messages.value[assistantIndex].content = generateMockReply(text)
+    if (import.meta.env.PROD) {
+      // 生产环境不展示虚构数据，明确告知服务不可用
+      console.warn('[AgentChat] 调用失败', e)
+      messages.value[assistantIndex].content = '运营助手暂时不可用，请稍后重试。'
+    } else {
+      // 开发环境降级到模拟回复便于联调演示
+      console.warn('[AgentChat] 调用失败，使用模拟回复', e)
+      messages.value[assistantIndex].content = generateMockReply(text)
+    }
   } finally {
     loading.value = false
     await scrollToBottom()
   }
-}
-
-// 解析 SSE 数据块：剥离 data: 前缀与 [DONE] 标记，兼容纯文本流
-const parseSseChunk = (raw: string): string => {
-  let result = ''
-  const matches = [...raw.matchAll(/data:\s*(.*)/g)]
-  if (matches.length > 0) {
-    for (const m of matches) {
-      const data = m[1].trim()
-      if (!data || data === '[DONE]') continue
-      try {
-        const parsed = JSON.parse(data)
-        result += parsed.content ?? parsed.text ?? parsed.delta ?? ''
-      } catch {
-        result += data
-      }
-    }
-    return result
-  }
-  // 非 SSE 格式，直接追加原文
-  return raw
 }
 
 const generateMockReply = (question: string): string => {

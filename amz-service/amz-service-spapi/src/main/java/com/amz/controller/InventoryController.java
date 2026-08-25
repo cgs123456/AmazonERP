@@ -77,7 +77,7 @@ public class InventoryController {
             return Result.success(synced);
         } catch (Exception e) {
             log.error("manual sync inventory failed shopId={}", shopId, e);
-            return Result.failure("sync failed: " + e.getMessage());
+            return Result.failure("sync failed");
         }
     }
 }

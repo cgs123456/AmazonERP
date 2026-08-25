@@ -67,11 +67,16 @@ public class SearchServiceImpl implements SearchService {
     public Result<List<ProductVo>> search(String key) {
         List<ProductDoc> products = searchProducts(key);
 
-        List<ProductVo> productVos = new ArrayList<>();
+        // 批量装配用户信息：去重 + 本地短 TTL 缓存，消除逐条串行 Feign 的 N+1 放大
+        List<ProductVo> productVos = new ArrayList<>(products.size());
+        Map<Integer, Object> userCacheHit = new HashMap<>();
         for (ProductDoc product : products) {
             ProductVo vo = new ProductVo();
             BeanUtils.copyProperties(product, vo);
-            vo.setUser(userClient.getUserById(product.getUserId()).getData());
+            Integer uid = product.getUserId();
+            if (uid != null) {
+                vo.setUser(userCacheHit.computeIfAbsent(uid, this::loadUserCached));
+            }
             productVos.add(vo);
         }
 
@@ -84,7 +89,7 @@ public class SearchServiceImpl implements SearchService {
             History existingHistory = historyMapper.selectOne(queryWrapper);
 
             if (existingHistory != null) {
-                log.info("搜索记录已存在，更新: userId={}, key={}", currentUserId, key);
+                log.debug("搜索记录已存在，更新: userId={}, key={}", currentUserId, key);
             } else {
                 History history = new History();
                 history.setHistory(key);
@@ -96,8 +101,67 @@ public class SearchServiceImpl implements SearchService {
             log.warn("用户搜索记录处理异常: userId={}, key={}", UserContext.getUserId(), key, e);
         }
 
-        redisTemplate.opsForZSet().incrementScore(RedisConstant.PRODUCT_SCORE, key, 1);
+        try {
+            redisTemplate.opsForZSet().incrementScore(RedisConstant.PRODUCT_SCORE, key, 1);
+            trimHotSearch();
+        } catch (Exception e) {
+            log.warn("热搜计数失败（不阻断搜索）: {}", e.getMessage());
+        }
         return Result.success(productVos);
+    }
+
+    /** 热搜 ZSET 最大保留条目数：超出部分从低分端裁剪，防止无限增长。 */
+    private static final long HOT_SCORE_MAX_ENTRIES = 1000L;
+    /** 热搜 ZSET 过期时间：7 天无写入自动消亡。 */
+    private static final java.time.Duration HOT_SCORE_TTL = java.time.Duration.ofDays(7);
+
+    /**
+     * 裁剪热搜 ZSET：仅保留分数最高的 TOP N，并滑动续期。
+     * 每次搜索多一次 ZREMRANGEBYRANK + EXPIRE，代价远低于集合无限膨胀。
+     */
+    private void trimHotSearch() {
+        try {
+            redisTemplate.opsForZSet().removeRange(
+                    RedisConstant.PRODUCT_SCORE, 0, -(HOT_SCORE_MAX_ENTRIES + 1));
+            redisTemplate.expire(RedisConstant.PRODUCT_SCORE, HOT_SCORE_TTL);
+        } catch (Exception e) {
+            log.debug("热搜裁剪失败: {}", e.getMessage());
+        }
+    }
+
+    /** 用户信息本地缓存条目。 */
+    private static final long USER_CACHE_TTL_MS = 5 * 60 * 1000L;
+    private final java.util.concurrent.ConcurrentHashMap<Integer, UserCacheEntry> userLocalCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final class UserCacheEntry {
+        final Object user;
+        final long expiresAtMs;
+
+        UserCacheEntry(Object user, long expiresAtMs) {
+            this.user = user;
+            this.expiresAtMs = expiresAtMs;
+        }
+    }
+
+    /**
+     * 带缓存的用户查询：命中直接返回；未命中走 Feign 并回填（含失败负缓存 30s，防穿透打爆下游）。
+     */
+    private Object loadUserCached(Integer userId) {
+        long now = System.currentTimeMillis();
+        UserCacheEntry entry = userLocalCache.get(userId);
+        if (entry != null && entry.expiresAtMs > now) {
+            return entry.user;
+        }
+        Object user = null;
+        try {
+            user = userClient.getUserById(userId).getData();
+        } catch (Exception e) {
+            log.warn("查询用户信息失败 userId={}: {}", userId, e.getMessage());
+        }
+        long ttl = (user != null) ? USER_CACHE_TTL_MS : 30_000L;
+        userLocalCache.put(userId, new UserCacheEntry(user, now + ttl));
+        return user;
     }
 
     private List<ProductDoc> searchProducts(String key) {
@@ -165,7 +229,7 @@ public class SearchServiceImpl implements SearchService {
                 .map(e -> productMap.get(e.getKey()))
                 .collect(Collectors.toList());
 
-        log.info("混合检索 key={} BM25命中={} kNN命中={} RRF融合后={}",
+        log.debug("混合检索 key={} BM25命中={} kNN命中={} RRF融合后={}",
                 key, bm25Hits.getTotalHits(), knnHits.getTotalHits(), result.size());
         return result;
     }

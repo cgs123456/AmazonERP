@@ -10,6 +10,7 @@ import com.amz.service.CustomerEmailService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,9 @@ import java.util.*;
  * 客服管理升级服务实现。
  * <p>
  * 邮件模板 → 自动化邮件 → 差评监控 → RMA 退货全流程。
+ * <p>
+ * 模拟数据治理：邮件真实发送与差评-订单匹配依赖外部通道（Amazon Messaging / SP-API），
+ * 非 mock 环境下相关方法<b>诚实失败</b>，不再伪造 SENT/MATCHED 状态误导运营。
  */
 @Slf4j
 @Service
@@ -36,6 +40,23 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Autowired
     private RmaMapper rmaMapper;
+
+    @Autowired
+    private Environment environment;
+
+    /** 是否运行在 mock profile。 */
+    private boolean isMockProfile() {
+        try {
+            for (String p : environment.getActiveProfiles()) {
+                if ("mock".equals(p)) {
+                    return true;
+                }
+            }
+        } catch (Exception ignore) {
+            // 无环境上下文时按非 mock 处理（诚实失败）
+        }
+        return false;
+    }
 
     // ==================== 邮件模板 ====================
 
@@ -141,13 +162,27 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
         for (EmailTask task : pendingTasks) {
             try {
-                // 生产环境应调用 Amazon Messaging API 或 SMTP 发送邮件
-                // 当前模拟发送成功
+                if (!isMockProfile()) {
+                    // 非 mock：无真实发送通道时诚实标记失败，绝不伪造 SENT
+                    task.setStatus("FAILED");
+                    task.setFailureReason("邮件发送通道未接入（Amazon Messaging/SMTP），非 mock 环境");
+                    emailTaskMapper.updateById(task);
+                    failed++;
+                    Map<String, Object> failure = new LinkedHashMap<>();
+                    failure.put("taskId", task.getId());
+                    failure.put("orderId", task.getAmazonOrderId());
+                    failure.put("error", task.getFailureReason());
+                    failures.add(failure);
+                    log.warn("邮件发送通道未接入，任务标记 FAILED：taskId={}", task.getId());
+                    continue;
+                }
+                // mock 环境：模拟发送成功（日志明确标注 MOCK）
+                log.warn("[MOCK] 模拟邮件发送成功：taskId={}, orderId={}（非真实发送）",
+                        task.getId(), task.getAmazonOrderId());
                 task.setStatus("SENT");
                 task.setSentTime(LocalDateTime.now());
                 emailTaskMapper.updateById(task);
                 sent++;
-                log.info("邮件发送成功：taskId={}, orderId={}", task.getId(), task.getAmazonOrderId());
             } catch (Exception e) {
                 task.setStatus("FAILED");
                 task.setFailureReason(e.getMessage());
@@ -231,9 +266,14 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
             throw new AttrIsNullException("差评记录不存在：id=" + reviewId);
         }
 
-        // 生产环境应通过 SP-API 查询该 ASIN 在留评日期前 7-30 天的订单
-        // 当前模拟匹配：用 ASIN + 留评日期前推 14 天匹配
-        String matchedOrderId = "AMZ-MATCH-" + System.currentTimeMillis();
+        // 真实匹配需通过 SP-API 查询该 ASIN 在留评日期前 7-30 天的订单。
+        // 非 mock 环境诚实失败：伪造订单号落库为 MATCHED 会误导后续索评/跟进流程
+        if (!isMockProfile()) {
+            throw new IllegalStateException(
+                    "差评订单匹配依赖 SP-API 订单查询，尚未接入真实实现（本地演示请启用 mock profile），reviewId=" + reviewId);
+        }
+        String matchedOrderId = "SIMULATED-MATCH-" + System.currentTimeMillis();
+        log.warn("[MOCK] 差评订单匹配为模拟数据：reviewId={}, orderId={}（非真实匹配）", reviewId, matchedOrderId);
 
         review.setMatchedOrderId(matchedOrderId);
         review.setStatus("MATCHED");
@@ -245,7 +285,6 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         result.put("reviewRating", review.getReviewRating());
         result.put("matchedOrderId", matchedOrderId);
         result.put("status", "MATCHED");
-        log.info("差评订单匹配完成：reviewId={}, orderId={}", reviewId, matchedOrderId);
         return result;
     }
 
@@ -260,11 +299,14 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
             throw new IllegalStateException("仅 DETECTED/MATCHED 状态的差评可跟进，当前状态：" + review.getStatus());
         }
 
-        // 查找差评跟进模板
+        // 查找差评跟进模板：同类型可能配置多条启用模板，selectOne 多命中会抛
+        // TooManyResultsException —— 固定取 id 最小的一条，保证确定性
         LambdaQueryWrapper<EmailTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(EmailTemplate::getShopId, review.getShopId())
                .eq(EmailTemplate::getTemplateType, "NEGATIVE_REVIEW_FOLLOWUP")
-               .eq(EmailTemplate::getEnabled, 1);
+               .eq(EmailTemplate::getEnabled, 1)
+               .orderByAsc(EmailTemplate::getId)
+               .last("LIMIT 1");
         EmailTemplate template = emailTemplateMapper.selectOne(wrapper);
 
         if (template == null) {

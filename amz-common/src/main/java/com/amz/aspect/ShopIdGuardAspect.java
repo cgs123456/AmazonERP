@@ -64,8 +64,13 @@ public class ShopIdGuardAspect {
                 return Result.failure("shopId 不在授权范围");
             }
         } catch (Exception e) {
-            // 切面异常吞掉并放行，避免阻断业务
-            log.warn("ShopIdGuardAspect 校验异常，放行: {}", e.getMessage());
+            // fail-closed：租户防护组件自身异常时拒绝而非放行。
+            // 旧实现吞异常放行——上游任何导致 shops 缺失/切面报错的 bug
+            // 都会静默关闭多租户校验，构成越权窗口。此处拦截并返回失败，
+            // 业务方可依据日志快速定位切面异常根因。
+            log.error("ShopIdGuardAspect 校验异常，按拒绝处理（fail-closed） - class: {}, msg: {}",
+                    e.getClass().getName(), e.getMessage());
+            return Result.failure("店铺权限校验异常，请稍后重试");
         }
         return pjp.proceed();
     }

@@ -93,7 +93,7 @@ public class SheinRealClient extends AbstractPlatformClient implements SheinClie
             return ok;
         } catch (Exception e) {
             log.error("Shein markShipped failed orderNo={}", platformOrderNo, e);
-            return false;
+            throw new RuntimeException("Shein markShipped failed: " + e.getMessage(), e);
         }
     }
 
@@ -165,7 +165,7 @@ public class SheinRealClient extends AbstractPlatformClient implements SheinClie
                 if (amtStr != null) {
                     try {
                         uo.setOriginalAmount(new BigDecimal(amtStr));
-                    } catch (Exception ignore) {
+                    } catch (NumberFormatException e) {
                         log.debug("Shein 订单金额解析失败 orderNo={} amount={}", uo.getPlatformOrderNo(), amtStr);
                     }
                 }

@@ -24,8 +24,9 @@ export default defineConfig({
     {
       name: 'chromium',
       use: {
+        // 使用 Playwright 自带 Chromium：channel:'chrome' 依赖系统安装的
+        // 桌面版 Chrome，CI/新环境无浏览器时启动即失败
         browserName: 'chromium',
-        channel: 'chrome',  // use system Chrome instead of downloading
       },
     },
   ],

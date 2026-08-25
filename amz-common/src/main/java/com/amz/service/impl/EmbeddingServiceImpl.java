@@ -41,11 +41,54 @@ public class EmbeddingServiceImpl implements EmbeddingService {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
+    // ==================== 查询向量本地缓存 ====================
+
+    /** 缓存最大条目数：超出后整体清空（简单防膨胀，热搜/重复查询场景命中率已足够）。 */
+    private static final int EMBED_CACHE_MAX = 512;
+
+    /** 缓存 TTL：10 分钟。 */
+    private static final long EMBED_CACHE_TTL_MS = 10 * 60 * 1000L;
+
+    private final java.util.concurrent.ConcurrentHashMap<String, EmbedCacheEntry> embedCache =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final class EmbedCacheEntry {
+        final float[] vector;
+        final long expiresAtMs;
+
+        EmbedCacheEntry(float[] vector, long expiresAtMs) {
+            this.vector = vector;
+            this.expiresAtMs = expiresAtMs;
+        }
+    }
+
     @Override
     public float[] embed(String text) {
         if (!isAvailable() || text == null || text.trim().isEmpty()) {
             return null;
         }
+        String normalized = text.trim().toLowerCase();
+        long now = System.currentTimeMillis();
+        EmbedCacheEntry cached = embedCache.get(normalized);
+        if (cached != null && cached.expiresAtMs > now) {
+            // 返回克隆，避免调用方修改缓存值
+            return cached.vector.clone();
+        }
+        float[] vector = embedRemote(text);
+        if (vector != null) {
+            if (embedCache.size() >= EMBED_CACHE_MAX) {
+                embedCache.clear();
+            }
+            embedCache.put(normalized, new EmbedCacheEntry(vector, now + EMBED_CACHE_TTL_MS));
+            return vector.clone();
+        }
+        return null;
+    }
+
+    /**
+     * 实际远程调用 /v1/embeddings。
+     */
+    private float[] embedRemote(String text) {
         try {
             // 构建请求体（使用 Gson 构建，避免手动转义问题）
             JsonObject reqObj = new JsonObject();

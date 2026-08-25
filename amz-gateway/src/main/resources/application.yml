@@ -6,7 +6,7 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+        server-addr: ${NACOS_ADDR:localhost:8848}
     gateway:
       httpclient:
         connect-timeout: 5000
@@ -82,9 +82,12 @@ spring:
           uri: lb://amz-service-report
           predicates:
             - Path=/report/**
-        # WebSocket服务路由（使用Nacos服务发现）
+        # WebSocket服务路由
+        # 注意：Netty WebSocket 监听独立端口 8888（非 HTTP 8889），
+        # lb:// 负载均衡只会路由到 Nacos 注册的 HTTP 端口，故此处使用静态上游。
+        # docker-compose 内通过容器名 amz-service-message 解析；其他环境用 WS_MESSAGE_UPSTREAM 覆盖。
         - id: amz-netty-websocket
-          uri: lb://amz-service-message
+          uri: ${WS_MESSAGE_UPSTREAM:http://amz-service-message:8888}
           predicates:
             - Path=/ws/**
           filters:
@@ -134,7 +137,10 @@ management:
 springdoc:
   api-docs:
     path: /v3/api-docs
+    # 默认关闭：API 文档经网关对外暴露属信息泄露面；本地开发在
+    # application-local.yml 中覆盖为 true
+    enabled: false
   swagger-ui:
     path: /swagger-ui.html
-    enabled: true
+    enabled: false
   show-actuator: false

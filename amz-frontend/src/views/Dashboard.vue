@@ -77,6 +77,7 @@ import AppSidebar from '../components/AppSidebar.vue'
 import AgentChat from '../components/AgentChat.vue'
 import { getKpiData, getSalesTrend, getShopDistribution } from '@/api/dashboard'
 import type { KpiItem, SalesTrendItem, ShopDistItem } from '@/api/dashboard'
+import { getCurrentShopId } from '@/utils/shop'
 
 const agentVisible = ref(false)
 const loading = ref(false)
@@ -118,7 +119,7 @@ onMounted(async () => {
   // 并行请求三组数据，任一失败则该组降级到 mock
   const tasks = [
     {
-      fn: () => getKpiData(),
+      fn: () => getKpiData(getCurrentShopId()),
       onSuccess: (data: KpiItem[]) => { kpiData.value = data },
       mock: mockKpiData,
       tag: 'getKpiData'

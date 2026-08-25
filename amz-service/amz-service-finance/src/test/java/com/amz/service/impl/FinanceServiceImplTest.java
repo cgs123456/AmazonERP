@@ -24,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -147,6 +148,8 @@ class FinanceServiceImplTest {
         v.setVoucherNo("Vabc");
         v.setKingdeeSyncStatus("PENDING");
         when(voucherMapper.selectById(1L)).thenReturn(v);
+        // 原子认领成功（PENDING/FAILED → SYNCING 影响 1 行）
+        when(voucherMapper.update(isNull(), any())).thenReturn(1);
         when(kingdeeClient.syncVoucher(any())).thenReturn("KD-1700000000000");
 
         boolean result = financeService.syncToKingdee(1L);
@@ -164,6 +167,7 @@ class FinanceServiceImplTest {
         v.setVoucherNo("Vdef");
         v.setKingdeeSyncStatus("PENDING");
         when(voucherMapper.selectById(2L)).thenReturn(v);
+        when(voucherMapper.update(isNull(), any())).thenReturn(1);
         when(kingdeeClient.syncVoucher(any())).thenReturn("KINGDEE_MOCK_1700000000000");
 
         boolean result = financeService.syncToKingdee(2L);
@@ -182,6 +186,7 @@ class FinanceServiceImplTest {
         v.setVoucherNo("Vghi");
         v.setKingdeeSyncStatus("PENDING");
         when(voucherMapper.selectById(3L)).thenReturn(v);
+        when(voucherMapper.update(isNull(), any())).thenReturn(1);
         when(kingdeeClient.syncVoucher(any())).thenThrow(new RuntimeException("金蝶网关超时"));
 
         boolean result = financeService.syncToKingdee(3L);
@@ -189,6 +194,24 @@ class FinanceServiceImplTest {
         assertFalse(result);
         assertEquals("FAILED", v.getKingdeeSyncStatus());
         verify(voucherMapper).updateById(v);
+    }
+
+    @Test
+    @DisplayName("syncToKingdee：认领失败（他人正在同步/已同步）→ 跳过且不调用金蝶客户端")
+    void syncToKingdeeClaimFailsSkipsRemoteCall() {
+        AccountingVoucher v = new AccountingVoucher();
+        v.setId(4L);
+        v.setVoucherNo("Vjkl");
+        v.setKingdeeSyncStatus("SYNCING");
+        when(voucherMapper.selectById(4L)).thenReturn(v);
+        // 原子认领影响 0 行：状态已非 PENDING/FAILED
+        when(voucherMapper.update(isNull(), any())).thenReturn(0);
+
+        boolean result = financeService.syncToKingdee(4L);
+
+        assertTrue(result, "幂等跳过应视为成功");
+        verify(kingdeeClient, never()).syncVoucher(any());
+        verify(voucherMapper, never()).updateById(any(AccountingVoucher.class));
     }
 
     @Test

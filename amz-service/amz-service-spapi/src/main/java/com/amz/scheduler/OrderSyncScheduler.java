@@ -59,13 +59,29 @@ public class OrderSyncScheduler {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
+    @Autowired
+    private DistributedJobLock distributedJobLock;
+
+    /** 发布去重（每订单 14 天 TTL）。 */
+    @Autowired
+    private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+
     private final Gson gson = new Gson();
 
     /**
      * 每 15 分钟执行一次（上一次执行结束后起算 fixedDelay）。
+     * 分布式锁互斥：多实例部署时仅一个实例拉取，避免双倍消耗 SP-API 配额与重复发消息。
+     * 租期 14 分钟略小于 15 分钟调度周期，实例崩溃后下一轮可正常接手。
      */
     @Scheduled(fixedDelay = 15 * 60 * 1000)
     public void syncOrders() {
+        distributedJobLock.runWithLock(
+                "amz:sched:order-sync",
+                14 * 60L,
+                this::doSyncOrders);
+    }
+
+    private void doSyncOrders() {
         Set<Long> shopIds = shopCredentialStore.getActiveShopIds();
         if (shopIds.isEmpty()) {
             log.info("syncOrders: no active shops, skipping");
@@ -89,8 +105,33 @@ public class OrderSyncScheduler {
                 log.info("syncOrders shopId={} fetched={} orders", shopId, orders.size());
 
                 for (JsonObject order : orders) {
+                    String amazonOrderId = optString(order, "AmazonOrderId");
+                    if (amazonOrderId == null || amazonOrderId.isEmpty()) {
+                        continue;
+                    }
+                    // Redis 发布去重：7 天窗口 × 15 分钟轮询会让同一订单存活期被重复发布
+                    // ~600 次（放大 MQ 流量并迫使消费端做大量无效幂等查询）。
+                    // SETNX+TTL 14 天保证每订单只发布一轮；失败时降级为不去重（宁可重复，
+                    // 由下游唯一索引兜底，也不丢订单）
+                    String dedupeKey = "amz:sync:published:" + shopId + ":" + amazonOrderId;
+                    Boolean firstTime;
+                    try {
+                        firstTime = stringRedisTemplate.opsForValue()
+                                .setIfAbsent(dedupeKey, "1", java.time.Duration.ofDays(14));
+                    } catch (Exception redisEx) {
+                        log.warn("发布去重 Redis 异常，本轮降级为不去重：{}", redisEx.getMessage());
+                        firstTime = true;
+                    }
+                    if (Boolean.FALSE.equals(firstTime)) {
+                        continue;
+                    }
+
+                    // 行级明细仅对新订单拉取一次（orderItems 端点配额紧）
+                    List<JsonObject> orderItems = ordersClient.fetchOrderItems(
+                            shopId, marketplaceId, amazonOrderId);
+
                     publishSaveMessage(shopId, marketplaceId, region, order);
-                    publishProfitMessage(shopId, region, order);
+                    publishProfitMessages(shopId, region, order, orderItems);
                 }
             } catch (Exception e) {
                 log.error("syncOrders failed shopId={}", shopId, e);
@@ -138,26 +179,60 @@ public class OrderSyncScheduler {
     }
 
     /**
-     * 构造利润核算消息（JSON），发送到 profit 交换机，由 ProfitMQConsumer 消费。
+     * 构造利润核算消息（按行级明细拆分），发送到 profit 交换机。
      * <p>
-     * 消息体对齐 {@code ProfitMQConsumer.ProfitMessage}：
-     * shopId, amazonOrderId, sku, revenue, category, sizeTier, weightG, region。
-     * <p>
-     * 注：列表接口不含行级 SKU，此处暂以 amazonOrderId 作为订单级聚合标识，
-     * category/sizeTier/weightG 缺失，ProfitCalculator 会将 dataComplete 标记为 false。
+     * 有行级明细时：每个 orderItem 发布一条消息，sku 使用真实 sellerSku、
+     * revenue 使用行金额（itemPrice × quantity 的 SP-API LineAmount）——
+     * 使下游 COGS/佣金率可按真实 SKU 命中（旧实现 sku=amazonOrderId 恒缺失）。
+     * 明细缺失/为空时：回退订单级聚合消息（sku=amazonOrderId），保证不丢核算。
      */
-    private void publishProfitMessage(Long shopId, String region, JsonObject order) {
+    private void publishProfitMessages(Long shopId, String region, JsonObject order,
+                                       List<JsonObject> orderItems) {
         String amazonOrderId = optString(order, "AmazonOrderId");
         JsonObject orderTotal = optObject(order, "OrderTotal");
-        BigDecimalHolder revenue = parseAmount(orderTotal);
 
+        if (orderItems == null || orderItems.isEmpty()) {
+            BigDecimalHolder revenue = parseAmount(orderTotal);
+            publishSingleProfit(shopId, region, amazonOrderId, amazonOrderId,
+                    revenue.value, null);
+            return;
+        }
+
+        for (JsonObject item : orderItems) {
+            String sku = optString(item, "SellerSku");
+            JsonElement priceEl = item.get("ItemPrice");
+            double lineRevenue = 0.0;
+            if (priceEl != null && priceEl.isJsonObject()) {
+                BigDecimalHolder line = parseAmount(priceEl.getAsJsonObject());
+                lineRevenue = line.value;
+            } else {
+                // 无行金额时用 UnitPrice × Quantity 估算
+                double unit = 0.0;
+                int qty = item.has("Quantity") && !item.get("Quantity").isJsonNull()
+                        ? item.get("Quantity").getAsInt() : 1;
+                JsonElement unitEl = item.get("UnitPrice");
+                if (unitEl != null && !unitEl.isJsonNull()) {
+                    try { unit = unitEl.getAsDouble(); } catch (Exception ignore) { }
+                }
+                lineRevenue = unit * qty;
+            }
+            publishSingleProfit(shopId, region, amazonOrderId,
+                    sku != null ? sku : amazonOrderId, lineRevenue, null);
+        }
+    }
+
+    /**
+     * 发布单条利润核算消息。
+     */
+    private void publishSingleProfit(Long shopId, String region, String amazonOrderId,
+                                     String sku, double revenue, Object category) {
         Map<String, Object> body = new HashMap<>();
         body.put("shopId", shopId);
         body.put("amazonOrderId", amazonOrderId);
-        // 列表接口未返回行级 SKU，使用 amazonOrderId 作为订单级标识，避免 sku NOT NULL 约束失败
-        body.put("sku", amazonOrderId);
-        body.put("revenue", revenue.value);
-        body.put("category", null);
+        // 行级 SKU（或回退的订单级标识），满足 profit_report sku NOT NULL 约束
+        body.put("sku", sku);
+        body.put("revenue", revenue);
+        body.put("category", category);
         body.put("sizeTier", null);
         body.put("weightG", null);
         body.put("region", region);

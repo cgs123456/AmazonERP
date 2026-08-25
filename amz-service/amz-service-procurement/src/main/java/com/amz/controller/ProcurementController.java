@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.*;
 import com.amz.result.Result;
@@ -153,24 +154,28 @@ public class ProcurementController {
     // ==================== 采购订单 ====================
 
     /** 创建采购单 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/order")
     public Result<PurchaseOrder> createOrder(@RequestBody PurchaseOrder order) {
         return Result.success(procurementService.createPurchaseOrder(order));
     }
 
     /** 提交采购单到 1688 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/order/{orderId}/submit")
     public Result<PurchaseOrder> submitTo1688(@PathVariable Long orderId) {
         return Result.success(procurementService.submitTo1688(orderId));
     }
 
     /** 同步 1688 订单状态 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/order/{orderId}/sync")
     public Result<PurchaseOrder> syncStatus(@PathVariable Long orderId) {
         return Result.success(procurementService.syncOrderStatus(orderId));
     }
 
     /** 取消采购单 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/order/{orderId}/cancel")
     public Result<Boolean> cancelOrder(@PathVariable Long orderId) {
         return Result.success(procurementService.cancelPurchaseOrder(orderId));
@@ -186,6 +191,7 @@ public class ProcurementController {
     // ==================== 质检 ====================
 
     /** 提交质检结果 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/qc/{purchaseOrderId}")
     public Result<QualityCheck> submitQualityCheck(
             @PathVariable Long purchaseOrderId,

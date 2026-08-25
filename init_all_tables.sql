@@ -834,7 +834,7 @@ CREATE TABLE IF NOT EXISTS amz_keyword_rank (
     shop_id BIGINT NOT NULL,
     keyword VARCHAR(200) NOT NULL COMMENT '追踪关键词',
     asin VARCHAR(15) NOT NULL COMMENT '商品 ASIN',
-    rank INT DEFAULT NULL COMMENT '自然排名位置（1=首页第1名）',
+    `rank` INT DEFAULT NULL COMMENT '自然排名位置（1=首页第1名）',
     marketplace VARCHAR(5) DEFAULT 'US' COMMENT '搜索站点',
     capture_time VARCHAR(25) DEFAULT NULL COMMENT '抓取时间',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,

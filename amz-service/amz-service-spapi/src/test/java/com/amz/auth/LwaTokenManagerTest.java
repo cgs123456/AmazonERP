@@ -62,16 +62,23 @@ class LwaTokenManagerTest {
     /**
      * 通过反射构造 TokenEntry 并放入 cache。
      * TokenEntry 是私有静态内部类，需反射构造。
+     * 缓存键与实现保持一致（clientId:sha256(refreshToken)）。
      */
     @SuppressWarnings("unchecked")
     private void putCacheEntry(String clientId, String accessToken, Instant expiresAt) throws Exception {
+        putCacheEntry(clientId, "refresh-001", accessToken, expiresAt);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void putCacheEntry(String clientId, String refreshToken, String accessToken, Instant expiresAt)
+            throws Exception {
         Class<?> tokenEntryClass = Class.forName("com.amz.auth.LwaTokenManager$TokenEntry");
         Constructor<?> constructor = tokenEntryClass.getDeclaredConstructor(String.class, Instant.class);
         constructor.setAccessible(true);
         Object tokenEntry = constructor.newInstance(accessToken, expiresAt);
 
         Map<String, Object> cache = (Map<String, Object>) ReflectionTestUtils.getField(tokenManager, "cache");
-        cache.put(clientId, tokenEntry);
+        cache.put(LwaTokenManager.cacheKeyOf(clientId, refreshToken), tokenEntry);
     }
 
     @Test
@@ -107,19 +114,40 @@ class LwaTokenManagerTest {
     @Test
     @DisplayName("invalidate：null clientId 应无副作用（不抛异常）")
     void testInvalidateNullIdIsNoOp() {
-        assertDoesNotThrow(() -> tokenManager.invalidate(null));
+        assertDoesNotThrow(() -> tokenManager.invalidate((String) null));
+        assertDoesNotThrow(() -> tokenManager.invalidate((ShopCredential) null));
     }
 
     @Test
-    @DisplayName("invalidate：有效 clientId 应从缓存移除")
+    @DisplayName("invalidate：有效 clientId 应从缓存移除（该应用下所有店铺条目）")
     void testInvalidateRemovesEntry() throws Exception {
-        putCacheEntry("client-001", "token-aaa", Instant.now().plusSeconds(3600));
+        putCacheEntry("client-001", "refresh-001", "token-aaa", Instant.now().plusSeconds(3600));
 
         tokenManager.invalidate("client-001");
 
         @SuppressWarnings("unchecked")
         Map<String, Object> cache = (Map<String, Object>) ReflectionTestUtils.getField(tokenManager, "cache");
-        assertTrue(!cache.containsKey("client-001"), "缓存中应不再包含该 clientId");
+        String key = LwaTokenManager.cacheKeyOf("client-001", "refresh-001");
+        assertTrue(!cache.containsKey(key), "缓存中应不再包含该 clientId 的条目");
+    }
+
+    @Test
+    @DisplayName("同 clientId 不同 refresh_token 的店铺缓存必须隔离（防跨租户串号）")
+    void testSameClientIdDifferentRefreshTokenIsolated() throws Exception {
+        // 店铺 A 与店铺 B 共用同一 LWA 应用，但 refresh_token 不同
+        putCacheEntry("shared-client", "refresh-shopA", "token-A", Instant.now().plusSeconds(3600));
+        putCacheEntry("shared-client", "refresh-shopB", "token-B", Instant.now().plusSeconds(3600));
+
+        ShopCredential credA = buildCredential();
+        credA.setClientId("shared-client");
+        credA.setRefreshToken("refresh-shopA");
+
+        ShopCredential credB = buildCredential();
+        credB.setClientId("shared-client");
+        credB.setRefreshToken("refresh-shopB");
+
+        assertEquals("token-A", tokenManager.getToken(credA), "店铺 A 应拿到自己的 token");
+        assertEquals("token-B", tokenManager.getToken(credB), "店铺 B 应拿到自己的 token，不得串用 A 的");
     }
 
     @Test

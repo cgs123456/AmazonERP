@@ -7,12 +7,12 @@ import com.amz.result.Result;
 import com.amz.service.AiService;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -24,11 +24,9 @@ public class AiServiceImpl implements AiService {
     @Value("${deepseek.api_key}")
     private String apiKey;
 
-    private final OkHttpClient client = new OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build();
+    /** 共享 OkHttp 客户端（连接池/线程池进程内复用，见 AiHttpClientConfig）。 */
+    @Autowired
+    private OkHttpClient client;
 
     private final Gson gson = new Gson();
 

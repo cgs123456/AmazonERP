@@ -35,7 +35,7 @@
         </div>
       </div>
 
-      <!-- 库存列表 -->
+      <!-- 库存列表（客户端分页，避免大店铺全量渲染卡顿） -->
       <div class="table-card">
         <table class="data-table">
           <thead>
@@ -51,7 +51,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in inventory" :key="item.sku">
+            <tr v-for="item in pagedInventory" :key="item.sku">
               <td class="mono">{{ item.sku }}</td>
               <td class="mono">{{ item.asin }}</td>
               <td>{{ item.shop }}</td>
@@ -61,11 +61,18 @@
               <td><span class="health-tag" :class="item.level">{{ item.levelText }}</span></td>
               <td>{{ item.suggestQty > 0 ? item.suggestQty + ' 件' : '-' }}</td>
             </tr>
-            <tr v-if="!loading && inventory.length === 0">
+            <tr v-if="!loading && pagedInventory.length === 0">
               <td colspan="8" class="empty-row">暂无库存数据</td>
             </tr>
           </tbody>
         </table>
+        <div v-if="totalInventory > pageSize" class="table-pager">
+          <span class="page-info">第 {{ currentPage }} 页 / 共 {{ totalPagesCount }} 页（{{ totalInventory }} 条）</span>
+          <div class="page-actions">
+            <button class="page-btn" :disabled="currentPage <= 1" @click="invPage.prevPage">上一页</button>
+            <button class="page-btn" :disabled="currentPage >= totalPagesCount" @click="invPage.nextPage">下一页</button>
+          </div>
+        </div>
       </div>
     </main>
   </div>
@@ -78,6 +85,7 @@ import AppSidebar from '../components/AppSidebar.vue'
 import { getInventoryList, getInventoryHealth } from '@/api/inventory'
 import type { InventoryItem, InventoryHealth } from '@/api/inventory'
 import { getCurrentShopId } from '@/utils/shop'
+import { usePagination } from '@/composables/usePagination'
 
 const loading = ref(false)
 
@@ -98,6 +106,14 @@ const mockHealth: InventoryHealth = { urgent: 2, risk: 2, healthy: 2, overstock:
 
 const inventory = ref<InventoryItem[]>([...mockInventory])
 const healthData = ref<InventoryHealth>({ ...mockHealth })
+
+// 客户端分页：每页 20 条
+const invPage = usePagination<InventoryItem>(() => inventory.value, 20)
+const pagedInventory = invPage.paged
+const totalInventory = invPage.total
+const currentPage = invPage.page
+const pageSize = invPage.size
+const totalPagesCount = invPage.totalPages
 
 const healthCounts = computed(() => ({
   urgent: healthData.value.urgent,
@@ -184,4 +200,12 @@ onMounted(async () => {
 .health-tag.risk { background: #fef3c7; color: #92400e; }
 .health-tag.healthy { background: #d1fae5; color: #065f46; }
 .health-tag.overstock { background: #e0e7ff; color: #3730a3; }
+
+/* 分页条（与 Finance.vue 风格一致） */
+.table-pager { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
+.page-info { font-size: 13px; color: #666; }
+.page-actions { display: flex; gap: 8px; }
+.page-btn { padding: 6px 16px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; cursor: pointer; font-size: 13px; color: #333; }
+.page-btn:hover:not(:disabled) { background: #f9fafb; border-color: #4f46e5; color: #4f46e5; }
+.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

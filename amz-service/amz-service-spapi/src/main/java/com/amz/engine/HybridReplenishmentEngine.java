@@ -13,7 +13,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -91,9 +90,9 @@ public class HybridReplenishmentEngine extends ReplenishmentEngine {
         ReplenishmentSuggestion suggestion = super.generateSuggestion(
                 shopId, sku, asin, category, currentTotalStock, leadTimeDays);
 
-        // 2. 查询销量数据，计算 CV 和特征
+        // 2. 查询销量数据，计算 CV 和特征（复用父类零填充口径，保证与规则路径 CV 一致）
         List<SalesHistory> histories = queryLast30DaysSalesHistory(shopId, sku);
-        List<Integer> dailySales = extractQuantities(histories);
+        List<Integer> dailySales = extractDailyQuantities(histories);
         double cv = calculateCV(dailySales);
 
         // 3. 判断是否使用 ML（模型未加载或 CV 未达阈值 → 纯规则）
@@ -165,20 +164,6 @@ public class HybridReplenishmentEngine extends ReplenishmentEngine {
                         .ge(SalesHistory::getSaleDate, start30)
                         .le(SalesHistory::getSaleDate, today)
                         .orderByAsc(SalesHistory::getSaleDate));
-    }
-
-    /**
-     * 从销量历史中提取每日销量列表。
-     *
-     * @param histories 销量历史列表
-     * @return 每日销量列表（null 数量按 0 处理）
-     */
-    private List<Integer> extractQuantities(List<SalesHistory> histories) {
-        List<Integer> result = new ArrayList<>(histories.size());
-        for (SalesHistory h : histories) {
-            result.add(h.getQuantity() == null ? 0 : h.getQuantity());
-        }
-        return result;
     }
 
     /**

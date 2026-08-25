@@ -13,12 +13,15 @@ const globalStubs = {
 
 describe('AgentChat 组件', () => {
   beforeEach(() => {
-    // 模拟后端 SSE 接口不可用，使组件降级到 generateMockReply
+    // 登录守卫需要 token；未登录时组件直接提示而不发起请求
+    localStorage.setItem('token', 'test-token')
+    // 模拟后端接口不可用，使组件降级到 generateMockReply
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('test: backend unavailable')))
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    localStorage.clear()
   })
 
   it('visible 为 true 时应显示浮窗', () => {
@@ -83,19 +86,13 @@ describe('AgentChat 组件', () => {
     expect(lastReply).toMatch(/订单|162/)
   })
 
-  it('SSE 流式回复应逐块追加到 assistant 消息', async () => {
-    // 模拟 SSE 流式响应：分两块返回 data: 内容
-    const encoder = new TextEncoder()
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode('data: {"content":"近 7 天"}\n\n'))
-        controller.enqueue(encoder.encode('data: {"content":"订单 162 单"}\n\n'))
-        controller.close()
-      }
-    })
+  it('后端返回 Result JSON 时应展示 data 字段内容', async () => {
+    // 组件已切换为标准 JSON 契约（POST /ai/erp/agent → Result<String>），
+    // 旧 SSE 流式测试已过时（此前因缺少 .json() 方法意外走了 mock 兜底路径）
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      body: stream
+      status: 200,
+      json: async () => ({ code: 200, message: 'success', data: '近 7 天订单共 162 单，销售额 $8,456。' })
     }))
 
     const wrapper = mount(AgentChat, {
@@ -108,9 +105,32 @@ describe('AgentChat 组件', () => {
     await flushPromises()
 
     const assistantMessages = wrapper.findAll('.message.assistant .message-content')
+    expect(assistantMessages.length).toBeGreaterThanOrEqual(2)
     const lastReply = assistantMessages[assistantMessages.length - 1].text()
-    // 两块 SSE 内容应被拼接
-    expect(lastReply).toContain('近 7 天')
-    expect(lastReply).toContain('订单 162 单')
+    // 应渲染后端 data 字段的原文，而非 mock 兜底
+    expect(lastReply).toContain('162 单')
+    expect(lastReply).toContain('$8,456')
+  })
+
+  it('后端返回业务失败（code!=200）时应降级到模拟回复', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: 500, message: 'LLM 超时', data: null })
+    }))
+
+    const wrapper = mount(AgentChat, {
+      props: { visible: true },
+      global: globalStubs
+    })
+    await wrapper.find('.chat-input').setValue('库存')
+    await wrapper.find('.send-btn').trigger('click')
+
+    await flushPromises()
+
+    const assistantMessages = wrapper.findAll('.message.assistant .message-content')
+    const lastReply = assistantMessages[assistantMessages.length - 1].text()
+    // 业务失败走 generateMockReply 兜底
+    expect(lastReply).toMatch(/SKU|库存|补货/)
   })
 })

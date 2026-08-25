@@ -6,7 +6,8 @@ import { getCurrentShopId } from '../utils/shop'
 // dev 环境通过 vite proxy 转发 /api → VITE_API_BASE_URL，避免跨域
 const request = axios.create({
     baseURL: import.meta.env.DEV ? '/api' : import.meta.env.VITE_API_BASE_URL,
-    timeout: 100000
+    // 30s：覆盖绝大多数业务接口；AI Agent 等长耗时调用已在各自组件内用原生 fetch 自行控制
+    timeout: 30000
 })
 
 // 请求拦截器：统一注入 token 与 shopId 请求头

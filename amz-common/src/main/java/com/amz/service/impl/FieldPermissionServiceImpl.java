@@ -42,22 +42,35 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
     /** 标记是否已成功加载过权限规则（避免无规则表时反复尝试 DB 查询）。 */
     private volatile boolean loaded = false;
 
-    /** Redis 可选注入：amz-common 单元测试或独立运行时可能缺失。 */
+    /**
+     * Redis 可选注入：amz-common 单元测试或独立运行时可能缺失。
+     * 使用 ObjectProvider 懒解析：宿主服务 classpath 无 spring-data-redis 时
+     * 也不会因类缺失导致 Bean introspect 失败（此前 message 服务启动崩溃根因）。
+     */
     @Autowired(required = false)
-    private RedisTemplate<String, Object> redisTemplate;
+    private org.springframework.beans.factory.ObjectProvider<RedisTemplate<String, Object>> redisTemplateProvider;
 
-    /** JDBC 可选注入：同上。 */
+    /** JDBC 可选注入：同上，ObjectProvider 防止宿主缺 spring-jdbc 时崩溃。 */
     @Autowired(required = false)
-    private JdbcTemplate jdbcTemplate;
+    private org.springframework.beans.factory.ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
+
+    private RedisTemplate<String, Object> redis() {
+        return redisTemplateProvider != null ? redisTemplateProvider.getIfAvailable() : null;
+    }
+
+    private JdbcTemplate jdbc() {
+        return jdbcTemplateProvider != null ? jdbcTemplateProvider.getIfAvailable() : null;
+    }
 
     @Override
     public synchronized void loadPermissions() {
-        if (jdbcTemplate == null) {
+        JdbcTemplate template = jdbc();
+        if (template == null) {
             log.warn("FieldPermissionService: JdbcTemplate 未注入，跳过权限加载（amz-common 单独运行？）。");
             return;
         }
         try {
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(LOAD_SQL);
+            List<Map<String, Object>> rows = template.queryForList(LOAD_SQL);
             memoryCache.clear();
             int count = 0;
             for (Map<String, Object> row : rows) {
@@ -69,9 +82,10 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
                         .computeIfAbsent(entity, k -> ConcurrentHashMap.newKeySet())
                         .add(field);
                 // 同步写入 Redis Hash
-                if (redisTemplate != null) {
+                RedisTemplate<String, Object> redis = redis();
+                if (redis != null) {
                     String redisKey = RedisConstant.FIELD_PERM_PREFIX + role + ":" + entity;
-                    redisTemplate.opsForSet().add(redisKey, field);
+                    redis.opsForSet().add(redisKey, field);
                 }
                 count++;
             }
@@ -92,10 +106,11 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
             return Collections.emptySet();
         }
         // 优先 Redis
-        if (redisTemplate != null) {
+        RedisTemplate<String, Object> redis = redis();
+        if (redis != null) {
             try {
                 String redisKey = RedisConstant.FIELD_PERM_PREFIX + role + ":" + entityName;
-                Set<Object> members = redisTemplate.opsForSet().members(redisKey);
+                Set<Object> members = redis.opsForSet().members(redisKey);
                 if (members != null && !members.isEmpty()) {
                     Set<String> result = new HashSet<>(members.size());
                     for (Object m : members) {

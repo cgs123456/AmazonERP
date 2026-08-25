@@ -15,6 +15,7 @@ import com.amz.model.vo.OrderVo;
 import com.amz.result.Result;
 import com.amz.service.OrderService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
@@ -57,23 +58,52 @@ public class OrderController {
     }
 
     /**
-     * 查询指定店铺最近 N 天的订单汇总（供 Agent 工具调用）。
+     * 查询指定店铺的订单列表（分页 + 日期范围）。
+     * <p>
+     * 参数兼容两种调用方：
+     * <ul>
+     *   <li>前端 OrderList：传 startDate/endDate/page/size；</li>
+     *   <li>Agent 工具 query_orders：仅传 shopId(+days)，保持旧语义返回近 N 天汇总。</li>
+     * </ul>
+     * 响应同时包含分页字段（list/total/page/size）与旧汇总字段（count/orders/totalAmount），
+     * totalAmount 为当前页订单金额合计。
      */
     @ShopScoped
     @GetMapping("/list")
     public Result<Map<String, Object>> listOrders(@RequestParam Long shopId,
-                                                  @RequestParam(defaultValue = "7") Integer days) {
+                                                  @RequestParam(required = false) Integer days,
+                                                  @RequestParam(required = false)
+                                                  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+                                                  @RequestParam(required = false)
+                                                  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+                                                  @RequestParam(defaultValue = "1") Integer page,
+                                                  @RequestParam(defaultValue = "20") Integer size) {
         if (shopId == null) {
             return Result.failure("shopId must not be null");
         }
-        if (days == null || days <= 0) {
-            days = 7;
+        if (page == null || page < 1) {
+            page = 1;
         }
-        LocalDateTime since = LocalDateTime.now().minusDays(days);
-        List<Order> orders = orderMapper.selectList(new LambdaQueryWrapper<Order>()
-                .eq(Order::getShopId, shopId)
-                .gt(Order::getPurchaseDate, since)
-                .orderByDesc(Order::getPurchaseDate));
+        // 单页上限保护（与 MybatisPlusConfig.maxLimit 双保险）
+        if (size == null || size < 1) {
+            size = 20;
+        } else if (size > 200) {
+            size = 200;
+        }
+
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                .eq(Order::getShopId, shopId);
+        if (startDate != null && endDate != null) {
+            wrapper.gt(Order::getPurchaseDate, startDate.atStartOfDay())
+                    .lt(Order::getPurchaseDate, endDate.plusDays(1).atStartOfDay());
+        } else {
+            int windowDays = (days == null || days <= 0) ? 7 : days;
+            wrapper.gt(Order::getPurchaseDate, LocalDateTime.now().minusDays(windowDays));
+        }
+        wrapper.orderByDesc(Order::getPurchaseDate);
+
+        Page<Order> pageResult = orderMapper.selectPage(new Page<>(page, size), wrapper);
+        List<Order> orders = pageResult.getRecords();
 
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (Order o : orders) {
@@ -84,9 +114,15 @@ public class OrderController {
         Map<String, Object> summary = new HashMap<>();
         summary.put("shopId", shopId);
         summary.put("days", days);
-        summary.put("count", orders.size());
-        summary.put("totalAmount", totalAmount);
+        // 分页字段（前端 PageResult 契约）
+        summary.put("list", orders);
+        summary.put("total", pageResult.getTotal());
+        summary.put("page", page);
+        summary.put("size", size);
+        // 旧汇总字段（Agent 工具兼容）
+        summary.put("count", pageResult.getTotal());
         summary.put("orders", orders);
+        summary.put("totalAmount", totalAmount);
         return Result.success(summary);
     }
 

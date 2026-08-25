@@ -124,7 +124,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import { sendVerifyCode, verifyLogin } from '../api/auth'
 import { useToast } from '../composables/useToast'
@@ -151,6 +151,14 @@ const countdown = ref(0)
 const loading = ref(false)
 
 let timer: number | null = null
+
+// 组件卸载时清理倒计时，防止隐藏后仍空转
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+})
 
 const closeModal = () => {
   emit('update:visible', false)
@@ -219,8 +227,12 @@ const handleLogin = async () => {
     const response = await verifyLogin(phoneNumber.value, verifyCode.value)
 
     if (response.code === 200) {
-      // 登录成功，保存 token
+      // 登录成功，保存 token（校验后端确实返回了字符串，避免写入 "undefined"）
       const token = response.data
+      if (typeof token !== 'string' || !token) {
+        showToast('登录响应异常，请稍后重试', 'error')
+        return
+      }
       localStorage.setItem('token', token)
       // 设置 token 过期时间（例如：7 天后）
       const expiryTime = Date.now() + 7 * 24 * 60 * 60 * 1000

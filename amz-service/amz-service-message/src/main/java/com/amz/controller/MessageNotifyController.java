@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * 消息通知 REST 控制器（<b>纯服务间内部端点</b>）。
  * <p>
@@ -60,7 +63,10 @@ public class MessageNotifyController {
         }
 
         try {
-            channel.writeAndFlush(new TextWebSocketFrame(content));
+            // 推送 JSON 结构（对齐前端 NotificationPage 协议：{type,title,content,time}），
+            // 前端 websocket.ts 会对消息做 JSON.parse，纯文本会导致解析失败被静默丢弃
+            String payload = buildNotifyPayload(req.getType(), content);
+            channel.writeAndFlush(new TextWebSocketFrame(payload));
             resp.setDelivered(true);
             log.info("WebSocket 推送成功：userId={}, type={}, length={}",
                     userId, req.getType(), content.length());
@@ -71,6 +77,27 @@ public class MessageNotifyController {
             resp.setReason("push_failed:" + e.getMessage());
             return Result.success(resp);
         }
+    }
+
+    /**
+     * 构造前端可解析的 JSON 消息体。
+     * type 为 MessageTypeEnum 序号（0=库存预警/1=订单异常/2=补货建议/3=差评/4=价格异动），
+     * 未匹配的类型由前端回退为 system。
+     */
+    private String buildNotifyPayload(Integer type, String content) {
+        Map<String, Object> msg = new LinkedHashMap<>();
+        msg.put("type", type == null ? 0 : type);
+        msg.put("title", "运营通知");
+        msg.put("content", content);
+        msg.put("time", java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        return GsonHolder.GSON.toJson(msg);
+    }
+
+    /** 延迟初始化的 Gson 单例（避免每个请求重建）。 */
+    private static final class GsonHolder {
+        private static final com.google.gson.Gson GSON =
+                new com.google.gson.GsonBuilder().disableHtmlEscaping().create();
     }
 
     /** 推送请求体。 */

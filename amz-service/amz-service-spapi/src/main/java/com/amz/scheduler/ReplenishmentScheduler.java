@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 智能补货定时调度器。
@@ -50,11 +51,23 @@ public class ReplenishmentScheduler {
     @Autowired
     private ShopCredentialStore shopCredentialStore;
 
+    @Autowired
+    private DistributedJobLock distributedJobLock;
+
     /**
      * 每天 06:00 全量重算补货建议。
+     * 分布式锁互斥：多实例部署时仅一个实例执行，避免重复计算与 SP-API/DB 压力翻倍。
+     * 租期 2h > 任务预期耗时且 < 24h 调度周期，崩溃后锁自动过期不阻塞次日运行。
      */
     @Scheduled(cron = "0 0 6 * * *")
     public void dailyReplenishmentCalc() {
+        distributedJobLock.runWithLock(
+                "amz:sched:replenishment-daily",
+                TimeUnit.HOURS.toSeconds(2),
+                this::doDailyReplenishmentCalc);
+    }
+
+    private void doDailyReplenishmentCalc() {
         Set<Long> shopIds = shopCredentialStore.getActiveShopIds();
         if (shopIds == null || shopIds.isEmpty()) {
             log.info("dailyReplenishmentCalc: no active shops, skipping");

@@ -84,7 +84,7 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
             return ok;
         } catch (Exception e) {
             log.error("Temu markShipped failed orderNo={}", platformOrderNo, e);
-            return false;
+            throw new RuntimeException("Temu markShipped failed: " + e.getMessage(), e);
         }
     }
 
@@ -153,7 +153,7 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
                 if (amtStr != null) {
                     try {
                         uo.setOriginalAmount(new BigDecimal(amtStr));
-                    } catch (Exception ignore) {
+                    } catch (NumberFormatException e) {
                         log.debug("Temu 订单金额解析失败 orderNo={} amount={}", uo.getPlatformOrderNo(), amtStr);
                     }
                 }

@@ -50,6 +50,19 @@ public class FinanceServiceImpl implements FinanceService {
 
     @Override
     public AccountingVoucher generateOrderVoucher(Long shopId, String orderNo, BigDecimal amount, String currency) {
+        // 幂等去重：同一订单重复触发（MQ 重投 / Feign 重试）时返回既有凭证，
+        // 避免重复凭证导致 calculateProfit 重复计入收入
+        AccountingVoucher existing = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
+                .eq(AccountingVoucher::getShopId, shopId)
+                .eq(AccountingVoucher::getSourceType, "ORDER")
+                .eq(AccountingVoucher::getSourceNo, orderNo)
+                .last("LIMIT 1"));
+        if (existing != null) {
+            log.info("订单凭证已存在，幂等返回：shopId={} orderNo={} voucherNo={}",
+                    shopId, orderNo, existing.getVoucherNo());
+            return existing;
+        }
+
         BigDecimal cnyAmount = currencyConverter.convertToCny(amount, currency);
         BigDecimal rate = currencyConverter.getRate(currency);
 
@@ -69,7 +82,18 @@ public class FinanceServiceImpl implements FinanceService {
         v.setSourceType("ORDER");
         v.setSourceNo(orderNo);
         v.setKingdeeSyncStatus("PENDING");
-        voucherMapper.insert(v);
+        try {
+            voucherMapper.insert(v);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 并发窗口兜底：另一线程已插入同源凭证，查询返回既有记录
+            AccountingVoucher concurrent = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
+                    .eq(AccountingVoucher::getShopId, shopId)
+                    .eq(AccountingVoucher::getSourceType, "ORDER")
+                    .eq(AccountingVoucher::getSourceNo, orderNo)
+                    .last("LIMIT 1"));
+            log.warn("订单凭证并发幂等命中：orderNo={}", orderNo);
+            return concurrent != null ? concurrent : existing;
+        }
         log.info("订单凭证生成：orderNo={} 原币 {} {} → CNY {}", orderNo, amount, currency, cnyAmount);
         return v;
     }
@@ -79,6 +103,26 @@ public class FinanceServiceImpl implements FinanceService {
         AccountingVoucher v = voucherMapper.selectById(voucherId);
         if (v == null) {
             return false;
+        }
+        // 多租户越权防护：sync 端点仅携带 voucherId，无 shopId 参数可被 ShopScoped 切面拦截，
+        // 此处在服务层显式校验当前用户是否被授权操作该凭证所属店铺
+        if (!com.amz.context.UserContext.isShopAllowed(v.getShopId())) {
+            log.warn("syncToKingdee 越权拦截：voucherId={} shopId={} userId={}",
+                    voucherId, v.getShopId(), com.amz.context.UserContext.getUserId());
+            return false;
+        }
+        // 原子认领：PENDING/FAILED 才允许发起同步，防并发双写金蝶。
+        // 使用字符串列名 UpdateWrapper（Lambda 版在无 MyBatis-Plus 元数据缓存的
+        // 纯单测环境下无法解析实体列）
+        boolean claimed = voucherMapper.update(null,
+                new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<AccountingVoucher>()
+                        .eq("id", voucherId)
+                        .in("kingdee_sync_status", "PENDING", "FAILED")
+                        .set("kingdee_sync_status", "SYNCING")) > 0;
+        if (!claimed) {
+            log.info("凭证已被其他请求认领或已同步，跳过：voucherId={} status={}",
+                    voucherId, v.getKingdeeSyncStatus());
+            return true;
         }
         try {
             String kingdeeNo = kingdeeClient.syncVoucher(v);
@@ -98,6 +142,9 @@ public class FinanceServiceImpl implements FinanceService {
         }
     }
 
+    /** 列表查询安全上限：调度器持续写入，无界 selectList 会随时间线性膨胀。 */
+    private static final String LIST_LIMIT = "LIMIT 500";
+
     @Override
     public List<AccountingVoucher> listVouchers(Long shopId, String sourceType) {
         LambdaQueryWrapper<AccountingVoucher> wrapper = new LambdaQueryWrapper<>();
@@ -105,7 +152,8 @@ public class FinanceServiceImpl implements FinanceService {
         if (sourceType != null && !sourceType.isBlank()) {
             wrapper.eq(AccountingVoucher::getSourceType, sourceType);
         }
-        wrapper.orderByDesc(AccountingVoucher::getId);
+        wrapper.orderByDesc(AccountingVoucher::getId)
+                .last(LIST_LIMIT);
         return voucherMapper.selectList(wrapper);
     }
 

@@ -79,7 +79,7 @@ public class ReplenishmentController {
             return Result.success(count);
         } catch (Exception e) {
             log.error("manual replenish calc failed shopId={}", shopId, e);
-            return Result.failure("calc failed: " + e.getMessage());
+            return Result.failure("calc failed");
         }
     }
 

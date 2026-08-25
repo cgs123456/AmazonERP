@@ -16,6 +16,12 @@ services:
     ports:
       - "8848:8848"
       - "9848:9848"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8848/nacos/v1/console/health/readiness"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   # MySQL Database (master, write node)
@@ -41,6 +47,12 @@ services:
       --binlog-format=ROW
       --gtid-mode=ON
       --enforce-gtid-consistency=ON
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
     restart: unless-stopped
 
   # MySQL Read Replica (slave, read node)
@@ -80,6 +92,14 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD:} --appendonly yes
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:}
     restart: unless-stopped
 
   # RabbitMQ 消息队列
@@ -92,6 +112,12 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
     restart: unless-stopped
 
   # MongoDB
@@ -239,6 +265,8 @@ services:
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
       # 通过 compose 网络内服务名访问基础设施
       - NACOS_SERVER_ADDR=nacos:8848
+      # WebSocket 上游：/ws/** 路由转发到 message 服务 Netty 端口（显式声明，避免依赖 yml 默认值）
+      - WS_MESSAGE_UPSTREAM=http://amz-service-message:8888
     depends_on:
       - nacos
       - redis
@@ -281,12 +309,12 @@ services:
       - rabbitmq
     restart: unless-stopped
 
-  # User Management Service (users, roles, permissions, port 8086)
+  # User Management Service (users, roles, permissions, port 8080 — 与 application.yml/k8s 一致)
   amz-service-user:
     image: amazon-erp/amz-service-user:latest
     container_name: amz-service-user
     ports:
-      - "8086:8086"
+      - "8080:8080"
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
@@ -303,12 +331,12 @@ services:
       - redis
     restart: unless-stopped
 
-  # Product Management Service (products, categories, brands, SPU/SKU, port 8087)
+  # Product Management Service (products, categories, brands, SPU/SKU, port 8095 — 与 application.yml/k8s 一致)
   amz-service-product:
     image: amazon-erp/amz-service-product:latest
     container_name: amz-service-product
     ports:
-      - "8087:8087"
+      - "8095:8095"
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
@@ -569,12 +597,14 @@ services:
       - redis
     restart: unless-stopped
 
-  # Message Service (WebSocket + RabbitMQ real-time push, port 8889)
+  # Message Service (WebSocket + RabbitMQ real-time push, HTTP port 8889, Netty WS port 8888)
   amz-service-message:
     image: amazon-erp/amz-service-message:latest
     container_name: amz-service-message
     ports:
       - "8889:8889"
+      # Netty WebSocket 端口：网关 /ws/** 路由转发到该端口（见 gateway application.yml）
+      - "8888:8888"
     environment:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
