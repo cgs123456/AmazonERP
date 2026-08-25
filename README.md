@@ -23,24 +23,24 @@
 ## 📊 微服务架构（16 业务服务 + 网关 + 公共模块）
 
 ```
-amz-gateway              (10010)  — API 网关（JWT + Sentinel 限流 + shopId 校验）
+amz-gateway                — API 网关（JWT + Sentinel 限流 + shopId 校验）
 # 核心业务（7 个）
-amz-service-user         (8086)   — 用户 + 多店铺 RBAC + JWT 双 Token
-amz-service-product      (8087)   — 商品/Listing + Keepa 竞品监控
-amz-service-order        (8105)   — 订单 + SP-API 同步 + 智能审单
-amz-service-search       (8090)   — ES 混合检索
-amz-service-message      (8889)   — WebSocket + Amazon Messaging
-amz-service-ai           (8091)   — AI 运营 Agent（28 工具）
-amz-service-spapi        (8096)   — SP-API 对接层（LWA + SigV4）
+amz-service-user            — 用户 + 多店铺 RBAC + JWT 双 Token
+amz-service-product         — 商品/Listing + Keepa 竞品监控
+amz-service-order           — 订单 + SP-API 同步 + 智能审单
+amz-service-search          — ES 混合检索
+amz-service-message         — WebSocket + Amazon Messaging
+amz-service-ai              — AI 运营 Agent（28 工具）
+amz-service-spapi           — SP-API 对接层（LWA + SigV4）
 # 扩展业务（8 个）
-amz-service-ad           (8097)   — 广告管理（ACoS + 搜索词 + 自动规则）
-amz-service-procurement  (8098)   — 采购供应链（供应商 + 1688 + FBA 货件）
-amz-service-customer     (8099)   — 客服（邮件 + 差评匹配 + RMA）
-amz-service-logistics    (8100)   — 物流（商比价 + 调拨 + 头程分摊）
-amz-service-ops          (8101)   — 运营工具（差评/跟卖/关键词监控）
-amz-service-report       (8102)   — 数据报表（利润/周转/经营看板）
-amz-service-finance      (8103)   — 业财一体（复式记账 + 金蝶 + VAT）
-amz-service-multiplatform (8104)  — 多平台（Shopify/eBay/Walmart/Shopee/Lazada）
+amz-service-ad              — 广告管理（ACoS + 搜索词 + 自动规则）
+amz-service-procurement     — 采购供应链（供应商 + 1688 + FBA 货件）
+amz-service-customer        — 客服（邮件 + 差评匹配 + RMA）
+amz-service-logistics       — 物流（商比价 + 调拨 + 头程分摊）
+amz-service-ops             — 运营工具（差评/跟卖/关键词监控）
+amz-service-report          — 数据报表（利润/周转/经营看板）
+amz-service-finance         — 业财一体（复式记账 + 金蝶 + VAT）
+amz-service-multiplatform   — 多平台（Shopify/eBay/Walmart/Shopee/Lazada）
 # 公共模块
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
@@ -58,7 +58,6 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **优化建议（8）** | optimize_ad_campaign、optimize_listing_seo、optimize_shipping_route、optimize_inventory_distribution、cross_marketplace_listing、monitor_competitor_price、estimate_fba_fees、translate_listing | 覆盖广告优化/Listing SEO/物流/库存调拨/跨站点/竞品/FBA 费用/翻译 |
 | **操作执行（6）** | create_purchase_plan、auto_reply_message、generate_promotion_plan | 覆盖采购计划/消息回复/促销方案 |
 
-> 部分工具含 mock 降级，切 `real` profile + 配置外部 API 凭据后对接真实数据源。
 
 ## 📦 4 大 P0 核心模块
 
@@ -112,21 +111,6 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **数据库迁移** | Flyway 10.20.0（14 MySQL 服务 V1__init.sql，baseline-on-migrate 兼容存量库） |
 | **Docker 健康探针** | 16 服务 Actuator health/liveness/readiness |
 
-## 🛠 核心可靠性修复日志
-
-| 模块 | 问题 | 修复 |
-|------|------|------|
-| spapi/auth | LWA token 缓存按 clientId 共享，租户间可能串用 | 缓存键加入 refreshToken SHA-256，静态方法可测 |
-| spapi/engine | 补货 leadTimeDemand 公式倍数错误，补货量低估约 10 倍 | 修正为 `adjusted × leadTimeDays`，单测覆盖 |
-| order/mq | 订单消息重复消费、重启后 deliveryTag 误判已处理 | Redis SETNX 幂等 + UUID 交付标签 + 处理上限转 DLQ |
-| order/profit | 广告费全额计入当日、仓储费未摊销、VAT 按价外税计算 | 广告费按近 30 天订单数摊薄；仓储费 /30 日均；VAT 价内税还原 `revenue×r/(1+r)` |
-| finance | 凭证并发重复生成、金蝶同步无归属校验 | 库查重 + 唯一约束兜底；同步原子认领（乐观更新）+ 分段状态上报 |
-| procurement | 1688 下单失败本地状态已变更 | SUBMITTING 先持久化再调远程，失败回滚 DRAFT；质检入参边界校验 |
-| spapi/ai pom | 引用 Sentinel Nacos 数据源但缺依赖，启动即崩 | 补 `sentinel-datasource-nacos` |
-| gateway | CORS 硬编码、mutate 结果未转发、伪造头透传 | 配置化 origins + 修复链式 mutate + 剥离伪造头 |
-| common | 死代码拦截器残留 | 移除 BaseInterceptor/MyInterceptor（5 处） |
-| frontend | 列表页一次性拉全量、AgentChat 端点/响应解析错误 | `usePagination` 组合式函数；Agent 对话改 JSON POST + data 字段读取；WS 降级 URL 修正 |
-
 ## 🚀 快速开始
 
 ### 1. 克隆
@@ -164,18 +148,6 @@ mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=r
 ```
 
 > **Windows 本地一键全栈**：仓库根目录提供 `.start-backend-final.bat`（14 微服务按依赖顺序拉起）与 `.start-vite.bat`（前端），配套 `.start-mysql.bat` 初始化本地 MySQL/Redis。
-
-### 5. 访问
-
-| 服务 | 地址 |
-|------|------|
-| 前端 | http://localhost:5173 |
-| 网关 | http://localhost:10010 |
-| Grafana | http://localhost:3000 |
-| Prometheus | http://localhost:9090 |
-| Skywalking UI | http://localhost:8081 |
-| Nacos | http://localhost:8848/nacos |
-| API 文档 | http://localhost:10010/swagger-ui.html |
 
 ## 🧪 测试
 
