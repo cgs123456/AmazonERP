@@ -56,7 +56,7 @@ const router = createRouter({
     ]
 })
 
-// 全局前置守卫：除首页外均需登录，并校验 token 是否过期
+// 全局前置守卫：除首页外均需登录
 router.beforeEach((to, _from, next) => {
     // 首页为白名单，无需登录
     if (to.path === '/') {
@@ -64,9 +64,8 @@ router.beforeEach((to, _from, next) => {
         return
     }
     const token = localStorage.getItem('token')
-    const tokenExpiry = localStorage.getItem('token_expiry')
-    // token 缺失或已过期：清理本地凭证并跳转首页登录
-    if (!token || (tokenExpiry && Date.now() > parseInt(tokenExpiry))) {
+    // token 缺失：清理本地凭证并跳转首页登录
+    if (!token) {
         localStorage.removeItem('token')
         localStorage.removeItem('token_expiry')
         next('/')

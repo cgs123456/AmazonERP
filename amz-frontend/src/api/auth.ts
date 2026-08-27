@@ -22,14 +22,7 @@ request.interceptors.request.use(
 
             // 检查 token 是否过期（可以通过解析 JWT 或检查时间戳）
             // 这里简单检查 token 是否存在，实际项目中可以添加更复杂的验证
-            const tokenExpiry = localStorage.getItem('token_expiry')
-            if (tokenExpiry && Date.now() > parseInt(tokenExpiry)) {
-                // Token 已过期，清除并跳转登录页
-                localStorage.removeItem('token')
-                localStorage.removeItem('token_expiry')
-                window.location.href = '/'
-                return Promise.reject(new Error('Token 已过期'))
-            }
+            // 已在路由守卫中统一处理，此处仅透出 token
         }
         // 透传当前选中店铺 shopId（未选则为空，由后端网关/业务按需校验）
         const shopId = getCurrentShopId()
