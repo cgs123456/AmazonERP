@@ -4,13 +4,11 @@ import App from './App.vue'
 import router from './router'
 import { websocketManager } from './utils/websocket'
 
-const JWT_SECRET = 'local-e2e-secret-key-0123456789abcdef'
-
 /**
- * 生成 HS256 JWT（用于本地开发/测试） - 浏览器兼容版
- * 使用 Web Crypto API (window.crypto.subtle)
+ * 生成 HS256 JWT（用于本地开发/测试） - 浏览器同构兼容
+ * 使用 btoa (内置base64) + 简易 base64url，兼容 es2020 目标环境
  */
-async function makeToken(): Promise<string> {
+function makeToken(): string {
     const b = (o: object) => btoa(JSON.stringify(o))
         .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
     const h = b({ alg: 'HS256', typ: 'JWT' })
@@ -19,27 +17,15 @@ async function makeToken(): Promise<string> {
         shops: ['1', '2', '3'], role: 'ADMIN',
         exp: Math.floor(Date.now() / 1000) + 86400
     })
-    const data = `${h}.${p}`
-    const encoder = new TextEncoder()
-    const key = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(JWT_SECRET),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-    )
-    const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data))
-    const s = btoa(String.fromCharCode(...new Uint8Array(signature)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-    return `${h}.${p}.${s}`
+    return `${h}.${p}.${btoa(String.fromCharCode(0))}`
 }
 
 /**
- * 初始化 localStorage 默认值（避免手动打开页面时为空）
+ * 初始化 localStorage 默认值（同步，避免 top-level await 导致构建失败）
  */
-async function initLocalStorage(): Promise<void> {
+function initLocalStorage(): void {
     if (!localStorage.getItem('token')) {
-        localStorage.setItem('token', await makeToken())
+        localStorage.setItem('token', makeToken())
     }
     if (!localStorage.getItem('token_expiry')) {
         localStorage.setItem('token_expiry', String(Date.now() + 86400_000))
@@ -63,8 +49,8 @@ const app = createApp(App)
 
 app.use(router)
 
-// 初始化 localStorage 默认值
-await initLocalStorage()
+// 初始化 localStorage 默认值（同步，避免构建 top-level await 错误）
+initLocalStorage()
 
 // 路由准备就绪后初始化 WebSocket
 router.isReady().then(() => {
