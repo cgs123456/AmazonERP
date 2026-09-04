@@ -263,6 +263,8 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
+      # Swagger/OpenAPI 文档端点开关：本地/内网默认放行，生产置 false 收紧
+      - GATEWAY_DOCS_ENABLED=${GATEWAY_DOCS_ENABLED:-true}
       # 通过 compose 网络内服务名访问基础设施
       - NACOS_SERVER_ADDR=nacos:8848
       # WebSocket 上游：/ws/** 路由转发到 message 服务 Netty 端口（显式声明，避免依赖 yml 默认值）

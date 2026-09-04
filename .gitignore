@@ -63,3 +63,4 @@ logs/
 .vite/
 dist/
 test-output.txt
+.hsk/
