@@ -4,6 +4,7 @@ import com.amz.analytics.InventoryHealthAnalyzer;
 import com.amz.client.FbaInventoryClient;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.lock.DistributedJobLock;
 import com.amz.mapper.FbaInventoryMapper;
 import com.amz.mapper.InventorySyncLogMapper;
 import com.amz.model.FbaInventory;

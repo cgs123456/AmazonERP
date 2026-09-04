@@ -2,6 +2,7 @@ package com.amz.scheduler;
 
 import com.amz.agent.ProactiveReminderService;
 import com.amz.client.MessageServiceClient;
+import com.amz.lock.DistributedJobLock;
 import com.amz.mapper.UserPreferenceMapper;
 import com.amz.model.UserPreference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -46,14 +47,23 @@ public class DailyReportScheduler {
     @Autowired
     private MessageServiceClient messageServiceClient;
 
+    @Autowired
+    private DistributedJobLock distributedJobLock;
+
     /**
      * 每日昨日运营报告（cron: 0 0 8 * * ?，每天早 8 点）。
      * <p>
      * 注意：注释中不能包含 cron 表达式中的斜杠星号序列，否则会被解析为 Javadoc 结束符。
      * 真实 cron 为 0 0 8 星 星 问。
+     * <p>
+     * 分布式锁：多实例双跑会对同一用户重复推送报告。
      */
     @Scheduled(cron = "${agent.daily-report-cron:0 0 8 * * ?}")
     public void pushDailyReport() {
+        distributedJobLock.runWithLock("amz:sched:ai-daily-report", 2 * 60 * 60L, this::doPushDailyReport);
+    }
+
+    private void doPushDailyReport() {
         log.info("=== 每日运营报告推送任务启动 ===");
         LocalDate yesterday = LocalDate.now().minusDays(1);
 
@@ -106,9 +116,15 @@ public class DailyReportScheduler {
     /**
      * 主动提醒扫描（每 4 小时一次）。
      * 真实 cron 为 0 0 斜杠4 星 星 问。
+     * <p>
+     * 分布式锁：多实例双跑会生成重复提醒。
      */
     @Scheduled(cron = "0 0 0/4 * * ?")
     public void proactiveReminderScan() {
+        distributedJobLock.runWithLock("amz:sched:ai-proactive-reminder", 3 * 60 * 60L, this::doProactiveReminderScan);
+    }
+
+    private void doProactiveReminderScan() {
         log.info("=== 主动提醒扫描任务启动 ===");
         List<String> reminders = proactiveReminderService.scanAndRemind();
         for (String r : reminders) {

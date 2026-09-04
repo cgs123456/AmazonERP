@@ -194,11 +194,7 @@ onMounted(() => {
 
 <style scoped>
 .order-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
-/* 页头：仪表盘场景左对齐，副标题用 muted（accent 纪律） */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
+/* .main-content / hero / shop-tip / 表格 / 分页样式已收敛至全局 style.css */
 
 /* 骨架屏（表格行形状） */
 .skeleton-zone { display: flex; flex-direction: column; gap: 0.625rem; margin-bottom: 1rem; }
@@ -212,31 +208,18 @@ onMounted(() => {
 .filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
 .filter-btn:hover { background: var(--color-primary-dark); }
 
-.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
+/* shop-tip / table-card / data-table / mono / empty-row / status-tag 基类 / 分页已收敛至全局 style.css */
 
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
-.data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
-.data-table tr:hover { background: var(--color-primary-light); }
-.mono { font-family: var(--font-mono); font-size: 0.8125rem; }
-.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
 .profit-positive { color: var(--color-success); font-weight: 600; }
 .profit-negative { color: var(--color-error); font-weight: 600; }
 
 /* 状态标签：语义色各归其位（pending=等待/警告，completed=完成/成功，refunded=退款/错误） */
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .status-tag.shipped { background: var(--color-primary-light); color: var(--color-primary); }
 .status-tag.completed { background: var(--color-success-light); color: var(--color-success); }
 .status-tag.pending { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .status-tag.refunded { background: var(--color-light-red); color: var(--color-error); }
 
-.pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
-.page-info { font-size: 0.8125rem; color: var(--color-muted); }
-.page-actions { display: flex; gap: 0.5rem; }
-.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
-.page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
-.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 分页已收敛全局（style.css） */
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } }
 @media (max-width: 768px) { .main-content { margin-left: 0; } .filter-bar { flex-wrap: wrap; } }

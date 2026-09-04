@@ -1,6 +1,7 @@
 package com.amz.scheduler;
 
 import com.amz.client.AdvertisingApiClient;
+import com.amz.lock.DistributedJobLock;
 import com.amz.mapper.BidScheduleMapper;
 import com.amz.model.AdKeyword;
 import com.amz.model.BidSchedule;
@@ -36,12 +37,19 @@ public class BidScheduleExecutor {
     @Autowired
     private AdvertisingApiClient advertisingApiClient;
 
+    @Autowired
+    private DistributedJobLock distributedJobLock;
+
     /**
-     * 每小时整点执行分时调价。
-     * fixedDelay 兜底：若任务执行超过 1 小时，避免重叠。
+     * 每小时整点执行分时调价（cron: 0 0 * * * ?）。
+     * 分布式锁：调价按「当前价 × 倍率」计算，多实例双跑会叠加调价，必须互斥。
      */
     @Scheduled(cron = "0 0 * * * ?")
     public void executeHourly() {
+        distributedJobLock.runWithLock("amz:sched:bid-executor", 55 * 60L, this::doExecuteHourly);
+    }
+
+    private void doExecuteHourly() {
         int currentHour = LocalDateTime.now().getHour();
         List<BidSchedule> activeRules = bidScheduleMapper.selectEnabledByHour(currentHour);
         if (activeRules == null || activeRules.isEmpty()) {

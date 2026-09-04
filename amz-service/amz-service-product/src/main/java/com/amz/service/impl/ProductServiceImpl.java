@@ -1,6 +1,7 @@
 package com.amz.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.amz.context.UserContext;
 import com.amz.mapper.ProductMapper;
 import com.amz.mapper.ShopMapper;
 import com.amz.model.dto.ProductDto;
@@ -20,7 +21,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -37,7 +37,15 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Result<List<Product>> getProductList() {
-        List<Product> products = productMapper.selectList(null);
+        // 多店铺隔离：仅返回当前用户所选店铺的商品（shopId 经网关/拦截器校验后写入 UserContext）。
+        // 原实现 selectList(null) 会把所有店铺的商品全部返回，构成跨店铺数据暴露。
+        Long shopId = UserContext.getShopId();
+        if (shopId == null) {
+            return Result.failure("请先选择店铺");
+        }
+        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Product::getShopId, shopId.intValue());
+        List<Product> products = productMapper.selectList(wrapper);
         return Result.success(products);
     }
 
@@ -69,13 +77,11 @@ public class ProductServiceImpl implements ProductService {
             return Result.failure("商品不存在");
         }
         Integer shopId = product.getShopId();
-        // 2.根据店铺id获取该店铺所有产品
+        // 2.查询同店铺其余产品（排除条件谓词下推到 DB，避免全店商品载入内存后再过滤）
         LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.eq(Product::getShopId, shopId);
+        queryWrapper.eq(Product::getShopId, shopId)
+                .ne(Product::getId, productId);
         List<Product> products = productMapper.selectList(queryWrapper);
-        // 3.过滤该产品
-        products = products.stream().filter(
-                product2 -> !product2.getId().equals(productId)).collect(Collectors.toList());
         return Result.success(products);
     }
 

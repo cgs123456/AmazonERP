@@ -1,6 +1,7 @@
 package com.amz.scheduler;
 
 import com.amz.client.KeepaClient;
+import com.amz.lock.DistributedJobLock;
 import com.amz.mapper.CompetitorMonitorMapper;
 import com.amz.model.CompetitorMonitor;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -55,11 +56,19 @@ public class KeepaCompetitorScheduler {
     @Autowired
     private KeepaClient keepaClient;
 
+    @Autowired
+    private DistributedJobLock distributedJobLock;
+
     /**
      * 每 6 小时轮询一次竞品价格。
+     * 分布式锁：多实例双跑会双倍消耗 Keepa 积分并重复写快照。
      */
     @Scheduled(fixedDelay = 6 * 60 * 60 * 1000)
     public void pollCompetitorPrices() {
+        distributedJobLock.runWithLock("amz:sched:keepa-competitor", 60 * 60L, this::doPollCompetitorPrices);
+    }
+
+    private void doPollCompetitorPrices() {
         List<CompetitorMonitor> monitors = competitorMonitorMapper.selectList(
                 new LambdaQueryWrapper<CompetitorMonitor>()
                         .select(CompetitorMonitor::getShopId, CompetitorMonitor::getCompetitorAsin,
@@ -199,7 +208,12 @@ public class KeepaCompetitorScheduler {
         }
         JsonElement rankEl = stats.get("salesRank");
         if (rankEl != null && !rankEl.isJsonNull()) {
-            try { snapshot.setBsRank(rankEl.getAsBigDecimal().intValue()); } catch (Exception ignore) { }
+            try {
+                snapshot.setBsRank(rankEl.getAsBigDecimal().intValue());
+            } catch (Exception e) {
+                // Keepa 偶发返回异常 rank 值（如 -1 占位）：字段留空即可，不阻断快照落库
+                log.debug("Keepa salesRank 解析失败 asin={} raw={}", asin, rankEl);
+            }
         }
         Integer reviewCount = optInt(stats, 16);
         snapshot.setReviewCount(reviewCount);

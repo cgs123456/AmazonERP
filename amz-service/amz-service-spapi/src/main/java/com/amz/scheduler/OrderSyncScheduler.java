@@ -4,6 +4,7 @@ import com.amz.client.OrdersClient;
 import com.amz.constant.MqConstant;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.lock.DistributedJobLock;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;

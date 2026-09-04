@@ -1,5 +1,6 @@
 package com.amz.scheduler;
 
+import com.amz.lock.DistributedJobLock;
 import com.amz.mapper.ShopMapper;
 import com.amz.model.Shop;
 import com.amz.service.OpsService;
@@ -38,12 +39,20 @@ public class OpsMonitorScheduler {
     @Autowired
     private ShopMapper shopMapper;
 
+    @Autowired
+    private DistributedJobLock distributedJobLock;
+
     /**
      * 每天早 8 点扫描差评 + 跟卖（cron: 0 0 8 * * ?）。
      * 遍历所有已授权店铺，单店失败不影响其他店铺。
+     * 分布式锁：多实例双跑会重复落库告警。
      */
     @Scheduled(cron = "0 0 8 * * ?")
     public void dailyScan() {
+        distributedJobLock.runWithLock("amz:sched:ops-daily-scan", 2 * 60 * 60L, this::doDailyScan);
+    }
+
+    private void doDailyScan() {
         log.info("运营监控定时任务启动：差评 + 跟卖扫描");
         List<Shop> shops = listActiveShops();
         int totalReviewAlerts = 0;
@@ -68,9 +77,14 @@ public class OpsMonitorScheduler {
     /**
      * 每 6 小时抓取关键词排名（cron 0 0 斜杠6 星 星 问）。
      * 遍历所有已授权店铺，单店失败不影响其他店铺。
+     * 分布式锁：多实例双跑会重复抓取与落库。
      */
     @Scheduled(cron = "0 0 */6 * * ?")
     public void rankCapture() {
+        distributedJobLock.runWithLock("amz:sched:ops-rank-capture", 5 * 60 * 60L, this::doRankCapture);
+    }
+
+    private void doRankCapture() {
         log.info("关键词排名抓取任务启动");
         List<Shop> shops = listActiveShops();
         int totalCaptured = 0;

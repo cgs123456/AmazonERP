@@ -460,11 +460,7 @@ const acosClass = (acos?: number) => {
 
 <style scoped>
 .ad-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; }
-/* 页头：左对齐 + muted 副标题 */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
+/* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */
 
 /* 骨架屏 */
 .skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
@@ -474,8 +470,6 @@ const acosClass = (acos?: number) => {
 .sk-row { height: 2.75rem; border-radius: 0; }
 .sk-row-alt { width: 96%; }
 .sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
-
-.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
 
 .acos-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .acos-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; text-align: center; box-shadow: var(--shadow-sm); }
@@ -496,14 +490,6 @@ const acosClass = (acos?: number) => {
 .chart-labels { display: flex; justify-content: space-between; margin-top: 0.5rem; }
 .chart-labels span { font-size: 0.6875rem; color: var(--color-muted); }
 
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
-.data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
-.data-table tr:hover { background: var(--color-primary-light); }
-.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
-
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .status-tag.active { background: var(--color-success-light); color: var(--color-success); }
 .status-tag.paused { background: var(--color-muted-light); color: var(--color-muted); }
 .status-tag.pending { background: var(--color-warning-light); color: var(--color-warning-dark); }

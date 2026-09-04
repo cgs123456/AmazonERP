@@ -20,7 +20,7 @@ import java.util.Map;
  * 3. 将工具返回值注入对话继续推理
  * <p>
  * 本类是 ErpToolExecutor 的薄适配层，实际工具逻辑仍委托给 ErpToolExecutor，
- * 避免重复实现 12 个工具的业务逻辑。
+ * 避免重复实现各工具的业务逻辑。
  */
 @Slf4j
 @Component

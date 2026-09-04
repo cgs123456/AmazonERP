@@ -281,12 +281,7 @@ const handleDismiss = (notification: Notification) => {
 <style scoped>
 .notification-page { background: var(--color-background); }
 
-/* 页头：左对齐 + muted 副标题 */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
-
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
+/* 页头/主区公共样式已收敛至全局 style.css */
 
 .notification-container { width: 100%; }
 

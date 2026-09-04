@@ -177,12 +177,8 @@ onMounted(async () => {
 
 <style scoped>
 .profit-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-/* 页头：左对齐 + muted 副标题 */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
+/* 页头/主区/表格等公共样式已收敛至全局 style.css */
 
 /* 骨架屏 */
 .skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
@@ -192,8 +188,6 @@ onMounted(async () => {
 .sk-row { height: 2.75rem; border-radius: 0; }
 .sk-row-alt { width: 96%; }
 .sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
-
-.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: var(--font-size-2); text-align: center; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
@@ -205,13 +199,6 @@ onMounted(async () => {
 .dim-tab:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .dim-tab.active { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: var(--font-size-2); color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
-.data-table td { padding: 0.75rem 1rem; font-size: var(--font-size-2); color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
-.data-table tr:hover { background: var(--color-primary-light); }
-.mono { font-family: var(--font-mono); }
-.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
 .profit-positive { color: var(--color-success); font-weight: 600; }
 .profit-negative { color: var(--color-error); font-weight: 600; }
 

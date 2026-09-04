@@ -448,12 +448,8 @@ const seasonalityText = (s?: string) => {
 
 <style scoped>
 .selection-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-/* 页头：左对齐 + muted 副标题 */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
+/* 页头/主区/表格等公共样式已收敛至全局 style.css */
 
 /* 骨架屏 */
 .skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
@@ -530,8 +526,6 @@ const seasonalityText = (s?: string) => {
   opacity: 0.6;
   cursor: not-allowed;
 }
-
-.loading-mask { padding: 1rem; margin-bottom: 1rem; background: var(--color-primary-light); color: var(--color-primary); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
 
 /* 结果区 */
 .result-section { margin-bottom: 1rem; }
@@ -766,24 +760,6 @@ const seasonalityText = (s?: string) => {
 
 .sort-btn.active { background: var(--color-primary); /* 4f46e5 */; color: var(--color-on-primary); /* white */; font-weight: 500; }
 
-.data-table { width: 100%; border-collapse: collapse; }
-
-.data-table th {
-  text-align: left;
-  padding: 0.75rem 1rem; /* 12px 14px */;
-  font-size: 0.8125rem; /* 13px */;
-  color: var(--color-muted); /* 666 */;
-  font-weight: 500;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.data-table td {
-  padding: 0.875rem 1rem; /* 14px */;
-  font-size: 0.875rem; /* 14px */;
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-on-surface);
-}
-
 .asin-cell { font-family: var(--font-mono); color: var(--color-primary); font-weight: 600; }
 
 .title-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -821,8 +797,6 @@ const seasonalityText = (s?: string) => {
 .action-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
 
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.empty-row { text-align: center; color: var(--color-muted); /* 888 */; padding: 2rem; /* 40px */; }
 
 @media (max-width: 1024px) {
   .main-content { margin-left: 80px; }

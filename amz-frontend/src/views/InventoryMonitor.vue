@@ -187,12 +187,8 @@ onMounted(async () => {
 <style scoped>
 /* 页面基础 */
 .inventory-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; }
 
-/* 页头：左对齐 + muted 副标题 */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
+/* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */
 
 /* 骨架屏 */
 .skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
@@ -202,13 +198,6 @@ onMounted(async () => {
 .sk-row { height: 2.75rem; border-radius: 0; }
 .sk-row-alt { width: 96%; }
 .sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
-
-/* shop-tip */
-.shop-tip {
-  padding: 0.75rem 1rem; margin-bottom: 1rem;
-  background: var(--color-primary-light); color: var(--color-primary);
-  border-radius: var(--radius-md); font-size: 0.875rem; text-align: center;
-}
 
 /* health-grid - bento grid: 4 个 card */
 .health-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
@@ -243,18 +232,6 @@ onMounted(async () => {
   margin-top: 0.125rem; /* 2px */
 }
 
-/* table-card */
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
-
-/* data-table */
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
-.data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
-.data-table tr:hover { background: var(--color-primary-light); }
-
-.mono { font-family: var(--font-mono); font-size: 0.8125rem; }
-.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
-
 /* days-urgent / days-risk */
 .days-urgent { color: var(--color-error); font-weight: 600; }
 .days-risk { color: var(--color-warning-dark); font-weight: 600; }
@@ -268,11 +245,6 @@ onMounted(async () => {
 
 /* table-pager */
 .table-pager { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; margin-top: 1rem; }
-.page-info { font-size: 0.8125rem; color: var(--color-muted); }
-.page-actions { display: flex; gap: 0.5rem; }
-.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
-.page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
-.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } .health-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 768px) { .main-content { margin-left: 0; } .health-grid { grid-template-columns: 1fr; } }

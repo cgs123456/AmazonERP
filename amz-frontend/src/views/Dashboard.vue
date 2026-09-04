@@ -191,25 +191,10 @@ onMounted(async () => {
 <style scoped>
 /* design tokens 引用全局 style.css；此处不再重复定义 */
 
-/* 页面与主布局（与 AppHeader 64px / AppSidebar 220px 对齐） */
+/* 页面与主布局（.main-content / hero 已收敛至全局 style.css） */
 .dashboard-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-/* 页头：仪表盘场景左对齐（技能 4.3 Anti-Center Bias），副标题用 muted 而非 accent（色彩纪律） */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title {
-  font-size: var(--font-size-7); /* 30px：仪表盘页头不需要落地页级 display 字号 */
-  font-weight: 700;
-  color: var(--color-on-surface);
-  margin: 0 0 0.25rem 0;
-  line-height: var(--line-height-tight);
-}
-.hero-subtitle {
-  font-size: var(--font-size-2); /* 14px */
-  color: var(--color-muted);
-  margin: 0;
-  line-height: var(--line-height-snug);
-}
+/* 页头：仪表盘场景左对齐（hero 三件套已收敛至全局 style.css） */
 
 /* 骨架屏 */
 .skeleton-zone { min-height: 24rem; }

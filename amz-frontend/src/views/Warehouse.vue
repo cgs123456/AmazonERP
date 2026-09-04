@@ -476,12 +476,8 @@ onMounted(async () => {
 <style scoped>
 /* 页面基础 */
 .warehouse-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-/* 页头：左对齐 + muted 副标题 */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
+/* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */
 
 /* 骨架屏 */
 .skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
@@ -500,16 +496,9 @@ onMounted(async () => {
 .filter-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .filter-bar select, .filter-bar input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.8125rem; background: var(--color-surface); color: var(--color-on-surface); }
 
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
-.data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
-.data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
-.data-table tr:hover { background: var(--color-primary-light); }
-.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
 .num-good { color: var(--color-primary); font-weight: 600; }
 
 /* 状态语义色：active=运行/成功，pending=进行中/警告，inactive=停用/中性灰而非错误红 */
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .status-tag.active { background: var(--color-success-light); color: var(--color-success); }
 .status-tag.inactive { background: var(--color-muted-light); color: var(--color-muted); }
 .status-tag.pending { background: var(--color-warning-light); color: var(--color-warning-dark); }
@@ -536,11 +525,6 @@ onMounted(async () => {
 
 /* 分页条 */
 .table-pager { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; margin-top: 1rem; }
-.page-info { font-size: 0.8125rem; color: var(--color-muted); }
-.page-actions { display: flex; gap: 0.5rem; }
-.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
-.page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
-.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } }
 @media (max-width: 768px) { .main-content { margin-left: 0; padding: 1rem; } .tab-bar { overflow-x: auto; } }

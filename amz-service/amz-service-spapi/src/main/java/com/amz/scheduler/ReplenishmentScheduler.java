@@ -1,6 +1,7 @@
 package com.amz.scheduler;
 
 import com.amz.credential.ShopCredentialStore;
+import com.amz.lock.DistributedJobLock;
 import com.amz.engine.ReplenishmentEngine;
 import com.amz.mapper.FbaInventoryMapper;
 import com.amz.mapper.ReplenishmentSuggestionMapper;

@@ -271,12 +271,7 @@ onMounted(() => {
 
 <style scoped>
 .finance-page { background: var(--color-background); }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; }
-/* 页头：左对齐 + muted 副标题 */
-.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
-.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
-.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
-.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
+/* 页头/主区/表格等公共样式已收敛至全局 style.css */
 
 /* 骨架屏 */
 .skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
@@ -298,9 +293,6 @@ onMounted(() => {
 .filter-btn:hover { background: var(--color-primary-dark); }
 .range-sep { color: var(--color-muted); font-size: 0.875rem; margin: 0 0.5rem; }
 
-.loading-mask { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-primary-light); color: var(--color-primary); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
-
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .src-order { background: var(--color-primary-light); color: var(--color-primary); }
 .src-proc { background: var(--color-muted-light); color: var(--color-muted); }
 .src-fee { background: var(--color-muted-light); color: var(--color-muted); }
@@ -316,13 +308,6 @@ onMounted(() => {
 .sync-btn { padding: 0.25rem 0.75rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; }
 .sync-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
 .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
-.page-info { font-size: 0.8125rem; color: var(--color-muted); }
-.page-actions { display: flex; gap: 0.5rem; }
-.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
-.page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
-.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
