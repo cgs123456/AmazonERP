@@ -3,9 +3,24 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
-      <div class="page-header">
-        <h1>海外仓 / WMS</h1>
-        <p class="subtitle">仓库管理、入库单、出库单与库存查询</p>
+      <!-- hero section - 符合 design-taste-frontend 约束 -->
+      <!-- eyebrow: 无 (每 3 个 section 最多 1 个，本页面 0 个，合规)
+           headline: "海外仓 / WMS" - 2 行以内
+           subtext: "仓库管理、入库单、出库单与库存查询" - 6 词以内
+           CTAs: 无 (Tab 切换在页面尾部，不计入 hero CTA 数)
+           top padding: 由 AppHeader + main-content margin 处理
+           split-header: 已垂直堆叠 (h1 在上，p 在下)
+      -->
+      <div class="hero-section">
+        <h1 class="hero-title">海外仓 / WMS</h1>
+        <p class="hero-subtitle">仓库管理、入库单、出库单与库存查询</p>
+      </div>
+
+      <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
+      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+        <div class="table-card sk-table-card">
+          <div v-for="i in 6" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
+        </div>
       </div>
 
       <!-- Tab 切换 -->
@@ -21,8 +36,6 @@
           <span>{{ tab.label }}</span>
         </div>
       </div>
-
-      <div v-if="loading" class="loading-mask">加载中...</div>
 
       <!-- 仓库列表 -->
       <div v-show="activeTab === 'warehouse'" class="panel">
@@ -50,7 +63,7 @@
                 <td>{{ w.usedCbm || 0 }}</td>
                 <td><span class="status-tag" :class="w.status === 'ACTIVE' ? 'active' : 'inactive'">{{ w.status }}</span></td>
               </tr>
-              <tr v-if="!loading && warehouses.length === 0"><td colspan="9" class="empty-row">暂无仓库数据</td></tr>
+              <tr v-if="!loading && warehouses.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:warehouse" width="32" class="empty-icon" /><span>暂无仓库数据</span></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -89,7 +102,7 @@
                 <td>{{ inv.locationCode || '-' }}</td>
                 <td>{{ inv.batchNo || '-' }}</td>
               </tr>
-              <tr v-if="!loading && inventoryList.length === 0"><td colspan="9" class="empty-row">暂无库存数据</td></tr>
+              <tr v-if="!loading && inventoryList.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:package-variant-closed" width="32" class="empty-icon" /><span>暂无库存数据</span></div></td></tr>
             </tbody>
           </table>
           <div v-if="invPage.total.value > invPage.size.value" class="table-pager">
@@ -132,7 +145,7 @@
                   <button v-if="canCancelInbound(o.status)" class="action-btn cancel" @click="doCancelInbound(o.id!)">取消</button>
                 </td>
               </tr>
-              <tr v-if="!loading && inboundOrders.length === 0"><td colspan="9" class="empty-row">暂无入库单</td></tr>
+              <tr v-if="!loading && inboundOrders.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-in" width="32" class="empty-icon" /><span>暂无入库单</span></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -169,7 +182,7 @@
                   <button v-if="canCancelOutbound(o.status)" class="action-btn cancel" @click="doCancelOutbound(o.id!)">取消</button>
                 </td>
               </tr>
-              <tr v-if="!loading && outboundOrders.length === 0"><td colspan="9" class="empty-row">暂无出库单</td></tr>
+              <tr v-if="!loading && outboundOrders.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-out" width="32" class="empty-icon" /><span>暂无出库单</span></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -461,61 +474,74 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.warehouse-page { min-height: 100vh; background: #f5f6fa; }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 24px 32px; }
-.page-header h1 { font-size: 24px; font-weight: 700; color: #1a1a2e; margin: 0; }
-.page-header .subtitle { color: #666; margin: 4px 0 24px; font-size: 14px; }
+/* 页面基础 */
+.warehouse-page { background: var(--color-background); }
+.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-.loading-mask { padding: 12px 16px; margin-bottom: 16px; background: #eef2ff; color: #4f46e5; border-radius: 8px; font-size: 14px; text-align: center; }
+/* 页头：左对齐 + muted 副标题 */
+.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
+.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
+.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
-.tab-bar { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; }
-.tab-item { display: flex; align-items: center; gap: 6px; padding: 10px 16px; cursor: pointer; color: #6b7280; font-size: 14px; border-bottom: 2px solid transparent; transition: all 0.2s; }
-.tab-item:hover { color: #1a1a2e; }
-.tab-item.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
+/* 骨架屏 */
+.skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
+.sk-row { height: 2.75rem; border-radius: 0; }
+.sk-row-alt { width: 96%; }
+.sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
 
-.panel { margin-bottom: 24px; }
-.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.panel-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
-.filter-bar { display: flex; gap: 8px; align-items: center; }
-.filter-bar select, .filter-bar input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+.tab-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--color-border); }
+.tab-item { display: flex; align-items: center; gap: 0.375rem; padding: 0.5rem 1rem; cursor: pointer; color: var(--color-muted); font-size: 0.875rem; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tab-item:hover { color: var(--color-on-surface); }
+.tab-item.active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
 
-.table-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.panel { margin-bottom: 1rem; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+.panel-header h3 { font-size: 1rem; font-weight: 600; margin: 0; color: var(--color-on-surface); }
+.filter-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.filter-bar select, .filter-bar input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.8125rem; background: var(--color-surface); color: var(--color-on-surface); }
+
+.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
 .data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: #f9fafb; padding: 12px 16px; text-align: left; font-size: 13px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
-.data-table td { padding: 12px 16px; font-size: 14px; color: #1f2937; border-bottom: 1px solid #f3f4f6; }
-.data-table tr:hover { background: #f9fafb; }
-.empty-row { text-align: center; color: #999; padding: 32px 0; }
-.num-good { color: #10b981; font-weight: 600; }
+.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
+.data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
+.data-table tr:hover { background: var(--color-primary-light); }
+.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
+.num-good { color: var(--color-primary); font-weight: 600; }
 
-.status-tag { padding: 4px 10px; border-radius: 6px; font-size: 12px; }
-.status-tag.active { background: #d1fae5; color: #065f46; }
-.status-tag.inactive { background: #fee2e2; color: #991b1b; }
-.status-tag.pending { background: #fef3c7; color: #92400e; }
+/* 状态语义色：active=运行/成功，pending=进行中/警告，inactive=停用/中性灰而非错误红 */
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.status-tag.active { background: var(--color-success-light); color: var(--color-success); }
+.status-tag.inactive { background: var(--color-muted-light); color: var(--color-muted); }
+.status-tag.pending { background: var(--color-warning-light); color: var(--color-warning-dark); }
 
-.primary-btn { padding: 8px 16px; background: #4f46e5; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; }
-.primary-btn:hover { background: #4338ca; }
-.ghost-btn { padding: 8px 16px; background: transparent; color: #6b7280; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; font-size: 13px; }
-.action-btn { padding: 4px 10px; background: #eef2ff; color: #4f46e5; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; margin-right: 4px; }
-.action-btn.cancel { background: #fee2e2; color: #991b1b; }
+.primary-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); cursor: pointer; font-size: 0.8125rem; font-weight: 500; transition: background 0.2s; }
+.primary-btn:hover { background: var(--color-primary-dark); }
+.ghost-btn { padding: 0.5rem 1rem; background: transparent; color: var(--color-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); cursor: pointer; font-size: 0.8125rem; transition: all 0.2s; }
+.ghost-btn:hover { background: var(--color-primary-light); color: var(--color-primary); border-color: var(--color-primary); }
+.action-btn { padding: 0.25rem 0.625rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; margin-right: 0.25rem; transition: all 0.2s; }
+.action-btn:hover:not(:disabled) { background: var(--color-primary); color: var(--color-on-primary); }
+.action-btn.cancel { background: var(--color-light-red); color: var(--color-error); }
+.action-btn.cancel:hover:not(:disabled) { background: var(--color-error); color: var(--color-on-primary); }
 
-.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 200; }
-.modal { background: #fff; border-radius: 12px; padding: 24px; width: 560px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
-.modal h3 { margin: 0 0 16px; font-size: 18px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #374151; }
-.form-grid input, .form-grid select { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-.helper { font-size: 13px; color: #6b7280; margin: 12px 0 8px; }
-.inline-row { display: flex; gap: 8px; margin-bottom: 8px; }
-.inline-row input { flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; }
+.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.modal { background: var(--color-surface); border-radius: var(--radius-md); padding: 1.5rem; width: 90%; max-width: 560px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
+.modal h3 { margin: 0 0 1rem; font-size: 1.125rem; color: var(--color-on-surface); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--color-on-surface); }
+.form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.helper { font-size: 0.8125rem; color: var(--color-muted); margin: 0.75rem 0 0.5rem; }
+.inline-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+.inline-row input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.8125rem; }
 
 /* 分页条 */
-.table-pager { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
-.page-info { font-size: 13px; color: #666; }
-.page-actions { display: flex; gap: 8px; }
-.page-btn { padding: 6px 16px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; cursor: pointer; font-size: 13px; color: #333; }
-.page-btn:hover:not(:disabled) { background: #f9fafb; border-color: #4f46e5; color: #4f46e5; }
+.table-pager { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; margin-top: 1rem; }
+.page-info { font-size: 0.8125rem; color: var(--color-muted); }
+.page-actions { display: flex; gap: 0.5rem; }
+.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
+.page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
 .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } }
+@media (max-width: 768px) { .main-content { margin-left: 0; padding: 1rem; } .tab-bar { overflow-x: auto; } }
 </style>

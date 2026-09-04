@@ -3,9 +3,10 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
-      <div class="page-header">
-        <h1>广告管理</h1>
-        <p class="subtitle">广告活动、ACoS 监控与分时调价（支持 SP / SB / SD / DSP 全广告类型）</p>
+      <!-- hero section - design-taste-frontend 约束：headline ≤2 行，subtext ≤20 词，垂直堆叠 -->
+      <div class="hero-section">
+        <h1 class="hero-title">广告管理</h1>
+        <p class="hero-subtitle">广告活动、ACoS 监控与分时调价</p>
       </div>
 
       <!-- 广告类型 Tab -->
@@ -21,7 +22,18 @@
         </div>
       </div>
 
-      <div v-if="loading" class="loading-mask">加载中...</div>
+      <!-- 骨架屏：ACoS 概览卡片 + 表格行形状（技能 4.5 Loading） -->
+      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+        <div class="acos-overview">
+          <div v-for="i in 4" :key="i" class="acos-card">
+            <div class="skeleton sk-line sk-line-sm"></div>
+            <div class="skeleton sk-line sk-line-lg" style="margin: 0.5rem auto 0"></div>
+          </div>
+        </div>
+        <div class="table-card sk-table-card">
+          <div v-for="i in 5" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
+        </div>
+      </div>
 
       <!-- 未选择店铺提示 -->
       <div v-if="!currentShopId" class="shop-tip">
@@ -57,8 +69,8 @@
         <h3>近 14 天 ACoS 趋势</h3>
         <div class="line-chart">
           <svg viewBox="0 0 600 200" class="chart-svg">
-            <polyline :points="acosTrendPoints" fill="none" stroke="#4f46e5" stroke-width="2" />
-            <circle v-for="(pt, i) in acosTrendDots" :key="i" :cx="pt.x" :cy="pt.y" r="3" fill="#4f46e5" />
+            <polyline :points="acosTrendPoints" class="trend-line" fill="none" stroke-width="2" />
+            <circle v-for="(pt, i) in acosTrendDots" :key="i" :cx="pt.x" :cy="pt.y" r="3" class="trend-dot" />
           </svg>
           <div class="chart-labels">
             <span v-for="(d, i) in acosTrend" :key="i">{{ d.day }}</span>
@@ -91,7 +103,12 @@
               <td><button class="action-btn">调价</button></td>
             </tr>
             <tr v-if="!loading && campaigns.length === 0">
-              <td colspan="7" class="empty-row">暂无广告活动数据</td>
+              <td colspan="7" class="empty-row">
+                <div class="empty-state">
+                  <Icon icon="mdi:chart-line" width="32" class="empty-icon" />
+                  <span>暂无广告活动数据</span>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -126,7 +143,7 @@
                   <button v-if="cr.status === 'PENDING'" class="action-btn cancel" @click="reviewCreative(cr.id!, 'REJECTED')">拒绝</button>
                 </td>
               </tr>
-              <tr v-if="creatives.length === 0"><td colspan="9" class="empty-row">暂无素材，请输入活动ID查询</td></tr>
+              <tr v-if="creatives.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:image-multiple-outline" width="32" class="empty-icon" /><span>暂无素材，请输入活动ID查询</span></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -162,7 +179,7 @@
                 <td>${{ tg.sales || 0 }}</td>
                 <td><button class="action-btn cancel" @click="removeTargeting(tg.id!)">删除</button></td>
               </tr>
-              <tr v-if="targetings.length === 0"><td colspan="9" class="empty-row">暂无定向规则，请输入活动ID查询</td></tr>
+              <tr v-if="targetings.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:target-variant" width="32" class="empty-icon" /><span>暂无定向规则，请输入活动ID查询</span></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -249,6 +266,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
+import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getAdReports } from '@/api/ad'
@@ -441,75 +459,104 @@ const acosClass = (acos?: number) => {
 </script>
 
 <style scoped>
-.ad-page { min-height: 100vh; background: #f5f6fa; }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 24px 32px; }
-.page-header h1 { font-size: 24px; font-weight: 700; color: #1a1a2e; margin: 0; }
-.page-header .subtitle { color: #666; margin: 4px 0 24px; font-size: 14px; }
+.ad-page { background: var(--color-background); }
+.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; }
+/* 页头：左对齐 + muted 副标题 */
+.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
+.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
+.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
-.loading-mask { padding: 12px 16px; margin-bottom: 16px; background: #eef2ff; color: #4f46e5; border-radius: 8px; font-size: 14px; text-align: center; }
+/* 骨架屏 */
+.skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
+.sk-line { height: 0.875rem; }
+.sk-line-sm { width: 40%; }
+.sk-line-lg { width: 55%; height: 1.5rem; }
+.sk-row { height: 2.75rem; border-radius: 0; }
+.sk-row-alt { width: 96%; }
+.sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
 
-.shop-tip { padding: 12px 16px; margin-bottom: 16px; background: #fef3c7; color: #92400e; border-radius: 8px; font-size: 14px; text-align: center; }
+.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
 
-.acos-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 24px; }
-.acos-card { background: #fff; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.acos-label { font-size: 13px; color: #666; }
-.acos-value { font-size: 28px; font-weight: 700; color: #1a1a2e; margin: 4px 0; }
-.acos-value.good { color: #10b981; }
-.acos-value.warn { color: #f59e0b; }
-.acos-value.bad { color: #ef4444; }
-.acos-desc { font-size: 12px; color: #999; }
+.acos-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+.acos-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; text-align: center; box-shadow: var(--shadow-sm); }
+.acos-label { font-size: 0.8125rem; color: var(--color-muted); margin-bottom: 0.25rem; }
+.acos-value { font-size: 1.75rem; font-weight: 700; color: var(--color-on-surface); margin: 0.25rem 0; font-variant-numeric: tabular-nums; }
+.acos-value.good { color: var(--color-success); }
+.acos-value.warn { color: var(--color-warning-dark); }
+.acos-value.bad { color: var(--color-error); }
+.acos-desc { font-size: 0.75rem; color: var(--color-muted); }
 
-.chart-card { background: #fff; border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.chart-card h3 { font-size: 16px; font-weight: 600; margin: 0 0 16px; }
+.chart-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow-sm); }
+.chart-card h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--color-on-surface); }
+/* 折线颜色走 token，双主题自动适配 */
+.trend-line { stroke: var(--color-primary); }
+.trend-dot { fill: var(--color-primary); }
 .line-chart { width: 100%; }
-.chart-svg { width: 100%; height: 200px; }
-.chart-labels { display: flex; justify-content: space-between; margin-top: 8px; }
-.chart-labels span { font-size: 11px; color: #999; }
+.chart-svg { width: 100%; height: auto; }
+.chart-labels { display: flex; justify-content: space-between; margin-top: 0.5rem; }
+.chart-labels span { font-size: 0.6875rem; color: var(--color-muted); }
 
-.table-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
 .data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: #f9fafb; padding: 12px 16px; text-align: left; font-size: 13px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
-.data-table td { padding: 12px 16px; font-size: 14px; color: #1f2937; border-bottom: 1px solid #f3f4f6; }
-.data-table tr:hover { background: #f9fafb; }
-.empty-row { text-align: center; color: #999; padding: 32px 0; }
+.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
+.data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
+.data-table tr:hover { background: var(--color-primary-light); }
+.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
 
-.status-tag { padding: 4px 10px; border-radius: 6px; font-size: 12px; }
-.status-tag.active { background: #d1fae5; color: #065f46; }
-.status-tag.paused { background: #f3f4f6; color: #6b7280; }
-.status-tag.pending { background: #fef3c7; color: #92400e; }
-.acos-good { color: #10b981; font-weight: 600; }
-.acos-warn { color: #f59e0b; font-weight: 600; }
-.acos-bad { color: #ef4444; font-weight: 600; }
-.action-btn { padding: 4px 12px; background: #4f46e5; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; }
-.action-btn.cancel { background: #fee2e2; color: #991b1b; }
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.status-tag.active { background: var(--color-success-light); color: var(--color-success); }
+.status-tag.paused { background: var(--color-muted-light); color: var(--color-muted); }
+.status-tag.pending { background: var(--color-warning-light); color: var(--color-warning-dark); }
+
+.acos-good { color: var(--color-success); font-weight: 600; }
+.acos-warn { color: var(--color-warning-dark); font-weight: 600; }
+.acos-bad { color: var(--color-error); font-weight: 600; }
+
+.action-btn {
+  padding: 0.25rem 0.75rem;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.action-btn.cancel {
+  background: var(--color-light-red);
+  color: var(--color-error);
+}
 
 /* 广告类型 Tab */
-.ad-tab-bar { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #e5e7eb; }
-.ad-tab-item { padding: 10px 18px; cursor: pointer; color: #6b7280; font-size: 14px; border-bottom: 2px solid transparent; transition: all 0.2s; }
-.ad-tab-item:hover { color: #1a1a2e; }
-.ad-tab-item.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
+.ad-tab-bar { display: flex; gap: 0.25rem; margin-bottom: 1rem; border-bottom: 1px solid var(--color-border); }
+.ad-tab-item { padding: 0.5rem 0.75rem; cursor: pointer; color: var(--color-muted); font-size: 0.875rem; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.ad-tab-item:hover { color: var(--color-on-surface); }
+.ad-tab-item.active { color: var(--color-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
 
 /* 扩展区块 */
-.ext-section { margin-top: 20px; }
-.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-.section-header h3 { font-size: 16px; font-weight: 600; margin: 0; }
-.ext-toolbar { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
-.ext-toolbar input { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; flex: 1; max-width: 320px; }
+.ext-section { margin-top: 1rem; }
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+.section-header h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+.ext-toolbar { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: center; }
+.ext-toolbar input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; flex: 1; max-width: 320px; }
 
 /* DSP 批量报表 */
-.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
-.summary-card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.summary-type { font-size: 16px; font-weight: 700; color: #4f46e5; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #f3f4f6; }
-.summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
-.summary-row span { color: #6b7280; }
-.summary-row b { color: #1f2937; font-weight: 600; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+.summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
+.summary-type { font-size: 1rem; font-weight: 700; color: var(--color-primary); margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--color-border); }
+.summary-row { display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.8125rem; }
+.summary-row span { color: var(--color-muted); }
+.summary-row b { color: var(--color-on-surface); font-weight: 600; }
 
 /* 弹窗 */
-.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 200; }
-.modal { background: #fff; border-radius: 12px; padding: 24px; width: 560px; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
-.modal h3 { margin: 0 0 16px; font-size: 18px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #374151; }
-.form-grid input, .form-grid select { padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.modal { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; width: 90%; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
+.modal h3 { margin: 0 0 0.5rem 0; font-size: 1.125rem; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--color-on-surface); }
+.form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+
+@media (max-width: 1024px) { .main-content { margin-left: 80px; } .acos-overview { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) { .main-content { margin-left: 0; } .acos-overview { grid-template-columns: 1fr; } .ad-tab-bar { overflow-x: auto; } }
 </style>

@@ -16,6 +16,16 @@
  */
 import { test, expect } from '@playwright/test'
 
+// 全局前置：为 fixture page 注入测试登录态（路由守卫只认存在性 + 未过期）。
+// 守卫测试（无 token / 过期 token）使用 browser.newContext() 自建干净上下文，
+// 不受此处 initScript 影响；app 本身不再播种占位 token。
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('token', 'e2e-test-token')
+    localStorage.setItem('token_expiry', String(Date.now() + 86400_000))
+  })
+})
+
 // ═══ 1. 首页 / Dashboard ═══
 test.describe('Dashboard', () => {
   test('应正常渲染首页', async ({ page }) => {
@@ -42,15 +52,16 @@ test.describe('Orders', () => {
     expect(typeof hasContent).toBe('string')
   })
 
-  test('未登录应重定向到首页', async ({ page }) => {
-    // 清除 token 模拟未登录状态
-    await page.goto('/orders')
-    await page.evaluate(() => localStorage.removeItem('token'))
+  test('未登录应重定向到首页', async ({ browser }) => {
+    // 自建干净上下文：无任何 token（beforeEach 的 initScript 只作用于 fixture page）
+    const ctx = await browser.newContext()
+    const page = await ctx.newPage()
     await page.goto('/orders')
     // 应被路由守卫重定向
     await page.waitForTimeout(2000)
     const url = page.url()
     expect(url).toMatch(/\/($|#)/) // 应该在 / 或 /#
+    await ctx.close()
   })
 })
 
@@ -153,41 +164,34 @@ test.describe('404', () => {
 
 // ═══ 11. 路由守卫 ═══
 test.describe('Route Guard', () => {
-  test('受保护路由在无 token 时应重定向到首页', async ({ page }) => {
-    // 先清除所有 token 确保干净状态
-    await page.goto('/')
-    await page.evaluate(() => {
-      localStorage.clear()
-    })
-    // 尝试访问受保护路由，Vue Router 会重定向，Playwright 会报 ERR_ABORTED
-    try {
-      await page.goto('/orders', { timeout: 5000 })
-    } catch {
-      // 路由守卫 next('/') 导致导航中断 → 预期行为
-    }
+  test('受保护路由在无 token 时应重定向到首页', async ({ browser }) => {
+    // 自建干净上下文确保无 token
+    const ctx = await browser.newContext()
+    const page = await ctx.newPage()
+    await page.goto('/orders', { timeout: 10000 })
     await page.waitForTimeout(2000)
     const url = page.url()
     // 无 token 应被重定向到首页 /
     expect(url).not.toContain('/orders')
+    await ctx.close()
   })
 
-  test('过期 token 应触发清除并重定向', async ({ page }) => {
-    // 注入过期 token
+  test('过期 token 应触发清除并重定向', async ({ browser }) => {
+    // 自建上下文并注入过期 token
+    const ctx = await browser.newContext()
+    const page = await ctx.newPage()
     await page.goto('/')
     await page.evaluate(() => {
       localStorage.setItem('token', 'expired-fake-token')
       localStorage.setItem('token_expiry', (Date.now() - 86400000).toString())
     })
-    try {
-      await page.goto('/orders', { timeout: 5000 })
-    } catch {
-      // 守卫 next('/') 中断导航 → 预期
-    }
+    await page.goto('/orders', { timeout: 10000 })
     await page.waitForTimeout(2000)
     const url = page.url()
     expect(url).not.toContain('/orders')
     // token 应被守卫清除
     const token = await page.evaluate(() => localStorage.getItem('token'))
     expect(token).toBeNull()
+    await ctx.close()
   })
 })

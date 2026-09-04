@@ -36,7 +36,7 @@ describe('InventoryMonitor 视图', () => {
 
   it('应渲染页面标题与 4 个健康度卡片', () => {
     const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
-    expect(wrapper.find('.page-header h1').text()).toBe('库存监控')
+    expect(wrapper.find('.hero-section .hero-title').text()).toBe('库存监控')
     expect(wrapper.findAll('.health-card').length).toBe(4)
     // 降级 mock 健康度数据：urgent=2 risk=2 healthy=2 overstock=1
     const labels = wrapper.findAll('.health-label').map(l => l.text())

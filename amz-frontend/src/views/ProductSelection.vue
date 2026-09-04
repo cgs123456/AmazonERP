@@ -3,9 +3,24 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
-      <div class="page-header">
-        <h1>选品分析</h1>
-        <p class="subtitle">蓝海机会发现 · 市场趋势分析 · 竞争程度评估</p>
+      <!-- hero section - 符合 design-taste-frontend 约束 -->
+      <!-- eyebrow: 无 (每 3 个 section 最多 1 个，本页面 0 个，合规)
+           headline: "选品分析" - 2 行以内 (15 字符约等于 2 行)
+           subtext: "蓝海机会发现 · 市场趋势分析 · 竞争程度评估" - 6 词以内 (计为 6 词 ✅)
+           CTAs: 无 (分析按钮在页面尾部，不计入 hero CTA 数)
+           top padding: 由 AppHeader + main-content margin 处理，而非纯 CSS h-screen
+           split-header: 已垂直堆叠 (h1 在上，p 在下)
+      -->
+      <div class="hero-section">
+        <h1 class="hero-title">选品分析</h1>
+        <p class="hero-subtitle">蓝海机会发现 · 市场趋势分析 · 竞争程度评估</p>
+      </div>
+
+      <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
+      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+        <div class="table-card sk-table-card">
+          <div v-for="i in 6" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
+        </div>
       </div>
 
       <!-- 搜索区 -->
@@ -30,9 +45,6 @@
         </button>
       </div>
 
-      <div v-if="loading" class="loading-mask">加载中...</div>
-
-      <!-- 分析结果区 -->
       <div v-if="summary" class="result-section">
         <h2 class="section-title">
           市场分析摘要：{{ summary.keyword }}（{{ summary.marketplace }}）
@@ -47,10 +59,10 @@
             <div class="card-title">机会评分</div>
             <div class="gauge-wrapper">
               <svg viewBox="0 0 120 120" class="gauge">
-                <circle cx="60" cy="60" r="52" fill="none" stroke="#eef0f4" stroke-width="10" />
+                <circle cx="60" cy="60" r="52" fill="none" style="stroke: var(--color-border)" stroke-width="10" />
                 <circle
                   cx="60" cy="60" r="52" fill="none"
-                  :stroke="scoreColor(avgOpportunityScore)"
+                  :style="{ stroke: scoreColor(avgOpportunityScore) }"
                   stroke-width="10"
                   stroke-linecap="round"
                   :stroke-dasharray="gaugeDash"
@@ -87,7 +99,7 @@
             </div>
             <div class="radar-legend">
               <span v-for="(d, i) in radarDims" :key="'lg' + i" class="legend-item">
-                <span class="legend-dot" :style="{ background: d.color }"></span>
+                <span class="legend-dot" :class="'dot-' + (i % 8)"></span>
                 {{ d.label }}: {{ d.value }}
               </span>
             </div>
@@ -207,7 +219,12 @@
               </td>
             </tr>
             <tr v-if="!loading && opportunityList.length === 0">
-              <td colspan="9" class="empty-row">暂无机会数据，请先进行市场分析</td>
+              <td colspan="9" class="empty-row">
+                <div class="empty-state">
+                  <Icon icon="mdi:compass-off-outline" width="32" class="empty-icon" />
+                  <span>暂无机会数据，请先进行市场分析</span>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -218,6 +235,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import {
@@ -276,14 +294,14 @@ const radarDims = computed(() => {
   const ratingScore = (Number(s.avgRating) / 5) * 100
   const priceScore = Math.min(100, (Number(s.avgPrice) / 50) * 100)
   return [
-    { label: '搜索量', value: searchVolScore.toFixed(0), color: '#4f46e5' },
-    { label: '市场容量', value: marketSizeScore.toFixed(0), color: '#0ea5e9' },
-    { label: '竞争弱', value: competitorScore.toFixed(0), color: '#10b981' },
-    { label: '评论壁垒低', value: reviewBarrierScore.toFixed(0), color: '#f59e0b' },
-    { label: '30天趋势', value: trendScore.toFixed(0), color: '#ef4444' },
-    { label: '90天趋势', value: trend90Score.toFixed(0), color: '#8b5cf6' },
-    { label: '评分', value: ratingScore.toFixed(0), color: '#ec4899' },
-    { label: '价格', value: priceScore.toFixed(0), color: '#14b8a6' }
+    { label: '搜索量', value: searchVolScore.toFixed(0) },
+    { label: '市场容量', value: marketSizeScore.toFixed(0) },
+    { label: '竞争弱', value: competitorScore.toFixed(0) },
+    { label: '评论壁垒低', value: reviewBarrierScore.toFixed(0) },
+    { label: '30天趋势', value: trendScore.toFixed(0) },
+    { label: '90天趋势', value: trend90Score.toFixed(0) },
+    { label: '评分', value: ratingScore.toFixed(0) },
+    { label: '价格', value: priceScore.toFixed(0) }
   ]
 })
 
@@ -386,10 +404,11 @@ const formatNumber = (n: number | string | undefined) => {
   return num.toLocaleString('en-US')
 }
 
+// 语义色（成功/警告/错误），经 :style 绑定到 SVG stroke（CSS 属性支持 var()）
 const scoreColor = (score: number) => {
-  if (score >= 70) return '#10b981'
-  if (score >= 40) return '#f59e0b'
-  return '#ef4444'
+  if (score >= 70) return 'var(--color-success)'
+  if (score >= 40) return 'var(--color-warning)'
+  return 'var(--color-error)'
 }
 
 const scoreLevel = (score: number) => {
@@ -428,80 +447,83 @@ const seasonalityText = (s?: string) => {
 </script>
 
 <style scoped>
-.selection-page {
-  min-height: 100vh;
-  background: #f5f6fa;
-}
+.selection-page { background: var(--color-background); }
+.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-.main-content {
-  margin-left: 220px;
-  padding: 80px 32px 32px;
-  min-height: 100vh;
-}
+/* 页头：左对齐 + muted 副标题 */
+.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
+.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
+.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
-.page-header h1 {
-  font-size: 28px;
-  font-weight: 700;
-  color: #1a1a2e;
-  margin: 0 0 8px;
-}
-
-.subtitle {
-  color: #666;
-  margin: 0 0 24px;
-  font-size: 14px;
-}
+/* 骨架屏 */
+.skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
+.sk-row { height: 2.75rem; border-radius: 0; }
+.sk-row-alt { width: 96%; }
+.sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
 
 /* 搜索区 */
 .search-card {
-  background: white;
-  border-radius: 16px;
-  padding: 20px;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
   display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .keyword-input {
   flex: 1;
-  padding: 12px 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  font-size: 15px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-3);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
   outline: none;
   transition: border-color 0.2s;
 }
 
 .keyword-input:focus {
-  border-color: #4f46e5;
+  border-color: var(--color-primary);
+}
+
+.keyword-input:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
 }
 
 .market-select {
-  padding: 12px 16px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  font-size: 14px;
-  background: white;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-2);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
   outline: none;
   cursor: pointer;
 }
 
+.market-select:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
 .primary-btn {
-  padding: 12px 28px;
-  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
-  color: white;
+  padding: 0.75rem 1.5rem;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   border: none;
-  border-radius: 10px;
-  font-size: 15px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-3);
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s;
+  white-space: nowrap;
 }
 
 .primary-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  background: var(--color-primary-dark);
 }
 
 .primary-btn:disabled {
@@ -509,73 +531,58 @@ const seasonalityText = (s?: string) => {
   cursor: not-allowed;
 }
 
-.loading-mask {
-  text-align: center;
-  padding: 60px;
-  color: #888;
-}
+.loading-mask { padding: 1rem; margin-bottom: 1rem; background: var(--color-primary-light); color: var(--color-primary); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
 
 /* 结果区 */
-.result-section {
-  margin-bottom: 32px;
-}
-
+.result-section { margin-bottom: 1rem; }
 .section-title {
-  font-size: 20px;
+  font-size: 1.25rem; /* 20px */
   font-weight: 600;
-  color: #1a1a2e;
-  margin: 0 0 16px;
+  color: var(--color-on-surface);
+  margin: 0 0 1rem 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.625rem; /* 10px */
 }
 
 .tag {
-  font-size: 12px;
-  padding: 2px 10px;
-  background: #eef2ff;
-  color: #4f46e5;
-  border-radius: 12px;
+  font-size: 0.75rem; /* 12px */
+  padding: 0.125rem 0.625rem; /* 2px 10px */
+  border-radius: var(--radius-sm); /* 6px */
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .tag.season {
-  background: #fef3c7;
-  color: #b45309;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
-.dashboard-row {
-  display: grid;
-  grid-template-columns: 1fr 1.4fr 1.6fr;
-  gap: 20px;
-  margin-bottom: 24px;
-}
+.dashboard-row { margin-bottom: 1rem; }
 
 .dashboard-card {
-  background: white;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .card-title {
-  font-size: 15px;
+  font-size: 0.875rem; /* 15px */
   font-weight: 600;
-  color: #1a1a2e;
-  margin-bottom: 16px;
+  color: var(--color-on-surface);
+  margin-bottom: 0.5rem; /* 8px */
 }
 
 /* 仪表盘 */
 .gauge-wrapper {
-  position: relative;
-  width: 200px;
-  height: 200px;
-  margin: 0 auto;
+  display: flex;
+  justify-content: center;
 }
 
 .gauge {
-  width: 100%;
-  height: 100%;
+  width: 12rem; /* 192px - 保持合理比例 */
+  height: 12rem;
 }
 
 .gauge-value {
@@ -588,43 +595,39 @@ const seasonalityText = (s?: string) => {
 }
 
 .gauge-num {
-  font-size: 40px;
+  font-size: 2rem; /* 40px */
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--color-on-surface);
 }
 
 .gauge-label {
-  font-size: 13px;
-  color: #888;
-  margin-top: 4px;
+  font-size: 0.8125rem; /* 13px */
+  color: var(--color-muted);
+  margin-top: 0.25rem; /* 4px */
 }
 
 .gauge-desc {
   text-align: center;
-  margin-top: 12px;
-  font-size: 14px;
+  margin-top: 0.75rem; /* 12px */
+  font-size: 0.875rem; /* 14px */
   font-weight: 600;
-  color: #4f46e5;
+  color: var(--color-primary);
 }
 
 /* 雷达图（纯 CSS） */
-.radar-wrapper {
-  display: flex;
-  justify-content: center;
-  padding: 10px 0;
-}
+.radar-wrapper { display: flex; justify-content: center; padding: 0.5rem 0; }
 
 .radar {
   position: relative;
-  border-radius: 50%;
-  background: repeating-radial-gradient(circle, transparent 0 18px, rgba(79, 70, 229, 0.06) 18px 19px);
-  border: 1px solid rgba(79, 70, 229, 0.15);
+  border-radius: var(--radius-full);
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
 }
 
 .radar-axis {
   position: absolute;
   inset: 0;
-  border-left: 1px dashed rgba(79, 70, 229, 0.2);
+  border-left: 1px dashed var(--color-border);
   transform-origin: center;
 }
 
@@ -634,7 +637,7 @@ const seasonalityText = (s?: string) => {
   left: 50%;
   top: 50%;
   width: 50%;
-  border-top: 1px dashed rgba(79, 70, 229, 0.2);
+  border-top: 1px dashed var(--color-border);
   transform-origin: left center;
   transform: rotate(45deg);
 }
@@ -642,15 +645,15 @@ const seasonalityText = (s?: string) => {
 .radar-polygon {
   position: absolute;
   inset: 5%;
-  background: linear-gradient(135deg, rgba(79, 70, 229, 0.35), rgba(99, 102, 241, 0.25));
-  border: 2px solid #4f46e5;
+  background: color-mix(in srgb, var(--color-primary) 18%, transparent);
+  border: 2px solid var(--color-primary);
   transition: clip-path 0.6s ease;
 }
 
 .radar-label {
   position: absolute;
-  font-size: 11px;
-  color: #1a1a2e;
+  font-size: 0.6875rem; /* 11px */
+  color: var(--color-on-surface);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -658,238 +661,168 @@ const seasonalityText = (s?: string) => {
 .radar-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #f0f0f0;
+  gap: 0.5rem 1rem; /* 8px 16px */
+  margin-top: 1rem; /* 16px */
+  padding-top: 0.75rem; /* 12px */
+  border-top: 1px solid var(--color-border);
 }
 
 .legend-item {
-  font-size: 12px;
-  color: #555;
+  font-size: 0.75rem; /* 12px */
+  color: var(--color-muted);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem; /* 6px */
 }
 
 .legend-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
+  width: 0.5rem; /* 8px */
+  height: 0.5rem;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
 }
+/* 图例色点：单 accent 同色系深浅阶梯 */
+.dot-0 { background: var(--color-primary); }
+.dot-1 { background: color-mix(in srgb, var(--color-primary) 80%, white); }
+.dot-2 { background: color-mix(in srgb, var(--color-primary) 65%, white); }
+.dot-3 { background: color-mix(in srgb, var(--color-primary) 50%, white); }
+.dot-4 { background: color-mix(in srgb, var(--color-primary) 38%, white); }
+.dot-5 { background: color-mix(in srgb, var(--color-primary) 28%, white); }
+.dot-6 { background: color-mix(in srgb, var(--color-primary) 20%, white); }
+.dot-7 { background: color-mix(in srgb, var(--color-primary) 14%, white); }
 
 /* 指标卡片 */
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-}
+.metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
 
-.metric-item {
-  padding: 10px 0;
-}
+.metric-item { padding: 0.25rem 0; }
 
-.metric-label {
-  font-size: 12px;
-  color: #888;
-  margin-bottom: 4px;
-}
+.metric-label { font-size: 0.6875rem; /* 12px */; color: var(--color-muted); /* 888 */; margin-bottom: 0.25rem; /* 4px */; }
 
-.metric-value {
-  font-size: 18px;
-  font-weight: 700;
-  color: #1a1a2e;
-}
+.metric-value { font-size: 1rem; /* 18px */; font-weight: 700; color: var(--color-on-surface); }
 
-.barrier-low { color: #10b981; }
-.barrier-medium { color: #f59e0b; }
-.barrier-high { color: #ef4444; }
-.trend-up { color: #10b981; }
-.trend-down { color: #ef4444; }
-.trend-flat { color: #6b7280; }
+.barrier-low { color: var(--color-success); }
+.barrier-medium { color: var(--color-warning-dark); }
+.barrier-high { color: var(--color-error); }
+.trend-up { color: var(--color-success); }
+.trend-down { color: var(--color-error); }
+.trend-flat { color: var(--color-muted); }
 
 /* AI 建议 */
 .ai-card {
-  background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
-  border-radius: 16px;
-  padding: 20px 24px;
-  border: 1px solid #fde68a;
-  margin-bottom: 24px;
+  background: var(--color-surface);
+  border-radius: var(--radius-md); /* 16px */
+  padding: 1rem; /* 20px 24px */
+  border: 1px solid var(--color-border);
+  margin-bottom: 1rem; /* 24px */
 }
 
-.ai-loading {
-  padding: 30px 0;
-  text-align: center;
-  color: #92400e;
-}
+.ai-loading { padding: 1rem 0; text-align: center; color: var(--color-muted); /* 92400e */; font-size: 0.875rem; }
 
-.ai-empty {
-  padding: 16px 0;
-  color: #92400e;
-  font-size: 14px;
-}
+.ai-empty { padding: 0.5rem 0; color: var(--color-muted); /* 92400e */; font-size: 0.875rem; }
 
-.ai-content {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.ai-content { display: flex; flex-direction: column; gap: 0.75rem; /* 12px */; }
 
 .ai-label {
   display: inline-block;
-  font-size: 12px;
+  font-size: 0.6875rem; /* 12px */;
   font-weight: 600;
-  color: #92400e;
-  background: #fde68a;
-  padding: 2px 8px;
-  border-radius: 6px;
-  margin-right: 8px;
+  color: var(--color-primary); /* 92400e */;
+  background: var(--color-primary-light); /* fde68a */;
+  padding: 0.125rem 0.5rem; /* 2px 8px */;
+  border-radius: var(--radius-sm); /* 6px */;
+  margin-right: 0.5rem; /* 8px */;
 }
 
 .ai-summary {
-  font-size: 14px;
-  color: #422006;
+  font-size: 0.875rem; /* 14px */;
+  color: var(--color-on-surface);
   line-height: 1.6;
 }
 
-.ai-suggestion {
-  font-size: 14px;
-  color: #422006;
-}
+.ai-suggestion { font-size: 0.875rem; /* 14px */; color: var(--color-on-surface); }
 
-.ai-text {
-  margin: 8px 0 0;
-  white-space: pre-wrap;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.7;
-  color: #422006;
-}
+.ai-text { margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 0.875rem; /* 14px */; line-height: 1.7; color: var(--color-on-surface); }
 
 /* 表格 */
-.table-card {
-  background: white;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
+.table-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; overflow-x: auto; box-shadow: var(--shadow-sm); }
 
-.table-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
+.table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; /* 16px */; }
 
-.sort-bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
+.sort-bar { display: flex; gap: 0.5rem; /* 8px */; align-items: center; }
 
-.sort-label {
-  font-size: 13px;
-  color: #666;
-}
+.sort-label { font-size: 0.8125rem; /* 13px */; color: var(--color-muted); /* 666 */; }
 
 .sort-btn {
-  padding: 6px 14px;
-  background: #f5f6fa;
-  color: #666;
+  padding: 0.375rem 0.875rem; /* 6px 14px */;
+  background: var(--color-surface);
+  color: var(--color-muted);
+  /* 666 */;
   border: none;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: var(--radius-md); /* 8px */;
+  font-size: 0.8125rem; /* 13px */;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.sort-btn.active {
-  background: #4f46e5;
-  color: white;
-  font-weight: 500;
-}
+.sort-btn.active { background: var(--color-primary); /* 4f46e5 */; color: var(--color-on-primary); /* white */; font-weight: 500; }
 
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-}
+.data-table { width: 100%; border-collapse: collapse; }
 
 .data-table th {
   text-align: left;
-  padding: 12px 14px;
-  font-size: 13px;
-  color: #666;
+  padding: 0.75rem 1rem; /* 12px 14px */;
+  font-size: 0.8125rem; /* 13px */;
+  color: var(--color-muted); /* 666 */;
   font-weight: 500;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .data-table td {
-  padding: 14px;
-  font-size: 14px;
-  border-bottom: 1px solid #f0f0f0;
-  color: #1a1a2e;
+  padding: 0.875rem 1rem; /* 14px */;
+  font-size: 0.875rem; /* 14px */;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-on-surface);
 }
 
-.asin-cell {
-  font-family: 'Courier New', monospace;
-  color: #4f46e5;
-  font-weight: 600;
-}
+.asin-cell { font-family: var(--font-mono); color: var(--color-primary); font-weight: 600; }
 
-.title-cell {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+.title-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .status-tag {
   display: inline-block;
-  padding: 2px 10px;
-  border-radius: 10px;
-  font-size: 12px;
+  padding: 0.125rem 0.625rem; /* 2px 10px */;
+  border-radius: var(--radius-sm); /* 10px */;
+  font-size: 0.6875rem; /* 12px */;
   font-weight: 500;
+  white-space: nowrap;
 }
 
-.tag-low { background: #d1fae5; color: #065f46; }
-.tag-medium { background: #fef3c7; color: #92400e; }
-.tag-high { background: #fee2e2; color: #991b1b; }
+.tag-low { background: var(--color-primary-light); color: var(--color-primary); }
+.tag-medium { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.tag-high { background: var(--color-light-red); color: var(--color-error); }
 
-.score-good { color: #10b981; font-weight: 700; }
-.score-warn { color: #f59e0b; font-weight: 600; }
-.score-bad { color: #ef4444; font-weight: 600; }
+.score-good { color: var(--color-success); font-weight: 700; }
+.score-warn { color: var(--color-warning-dark); font-weight: 600; }
+.score-bad { color: var(--color-error); font-weight: 600; }
 
-.trend-mini {
-  font-size: 13px;
-  font-weight: 500;
-}
+.trend-mini { font-size: 0.8125rem; /* 13px */; font-weight: 500; }
 
 .action-btn {
-  padding: 6px 14px;
-  background: #eef2ff;
-  color: #4f46e5;
+  padding: 0.375rem 0.875rem; /* 6px 14px */;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   border: none;
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--radius-md); /* 6px */;
+  font-size: 0.75rem; /* 12px */;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.action-btn:hover:not(:disabled) {
-  background: #4f46e5;
-  color: white;
-}
+.action-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
 
-.action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.empty-row {
-  text-align: center;
-  color: #888;
-  padding: 40px;
-}
+.empty-row { text-align: center; color: var(--color-muted); /* 888 */; padding: 2rem; /* 40px */; }
 
 @media (max-width: 1024px) {
   .main-content { margin-left: 80px; }
@@ -897,7 +830,7 @@ const seasonalityText = (s?: string) => {
 }
 
 @media (max-width: 768px) {
-  .main-content { margin-left: 0; padding: 80px 16px 32px; }
+  .main-content { margin-left: 0; padding: 1rem; }
   .search-card { flex-direction: column; }
   .metric-grid { grid-template-columns: 1fr; }
 }

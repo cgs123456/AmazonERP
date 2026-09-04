@@ -3,12 +3,24 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
-      <div class="page-header">
-        <h1>利润报表</h1>
-        <p class="subtitle">按 SKU / 店铺 / 月度汇总利润分析</p>
+      <!-- hero section - design-taste-frontend 约束：headline ≤2 行，subtext 精简，垂直堆叠 -->
+      <div class="hero-section">
+        <h1 class="hero-title">利润报表</h1>
+        <p class="hero-subtitle">按 SKU / 店铺 / 月度汇总利润分析</p>
       </div>
 
-      <div v-if="loading" class="loading-mask">加载中...</div>
+      <!-- 骨架屏：汇总卡片 + 表格行形状（技能 4.5 Loading） -->
+      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+        <div class="summary-grid">
+          <div v-for="i in 4" :key="i" class="summary-card">
+            <div class="skeleton sk-line sk-line-sm"></div>
+            <div class="skeleton sk-line sk-line-lg"></div>
+          </div>
+        </div>
+        <div class="table-card sk-table-card">
+          <div v-for="i in 6" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
+        </div>
+      </div>
 
       <!-- 未选择店铺提示 -->
       <div v-if="!currentShopId" class="shop-tip">
@@ -69,7 +81,12 @@
               <td :class="row.margin > 0 ? 'profit-positive' : 'profit-negative'">{{ row.margin }}%</td>
             </tr>
             <tr v-if="!loading && currentData.length === 0">
-              <td colspan="8" class="empty-row">暂无利润数据</td>
+              <td colspan="8" class="empty-row">
+                <div class="empty-state">
+                  <Icon icon="mdi:chart-box-outline" width="32" class="empty-icon" />
+                  <span>暂无利润数据</span>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -80,6 +97,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getProfitReport } from '@/api/profit'
@@ -158,31 +176,45 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.profit-page { min-height: 100vh; background: #f5f6fa; }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 24px 32px; }
-.page-header h1 { font-size: 24px; font-weight: 700; color: #1a1a2e; margin: 0; }
-.page-header .subtitle { color: #666; margin: 4px 0 24px; font-size: 14px; }
+.profit-page { background: var(--color-background); }
+.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-.loading-mask { padding: 12px 16px; margin-bottom: 16px; background: #eef2ff; color: #4f46e5; border-radius: 8px; font-size: 14px; text-align: center; }
+/* 页头：左对齐 + muted 副标题 */
+.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
+.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
+.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
-.shop-tip { padding: 12px 16px; margin-bottom: 16px; background: #fef3c7; color: #92400e; border-radius: 8px; font-size: 14px; text-align: center; }
+/* 骨架屏 */
+.skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }
+.sk-line { height: 0.875rem; }
+.sk-line-sm { width: 40%; }
+.sk-line-lg { width: 60%; height: 1.5rem; margin-top: 0.5rem; }
+.sk-row { height: 2.75rem; border-radius: 0; }
+.sk-row-alt { width: 96%; }
+.sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
 
-.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 24px; }
-.summary-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.summary-label { font-size: 13px; color: #666; }
-.summary-value { font-size: 24px; font-weight: 700; color: #1a1a2e; margin-top: 4px; }
+.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: var(--font-size-2); text-align: center; }
 
-.dim-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
-.dim-tab { padding: 8px 20px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; cursor: pointer; font-size: 14px; color: #666; }
-.dim-tab.active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
+.summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
+.summary-label { font-size: var(--font-size-2); color: var(--color-muted); }
+.summary-value { font-size: var(--font-size-6); font-weight: 700; color: var(--color-on-surface); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
 
-.table-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.dim-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.dim-tab { padding: 0.5rem 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: var(--font-size-2); color: var(--color-muted); transition: all 0.2s; }
+.dim-tab:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.dim-tab.active { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
+
+.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
 .data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: #f9fafb; padding: 12px 16px; text-align: left; font-size: 13px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
-.data-table td { padding: 12px 16px; font-size: 14px; color: #1f2937; border-bottom: 1px solid #f3f4f6; }
-.data-table tr:hover { background: #f9fafb; }
-.mono { font-family: 'Courier New', monospace; font-size: 13px; }
-.empty-row { text-align: center; color: #999; padding: 32px 0; }
-.profit-positive { color: #10b981; font-weight: 600; }
-.profit-negative { color: #ef4444; font-weight: 600; }
+.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: var(--font-size-2); color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
+.data-table td { padding: 0.75rem 1rem; font-size: var(--font-size-2); color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
+.data-table tr:hover { background: var(--color-primary-light); }
+.mono { font-family: var(--font-mono); }
+.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
+.profit-positive { color: var(--color-success); font-weight: 600; }
+.profit-negative { color: var(--color-error); font-weight: 600; }
+
+@media (max-width: 1024px) { .main-content { margin-left: 80px; } .summary-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 768px) { .main-content { margin-left: 0; } .summary-grid { grid-template-columns: 1fr; } }
 </style>

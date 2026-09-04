@@ -33,7 +33,7 @@ describe('ProfitReport 视图', () => {
 
   it('应渲染页面标题与汇总卡片', () => {
     const wrapper = mount(ProfitReport, { shallow: true, global: globalStubs })
-    expect(wrapper.find('.page-header h1').text()).toBe('利润报表')
+    expect(wrapper.find('.hero-section .hero-title').text()).toBe('利润报表')
     // 4 个汇总卡片
     const cards = wrapper.findAll('.summary-card')
     expect(cards.length).toBe(4)

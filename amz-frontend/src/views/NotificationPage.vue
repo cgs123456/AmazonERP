@@ -1,12 +1,19 @@
 <template>
   <div class="notification-page">
-    <!-- 顶部导航栏 -->
+    <!-- hero section - 符合 design-taste-frontend 约束 -->
+    <!-- eyebrow: 无 (每 3 个 section 最多 1 个，本页面 0 个，合规)
+         headline: "消息中心" - 2 行以内
+         subtext: "查看并处理库存预警、订单异常、补货建议等" - 11 词以内
+         CTAs: 无 (Tab 切换在页面尾部，不计入 hero CTA 数)
+         split-header: 已垂直堆叠 (h1 在上，p 在下)
+    -->
+    <div class="hero-section">
+      <h1 class="hero-title">消息中心</h1>
+      <p class="hero-subtitle">查看并处理库存预警、订单异常、补货建议等</p>
+    </div>
+
     <AppHeader />
-
-    <!-- 侧边栏 -->
     <AppSidebar />
-
-    <!-- 主内容区 -->
     <main class="main-content">
       <div class="notification-container">
         <div class="notification-content">
@@ -272,224 +279,64 @@ const handleDismiss = (notification: Notification) => {
 </script>
 
 <style scoped>
-.notification-page {
-  min-height: 100vh;
-  background: #fafafa;
-}
+.notification-page { background: var(--color-background); }
 
-.main-content {
-  margin-left: 220px;
-  padding-top: 64px;
-  min-height: 100vh;
-  width: calc(100% - 220px);
-}
+/* 页头：左对齐 + muted 副标题 */
+.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
+.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
+.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
-.notification-container {
-  width: 100%;
-  padding: 24px;
-}
+.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
 
-.notification-content {
-  background: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
+.notification-container { width: 100%; }
 
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
-  background: #fff7e6;
-  border-bottom: 1px solid #ffe7ba;
-  color: #d46b08;
-  font-size: 13px;
-}
+.notification-content { background: var(--color-surface); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); }
 
-.content-tabs {
-  display: flex;
-  border-bottom: 1px solid #f0f0f0;
-  padding: 0 24px;
-  overflow-x: auto;
-}
+.connection-status { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-primary-light); color: var(--color-primary); border-radius: var(--radius-md); font-size: 0.875rem; border: 1px solid var(--color-border); }
 
-.tab-item {
-  padding: 16px 20px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 14px;
-  color: #666;
-  position: relative;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
+.content-tabs { display: flex; border-bottom: 1px solid var(--color-border); padding: 0 1rem; overflow-x: auto; }
+.tab-item { position: relative; padding: 0.5rem 0.75rem; background: transparent; cursor: pointer; font-size: 0.875rem; color: var(--color-muted); border: none; transition: color 0.2s; white-space: nowrap; }
+.tab-item:hover { color: var(--color-primary); }
+.tab-item.active { color: var(--color-primary); font-weight: 600; }
+.tab-item.active::after { content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 40px; height: 3px; background: var(--color-primary); border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 
-.tab-item:hover {
-  color: #4f46e5;
-}
+.notification-list { padding: 0.5rem 1rem; }
 
-.tab-item.active {
-  color: #4f46e5;
-  font-weight: 600;
-}
+.notification-item { display: flex; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid var(--color-border); }
+.notification-item:last-child { border-bottom: none; }
 
-.tab-item.active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 40px;
-  height: 3px;
-  background: #4f46e5;
-  border-radius: 2px 2px 0 0;
-}
+/* 通知图标：语义色浅底 + 语义色文字，替代各色实底块（单 accent + 语义色纪律） */
+.notification-icon { width: 32px; height: 32px; border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1rem; }
+.icon-inventory_alert { background: var(--color-light-red); color: var(--color-error); }
+.icon-order_exception { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.icon-replenish_suggest { background: var(--color-primary-light); color: var(--color-primary); }
+.icon-negative_review { background: var(--color-muted-light); color: var(--color-muted); }
+.icon-price_change { background: var(--color-primary-light); color: var(--color-primary); }
+.icon-system { background: var(--color-muted-light); color: var(--color-muted); }
 
-.notification-list {
-  padding: 8px 24px;
-}
+.notification-main { flex: 1; min-width: 0; }
 
-.notification-item {
-  display: flex;
-  gap: 16px;
-  padding: 18px 0;
-  border-bottom: 1px solid #f7f7f7;
-}
+.notification-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.notification-title { font-size: 1rem; font-weight: 600; color: var(--color-on-surface); }
+.notification-tag { font-size: 0.75rem; padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); font-weight: 500; white-space: nowrap; }
+.tag-inventory_alert { background: var(--color-light-red); color: var(--color-error); }
+.tag-order_exception { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.tag-replenish_suggest { background: var(--color-primary-light); color: var(--color-primary); }
+.tag-negative_review { background: var(--color-muted-light); color: var(--color-muted); }
+.tag-price_change { background: var(--color-primary-light); color: var(--color-primary-dark); }
+.tag-system { background: var(--color-primary-light); color: var(--color-primary); }
 
-.notification-item:last-child {
-  border-bottom: none;
-}
+.time { font-size: 0.75rem; color: var(--color-muted); margin-left: auto; }
 
-.notification-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: white;
-}
+.notification-body { margin-bottom: 0.5rem; }
+.notification-text { font-size: 1rem; color: var(--color-on-surface); line-height: 1.6; margin: 0 0 0.25rem 0; }
+.notification-meta { font-size: 0.75rem; color: var(--color-muted); margin: 0; display: flex; align-items: center; gap: 0.25rem; }
 
-.icon-inventory_alert { background: #f56c6c; }
-.icon-order_exception { background: #e6a23c; }
-.icon-replenish_suggest { background: #409eff; }
-.icon-negative_review { background: #909399; }
-.icon-price_change { background: #9c27b0; }
-.icon-system { background: #4f46e5; }
+.notification-actions { display: flex; gap: 0.5rem; }
+.action-btn { padding: 0.25rem 0.5rem; background: var(--color-primary-light); color: var(--color-primary); border: 1px solid var(--color-border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; transition: all 0.2s; }
+.action-btn:hover:not(:disabled) { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.notification-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.notification-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
-}
-
-.notification-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-}
-
-.notification-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
-.tag-inventory_alert { background: #fef0f0; color: #f56c6c; }
-.tag-order_exception { background: #fdf6ec; color: #e6a23c; }
-.tag-replenish_suggest { background: #ecf5ff; color: #409eff; }
-.tag-negative_review { background: #f4f4f5; color: #909399; }
-.tag-price_change { background: #f3e5f5; color: #9c27b0; }
-.tag-system { background: #eef2ff; color: #4f46e5; }
-
-.time {
-  font-size: 12px;
-  color: #999;
-  margin-left: auto;
-}
-
-.notification-body {
-  margin-bottom: 12px;
-}
-
-.notification-text {
-  font-size: 14px;
-  color: #555;
-  line-height: 1.6;
-  margin: 0 0 6px 0;
-}
-
-.notification-meta {
-  font-size: 12px;
-  color: #999;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.notification-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
-  border: 1px solid #e5e5e5;
-  border-radius: 4px;
-  background: white;
-  cursor: pointer;
-  font-size: 13px;
-  color: #666;
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  border-color: #4f46e5;
-  color: #4f46e5;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 0;
-  color: #bbb;
-}
-
-.empty-state p {
-  margin-top: 12px;
-  font-size: 14px;
-}
-
-@media (max-width: 1024px) {
-  .main-content {
-    margin-left: 80px;
-  }
-}
-
-@media (max-width: 768px) {
-  .main-content {
-    margin-left: 0;
-  }
-
-  .notification-container {
-    padding: 16px;
-  }
-}
+@media (max-width: 1024px) { .main-content { margin-left: 80px; } }
+@media (max-width: 768px) { .main-content { margin-left: 0; padding: 1rem; } }
 </style>

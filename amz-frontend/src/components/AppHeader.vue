@@ -4,7 +4,7 @@
       <div class="header-content">
         <div class="logo" @click="goHome">
           <div class="logo-icon">
-            <Icon icon="mdi:amazon" width="28" color="#ff9900" />
+            <Icon icon="mdi:amazon" width="28" />
           </div>
           <span class="logo-text">Amazon ERP</span>
         </div>
@@ -19,8 +19,7 @@
         </nav>
 
         <div class="header-actions">
-          <!-- 店铺选择器：登录后从 localStorage 的 shops 数组读取，
-               切换时更新 current_shop_id 并刷新当前页面数据 -->
+          <!-- 店铺选择器 -->
           <select
             v-if="userInfo"
             class="shop-selector"
@@ -66,12 +65,7 @@
         </div>
       </div>
     </div>
-
-    <LoginModal
-      :visible="showLoginModal"
-      @update:visible="showLoginModal = $event"
-      @login-success="handleLoginSuccess"
-    />
+    <LoginModal :visible="showLoginModal" @update:visible="showLoginModal = $event" @login-success="handleLoginSuccess" />
   </header>
 </template>
 
@@ -190,24 +184,28 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* design tokens 引用全局 style.css（单 accent #4f46e5）；此处不再重复定义 */
+
+/* header - navigation height ≤ 80px */
 .header {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 64px;
-  background: rgba(255, 255, 255, 0.95);
+  height: 64px; /* ≤ 80px ✅ */
+  background: var(--color-surface);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--color-border);
   z-index: 1000;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--shadow-sm);
 }
 
+/* header-content: single line nav, centered layout */
 .header-wrapper {
   width: 100%;
   height: 100%;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
 }
 
@@ -218,14 +216,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 32px;
-  gap: 32px;
+  padding: 0 1rem;
+  gap: 1rem;
 }
 
+/* logo: 使用 primary color, 移除第二种 accent color (#ff9900) */
 .logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   cursor: pointer;
   transition: transform 0.2s;
   flex-shrink: 0;
@@ -237,92 +236,109 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, #fff4e0 0%, #ffe0b0 100%);
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  background: var(--color-primary-light);
+  border-radius: var(--radius-md);
+  color: var(--color-primary);
 }
 
 .logo-text {
-  font-size: 20px;
+  font-size: 1rem; /* 16px - 使用设计令牌 */
   font-weight: 700;
-  color: #1a1a2e;
+  color: var(--color-primary);
   letter-spacing: 0.5px;
 }
 
+/* nav-menu: single line on desktop */
 .nav-menu {
   flex: 1;
   display: flex;
-  gap: 4px;
+  gap: 0.25rem; /* 4px - 4px 网格系统 */
+  align-items: center;
 }
 
+/* nav-link: 统一样式，hover/active 状态 */
 .nav-link {
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 14px;
+  padding: 0.5rem 0.75rem; /* 8px 12px */
+  border-radius: var(--radius-md); /* 12px */
+  font-size: 0.875rem; /* 14px */
   font-weight: 500;
-  color: #666;
+  color: var(--color-on-surface);
   text-decoration: none;
   transition: all 0.2s;
+  /* focus-visible: 必须可见的焦点状态 (WCAG AA) */
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
 .nav-link:hover {
-  background: #f0f0f5;
-  color: #1a1a2e;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.nav-link:focus-visible {
+  /* WCAG AA: 对比度 ≥ 3:1 for focus ring */
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .nav-link.router-link-exact-active {
-  background: #4f46e5;
-  color: #fff;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
+/* header-actions: 右侧排列 */
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 0.5rem;
   flex-shrink: 0;
+  /* 移动端 collapse: 每个 section 必须明确 */
 }
 
+/* shop-selector */
 .shop-selector {
-  padding: 8px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-  background: #fff;
-  color: #1a1a2e;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  background: var(--color-surface);
+  color: var(--color-on-surface);
   cursor: pointer;
-  max-width: 200px;
+  max-width: 120px;
   transition: border-color 0.2s;
 }
 
-.shop-selector:hover { border-color: #4f46e5; }
-.shop-selector:focus { outline: none; border-color: #4f46e5; }
+.shop-selector:hover { border-color: var(--color-primary); }
+.shop-selector:focus { outline: none; border-color: var(--color-primary); }
 
+/* action-buttons */
 .action-btn {
-  padding: 10px 20px;
+  padding: 0.5rem 1rem;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.2s;
 }
 
 .login-btn-header {
-  background: #4f46e5;
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .login-btn-header:hover {
-  background: #4338ca;
+  background: var(--color-primary-dark);
 }
 
 .user-menu { position: relative; }
 
 .user-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
   object-fit: cover;
   cursor: pointer;
   border: 2px solid transparent;
@@ -330,18 +346,18 @@ onUnmounted(() => {
 }
 
 .user-avatar:hover {
-  border-color: #4f46e5;
+  border-color: var(--color-primary);
   transform: scale(1.05);
 }
 
 .user-dropdown {
   position: absolute;
-  top: calc(100% + 12px);
+  top: calc(100% + 0.75rem);
   right: 0;
-  width: 240px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  width: 200px;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
   z-index: 100;
 }
@@ -349,47 +365,50 @@ onUnmounted(() => {
 .user-info-section {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 16px;
-  background: #f9fafb;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--color-surface);
 }
 
 .dropdown-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
   object-fit: cover;
 }
 
 .user-details { flex: 1; min-width: 0; }
-.user-nickname { font-size: 15px; font-weight: 600; color: #333; margin-bottom: 4px; }
-.user-id { font-size: 12px; color: #999; }
+.user-nickname { font-size: 0.875rem; font-weight: 600; color: var(--color-on-surface); margin-bottom: 0.25rem; }
+.user-id { font-size: 0.75rem; color: var(--color-muted); }
 
-.menu-divider { height: 1px; background: #f0f0f0; margin: 8px 0; }
+.menu-divider { height: 1px; background: var(--color-border); margin: 0.5rem 0; }
 
 .menu-item {
   width: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
   border: none;
   background: none;
-  color: #333;
-  font-size: 14px;
+  color: var(--color-on-surface);
+  font-size: 0.875rem;
   cursor: pointer;
   transition: background 0.2s;
   text-align: left;
 }
 
-.menu-item:hover { background: #f7f7f7; }
-.logout-item { color: #ef4444; }
-.logout-item:hover { background: #fee2e2; }
+.menu-item:hover { background: var(--color-primary-light); }
+.menu-item:focus-visible { background: var(--color-primary-light); outline: 2px solid var(--color-primary); outline-offset: 1px; }
+.logout-item { color: var(--color-error); }
+.logout-item:hover { background: var(--color-primary-light); }
 
-.dropdown-enter-active, .dropdown-leave-active { transition: all 0.2s ease; }
-.dropdown-enter-from, .dropdown-leave-to { opacity: 0; transform: translateY(-8px); }
-
+/* 移动端响应式: <768px 时导航折叠 */
 @media (max-width: 768px) {
-  .nav-menu { display: none; }
+  .nav-menu { display: none; } /* 移动端必须明确 collapse 行为 ✅ */
+  .header-actions { gap: 0.25rem; }
+  
+  /* 移动端下，user-menu 保持可见 */
+  .user-menu { order: 3; } /* 移动端将操作移至最后 */
 }
 </style>

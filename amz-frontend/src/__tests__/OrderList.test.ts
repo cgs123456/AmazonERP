@@ -33,8 +33,8 @@ describe('OrderList 视图', () => {
 
   it('应渲染页面标题与副标题', () => {
     const wrapper = mount(OrderList, { shallow: true, global: globalStubs })
-    expect(wrapper.find('.page-header h1').text()).toBe('订单管理')
-    expect(wrapper.find('.subtitle').text()).toContain('Amazon 订单列表')
+    expect(wrapper.find('.hero-section .hero-title').text()).toBe('订单管理')
+    expect(wrapper.find('.hero-section .hero-subtitle').text()).toContain('Amazon 订单列表')
   })
 
   it('未选择店铺时应显示空店铺提示且不调用 getOrderList', async () => {

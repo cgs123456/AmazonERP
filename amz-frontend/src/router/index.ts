@@ -64,8 +64,10 @@ router.beforeEach((to, _from, next) => {
         return
     }
     const token = localStorage.getItem('token')
-    // token 缺失：清理本地凭证并跳转首页登录
-    if (!token) {
+    const expiry = Number(localStorage.getItem('token_expiry') || 0)
+    // token 缺失或已过期（有明确过期时间且已超过）：清理本地凭证并跳转首页登录
+    // 无过期时间记录的 token 视为有效（兼容后端签发但前端未记录过期时间的场景）
+    if (!token || (expiry > 0 && Date.now() > expiry)) {
         localStorage.removeItem('token')
         localStorage.removeItem('token_expiry')
         next('/')

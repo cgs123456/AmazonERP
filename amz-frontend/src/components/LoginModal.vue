@@ -4,13 +4,13 @@
       <div v-if="visible" class="modal-overlay" @click="handleOverlayClick">
         <div class="modal-container" @click.stop>
           <button class="close-btn" @click="closeModal">
-            <Icon icon="mdi:close" width="20" color="#666" />
+            <Icon icon="mdi:close" width="20" />
           </button>
 
           <div class="modal-content">
             <!-- Logo -->
             <div class="modal-logo">
-              <Icon icon="mdi:book-open-page-variant" width="48" color="#ff2442" />
+              <Icon icon="mdi:book-open-page-variant" width="48" />
             </div>
 
             <!-- 标题 -->
@@ -36,7 +36,7 @@
             <div v-if="activeTab === 'qrcode'" class="qrcode-section">
               <div class="qrcode-box">
                 <div class="qrcode-placeholder">
-                  <Icon icon="mdi:qrcode" width="120" color="#333" />
+                  <Icon icon="mdi:qrcode" width="120" />
                 </div>
               </div>
               <p class="qrcode-tip">
@@ -106,13 +106,13 @@
               </div>
               <div class="social-login">
                 <button class="social-btn" title="微信登录">
-                  <Icon icon="mdi:wechat" width="36" color="#07c160" />
+                  <Icon icon="mdi:wechat" width="36" />
                 </button>
                 <button class="social-btn" title="QQ登录">
-                  <Icon icon="mdi:qqchat" width="36" color="#12b7f5" />
+                  <Icon icon="mdi:qqchat" width="36" />
                 </button>
                 <button class="social-btn" title="微博登录">
-                  <Icon icon="mdi:sina-weibo" width="36" color="#e6162d" />
+                  <Icon icon="mdi:sina-weibo" width="36" />
                 </button>
               </div>
             </div>
@@ -131,17 +131,11 @@ import { useToast } from '../composables/useToast'
 
 const { showToast } = useToast()
 
-interface Props {
-  visible: boolean
-}
-
-interface Emits {
-  (e: 'update:visible', value: boolean): void
-  (e: 'login-success'): void
-}
-
-defineProps<Props>()
-const emit = defineEmits<Emits>()
+defineProps<{ visible: boolean }>()
+const emit = defineEmits<{
+  'update:visible': [value: boolean]
+  'login-success': []
+}>()
 
 const activeTab = ref<'qrcode' | 'phone'>('qrcode')
 const phoneNumber = ref('')
@@ -265,23 +259,25 @@ const handleLogin = async () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 2000;
-  padding: 20px;
+  padding: 1rem;
 }
 
 .modal-container {
   position: relative;
-  background: white;
-  border-radius: 24px;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
   width: 100%;
-  max-width: 420px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  max-width: 440px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
   animation: slideUp 0.3s ease-out;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 @keyframes slideUp {
@@ -297,89 +293,85 @@ const handleLogin = async () => {
 
 .close-btn {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  width: 36px;
-  height: 36px;
+  top: 1rem;
+  right: 1rem;
+  width: 32px;
+  height: 32px;
   border: none;
-  background: #f5f5f5;
-  border-radius: 50%;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   transition: all 0.2s;
   z-index: 10;
   padding: 0;
 }
 
-.close-btn:hover {
-  background: #e5e5e5;
-}
+.close-btn:hover { color: var(--color-primary); }
+.close-btn:focus-visible { background: var(--color-primary-light); outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
 .modal-content {
-  padding: 48px 40px 40px;
+  padding: 1.5rem 1.75rem;
 }
 
 .modal-logo {
   display: flex;
   justify-content: center;
-  margin-bottom: 20px;
+  margin-bottom: 1rem;
 }
 
 .modal-title {
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 600;
-  color: #333;
+  color: var(--color-on-surface);
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 1.5rem;
 }
 
 .tab-container {
   display: flex;
-  gap: 8px;
-  margin-bottom: 32px;
-  background: #f5f5f5;
-  border-radius: 12px;
-  padding: 4px;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: 0.25rem;
 }
 
 .tab-item {
   flex: 1;
-  padding: 10px;
+  padding: 0.5rem 0.75rem;
   border: none;
   background: transparent;
-  border-radius: 10px;
-  font-size: 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
   font-weight: 500;
-  color: #666;
+  color: var(--color-muted);
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.2s;
 }
 
 .tab-item.active {
-  background: white;
-  color: #ff2442;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  box-shadow: none;
 }
 
 /* 二维码登录 */
-.qrcode-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
+.qrcode-section { flex: 1; }
 
 .qrcode-box {
-  width: 200px;
-  height: 200px;
-  background: #f5f5f5;
-  border-radius: 16px;
+  width: 180px;
+  height: 180px;
+  background: var(--color-primary-light);
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 20px;
-  border: 2px solid #e5e5e5;
+  margin-bottom: 1rem;
+  border: 2px solid var(--color-border);
 }
 
 .qrcode-placeholder {
@@ -391,54 +383,48 @@ const handleLogin = async () => {
 .qrcode-tip {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 8px;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  margin-bottom: 0.5rem;
 }
 
-.highlight {
-  color: #ff2442;
-  font-weight: 600;
-}
+.highlight { color: var(--color-primary); font-weight: 600; }
 
 .qrcode-subtitle {
-  font-size: 12px;
-  color: #999;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  text-align: center;
 }
 
 /* 手机号登录 */
-.phone-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
+.phone-section { flex: 1; }
 
-.input-group {
-  width: 100%;
-}
+.input-group { width: 100%; margin-bottom: 0.75rem; }
 
 .input-wrapper {
   display: flex;
   align-items: center;
-  background: #f7f7f7;
-  border-radius: 12px;
-  padding: 14px 16px;
+  background: var(--color-primary-light);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.75rem;
   border: 2px solid transparent;
-  transition: all 0.3s;
+  transition: all 0.2s;
+  gap: 0.5rem;
 }
 
 .input-wrapper:focus-within {
-  background: white;
-  border-color: #ff2442;
+  background: var(--color-surface);
+  border-color: var(--color-primary);
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .country-code {
-  font-size: 14px;
-  color: #333;
-  margin-right: 12px;
-  padding-right: 12px;
-  border-right: 1px solid #e5e5e5;
+  font-size: 0.875rem;
+  color: var(--color-muted);
+  margin-right: 0.5rem;
+  white-space: nowrap;
 }
 
 .phone-input,
@@ -447,101 +433,81 @@ const handleLogin = async () => {
   border: none;
   background: transparent;
   outline: none;
-  font-size: 14px;
-  color: #333;
+  font-size: 0.875rem;
+  color: var(--color-on-surface);
 }
 
 .phone-input::placeholder,
 .code-input::placeholder {
-  color: #999;
+  color: var(--color-muted);
 }
 
 .send-code-btn {
-  padding: 6px 16px;
+  padding: 0.375rem 0.75rem;
   background: transparent;
   border: none;
-  color: #ff2442;
-  font-size: 13px;
+  color: var(--color-primary);
+  font-size: 0.8125rem;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   transition: opacity 0.2s;
 }
 
-.send-code-btn:hover:not(:disabled) {
-  opacity: 0.8;
-}
+.send-code-btn:hover:not(:disabled) { opacity: 0.8; }
 
-.send-code-btn:disabled {
-  color: #999;
-  cursor: not-allowed;
-}
+.send-code-btn:disabled { color: var(--color-muted); cursor: not-allowed; }
 
 .login-btn {
   width: 100%;
-  padding: 14px;
-  background: linear-gradient(135deg, #ff2442 0%, #ff4d6d 100%);
-  color: white;
+  padding: 0.75rem;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   border: none;
-  border-radius: 12px;
-  font-size: 15px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 4px 12px rgba(255, 36, 66, 0.3);
+  transition: background 0.2s;
 }
 
-.login-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(255, 36, 66, 0.4);
-}
+.login-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
+.login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.login-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.agreement {
-  margin-top: 8px;
-}
+.agreement { margin-top: 0.75rem; }
 
 .checkbox-wrapper {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 0.5rem;
   cursor: pointer;
 }
 
 .checkbox-wrapper input[type='checkbox'] {
-  margin-top: 2px;
+  margin-top: 0.125rem;
   cursor: pointer;
 }
 
 .checkbox-text {
-  font-size: 12px;
-  color: #999;
+  font-size: 0.75rem;
+  color: var(--color-muted);
   line-height: 1.5;
 }
 
 .link {
-  color: #ff2442;
+  color: var(--color-primary);
   text-decoration: none;
 }
 
-.link:hover {
-  text-decoration: underline;
-}
+.link:hover { text-decoration: underline; }
 
 /* 其他登录方式 */
-.other-login {
-  margin-top: 32px;
-}
+.other-login { margin-top: 1.5rem; }
 
 .divider {
   position: relative;
   text-align: center;
-  margin-bottom: 20px;
+  margin: 1rem 0;
 }
 
 .divider::before {
@@ -551,68 +517,54 @@ const handleLogin = async () => {
   top: 50%;
   width: 100%;
   height: 1px;
-  background: #e5e5e5;
+  background: var(--color-border);
 }
 
 .divider span {
   position: relative;
   display: inline-block;
-  padding: 0 16px;
-  background: white;
-  font-size: 12px;
-  color: #999;
+  padding: 0 0.75rem;
+  background: var(--color-surface);
+  font-size: 0.75rem;
+  color: var(--color-muted);
 }
 
 .social-login {
   display: flex;
   justify-content: center;
-  gap: 28px;
+  gap: 0.75rem;
 }
 
 .social-btn {
-  width: 56px;
-  height: 56px;
-  border: 1px solid #e5e5e5;
-  background: white;
-  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.2s;
   padding: 0;
 }
 
 .social-btn:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
-  border-color: #d5d5d5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--color-primary);
 }
+
+.social-btn:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 
 /* 过渡动画 */
 .modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.3s ease;
-}
-
+.modal-leave-active { transition: opacity 0.3s ease; }
 .modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
+.modal-leave-to { opacity: 0; }
 
-/* 响应式 */
 @media (max-width: 480px) {
-  .modal-content {
-    padding: 40px 24px 32px;
-  }
-
-  .modal-title {
-    font-size: 18px;
-  }
-
-  .qrcode-box {
-    width: 180px;
-    height: 180px;
-  }
+  .modal-content { padding: 1.25rem 1.5rem 1.5rem; }
+  .modal-title { font-size: 1.125rem; }
 }
 </style>

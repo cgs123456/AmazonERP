@@ -1,9 +1,14 @@
+/* 全局 design tokens — design-taste-frontend 准则
+ * 单一 accent：primary indigo；语义色（success/warning/error）仅用于功能状态
+ * 所有组件通过 var(--*) 引用，禁止硬编码色值/字号/圆角
+ * 双主题：light 为默认，dark 经 prefers-color-scheme 覆盖同名 token（组件零改动）
+ */
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light;
+  color-scheme: light dark;
   color: #213547;
   background-color: #ffffff;
 
@@ -11,10 +16,171 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* 色彩系统：max 1 accent color */
+  --color-primary: #4f46e5;
+  --color-primary-dark: #4338ca;
+  --color-primary-light: #eef2ff;
+  --color-on-primary: #ffffff;
+
+  --color-background: #f5f6fa;
+  --color-surface: #ffffff;
+  --color-on-surface: #1a1a2e;
+  --color-border: #e2e8f0;
+  --color-muted: #6b7280;
+  --color-muted-light: #f3f4f6;
+
+  /* 功能语义色（仅状态/反馈，不做装饰 accent；success 取 green-700 保证白底 ≥4.5:1） */
+  --color-success: #15803d;
+  --color-success-light: #dcfce7;
+  --color-warning: #d97706;
+  --color-warning-dark: #92400e;
+  --color-warning-light: #fef3c7;
+  --color-error: #dc2626;
+  --color-light-red: #fee2e2;
+
+  /* 阴影：按背景色调色（蓝灰基调），不用纯黑 */
+  --shadow-sm: 0 1px 3px rgba(30, 41, 89, 0.06), 0 1px 2px rgba(30, 41, 89, 0.04);
+  --shadow-md: 0 4px 12px rgba(30, 41, 89, 0.1);
+  --shadow-accent: 0 4px 12px rgba(79, 70, 229, 0.14);
+
+  /* 字体：数据/编号用等宽栈，禁用 Courier New */
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+
+  /* 圆角：xs 4 / sm 8 / md 12 / lg 16 / xl 24 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* 字号：1:12 2:14 3:16 4:18 5:20 6:24 7:30 8:36 9:48 10:60 */
+  --font-size-1: 0.75rem;
+  --font-size-2: 0.875rem;
+  --font-size-3: 1rem;
+  --font-size-4: 1.125rem;
+  --font-size-5: 1.25rem;
+  --font-size-6: 1.5rem;
+  --font-size-7: 1.875rem;
+  --font-size-8: 2.25rem;
+  --font-size-9: 3rem;
+  --font-size-10: 3.75rem;
+
+  /* 行高 */
+  --line-height-tight: 1.25;
+  --line-height-snug: 1.375;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
+}
+
+/* 暗色主题：同名 token 覆盖，保持 indigo 品牌色相
+ * 对比度：正文 #e7e9f2 on #171b2e ≈ 12:1；muted #9aa1b5 ≈ 5.5:1，均过 WCAG AA
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e7e9f2;
+    background-color: #0d1020;
+
+    --color-primary: #818cf8;
+    --color-primary-dark: #a5b4fc;
+    --color-primary-light: rgba(99, 102, 241, 0.16);
+    --color-on-primary: #0d1020;
+
+    --color-background: #0d1020;
+    --color-surface: #171b2e;
+    --color-on-surface: #e7e9f2;
+    --color-border: #2a3049;
+    --color-muted: #9aa1b5;
+    --color-muted-light: #20263c;
+
+    --color-success: #4ade80;
+    --color-success-light: rgba(74, 222, 128, 0.14);
+    --color-warning: #fbbf24;
+    --color-warning-dark: #fcd34d;
+    --color-warning-light: rgba(251, 191, 36, 0.14);
+    --color-error: #f87171;
+    --color-light-red: rgba(248, 113, 113, 0.14);
+
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+    --shadow-accent: 0 4px 12px rgba(129, 140, 248, 0.2);
+  }
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+}
+
+/* 全局键盘焦点可见性（WCAG 2.4.7）：:where 保持 0 特异性，组件级规则可覆盖 */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* 触感反馈：按下时物理下压（技能 4.5 Tactile Feedback） */
+button:not(:disabled):active,
+[role='button']:active {
+  transform: scale(0.98);
+}
+
+/* 数据列对齐：表格数字/金额用等宽数字，扫读不跳行 */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 骨架屏（技能 4.5 Loading：形状匹配最终布局，替代文字横幅） ---- */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-muted-light);
+  border-radius: var(--radius-sm);
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-color-scheme: dark) {
+  .skeleton::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  }
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* ---- 空状态（技能 4.5 Empty States：成组构图 + 指引） ---- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 1rem 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-2);
+}
+
+.empty-state .empty-icon {
+  opacity: 0.5;
+}
+
+/* 尊重用户减少动态偏好 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

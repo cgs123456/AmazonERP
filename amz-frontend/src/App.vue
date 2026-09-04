@@ -16,6 +16,6 @@ import Toast from './components/Toast.vue'
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background-color: #f8f8f8;
+  background-color: var(--color-background);
 }
 </style>

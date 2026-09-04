@@ -3,9 +3,10 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
-      <div class="page-header">
-        <h1>订单管理</h1>
-        <p class="subtitle">Amazon 订单列表与状态跟踪</p>
+      <!-- hero section - design-taste-frontend 约束：headline ≤2 行，subtext 精简，垂直堆叠 -->
+      <div class="hero-section">
+        <h1 class="hero-title">订单管理</h1>
+        <p class="hero-subtitle">Amazon 订单列表与状态跟踪</p>
       </div>
 
       <!-- 筛选栏 -->
@@ -21,7 +22,10 @@
         <button class="filter-btn" @click="handleQuery">查询</button>
       </div>
 
-      <div v-if="loading" class="loading-mask">加载中...</div>
+      <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
+      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+        <div v-for="i in 6" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
+      </div>
 
       <!-- 未选择店铺提示 -->
       <div v-if="!currentShopId" class="shop-tip">
@@ -55,7 +59,12 @@
               <td class="mono">{{ order.date }}</td>
             </tr>
             <tr v-if="!loading && displayOrders.length === 0">
-              <td colspan="8" class="empty-row">暂无订单数据</td>
+              <td colspan="8" class="empty-row">
+                <div class="empty-state">
+                  <Icon icon="mdi:clipboard-text-off-outline" width="32" class="empty-icon" />
+                  <span>暂无订单数据</span>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -75,6 +84,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getOrderList } from '@/api/order'
@@ -183,41 +193,51 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.order-page { min-height: 100vh; background: #f5f6fa; }
-.main-content { margin-left: 220px; margin-top: 64px; padding: 24px 32px; }
-.page-header h1 { font-size: 24px; font-weight: 700; color: #1a1a2e; margin: 0; }
-.page-header .subtitle { color: #666; margin: 4px 0 24px; font-size: 14px; }
+.order-page { background: var(--color-background); }
+.main-content { margin-left: 220px; margin-top: 64px; padding: 1rem; min-height: 100dvh; }
+/* 页头：仪表盘场景左对齐，副标题用 muted（accent 纪律） */
+.hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 1.5rem; }
+.hero-title { font-size: var(--font-size-7); font-weight: 700; color: var(--color-on-surface); margin: 0 0 0.25rem 0; line-height: var(--line-height-tight); }
+.hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
-.filter-bar { display: flex; gap: 12px; margin-bottom: 20px; }
-.filter-select, .filter-date, .filter-input { padding: 8px 12px; border: 1px solid #e0e0e0; border-radius: 8px; font-size: 14px; background: #fff; }
+/* 骨架屏（表格行形状） */
+.skeleton-zone { display: flex; flex-direction: column; gap: 0.625rem; margin-bottom: 1rem; }
+.sk-row { height: 2.75rem; }
+.sk-row-alt { width: 96%; }
+
+.filter-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+.filter-select, .filter-date, .filter-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); transition: border-color 0.2s; }
+.filter-select:hover, .filter-date:hover, .filter-input:hover { border-color: var(--color-primary); }
 .filter-input { flex: 1; max-width: 300px; }
-.filter-btn { padding: 8px 20px; background: #4f46e5; color: #fff; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; }
-.filter-btn:hover { background: #4338ca; }
+.filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+.filter-btn:hover { background: var(--color-primary-dark); }
 
-.loading-mask { padding: 12px 16px; margin-bottom: 16px; background: #eef2ff; color: #4f46e5; border-radius: 8px; font-size: 14px; text-align: center; }
+.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: 0.875rem; text-align: center; }
 
-.shop-tip { padding: 12px 16px; margin-bottom: 16px; background: #fef3c7; color: #92400e; border-radius: 8px; font-size: 14px; text-align: center; }
-
-.table-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
 .data-table { width: 100%; border-collapse: collapse; }
-.data-table th { background: #f9fafb; padding: 12px 16px; text-align: left; font-size: 13px; color: #6b7280; font-weight: 600; border-bottom: 1px solid #e5e7eb; }
-.data-table td { padding: 12px 16px; font-size: 14px; color: #1f2937; border-bottom: 1px solid #f3f4f6; }
-.data-table tr:hover { background: #f9fafb; }
-.mono { font-family: 'Courier New', monospace; font-size: 13px; }
-.empty-row { text-align: center; color: #999; padding: 32px 0; }
-.profit-positive { color: #10b981; font-weight: 600; }
-.profit-negative { color: #ef4444; font-weight: 600; }
+.data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
+.data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
+.data-table tr:hover { background: var(--color-primary-light); }
+.mono { font-family: var(--font-mono); font-size: 0.8125rem; }
+.empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
+.profit-positive { color: var(--color-success); font-weight: 600; }
+.profit-negative { color: var(--color-error); font-weight: 600; }
 
-.status-tag { padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; }
-.status-tag.shipped { background: #dbeafe; color: #1e40af; }
-.status-tag.completed { background: #d1fae5; color: #065f46; }
-.status-tag.pending { background: #fef3c7; color: #92400e; }
-.status-tag.refunded { background: #fee2e2; color: #991b1b; }
+/* 状态标签：语义色各归其位（pending=等待/警告，completed=完成/成功，refunded=退款/错误） */
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.status-tag.shipped { background: var(--color-primary-light); color: var(--color-primary); }
+.status-tag.completed { background: var(--color-success-light); color: var(--color-success); }
+.status-tag.pending { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.status-tag.refunded { background: var(--color-light-red); color: var(--color-error); }
 
-.pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
-.page-info { font-size: 13px; color: #666; }
-.page-actions { display: flex; gap: 8px; }
-.page-btn { padding: 6px 16px; border: 1px solid #e0e0e0; border-radius: 8px; background: #fff; cursor: pointer; font-size: 13px; color: #333; }
-.page-btn:hover:not(:disabled) { background: #f9fafb; border-color: #4f46e5; color: #4f46e5; }
+.pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
+.page-info { font-size: 0.8125rem; color: var(--color-muted); }
+.page-actions { display: flex; gap: 0.5rem; }
+.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
+.page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
 .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 1024px) { .main-content { margin-left: 80px; } }
+@media (max-width: 768px) { .main-content { margin-left: 0; } .filter-bar { flex-wrap: wrap; } }
 </style>
