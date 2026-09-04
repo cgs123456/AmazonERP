@@ -6,6 +6,7 @@ import com.amz.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.context.annotation.Configuration;
@@ -35,8 +36,15 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
             // /actuator/** 为 k8s 存活/就绪探针端点（kubelet 请求不携带 JWT），必须放行，
             // 否则网关自身探针恒返回 401 导致 Pod 永远 NotReady。
             // 网关未配置 /actuator/** 的 lb 路由，故不会转发到下游业务服务。
-            "/actuator",
-            // Swagger UI / OpenAPI 文档（无需鉴权，仅内网访问）
+            "/actuator"
+    );
+
+    /**
+     * 文档端点白名单（Swagger UI / OpenAPI）。默认放行便于本地与内网联调；
+     * 生产环境应设置环境变量 GATEWAY_DOCS_ENABLED=false 收紧
+     * （对应配置项 amz.gateway.docs.enabled）。
+     */
+    private static final List<String> DOCS_WHITELIST = List.of(
             "/swagger-ui",
             "/v3/api-docs"
     );
@@ -44,11 +52,22 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
     @Autowired
     private JwtUtil jwtUtil;
 
+    /** 是否放行文档端点，默认 true；生产环境建议关闭。 */
+    @Value("${amz.gateway.docs.enabled:true}")
+    private boolean docsEnabled;
+
     /** 判断路径是否命中白名单：path 等于白名单项，或以 白名单项 + "/" 开头 */
     private boolean isWhiteListed(String path) {
         for (String prefix : WHITE_LIST) {
             if (path.equals(prefix) || path.startsWith(prefix + "/")) {
                 return true;
+            }
+        }
+        if (docsEnabled) {
+            for (String prefix : DOCS_WHITELIST) {
+                if (path.equals(prefix) || path.startsWith(prefix + "/")) {
+                    return true;
+                }
             }
         }
         return false;
