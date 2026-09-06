@@ -33,7 +33,7 @@ amz-service-message         — WebSocket + Amazon Messaging
 amz-service-ai              — AI 运营 Agent（28 工具）
 amz-service-spapi           — SP-API 对接层（LWA + SigV4）
 # 扩展业务（8 个）
-amz-service-ad              — 广告管理（ACoS + 搜索词 + 自动规则）
+amz-service-ad              — 广告管理（ACoS + 搜索词 + 自动规则 + 日报 02:00 同步/趋势聚合）
 amz-service-procurement     — 采购供应链（供应商 + 1688 + FBA 货件）
 amz-service-customer        — 客服（邮件 + 差评匹配 + RMA）
 amz-service-logistics       — 物流（商比价 + 调拨 + 头程分摊）
@@ -45,7 +45,7 @@ amz-service-multiplatform   — 多平台（Shopify/eBay/Walmart/Shopee/Lazada�
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
 
-> 共 53 张表、137+ REST 端点、AI Agent 28 工具 ｜ 
+> 共 54 张表（含广告日报表）、140+ REST 端点、AI Agent 28 工具 ｜ 
 
 ## 🤖 AI 运营 Agent（28 工具）
 
@@ -79,6 +79,14 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 - CV>0.6：LightGBM(70%) + 规则(30%) ONNX 混合推理
 - Cron 每天 06:00 全量 + 每 6h 增量
 
+## 🎨 前端设计系统
+
+- **Design Tokens**（`src/style.css` 全局）：单 accent indigo、语义色（成功/警告/错误仅用于状态）、圆角/字号/行高/阴影/等宽字体全 token 化，禁止硬编码
+- **暗色模式**：`prefers-color-scheme` 整套 token 翻转（正文约 12:1、muted 约 5.5:1，WCAG AA）；`color-scheme: light dark` 照顾原生控件
+- **加载与空态**：骨架屏（形状匹配最终布局，加载时独占内容区防跳动）+ 全局空态构图；`role="status"` 播报加载
+- **无障碍**：全局 `:where` 焦点环（WCAG 2.4.7）、`prefers-reduced-motion` 降级
+- **数据诚实**：聚合/趋势等后端无数据时用 mock 兜底并打“示例数据”标识
+
 ## 📊 可观测性三栈
 
 | 组件 | 用途 | 配置 |
@@ -93,10 +101,14 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 
 | 防护层 | 实现 |
 |--------|------|
-| **多店铺 RBAC** | `@ShopScoped` + `ShopIdGuardAspect`（41 方法）+ 网关 JWT+shopId 校验 |
+| **多店铺 RBAC** | `@ShopScoped` + `ShopIdGuardAspect`（200+ 方法）+ 网关 JWT+shopId 校验；切面覆盖不到的 `@RequestBody`/路径参数场景由各服务显式 `isShopAllowed` 校验 |
 | **接口级权限** | `@RequireRole` 注解 + AOP 切面（采购/运营等敏感端点 OPERATOR/ADMIN 校验） |
 | **字段级权限** | `@FieldPermission` + 切面 + 前端 `***` 掩码 |
 | **JWT 双 Token** | access_token(24h) + refresh_token(7d) |
+| **登录安全** | 短信 60s 重发冷却＋每日 10 条上限＋验证码 5 次试错作废 |
+| **OAuth 应用密钥** | SHA-256 存储校验＋轮换端点＋scope 取交集＋token 绑定归属店 |
+| **写隔离加固** | 商品/多平台账号·消息·订单读写归属校验＋更新锁定 shopId 防跨店搬移 |
+| **单号防碰撞** | `BizNoGenerator`（毫秒+3 位随机）统一 9 处 millis 单号 |
 | **LWA Token 隔离** | 缓存键 `clientId:sha256(refreshToken)`，杜绝跨租户 token 串号 |
 | **网关防伪造** | 全局过滤器剥离外部传入的 `userId`/`shopId` 请求头，身份仅取自 JWT |
 | **CORS 配置化** | 白名单经 `amz.cors.allowed-origins` 环境变量注入，默认仅本地 |
@@ -118,7 +130,8 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **Redis 单点** | 幂等（SETNX）、分布式锁、Sentinel 规则拉取、LWA token 缓存均依赖单实例 Redis，无 Sentinel/Cluster；生产建议部署哨兵或集群 |
 | **MySQL 主从需手动建立复制** | docker-compose 从库仅预置只读 + GTID 参数，主从复制需按 `docker-compose.yml` 中注释手动执行 `CHANGE REPLICATION SOURCE` |
 | **Swagger/OpenAPI 默认放行** | 网关默认放行 `/swagger-ui` 与 `/v3/api-docs`（本地/内网联调用）；生产环境设置 `GATEWAY_DOCS_ENABLED=false` 收紧 |
-| **前端降级数据** | 前端各页在后端不可达时降级到内置样例数据（仅演示），生产环境建议关闭降级或展示明确的不可用态 |
+| **前端降级数据** | 前端各页在后端不可达时降级到内置样例数据（仅演示），生产环境建议关闭降级或展示明确的不可用态；趋势等聚合区用 mock 时标题旁有“示例数据”标识 |
+| **广告趋势数据源** | `GET /ad/trend` 读 `amz_ad_daily_report`，由 02:00 调度逐天回补（含当天自愈归因延迟）；mock 环境写入相同 stub 行，趋势拉平属预期 |
 
 ## 🚀 快速开始
 
@@ -148,6 +161,8 @@ docker-compose up -d
 
 启动顺序：Nacos → Gateway → User → 其他业务服务
 
+> 构建要求 JDK 17 + Maven 3.8+（`mvn -v` 确认；仓库无 wrapper，本机验证组合：Temurin 17.0.20 + Maven 3.9.9）
+
 ```bash
 # 默认 mock 模式（内置样例数据）
 mvn -pl amz-service/amz-service-user spring-boot:run
@@ -162,10 +177,10 @@ mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=r
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（19 模块） | 546 | 100% |
-| 前端 Vitest（8 文件） | 58 | 100% |
+| 后端 JUnit 5（19 模块） | 550（含 Session 条件解绑、单号生成器等新增用例） | 100% |
+| 前端 Vitest（10 文件） | 74（含接口映射、登录 token 提取、广告趋势/聚合用例） | 100% |
 | 前端 Playwright 全交互 E2E（连接真实后端栈：8 页导航 + KPI + Agent 对话 + 分页 + Tab 切换 + 弹窗 + 过滤 + 登录守卫 + 404） | 39 | 100% |
-| **总计** | **643** | **100%** ✅ |
+| **总计** | **663** | **100%** ✅ |
 
 > E2E 通过 `.start-backend-final.bat` + `.start-vite.bat` 拉起本地全栈后运行 `npx playwright test`。
 
