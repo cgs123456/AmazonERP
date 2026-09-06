@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.PurchasePlanMapper;
 import com.amz.mapper.PurchaseOrderItemMapper;
@@ -50,7 +52,7 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
         if (plan.getShopId() == null || plan.getSku() == null || plan.getPlannedQty() == null) {
             throw new AttrIsNullException("店铺ID、SKU和计划数量不能为空");
         }
-        plan.setPlanNo("PL" + System.currentTimeMillis());
+        plan.setPlanNo(BizNoGenerator.next("PL"));
         if (plan.getStatus() == null) {
             plan.setStatus("DRAFT");
         }
@@ -129,7 +131,9 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
         order.setQuantity(plan.getPlannedQty());
         order.setUnitPrice(plan.getUnitPrice());
         order.setTotalAmount(plan.getTotalAmount());
-        order.setStatus("PENDING_APPROVAL");
+        // 注意：不要在此设置 PENDING_APPROVAL——那是计划单据的状态；
+        // 采购订单状态机以 DRAFT 起始（createPurchaseOrder 强制），
+        // 计划审批已在上方 gate（仅 APPROVED 可转换），订单创建后即为可提交的 DRAFT。
         order.setRemark("由采购计划 " + plan.getPlanNo() + " 转换");
         PurchaseOrder createdOrder = procurementService.createPurchaseOrder(order);
 

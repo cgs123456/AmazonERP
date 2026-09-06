@@ -501,6 +501,7 @@ CREATE TABLE IF NOT EXISTS amz_ad_keyword (
     keyword VARCHAR(200) NOT NULL COMMENT '关键词文本',
     match_type VARCHAR(10) DEFAULT 'EXACT' COMMENT 'EXACT/PHRASE/BROAD',
     bid DECIMAL(10,2) DEFAULT 0 COMMENT '当前竞价（美元）',
+    base_bid DECIMAL(10,2) COMMENT '基准竞价（美元，调价器首次触达时认领）',
     state VARCHAR(10) DEFAULT 'ENABLED',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -578,6 +579,29 @@ CREATE TABLE IF NOT EXISTS amz_ad_targeting (
     sales DECIMAL(10,2) DEFAULT 0,
     INDEX idx_campaign_type (campaign_id, targeting_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='SD 受众定向表';
+
+-- 广告日报表（对应 com.amz.model.AdDailyReport @TableName("amz_ad_daily_report")，趋势图数据源）
+CREATE TABLE IF NOT EXISTS amz_ad_daily_report (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    shop_id BIGINT NOT NULL,
+    campaign_id VARCHAR(50),
+    ad_type VARCHAR(20) COMMENT 'SP/SB/SD/DSP',
+    report_date DATE NOT NULL,
+    impressions BIGINT DEFAULT 0,
+    clicks BIGINT DEFAULT 0,
+    cost DECIMAL(10,2) DEFAULT 0,
+    sales DECIMAL(10,2) DEFAULT 0,
+    orders INT DEFAULT 0,
+    units INT DEFAULT 0,
+    acos DECIMAL(5,2) DEFAULT 0,
+    roas DECIMAL(5,2) DEFAULT 0,
+    cr DECIMAL(5,2) DEFAULT 0,
+    ctr DECIMAL(5,2) DEFAULT 0,
+    cpc DECIMAL(8,2) DEFAULT 0,
+    create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_shop_campaign_date (shop_id, campaign_id, report_date),
+    INDEX idx_shop_date (shop_id, report_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='广告日报表(趋势图数据源)';
 
 
 -- =============================================================================

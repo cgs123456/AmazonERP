@@ -123,7 +123,16 @@ public class JwtUtil {
         if (shopStr == null || shopStr.isEmpty()) {
             return new ArrayList<>();
         }
-        return shopStr.stream().map(Long::valueOf).toList();
+        // 脏 claim 容错：逐个安全解析，非法条目跳过（避免 NumberFormatException 逃逸成 500）
+        List<Long> shopIds = new ArrayList<>(shopStr.size());
+        for (String s : shopStr) {
+            try {
+                shopIds.add(Long.valueOf(s));
+            } catch (NumberFormatException e) {
+                // 忽略非法店铺 id（鉴权拦截器会按 401 处理无有效店铺的 token 场景）
+            }
+        }
+        return shopIds;
     }
 
     /**

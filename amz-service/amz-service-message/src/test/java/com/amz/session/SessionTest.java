@@ -73,6 +73,27 @@ class SessionTest {
     }
 
     @Test
+    @DisplayName("旧连接关闭事件不得误删同用户新登录的连接")
+    void testStaleUnbindDoesNotKillNewSession() {
+        Session.bind(USER_A, channelA);
+        Session.bind(USER_A, channelB);
+        // 旧连接 channelA 后到达的关闭事件
+        Session.unbind(USER_A, channelA);
+
+        assertEquals(channelB, Session.getChannel(USER_A), "新连接不应被旧关闭事件误删");
+        assertEquals(USER_A, Session.getUserId(channelB), "新连接反向映射应保留");
+    }
+
+    @Test
+    @DisplayName("重绑后旧 channel 反向映射应被清理（无幽灵条目）")
+    void testRebindCleansReverseMapping() {
+        Session.bind(USER_A, channelA);
+        Session.bind(USER_A, channelB);
+
+        assertNull(Session.getUserId(channelA), "旧 channel 反向映射应被清理");
+    }
+
+    @Test
     @DisplayName("多用户绑定 → 各自独立互不干扰")
     void testMultipleUsersIndependent() {
         Session.bind(USER_A, channelA);

@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.client.LogisticsTrackingClient;
 import com.amz.mapper.ShipmentMapper;
 import com.amz.mapper.TrackingEventMapper;
@@ -33,7 +35,7 @@ public class LogisticsServiceImpl implements LogisticsService {
 
     @Override
     public Shipment createShipment(Shipment shipment) {
-        shipment.setShipmentNo("SHP" + System.currentTimeMillis());
+        shipment.setShipmentNo(BizNoGenerator.next("SHP"));
         if (shipment.getStatus() == null) {
             shipment.setStatus("CREATED");
         }
@@ -65,8 +67,11 @@ public class LogisticsServiceImpl implements LogisticsService {
         if (events == null || events.isEmpty()) {
             return shipment;
         }
-        // 最新事件的状态映射到货件状态
-        TrackingEvent latest = events.get(0);
+        // 最新事件的状态映射到货件状态（按 eventTime 取最大，不依赖承运商返回顺序）
+        TrackingEvent latest = events.stream()
+                .max(Comparator.comparing(TrackingEvent::getEventTime,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .orElse(events.get(0));
         shipment.setStatus(mapEventToShipmentStatus(latest.getEventStatus()));
         shipmentMapper.updateById(shipment);
 

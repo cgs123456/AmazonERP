@@ -113,6 +113,7 @@ public class SearchTermServiceImpl implements SearchTermService {
         result.put("totalSales", totalSales);
         result.put("wasteCost", wasteCost);
         result.put("overallAcos", totalCost.compareTo(BigDecimal.ZERO) > 0
+                && totalSales.compareTo(BigDecimal.ZERO) > 0
                 ? totalCost.multiply(new BigDecimal("100")).divide(totalSales, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO);
 

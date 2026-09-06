@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.InventoryBatchMapper;
 import com.amz.mapper.PurchaseOrderMapper;
@@ -45,7 +47,7 @@ public class SupplierServiceImpl implements SupplierService {
             throw new AttrIsNullException("店铺ID和供应商名称不能为空");
         }
         if (supplier.getSupplierCode() == null || supplier.getSupplierCode().isBlank()) {
-            supplier.setSupplierCode("SUP-" + System.currentTimeMillis());
+            supplier.setSupplierCode(BizNoGenerator.next("SUP-"));
         }
         if (supplier.getStatus() == null) {
             supplier.setStatus("ACTIVE");

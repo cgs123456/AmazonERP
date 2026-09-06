@@ -4,6 +4,7 @@ import com.amz.annotation.ShopScoped;
 import com.amz.model.AdReport;
 import com.amz.model.BidSchedule;
 import com.amz.optimizer.KeywordOptimizer;
+import com.amz.scheduler.AdReportSyncScheduler;
 import com.amz.result.Result;
 import com.amz.service.AdService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,9 @@ public class AdController {
 
     @Autowired
     private AdService adService;
+
+    @Autowired
+    private AdReportSyncScheduler adReportSyncScheduler;
 
     /**
      * 查询店铺活动级报表（含 ACoS/ROAS）。
@@ -85,6 +89,46 @@ public class AdController {
             return Result.failure("shopId must not be null");
         }
         return Result.success(adService.getShopReports(shopId));
+    }
+
+    /**
+     * 查询店铺近 N 天每日 ACoS 趋势（供前端折线图）。
+     * GET /ad/trend?shopId=1&days=14
+     * <p>
+     * 数据源为 amz_ad_daily_report；表空或未初始化时返回 []，前端保留降级 mock。
+     */
+    @ShopScoped
+    @GetMapping("/trend")
+    public Result<List<Map<String, Object>>> getAdTrend(
+            @RequestParam(required = false) Long shopId,
+            @RequestParam(required = false, defaultValue = "14") Integer days,
+            @RequestParam(required = false) String adType) {
+        return Result.success(adService.getAdTrend(shopId, days, adType));
+    }
+
+    /**
+     * 手动触发广告日报同步落库（运维/回补入口，定时任务共用同一逻辑）。
+     * POST /ad/reports/sync?shopId=&days=7
+     * <p>
+     * shopId 为空时同步全部有广告活动配置的店铺；days 缺省 7 天、上限 30 天。
+     * shopId 为 null 时切面跳过校验（见 ShopIdGuardAspect），非 null 时按授权校验。
+     */
+    @ShopScoped
+    @PostMapping("/reports/sync")
+    public Result<Map<String, Object>> syncReports(
+            @RequestParam(required = false) Long shopId,
+            @RequestParam(required = false, defaultValue = "7") Integer days) {
+        int rows;
+        if (shopId != null) {
+            rows = adReportSyncScheduler.syncShopReports(shopId, days == null ? 7 : days);
+        } else {
+            rows = adReportSyncScheduler.syncAllShops(days == null ? 7 : days);
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("shopId", shopId);
+        data.put("days", days);
+        data.put("upserted", rows);
+        return Result.success(data);
     }
 
     /**

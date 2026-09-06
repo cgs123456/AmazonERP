@@ -149,6 +149,11 @@ public class SearchServiceImpl implements SearchService {
      */
     private Object loadUserCached(Integer userId) {
         long now = System.currentTimeMillis();
+        // 机会式淘汰：map 突破阈值时顺手清掉已过期条目（无 Caffeine 依赖下的轻量替代，
+        // key 为用户 id 基数有限，阈值仅防异常膨胀）
+        if (userLocalCache.size() > 10000) {
+            userLocalCache.entrySet().removeIf(e -> e.getValue().expiresAtMs <= now);
+        }
         UserCacheEntry entry = userLocalCache.get(userId);
         if (entry != null && entry.expiresAtMs > now) {
             return entry.user;

@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.client.Alibaba1688Client;
 import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.PurchaseOrderMapper;
@@ -50,7 +52,7 @@ public class ProcurementServiceImpl implements ProcurementService {
             throw new IllegalStateException("无权为该店铺创建采购单：shopId=" + order.getShopId());
         }
         // 生成业务单号 + 计算总金额
-        order.setOrderNo("PO" + System.currentTimeMillis());
+        order.setOrderNo(BizNoGenerator.next("PO"));
         order.setTotalAmount(order.getUnitPrice()
                 .multiply(BigDecimal.valueOf(order.getQuantity())));
         order.setStatus("DRAFT");

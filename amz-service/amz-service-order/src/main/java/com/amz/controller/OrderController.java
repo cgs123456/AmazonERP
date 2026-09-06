@@ -76,6 +76,7 @@ public class OrderController {
                                                   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
                                                   @RequestParam(required = false)
                                                   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+                                                  @RequestParam(required = false) String orderNo,
                                                   @RequestParam(defaultValue = "1") Integer page,
                                                   @RequestParam(defaultValue = "20") Integer size) {
         if (shopId == null) {
@@ -93,6 +94,10 @@ public class OrderController {
 
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getShopId, shopId);
+        // 订单号服务端模糊查询（前端搜索框直达，避免仅过滤当前页）
+        if (orderNo != null && !orderNo.isBlank()) {
+            wrapper.like(Order::getAmazonOrderId, orderNo.trim());
+        }
         if (startDate != null && endDate != null) {
             wrapper.gt(Order::getPurchaseDate, startDate.atStartOfDay())
                     .lt(Order::getPurchaseDate, endDate.plusDays(1).atStartOfDay());

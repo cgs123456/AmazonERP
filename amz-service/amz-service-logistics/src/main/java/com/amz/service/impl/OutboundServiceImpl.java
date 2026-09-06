@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.mapper.OutboundOrderMapper;
 import com.amz.model.OutboundOrder;
 import com.amz.model.WarehouseInventory;
@@ -28,7 +30,7 @@ public class OutboundServiceImpl implements OutboundService {
 
     @Override
     public OutboundOrder createOutboundOrder(OutboundOrder order) {
-        order.setOutboundNo("OUT" + System.currentTimeMillis());
+        order.setOutboundNo(BizNoGenerator.next("OUT"));
         if (order.getStatus() == null) {
             order.setStatus("PENDING");
         }

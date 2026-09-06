@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.*;
 import com.amz.model.*;
@@ -124,7 +126,7 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
         if (transfer.getShopId() == null || transfer.getAsin() == null || transfer.getQuantity() == null) {
             throw new AttrIsNullException("店铺ID、ASIN和调拨数量不能为空");
         }
-        transfer.setTransferNo("TRF" + System.currentTimeMillis());
+        transfer.setTransferNo(BizNoGenerator.next("TRF"));
         if (transfer.getStatus() == null) transfer.setStatus("DRAFT");
         if (transfer.getShippingCost() == null) transfer.setShippingCost(BigDecimal.ZERO);
         inventoryTransferMapper.insert(transfer);

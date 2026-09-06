@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.mapper.InboundOrderMapper;
 import com.amz.model.InboundOrder;
 import com.amz.model.WarehouseInventory;
@@ -28,7 +30,7 @@ public class InboundServiceImpl implements InboundService {
 
     @Override
     public InboundOrder createInboundOrder(InboundOrder order) {
-        order.setInboundNo("IN" + System.currentTimeMillis());
+        order.setInboundNo(BizNoGenerator.next("IN"));
         if (order.getStatus() == null) {
             order.setStatus("PENDING");
         }

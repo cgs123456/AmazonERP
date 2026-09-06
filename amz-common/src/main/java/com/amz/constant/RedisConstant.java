@@ -8,6 +8,8 @@ package com.amz.constant;
  */
 public class RedisConstant {
     public static final String PHONE_CODE = "amz:user:phone_code:";
+    /** 短信验证码错误尝试计数前缀，完整 key: amz:user:phone_code_err:{phone} → 次数（随验证码同失效） */
+    public static final String PHONE_CODE_ERR = "amz:user:phone_code_err:";
     public static final String PRODUCT_SCORE = "amz:product:product_score:";
 
     // ===== 字段级数据权限 =====

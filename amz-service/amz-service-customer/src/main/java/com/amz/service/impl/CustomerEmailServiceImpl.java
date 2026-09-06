@@ -153,7 +153,10 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         LambdaQueryWrapper<EmailTask> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(EmailTask::getShopId, shopId)
                .eq(EmailTask::getStatus, "PENDING")
-               .le(EmailTask::getScheduledTime, LocalDateTime.now());
+               .le(EmailTask::getScheduledTime, LocalDateTime.now())
+               // 单次上限：极端积压时分批消化，避免一次全量载入 OOM；剩余下次调度继续
+               .orderByAsc(EmailTask::getId)
+               .last("LIMIT 1000");
         List<EmailTask> pendingTasks = emailTaskMapper.selectList(wrapper);
 
         int sent = 0;

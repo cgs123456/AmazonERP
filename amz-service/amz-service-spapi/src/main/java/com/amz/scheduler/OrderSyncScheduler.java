@@ -8,6 +8,7 @@ import com.amz.lock.DistributedJobLock;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonPrimitive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -18,6 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.HashMap;
@@ -193,29 +196,25 @@ public class OrderSyncScheduler {
         JsonObject orderTotal = optObject(order, "OrderTotal");
 
         if (orderItems == null || orderItems.isEmpty()) {
-            BigDecimalHolder revenue = parseAmount(orderTotal);
+            String revenue = parseAmount(orderTotal);
             publishSingleProfit(shopId, region, amazonOrderId, amazonOrderId,
-                    revenue.value, null);
+                    revenue, null);
             return;
         }
 
         for (JsonObject item : orderItems) {
             String sku = optString(item, "SellerSku");
             JsonElement priceEl = item.get("ItemPrice");
-            double lineRevenue = 0.0;
+            String lineRevenue;
             if (priceEl != null && priceEl.isJsonObject()) {
-                BigDecimalHolder line = parseAmount(priceEl.getAsJsonObject());
-                lineRevenue = line.value;
+                lineRevenue = parseAmount(priceEl.getAsJsonObject());
             } else {
-                // 无行金额时用 UnitPrice × Quantity 估算
-                double unit = 0.0;
+                // 无行金额时用 UnitPrice × Quantity 估算（字符串精确运算，禁止 double 中转）
                 int qty = item.has("Quantity") && !item.get("Quantity").isJsonNull()
                         ? item.get("Quantity").getAsInt() : 1;
                 JsonElement unitEl = item.get("UnitPrice");
-                if (unitEl != null && !unitEl.isJsonNull()) {
-                    try { unit = unitEl.getAsDouble(); } catch (Exception ignore) { }
-                }
-                lineRevenue = unit * qty;
+                String unitStr = (unitEl != null && unitEl.isJsonPrimitive()) ? unitEl.getAsString() : null;
+                lineRevenue = multiply(unitStr, qty);
             }
             publishSingleProfit(shopId, region, amazonOrderId,
                     sku != null ? sku : amazonOrderId, lineRevenue, null);
@@ -226,7 +225,7 @@ public class OrderSyncScheduler {
      * 发布单条利润核算消息。
      */
     private void publishSingleProfit(Long shopId, String region, String amazonOrderId,
-                                     String sku, double revenue, Object category) {
+                                     String sku, String revenue, Object category) {
         Map<String, Object> body = new HashMap<>();
         body.put("shopId", shopId);
         body.put("amazonOrderId", amazonOrderId);
@@ -275,26 +274,48 @@ public class OrderSyncScheduler {
     }
 
     /**
-     * 解析 OrderTotal.Amount 为 double；失败返回 0。
+     * 解析 OrderTotal.Amount 为精确小数串；失败返回 "0.00"。
+     * <p>
+     * 金额全程以字符串传输：Gson double 会引入二进制浮点尘埃（如 19.99*3=59.969999...），
+     * 而 Gson 对 JSON 数字的 getAsString / Jackson 的 String→BigDecimal 都是精确的。
+     * 消费端（ProfitMQConsumer）直接 new BigDecimal(String) 落库。
      */
-    private BigDecimalHolder parseAmount(JsonObject orderTotal) {
+    private String parseAmount(JsonObject orderTotal) {
         if (orderTotal == null) {
-            return new BigDecimalHolder(0.0);
+            return "0.00";
         }
         JsonElement amountEl = orderTotal.get("Amount");
         if (amountEl == null || amountEl.isJsonNull()) {
-            return new BigDecimalHolder(0.0);
+            return "0.00";
         }
         try {
-            return new BigDecimalHolder(amountEl.getAsDouble());
-        } catch (NumberFormatException e) {
-            return new BigDecimalHolder(0.0);
+            if (amountEl.isJsonPrimitive()) {
+                JsonPrimitive primitive = amountEl.getAsJsonPrimitive();
+                if (primitive.isNumber()) {
+                    return primitive.getAsBigDecimal().toPlainString();
+                }
+                if (primitive.isString()) {
+                    return new BigDecimal(primitive.getAsString().trim()).toPlainString();
+                }
+            }
+            return "0.00";
+        } catch (NumberFormatException | ArithmeticException e) {
+            return "0.00";
         }
     }
 
     /**
-     * 简单的金额持有者（避免在 Gson 序列化时丢失精度信息，统一用 double 传输）。
+     * 单价字符串 × 数量（精确运算，禁止 double 中转）。
      */
-    private record BigDecimalHolder(double value) {
+    private String multiply(String unitStr, int qty) {
+        if (unitStr == null || unitStr.isBlank()) {
+            return "0.00";
+        }
+        try {
+            return new BigDecimal(unitStr.trim()).multiply(BigDecimal.valueOf(qty))
+                    .setScale(2, RoundingMode.HALF_UP).toPlainString();
+        } catch (NumberFormatException | ArithmeticException e) {
+            return "0.00";
+        }
     }
 }

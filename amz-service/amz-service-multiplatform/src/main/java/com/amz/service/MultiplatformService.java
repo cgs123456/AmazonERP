@@ -66,7 +66,16 @@ public interface MultiplatformService {
 
     // ===== OAuth 开放 API =====
 
-    OauthApp registerApp(OauthApp app);
+    /**
+     * 注册 OAuth 应用。明文密钥仅本次随结果返回（字段 {@code appSecret}），
+     * 后续只存 SHA-256，请调用方妥善保存，丢失后走 rotateAppSecret 轮换。
+     */
+    Map<String, Object> registerApp(OauthApp app);
+
+    /**
+     * 轮换应用密钥（需归属店铺权限），返回新的明文密钥（仅此一次）。
+     */
+    Map<String, Object> rotateAppSecret(Long appId);
 
     List<OauthApp> listApps(Long ownerShopId);
 

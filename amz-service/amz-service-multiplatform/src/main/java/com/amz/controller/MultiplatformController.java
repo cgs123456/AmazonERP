@@ -148,8 +148,14 @@ public class MultiplatformController {
 
     @ShopScoped
     @PostMapping("/oauth/app")
-    public Result<OauthApp> registerApp(@RequestBody OauthApp app) {
+    public Result<Map<String, Object>> registerApp(@RequestBody OauthApp app) {
         return Result.success(multiplatformService.registerApp(app));
+    }
+
+    @ShopScoped
+    @PostMapping("/oauth/app/{id}/rotate")
+    public Result<Map<String, Object>> rotateAppSecret(@PathVariable Long id) {
+        return Result.success(multiplatformService.rotateAppSecret(id));
     }
 
     @ShopScoped

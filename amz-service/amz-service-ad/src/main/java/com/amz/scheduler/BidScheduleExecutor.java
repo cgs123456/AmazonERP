@@ -2,9 +2,11 @@ package com.amz.scheduler;
 
 import com.amz.client.AdvertisingApiClient;
 import com.amz.lock.DistributedJobLock;
+import com.amz.mapper.AdKeywordMapper;
 import com.amz.mapper.BidScheduleMapper;
 import com.amz.model.AdKeyword;
 import com.amz.model.BidSchedule;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,7 +15,9 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 分时调价执行器。
@@ -33,6 +37,9 @@ public class BidScheduleExecutor {
 
     @Autowired
     private BidScheduleMapper bidScheduleMapper;
+
+    @Autowired
+    private AdKeywordMapper adKeywordMapper;
 
     @Autowired
     private AdvertisingApiClient advertisingApiClient;
@@ -64,6 +71,10 @@ public class BidScheduleExecutor {
 
     /**
      * 应用单条调价规则：查询该规则作用范围下的关键词，计算新竞价并下发。
+     * <p>
+     * 新竞价一律按 基准价 × 倍率 计算（基准价首次触达时认领并持久化到
+     * amz_ad_keyword.base_bid），禁止在上一小时结果上连乘——否则 1.5x 规则
+     * 几小时内即指数爆炸烧费。
      */
     private void applyRule(BidSchedule rule) {
         try {
@@ -71,12 +82,19 @@ public class BidScheduleExecutor {
             if (keywords == null || keywords.isEmpty()) {
                 return;
             }
+            Map<String, BigDecimal> baseBids = loadBaseBids(rule.getShopId(), rule.getCampaignId());
             int success = 0;
             for (AdKeyword kw : keywords) {
                 if (kw.getBid() == null) {
                     continue;
                 }
-                BigDecimal newBid = kw.getBid().multiply(rule.getMultiplier())
+                BigDecimal base = baseBids.get(baseKey(kw));
+                if (base == null) {
+                    base = kw.getBid();
+                    adoptBaseBid(rule.getShopId(), rule.getCampaignId(), kw, base);
+                    baseBids.put(baseKey(kw), base);
+                }
+                BigDecimal newBid = base.multiply(rule.getMultiplier())
                         .setScale(2, RoundingMode.HALF_UP);
                 // 广告 API 竞价下限 0.02，上限 1000
                 if (newBid.compareTo(new BigDecimal("0.02")) < 0) {
@@ -91,6 +109,70 @@ public class BidScheduleExecutor {
                     rule.getShopId(), rule.getCampaignId(), rule.getMultiplier(), success);
         } catch (Exception e) {
             log.error("分时调价失败：ruleId={}", rule.getId(), e);
+        }
+    }
+
+    private static String baseKey(AdKeyword kw) {
+        return String.valueOf(kw.getKeyword()) + "\0" + String.valueOf(kw.getMatchType());
+    }
+
+    /**
+     * 一次性加载本活动已持久化的基准价（key 含 matchType，区分同词不同匹配）。
+     */
+    private Map<String, BigDecimal> loadBaseBids(Long shopId, String campaignId) {
+        Map<String, BigDecimal> map = new HashMap<>();
+        try {
+            LambdaQueryWrapper<AdKeyword> qw = new LambdaQueryWrapper<AdKeyword>()
+                    .eq(AdKeyword::getShopId, shopId)
+                    .eq(campaignId != null, AdKeyword::getCampaignId, campaignId);
+            for (AdKeyword row : adKeywordMapper.selectList(qw)) {
+                if (row != null && row.getBaseBid() != null) {
+                    map.put(baseKey(row), row.getBaseBid());
+                }
+            }
+        } catch (Exception e) {
+            // amz_ad_keyword.base_bid 列尚未迁移时降级为空映射，
+            // 本轮按认领逻辑重建（不阻断调价，列补齐后自动持久化）
+            log.warn("基准价加载失败 shopId={} campaignId={}，本轮重认领", shopId, campaignId, e);
+        }
+        return map;
+    }
+
+    /**
+     * 认领基准价并持久化（行不存在则插入最小行，存在但 base 为空则补写）。
+     * 持久化失败仅记 warn，不阻断本次调价。
+     */
+    private void adoptBaseBid(Long shopId, String campaignId, AdKeyword kw, BigDecimal base) {
+        try {
+            LambdaQueryWrapper<AdKeyword> qw = new LambdaQueryWrapper<AdKeyword>()
+                    .eq(AdKeyword::getShopId, shopId);
+            if (campaignId != null) {
+                qw.eq(AdKeyword::getCampaignId, campaignId);
+            } else {
+                qw.isNull(AdKeyword::getCampaignId);
+            }
+            if (kw.getKeyword() != null) {
+                qw.eq(AdKeyword::getKeyword, kw.getKeyword());
+            } else {
+                qw.isNull(AdKeyword::getKeyword);
+            }
+            AdKeyword row = adKeywordMapper.selectOne(qw);
+            if (row == null) {
+                row = new AdKeyword();
+                row.setShopId(shopId);
+                row.setCampaignId(campaignId);
+                row.setKeyword(kw.getKeyword());
+                row.setMatchType(kw.getMatchType());
+                row.setBid(kw.getBid());
+                row.setBaseBid(base);
+                row.setState(kw.getState());
+                adKeywordMapper.insert(row);
+            } else if (row.getBaseBid() == null) {
+                row.setBaseBid(base);
+                adKeywordMapper.updateById(row);
+            }
+        } catch (Exception e) {
+            log.warn("基准价认领持久化失败 shopId={} keyword={}", shopId, kw.getKeyword(), e);
         }
     }
 }

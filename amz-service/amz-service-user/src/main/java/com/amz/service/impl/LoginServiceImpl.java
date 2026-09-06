@@ -47,32 +47,62 @@ public class LoginServiceImpl implements LoginService {
     @Value("${user.default-avatar-url:https://i.pravatar.cc/150?img=0}")
     private String defaultAvatarUrl;
 
+    /** 同一验证码有效期内允许的最大错误尝试次数（防 4 位码爆破） */
+    private static final int MAX_VERIFY_ATTEMPTS = 5;
+
     @Override
     public Result<String> send(String phone) {
         // 手机号格式校验
         if (phone == null || !phone.matches("^1[3-9]\\d{9}$")) {
             return Result.failure("手机号格式不正确");
         }
+        String key = RedisConstant.PHONE_CODE.concat(phone);
+        // 冷却期内拒绝重发：既防短信轰炸盗费，也避免频繁刷新验证码延长爆破窗口
+        Long ttl = redisTemplate.getExpire(key, TimeUnit.SECONDS);
+        if (ttl != null && ttl > 0) {
+            return Result.failure("验证码已发送，请" + ttl + "秒后再试");
+        }
+        // 每日发送上限（防持续盗刷短信费用）
+        String dayKey = RedisConstant.PHONE_CODE.concat("cnt:").concat(phone).concat(":")
+                .concat(java.time.LocalDate.now().toString());
+        Long sentToday = redisTemplate.opsForValue().increment(dayKey);
+        if (sentToday != null && sentToday == 1L) {
+            redisTemplate.expire(dayKey, 1, TimeUnit.DAYS);
+        }
+        if (sentToday != null && sentToday > 10) {
+            return Result.failure("今日发送次数过多，请明天再试");
+        }
         // 1.生成验证码
         String code = CodeUtil.generateCode(4);
         // 2.保存到redis
-        redisTemplate.opsForValue().set(
-                RedisConstant.PHONE_CODE.concat(phone), code, 60, TimeUnit.SECONDS);
+        redisTemplate.opsForValue().set(key, code, 60, TimeUnit.SECONDS);
         // 3.返回结果（验证码不再回显给前端）
         return Result.success("验证码已发送");
     }
 
     @Override
     public Result<Map<String, String>> verify(LoginDto loginDto) {
+        String codeKey = RedisConstant.PHONE_CODE.concat(loginDto.getPhone());
+        String errKey = RedisConstant.PHONE_CODE_ERR.concat(loginDto.getPhone());
         // 1.从redis获取验证码
-        String cacheCode = redisTemplate.opsForValue().get(
-                RedisConstant.PHONE_CODE.concat(loginDto.getPhone()));
+        String cacheCode = redisTemplate.opsForValue().get(codeKey);
         // 2.校验验证码
         if (cacheCode == null || !cacheCode.equals(loginDto.getCode())) {
+            // 错误尝试计数：超限则作废当前验证码，强制重新获取（防 4 位码爆破）
+            Long attempts = redisTemplate.opsForValue().increment(errKey);
+            if (attempts != null && attempts == 1L) {
+                redisTemplate.expire(errKey, 60, TimeUnit.SECONDS);
+            }
+            if (attempts != null && attempts >= MAX_VERIFY_ATTEMPTS) {
+                redisTemplate.delete(codeKey);
+                redisTemplate.delete(errKey);
+                throw new CodeErrorException("尝试次数过多，请重新获取验证码");
+            }
             throw new CodeErrorException(ExceptionConstant.CODE_ERROR);
         }
-        // 3.删除redis中的验证码
-        redisTemplate.delete(RedisConstant.PHONE_CODE.concat(loginDto.getPhone()));
+        // 3.删除redis中的验证码（含错误计数）
+        redisTemplate.delete(codeKey);
+        redisTemplate.delete(errKey);
         // 4.获取用户id
         LambdaQueryWrapper<User> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(User::getPhone, loginDto.getPhone());

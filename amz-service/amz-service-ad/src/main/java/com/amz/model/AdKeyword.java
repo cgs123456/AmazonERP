@@ -35,6 +35,13 @@ public class AdKeyword implements Serializable {
     /** 当前竞价（美元） */
     private BigDecimal bid;
 
+    /**
+     * 基准竞价（美元）：分时调价首次触达该关键词时认领当时价并持久化，
+     * 之后各小时一律按 基准×倍率 计算，防止在上一小时结果上连乘导致指数爆炸。
+     * 既有数据为 null，触达时自动认领。
+     */
+    private BigDecimal baseBid;
+
     /** 状态：ENABLED / PAUSED */
     private String state;
 }

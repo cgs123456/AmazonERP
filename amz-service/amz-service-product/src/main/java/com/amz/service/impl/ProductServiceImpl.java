@@ -56,6 +56,11 @@ public class ProductServiceImpl implements ProductService {
         if (product == null) {
             return Result.failure("商品不存在");
         }
+        // 2.店铺归属校验（@ShopScoped 切面覆盖不到路径参数，需显式校验防跨店枚举）
+        if (product.getShopId() == null
+                || !UserContext.isShopAllowed(product.getShopId().longValue())) {
+            return Result.failure("商品不存在或无权访问");
+        }
         // 2.获取店铺信息
         Shop shop = shopMapper.selectById(product.getShopId());
         // 获取商品属性
@@ -76,6 +81,11 @@ public class ProductServiceImpl implements ProductService {
         if (product == null) {
             return Result.failure("商品不存在");
         }
+        // 目标商品本身先做归属校验，避免以他人商品 id 为跳板拉取其店铺商品
+        if (product.getShopId() == null
+                || !UserContext.isShopAllowed(product.getShopId().longValue())) {
+            return Result.failure("商品不存在或无权访问");
+        }
         Integer shopId = product.getShopId();
         // 2.查询同店铺其余产品（排除条件谓词下推到 DB，避免全店商品载入内存后再过滤）
         LambdaQueryWrapper<Product> queryWrapper = new LambdaQueryWrapper<>();
@@ -91,8 +101,19 @@ public class ProductServiceImpl implements ProductService {
         if (productDto == null) {
             return Result.failure("商品数据不能为空");
         }
-        // 1.上传商品
+        // 店铺归属校验（请求体 shopId 切面覆盖不到，显式校验）
+        if (productDto.getShopId() == null
+                || !UserContext.isShopAllowed(productDto.getShopId().longValue())) {
+            return Result.failure("无权操作该店铺商品");
+        }
+        if (productDto.getName() == null || productDto.getName().isBlank()) {
+            return Result.failure("商品名称不能为空");
+        }
+        // 1.上传商品（从 DTO 拷贝字段后再落库，避免空行垃圾数据）
         Product product = new Product();
+        BeanUtils.copyProperties(productDto, product);
+        product.setId(null);
+        product.setSales(0);
         // 先插入商品获取 ID
         productMapper.insert(product);
 
@@ -110,27 +131,43 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Result<Void> updateProduct(ProductDto productDto) {
-        if (productDto == null) {
+        if (productDto == null || productDto.getId() == null) {
             return Result.failure("商品数据不能为空");
+        }
+        // 先查库做归属校验，避免伪造 id 跨店覆盖他人商品
+        Product existed = productMapper.selectById(productDto.getId());
+        if (existed == null) {
+            return Result.failure("商品不存在");
+        }
+        if (existed.getShopId() == null
+                || !UserContext.isShopAllowed(existed.getShopId().longValue())) {
+            return Result.failure("无权操作该店铺商品");
         }
         Product product = new Product();
         BeanUtils.copyProperties(productDto, product);
+        // 锁定归属店铺：禁止借更新把商品搬到其他店铺
+        product.setShopId(existed.getShopId());
         productMapper.updateById(product);
         return Result.success(null);
     }
 
     @Override
     public Result<List<Product>> searchProducts(String keyword) {
+        // 搜索限定当前店铺（与 getProductList 同口径，避免跨店数据暴露）
+        Long shopId = UserContext.getShopId();
+        if (shopId == null) {
+            return Result.failure("请先选择店铺");
+        }
+        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Product::getShopId, shopId.intValue());
         if (keyword == null || keyword.trim().isEmpty()) {
-            // 无关键词时返回全部商品（最多 20 条）
-            LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
+            // 无关键词时返回本店商品（最多 20 条）
             wrapper.last("LIMIT 20");
             return Result.success(productMapper.selectList(wrapper));
         }
-        LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
-        wrapper.like(Product::getName, keyword)
+        wrapper.and(w -> w.like(Product::getName, keyword)
                .or().like(Product::getDescription, keyword)
-               .or().like(Product::getBrand, keyword)
+               .or().like(Product::getBrand, keyword))
                .last("LIMIT 20");
         return Result.success(productMapper.selectList(wrapper));
     }

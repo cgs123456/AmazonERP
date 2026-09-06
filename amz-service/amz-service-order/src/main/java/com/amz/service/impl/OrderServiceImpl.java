@@ -205,19 +205,24 @@ public class OrderServiceImpl implements OrderService {
      * 保存订单的内部方法（提取公共逻辑）
      */
     private void saveOrderInternal(OrderDto orderDto, Integer userId) {
-        // 获取商品信息
-        Product product = productClient.getProductById(orderDto.getProductId()).getData();
-        if (product == null) {
-            throw new IllegalStateException("商品不存在");
+        // 获取商品信息（注意：本方法运行在 @Transactional 内，Feign 降级/超时时快速失败，
+        // 避免长时间占用 DB 连接；抛异常触发回滚，由 MQ 机制稍后重试）
+        Result<Product> productResult = productClient.getProductById(orderDto.getProductId());
+        if (productResult == null || productResult.getCode() != 200 || productResult.getData() == null) {
+            throw new IllegalStateException("商品不存在或商品服务不可用");
         }
-        
+        Product product = productResult.getData();
+        if (product.getPrice() == null) {
+            throw new IllegalStateException("商品价格缺失");
+        }
+
         // 保存订单
         Order order = new Order();
         order.setProductId(orderDto.getProductId());
         order.setUserId(userId);
         order.setStatus(OrderStatusEnum.DUE.getCode());
-        // 使用商品实际价格
-        order.setFinalPrice(java.math.BigDecimal.valueOf(product.getPrice()));
+        // 使用商品实际价格（经 Double.toString 中转，避免二进制浮点直接转 BigDecimal 的精度误差）
+        order.setFinalPrice(new BigDecimal(Double.toString(product.getPrice())));
         orderMapper.insert(order);
 
         // 保存订单属性

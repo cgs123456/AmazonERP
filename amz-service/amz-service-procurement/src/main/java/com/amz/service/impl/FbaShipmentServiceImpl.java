@@ -1,5 +1,7 @@
 package com.amz.service.impl;
 
+import com.amz.util.BizNoGenerator;
+
 import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.FbaShipmentItemMapper;
 import com.amz.mapper.FbaShipmentMapper;
@@ -46,7 +48,7 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         if (shipment.getShopId() == null) {
             throw new AttrIsNullException("店铺ID不能为空");
         }
-        shipment.setShipmentNo("FBA" + System.currentTimeMillis());
+        shipment.setShipmentNo(BizNoGenerator.next("FBA"));
         if (shipment.getStatus() == null) {
             shipment.setStatus("CREATED");
         }
@@ -299,7 +301,7 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
 
         InventoryBatch batch = new InventoryBatch();
         batch.setShopId(shipment.getShopId());
-        batch.setBatchNo("BAT" + LocalDate.now().format(BATCH_FMT) + String.format("%04d", System.currentTimeMillis() % 10000));
+        batch.setBatchNo(BizNoGenerator.next("BAT" + LocalDate.now().format(BATCH_FMT)));
         batch.setPurchaseOrderId(null);
         batch.setInboundOrderId(shipmentId);
         batch.setSku(item.getSku());

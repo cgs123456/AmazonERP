@@ -3,6 +3,7 @@ package com.amz.service.impl;
 import com.amz.client.SheinClient;
 import com.amz.client.TemuClient;
 import com.amz.client.TikTokClient;
+import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.finance.PlatformCurrencyConverter;
 import com.amz.mapper.*;
@@ -14,6 +15,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -70,6 +74,10 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     @Transactional
     public PlatformAccount createAccount(PlatformAccount account) {
+        // 请求体 shopId 切面覆盖不到，显式校验归属
+        if (account.getShopId() == null || !UserContext.isShopAllowed(account.getShopId())) {
+            throw new IllegalStateException("无权为该店铺创建账号");
+        }
         account.setStatus("ACTIVE");
         account.setCreateTime(LocalDateTime.now());
         account.setUpdateTime(LocalDateTime.now());
@@ -81,7 +89,16 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     @Transactional
     public PlatformAccount updateAccount(Long id, PlatformAccount account) {
+        PlatformAccount existed = platformAccountMapper.selectById(id);
+        if (existed == null) {
+            throw new AttrIsNullException("平台账号不存在 id=" + id);
+        }
+        if (existed.getShopId() == null || !UserContext.isShopAllowed(existed.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺账号");
+        }
+        // 锁定归属店铺：禁止借更新把行搬到其他店铺
         account.setId(id);
+        account.setShopId(existed.getShopId());
         account.setUpdateTime(LocalDateTime.now());
         platformAccountMapper.updateById(account);
         return account;
@@ -97,6 +114,13 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     @Transactional
     public boolean deleteAccount(Long id) {
+        PlatformAccount existed = platformAccountMapper.selectById(id);
+        if (existed == null) {
+            return false;
+        }
+        if (existed.getShopId() == null || !UserContext.isShopAllowed(existed.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺账号");
+        }
         return platformAccountMapper.deleteById(id) > 0;
     }
 
@@ -104,6 +128,9 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean testConnection(Long accountId) {
         PlatformAccount account = platformAccountMapper.selectById(accountId);
         if (account == null) return false;
+        if (account.getShopId() == null || !UserContext.isShopAllowed(account.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺账号");
+        }
         boolean ok = false;
         try {
             ok = isEndpointWellFormed(account.getPlatform(), account.getApiEndpoint(), account.getApiKey());
@@ -247,6 +274,9 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean replyMessage(Long messageId, String replyContent) {
         PlatformMessage msg = platformMessageMapper.selectById(messageId);
         if (msg == null) throw new AttrIsNullException("消息不存在 id=" + messageId);
+        if (msg.getShopId() == null || !UserContext.isShopAllowed(msg.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺消息");
+        }
         msg.setStatus("REPLIED");
         msg.setReplyTime(LocalDateTime.now());
         msg.setUpdateTime(LocalDateTime.now());
@@ -276,6 +306,9 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean assignMessage(Long messageId, String assignedTo) {
         PlatformMessage msg = platformMessageMapper.selectById(messageId);
         if (msg == null) throw new AttrIsNullException("消息不存在 id=" + messageId);
+        if (msg.getShopId() == null || !UserContext.isShopAllowed(msg.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺消息");
+        }
         msg.setAssignedTo(assignedTo);
         msg.setUpdateTime(LocalDateTime.now());
         platformMessageMapper.updateById(msg);
@@ -288,6 +321,13 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     public int syncInventory(Long shopId, String platform) {
+        // 快照语义：先清本轮 (shopId, platform) 旧快照，避免多次同步行数无限膨胀导致聚合翻倍
+        LambdaQueryWrapper<PlatformInventory> cleanWrapper = new LambdaQueryWrapper<>();
+        cleanWrapper.eq(PlatformInventory::getShopId, shopId);
+        if (platform != null) {
+            cleanWrapper.eq(PlatformInventory::getPlatform, platform);
+        }
+        platformInventoryMapper.delete(cleanWrapper);
         int count = 0;
         String[] skus = {"SKU-A", "SKU-B", "SKU-C", "SKU-D"};
         String[] warehouses = platform.equals("AMAZON") ? new String[]{"FBA-ON1", "FBA-LAX9"} : new String[]{platform + "-WH1"};
@@ -365,7 +405,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             }
         }
 
-        // shopId 未传时从平台账号表反查
+        // shopId 未传时从平台账号表反查；仍为空则拒绝落库，避免产生无归属脏数据
         if (shopId == null) {
             PlatformAccount acc = platformAccountMapper.selectOne(
                 new LambdaQueryWrapper<PlatformAccount>()
@@ -374,6 +414,9 @@ public class MultiplatformServiceImpl implements MultiplatformService {
                     .last("LIMIT 1"));
             shopId = acc != null ? acc.getShopId() : null;
             log.warn("Webhook 未传 shopId，已按 platform={} 反查 → shopId={}", platform, shopId);
+        }
+        if (shopId == null) {
+            throw new IllegalStateException("Webhook 无法确定归属店铺，拒绝落库");
         }
 
         WebhookEvent event = new WebhookEvent();
@@ -432,14 +475,46 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     @Transactional
-    public OauthApp registerApp(OauthApp app) {
+    public Map<String, Object> registerApp(OauthApp app) {
+        if (app.getOwnerShopId() != null && !UserContext.isShopAllowed(app.getOwnerShopId())) {
+            throw new IllegalStateException("无权为该店铺注册应用");
+        }
         app.setAppKey("AK_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
+        // 明文密钥仅本次返回，后续只存 SHA-256（无 crypto 依赖，用 JDK 内置实现）
+        String plainSecret = "ASK_" + UUID.randomUUID().toString().replace("-", "");
+        app.setAppSecretEncrypted(sha256Hex(plainSecret));
         app.setStatus("ACTIVE");
         app.setCreateTime(LocalDateTime.now());
         app.setUpdateTime(LocalDateTime.now());
         oauthAppMapper.insert(app);
         log.info("OAuth App 注册：{} appKey={} ownerShopId={}", app.getAppName(), app.getAppKey(), app.getOwnerShopId());
-        return app;
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("appId", app.getId());
+        result.put("appKey", app.getAppKey());
+        result.put("appSecret", plainSecret);
+        return result;
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> rotateAppSecret(Long appId) {
+        OauthApp app = oauthAppMapper.selectById(appId);
+        if (app == null) {
+            throw new AttrIsNullException("OAuth App 不存在：id=" + appId);
+        }
+        if (app.getOwnerShopId() != null && !UserContext.isShopAllowed(app.getOwnerShopId())) {
+            throw new IllegalStateException("无权操作该应用");
+        }
+        String plainSecret = "ASK_" + UUID.randomUUID().toString().replace("-", "");
+        app.setAppSecretEncrypted(sha256Hex(plainSecret));
+        app.setUpdateTime(LocalDateTime.now());
+        oauthAppMapper.updateById(app);
+        log.info("OAuth App 密钥轮换：appKey={}", app.getAppKey());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("appId", app.getId());
+        result.put("appKey", app.getAppKey());
+        result.put("appSecret", plainSecret);
+        return result;
     }
 
     @Override
@@ -460,6 +535,30 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             throw new AttrIsNullException("OAuth App 不存在或已停用");
         }
 
+        // 校验应用密钥：仅凭 appKey 不得签发（历史未初始化密钥的行拒绝并指引轮换）
+        if (appSecret == null || app.getAppSecretEncrypted() == null
+                || !sha256Hex(appSecret).equals(app.getAppSecretEncrypted())) {
+            log.warn("OAuth Token 签发拒绝：密钥不匹配 appKey={}", appKey);
+            throw new AttrIsNullException("应用密钥不正确或未初始化，请先轮换密钥");
+        }
+        // token 绑定应用归属店铺，防止持单应用凭证越权签发他店 token
+        // （归属为空的历史数据放行，由密钥校验兜底）
+        if (app.getOwnerShopId() != null && !app.getOwnerShopId().equals(shopId)) {
+            throw new IllegalStateException("shopId 必须为应用归属店铺");
+        }
+        // scopes 取交集：未传则继承应用全部范围；交集为空直接拒绝
+        Set<String> allowed = splitScopes(app.getScopes());
+        final Set<String> granted;
+        if (scopes == null || scopes.length == 0) {
+            granted = allowed;
+        } else {
+            granted = new LinkedHashSet<>(Arrays.asList(scopes));
+            granted.retainAll(allowed);
+            if (granted.isEmpty()) {
+                throw new AttrIsNullException("无有效授权范围");
+            }
+        }
+
         // 生成 Token
         String accessToken = "oat_" + UUID.randomUUID().toString().replace("-", "");
         String refreshToken = "ort_" + UUID.randomUUID().toString().replace("-", "");
@@ -470,13 +569,41 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         token.setRefreshToken(refreshToken);
         token.setTokenType("Bearer");
         token.setExpiresAt(LocalDateTime.now().plusDays(30));
-        token.setScopes(scopes != null ? String.join(",", scopes) : app.getScopes());
+        token.setScopes(String.join(",", granted));
         token.setShopId(shopId);
         token.setCreateTime(LocalDateTime.now());
         oauthTokenMapper.insert(token);
 
         log.info("OAuth Token 生成：appKey={} shopId={} scopes={}", appKey, shopId, token.getScopes());
         return token;
+    }
+
+    private static Set<String> splitScopes(String scopes) {
+        Set<String> set = new LinkedHashSet<>();
+        if (scopes == null) {
+            return set;
+        }
+        for (String s : scopes.split(",")) {
+            String t = s == null ? "" : s.trim();
+            if (!t.isEmpty()) {
+                set.add(t);
+            }
+        }
+        return set;
+    }
+
+    private static String sha256Hex(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
+        }
     }
 
     // ========================================================
@@ -562,6 +689,9 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean markShipped(Long orderId, String trackingNo) {
         com.amz.model.UnifiedOrder order = unifiedOrderMapper.selectById(orderId);
         if (order == null) throw new AttrIsNullException("订单不存在：id=" + orderId);
+        if (order.getShopId() == null || !UserContext.isShopAllowed(order.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺订单");
+        }
         boolean ok;
         switch (order.getPlatform()) {
             case "TEMU": ok = temuClient.markShipped(order.getPlatformOrderNo(), trackingNo); break;
