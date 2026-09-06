@@ -23,7 +23,7 @@
       </div>
 
       <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
-      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+      <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div v-for="i in 6" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
       </div>
 
@@ -32,7 +32,8 @@
         请先在右上角选择店铺后再查询订单数据。
       </div>
 
-      <!-- 订单表格 -->
+      <!-- 订单表格（加载时仅显示骨架，避免布局跳动） -->
+      <template v-if="!loading">
       <div class="table-card">
         <table class="data-table">
           <thead>
@@ -78,6 +79,7 @@
           <button class="page-btn" :disabled="page >= totalPages" @click="nextPage">下一页</button>
         </div>
       </div>
+      </template>
     </main>
   </div>
 </template>
@@ -116,11 +118,8 @@ const mockOrders: OrderItem[] = [
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value)))
 
-// 订单号搜索为前端筛选（API 未提供该参数）
-const displayOrders = computed(() => {
-  if (!filterOrderNo.value) return orders.value
-  return orders.value.filter(o => o.orderNo.includes(filterOrderNo.value))
-})
+// 订单号走服务端查询（GET /order/list?orderNo=），分页与总数与之一致
+const displayOrders = computed(() => orders.value)
 
 const loadOrders = async () => {
   // 未选择店铺时不发请求，避免网关 MyGlobalFilter 拒绝 /order/ 路径
@@ -136,6 +135,7 @@ const loadOrders = async () => {
       shopId,
       startDate: filterDate.value || undefined,
       endDate: filterDate.value || undefined,
+      orderNo: filterOrderNo.value || undefined,
       page: page.value,
       size: size.value
     })
@@ -164,6 +164,7 @@ const fallbackToMock = () => {
   let filtered = [...mockOrders]
   if (filterShop.value) filtered = filtered.filter(o => o.shopId === filterShop.value)
   if (filterDate.value) filtered = filtered.filter(o => o.date.startsWith(filterDate.value))
+  if (filterOrderNo.value) filtered = filtered.filter(o => o.orderNo.includes(filterOrderNo.value))
   orders.value = filtered
   total.value = filtered.length
 }

@@ -10,7 +10,7 @@
       </div>
 
       <!-- 骨架屏：健康度卡片 + 表格行形状（技能 4.5 Loading） -->
-      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+      <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="health-grid">
           <div v-for="i in 4" :key="i" class="health-card">
             <div class="skeleton sk-count"></div>
@@ -27,7 +27,8 @@
         请先在右上角选择店铺后再查看库存数据。
       </div>
 
-      <!-- 健康度概览 - bento grid: 4 个 card, 无空单元格 -->
+      <!-- 健康度概览 - bento grid: 4 个 card, 无空单元格（加载时仅显示骨架） -->
+      <template v-if="!loading">
       <div class="health-grid">
         <div class="health-card urgent">
           <div class="health-count">{{ healthCounts.urgent }}</div>
@@ -91,6 +92,7 @@
           </div>
         </div>
       </div>
+      </template>
     </main>
   </div>
 </template>

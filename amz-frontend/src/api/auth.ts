@@ -50,10 +50,11 @@ request.interceptors.response.use(
         return payload
     },
     (error) => {
-        // 401 未授权，清除 token 并跳转登录页
+        // 401 未授权，清除 token（含 refreshToken）并跳转登录页
         if (error.response?.status === 401) {
             localStorage.removeItem('token')
             localStorage.removeItem('token_expiry')
+            localStorage.removeItem('refreshToken')
             window.location.href = '/'
             return Promise.reject(new Error('未授权，请重新登录'))
         }
@@ -88,6 +89,27 @@ export interface LoginDto {
     code: string
 }
 
+/**
+ * 后端 POST /user/verify 返回的 token 对（LoginServiceImpl#verify）。
+ * data 为 { token, refreshToken } 对象；兼容历史 string 形式。
+ */
+export interface LoginTokenPair {
+    token: string
+    refreshToken?: string
+}
+
+/**
+ * 从登录响应 data 中提取 access token。
+ * 后端返回对象 { token, refreshToken }，历史/降级场景可能为裸字符串。
+ */
+export const extractLoginToken = (data: unknown): string | null => {
+    if (typeof data === 'string') return data || null
+    if (data && typeof data === 'object' && typeof (data as LoginTokenPair).token === 'string') {
+        return (data as LoginTokenPair).token || null
+    }
+    return null
+}
+
 export interface UserVo {
     id?: number
     phone?: string
@@ -109,9 +131,9 @@ export const sendVerifyCode = (phone: string) => {
     return request.get<void, ApiResponse<string>>(`/user/send/${phone}`)
 }
 
-// 验证登录
+// 验证登录（后端返回 { token, refreshToken } 对象，见 extractLoginToken）
 export const verifyLogin = (phone: string, code: string) => {
-    return request.post<void, ApiResponse<string>>('/user/verify', null, { params: { phone, code } })
+    return request.post<void, ApiResponse<string | LoginTokenPair>>('/user/verify', null, { params: { phone, code } })
 }
 
 // 获取用户信息

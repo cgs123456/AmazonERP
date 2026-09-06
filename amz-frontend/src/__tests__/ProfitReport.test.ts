@@ -5,8 +5,7 @@ import type { ProfitRow, ProfitSummary } from '@/api/profit'
 
 // mock @/api/profit，避免触发真实请求
 vi.mock('@/api/profit', () => ({
-  getProfitReport: vi.fn(),
-  getProfitSummary: vi.fn()
+  getProfitReport: vi.fn()
 }))
 
 import { getProfitReport } from '@/api/profit'

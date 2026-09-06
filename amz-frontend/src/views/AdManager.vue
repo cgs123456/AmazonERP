@@ -23,11 +23,11 @@
       </div>
 
       <!-- 骨架屏：ACoS 概览卡片 + 表格行形状（技能 4.5 Loading） -->
-      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+      <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="acos-overview">
           <div v-for="i in 4" :key="i" class="acos-card">
             <div class="skeleton sk-line sk-line-sm"></div>
-            <div class="skeleton sk-line sk-line-lg" style="margin: 0.5rem auto 0"></div>
+            <div class="skeleton sk-line sk-line-lg sk-line-center"></div>
           </div>
         </div>
         <div class="table-card sk-table-card">
@@ -40,7 +40,8 @@
         请先在右上角选择店铺后再查看广告数据。
       </div>
 
-      <!-- ACoS 概览（全类型共用） -->
+      <!-- ACoS 概览（全类型共用）（加载时仅显示骨架） -->
+      <template v-if="!loading">
       <div v-show="activeAdTab !== 'DSP'" class="acos-overview">
         <div class="acos-card">
           <div class="acos-label">整体 ACoS</div>
@@ -66,7 +67,7 @@
 
       <!-- ACoS 趋势 -->
       <div v-show="activeAdTab !== 'DSP'" class="chart-card">
-        <h3>近 14 天 ACoS 趋势</h3>
+        <h3>近 14 天 ACoS 趋势 <span v-if="!trendIsLive" class="mock-badge">示例数据</span></h3>
         <div class="line-chart">
           <svg viewBox="0 0 600 200" class="chart-svg">
             <polyline :points="acosTrendPoints" class="trend-line" fill="none" stroke-width="2" />
@@ -208,6 +209,7 @@
           </div>
         </div>
       </div>
+      </template>
 
       <!-- 素材弹窗 -->
       <div v-if="creativeDialog.visible" class="modal-mask" @click.self="creativeDialog.visible = false">
@@ -265,11 +267,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import { getAdReports } from '@/api/ad'
+import { getAdReports, getAdTrend } from '@/api/ad'
 import type { AdOverview, AcosTrendItem, AdCampaign } from '@/api/ad'
 import * as AdExt from '@/api/ad-ext'
 import type { AdCreative, AdTargeting, AdSummary, AdType } from '@/api/ad-ext'
@@ -292,6 +294,39 @@ const switchAdTab = (tab: AdType) => {
   activeAdTab.value = tab
   if (tab === 'DSP') loadSummaryByType()
 }
+
+// 趋势是否为真实数据（false 时图表为降级 mock，标题旁展示“示例数据”标识）
+const trendIsLive = ref(false)
+
+// 加载指定广告类型的趋势（非空才替换 mock）
+// 请求序号守卫：快速切换 Tab 时丢弃过期响应，避免旧类型数据覆盖新 Tab 图表
+let trendSeq = 0
+const loadTrend = async (shopId: number | string, adType: AdType) => {
+  const seq = ++trendSeq
+  try {
+    // 趋势来自 /ad/trend 日报表聚合（空数组说明日报表无数据，保留 mock）
+    const tres = await getAdTrend(shopId, 14, adType)
+    if (seq !== trendSeq) return
+    if (tres?.code === 200 && Array.isArray(tres.data) && tres.data.length > 0) {
+      acosTrend.value = tres.data.map((d) => ({ day: String(d.day), value: Number(d.value) || 0 }))
+      trendIsLive.value = true
+    } else {
+      trendIsLive.value = false
+      if (!tres || tres.code !== 200) console.warn('[AdManager] 趋势返回异常，使用降级数据', tres)
+    }
+  } catch (e) {
+    if (seq !== trendSeq) return
+    trendIsLive.value = false
+    console.warn('[AdManager] 趋势调用失败，使用降级数据', e)
+  }
+}
+
+// 切换 SP/SB/SD 时按类型重拉趋势（DSP 页不展示趋势图，跳过）
+watch(activeAdTab, (tab) => {
+  const shopId = currentShopId.value
+  if (!shopId || tab === 'DSP') return
+  loadTrend(shopId, tab)
+})
 
 // 降级用的 mock 数据
 const mockOverview: AdOverview = { totalAcos: 24.9, totalSpend: '1,098.50', totalSales: '4,412.80', roas: '4.02' }
@@ -324,24 +359,38 @@ const acosLevelText = computed(() => {
   return '预警 (>35%)'
 })
 
+// 趋势纵轴动态刻度：真实 ACoS 可能超出 mock 的 [15,40] 区间，固定刻度会把线裁出画布；
+// 单点数据居中绘制（此前 len===1 时 step 除零产生 NaN，整条线消失）
+const trendBounds = computed(() => {
+  let lo = Infinity, hi = -Infinity
+  for (const d of acosTrend.value) {
+    if (d.value < lo) lo = d.value
+    if (d.value > hi) hi = d.value
+  }
+  if (!isFinite(lo)) return { min: 0, max: 40 }
+  const pad = Math.max((hi - lo) * 0.2, 1)
+  return { min: Math.max(0, lo - pad), max: hi + pad }
+})
 const acosTrendPoints = computed(() => {
-  if (acosTrend.value.length === 0) return ''
-  const max = 40, min = 15
+  const n = acosTrend.value.length
+  if (n === 0) return ''
+  const { min, max } = trendBounds.value
   const w = 600, h = 180, pad = 10
-  const step = (w - pad * 2) / (acosTrend.value.length - 1)
+  const step = n <= 1 ? 0 : (w - pad * 2) / (n - 1)
   return acosTrend.value.map((d, i) => {
-    const x = pad + i * step
+    const x = n <= 1 ? w / 2 : pad + i * step
     const y = h - ((d.value - min) / (max - min)) * (h - pad * 2) + pad
     return `${x},${y}`
   }).join(' ')
 })
 const acosTrendDots = computed(() => {
-  if (acosTrend.value.length === 0) return []
-  const max = 40, min = 15
+  const n = acosTrend.value.length
+  if (n === 0) return []
+  const { min, max } = trendBounds.value
   const w = 600, h = 180, pad = 10
-  const step = (w - pad * 2) / (acosTrend.value.length - 1)
+  const step = n <= 1 ? 0 : (w - pad * 2) / (n - 1)
   return acosTrend.value.map((d, i) => ({
-    x: pad + i * step,
+    x: n <= 1 ? w / 2 : pad + i * step,
     y: h - ((d.value - min) / (max - min)) * (h - pad * 2) + pad
   }))
 })
@@ -354,20 +403,53 @@ onMounted(async () => {
     return
   }
   loading.value = true
+  const toNum = (v: unknown): number => {
+    const n = Number(v)
+    return isNaN(n) ? 0 : n
+  }
+  const fmtMoney = (n: number): string =>
+    '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   try {
+    // 后端 GET /ad/reports 返回 AdReport 行数组（无总览包装），前端聚合总览
     const res = await getAdReports(shopId)
-    if (res?.code === 200 && res.data) {
-      if (res.data.overview) acosData.value = res.data.overview
-      if (res.data.trend) acosTrend.value = res.data.trend
-      if (res.data.campaigns) campaigns.value = res.data.campaigns
-    } else {
+    if (res?.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
+      const rows = res.data
+      const totalSpend = rows.reduce((s, r) => s + toNum(r.cost), 0)
+      const totalSales = rows.reduce((s, r) => s + toNum(r.sales), 0)
+      acosData.value = {
+        totalAcos: totalSales > 0 ? Number(((totalSpend / totalSales) * 100).toFixed(1)) : 0,
+        totalSpend: fmtMoney(totalSpend),
+        totalSales: fmtMoney(totalSales),
+        roas: totalSpend > 0 ? (totalSales / totalSpend).toFixed(2) : '0.00'
+      }
+      // 趋势无后端数据源，保留降级 mock
+    } else if (!res || res.code !== 200) {
       console.warn('[AdManager] 返回数据异常，使用降级数据', res)
     }
   } catch (e) {
     console.warn('[AdManager] API 调用失败，使用降级数据', e)
-  } finally {
-    loading.value = false
   }
+  try {
+    // 活动列表改用 /ad/campaigns/list（含名称/状态/预算，AdReport 行无这些字段）
+    const cres = await AdExt.listCampaigns(shopId, 'SP')
+    if (cres?.code === 200 && Array.isArray(cres.data) && cres.data.length > 0) {
+      campaigns.value = cres.data.map((c, i) => ({
+        id: Number(c.id ?? i + 1),
+        name: c.campaignName || c.campaignId,
+        active: c.status === 'ENABLED',
+        budget: toNum(c.budget),
+        spend: toNum(c.spend),
+        sales: toNum(c.sales),
+        acos: toNum(c.acos)
+      }))
+    } else if (!cres || cres.code !== 200) {
+      console.warn('[AdManager] 活动列表返回异常，使用降级数据', cres)
+    }
+  } catch (e) {
+    console.warn('[AdManager] 活动列表调用失败，使用降级数据', e)
+  }
+  await loadTrend(shopId, activeAdTab.value)
+  loading.value = false
 })
 
 // ===== SB 广告素材 =====
@@ -470,6 +552,7 @@ const acosClass = (acos?: number) => {
 .sk-row { height: 2.75rem; border-radius: 0; }
 .sk-row-alt { width: 96%; }
 .sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
+.sk-line-center { margin: 0.5rem auto 0; }
 
 .acos-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .acos-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; text-align: center; box-shadow: var(--shadow-sm); }
@@ -482,6 +565,7 @@ const acosClass = (acos?: number) => {
 
 .chart-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow-sm); }
 .chart-card h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--color-on-surface); }
+.mock-badge { display: inline-block; vertical-align: middle; font-size: 0.6875rem; font-weight: 500; color: var(--color-muted); background: var(--color-muted-light); padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); margin-left: 0.5rem; }
 /* 折线颜色走 token，双主题自动适配 */
 .trend-line { stroke: var(--color-primary); }
 .trend-dot { fill: var(--color-primary); }

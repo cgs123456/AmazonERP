@@ -4,7 +4,7 @@
       <div v-if="visible" class="agent-chat-window">
         <div class="chat-header">
           <div class="chat-title">
-            <Icon icon="mdi:robot" width="20" />
+            <Icon icon="mdi:robot" width="20" class="chat-title-icon" />
             <span>运营助手</span>
           </div>
           <div class="chat-status">
@@ -45,8 +45,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref, nextTick, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
+import request from '../api/auth'
 
 defineProps<{ visible: boolean }>()
 defineEmits<{
@@ -61,6 +62,13 @@ interface ChatMessage {
 const inputText = ref('')
 const loading = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
+// 在途请求的取消控制器：切页/卸载时中止，避免回写已卸载状态
+let abortController: AbortController | null = null
+
+onUnmounted(() => {
+  abortController?.abort()
+  abortController = null
+})
 
 const messages = ref<ChatMessage[]>([
   {
@@ -95,48 +103,58 @@ const sendMessage = async () => {
   inputText.value = ''
   loading.value = true
 
-  // 占位的 assistant 消息，流式内容会逐步追加
-  messages.value.push({ role: 'assistant', content: '' })
-  const assistantIndex = messages.value.length - 1
+  // 占位的 assistant 消息（对象引用定位，避免并发下索引漂移）
+  const placeholder: ChatMessage = { role: 'assistant', content: '' }
+  messages.value.push(placeholder)
   await scrollToBottom()
+
+  // 取消上一轮未完成的请求，避免旧响应覆盖新对话
+  abortController?.abort()
+  const controller = new AbortController()
+  abortController = controller
 
   try {
     // 对齐后端 AiController：POST /ai/erp/agent?userId=（userId 为 query 参数，body 为 {message}）
-    // 后端返回 Result<String> JSON（非 SSE 流式），此处一次性读取并取 data 字段
+    // 走统一 request 实例：自动注入 token/shopId 头、30s 超时基线，此处覆盖 60s（AI 推理慢）；
+    // 后端返回 Result<String> JSON（非 SSE 流式），拦截器已拆包为 { code, message, data }
     const savedUserId = localStorage.getItem('user_id')
-    const response = await fetch(`/api/ai/erp/agent?userId=${encodeURIComponent(savedUserId || '1')}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'token': token
-      },
-      body: JSON.stringify({ message: text })
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-
-    const result = await response.json()
-    // Result 结构：{ code, message, data }
+    const result = await request.post<void, { code: number; message: string; data: unknown }>(
+      '/ai/erp/agent',
+      { message: text },
+      {
+        params: savedUserId ? { userId: savedUserId } : {},
+        timeout: 60000,
+        signal: controller.signal
+      }
+    )
     if (result?.code === 200 && typeof result.data === 'string' && result.data) {
-      messages.value[assistantIndex].content = result.data
+      placeholder.content = result.data
     } else {
       throw new Error(result?.message || 'Empty agent response')
     }
   } catch (e) {
+    if (controller.signal.aborted) {
+      // 被新一轮请求取代：移除本轮占位气泡后静默返回
+      const at = messages.value.indexOf(placeholder)
+      if (at !== -1) messages.value.splice(at, 1)
+      return
+    }
     if (import.meta.env.PROD) {
       // 生产环境不展示虚构数据，明确告知服务不可用
       console.warn('[AgentChat] 调用失败', e)
-      messages.value[assistantIndex].content = '运营助手暂时不可用，请稍后重试。'
+      placeholder.content = '运营助手暂时不可用，请稍后重试。'
     } else {
       // 开发环境降级到模拟回复便于联调演示
       console.warn('[AgentChat] 调用失败，使用模拟回复', e)
-      messages.value[assistantIndex].content = generateMockReply(text)
+      placeholder.content = generateMockReply(text)
     }
   } finally {
-    loading.value = false
-    await scrollToBottom()
+    // 仅当本轮仍是最新请求时才复位 loading（旧轮 finally 不得覆盖新轮状态）
+    if (abortController === controller) {
+      abortController = null
+      loading.value = false
+      await scrollToBottom()
+    }
   }
 }
 
@@ -198,6 +216,9 @@ const scrollToBottom = async () => {
   font-size: 0.875rem;
   font-weight: 600;
 }
+
+/* 头像图标：继承 header 的 on-primary（双主题下自动翻转） */
+.chat-title-icon { color: var(--color-on-primary); }
 
 .chat-status {
   display: flex;

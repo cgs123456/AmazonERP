@@ -126,7 +126,8 @@
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
-import { sendVerifyCode, verifyLogin } from '../api/auth'
+import { sendVerifyCode, verifyLogin, extractLoginToken } from '../api/auth'
+import type { LoginTokenPair } from '../api/auth'
 import { useToast } from '../composables/useToast'
 
 const { showToast } = useToast()
@@ -221,13 +222,16 @@ const handleLogin = async () => {
     const response = await verifyLogin(phoneNumber.value, verifyCode.value)
 
     if (response.code === 200) {
-      // 登录成功，保存 token（校验后端确实返回了字符串，避免写入 "undefined"）
-      const token = response.data
-      if (typeof token !== 'string' || !token) {
+      // 登录成功，保存 token（后端返回 { token, refreshToken } 对象，兼容裸字符串）
+      const token = extractLoginToken(response.data)
+      if (!token) {
         showToast('登录响应异常，请稍后重试', 'error')
         return
       }
       localStorage.setItem('token', token)
+      if (response.data && typeof response.data === 'object' && (response.data as LoginTokenPair).refreshToken) {
+        localStorage.setItem('refreshToken', (response.data as LoginTokenPair).refreshToken as string)
+      }
       // 设置 token 过期时间（例如：7 天后）
       const expiryTime = Date.now() + 7 * 24 * 60 * 60 * 1000
       localStorage.setItem('token_expiry', expiryTime.toString())

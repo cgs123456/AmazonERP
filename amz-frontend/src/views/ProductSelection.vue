@@ -17,7 +17,7 @@
       </div>
 
       <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
-      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+      <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="table-card sk-table-card">
           <div v-for="i in 6" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
         </div>
@@ -45,6 +45,8 @@
         </button>
       </div>
 
+      <!-- 分析结果与机会列表（加载时仅显示骨架） -->
+      <template v-if="!loading">
       <div v-if="summary" class="result-section">
         <h2 class="section-title">
           市场分析摘要：{{ summary.keyword }}（{{ summary.marketplace }}）
@@ -229,6 +231,7 @@
           </tbody>
         </table>
       </div>
+      </template>
     </main>
   </div>
 </template>
@@ -245,6 +248,7 @@ import {
   type MarketAnalysisSummary,
   type SelectionOpportunity
 } from '@/api/selection'
+import { getCurrentShopId } from '@/utils/shop'
 
 const keyword = ref('wireless earbuds')
 const marketplace = ref('US')
@@ -364,7 +368,8 @@ const onSortChange = async (val: 'score' | 'volume' | 'competition') => {
 }
 
 const refreshList = async () => {
-  const shopId = Number(localStorage.getItem('shopId') || 1)
+  // 店铺 ID 统一走 current_shop_id（曾误读无约定的 'shopId' 键，恒回退 1 号店）
+  const shopId = Number(getCurrentShopId()) || 1
   try {
     const resp = await findOpportunities(shopId, undefined, sortBy.value, 20)
     opportunityList.value = resp.data ?? []
@@ -677,13 +682,13 @@ const seasonalityText = (s?: string) => {
 }
 /* 图例色点：单 accent 同色系深浅阶梯 */
 .dot-0 { background: var(--color-primary); }
-.dot-1 { background: color-mix(in srgb, var(--color-primary) 80%, white); }
-.dot-2 { background: color-mix(in srgb, var(--color-primary) 65%, white); }
-.dot-3 { background: color-mix(in srgb, var(--color-primary) 50%, white); }
-.dot-4 { background: color-mix(in srgb, var(--color-primary) 38%, white); }
-.dot-5 { background: color-mix(in srgb, var(--color-primary) 28%, white); }
-.dot-6 { background: color-mix(in srgb, var(--color-primary) 20%, white); }
-.dot-7 { background: color-mix(in srgb, var(--color-primary) 14%, white); }
+.dot-1 { background: color-mix(in srgb, var(--color-primary) 80%, var(--color-surface)); }
+.dot-2 { background: color-mix(in srgb, var(--color-primary) 65%, var(--color-surface)); }
+.dot-3 { background: color-mix(in srgb, var(--color-primary) 50%, var(--color-surface)); }
+.dot-4 { background: color-mix(in srgb, var(--color-primary) 38%, var(--color-surface)); }
+.dot-5 { background: color-mix(in srgb, var(--color-primary) 28%, var(--color-surface)); }
+.dot-6 { background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface)); }
+.dot-7 { background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)); }
 
 /* 指标卡片 */
 .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
@@ -763,15 +768,6 @@ const seasonalityText = (s?: string) => {
 .asin-cell { font-family: var(--font-mono); color: var(--color-primary); font-weight: 600; }
 
 .title-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.status-tag {
-  display: inline-block;
-  padding: 0.125rem 0.625rem; /* 2px 10px */;
-  border-radius: var(--radius-sm); /* 10px */;
-  font-size: 0.6875rem; /* 12px */;
-  font-weight: 500;
-  white-space: nowrap;
-}
 
 .tag-low { background: var(--color-primary-light); color: var(--color-primary); }
 .tag-medium { background: var(--color-warning-light); color: var(--color-warning-dark); }

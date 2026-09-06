@@ -2,6 +2,17 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import AgentChat from '../components/AgentChat.vue'
 
+// 组件走统一 request 实例（../api/auth 默认导出），此处整体 mock 该模块
+vi.mock('../api/auth', () => ({
+  default: {
+    post: vi.fn()
+  }
+}))
+
+import request from '../api/auth'
+
+const mockedPost = vi.mocked(request.post)
+
 // 公共 stubs：避免 Teleport/Transition/Icon 在测试环境中的副作用
 const globalStubs = {
   stubs: {
@@ -15,12 +26,12 @@ describe('AgentChat 组件', () => {
   beforeEach(() => {
     // 登录守卫需要 token；未登录时组件直接提示而不发起请求
     localStorage.setItem('token', 'test-token')
-    // 模拟后端接口不可用，使组件降级到 generateMockReply
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('test: backend unavailable')))
+    mockedPost.mockReset()
+    // 默认模拟后端接口不可用，使组件降级到 generateMockReply
+    mockedPost.mockRejectedValue(new Error('test: backend unavailable'))
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
     localStorage.clear()
   })
 
@@ -87,13 +98,8 @@ describe('AgentChat 组件', () => {
   })
 
   it('后端返回 Result JSON 时应展示 data 字段内容', async () => {
-    // 组件已切换为标准 JSON 契约（POST /ai/erp/agent → Result<String>），
-    // 旧 SSE 流式测试已过时（此前因缺少 .json() 方法意外走了 mock 兜底路径）
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ code: 200, message: 'success', data: '近 7 天订单共 162 单，销售额 $8,456。' })
-    }))
+    // 组件经统一 request 实例调用 POST /ai/erp/agent（拦截器已拆包为 { code, message, data }）
+    mockedPost.mockResolvedValue({ code: 200, message: 'success', data: '近 7 天订单共 162 单，销售额 $8,456。' })
 
     const wrapper = mount(AgentChat, {
       props: { visible: true },
@@ -104,6 +110,12 @@ describe('AgentChat 组件', () => {
 
     await flushPromises()
 
+    // 应携带 userId 参数并设置 60s 超时
+    expect(mockedPost).toHaveBeenCalledWith(
+      '/ai/erp/agent',
+      { message: '销量' },
+      expect.objectContaining({ timeout: 60000 })
+    )
     const assistantMessages = wrapper.findAll('.message.assistant .message-content')
     expect(assistantMessages.length).toBeGreaterThanOrEqual(2)
     const lastReply = assistantMessages[assistantMessages.length - 1].text()
@@ -113,11 +125,7 @@ describe('AgentChat 组件', () => {
   })
 
   it('后端返回业务失败（code!=200）时应降级到模拟回复', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ code: 500, message: 'LLM 超时', data: null })
-    }))
+    mockedPost.mockResolvedValue({ code: 500, message: 'LLM 超时', data: null })
 
     const wrapper = mount(AgentChat, {
       props: { visible: true },

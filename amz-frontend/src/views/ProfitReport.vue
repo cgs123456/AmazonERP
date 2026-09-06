@@ -10,7 +10,7 @@
       </div>
 
       <!-- 骨架屏：汇总卡片 + 表格行形状（技能 4.5 Loading） -->
-      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+      <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="summary-grid">
           <div v-for="i in 4" :key="i" class="summary-card">
             <div class="skeleton sk-line sk-line-sm"></div>
@@ -27,7 +27,8 @@
         请先在右上角选择店铺后再查看利润报表。
       </div>
 
-      <!-- 汇总卡片 -->
+      <!-- 汇总卡片（加载时仅显示骨架） -->
+      <template v-if="!loading">
       <div class="summary-grid">
         <div class="summary-card">
           <div class="summary-label">总销售额</div>
@@ -46,6 +47,7 @@
           <div class="summary-value profit-positive">{{ summary.grossMargin }}</div>
         </div>
       </div>
+      </template>
 
       <!-- 维度切换 -->
       <div class="dim-tabs">
@@ -54,7 +56,8 @@
         <button :class="['dim-tab', { active: dim === 'month' }]" @click="dim = 'month'">按月度</button>
       </div>
 
-      <!-- 利润表格 -->
+      <!-- 利润表格（加载时仅显示骨架） -->
+      <template v-if="!loading">
       <div class="table-card">
         <table class="data-table">
           <thead>
@@ -91,6 +94,7 @@
           </tbody>
         </table>
       </div>
+      </template>
     </main>
   </div>
 </template>

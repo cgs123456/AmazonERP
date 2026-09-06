@@ -142,6 +142,7 @@ const loadUserInfo = async () => {
 const clearCredentials = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('token_expiry')
+  localStorage.removeItem('refreshToken')
   userInfo.value = null
 }
 
@@ -163,6 +164,7 @@ const handleLoginSuccess = () => {
 const handleLogout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('token_expiry')
+  localStorage.removeItem('refreshToken')
   userInfo.value = null
   showUserMenu.value = false
   websocketManager.close()

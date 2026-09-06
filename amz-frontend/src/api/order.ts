@@ -21,6 +21,7 @@ export interface OrderListParams {
   shopId?: number | string
   startDate?: string
   endDate?: string
+  orderNo?: string
   page?: number
   size?: number
 }
@@ -40,7 +41,3 @@ export const getOrderList = (params: OrderListParams) => {
   })
 }
 
-// 获取订单详情
-export const getOrderDetail = (orderId: number | string) => {
-  return request.get<void, ApiResponse<OrderItem>>(`/order/${orderId}`)
-}

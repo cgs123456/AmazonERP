@@ -9,11 +9,13 @@ export function usePagination<T>(source: () => T[], initialSize = 10) {
     const page = ref(1)
     const size = ref(initialSize)
 
-    const total = computed(() => source().length)
+    // 快照一次 source() 后再派生，避免 total/paged 每次求值重复拉取并切片大列表
+    const snapshot = computed(() => source())
+    const total = computed(() => snapshot.value.length)
     const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value)))
     const paged = computed(() => {
         const start = (page.value - 1) * size.value
-        return source().slice(start, start + size.value)
+        return snapshot.value.slice(start, start + size.value)
     })
 
     /** 数据源变化（筛选/刷新）时回到第一页 */

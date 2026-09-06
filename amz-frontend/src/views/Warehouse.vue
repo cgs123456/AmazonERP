@@ -16,8 +16,12 @@
         <p class="hero-subtitle">仓库管理、入库单、出库单与库存查询</p>
       </div>
 
+      <div v-if="!currentShopId" class="shop-tip">
+        请先在右上角选择店铺后再查看仓库数据。
+      </div>
+
       <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
-      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+      <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="table-card sk-table-card">
           <div v-for="i in 6" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
         </div>
@@ -37,6 +41,8 @@
         </div>
       </div>
 
+      <!-- 各 Tab 面板（加载时仅显示骨架） -->
+      <template v-if="!loading">
       <!-- 仓库列表 -->
       <div v-show="activeTab === 'warehouse'" class="panel">
         <div class="panel-header">
@@ -141,7 +147,7 @@
                 <td>{{ o.expectedArrival || '-' }}</td>
                 <td>
                   <button v-if="o.status === 'PENDING'" class="action-btn" @click="doTransit(o.id!)">运输中</button>
-                  <button v-if="o.status === 'IN_TRANSIT' || o.status === 'PARTIAL'" class="action-btn" @click="doReceive(o.id!)">到货验收</button>
+                  <button v-if="o.status === 'IN_TRANSIT' || o.status === 'PARTIAL'" class="action-btn" @click="openReceive(o.id!)">到货验收</button>
                   <button v-if="canCancelInbound(o.status)" class="action-btn cancel" @click="doCancelInbound(o.id!)">取消</button>
                 </td>
               </tr>
@@ -187,6 +193,7 @@
           </table>
         </div>
       </div>
+      </template>
 
       <!-- 仓库弹窗 -->
       <div v-if="warehouseDialog.visible" class="modal-mask" @click.self="warehouseDialog.visible = false">
@@ -274,6 +281,24 @@
         </div>
       </div>
 
+      <!-- 到货验收弹窗 -->
+      <div v-if="receiveDialog.visible" class="modal-mask" @click.self="receiveDialog.visible = false">
+        <div class="modal">
+          <h3>到货验收 - 库存增加</h3>
+          <p class="helper">请填写本次到货明细（用于增加库存，留空则仅变更单据状态）：</p>
+          <div v-for="(item, idx) in receiveDialog.items" :key="idx" class="inline-row">
+            <input v-model="item.sku" placeholder="SKU" />
+            <input v-model.number="item.quantity" type="number" placeholder="数量" />
+            <button class="action-btn cancel" @click="receiveDialog.items.splice(idx, 1)">删除</button>
+          </div>
+          <button class="ghost-btn" @click="receiveDialog.items.push({ sku: '', quantity: 1 })">+ 添加明细</button>
+          <div class="modal-actions">
+            <button class="ghost-btn" @click="receiveDialog.visible = false">取消</button>
+            <button class="primary-btn" @click="confirmReceive">确认收货</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 发货弹窗 -->
       <div v-if="shipDialog.visible" class="modal-mask" @click.self="shipDialog.visible = false">
         <div class="modal">
@@ -307,8 +332,13 @@ import AppSidebar from '../components/AppSidebar.vue'
 import * as WH from '@/api/warehouse'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder } from '@/api/warehouse'
 import { usePagination } from '@/composables/usePagination'
+import { getCurrentShopId } from '@/utils/shop'
+import { useToast } from '@/composables/useToast'
 
-const SHOP_ID = 1
+// 店铺上下文统一走 current_shop_id（曾硬编码 shopIdNum()=1 导致多店数据污染）
+const currentShopId = ref(getCurrentShopId())
+const shopIdNum = () => Number(currentShopId.value) || 0
+const { showToast } = useToast()
 const loading = ref(false)
 const activeTab = ref<'warehouse' | 'inventory' | 'inbound' | 'outbound'>('warehouse')
 const tabs = [
@@ -334,30 +364,34 @@ const warehouseName = (id?: number) => {
 }
 
 const loadWarehouses = async () => {
+  if (!currentShopId.value) return
   try {
-    const res = await WH.listWarehouses(SHOP_ID)
+    const res = await WH.listWarehouses(currentShopId.value)
     if (res?.code === 200) warehouses.value = res.data || []
   } catch (e) { console.warn('[Warehouse] 加载仓库失败', e) }
 }
 
 const loadInventory = async () => {
+  if (!currentShopId.value) return
   loading.value = true
   try {
-    const res = await WH.listInventory({ shopId: SHOP_ID, ...invFilter })
+    const res = await WH.listInventory({ shopId: shopIdNum(), ...invFilter })
     if (res?.code === 200) inventoryList.value = res.data || []
   } catch (e) { console.warn('[Warehouse] 加载库存失败', e) } finally { loading.value = false }
 }
 
 const loadInbound = async () => {
+  if (!currentShopId.value) return
   try {
-    const res = await WH.listInboundOrders(SHOP_ID)
+    const res = await WH.listInboundOrders(currentShopId.value)
     if (res?.code === 200) inboundOrders.value = res.data || []
   } catch (e) { console.warn('[Warehouse] 加载入库单失败', e) }
 }
 
 const loadOutbound = async () => {
+  if (!currentShopId.value) return
   try {
-    const res = await WH.listOutboundOrders(SHOP_ID)
+    const res = await WH.listOutboundOrders(currentShopId.value)
     if (res?.code === 200) outboundOrders.value = res.data || []
   } catch (e) { console.warn('[Warehouse] 加载出库单失败', e) }
 }
@@ -365,10 +399,10 @@ const loadOutbound = async () => {
 // ===== 仓库表单 =====
 const warehouseDialog = reactive<{ visible: boolean; form: Warehouse }>({
   visible: false,
-  form: { shopId: SHOP_ID, warehouseName: '', warehouseCode: '', warehouseType: 'THIRD_PARTY', country: 'US' }
+  form: { shopId: shopIdNum(), warehouseName: '', warehouseCode: '', warehouseType: 'THIRD_PARTY', country: 'US' }
 })
 const openWarehouseDialog = () => {
-  warehouseDialog.form = { shopId: SHOP_ID, warehouseName: '', warehouseCode: '', warehouseType: 'THIRD_PARTY', country: 'US' }
+  warehouseDialog.form = { shopId: shopIdNum(), warehouseName: '', warehouseCode: '', warehouseType: 'THIRD_PARTY', country: 'US' }
   warehouseDialog.visible = true
 }
 const submitWarehouse = async () => {
@@ -382,10 +416,10 @@ const submitWarehouse = async () => {
 // ===== 入库单表单 =====
 const inboundDialog = reactive<{ visible: boolean; form: InboundOrder }>({
   visible: false,
-  form: { shopId: SHOP_ID, warehouseId: 0, source: '1688_PURCHASE', totalItems: 0 }
+  form: { shopId: shopIdNum(), warehouseId: 0, source: '1688_PURCHASE', totalItems: 0 }
 })
 const openInboundDialog = () => {
-  inboundDialog.form = { shopId: SHOP_ID, warehouseId: warehouses.value[0]?.id || 0, source: '1688_PURCHASE', totalItems: 0 }
+  inboundDialog.form = { shopId: shopIdNum(), warehouseId: warehouses.value[0]?.id || 0, source: '1688_PURCHASE', totalItems: 0 }
   inboundDialog.visible = true
 }
 const submitInbound = async () => {
@@ -396,29 +430,57 @@ const submitInbound = async () => {
   } catch (e) { console.warn('[Warehouse] 创建入库单失败', e) }
 }
 
-const doTransit = async (id: number) => { await WH.transitInbound(id); await loadInbound() }
-const doReceive = async (id: number) => {
-  // 简化：到货验收无明细，直接完成。实际场景应填写收货明细。
-  const items: WarehouseInventory[] = []
-  const sku = window.prompt('收货 SKU（留空则不增加库存）')
-  if (sku) {
-    const qty = Number(window.prompt('收货数量', '1') || '0')
-    if (qty > 0) items.push({ warehouseId: 0, shopId: SHOP_ID, sku, quantity: qty } as WarehouseInventory)
+const doTransit = async (id: number) => {
+  try {
+    await WH.transitInbound(id)
+    await loadInbound()
+  } catch (e) {
+    console.warn('[Warehouse] 入库单发运失败', e)
+    showToast('操作失败，请稍后重试', 'error')
   }
-  await WH.receiveInbound(id, items)
-  await loadInbound()
-  await loadInventory()
 }
-const doCancelInbound = async (id: number) => { await WH.cancelInbound(id); await loadInbound() }
+// 到货验收明细弹窗（替代阻塞式 window.prompt，支持多行 SKU/数量校验）
+const receiveDialog = reactive<{ visible: boolean; id: number; items: { sku: string; quantity: number }[] }>({
+  visible: false, id: 0, items: [{ sku: '', quantity: 1 }]
+})
+const openReceive = (id: number) => {
+  receiveDialog.id = id
+  receiveDialog.items = [{ sku: '', quantity: 1 }]
+  receiveDialog.visible = true
+}
+const confirmReceive = async () => {
+  try {
+    const items: WarehouseInventory[] = receiveDialog.items
+      .filter((x) => x.sku && x.quantity > 0)
+      .map((x) => ({ warehouseId: 0, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
+    await WH.receiveInbound(receiveDialog.id, items)
+    receiveDialog.visible = false
+    showToast('到货验收成功', 'success')
+    await loadInbound()
+    await loadInventory()
+  } catch (e) {
+    console.warn('[Warehouse] 到货验收失败', e)
+    showToast('到货验收失败，请稍后重试', 'error')
+  }
+}
+const doCancelInbound = async (id: number) => {
+  try {
+    await WH.cancelInbound(id)
+    await loadInbound()
+  } catch (e) {
+    console.warn('[Warehouse] 取消入库单失败', e)
+    showToast('取消失败，请稍后重试', 'error')
+  }
+}
 const canCancelInbound = (s?: string) => s === 'PENDING' || s === 'IN_TRANSIT' || s === 'PARTIAL'
 
 // ===== 出库单表单 =====
 const outboundDialog = reactive<{ visible: boolean; form: OutboundOrder }>({
   visible: false,
-  form: { shopId: SHOP_ID, warehouseId: 0, orderType: 'ORDER', totalItems: 0 }
+  form: { shopId: shopIdNum(), warehouseId: 0, orderType: 'ORDER', totalItems: 0 }
 })
 const openOutboundDialog = () => {
-  outboundDialog.form = { shopId: SHOP_ID, warehouseId: warehouses.value[0]?.id || 0, orderType: 'ORDER', totalItems: 0 }
+  outboundDialog.form = { shopId: shopIdNum(), warehouseId: warehouses.value[0]?.id || 0, orderType: 'ORDER', totalItems: 0 }
   outboundDialog.visible = true
 }
 const submitOutbound = async () => {
@@ -429,8 +491,24 @@ const submitOutbound = async () => {
   } catch (e) { console.warn('[Warehouse] 创建出库单失败', e) }
 }
 
-const doPick = async (id: number) => { await WH.pickOutbound(id); await loadOutbound() }
-const doPack = async (id: number) => { await WH.packOutbound(id); await loadOutbound() }
+const doPick = async (id: number) => {
+  try {
+    await WH.pickOutbound(id)
+    await loadOutbound()
+  } catch (e) {
+    console.warn('[Warehouse] 拣货失败', e)
+    showToast('操作失败，请稍后重试', 'error')
+  }
+}
+const doPack = async (id: number) => {
+  try {
+    await WH.packOutbound(id)
+    await loadOutbound()
+  } catch (e) {
+    console.warn('[Warehouse] 打包失败', e)
+    showToast('操作失败，请稍后重试', 'error')
+  }
+}
 const shipDialog = reactive<{ visible: boolean; id: number; carrier: string; trackingNo: string; items: { sku: string; quantity: number }[] }>({
   visible: false, id: 0, carrier: '', trackingNo: '', items: [{ sku: '', quantity: 1 }]
 })
@@ -442,15 +520,29 @@ const doShip = (id: number) => {
   shipDialog.visible = true
 }
 const confirmShip = async () => {
-  const items: WarehouseInventory[] = shipDialog.items
-    .filter((x) => x.sku && x.quantity > 0)
-    .map((x) => ({ warehouseId: 0, shopId: SHOP_ID, sku: x.sku, quantity: x.quantity } as WarehouseInventory))
-  await WH.shipOutbound(shipDialog.id, { carrier: shipDialog.carrier, trackingNo: shipDialog.trackingNo, items })
-  shipDialog.visible = false
-  await loadOutbound()
-  await loadInventory()
+  try {
+    const items: WarehouseInventory[] = shipDialog.items
+      .filter((x) => x.sku && x.quantity > 0)
+      .map((x) => ({ warehouseId: 0, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
+    await WH.shipOutbound(shipDialog.id, { carrier: shipDialog.carrier, trackingNo: shipDialog.trackingNo, items })
+    shipDialog.visible = false
+    showToast('发货成功', 'success')
+    await loadOutbound()
+    await loadInventory()
+  } catch (e) {
+    console.warn('[Warehouse] 发货失败', e)
+    showToast('发货失败，请稍后重试', 'error')
+  }
 }
-const doCancelOutbound = async (id: number) => { await WH.cancelOutbound(id); await loadOutbound() }
+const doCancelOutbound = async (id: number) => {
+  try {
+    await WH.cancelOutbound(id)
+    await loadOutbound()
+  } catch (e) {
+    console.warn('[Warehouse] 取消出库单失败', e)
+    showToast('取消失败，请稍后重试', 'error')
+  }
+}
 const canCancelOutbound = (s?: string) => s === 'PENDING' || s === 'PICKING'
 
 const inboundStatusClass = (s?: string) => {
@@ -465,6 +557,11 @@ const outboundStatusClass = (s?: string) => {
 }
 
 onMounted(async () => {
+  // 未选择店铺时不发请求，各 load 函数内部同样守卫
+  if (!currentShopId.value) {
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     await loadWarehouses()

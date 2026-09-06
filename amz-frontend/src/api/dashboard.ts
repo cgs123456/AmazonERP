@@ -56,14 +56,16 @@ export const getKpiData = (shopId: number | string) => {
     })
 }
 
-// 获取近 N 天销售趋势
-export const getSalesTrend = (days: number) => {
+// 获取近 N 天销售趋势（shopId 可选；传入时后端按店铺过滤，否则返回全局聚合）
+export const getSalesTrend = (days: number, shopId?: number | string) => {
   return request.get<void, ApiResponse<SalesTrendItem[]>>('/report/dashboard/sales-trend', {
-    params: { days }
+    params: { days, shopId }
   })
 }
 
-// 获取店铺销售占比
-export const getShopDistribution = () => {
-  return request.get<void, ApiResponse<ShopDistItem[]>>('/report/dashboard/shop-distribution')
+// 获取店铺销售占比（shopId 可选；传入时按店铺过滤，否则返回全局分布）
+export const getShopDistribution = (shopId?: number | string) => {
+  return request.get<void, ApiResponse<ShopDistItem[]>>('/report/dashboard/shop-distribution', {
+    params: { shopId }
+  })
 }

@@ -237,6 +237,9 @@ const handleWebSocketMessage = (data: unknown) => {
     }
 
     notifications.value.unshift(newNotification)
+    // 上限裁剪：久置页面 WS 持续堆积会拖慢渲染，保留最新 200 条
+    // （如需全量历史/虚拟滚动，另做分页加载，此处先止血）
+    if (notifications.value.length > 200) notifications.value.splice(200)
 
     // 浏览器通知
     if ('Notification' in window && Notification.permission === 'granted') {

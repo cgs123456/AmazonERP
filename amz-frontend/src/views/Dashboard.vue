@@ -17,7 +17,7 @@
       </div>
 
       <!-- 骨架屏：形状匹配 KPI 网格 + 图表区（技能 4.5 Loading） -->
-      <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+      <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="kpi-grid">
           <div v-for="i in 4" :key="i" class="kpi-card">
             <div class="skeleton sk-icon"></div>
@@ -141,8 +141,12 @@ const salesTrend = ref<SalesTrendItem[]>([...mockSalesTrend])
 const shopDist = ref<ShopDistItem[]>([...mockShopDist])
 
 const maxSales = computed(() => {
-  if (!salesTrend.value.length) return 1
-  return Math.max(...salesTrend.value.map(i => i.value))
+  // reduce 求最大（避免展开运算符在大数组下栈溢出）
+  let max = 0
+  for (const i of salesTrend.value) {
+    if (i.value > max) max = i.value
+  }
+  return max > 0 ? max : 1
 })
 
 onMounted(async () => {
@@ -156,13 +160,14 @@ onMounted(async () => {
       tag: 'getKpiData'
     },
     {
-      fn: () => getSalesTrend(7),
+      // 趋势/分布支持按店铺过滤；未选中店铺时传 undefined（axios 自动省略），后端返回全局聚合
+      fn: () => getSalesTrend(7, getCurrentShopId() || undefined),
       onSuccess: (data: SalesTrendItem[]) => { salesTrend.value = data },
       mock: mockSalesTrend,
       tag: 'getSalesTrend'
     },
     {
-      fn: () => getShopDistribution(),
+      fn: () => getShopDistribution(getCurrentShopId() || undefined),
       onSuccess: (data: ShopDistItem[]) => { shopDist.value = data },
       mock: mockShopDist,
       tag: 'getShopDistribution'
@@ -354,9 +359,9 @@ onMounted(async () => {
 }
 /* 占比图例：单 accent 的同色系深浅阶梯（color-mix），避免多 accent */
 .pie-0 { background: var(--color-primary); }
-.pie-1 { background: color-mix(in srgb, var(--color-primary) 65%, white); }
-.pie-2 { background: color-mix(in srgb, var(--color-primary) 40%, white); }
-.pie-3 { background: color-mix(in srgb, var(--color-primary) 20%, white); }
+.pie-1 { background: color-mix(in srgb, var(--color-primary) 65%, var(--color-surface)); }
+.pie-2 { background: color-mix(in srgb, var(--color-primary) 40%, var(--color-surface)); }
+.pie-3 { background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface)); }
 
 .pie-name {
   flex: 1;

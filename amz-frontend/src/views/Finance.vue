@@ -32,12 +32,13 @@
           <button class="filter-btn" @click="loadVouchers">查询</button>
         </div>
 
-        <div v-if="loading" class="skeleton-zone" aria-hidden="true">
+        <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
           <div class="table-card sk-table-card">
             <div v-for="i in 5" :key="i" class="skeleton sk-row" :class="{ 'sk-row-alt': i % 2 === 0 }"></div>
           </div>
         </div>
 
+        <template v-if="!loading">
         <div class="table-card">
           <table class="data-table">
             <thead>
@@ -82,6 +83,7 @@
             <button class="page-btn" :disabled="page >= totalPages" @click="nextPage">下一页</button>
           </div>
         </div>
+        </template>
       </div>
 
       <!-- 利润查询 -->
@@ -93,7 +95,7 @@
           <button class="filter-btn" @click="loadProfit">查询利润</button>
         </div>
 
-        <div v-if="profitLoading" class="skeleton-zone" aria-hidden="true">
+        <div v-if="profitLoading" class="skeleton-zone" role="status" aria-label="内容加载中">
           <div class="summary-grid">
             <div v-for="i in 2" :key="i" class="summary-card">
               <div class="skeleton sk-line sk-line-sm"></div>
@@ -102,7 +104,7 @@
           </div>
         </div>
 
-        <div class="summary-grid">
+        <div v-if="!profitLoading" class="summary-grid">
           <div class="summary-card">
             <div class="summary-label">店铺利润（CNY）</div>
             <div class="summary-value" :class="profitNum > 0 ? 'profit-positive' : 'profit-negative'">¥{{ profitDisplay }}</div>
@@ -122,6 +124,7 @@
 </template>
 
 <script setup lang="ts">
+import { usePagination } from '@/composables/usePagination'
 import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
@@ -137,15 +140,11 @@ const currentShopId = ref(getCurrentShopId())
 const loading = ref(false)
 const vouchers = ref<AccountingVoucher[]>([])
 const filterSourceType = ref('')
-const page = ref(1)
-const size = ref(10)
 const syncing = ref<number | null>(null)
 
-const totalPages = computed(() => Math.max(1, Math.ceil(vouchers.value.length / size.value)))
-const pagedVouchers = computed(() => {
-  const start = (page.value - 1) * size.value
-  return vouchers.value.slice(start, start + size.value)
-})
+// 凭证分页复用 usePagination（与库存/订单页同一交互：total/totalPages/paged/prev/next/reset）
+const { page, totalPages, paged: pagedVouchers, resetPage, prevPage, nextPage } =
+  usePagination<AccountingVoucher>(() => vouchers.value, 10)
 
 const switchTab = (t: 'voucher' | 'profit') => {
   tab.value = t
@@ -158,7 +157,7 @@ const loadVouchers = async () => {
     return
   }
   loading.value = true
-  page.value = 1
+  resetPage()
   try {
     const res = await listVouchers(shopId, filterSourceType.value || undefined)
     if (res?.code === 200 && res.data) {
@@ -190,13 +189,6 @@ const handleSync = async (v: AccountingVoucher) => {
   } finally {
     syncing.value = null
   }
-}
-
-const prevPage = () => {
-  if (page.value > 1) page.value--
-}
-const nextPage = () => {
-  if (page.value < totalPages.value) page.value++
 }
 
 // 利润查询

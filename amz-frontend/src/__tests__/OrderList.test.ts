@@ -85,7 +85,7 @@ describe('OrderList 视图', () => {
     expect(wrapper.find('.page-info').text()).toContain('共 3 页')
   })
 
-  it('订单号筛选应在前端过滤展示的订单', async () => {
+  it('订单号筛选应透传服务端查询（GET /order/list?orderNo=）', async () => {
     localStorage.setItem('current_shop_id', '1')
     const orders: OrderItem[] = [
       { id: 1, orderNo: '114-AAA-111', shop: 'Shop A (US)', shopId: '1', sku: 'B08X4-001', qty: 1, amount: '$1.00', profit: 1, status: '已发货', statusClass: 'shipped', date: '2026-07-06 14:30' },
@@ -100,13 +100,13 @@ describe('OrderList 视图', () => {
     // 初始 3 行
     expect(wrapper.findAll('.data-table tbody tr').length).toBe(3)
 
-    // 输入订单号筛选，应只显示包含 "AAA" 的两行
+    // 输入订单号并点击查询，应把 orderNo 透传给服务端（跨页可查）
     await wrapper.find('.filter-input').setValue('AAA')
-    const rows = wrapper.findAll('.data-table tbody tr')
-    expect(rows.length).toBe(2)
-    expect(wrapper.text()).toContain('114-AAA-111')
-    expect(wrapper.text()).toContain('114-AAA-333')
-    expect(wrapper.text()).not.toContain('114-BBB-222')
+    await wrapper.find('.filter-btn').trigger('click')
+    await flushPromises()
+
+    const lastParams = mockedGetOrderList.mock.calls[mockedGetOrderList.mock.calls.length - 1][0] as { orderNo?: string }
+    expect(lastParams.orderNo).toBe('AAA')
   })
 
   it('API 返回非 200 时应降级到 mock 数据并渲染', async () => {

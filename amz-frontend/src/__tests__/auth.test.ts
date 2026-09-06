@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
-import request from '../api/auth'
+import request, { extractLoginToken } from '../api/auth'
 
 // 自定义 axios adapter，用于在请求/响应拦截器测试中捕获配置或模拟响应
 // 直接复用 axios 的 InternalAxiosRequestConfig，避免与 Record<string, unknown>
@@ -70,5 +70,22 @@ describe('axios 拦截器', () => {
     expect(localStorage.getItem('token')).toBeNull()
     expect(localStorage.getItem('token_expiry')).toBeNull()
     expect(hrefSetter).toHaveBeenCalledWith('/')
+  })
+})
+
+describe('extractLoginToken（对齐后端 POST /user/verify 的 { token, refreshToken } 响应）', () => {
+  it('对象形式应取出 token', () => {
+    expect(extractLoginToken({ token: 'abc', refreshToken: 'ref' })).toBe('abc')
+  })
+
+  it('兼容历史裸字符串形式', () => {
+    expect(extractLoginToken('plain-token')).toBe('plain-token')
+  })
+
+  it('缺失或空 token 应返回 null', () => {
+    expect(extractLoginToken({})).toBeNull()
+    expect(extractLoginToken({ token: '' })).toBeNull()
+    expect(extractLoginToken(null)).toBeNull()
+    expect(extractLoginToken(undefined)).toBeNull()
   })
 })
