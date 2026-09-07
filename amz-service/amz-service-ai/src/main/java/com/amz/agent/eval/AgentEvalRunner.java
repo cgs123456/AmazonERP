@@ -34,14 +34,14 @@ public class AgentEvalRunner {
     private LangChain4jAgentService langChain4jAgentService;
 
     /**
-     * 运行全部评测用例。
+     * 运行全部评测用例（关键词单轨：CI 默认，无需 API key）。
      */
     public AgentEvalReport runAll() {
         List<AgentEvalCase> cases = AgentEvalCases.all();
         List<AgentEvalResult> results = new ArrayList<>(cases.size());
         long totalStart = System.currentTimeMillis();
 
-        log.info("===== Agent 评测开始，共 {} 个用例 =====", cases.size());
+        log.info("===== Agent 评测开始（关键词单轨），共 {} 个用例 =====", cases.size());
 
         for (AgentEvalCase evalCase : cases) {
             AgentEvalResult result = runSingle(evalCase);
@@ -54,23 +54,64 @@ public class AgentEvalRunner {
                     result.getMissedKeywords());
         }
 
+        return buildReport(results, "keyword", totalStart);
+    }
+
+    /**
+     * 运行全部评测用例（双轨：关键词 + LLM 四指标）。
+     * <p>
+     * LLM 轨要求 scorer 可用；单个用例评分失败只标记 score_error，不影响关键词轨结果。
+     * scorer 为 null（调用方未启用）时等价于关键词单轨，结果 evalMode 仍记 both 以反映调用意图。
+     */
+    public AgentEvalReport runAllWithLlm(LlmEvalScorer scorer) {
+        List<AgentEvalCase> cases = AgentEvalCases.all();
+        List<AgentEvalResult> results = new ArrayList<>(cases.size());
+        long totalStart = System.currentTimeMillis();
+
+        log.info("===== Agent 评测开始（双轨：关键词 + LLM），共 {} 个用例 =====", cases.size());
+
+        for (AgentEvalCase evalCase : cases) {
+            AgentEvalResult result = runSingle(evalCase);
+            if (scorer != null && scorer.isAvailable() && result.getActualResponse() != null) {
+                result.setLlmScore(scorer.score(evalCase, result.getActualResponse()));
+                LlmEvalScore s = result.getLlmScore();
+                log.info("[{}] LLM 评分{}：faithfulness={} relevancy={} toolAcc={} completeness={}",
+                        evalCase.getId(),
+                        s.isScoreError() ? "失败" : "完成",
+                        s.getFaithfulness(), s.getAnswerRelevancy(),
+                        s.getToolSelectionAccuracy(), s.getCompleteness());
+            }
+            results.add(result);
+
+            String status = result.isPassed() ? "✓ PASS" : "✗ FAIL";
+            log.info("{} [{}] {} | 耗时={}ms | 缺失关键词={}",
+                    status, evalCase.getId(), evalCase.getDescription(),
+                    result.getDurationMs(),
+                    result.getMissedKeywords());
+        }
+
+        return buildReport(results, "both", totalStart);
+    }
+
+    private AgentEvalReport buildReport(List<AgentEvalResult> results, String mode, long totalStart) {
         long totalDuration = System.currentTimeMillis() - totalStart;
         int passed = (int) results.stream().filter(AgentEvalResult::isPassed).count();
-        int failed = cases.size() - passed;
-        double passRate = cases.isEmpty() ? 0.0 : (double) passed / cases.size();
+        int failed = results.size() - passed;
+        double passRate = results.isEmpty() ? 0.0 : (double) passed / results.size();
 
-        log.info("===== 评测完成：{}/{} 通过，通过率 {}%，总耗时 {}ms =====",
-                passed, cases.size(), String.format("%.1f", passRate * 100), totalDuration);
+        log.info("===== 评测完成（{}）：{}/{} 通过，通过率 {}%，总耗时 {}ms =====",
+                mode, passed, results.size(), String.format("%.1f", passRate * 100), totalDuration);
 
         return AgentEvalReport.builder()
                 .timestamp(LocalDateTime.now())
-                .totalCases(cases.size())
+                .totalCases(results.size())
                 .passedCount(passed)
                 .failedCount(failed)
                 .passRate(passRate)
                 .totalDurationMs(totalDuration)
                 .results(results)
                 .agentVersion("v2")
+                .evalMode(mode)
                 .build();
     }
 

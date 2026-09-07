@@ -52,4 +52,9 @@ public class AgentEvalReport {
      * 使用的 Agent 版本（v1 手写 / v2 LangChain4j）
      */
     private String agentVersion;
+
+    /**
+     * 评估模式：keyword（关键词单轨，CI 默认）/ both（关键词 + LLM 双轨）
+     */
+    private String evalMode;
 }

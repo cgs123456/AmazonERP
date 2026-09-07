@@ -83,6 +83,22 @@ public class ErpToolExecutor {
             "estimate_logistics_cost");
 
     /**
+     * 需要 operate 权限的工具名集合（A-3）。
+     * <p>
+     * 必须与各处理方法上的 {@code @ToolPermission("agent:operate")} 标注严格一致，
+     * 由 {@code ToolPermissionTest} 反射双向核对，防漂移。
+     */
+    static final Set<String> OPERATE_TOOLS = Set.of(
+            "create_purchase_plan",
+            "auto_reply_message",
+            "generate_promotion_plan",
+            "cross_marketplace_listing",
+            "optimize_ad_campaign",
+            "optimize_listing_seo",
+            "optimize_shipping_route",
+            "optimize_inventory_distribution");
+
+    /**
      * 执行工具调用
      * @param call LLM 返回的函数调用描述
      * @return JSON 格式结果 {"ok":true/false,"message":"...","data":...}
@@ -102,7 +118,25 @@ public class ErpToolExecutor {
             return fail("无权访问该店铺数据");
         }
 
-        return switch (name) {
+        // 工具粒度权限（A-3）：operate 类工具要求 OPERATOR 及以上角色。
+        // role 为 null（内部调用/评测/单测，无鉴权上下文）时放行，与 isShopAllowed
+        // 空 shops 语义一致，避免阻断内部流。
+        if (OPERATE_TOOLS.contains(name) && !hasOperatePermission()) {
+            log.warn("Agent 工具权限拦截 name={}, role={}, userId={}",
+                    name, UserContext.getRole(), UserContext.getUserId());
+            return fail("无权执行此操作（需要 OPERATOR 及以上权限）");
+        }
+
+        // SSE 事件发布：仅当调用方（流式端点工作线程）绑定了 traceId 才生效，
+        // 普通 POST / 评测链路无 trace，直接跳过，零行为变化。
+        String traceId = AgentTraceContext.get();
+        if (traceId != null) {
+            AgentToolEventBus.publish(traceId, AgentToolEvent.call(name, truncate(String.valueOf(args), 300)));
+        }
+        long toolStart = System.currentTimeMillis();
+        String result;
+        try {
+            result = switch (name) {
             case "query_orders"              -> queryOrders(args);
             case "query_inventory"           -> queryInventory(args);
             case "query_sales"               -> querySales(args);
@@ -133,7 +167,42 @@ public class ErpToolExecutor {
             case "create_purchase_plan"       -> createPurchasePlan(args);
             case "auto_reply_message"        -> autoReplyMessage(args);
             default -> fail("未知工具：" + name);
-        };
+            };
+        } catch (RuntimeException e) {
+            if (traceId != null) {
+                AgentToolEventBus.publish(traceId, AgentToolEvent.result(name, false,
+                        System.currentTimeMillis() - toolStart,
+                        e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+            throw e;
+        }
+        if (traceId != null) {
+            AgentToolEventBus.publish(traceId, AgentToolEvent.result(name, true,
+                    System.currentTimeMillis() - toolStart, truncate(result, 500)));
+        }
+        return result;
+    }
+
+    /**
+     * 当前调用方是否有 operate 权限（包可见，供单测直接断言）。
+     * role 缺失时放行（内部调用/评测/单测无鉴权上下文）。
+     */
+    static boolean hasOperatePermission() {
+        String role = UserContext.getRole();
+        if (role == null) {
+            return true;
+        }
+        return "OPERATOR".equals(role) || "ADMIN".equals(role);
+    }
+
+    /**
+     * SSE 事件载荷截断，避免大 JSON 撑爆事件帧（无 trace 时调用方已短路，此处纯工具函数）。
+     */
+    private static String truncate(String text, int maxLength) {
+        if (text == null) {
+            return null;
+        }
+        return text.length() <= maxLength ? text : text.substring(0, maxLength) + "…";
     }
 
     /**
@@ -335,6 +404,7 @@ public class ErpToolExecutor {
      * 工具 7：跨站点 Listing 复制（P0-2 输出）。
      * 通过 Feign 调用 amz-service-product 的 /product/listing/copy 端点。
      */
+    @ToolPermission("agent:operate")
     private String crossMarketplaceListing(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String sourceAsin = toStr(args.get("sourceAsin"));
@@ -516,6 +586,7 @@ public class ErpToolExecutor {
      * 工具 12：AI 促销方案生成。
      * 通过 Feign 调用 amz-service-procurement 的 /procurement/promotion/plan 端点。
      */
+    @ToolPermission("agent:operate")
     private String generatePromotionPlan(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String asin = toStr(args.get("asin"));
@@ -966,6 +1037,7 @@ public class ErpToolExecutor {
     /**
      * 工具 23：广告优化建议（当前 ACoS 来自真实广告报表，建议为基于阈值的规则推导）。
      */
+    @ToolPermission("agent:operate")
     private String optimizeAdCampaign(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String campaignId = toStr(args.get("campaignId"));
@@ -1018,6 +1090,7 @@ public class ErpToolExecutor {
     /**
      * 工具 24：Listing SEO 优化（建议由真实 Listing 健康度字段推导）。
      */
+    @ToolPermission("agent:operate")
     private String optimizeListingSeo(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String asin = toStr(args.get("asin"));
@@ -1058,6 +1131,7 @@ public class ErpToolExecutor {
     /**
      * 工具 25：最优发货路由（真实物流报价，来自 amz-service-logistics）。
      */
+    @ToolPermission("agent:operate")
     private String optimizeShippingRoute(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String orderId = toStr(args.get("orderId"));
@@ -1098,6 +1172,7 @@ public class ErpToolExecutor {
     /**
      * 工具 26：库存跨仓调拨建议（真实多仓视图，来自 amz-service-logistics）。
      */
+    @ToolPermission("agent:operate")
     private String optimizeInventoryDistribution(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         log.info("工具调用 optimize_inventory_distribution shopId={}", shopId);
@@ -1130,6 +1205,7 @@ public class ErpToolExecutor {
      * 避免同一输入产生不同结果；对外文案标注为演示估算。若 ProcurementServiceClient
      * compareSupplierPrices 可用则优先展示真实比价结果。
      */
+    @ToolPermission("agent:operate")
     private String createPurchasePlan(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String sku = toStr(args.get("sku"));
@@ -1185,6 +1261,7 @@ public class ErpToolExecutor {
     /**
      * 工具 28：AI 自动生成回复。
      */
+    @ToolPermission("agent:operate")
     private String autoReplyMessage(Map<String, Object> args) {
         Long shopId = toLong(args.get("shopId"));
         String messageId = toStr(args.get("messageId"));

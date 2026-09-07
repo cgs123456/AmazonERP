@@ -43,4 +43,9 @@ public class AgentEvalResult {
      * 错误信息（Agent 调用失败时填写）
      */
     private String errorMessage;
+
+    /**
+     * LLM 四指标评分（双轨模式填写；关键词单轨为 null）
+     */
+    private LlmEvalScore llmScore;
 }
