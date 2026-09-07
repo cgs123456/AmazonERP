@@ -22,8 +22,25 @@
             :key="i"
             :class="['message', msg.role]"
           >
-            <div v-if="isThinking(i)" class="message-content typing">正在思考...</div>
-            <div v-else class="message-content">{{ msg.content }}</div>
+          <div v-if="isThinking(i) && !(msg.tools && msg.tools.length)" class="message-content typing">正在思考...</div>
+          <div v-else class="message-content">
+            <div v-if="msg.tools && msg.tools.length" class="tool-timeline">
+              <span
+                v-for="(t, ti) in msg.tools"
+                :key="ti"
+                class="tool-chip"
+                :class="t.ok === false ? 'tool-fail' : t.ok ? 'tool-ok' : 'tool-running'"
+              >
+                <Icon icon="mdi:cog-outline" width="12" />
+                {{ t.name }}
+                <span v-if="t.ok === true">✓</span>
+                <span v-else-if="t.ok === false">✕</span>
+                <span v-else>…</span>
+              </span>
+            </div>
+            <div v-if="isThinking(i)" class="typing">正在思考...</div>
+            <div v-else class="message-text">{{ msg.content }}</div>
+          </div>
           </div>
         </div>
 
@@ -57,6 +74,8 @@ defineEmits<{
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  /** SSE 工具调用时间线（仅流式路径填充） */
+  tools?: Array<{ name: string; ok?: boolean }>
 }
 
 const inputText = ref('')
@@ -64,8 +83,20 @@ const loading = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
 // 在途请求的取消控制器：切页/卸载时中止，避免回写已卸载状态
 let abortController: AbortController | null = null
+// 在途 SSE 连接：新发送/卸载时关闭
+let eventSource: EventSource | null = null
+// 流式模式开关：EventSource 不可用（如单测 jsdom）时自动回退 POST
+const streamMode = ref(true)
+
+const closeStream = () => {
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
+}
 
 onUnmounted(() => {
+  closeStream()
   abortController?.abort()
   abortController = null
 })
@@ -103,16 +134,30 @@ const sendMessage = async () => {
   inputText.value = ''
   loading.value = true
 
-  // 占位的 assistant 消息（对象引用定位，避免并发下索引漂移）
-  const placeholder: ChatMessage = { role: 'assistant', content: '' }
-  messages.value.push(placeholder)
+  // 占位的 assistant 消息。注意：必须从数组取回响应式代理后再持有引用，
+  // 直接变异 push 前的原始对象会绕过 Proxy，模板收不到更新。
+  messages.value.push({ role: 'assistant', content: '', tools: [] } as ChatMessage)
+  const placeholder = messages.value[messages.value.length - 1]
   await scrollToBottom()
 
-  // 取消上一轮未完成的请求，避免旧响应覆盖新对话
+  // 关闭上一轮 SSE（如有），取消上一轮未完成的 POST，避免旧响应覆盖新对话
+  closeStream()
   abortController?.abort()
   const controller = new AbortController()
   abortController = controller
 
+  // 流式优先（EventSource 不可用时回退 POST，如单测 jsdom 环境）
+  if (streamMode.value && typeof EventSource !== 'undefined') {
+    sseSend(text, placeholder)
+    return
+  }
+  await postSend(text, placeholder, controller)
+}
+
+/**
+ * POST 兜底链路（统一 request 实例；SSE 失败时回退到此）。
+ */
+const postSend = async (text: string, placeholder: ChatMessage, controller: AbortController) => {
   try {
     // 对齐后端 AiController：POST /ai/erp/agent?userId=（userId 为 query 参数，body 为 {message}）
     // 走统一 request 实例：自动注入 token/shopId 头、30s 超时基线，此处覆盖 60s（AI 推理慢）；
@@ -156,6 +201,93 @@ const sendMessage = async () => {
       await scrollToBottom()
     }
   }
+}
+
+/**
+ * SSE 流式链路：消费 GET /ai/chat-stream 事件（tool_call/tool_result/final/done/error）。
+ * 连接级失败且未拿到 final 时回退 postSend（仅一次，不循环）。
+ */
+const sseSend = (text: string, placeholder: ChatMessage) => {
+  const params = new URLSearchParams({ message: text })
+  const savedUserId = localStorage.getItem('user_id')
+  if (savedUserId) params.set('userId', savedUserId)
+  const es = new EventSource(`/api/ai/chat-stream?${params.toString()}`)
+  eventSource = es
+  let gotFinal = false
+
+  const finish = () => {
+    es.close()
+    if (eventSource === es) {
+      eventSource = null
+      loading.value = false
+      scrollToBottom()
+    }
+  }
+
+  const parseData = (ev: Event): Record<string, unknown> | undefined => {
+    const data = (ev as MessageEvent).data
+    if (typeof data !== 'string' || !data) return undefined
+    try {
+      const parsed: unknown = JSON.parse(data)
+      return typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  es.addEventListener('tool_call', (ev) => {
+    const data = parseData(ev)
+    const tools = placeholder.tools || (placeholder.tools = [])
+    tools.push({ name: String(data?.name || 'tool') })
+    scrollToBottom()
+  })
+
+  es.addEventListener('tool_result', (ev) => {
+    const data = parseData(ev)
+    const name = String(data?.name || 'tool')
+    const tools = placeholder.tools || (placeholder.tools = [])
+    const pending = [...tools].reverse().find((t) => t.name === name && t.ok === undefined)
+    if (pending) {
+      pending.ok = !!data?.ok
+    } else {
+      tools.push({ name, ok: !!data?.ok })
+    }
+    scrollToBottom()
+  })
+
+  es.addEventListener('final', (ev) => {
+    const data = parseData(ev)
+    if (data && typeof data.content === 'string' && data.content) {
+      placeholder.content = data.content
+      gotFinal = true
+    }
+  })
+
+  es.addEventListener('done', () => {
+    finish()
+  })
+
+  es.addEventListener('error', () => {
+    // 服务端 error 事件与连接级错误都会到这里；仅在无有效内容时回退
+    if (!gotFinal && !placeholder.content) {
+      finish()
+      postSendFallback(text, placeholder)
+    } else {
+      finish()
+    }
+  })
+}
+
+/**
+ * SSE 失败后的单次 POST 回退。
+ */
+const postSendFallback = async (text: string, placeholder: ChatMessage) => {
+  abortController?.abort()
+  const controller = new AbortController()
+  abortController = controller
+  await postSend(text, placeholder, controller)
 }
 
 const generateMockReply = (question: string): string => {
@@ -283,6 +415,21 @@ const scrollToBottom = async () => {
 }
 
 .message-content.typing { color: var(--color-muted); font-style: italic; }
+
+.tool-timeline { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.5rem; }
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-muted-light);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+.tool-chip.tool-ok { background: var(--color-primary-light); color: var(--color-primary); }
+.tool-chip.tool-fail { background: var(--color-light-red); color: var(--color-error); }
 
 .chat-input-area {
   padding: 0.75rem 1rem;
