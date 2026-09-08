@@ -21,15 +21,20 @@ const SHOPS_KEY = 'shops'
  * 否则返回空字符串（调用方应据此提示用户选择店铺）。
  */
 export const getCurrentShopId = (): string => {
-  let id = localStorage.getItem(CURRENT_SHOP_KEY) || ''
-  if (!id) {
-    const shops = getShops()
-    if (shops.length > 0) {
-      id = String(shops[0].id)
-      localStorage.setItem(CURRENT_SHOP_KEY, id)
+  // localStorage 在隐私模式/禁用存储下抛错：此处是全站守卫入口，必须兜底空串防白屏
+  try {
+    let id = localStorage.getItem(CURRENT_SHOP_KEY) || ''
+    if (!id) {
+      const shops = getShops()
+      if (shops.length > 0) {
+        id = String(shops[0].id)
+        localStorage.setItem(CURRENT_SHOP_KEY, id)
+      }
     }
+    return id
+  } catch {
+    return ''
   }
-  return id
 }
 
 /** 设置当前选中店铺 ID */

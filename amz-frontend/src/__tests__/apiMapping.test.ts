@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mapProfitReport } from '@/api/profit'
 import { mapHealthLevel, mapInventoryRow, joinSuggestQty, deriveHealthCounts } from '@/api/inventory'
+import { mapOrderRow, mapOrderStatus } from '@/api/order'
 
 // 后端原始结构 → 前端展示模型的纯函数映射测试
 // （对齐后端 Controller 实际返回：OrderController#profitReport、
@@ -106,5 +107,54 @@ describe('mapInventoryRow + joinSuggestQty + deriveHealthCounts', () => {
     const items = rows.map((r) => mapInventoryRow(r, 'S'))
     expect(deriveHealthCounts(items)).toEqual({ urgent: 1, risk: 0, healthy: 0, overstock: 1 })
     expect(deriveHealthCounts([])).toEqual({ urgent: 0, risk: 0, healthy: 0, overstock: 0 })
+  })
+})
+
+describe('mapOrderStatus（后端 Amazon 原始状态 → 前端中文状态）', () => {
+  it('四种后端状态应正确映射', () => {
+    expect(mapOrderStatus('Shipped')).toEqual({ status: '已发货', statusClass: 'shipped' })
+    expect(mapOrderStatus('Pending')).toEqual({ status: '待处理', statusClass: 'pending' })
+    expect(mapOrderStatus('Unshipped')).toEqual({ status: '待发货', statusClass: 'pending' })
+    expect(mapOrderStatus('Canceled')).toEqual({ status: '已取消', statusClass: 'refunded' })
+  })
+
+  it('未知状态应兜底', () => {
+    expect(mapOrderStatus(undefined)).toEqual({ status: '未知', statusClass: 'pending' })
+    expect(mapOrderStatus('WHATEVER')).toEqual({ status: '未知', statusClass: 'pending' })
+  })
+})
+
+describe('mapOrderRow（后端 Order 实体 → OrderItem 展示行）', () => {
+  it('实体字段应映射为展示字段', () => {
+    const item = mapOrderRow(
+      {
+        id: 7,
+        shopId: 1,
+        quantity: 2,
+        finalPrice: 59.98,
+        amazonOrderId: '114-1234567-1234567',
+        orderStatus: 'Shipped',
+        purchaseDate: '2026-07-06T14:30:00'
+      },
+      'Shop A (US)'
+    )
+    expect(item).toMatchObject({
+      id: 7,
+      orderNo: '114-1234567-1234567',
+      shop: 'Shop A (US)',
+      shopId: '1',
+      sku: '-',
+      qty: 2,
+      amount: '$59.98',
+      profit: 0,
+      status: '已发货',
+      statusClass: 'shipped',
+      date: '2026-07-06 14:30'
+    })
+  })
+
+  it('缺失字段应兜底为空占位', () => {
+    const item = mapOrderRow({}, 'S')
+    expect(item).toMatchObject({ orderNo: '-', sku: '-', qty: 0, amount: '$0.00', date: '' })
   })
 })

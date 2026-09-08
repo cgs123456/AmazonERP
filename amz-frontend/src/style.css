@@ -200,6 +200,10 @@ table {
 /* 状态标签基类（语义配色由各视图的修饰类定义） */
 .status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 
+/* 降级 mock 示例标识（B4 收敛：AdManager / ProfitReport 的 scoped 副本已删除，统一走全局）。
+   规则：展示降级 mock 数据时必须挂徽，不得冒充真实数据。 */
+.mock-badge { display: inline-block; vertical-align: middle; font-size: 0.6875rem; font-weight: 500; color: var(--color-muted); background: var(--color-muted-light); padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); margin-left: 0.5rem; }
+
 /* 分页 */
 .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
 .page-info { font-size: 0.8125rem; color: var(--color-muted); }

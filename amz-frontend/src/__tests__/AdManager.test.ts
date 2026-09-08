@@ -5,8 +5,7 @@ import AdManager from '../views/AdManager.vue'
 // mock 广告相关 API，避免触发真实请求
 vi.mock('@/api/ad', () => ({
   getAdReports: vi.fn(),
-  getAdTrend: vi.fn(),
-  getKeywordOptimization: vi.fn()
+  getAdTrend: vi.fn()
 }))
 
 vi.mock('@/api/ad-ext', () => ({
@@ -15,7 +14,6 @@ vi.mock('@/api/ad-ext', () => ({
   listCampaigns: vi.fn(),
   batchCreateCampaigns: vi.fn(),
   batchUpdateStatus: vi.fn(),
-  getShopSummary: vi.fn(),
   getSummaryByType: vi.fn(),
   createCreative: vi.fn(),
   updateCreative: vi.fn(),

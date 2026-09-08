@@ -49,11 +49,12 @@
       </div>
       </template>
 
-      <!-- 维度切换 -->
+      <!-- 维度切换（降级 mock 时挂示例标识，避免误当真实利润决策） -->
       <div class="dim-tabs">
         <button :class="['dim-tab', { active: dim === 'sku' }]" @click="dim = 'sku'">按 SKU</button>
         <button :class="['dim-tab', { active: dim === 'shop' }]" @click="dim = 'shop'">按店铺</button>
         <button :class="['dim-tab', { active: dim === 'month' }]" @click="dim = 'month'">按月度</button>
+        <span v-if="isMock" class="mock-badge">示例数据</span>
       </div>
 
       <!-- 利润表格（加载时仅显示骨架） -->
@@ -106,13 +107,14 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getProfitReport } from '@/api/profit'
 import type { ProfitRow, ProfitSummary } from '@/api/profit'
-import { getCurrentShopId } from '@/utils/shop'
+import { useShopGuard } from '@/composables/useShopGuard'
+import { useMockFlag } from '@/composables/useMockFlag'
 
 const loading = ref(false)
 const dim = ref<'sku' | 'shop' | 'month'>('sku')
 
-// 当前选中店铺（未选则为空字符串，用于阻断查询并提示用户）
-const currentShopId = ref(getCurrentShopId())
+// 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
+const { currentShopId, refreshShop } = useShopGuard()
 
 // 降级用的 mock 数据
 const mockSummary: ProfitSummary = {
@@ -143,6 +145,9 @@ const mockMonthData: ProfitRow[] = [
   { name: '2026-06', revenue: '$12,456.80', cost: '$7,234.20', platformFee: '$1,868.52', adFee: '$1,245.68', shipping: '$622.84', profit: 1485.56, margin: 11.9 }
 ]
 
+// 是否正在展示降级 mock（B4 公共标识：初始 true；任何 200 响应后摘徽，含零数据）
+const { isMock, markLive } = useMockFlag()
+
 const summary = ref<ProfitSummary>({ ...mockSummary })
 const skuData = ref<ProfitRow[]>([...mockSkuData])
 const shopData = ref<ProfitRow[]>([...mockShopData])
@@ -156,7 +161,7 @@ const currentData = computed(() => {
 
 onMounted(async () => {
   // 未选择店铺时不发请求，/order/profit/* 路径受网关 shopId 校验
-  const shopId = currentShopId.value
+  const shopId = refreshShop()
   if (!shopId) {
     loading.value = false
     return
@@ -168,6 +173,12 @@ onMounted(async () => {
       if (res.data.summary) summary.value = res.data.summary
       // API 返回的行数据填充到默认 SKU 维度
       if (res.data.rows) skuData.value = res.data.rows
+      // 后端只返回 SKU 维度：shop/month 的 mock 必须同步清空，
+      // 否则切维度会把 mock 当真实利润展示（与示例徽章语义矛盾）
+      shopData.value = []
+      monthData.value = []
+      // 200 即视为真实数据（含零数据空态），摘掉示例标识
+      markLive()
     } else {
       console.warn('[ProfitReport] 返回数据异常，使用降级数据', res)
     }
@@ -202,6 +213,7 @@ onMounted(async () => {
 .dim-tab { padding: 0.5rem 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: var(--font-size-2); color: var(--color-muted); transition: all 0.2s; }
 .dim-tab:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .dim-tab.active { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
+/* .mock-badge 已收敛至全局 style.css */
 
 .profit-positive { color: var(--color-success); font-weight: 600; }
 .profit-negative { color: var(--color-error); font-weight: 600; }

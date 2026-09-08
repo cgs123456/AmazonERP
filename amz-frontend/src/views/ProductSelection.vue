@@ -16,6 +16,11 @@
         <p class="hero-subtitle">蓝海机会发现 · 市场趋势分析 · 竞争程度评估</p>
       </div>
 
+      <!-- 未选择店铺提示 -->
+      <div v-if="!currentShopId" class="shop-tip">
+        请先在右上角选择店铺后再查看选品机会。
+      </div>
+
       <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
       <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="table-card sk-table-card">
@@ -95,7 +100,7 @@
                   v-for="(d, i) in radarDims"
                   :key="'l' + i"
                   class="radar-label"
-                  :style="labelStyle(i)"
+                  :style="labelStyles[i]"
                 >{{ d.label }}</div>
               </div>
             </div>
@@ -248,7 +253,7 @@ import {
   type MarketAnalysisSummary,
   type SelectionOpportunity
 } from '@/api/selection'
-import { getCurrentShopId } from '@/utils/shop'
+import { useShopGuard } from '@/composables/useShopGuard'
 
 const keyword = ref('wireless earbuds')
 const marketplace = ref('US')
@@ -267,6 +272,9 @@ const sortOptions = [
 
 const aiSummary = ref('')
 const aiSuggestion = ref('')
+
+// 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
+const { currentShopId, refreshShop } = useShopGuard()
 
 // 当前机会列表的平均机会评分
 const avgOpportunityScore = computed(() => {
@@ -329,18 +337,22 @@ const polygonStyle = computed(() => {
   return { clipPath: `polygon(${points.join(', ')})` }
 })
 
-// 雷达标签位置
-const labelStyle = (i: number) => {
-  const angle = (Math.PI * 2 * i) / 8 - Math.PI / 2
-  const r = 52
-  const x = 50 + r * Math.cos(angle)
-  const y = 50 + r * Math.sin(angle)
-  return {
-    left: `${x}%`,
-    top: `${y}%`,
-    transform: 'translate(-50%, -50%)'
+// 雷达标签位置（8 个固定槽位，一次派生为 computed 数组；模板内逐次函数调用会在每次渲染重复计算）
+const labelStyles = computed(() => {
+  const styles: Array<Record<string, string>> = []
+  for (let i = 0; i < 8; i++) {
+    const angle = (Math.PI * 2 * i) / 8 - Math.PI / 2
+    const r = 52
+    const x = 50 + r * Math.cos(angle)
+    const y = 50 + r * Math.sin(angle)
+    styles.push({
+      left: `${x}%`,
+      top: `${y}%`,
+      transform: 'translate(-50%, -50%)'
+    })
   }
-}
+  return styles
+})
 
 // 分析市场
 const onAnalyzeMarket = async () => {
@@ -368,8 +380,13 @@ const onSortChange = async (val: 'score' | 'volume' | 'competition') => {
 }
 
 const refreshList = async () => {
-  // 店铺 ID 统一走 current_shop_id（曾误读无约定的 'shopId' 键，恒回退 1 号店）
-  const shopId = Number(getCurrentShopId()) || 1
+  // 未选店铺时阻断查询：禁止静默回退 1 号店（曾因此查错店数据）
+  const rawShopId = refreshShop()
+  if (!rawShopId) {
+    opportunityList.value = []
+    return
+  }
+  const shopId = Number(rawShopId)
   try {
     const resp = await findOpportunities(shopId, undefined, sortBy.value, 20)
     opportunityList.value = resp.data ?? []

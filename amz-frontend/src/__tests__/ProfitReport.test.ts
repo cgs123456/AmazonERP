@@ -129,4 +129,57 @@ describe('ProfitReport 视图', () => {
     expect(wrapper.text()).toContain('$12,456.80')
     expect(wrapper.text()).toContain('B08X4-001')
   })
+
+  it('降级 mock 展示时应挂示例标识', async () => {
+    localStorage.setItem('current_shop_id', '1')
+    mockedGetProfitReport.mockRejectedValue(new Error('network error'))
+
+    const wrapper = mount(ProfitReport, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    expect(wrapper.find('.mock-badge').exists()).toBe(true)
+    expect(wrapper.find('.mock-badge').text()).toBe('示例数据')
+  })
+
+  it('200 后切换非 SKU 维度应展示空态而非 mock（后端只返 SKU 维）', async () => {
+    localStorage.setItem('current_shop_id', '1')
+    mockedGetProfitReport.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: {
+        summary: { totalRevenue: '$1.00', totalCost: '$0.50', grossProfit: '$0.50', grossMargin: '50.0%' },
+        rows: [
+          { name: 'API-SKU-1', revenue: '$1.00', cost: '$0.50', platformFee: '$0', adFee: '$0', shipping: '$0', profit: 0.5, margin: 50.0 }
+        ]
+      }
+    })
+
+    const wrapper = mount(ProfitReport, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    const shopTab = wrapper.findAll('.dim-tab').find(t => t.text().includes('按店铺'))!
+    await shopTab.trigger('click')
+
+    expect(wrapper.text()).toContain('暂无利润数据')
+    expect(wrapper.text()).not.toContain('Shop A (US)')
+  })
+
+  it('200 真实数据（即使零数据）应摘掉示例标识', async () => {
+    localStorage.setItem('current_shop_id', '1')
+    mockedGetProfitReport.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: {
+        summary: { totalRevenue: '$0.00', totalCost: '$0.00', grossProfit: '$0.00', grossMargin: '0.0%' },
+        rows: []
+      }
+    })
+
+    const wrapper = mount(ProfitReport, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    expect(wrapper.find('.mock-badge').exists()).toBe(false)
+    expect(wrapper.text()).toContain('$0.00')
+    expect(wrapper.text()).toContain('暂无利润数据')
+  })
 })

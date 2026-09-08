@@ -97,7 +97,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="inv in pagedInventoryList" :key="inv.id">
+              <tr v-for="inv in pagedInventoryList" :key="inv.id ?? `${inv.sku}|${inv.warehouseId}|${inv.batchNo || ''}`">
                 <td>{{ inv.sku }}</td>
                 <td>{{ inv.asin || '-' }}</td>
                 <td>{{ inv.warehouseId }}</td>
@@ -147,7 +147,7 @@
                 <td>{{ o.expectedArrival || '-' }}</td>
                 <td>
                   <button v-if="o.status === 'PENDING'" class="action-btn" @click="doTransit(o.id!)">运输中</button>
-                  <button v-if="o.status === 'IN_TRANSIT' || o.status === 'PARTIAL'" class="action-btn" @click="openReceive(o.id!)">到货验收</button>
+                  <button v-if="o.status === 'IN_TRANSIT' || o.status === 'PARTIAL'" class="action-btn" @click="openReceive(o.id!, o.warehouseId)">到货验收</button>
                   <button v-if="canCancelInbound(o.status)" class="action-btn cancel" @click="doCancelInbound(o.id!)">取消</button>
                 </td>
               </tr>
@@ -184,7 +184,7 @@
                 <td>
                   <button v-if="o.status === 'PENDING'" class="action-btn" @click="doPick(o.id!)">拣货</button>
                   <button v-if="o.status === 'PICKING'" class="action-btn" @click="doPack(o.id!)">打包</button>
-                  <button v-if="o.status === 'PACKED'" class="action-btn" @click="doShip(o.id!)">发货</button>
+                  <button v-if="o.status === 'PACKED'" class="action-btn" @click="doShip(o.id!, o.warehouseId)">发货</button>
                   <button v-if="canCancelOutbound(o.status)" class="action-btn cancel" @click="doCancelOutbound(o.id!)">取消</button>
                 </td>
               </tr>
@@ -332,11 +332,11 @@ import AppSidebar from '../components/AppSidebar.vue'
 import * as WH from '@/api/warehouse'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder } from '@/api/warehouse'
 import { usePagination } from '@/composables/usePagination'
-import { getCurrentShopId } from '@/utils/shop'
+import { useShopGuard } from '@/composables/useShopGuard'
 import { useToast } from '@/composables/useToast'
 
-// 店铺上下文统一走 current_shop_id（曾硬编码 shopIdNum()=1 导致多店数据污染）
-const currentShopId = ref(getCurrentShopId())
+// 店铺上下文统一走 current_shop_id（曾硬编码 shopIdNum()=1 导致多店数据污染；B4 公共守卫）
+const { currentShopId, refreshShop } = useShopGuard()
 const shopIdNum = () => Number(currentShopId.value) || 0
 const { showToast } = useToast()
 const loading = ref(false)
@@ -364,24 +364,27 @@ const warehouseName = (id?: number) => {
 }
 
 const loadWarehouses = async () => {
-  if (!currentShopId.value) return
+  if (!refreshShop()) return
   try {
     const res = await WH.listWarehouses(currentShopId.value)
     if (res?.code === 200) warehouses.value = res.data || []
   } catch (e) { console.warn('[Warehouse] 加载仓库失败', e) }
 }
 
-const loadInventory = async () => {
-  if (!currentShopId.value) return
-  loading.value = true
+// manageLoading：onMounted 外层已统一控制骨架屏时传 false，避免内层提前复位导致闪烁
+const loadInventory = async (manageLoading = true) => {
+  if (!refreshShop()) return
+  if (manageLoading) loading.value = true
   try {
     const res = await WH.listInventory({ shopId: shopIdNum(), ...invFilter })
     if (res?.code === 200) inventoryList.value = res.data || []
-  } catch (e) { console.warn('[Warehouse] 加载库存失败', e) } finally { loading.value = false }
+  } catch (e) { console.warn('[Warehouse] 加载库存失败', e) } finally {
+    if (manageLoading) loading.value = false
+  }
 }
 
 const loadInbound = async () => {
-  if (!currentShopId.value) return
+  if (!refreshShop()) return
   try {
     const res = await WH.listInboundOrders(currentShopId.value)
     if (res?.code === 200) inboundOrders.value = res.data || []
@@ -389,7 +392,7 @@ const loadInbound = async () => {
 }
 
 const loadOutbound = async () => {
-  if (!currentShopId.value) return
+  if (!refreshShop()) return
   try {
     const res = await WH.listOutboundOrders(currentShopId.value)
     if (res?.code === 200) outboundOrders.value = res.data || []
@@ -440,11 +443,13 @@ const doTransit = async (id: number) => {
   }
 }
 // 到货验收明细弹窗（替代阻塞式 window.prompt，支持多行 SKU/数量校验）
-const receiveDialog = reactive<{ visible: boolean; id: number; items: { sku: string; quantity: number }[] }>({
-  visible: false, id: 0, items: [{ sku: '', quantity: 1 }]
+const receiveDialog = reactive<{ visible: boolean; id: number; warehouseId: number; items: { sku: string; quantity: number }[] }>({
+  visible: false, id: 0, warehouseId: 0, items: [{ sku: '', quantity: 1 }]
 })
-const openReceive = (id: number) => {
+const openReceive = (id: number, warehouseId: number) => {
   receiveDialog.id = id
+  // 明细必须归属入库单所属仓库：硬编码 0 会导致后端按无效仓库落库存
+  receiveDialog.warehouseId = warehouseId
   receiveDialog.items = [{ sku: '', quantity: 1 }]
   receiveDialog.visible = true
 }
@@ -452,7 +457,7 @@ const confirmReceive = async () => {
   try {
     const items: WarehouseInventory[] = receiveDialog.items
       .filter((x) => x.sku && x.quantity > 0)
-      .map((x) => ({ warehouseId: 0, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
+      .map((x) => ({ warehouseId: receiveDialog.warehouseId, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
     await WH.receiveInbound(receiveDialog.id, items)
     receiveDialog.visible = false
     showToast('到货验收成功', 'success')
@@ -509,11 +514,13 @@ const doPack = async (id: number) => {
     showToast('操作失败，请稍后重试', 'error')
   }
 }
-const shipDialog = reactive<{ visible: boolean; id: number; carrier: string; trackingNo: string; items: { sku: string; quantity: number }[] }>({
-  visible: false, id: 0, carrier: '', trackingNo: '', items: [{ sku: '', quantity: 1 }]
+const shipDialog = reactive<{ visible: boolean; id: number; warehouseId: number; carrier: string; trackingNo: string; items: { sku: string; quantity: number }[] }>({
+  visible: false, id: 0, warehouseId: 0, carrier: '', trackingNo: '', items: [{ sku: '', quantity: 1 }]
 })
-const doShip = (id: number) => {
+const doShip = (id: number, warehouseId: number) => {
   shipDialog.id = id
+  // 同上：发货明细归属出库单所属仓库
+  shipDialog.warehouseId = warehouseId
   shipDialog.carrier = ''
   shipDialog.trackingNo = ''
   shipDialog.items = [{ sku: '', quantity: 1 }]
@@ -523,7 +530,7 @@ const confirmShip = async () => {
   try {
     const items: WarehouseInventory[] = shipDialog.items
       .filter((x) => x.sku && x.quantity > 0)
-      .map((x) => ({ warehouseId: 0, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
+      .map((x) => ({ warehouseId: shipDialog.warehouseId, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
     await WH.shipOutbound(shipDialog.id, { carrier: shipDialog.carrier, trackingNo: shipDialog.trackingNo, items })
     shipDialog.visible = false
     showToast('发货成功', 'success')
@@ -558,14 +565,14 @@ const outboundStatusClass = (s?: string) => {
 
 onMounted(async () => {
   // 未选择店铺时不发请求，各 load 函数内部同样守卫
-  if (!currentShopId.value) {
+  if (!refreshShop()) {
     loading.value = false
     return
   }
   loading.value = true
   try {
     await loadWarehouses()
-    await Promise.all([loadInventory(), loadInbound(), loadOutbound()])
+    await Promise.all([loadInventory(false), loadInbound(), loadOutbound()])
   } finally { loading.value = false }
 })
 </script>

@@ -18,16 +18,23 @@ class WebSocketManager {
     private isWaitingPong: boolean = false
     private messageHandlers: Set<(data: unknown) => void> = new Set()
     private statusHandlers: Set<(connected: boolean) => void> = new Set()
+    // 绑定的全局监听器引用：匿名 bind 每次产生新函数引用，无法移除；
+    // 此处保存引用，供 dispose() 清理（HMR / 单测多实例防泄漏）
+    private boundVisibilityHandler: () => void
+    private boundBeforeUnloadHandler: () => void
+    private disposed = false
 
     constructor(url: string) {
         this.url = url
         this.loadToken()
+        this.boundVisibilityHandler = () => this.handleVisibilityChange()
+        this.boundBeforeUnloadHandler = () => this.handleBeforeUnload()
 
         // 监听页面可见性变化
-        document.addEventListener('visibilitychange', this.handleVisibilityChange.bind(this))
+        document.addEventListener('visibilitychange', this.boundVisibilityHandler)
 
         // 页面卸载前保存状态
-        window.addEventListener('beforeunload', this.handleBeforeUnload.bind(this))
+        window.addEventListener('beforeunload', this.boundBeforeUnloadHandler)
     }
 
     /**
@@ -41,7 +48,12 @@ class WebSocketManager {
      * 连接 WebSocket
      */
     connect(): void {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        if (this.disposed) {
+            return
+        }
+        // OPEN 与 CONNECTING 都直接返回：后者正握手中，重复 new 会泄漏旧 socket
+        //（旧实例事件仍触发，心跳/消息错乱），等 onopen/onclose 自然收敛
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
             return
         }
 
@@ -93,7 +105,7 @@ class WebSocketManager {
                 return
             }
 
-            if (data.startsWith('auth_failed')) {
+            if (typeof data === 'string' && data.startsWith('auth_failed')) {
                 this.close()
                 return
             }
@@ -284,6 +296,21 @@ class WebSocketManager {
             this.ws.close()
             this.ws = null
         }
+    }
+
+    /**
+     * 彻底销毁实例：关闭连接、清定时器、移除全局监听器、清空订阅。
+     * <p>
+     * 单例常驻时调不到，但 HMR 热更替 / 单测多实例场景下防止监听器与心跳叠加泄漏。
+     * 销毁后实例不可再用（connect 会直接返回）。
+     */
+    dispose(): void {
+        this.disposed = true
+        this.close()
+        document.removeEventListener('visibilitychange', this.boundVisibilityHandler)
+        window.removeEventListener('beforeunload', this.boundBeforeUnloadHandler)
+        this.messageHandlers.clear()
+        this.statusHandlers.clear()
     }
 
     /**

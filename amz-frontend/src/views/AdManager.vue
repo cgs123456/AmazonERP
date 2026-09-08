@@ -90,7 +90,6 @@
               <th>花费</th>
               <th>销售额</th>
               <th>ACoS</th>
-              <th>操作</th>
             </tr>
           </thead>
           <tbody>
@@ -101,10 +100,9 @@
               <td>${{ camp.spend }}</td>
               <td>${{ camp.sales }}</td>
               <td :class="camp.acos > 50 ? 'acos-bad' : camp.acos > 35 ? 'acos-warn' : 'acos-good'">{{ camp.acos }}%</td>
-              <td><button class="action-btn">调价</button></td>
             </tr>
             <tr v-if="!loading && campaigns.length === 0">
-              <td colspan="7" class="empty-row">
+              <td colspan="6" class="empty-row">
                 <div class="empty-state">
                   <Icon icon="mdi:chart-line" width="32" class="empty-icon" />
                   <span>暂无广告活动数据</span>
@@ -275,12 +273,12 @@ import { getAdReports, getAdTrend } from '@/api/ad'
 import type { AdOverview, AcosTrendItem, AdCampaign } from '@/api/ad'
 import * as AdExt from '@/api/ad-ext'
 import type { AdCreative, AdTargeting, AdSummary, AdType } from '@/api/ad-ext'
-import { getCurrentShopId } from '@/utils/shop'
+import { useShopGuard } from '@/composables/useShopGuard'
 
 const loading = ref(false)
 
-// 当前选中店铺（未选则为空字符串，用于阻断查询并提示用户）
-const currentShopId = ref(getCurrentShopId())
+// 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
+const { currentShopId, refreshShop } = useShopGuard()
 
 // 广告类型 Tab
 const adTabs = [
@@ -323,7 +321,7 @@ const loadTrend = async (shopId: number | string, adType: AdType) => {
 
 // 切换 SP/SB/SD 时按类型重拉趋势（DSP 页不展示趋势图，跳过）
 watch(activeAdTab, (tab) => {
-  const shopId = currentShopId.value
+  const shopId = refreshShop()
   if (!shopId || tab === 'DSP') return
   loadTrend(shopId, tab)
 })
@@ -397,7 +395,7 @@ const acosTrendDots = computed(() => {
 
 onMounted(async () => {
   // 未选择店铺时不发请求
-  const shopId = currentShopId.value
+  const shopId = refreshShop()
   if (!shopId) {
     loading.value = false
     return
@@ -407,8 +405,9 @@ onMounted(async () => {
     const n = Number(v)
     return isNaN(n) ? 0 : n
   }
+  // 金额存裸数字串（模板统一加 $ 前缀；此前 live 路径自带 $ 导致渲染成 $$，mock 路径无此问题）
   const fmtMoney = (n: number): string =>
-    '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   try {
     // 后端 GET /ad/reports 返回 AdReport 行数组（无总览包装），前端聚合总览
     const res = await getAdReports(shopId)
@@ -525,7 +524,7 @@ const removeTargeting = async (id: number) => {
 const summaryByType = ref<Record<string, AdSummary>>({})
 const loadSummaryByType = async () => {
   // 未选择店铺时不发请求
-  const shopId = currentShopId.value
+  const shopId = refreshShop()
   if (!shopId) return
   try {
     const res = await AdExt.getSummaryByType(shopId)
@@ -565,7 +564,7 @@ const acosClass = (acos?: number) => {
 
 .chart-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow-sm); }
 .chart-card h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--color-on-surface); }
-.mock-badge { display: inline-block; vertical-align: middle; font-size: 0.6875rem; font-weight: 500; color: var(--color-muted); background: var(--color-muted-light); padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); margin-left: 0.5rem; }
+
 /* 折线颜色走 token，双主题自动适配 */
 .trend-line { stroke: var(--color-primary); }
 .trend-dot { fill: var(--color-primary); }

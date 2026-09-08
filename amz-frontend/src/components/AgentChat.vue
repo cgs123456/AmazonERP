@@ -65,6 +65,8 @@
 import { ref, nextTick, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import request from '../api/auth'
+import { getCurrentShopId } from '../utils/shop'
+import { readSseStream } from '../utils/sse'
 
 defineProps<{ visible: boolean }>()
 defineEmits<{
@@ -83,15 +85,16 @@ const loading = ref(false)
 const messagesContainer = ref<HTMLElement | null>(null)
 // 在途请求的取消控制器：切页/卸载时中止，避免回写已卸载状态
 let abortController: AbortController | null = null
-// 在途 SSE 连接：新发送/卸载时关闭
-let eventSource: EventSource | null = null
-// 流式模式开关：EventSource 不可用（如单测 jsdom）时自动回退 POST
-const streamMode = ref(true)
+// 在途流式请求的取消控制器 + 轮次号：新发送/卸载时中止上一轮；
+// 被取代的旧轮静默返回，不触发 POST 回退（避免旧响应覆盖新对话）
+let streamController: AbortController | null = null
+let streamSeq = 0
 
 const closeStream = () => {
-  if (eventSource) {
-    eventSource.close()
-    eventSource = null
+  streamSeq++
+  if (streamController) {
+    streamController.abort()
+    streamController = null
   }
 }
 
@@ -146,12 +149,9 @@ const sendMessage = async () => {
   const controller = new AbortController()
   abortController = controller
 
-  // 流式优先（EventSource 不可用时回退 POST，如单测 jsdom 环境）
-  if (streamMode.value && typeof EventSource !== 'undefined') {
-    sseSend(text, placeholder)
-    return
-  }
-  await postSend(text, placeholder, controller)
+  // 流式优先（fetch + ReadableStream，可透传 token/shopId 头）；
+  // 建连失败或空响应时 sseSend 内部回退 postSend（仅一次，不循环）
+  sseSend(text, placeholder).catch(() => undefined)
 }
 
 /**
@@ -204,31 +204,51 @@ const postSend = async (text: string, placeholder: ChatMessage, controller: Abor
 }
 
 /**
- * SSE 流式链路：消费 GET /ai/chat-stream 事件（tool_call/tool_result/final/done/error）。
+ * SSE 流式链路：fetch GET /ai/chat-stream，消费事件（tool_call/tool_result/final/done/error）。
+ * <p>
+ * 不用 EventSource 的原因：它发不出 token/shopId 自定义头，网关鉴权下流式恒 401；
+ * 且 URL 曾硬编码同源 /api，生产网关域名下 404。fetch 与统一 request 实例同基址
+ * （dev 走 vite /api 代理，生产走网关），并透传鉴权头。
  * 连接级失败且未拿到 final 时回退 postSend（仅一次，不循环）。
  */
-const sseSend = (text: string, placeholder: ChatMessage) => {
+const sseSend = async (text: string, placeholder: ChatMessage) => {
   const params = new URLSearchParams({ message: text })
   const savedUserId = localStorage.getItem('user_id')
   if (savedUserId) params.set('userId', savedUserId)
-  const es = new EventSource(`/api/ai/chat-stream?${params.toString()}`)
-  eventSource = es
+  // request 在单测中可能被 mock 为裸对象，defaults 缺失时回退同源 /api（与旧 EventSource 硬编码一致）
+  const url = `${request.defaults?.baseURL || '/api'}/ai/chat-stream?${params.toString()}`
+  const token = localStorage.getItem('token') || ''
+  const shopId = getCurrentShopId()
+  const controller = new AbortController()
+  const seq = ++streamSeq
+  streamController = controller
+  // 与后端 AgentSseController#EMITTER_TIMEOUT_MS 对齐，超时后走 POST 回退
+  const timeoutId = setTimeout(() => controller.abort(), 120000)
   let gotFinal = false
+  let finished = false
 
   const finish = () => {
-    es.close()
-    if (eventSource === es) {
-      eventSource = null
-      loading.value = false
-      scrollToBottom()
-    }
+    if (finished) return
+    finished = true
+    clearTimeout(timeoutId)
+    if (streamController === controller) streamController = null
+    loading.value = false
+    scrollToBottom()
   }
 
-  const parseData = (ev: Event): Record<string, unknown> | undefined => {
-    const data = (ev as MessageEvent).data
-    if (typeof data !== 'string' || !data) return undefined
+  // 进入 POST 回退前的收尾：与 finish() 的区别是不复位 loading，
+  // 由 postSend.finally 统一复位，避免回退窗口内发送按钮可用导致新旧对话交错
+  const beginFallback = () => {
+    if (finished) return
+    finished = true
+    clearTimeout(timeoutId)
+    if (streamController === controller) streamController = null
+  }
+
+  const parseData = (raw: string): Record<string, unknown> | undefined => {
+    if (!raw) return undefined
     try {
-      const parsed: unknown = JSON.parse(data)
+      const parsed: unknown = JSON.parse(raw)
       return typeof parsed === 'object' && parsed !== null
         ? (parsed as Record<string, unknown>)
         : undefined
@@ -237,47 +257,66 @@ const sseSend = (text: string, placeholder: ChatMessage) => {
     }
   }
 
-  es.addEventListener('tool_call', (ev) => {
-    const data = parseData(ev)
-    const tools = placeholder.tools || (placeholder.tools = [])
-    tools.push({ name: String(data?.name || 'tool') })
-    scrollToBottom()
-  })
-
-  es.addEventListener('tool_result', (ev) => {
-    const data = parseData(ev)
-    const name = String(data?.name || 'tool')
-    const tools = placeholder.tools || (placeholder.tools = [])
-    const pending = [...tools].reverse().find((t) => t.name === name && t.ok === undefined)
-    if (pending) {
-      pending.ok = !!data?.ok
-    } else {
-      tools.push({ name, ok: !!data?.ok })
-    }
-    scrollToBottom()
-  })
-
-  es.addEventListener('final', (ev) => {
-    const data = parseData(ev)
-    if (data && typeof data.content === 'string' && data.content) {
-      placeholder.content = data.content
-      gotFinal = true
-    }
-  })
-
-  es.addEventListener('done', () => {
+  try {
+    const resp = await fetch(url, {
+      headers: {
+        ...(token ? { token } : {}),
+        ...(shopId ? { shopId } : {})
+      },
+      signal: controller.signal
+    })
+    if (!resp.ok || !resp.body) throw new Error(`stream HTTP ${resp.status}`)
+    await readSseStream(
+      resp.body,
+      (event, data) => {
+        if (event === 'tool_call') {
+          const d = parseData(data)
+          const tools = placeholder.tools || (placeholder.tools = [])
+          tools.push({ name: String(d?.name || 'tool') })
+          scrollToBottom()
+        } else if (event === 'tool_result') {
+          const d = parseData(data)
+          const name = String(d?.name || 'tool')
+          const tools = placeholder.tools || (placeholder.tools = [])
+          const pending = [...tools].reverse().find((t) => t.name === name && t.ok === undefined)
+          if (pending) {
+            pending.ok = !!d?.ok
+          } else {
+            tools.push({ name, ok: !!d?.ok })
+          }
+          scrollToBottom()
+        } else if (event === 'final') {
+          const d = parseData(data)
+          if (d && typeof d.content === 'string' && d.content) {
+            placeholder.content = d.content
+            gotFinal = true
+          }
+        } else if (event === 'done') {
+          finish()
+        } else if (event === 'error') {
+          // 服务端 error 事件；仅在无有效内容时中断并回退（finished 守卫保证仅一次）
+          if (!gotFinal && !placeholder.content) {
+            beginFallback()
+            controller.abort()
+            postSendFallback(text, placeholder)
+          } else {
+            finish()
+          }
+        }
+      },
+      controller.signal
+    )
     finish()
-  })
-
-  es.addEventListener('error', () => {
-    // 服务端 error 事件与连接级错误都会到这里；仅在无有效内容时回退
+  } catch (e) {
+    // 被新一轮取代或已处理（error 事件分支）：静默返回
+    if (seq !== streamSeq || finished) return
     if (!gotFinal && !placeholder.content) {
-      finish()
+      beginFallback()
       postSendFallback(text, placeholder)
     } else {
       finish()
     }
-  })
+  }
 }
 
 /**

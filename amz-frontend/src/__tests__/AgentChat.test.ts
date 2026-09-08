@@ -13,34 +13,18 @@ import request from '../api/auth'
 
 const mockedPost = vi.mocked(request.post)
 
-// SSE EventSource 测试替身：记录实例与监听器，支持主动触发命名事件
-class FakeEventSource {
-  url: string
-  closed = false
-  private listeners: Record<string, Array<(ev: unknown) => void>> = {}
+// SSE fetch 测试替身：按给定分块构造 ReadableStream 响应
+const sseStream = (chunks: string[]) =>
+  new ReadableStream<Uint8Array>({
+    start(controller) {
+      const enc = new TextEncoder()
+      for (const c of chunks) controller.enqueue(enc.encode(c))
+      controller.close()
+    }
+  })
 
-  constructor(url: string) {
-    this.url = url
-  }
-
-  addEventListener(type: string, cb: (ev: unknown) => void) {
-    if (!this.listeners[type]) this.listeners[type] = []
-    this.listeners[type].push(cb)
-  }
-
-  removeEventListener() {
-    // 测试替身无需实现
-  }
-
-  close() {
-    this.closed = true
-  }
-
-  emit(type: string, data?: unknown) {
-    const ev = data === undefined ? {} : { data: typeof data === 'string' ? data : JSON.stringify(data) }
-    for (const cb of this.listeners[type] || []) cb(ev)
-  }
-}
+const mockFetchSse = (chunks: string[]) =>
+  vi.fn().mockResolvedValue({ ok: true, body: sseStream(chunks) })
 
 // 公共 stubs：避免 Teleport/Transition/Icon 在测试环境中的副作用
 const globalStubs = {
@@ -58,10 +42,13 @@ describe('AgentChat 组件', () => {
     mockedPost.mockReset()
     // 默认模拟后端接口不可用，使组件降级到 generateMockReply
     mockedPost.mockRejectedValue(new Error('test: backend unavailable'))
+    // 默认流式建连失败，走 POST 回退路径（各 POST 用例借此保持确定性）
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('test: stream unavailable')))
   })
 
   afterEach(() => {
     localStorage.clear()
+    vi.unstubAllGlobals()
   })
 
   it('visible 为 true 时应显示浮窗', () => {
@@ -154,75 +141,71 @@ describe('AgentChat 组件', () => {
   })
 
   it('SSE 工具时间线应渲染调用过程并展示最终回复', async () => {
-    const instances: FakeEventSource[] = []
-    vi.stubGlobal('EventSource', class extends FakeEventSource {
-      constructor(url: string) {
-        super(url)
-        instances.push(this)
-      }
+    // 注：SSE 规范要求每帧以空行结束；缺空行时多事件会合并为一帧（与真 EventSource 行为一致）
+    const fetchMock = mockFetchSse([
+      'event: tool_call\ndata: {"name":"query_inventory"}\n\n',
+      'event: tool_result\ndata: {"name":"query_inventory","ok":true}\n\n',
+      'event: final\ndata: {"content":"FINAL-ANSWER"}\n\nevent: done\ndata: {}\n\n'
+    ])
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(AgentChat, {
+      props: { visible: true },
+      global: globalStubs
     })
+    await wrapper.find('.chat-input').setValue('查库存')
+    await wrapper.find('.send-btn').trigger('click')
+    // 流式读取跨多个 microtask 轮次，用 waitFor 等事件消费完成
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [
+      string,
+      { headers: Record<string, string> }
+    ]
+    expect(url).toContain('/ai/chat-stream')
+    expect(url).toContain(encodeURIComponent('查库存'))
+    // 鉴权头必须透传（EventSource 时代缺失导致网关 401）
+    expect(init.headers.token).toBe('test-token')
+    // SSE 路径不应调用 POST
+    expect(mockedPost).not.toHaveBeenCalled()
 
-    try {
-      const wrapper = mount(AgentChat, {
-        props: { visible: true },
-        global: globalStubs
-      })
-      await wrapper.find('.chat-input').setValue('查库存')
-      await wrapper.find('.send-btn').trigger('click')
-      await flushPromises()
-
-      expect(instances.length).toBe(1)
-      expect(instances[0].url).toContain('/api/ai/chat-stream')
-      expect(instances[0].url).toContain(encodeURIComponent('查库存'))
-      // SSE 路径不应调用 POST
-      expect(mockedPost).not.toHaveBeenCalled()
-
-      // 工具调用过程渲染为 chips
-      instances[0].emit('tool_call', { name: 'query_inventory' })
-      await flushPromises()
-      expect(wrapper.text()).toContain('query_inventory')
-
-      instances[0].emit('tool_result', { name: 'query_inventory', ok: true })
-      instances[0].emit('final', { content: 'FINAL-ANSWER' })
-      instances[0].emit('done', {})
-      await flushPromises()
-
-      expect(wrapper.text()).toContain('FINAL-ANSWER')
-      // 完成后 loading 复位，发送按钮可用
-      expect((wrapper.find('.send-btn').element as HTMLButtonElement).disabled).toBe(false)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    // 工具调用过程渲染为 chips，最终回复展示
+    await vi.waitFor(() => expect(wrapper.text()).toContain('query_inventory'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('FINAL-ANSWER'))
+    // 完成后 loading 复位，发送按钮可用
+    expect((wrapper.find('.send-btn').element as HTMLButtonElement).disabled).toBe(false)
   })
 
-  it('SSE 连接失败且无内容时应回退 POST 一次', async () => {
-    const instances: FakeEventSource[] = []
-    vi.stubGlobal('EventSource', class extends FakeEventSource {
-      constructor(url: string) {
-        super(url)
-        instances.push(this)
-      }
+  it('SSE 服务端 error 事件且无内容时应回退 POST 一次', async () => {
+    const fetchMock = mockFetchSse(['event: error\ndata: {"message":"boom"}\n\n'])
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(AgentChat, {
+      props: { visible: true },
+      global: globalStubs
     })
+    await wrapper.find('.chat-input').setValue('查库存')
+    await wrapper.find('.send-btn').trigger('click')
+    await flushPromises()
+    await flushPromises()
 
-    try {
-      const wrapper = mount(AgentChat, {
-        props: { visible: true },
-        global: globalStubs
-      })
-      await wrapper.find('.chat-input').setValue('查库存')
-      await wrapper.find('.send-btn').trigger('click')
-      await flushPromises()
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    // POST 同样失败（默认 mock 拒绝）→ 降级 mock 回复
+    expect(wrapper.text()).toMatch(/库存/)
+  })
 
-      // 连接级错误（无 data）触发回退
-      instances[0].emit('error')
-      await flushPromises()
+  it('SSE 建连失败且无内容时应回退 POST 一次', async () => {
+    // beforeEach 默认 fetch 拒绝即建连失败场景
+    const wrapper = mount(AgentChat, {
+      props: { visible: true },
+      global: globalStubs
+    })
+    await wrapper.find('.chat-input').setValue('查库存')
+    await wrapper.find('.send-btn').trigger('click')
+    await flushPromises()
+    await flushPromises()
 
-      expect(mockedPost).toHaveBeenCalledTimes(1)
-      // POST 同样失败（默认 mock 拒绝）→ 降级 mock 回复
-      expect(wrapper.text()).toMatch(/库存/)
-    } finally {
-      vi.unstubAllGlobals()
-    }
+    expect(mockedPost).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toMatch(/库存/)
   })
 
   it('后端返回业务失败（code!=200）时应降级到模拟回复', async () => {

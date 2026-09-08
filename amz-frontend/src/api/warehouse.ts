@@ -89,14 +89,6 @@ export const listInventory = (params: { warehouseId?: number; sku?: string; shop
   })
 }
 
-export const updateLocationCode = (inventoryId: number, locationCode: string) => {
-  return request.put<void, ApiResponse<WarehouseInventory>>(
-    `/logistics/warehouse/inventory/${inventoryId}/location`,
-    null,
-    { params: { locationCode } }
-  )
-}
-
 // ===== 入库单 =====
 export const createInboundOrder = (data: InboundOrder) => {
   return request.post<void, ApiResponse<InboundOrder>>('/logistics/inbound', data)

@@ -91,7 +91,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getOrderList } from '@/api/order'
 import type { OrderItem } from '@/api/order'
-import { getCurrentShopId } from '@/utils/shop'
+import { useShopGuard } from '@/composables/useShopGuard'
 
 const filterShop = ref('')
 const filterDate = ref('')
@@ -103,8 +103,8 @@ const total = ref(0)
 const page = ref(1)
 const size = ref(20)
 
-// 当前选中店铺（未选则为空字符串，用于阻断查询并提示用户）
-const currentShopId = ref(getCurrentShopId())
+// 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
+const { currentShopId, refreshShop } = useShopGuard()
 
 // 降级用的 mock 数据
 const mockOrders: OrderItem[] = [
@@ -121,14 +121,17 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value
 // 订单号走服务端查询（GET /order/list?orderNo=），分页与总数与之一致
 const displayOrders = computed(() => orders.value)
 
+// 请求序号守卫：快速查询/翻页时丢弃过期响应（与 AdManager 趋势序号同模式）
+let loadSeq = 0
 const loadOrders = async () => {
   // 未选择店铺时不发请求，避免网关 MyGlobalFilter 拒绝 /order/ 路径
-  const shopId = filterShop.value || currentShopId.value
+  const shopId = filterShop.value || refreshShop()
   if (!shopId) {
     orders.value = []
     total.value = 0
     return
   }
+  const seq = ++loadSeq
   loading.value = true
   try {
     const res = await getOrderList({
@@ -139,6 +142,7 @@ const loadOrders = async () => {
       page: page.value,
       size: size.value
     })
+    if (seq !== loadSeq) return
     if (res?.code === 200 && res.data) {
       // 兼容分页对象与数组两种返回结构
       if (Array.isArray(res.data)) {

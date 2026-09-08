@@ -91,10 +91,6 @@ export const batchUpdateStatus = (ids: number[], status: string) => {
 }
 
 // ===== 综合报表 =====
-export const getShopSummary = (shopId: number | string) => {
-  return request.get<void, ApiResponse<AdSummary>>(`/ad/campaigns/summary/${shopId}`)
-}
-
 export const getSummaryByType = (shopId: number | string) => {
   return request.get<void, ApiResponse<Record<string, AdSummary>>>(`/ad/campaigns/summary/type/${shopId}`)
 }

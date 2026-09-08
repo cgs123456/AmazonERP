@@ -107,7 +107,7 @@
         <div v-if="!profitLoading" class="summary-grid">
           <div class="summary-card">
             <div class="summary-label">店铺利润（CNY）</div>
-            <div class="summary-value" :class="profitNum > 0 ? 'profit-positive' : 'profit-negative'">¥{{ profitDisplay }}</div>
+            <div class="summary-value" :class="profitNum > 0 ? 'profit-positive' : profitNum < 0 ? 'profit-negative' : 'profit-flat'">¥{{ profitDisplay }}</div>
           </div>
           <div class="summary-card">
             <div class="summary-label">统计区间</div>
@@ -131,10 +131,11 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { listVouchers, syncToKingdee, calculateProfit } from '@/api/finance'
 import type { AccountingVoucher } from '@/api/finance'
-import { getCurrentShopId } from '@/utils/shop'
+import { useShopGuard } from '@/composables/useShopGuard'
 
 const tab = ref<'voucher' | 'profit'>('voucher')
-const currentShopId = ref(getCurrentShopId())
+// B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值
+const { currentShopId, refreshShop } = useShopGuard()
 
 // 凭证列表
 const loading = ref(false)
@@ -143,21 +144,21 @@ const filterSourceType = ref('')
 const syncing = ref<number | null>(null)
 
 // 凭证分页复用 usePagination（与库存/订单页同一交互：total/totalPages/paged/prev/next/reset）
-const { page, totalPages, paged: pagedVouchers, resetPage, prevPage, nextPage } =
+const { page, totalPages, paged: pagedVouchers, prevPage, nextPage } =
   usePagination<AccountingVoucher>(() => vouchers.value, 10)
 
 const switchTab = (t: 'voucher' | 'profit') => {
   tab.value = t
 }
 
+// 注意：此处不 resetPage（翻页/同步后刷新应留在当前页；切店铺时 currentShopId 变化由调用方决定是否重置）
 const loadVouchers = async () => {
-  const shopId = currentShopId.value
+  const shopId = refreshShop()
   if (!shopId) {
     vouchers.value = []
     return
   }
   loading.value = true
-  resetPage()
   try {
     const res = await listVouchers(shopId, filterSourceType.value || undefined)
     if (res?.code === 200 && res.data) {
@@ -202,7 +203,7 @@ const profitDisplay = computed(() => {
 })
 
 const loadProfit = async () => {
-  const shopId = currentShopId.value
+  const shopId = refreshShop()
   if (!shopId) {
     profitNum.value = 0
     return
@@ -309,6 +310,8 @@ onMounted(() => {
 
 .profit-positive { color: var(--color-success); font-weight: 600; }
 .profit-negative { color: var(--color-error); font-weight: 600; }
+/* 零利润中性展示，避免误读为亏损 */
+.profit-flat { color: var(--color-muted); font-weight: 600; }
 .profit-note { padding: 0.75rem 1rem; background: var(--color-surface); color: var(--color-muted); border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } .summary-grid { grid-template-columns: 1fr 1fr; } }

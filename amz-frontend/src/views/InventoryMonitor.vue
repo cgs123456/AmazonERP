@@ -64,7 +64,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in pagedInventory" :key="item.sku">
+            <tr v-for="item in pagedInventory" :key="item.sku + '|' + item.shop">
               <td class="mono">{{ item.sku }}</td>
               <td class="mono">{{ item.asin }}</td>
               <td>{{ item.shop }}</td>
@@ -104,13 +104,13 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getInventoryList, getInventoryHealth } from '@/api/inventory'
 import type { InventoryItem, InventoryHealth } from '@/api/inventory'
-import { getCurrentShopId } from '@/utils/shop'
+import { useShopGuard } from '@/composables/useShopGuard'
 import { usePagination } from '@/composables/usePagination'
 
 const loading = ref(false)
 
-// 当前选中店铺（未选则为空字符串，用于阻断查询并提示用户）
-const currentShopId = ref(getCurrentShopId())
+// 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
+const { currentShopId, refreshShop } = useShopGuard()
 
 // 降级用的 mock 数据
 const mockInventory: InventoryItem[] = [
@@ -144,7 +144,7 @@ const healthCounts = computed(() => ({
 
 onMounted(async () => {
   // 未选择店铺时不发请求，避免网关校验失败
-  const shopId = currentShopId.value
+  const shopId = refreshShop()
   if (!shopId) {
     loading.value = false
     return

@@ -54,10 +54,4 @@ export const getAdTrend = (shopId: number | string, days = 14, adType?: string) 
   })
 }
 
-// 获取关键词优化建议
-export const getKeywordOptimization = (shopId: number | string) => {
-  // 后端映射为 AdController#/ad/keyword/optimize（单数），此处须与之一致
-  return request.get<void, ApiResponse<unknown>>('/ad/keyword/optimize', {
-    params: { shopId }
-  })
-}
+

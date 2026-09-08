@@ -2,6 +2,56 @@ import axios from 'axios'
 import type { ApiResponse } from './types'
 import { getCurrentShopId } from '../utils/shop'
 
+// refresh token 有效期（与后端 jwt.refresh-expire-time 默认 7 天对齐，见 LoginModal 登录写入）
+const REFRESH_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+// 刷新单飞：并发 401 只打一次 /user/refresh，其余等待同一结果
+let refreshPromise: Promise<boolean> | null = null
+
+const persistTokenPair = (data: LoginTokenPair) => {
+  localStorage.setItem('token', data.token)
+  if (data.refreshToken) {
+    localStorage.setItem('refreshToken', data.refreshToken)
+  }
+  localStorage.setItem('token_expiry', String(Date.now() + REFRESH_TTL_MS))
+}
+
+// 用 refreshToken 换取新的 token 对（对齐后端 POST /user/refresh，refresh token 走请求头 token 字段）。
+// 用裸 axios 实例（不挂拦截器），避免刷新请求自身 401 触发递归刷新。
+export const refreshAccessToken = (): Promise<boolean> => {
+  if (refreshPromise) return refreshPromise
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = localStorage.getItem('refreshToken')
+      if (!refreshToken) return false
+      // baseURL 缺失回退同源 /api（与 AgentChat 流式基址同策略；VITE_API_BASE_URL 未配时防打到 undefined/…）
+      const res = await axios.post<ApiResponse<LoginTokenPair>>(
+        `${request.defaults?.baseURL || '/api'}/user/refresh`,
+        null,
+        { headers: { token: refreshToken } }
+      )
+      const data = res?.data?.data
+      if (res?.data?.code === 200 && data && typeof data.token === 'string' && data.token) {
+        persistTokenPair(data)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    } finally {
+      refreshPromise = null
+    }
+  })()
+  return refreshPromise
+}
+
+const clearAuthAndRedirect = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('token_expiry')
+  localStorage.removeItem('refreshToken')
+  window.location.href = '/'
+}
+
 // 创建 axios 实例
 // dev 环境通过 vite proxy 转发 /api → VITE_API_BASE_URL，避免跨域
 const request = axios.create({
@@ -50,12 +100,26 @@ request.interceptors.response.use(
         return payload
     },
     (error) => {
-        // 401 未授权，清除 token（含 refreshToken）并跳转登录页
+        // 401 未授权：access token 过期时先用 refreshToken 静默续期并重放原请求一次；
+        // 无 refreshToken / 续期失败 / 登录与刷新接口自身 401 时，才清除凭证并跳转登录页
         if (error.response?.status === 401) {
-            localStorage.removeItem('token')
-            localStorage.removeItem('token_expiry')
-            localStorage.removeItem('refreshToken')
-            window.location.href = '/'
+            const original = error.config as (typeof error.config & { _retry?: boolean }) | undefined
+            const url: string = original?.url || ''
+            const isAuthCall = url.includes('/user/verify') || url.includes('/user/refresh')
+            if (!isAuthCall && original && !original._retry && localStorage.getItem('refreshToken')) {
+                original._retry = true
+                return refreshAccessToken().then((ok) => {
+                    if (ok) {
+                        original.headers = original.headers || {}
+                        ;(original.headers as Record<string, string>).token =
+                            localStorage.getItem('token') || ''
+                        return request(original)
+                    }
+                    clearAuthAndRedirect()
+                    return Promise.reject(new Error('未授权，请重新登录'))
+                })
+            }
+            clearAuthAndRedirect()
             return Promise.reject(new Error('未授权，请重新登录'))
         }
 

@@ -63,34 +63,8 @@ export interface MarketAnalysisSummary {
   keywordResearch?: KeywordResearch
 }
 
-// 竞品
-export interface CompetitorItem {
-  asin: string
-  title: string
-  price: number
-  reviews: number
-  rating: number
-  bsr: number
-  sellers: number
-}
-
-// 竞品分析结果
-export interface CompetitorAnalysis {
-  targetAsin: string
-  marketplace: string
-  competitorCount: number
-  competitors: CompetitorItem[]
-  differentiation: string[]
-}
-
 // 市场分析请求
 export interface MarketAnalysisRequest {
-  keyword: string
-  marketplace?: string
-}
-
-// 关键词调研请求
-export interface KeywordResearchRequest {
   keyword: string
   marketplace?: string
 }
@@ -110,18 +84,6 @@ export const findOpportunities = (
   return request.get<void, ApiResponse<SelectionOpportunity[]>>('/ops/selection/opportunities', {
     params: { shopId, category, sortBy, limit }
   })
-}
-
-// 竞品分析
-export const analyzeCompetitors = (asin: string, marketplace = 'US') => {
-  return request.get<void, ApiResponse<CompetitorAnalysis>>(`/ops/selection/competitors/${asin}`, {
-    params: { marketplace }
-  })
-}
-
-// 关键词调研
-export const researchKeyword = (data: KeywordResearchRequest) => {
-  return request.post<void, ApiResponse<KeywordResearch>>('/ops/selection/keyword', data)
 }
 
 // AI 选品建议

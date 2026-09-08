@@ -16,6 +16,12 @@
         <p class="hero-subtitle">今日运营数据一览</p>
       </div>
 
+      <!-- 未登录提示：无 token 时不发任何业务请求（否则 401 拦截器跳登录页造成重载循环） -->
+      <div v-if="!hasToken" class="login-hint">
+        <Icon icon="mdi:account-lock-outline" width="20" />
+        <span>请先登录后查看经营数据</span>
+      </div>
+
       <!-- 骨架屏：形状匹配 KPI 网格 + 图表区（技能 4.5 Loading） -->
       <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="kpi-grid">
@@ -49,9 +55,12 @@
             <div class="kpi-info">
               <div class="kpi-value">{{ kpi.value }}</div>
               <div class="kpi-label">{{ kpi.label }}</div>
-              <div class="kpi-trend" :class="kpi.trend > 0 ? 'up' : 'down'">
-                <Icon :icon="kpi.trend > 0 ? 'mdi:trending-up' : 'mdi:trending-down'" width="14" />
-                {{ Math.abs(kpi.trend) }}% 较昨日
+              <div class="kpi-trend" :class="kpi.trend > 0 ? 'up' : kpi.trend < 0 ? 'down' : 'flat'">
+                <Icon
+                  :icon="kpi.trend > 0 ? 'mdi:trending-up' : kpi.trend < 0 ? 'mdi:trending-down' : 'mdi:minus'"
+                  width="14"
+                />
+                {{ kpi.trend === 0 ? '暂无对比' : Math.abs(kpi.trend) + '% 较昨日' }}
               </div>
             </div>
           </div>
@@ -101,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -136,9 +145,13 @@ const mockShopDist: ShopDistItem[] = [
   { name: 'Shop D (JP)', percent: 10 }
 ]
 
-const kpiData = ref<KpiItem[]>([...mockKpiData])
-const salesTrend = ref<SalesTrendItem[]>([...mockSalesTrend])
-const shopDist = ref<ShopDistItem[]>([...mockShopDist])
+// 是否已登录：'/' 路由免登录，未登录时禁止发业务请求。
+// 否则无 token 请求必 401，拦截器跳登录页（即本页）形成重载循环。
+const hasToken = ref(!!localStorage.getItem('token'))
+
+const kpiData = ref<KpiItem[]>([])
+const salesTrend = ref<SalesTrendItem[]>([])
+const shopDist = ref<ShopDistItem[]>([])
 
 const maxSales = computed(() => {
   // reduce 求最大（避免展开运算符在大数组下栈溢出）
@@ -149,27 +162,32 @@ const maxSales = computed(() => {
   return max > 0 ? max : 1
 })
 
-onMounted(async () => {
+const loadAll = async () => {
+  // 未登录直接返回：不发请求（防 401 重载循环），页面仅展示登录提示
+  if (!hasToken.value) {
+    loading.value = false
+    return
+  }
   loading.value = true
   // 并行请求三组数据，任一失败则该组降级到 mock
   const tasks = [
     {
       fn: () => getKpiData(getCurrentShopId()),
       onSuccess: (data: KpiItem[]) => { kpiData.value = data },
-      mock: mockKpiData,
+      onFallback: () => { kpiData.value = [...mockKpiData] },
       tag: 'getKpiData'
     },
     {
       // 趋势/分布支持按店铺过滤；未选中店铺时传 undefined（axios 自动省略），后端返回全局聚合
       fn: () => getSalesTrend(7, getCurrentShopId() || undefined),
       onSuccess: (data: SalesTrendItem[]) => { salesTrend.value = data },
-      mock: mockSalesTrend,
+      onFallback: () => { salesTrend.value = [...mockSalesTrend] },
       tag: 'getSalesTrend'
     },
     {
       fn: () => getShopDistribution(getCurrentShopId() || undefined),
       onSuccess: (data: ShopDistItem[]) => { shopDist.value = data },
-      mock: mockShopDist,
+      onFallback: () => { shopDist.value = [...mockShopDist] },
       tag: 'getShopDistribution'
     }
   ]
@@ -182,14 +200,38 @@ onMounted(async () => {
           t.onSuccess(res.data as any)
         } else {
           console.warn(`[Dashboard] ${t.tag} 返回数据异常，使用降级数据`, res)
+          t.onFallback()
         }
       } catch (e) {
         console.warn(`[Dashboard] ${t.tag} 调用失败，使用降级数据`, e)
+        t.onFallback()
       }
     })
   )
 
   loading.value = false
+}
+
+// 登录态变化（AppHeader 登录/登出）后重评估：登录后补拉数据，登出后清空回提示态
+const onAuthChanged = () => {
+  hasToken.value = !!localStorage.getItem('token')
+  if (hasToken.value) {
+    loadAll()
+  } else {
+    kpiData.value = []
+    salesTrend.value = []
+    shopDist.value = []
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  loadAll()
+  window.addEventListener('amz:auth-changed', onAuthChanged)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('amz:auth-changed', onAuthChanged)
 })
 </script>
 
@@ -272,6 +314,21 @@ onMounted(async () => {
 
 .kpi-trend.up { color: var(--color-success); }
 .kpi-trend.down { color: var(--color-error); }
+/* trend 缺失（后端未提供涨跌）时中性展示，避免恒显示红色下跌误导 */
+.kpi-trend.flat { color: var(--color-muted); }
+
+.login-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-muted);
+  font-size: var(--font-size-2);
+}
 
 /* chart-row: bento grid 两栏布局 */
 .chart-row {

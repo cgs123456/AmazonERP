@@ -159,6 +159,8 @@ const handleClickOutside = (event: MouseEvent) => {
 
 const handleLoginSuccess = () => {
   loadUserInfo()
+  // 通知各页面刷新登录态相关数据（如 Dashboard 无 token 时不发请求，需登录后重拉）
+  window.dispatchEvent(new Event('amz:auth-changed'))
 }
 
 const handleLogout = () => {
@@ -168,6 +170,7 @@ const handleLogout = () => {
   userInfo.value = null
   showUserMenu.value = false
   websocketManager.close()
+  window.dispatchEvent(new Event('amz:auth-changed'))
   router.push('/')
 }
 

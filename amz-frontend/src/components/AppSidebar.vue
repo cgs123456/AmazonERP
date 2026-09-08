@@ -100,6 +100,17 @@
         <Icon icon="mdi:bell-outline" class="nav-icon" width="24" />
         <span class="nav-text">消息中心</span>
       </div>
+      <div
+        class="nav-item"
+        :class="{ active: isActive('/knowledge') }"
+        @click="navigateTo('/knowledge')"
+        role="button"
+        aria-label="知识库管理"
+        tabindex="0"
+      >
+        <Icon icon="mdi:database-search-outline" class="nav-icon" width="24" />
+        <span class="nav-text">知识库管理</span>
+      </div>
     </div>
   </aside>
 </template>

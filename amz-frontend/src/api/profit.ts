@@ -73,16 +73,32 @@ export const mapProfitReport = (raw: ProfitReportRaw): { summary: ProfitSummary;
   }
 }
 
-// 获取利润报表（空 reports 时原样返回，调用方保留降级 mock）
-export const getProfitReport = (shopId: number | string, startDate: string, endDate: string) => {
+// 零值汇总：后端 200 但 reports 为空时返回，调用方展示空态；
+// 禁止把扁平原结构强转后让视图误用 mock 当真实数据。
+export const zeroProfitReport = (): { summary: ProfitSummary; rows: ProfitRow[] } => ({
+  summary: { totalRevenue: '$0.00', totalCost: '$0.00', grossProfit: '$0.00', grossMargin: '0.0%' },
+  rows: []
+})
+
+// 获取利润报表（统一收敛为展示模型：200 有行 → 映射；200 空 → 零值空态；
+// 非 200 → 零值占位，调用方按 code 走降级 mock）
+export const getProfitReport = (
+  shopId: number | string,
+  startDate: string,
+  endDate: string
+): Promise<ApiResponse<{ summary: ProfitSummary; rows: ProfitRow[] }>> => {
   return request
     .get<void, ApiResponse<ProfitReportRaw>>('/order/profit/report', {
       params: { shopId, startDate, endDate }
     })
     .then((res) => {
-      if (res?.code === 200 && res.data && Array.isArray(res.data.reports) && res.data.reports.length > 0) {
-        return { ...res, data: mapProfitReport(res.data) }
+      if (res?.code === 200 && res.data) {
+        const data =
+          Array.isArray(res.data.reports) && res.data.reports.length > 0
+            ? mapProfitReport(res.data)
+            : zeroProfitReport()
+        return { ...res, data }
       }
-      return { ...res, data: res?.data as unknown as { summary: ProfitSummary; rows: ProfitRow[] } }
+      return { ...res, data: zeroProfitReport() }
     })
 }
