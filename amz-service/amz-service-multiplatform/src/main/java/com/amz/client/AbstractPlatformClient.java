@@ -3,12 +3,14 @@ package com.amz.client;
 import com.amz.credential.PlatformCredential;
 import com.amz.credential.PlatformCredentialService;
 import com.amz.http.ResilientHttpClient;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
@@ -97,6 +99,85 @@ public abstract class AbstractPlatformClient {
      */
     protected boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /**
+     * Jackson 文本节点取值：缺失/null/空串一律返回 null（B3：三客户端各存一份私有拷贝，现收敛）。
+     */
+    protected static String asTextOrNull(JsonNode node) {
+        if (node == null || node.isNull() || node.asText("").isEmpty()) {
+            return null;
+        }
+        return node.asText();
+    }
+
+    /**
+     * 判断节点是否“缺席”（B3：Jackson 数值/文本节点的 {@code isEmpty()} 恒为 true，
+     * 不能用于值回退判断——Temu sku_count 与 Shein payAmount 曾因此静默丢数据）。
+     * <p>
+     * 规则：null / Missing / Null → 缺席；容器按长度；文本按空串；数字/布尔视为存在。
+     */
+    protected static boolean isAbsent(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return true;
+        }
+        if (node.isContainerNode()) {
+            return node.isEmpty();
+        }
+        if (node.isTextual()) {
+            return node.asText().isEmpty();
+        }
+        return false;
+    }
+
+    /**
+     * 取首个存在的节点（字段别名回退，如 payAmount/orderAmount）。
+     */
+    protected static JsonNode firstPresent(JsonNode primary, JsonNode fallback) {
+        return isAbsent(primary) ? fallback : primary;
+    }
+
+    /**
+     * 数量节点转 Integer：缺失/null/非法文本一律返回 null，不臆测。
+     * <p>
+     * 此前各客户端用 {@code asInt(1)}，文本型/非法数量被静默记为 1，
+     * 多商品订单的数量直接算错。
+     */
+    protected static Integer parseIntOrNull(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        if (node.isNumber()) {
+            return node.asInt();
+        }
+        if (node.isTextual()) {
+            try {
+                return Integer.valueOf(node.asText().trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 构造 URL 查询串（B3：Shein/Temu 各存一份私有拷贝，现收敛）。
+     * <p>
+     * 参数值必须 URL 编码：时间戳等含空格/保留字符的值不编码会破坏请求行；
+     * 签名在编码前的原始 Map 上计算，不受此处影响。
+     */
+    protected static String buildQuery(Map<String, String> params) {
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, String> e : params.entrySet()) {
+            if (sb.length() > 0) {
+                sb.append("&");
+            }
+            sb.append(URLEncoder.encode(e.getKey(), StandardCharsets.UTF_8))
+                    .append("=")
+                    .append(URLEncoder.encode(e.getValue() == null ? "" : e.getValue(),
+                            StandardCharsets.UTF_8));
+        }
+        return sb.toString();
     }
 
     /**

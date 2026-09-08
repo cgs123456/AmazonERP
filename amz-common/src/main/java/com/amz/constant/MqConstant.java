@@ -32,4 +32,14 @@ public class MqConstant {
     public static final String PROFIT_DLX_EXCHANGE = "amz.order.profit.dlx.exchange";
     public static final String PROFIT_DLQ_QUEUE = "amz.order.profit.dlq.queue";
     public static final String PROFIT_DLQ_ROUTING_KEY = "amz.order.profit.dlq";
+
+    // ===== 凭证生成链路（B1：订单同步不再同步调 finance Feign，改发 MQ 最终一致） =====
+    /** 凭证生成交换机/队列/路由键（order 生产 -> finance 消费） */
+    public static final String VOUCHER_EXCHANGE = "amz.finance.voucher.exchange";
+    public static final String VOUCHER_QUEUE = "amz.finance.voucher.queue";
+    public static final String VOUCHER_ROUTING_KEY = "amz.finance.voucher";
+    /** 凭证死信交换机/队列：消费失败（nack requeue=false）的消息转入 DLQ */
+    public static final String VOUCHER_DLX_EXCHANGE = "amz.finance.voucher.dlx.exchange";
+    public static final String VOUCHER_DLQ_QUEUE = "amz.finance.voucher.dlq.queue";
+    public static final String VOUCHER_DLQ_ROUTING_KEY = "amz.finance.voucher.dlq";
 }

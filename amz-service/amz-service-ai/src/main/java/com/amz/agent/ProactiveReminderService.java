@@ -33,6 +33,10 @@ public class ProactiveReminderService {
     @Autowired
     private UserPreferenceMapper userPreferenceMapper;
 
+    // required=false：纯单测 new 出来时为 null，跳过推送
+    @Autowired(required = false)
+    private ImPushService imPushService;
+
     @Value("${agent.reminder.inventory-days-threshold:7}")
     private int inventoryDaysThreshold;
 
@@ -57,6 +61,10 @@ public class ProactiveReminderService {
             reminders.addAll(remindForUser(pref));
         }
         log.info("主动提醒扫描完成：活跃用户 {} 人，生成提醒 {} 条", activeUsers.size(), reminders.size());
+        // B-3：同步推送到 IM（URL 未配置时内部静默跳过；逐条失败不阻断）
+        if (imPushService != null && !reminders.isEmpty()) {
+            imPushService.pushAll(reminders);
+        }
         return reminders;
     }
 

@@ -1,5 +1,6 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.exception.AttrIsNullException;
@@ -48,6 +49,11 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         if (shipment.getShopId() == null) {
             throw new AttrIsNullException("店铺ID不能为空");
         }
+        // 多租户越权防护：创建入口仅携带 Body、无 shopId 参数可被 ShopScoped 切面拦截，
+        // 此处显式校验目标店铺归属（与 ProcurementServiceImpl#mustGetAuthorized 同模式）
+        if (!UserContext.isShopAllowed(shipment.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的货件：shopId=" + shipment.getShopId());
+        }
         shipment.setShipmentNo(BizNoGenerator.next("FBA"));
         if (shipment.getStatus() == null) {
             shipment.setStatus("CREATED");
@@ -69,6 +75,10 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         if (shipment.getId() == null) {
             throw new AttrIsNullException("货件ID不能为空");
         }
+        // 越权防护：按 ID 更新前先校验既有记录的店铺归属，并以既有 shopId 覆盖请求体，
+        // 防止把记录搬到其他店铺（updateById 全字段更新会连带写入请求体 shopId）
+        FbaShipment existed = mustGetAuthorized(shipment.getId());
+        shipment.setShopId(existed.getShopId());
         fbaShipmentMapper.updateById(shipment);
         return shipment;
     }
@@ -79,6 +89,8 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         if (item.getFbaShipmentId() == null || item.getSku() == null || item.getQuantity() == null) {
             throw new AttrIsNullException("货件ID、SKU和数量不能为空");
         }
+        // 越权防护：明细挂靠的父货件必须属于授权店铺
+        mustGetAuthorized(item.getFbaShipmentId());
         if (item.getReceivedQuantity() == null) item.setReceivedQuantity(0);
         if (item.getFreightAllocation() == null) item.setFreightAllocation(BigDecimal.ZERO);
         if (item.getCustomsAllocation() == null) item.setCustomsAllocation(BigDecimal.ZERO);
@@ -89,6 +101,8 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
 
     @Override
     public List<FbaShipmentItem> listShipmentItems(Long shipmentId) {
+        // 越权防护：先校验父货件归属（兼存在性校验）
+        mustGetAuthorized(shipmentId);
         LambdaQueryWrapper<FbaShipmentItem> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FbaShipmentItem::getFbaShipmentId, shipmentId);
         return fbaShipmentItemMapper.selectList(wrapper);
@@ -111,7 +125,20 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         if (shipment == null) {
             throw new AttrIsNullException("货件不存在：id=" + id);
         }
+        if (!UserContext.isShopAllowed(shipment.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的货件：id=" + id);
+        }
         return shipment;
+    }
+
+    /**
+     * 加载货件并做多租户越权校验（与 ProcurementServiceImpl#mustGetAuthorized 同模式）。
+     * <p>
+     * status/ship/allocate/receive 等端点仅携带货件 ID、无 shopId 参数，
+     * ShopScoped 切面无法按参数名拦截，故统一收敛到 getShipment 的归属校验。
+     */
+    private FbaShipment mustGetAuthorized(Long shipmentId) {
+        return getShipment(shipmentId);
     }
 
     @Override
@@ -214,6 +241,9 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> processReceipt(Long shipmentId, List<Map<String, Object>> receivedItems) {
         FbaShipment shipment = getShipment(shipmentId);
+        if (receivedItems == null || receivedItems.isEmpty()) {
+            throw new AttrIsNullException("验收明细不能为空");
+        }
         List<FbaShipmentItem> items = listShipmentItems(shipmentId);
 
         List<Map<String, Object>> results = new ArrayList<>();
@@ -221,8 +251,20 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         boolean hasDiscrepancy = false;
 
         for (Map<String, Object> received : receivedItems) {
-            Long itemId = Long.valueOf(received.get("itemId").toString());
-            Integer receivedQty = Integer.valueOf(received.get("receivedQty").toString());
+            if (received == null || received.get("itemId") == null || received.get("receivedQty") == null) {
+                throw new AttrIsNullException("验收明细缺 itemId/receivedQty");
+            }
+            final Long itemId;
+            final Integer receivedQty;
+            try {
+                itemId = Long.valueOf(received.get("itemId").toString());
+                receivedQty = Integer.valueOf(received.get("receivedQty").toString());
+            } catch (NumberFormatException e) {
+                throw new AttrIsNullException("验收明细 itemId/receivedQty 非法数字");
+            }
+            if (receivedQty < 0) {
+                throw new AttrIsNullException("验收数量不能为负数：itemId=" + itemId);
+            }
 
             FbaShipmentItem item = items.stream()
                     .filter(i -> i.getId().equals(itemId))
@@ -286,6 +328,10 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         FbaShipmentItem item = fbaShipmentItemMapper.selectById(shipmentItemId);
         if (item == null) {
             throw new AttrIsNullException("货件明细不存在：itemId=" + shipmentItemId);
+        }
+        // 归属一致性：明细必须挂靠当前货件，防止用自店货件 ID 套他店明细建批次
+        if (!shipmentId.equals(item.getFbaShipmentId())) {
+            throw new IllegalStateException("货件明细不属于当前货件：itemId=" + shipmentItemId);
         }
 
         // 计算批次单位成本（采购成本 + 分摊的头程费用）

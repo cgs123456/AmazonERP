@@ -308,6 +308,19 @@ public class ErpTools {
                 Map.of("shopId", shopId, "messageId", messageId, "subject", subject != null ? subject : "Customer Inquiry")));
     }
 
+    @Tool("检索店铺知识库，返回 SOP/政策文档相关片段")
+    String queryKnowledgeBase(
+            @P("店铺 ID") Long shopId,
+            @P("检索问题或关键词") String query,
+            @P("返回条数，默认 5") Integer topN) {
+        log.info("LangChain4j 工具调用: query_knowledge_base shopId={} topN={}", shopId, topN);
+        Map<String, Object> args = new HashMap<>();
+        args.put("shopId", shopId);
+        args.put("query", query);
+        args.put("topN", topN != null ? topN : 5);
+        return toolExecutor.execute(buildCall("query_knowledge_base", args));
+    }
+
     // ===== 辅助方法 =====
 
     /**

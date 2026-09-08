@@ -1,6 +1,6 @@
 # Amazon ERP — 微服务跨境电商管理平台
 
-基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务全业务闭环，内置 AI 运营 Agent（28 工具）与可观测性三栈。
+基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务全业务闭环，内置 AI 运营 Agent（29 工具）与可观测性三栈。
 
 ## 🏗 技术栈
 
@@ -45,18 +45,22 @@ amz-service-multiplatform   — 多平台（Shopify/eBay/Walmart/Shopee/Lazada�
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
 
-> 共 54 张表（含广告日报表）、140+ REST 端点、AI Agent 28 工具 ｜ 
+> 共 54 张表（含广告日报表、统一订单明细列）、140+ REST 端点、AI Agent 29 工具 ｜
 
-## 🤖 AI 运营 Agent（28 工具）
+## 🤖 AI 运营 Agent（29 工具）
 
 基于 LangChain4j AiServices 声明式编排，按用户意图自动调度工具链：
 
 | 类型 | 工具 | 说明 |
 |------|------|------|
-| **基础查询（9）** | query_orders、query_inventory、query_sales、query_profit、suggest_replenish、check_inventory_health、query_purchase_orders、query_suppliers、query_advertising | 覆盖订单/库存/销售/利润/补货/健康度/采购/供应商/广告 |
+| **基础查询（10）** | query_orders、query_inventory、query_sales、query_profit、suggest_replenish、check_inventory_health、query_purchase_orders、query_suppliers、query_advertising、query_knowledge_base | 覆盖订单/库存/销售/利润/补货/健康度/采购/供应商/广告/知识库 |
 | **分析洞察（8）** | analyze_ad_performance、analyze_product_reviews、analyze_product_selection、analyze_listing_health、analyze_search_terms、analyze_sales_trend、analyze_inventory_aging、track_shipment | 覆盖广告/评论/选品/Listing/搜索词/销售趋势/库龄/物流 |
 | **优化建议（8）** | optimize_ad_campaign、optimize_listing_seo、optimize_shipping_route、optimize_inventory_distribution、cross_marketplace_listing、monitor_competitor_price、estimate_fba_fees、translate_listing | 覆盖广告优化/Listing SEO/物流/库存调拨/跨站点/竞品/FBA 费用/翻译 |
 | **操作执行（3）** | create_purchase_plan、auto_reply_message、generate_promotion_plan | 覆盖采购计划/消息回复/促销方案 |
+
+> **店铺知识库 RAG**：SOP/政策文档上传解析（Tika）→ 分块 → 向量化 → ES（BM25 + dense_vector 混合检索 + RRF + 重排），`query_knowledge_base` 工具 + SOP 优先提示词 + 引用来源约束；配套 `/ai/knowledge/*` 接口与前端知识库管理页。
+>
+> **流式问答**：`GET /ai/chat-stream` SSE（fetch + ReadableStream，可透传 token/shopId 头）+ POST 兜底 + 工具调用时间线。
 
 
 ## 📦 4 大 P0 核心模块
@@ -104,7 +108,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **多店铺 RBAC** | `@ShopScoped` + `ShopIdGuardAspect`（200+ 方法）+ 网关 JWT+shopId 校验；切面覆盖不到的 `@RequestBody`/路径参数场景由各服务显式 `isShopAllowed` 校验 |
 | **接口级权限** | `@RequireRole` 注解 + AOP 切面（采购/运营等敏感端点 OPERATOR/ADMIN 校验） |
 | **字段级权限** | `@FieldPermission` + 切面 + 前端 `***` 掩码 |
-| **JWT 双 Token** | access_token(24h) + refresh_token(7d) |
+| **JWT 双 Token** | access_token(24h) + refresh_token(7d) + 前端 401 静默续期重试 |
 | **登录安全** | 短信 60s 重发冷却＋每日 10 条上限＋验证码 5 次试错作废 |
 | **OAuth 应用密钥** | SHA-256 存储校验＋轮换端点＋scope 取交集＋token 绑定归属店 |
 | **写隔离加固** | 商品/多平台账号·消息·订单读写归属校验＋更新锁定 shopId 防跨店搬移 |
@@ -116,11 +120,11 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **SP-API 客户端限流** | 滑动窗口 + `x-amzn-RateLimit-Limit` 动态收紧，401/403 自动驱逐缓存 token |
 | **分布式事务** | Seata AT 2.0.0（条件启用 `SEATA_ENABLED=true`） |
 | **TLS 可选** | SSL 配置块（默认关闭，需证书） |
-| **MQ 死信队列** | save.order + login.notice → DLX/DLQ；消费幂等（Redis SETNX + 处理上限熔断） |
+| **MQ 死信队列** | save.order + login.notice + order.profit + finance.voucher → DLX/DLQ；消费幂等（Redis SETNX + 处理上限熔断）；订单同步后凭证改发 MQ（Seata 不再跨服务持锁） |
 | **调度防重** | `DistributedJobLock` Redis 分布式锁，多实例部署不重复执行 |
 | **SQL 注入防护** | 全 MyBatis `#{}` |
 | **全局异常处理器** | 统一 `@ControllerAdvice` 覆盖 16 服务 |
-| **数据库迁移** | Flyway 10.20.0（14 MySQL 服务 V1__init.sql，baseline-on-migrate 兼容存量库） |
+| **数据库迁移** | Flyway 10.20.0（14 MySQL 服务 V1__init.sql + multiplatform V2 明细列，baseline-on-migrate 兼容存量库） |
 | **Docker 健康探针** | 16 服务 Actuator health/liveness/readiness |
 
 ## ⚠️ 已知限制
@@ -177,10 +181,10 @@ mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=r
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（19 模块） | 550（含 Session 条件解绑、单号生成器等新增用例） | 100% |
-| 前端 Vitest（10 文件） | 74（含接口映射、登录 token 提取、广告趋势/聚合用例） | 100% |
+| 后端 JUnit 5（15 有单测模块，gateway/product 暂无） | 367（0 失败，spapi 2 个集成跳过） | 100% |
+| 前端 Vitest（15 文件） | 115（含接口映射、静默刷新、SSE 解析、知识库、店铺守卫用例） | 100% |
 | 前端 Playwright 全交互 E2E（连接真实后端栈：8 页导航 + KPI + Agent 对话 + 分页 + Tab 切换 + 弹窗 + 过滤 + 登录守卫 + 404） | 39 | 100% |
-| **总计** | **663** | **100%** ✅ |
+| **总计** | **521** | **100%** ✅ |
 
 > E2E 通过 `.start-backend-final.bat` + `.start-vite.bat` 拉起本地全栈后运行 `npx playwright test`。
 

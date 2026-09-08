@@ -62,21 +62,29 @@ public class AiServiceImpl implements AiService {
 
             String responseBody = response.body() != null ? response.body().string() : "";
             JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
-            JsonArray choices = jsonResponse.getAsJsonArray("choices");
-            String content = choices.get(0).getAsJsonObject()
-                    .getAsJsonObject("message")
-                    .get("content").getAsString();
+            String content = extractContent(jsonResponse);
+            if (content == null) {
+                log.warn("DeepSeek API 返回异常结构 body={}", truncate(responseBody));
+                return Result.failure("DeepSeek API 返回异常，请稍后重试");
+            }
 
             return Result.success(content);
         } catch (IOException e) {
             log.error("DeepSeek API 调用异常", e);
             return Result.failure("DeepSeek API 调用异常: " + e.getMessage());
+        } catch (RuntimeException e) {
+            // gson 解析等运行时异常同样降级（JsonSyntaxException 非 IOException，会逃过上一个 catch）
+            log.warn("DeepSeek API 响应解析失败", e);
+            return Result.failure("DeepSeek API 返回异常，请稍后重试");
         }
     }
 
     @Override
     public Result<String> agentChat(com.amz.model.dto.AgentChatDto agentChatDto) {
-        // 防御性校验：messages 可能为 null（DTO 未加 @NotNull），直接遍历会 NPE
+        // 防御性校验：DTO 本体与 messages 均可能为 null（未加 @NotNull），直接遍历会 NPE
+        if (agentChatDto == null) {
+            return Result.failure("messages 不能为空");
+        }
         List<com.amz.model.dto.AgentChatDto.Message> messages = agentChatDto.getMessages();
         if (messages == null || messages.isEmpty()) {
             return Result.failure("messages 不能为空");
@@ -121,15 +129,50 @@ public class AiServiceImpl implements AiService {
             }
             String responseBody = response.body() != null ? response.body().string() : "";
             JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
-            JsonArray choices = jsonResponse.getAsJsonArray("choices");
-            String content = choices.get(0).getAsJsonObject()
-                    .getAsJsonObject("message")
-                    .get("content").getAsString();
+            String content = extractContent(jsonResponse);
+            if (content == null) {
+                log.warn("DeepSeek API 返回异常结构 body={}", truncate(responseBody));
+                return Result.failure("DeepSeek API 返回异常，请稍后重试");
+            }
             return Result.success(content);
         } catch (IOException e) {
             log.error("DeepSeek API 调用异常", e);
             return Result.failure("DeepSeek API 调用异常: " + e.getMessage());
+        } catch (RuntimeException e) {
+            log.warn("DeepSeek API 响应解析失败", e);
+            return Result.failure("DeepSeek API 返回异常，请稍后重试");
         }
+    }
+
+    /**
+     * 从 chat/completions 响应中提取首条 content。
+     * LLM 网关异常/限流时可能返回无 choices 的错误体，直接 get(0) 会 NPE/IndexOutOfBounds
+     * 穿透为 500；此处返回 null 由调用方降级为 failure。
+     */
+    static String extractContent(JsonObject jsonResponse) {
+        try {
+            if (jsonResponse == null || !jsonResponse.has("choices")) {
+                return null;
+            }
+            JsonArray choices = jsonResponse.getAsJsonArray("choices");
+            if (choices == null || choices.size() == 0) {
+                return null;
+            }
+            JsonObject message = choices.get(0).getAsJsonObject().getAsJsonObject("message");
+            if (message == null || !message.has("content") || message.get("content").isJsonNull()) {
+                return null;
+            }
+            return message.get("content").getAsString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String truncate(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= 300 ? text : text.substring(0, 300) + "…";
     }
 
 }

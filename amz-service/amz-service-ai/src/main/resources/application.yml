@@ -48,6 +48,17 @@ agent:
   # 每日报告推送时间
   daily-report-cron: "0 0 8 * * ?"
 
+# 店铺知识库（B-1：ES 混合检索 + 重排）
+knowledge:
+  es:
+    base-url: ${KNOWLEDGE_ES_BASE_URL:http://localhost:9200}
+    index: ${KNOWLEDGE_ES_INDEX:amz_knowledge_base}
+    vector-dims: ${KNOWLEDGE_ES_VECTOR_DIMS:1536}
+  search:
+    bm25-top: 50
+    knn-top: 50
+    rrf-k: 60.0
+
 # JWT security config
 jwt:
   secret-key: ${JWT_SECRET_KEY:}

@@ -97,6 +97,18 @@
             <artifactId>gson</artifactId>
         </dependency>
 
+        <!-- 文档解析（PDF/Word/Markdown/TXT/HTML 自动识别，SOP 知识库入库用） -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>2.9.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-parsers-standard-package</artifactId>
+            <version>2.9.2</version>
+        </dependency>
+
         <dependency>
             <groupId>com.amz</groupId>
             <artifactId>amz-common</artifactId>

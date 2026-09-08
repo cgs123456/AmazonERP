@@ -642,6 +642,8 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             if (key != null && existingKeys.contains(key)) continue;
             o.setUnifiedOrderNo("UO" + System.currentTimeMillis() + inserted);
             o.setCnyAmount(currencyConverter.toCny(o.getOriginalAmount(), o.getCurrency()));
+            // B3：明细持久化（items_json），否则多商品订单落库仍只存首行
+            o.setItemsJson(com.amz.model.UnifiedOrderItems.toJson(o.getItems()));
             unifiedOrderMapper.insert(o);
             if (key != null) existingKeys.add(key);
             inserted++;
@@ -675,7 +677,11 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public List<com.amz.model.UnifiedOrder> listOrders(Long shopId) {
         LambdaQueryWrapper<com.amz.model.UnifiedOrder> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(com.amz.model.UnifiedOrder::getShopId, shopId).orderByDesc(com.amz.model.UnifiedOrder::getId);
-        return unifiedOrderMapper.selectList(wrapper);
+        List<com.amz.model.UnifiedOrder> orders = unifiedOrderMapper.selectList(wrapper);
+        for (com.amz.model.UnifiedOrder o : orders) {
+            com.amz.model.UnifiedOrderItems.ensureItems(o);
+        }
+        return orders;
     }
 
     public List<com.amz.model.UnifiedOrder> listByPlatform(Long shopId, String platform) {
@@ -683,7 +689,11 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         wrapper.eq(com.amz.model.UnifiedOrder::getShopId, shopId)
                .eq(com.amz.model.UnifiedOrder::getPlatform, platform)
                .orderByDesc(com.amz.model.UnifiedOrder::getId);
-        return unifiedOrderMapper.selectList(wrapper);
+        List<com.amz.model.UnifiedOrder> orders = unifiedOrderMapper.selectList(wrapper);
+        for (com.amz.model.UnifiedOrder o : orders) {
+            com.amz.model.UnifiedOrderItems.ensureItems(o);
+        }
+        return orders;
     }
 
     public boolean markShipped(Long orderId, String trackingNo) {

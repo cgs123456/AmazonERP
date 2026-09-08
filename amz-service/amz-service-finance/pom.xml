@@ -65,6 +65,11 @@
             <artifactId>amz-common</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
+        <!-- B1：凭证生成 MQ 消费者（order 生产 -> finance 消费，替代同步 Feign） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
         <!-- 娴嬭瘯渚濊禆锛圝Unit 5 + Mockito + AssertJ锛岀函 Mock 涓嶄緷璧?Spring 瀹瑰櫒锛?-->
         <dependency>
             <groupId>io.micrometer</groupId>

@@ -391,10 +391,10 @@ public class RealReportServiceImpl implements ReportService {
         if (value == null) {
             return BigDecimal.ZERO;
         }
-        if (value instanceof Number) {
-            return BigDecimal.valueOf(((Number) value).doubleValue());
-        }
         try {
+            // 禁止经 double 中转（如 0.1 → 0.1000000000000000055511）：Double.toString
+            // 给出最短往返表示，new BigDecimal(String) 可保留金额精度；
+            // BigDecimal/Integer/Long 的 toString 本就是精确表示，同路径处理。
             return new BigDecimal(value.toString());
         } catch (NumberFormatException e) {
             return BigDecimal.ZERO;

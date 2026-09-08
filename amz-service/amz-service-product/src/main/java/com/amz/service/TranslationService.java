@@ -214,10 +214,34 @@ public class TranslationService {
         }
 
         JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
-        return body.getAsJsonArray("choices")
-                .get(0).getAsJsonObject()
-                .getAsJsonObject("message")
-                .get("content").getAsString();
+        String content = extractContent(body);
+        if (content == null || content.isBlank()) {
+            // 空译文不得写入三级缓存：抛异常走调用方“降级返回原文”分支
+            throw new IOException("DeepSeek 返回异常结构或空译文");
+        }
+        return content;
+    }
+
+    /**
+     * 从 chat/completions 响应中提取首条 content，结构异常时返回 null（不抛 NPE 穿透）。
+     */
+    private static String extractContent(JsonObject jsonResponse) {
+        try {
+            if (jsonResponse == null || !jsonResponse.has("choices")) {
+                return null;
+            }
+            JsonArray choices = jsonResponse.getAsJsonArray("choices");
+            if (choices == null || choices.size() == 0) {
+                return null;
+            }
+            JsonObject message = choices.get(0).getAsJsonObject().getAsJsonObject("message");
+            if (message == null || !message.has("content") || message.get("content").isJsonNull()) {
+                return null;
+            }
+            return message.get("content").getAsString();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

@@ -12,6 +12,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
@@ -105,16 +106,16 @@ class FinanceServiceImplTest {
     @Test
     @DisplayName("calculateProfit：ORDER(+) - PROCUREMENT - PLATFORM_FEE - REFUND，未知类型忽略，null 金额按 0")
     void calculateProfitFourSourceTypesByDebitCredit() {
-        AccountingVoucher order = voucher("ORDER", new BigDecimal("1000"));
-        AccountingVoucher proc = voucher("PROCUREMENT", new BigDecimal("300"));
-        AccountingVoucher fee = voucher("PLATFORM_FEE", new BigDecimal("50"));
-        AccountingVoucher refund = voucher("REFUND", new BigDecimal("80"));
-        AccountingVoucher unknown = voucher("UNKNOWN", new BigDecimal("999"));
-        AccountingVoucher orderNullAmt = voucher("ORDER", null); // null 金额按 0
-        when(voucherMapper.selectList(any())).thenReturn(
-                Arrays.asList(order, proc, fee, refund, unknown, orderNullAmt));
+        when(voucherMapper.sumBySourceType(eq(1L), eq("2026-01-01"), eq("2026-01-31"))).thenReturn(
+                Arrays.asList(
+                        group("ORDER", null, new BigDecimal("1000"), new BigDecimal("1000"), null),
+                        group("PROCUREMENT", null, new BigDecimal("300"), null, null),
+                        group("PLATFORM_FEE", null, new BigDecimal("50"), null, null),
+                        group("REFUND", null, new BigDecimal("80"), null, null),
+                        group("UNKNOWN", null, new BigDecimal("999"), null, null),
+                        group("ORDER", null, null, null, null))); // null 金额按 0
 
-        // 利润 = 1000 - 300 - 50 - 80 + 0 = 570.00
+        // 利润 = 1000 - 300 - 50 - 80 + 0 = 570.00（VAT 被 mock 为 null，跳过）
         BigDecimal profit = financeService.calculateProfit(1L, "2026-01-01", "2026-01-31");
 
         assertEquals(new BigDecimal("570.00"), profit);
@@ -123,7 +124,8 @@ class FinanceServiceImplTest {
     @Test
     @DisplayName("calculateProfit：无凭证时返回 0.00")
     void calculateProfitEmptyReturnsZero() {
-        when(voucherMapper.selectList(any())).thenReturn(Collections.emptyList());
+        when(voucherMapper.sumBySourceType(eq(1L), isNull(), isNull()))
+                .thenReturn(Collections.emptyList());
         BigDecimal profit = financeService.calculateProfit(1L, null, null);
         assertEquals(new BigDecimal("0.00"), profit);
     }
@@ -131,11 +133,29 @@ class FinanceServiceImplTest {
     @Test
     @DisplayName("calculateProfit：纯订单收入场景（仅 ORDER）")
     void calculateProfitOnlyOrder() {
-        when(voucherMapper.selectList(any())).thenReturn(Arrays.asList(
-                voucher("ORDER", new BigDecimal("500")),
-                voucher("ORDER", new BigDecimal("250.50"))));
+        when(voucherMapper.sumBySourceType(eq(1L), isNull(), isNull())).thenReturn(Arrays.asList(
+                group("ORDER", null, new BigDecimal("500"), new BigDecimal("500"), null),
+                group("ORDER", null, new BigDecimal("250.50"), new BigDecimal("250.50"), null)));
         BigDecimal profit = financeService.calculateProfit(1L, null, null);
         assertEquals(new BigDecimal("750.50"), profit);
+    }
+
+    @Test
+    @DisplayName("calculateProfit：结算币种映射国家计 VAT（USD 零税率，GBP 按 UK20%，EUR 保持默认 20%）")
+    void calculateProfitVatByCurrencyCountry() {
+        // 用真实 VatServiceImpl（零税率国家 US/CN/JP 已显式入库），验证币种→国家映射
+        FinanceServiceImpl service = new FinanceServiceImpl();
+        ReflectionTestUtils.setField(service, "voucherMapper", voucherMapper);
+        ReflectionTestUtils.setField(service, "vatService", new com.amz.service.impl.VatServiceImpl());
+
+        when(voucherMapper.sumBySourceType(eq(1L), isNull(), isNull())).thenReturn(Arrays.asList(
+                group("ORDER", "USD", new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("7.25")),
+                group("ORDER", "GBP", new BigDecimal("100"), new BigDecimal("100"), new BigDecimal("9.20")),
+                group("ORDER", "EUR", new BigDecimal("100"), new BigDecimal("100"), null)));
+
+        // VAT 按原币算出后必须折 CNY 再扣：300 - 0(USD) - 20×9.2(GBP) - 20×1(EUR无汇率按1) = 96.00
+        // （单位错配时为 260.00，利润虚高 164）
+        assertEquals(new BigDecimal("96.00"), service.calculateProfit(1L, null, null));
     }
 
     // ---------------- syncToKingdee ----------------
@@ -260,5 +280,20 @@ class FinanceServiceImplTest {
         v.setSourceType(sourceType);
         v.setCnyAmount(cnyAmount);
         return v;
+    }
+
+    /**
+     * 构造 sumBySourceType 返回的聚合分组 {sourceType, currency, totalCny, totalOriginal, rate}。
+     */
+    private java.util.Map<String, Object> group(String sourceType, String currency,
+                                                BigDecimal totalCny, BigDecimal totalOriginal,
+                                                BigDecimal rate) {
+        java.util.Map<String, Object> g = new java.util.LinkedHashMap<>();
+        g.put("sourceType", sourceType);
+        g.put("currency", currency);
+        g.put("totalCny", totalCny);
+        g.put("totalOriginal", totalOriginal);
+        g.put("rate", rate);
+        return g;
     }
 }

@@ -105,18 +105,9 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
         return md5Hex(sb.toString()).toUpperCase();
     }
 
-    private String buildQuery(Map<String, String> params) {
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, String> e : params.entrySet()) {
-            if (sb.length() > 0) {
-                sb.append("&");
-            }
-            sb.append(e.getKey()).append("=").append(e.getValue());
-        }
-        return sb.toString();
-    }
+    // buildQuery / asTextOrNull 已收敛至 AbstractPlatformClient（B3），此处不再重复实现。
 
-    private List<UnifiedOrder> parseOrders(String resp, Long shopId) throws Exception {
+    List<UnifiedOrder> parseOrders(String resp, Long shopId) throws Exception {
         List<UnifiedOrder> list = new ArrayList<>();
         JsonNode root = objectMapper.readTree(resp);
         if (root.path("code").asInt() != 0 && !root.path("success").asBoolean(false)) {
@@ -139,16 +130,16 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
                 uo.setBuyerNickname(asTextOrNull(o.path("buyer_name")));
                 uo.setShipCountry(asTextOrNull(o.path("country")));
                 JsonNode items = o.path("sku_list").isEmpty() ? o.path("order_item_list") : o.path("sku_list");
-                if (items.isArray() && items.size() > 0) {
-                    JsonNode p = items.get(0);
-                    uo.setSku(asTextOrNull(p.path("sku")));
-                    uo.setProductName(asTextOrNull(p.path("product_name")));
-                    JsonNode qty = p.path("sku_count").isEmpty() ? p.path("quantity") : p.path("sku_count");
-                    if (!qty.isMissingNode() && !qty.isNull()) {
-                        uo.setQuantity(qty.asInt(1));
+                // B3：全量保留明细行（此前只取首行，多商品订单静默丢数据）；
+                // 头字段由 addItem 回填首行，保持兼容
+                if (items.isArray()) {
+                    for (JsonNode p : items) {
+                        JsonNode qty = firstPresent(p.path("sku_count"), p.path("quantity"));
+                        uo.addItem(asTextOrNull(p.path("sku")),
+                                asTextOrNull(p.path("product_name")), parseIntOrNull(qty));
                     }
                 }
-                JsonNode amt = o.path("pay_amount").isEmpty() ? o.path("order_amount") : o.path("pay_amount");
+                JsonNode amt = firstPresent(o.path("pay_amount"), o.path("order_amount"));
                 String amtStr = asTextOrNull(amt);
                 if (amtStr != null) {
                     try {
@@ -164,12 +155,5 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
         }
         log.info("Temu fetchRecentOrders shopId={} count={}", shopId, list.size());
         return list;
-    }
-
-    private String asTextOrNull(JsonNode node) {
-        if (node == null || node.isNull() || node.asText("").isEmpty()) {
-            return null;
-        }
-        return node.asText();
     }
 }

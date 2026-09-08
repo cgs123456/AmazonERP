@@ -25,7 +25,10 @@ import org.springframework.amqp.core.MessageBuilder;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import io.seata.spring.annotation.GlobalTransactional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +48,15 @@ public class OrderServiceImpl implements OrderService {
      * 由消费者转死信队列（nack requeue=false），避免无限重投。
      */
     private static final int MAX_PROCESS_ATTEMPTS = 3;
+
+    /**
+     * 凭证生成走 MQ（B1，默认 true）还是同步 Feign（false，回退）。
+     * <p>
+     * MQ 路径：Seata 全局事务只覆盖订单本地落库，不再跨服务持有锁；
+     * finance 侧消费失败进 DLQ，generateOrderVoucher 自身幂等，重投安全。
+     */
+    @Value("${finance.voucher.async:true}")
+    private boolean voucherAsyncEnabled;
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
@@ -87,6 +99,39 @@ public class OrderServiceImpl implements OrderService {
         } catch (Exception e) {
             log.error("保存订单失败", e);
             return Result.failure("保存订单失败");
+        }
+    }
+
+    /**
+     * 发布凭证生成消息（B1：与 saveOrder 同一 JSON 文本消息范式）。
+     * <p>
+     * 注意：发送在 Seata 全局事务内，若事务最终回滚而消息已发出，
+     * finance 侧会产生一条 sourceNo 指向不存在订单的孤儿凭证——
+     * generateOrderVoucher 幂等保证重发安全，孤儿凭证可按 sourceNo 对账清理，
+     * 与改造前（Feign 在事务内调用成功后回滚）窗口一致，未引入新风险。
+     */
+    private void publishVoucherMessage(OrderSyncDto syncDto) {
+        try {
+            // 契约单源：与消费方共用 amz-common 的 VoucherMessage，字段漂移编译期即暴露
+            com.amz.mq.VoucherMessage payload = new com.amz.mq.VoucherMessage(
+                    syncDto.getShopId(),
+                    syncDto.getAmazonOrderId(),
+                    syncDto.getTotalAmount(),
+                    syncDto.getCurrency());
+            String json = objectMapper.writeValueAsString(payload);
+            Message message = MessageBuilder
+                    .withBody(json.getBytes(StandardCharsets.UTF_8))
+                    .setContentType(MessageProperties.CONTENT_TYPE_TEXT_PLAIN)
+                    .setMessageId(UUID.randomUUID().toString())
+                    .build();
+            rabbitTemplate.send(MqConstant.VOUCHER_EXCHANGE, MqConstant.VOUCHER_ROUTING_KEY, message);
+            log.info("凭证生成消息已发送：amazonOrderId={}, shopId={}",
+                    syncDto.getAmazonOrderId(), syncDto.getShopId());
+        } catch (Exception e) {
+            // 发送失败抛异常触发事务回滚 + 上游重试（幂等查重保证重入安全），
+            // 禁止静默吞掉导致订单有、凭证永远无
+            log.error("凭证生成消息发送失败：amazonOrderId={}", syncDto.getAmazonOrderId(), e);
+            throw new IllegalStateException("凭证消息发送失败：amazonOrderId=" + syncDto.getAmazonOrderId(), e);
         }
     }
 
@@ -179,20 +224,44 @@ public class OrderServiceImpl implements OrderService {
             log.info("syncAmazonOrder 落库成功：amazonOrderId={}, shopId={}",
                     syncDto.getAmazonOrderId(), syncDto.getShopId());
             // 业财一体化：订单落库成功后触发凭证生成（借应收 / 贷收入 + 多币种换算）。
-            // 失败降级 warn 日志，不阻断订单落库主流程；凭证可后续按订单号补生成。
+            // B1 默认走 MQ（finance 侧消费，失败进 DLQ；generateOrderVoucher 幂等，重投安全）。
+            // 同步 Feign 仅在 finance.voucher.async=false 时作为回退保留。
             if (syncDto.getShopId() != null
                     && syncDto.getTotalAmount() != null
                     && syncDto.getCurrency() != null
                     && !syncDto.getCurrency().isEmpty()) {
-                try {
-                    financeServiceFeignClient.generateOrderVoucher(
-                            syncDto.getShopId(),
-                            syncDto.getAmazonOrderId(),
-                            syncDto.getTotalAmount(),
-                            syncDto.getCurrency());
-                } catch (Exception feignEx) {
-                    log.warn("业财一体化凭证生成失败（不阻断订单落库）：amazonOrderId={}, shopId={}",
-                            syncDto.getAmazonOrderId(), syncDto.getShopId(), feignEx);
+                if (voucherAsyncEnabled) {
+                    // M7：事务提交后再发送。事务内同步 send 一旦 DB 回滚，
+                    // MQ 消息已发出会形成孤儿凭证；afterCommit 保证先落库后发消息。
+                    // 无事务同步上下文（如单测直调）时直接发送。
+                    if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                        TransactionSynchronizationManager.registerSynchronization(
+                                new TransactionSynchronization() {
+                                    @Override
+                                    public void afterCommit() {
+                                        try {
+                                            publishVoucherMessage(syncDto);
+                                        } catch (Exception e) {
+                                            // 提交后已无法回滚：大声记录，由 DLQ/对账补发兜底
+                                            log.error("凭证消息提交后发送失败，需对账补发：amazonOrderId={}",
+                                                    syncDto.getAmazonOrderId(), e);
+                                        }
+                                    }
+                                });
+                    } else {
+                        publishVoucherMessage(syncDto);
+                    }
+                } else {
+                    try {
+                        financeServiceFeignClient.generateOrderVoucher(
+                                syncDto.getShopId(),
+                                syncDto.getAmazonOrderId(),
+                                syncDto.getTotalAmount(),
+                                syncDto.getCurrency());
+                    } catch (Exception feignEx) {
+                        log.warn("业财一体化凭证生成失败（不阻断订单落库）：amazonOrderId={}, shopId={}",
+                                syncDto.getAmazonOrderId(), syncDto.getShopId(), feignEx);
+                    }
                 }
             }
         } catch (org.springframework.dao.DuplicateKeyException e) {

@@ -38,6 +38,12 @@ public class VatServiceImpl implements VatService {
         THRESHOLDS.put("IT", new BigDecimal("35000"));
         THRESHOLDS.put("ES", new BigDecimal("35000"));
         THRESHOLDS.put("UK", new BigDecimal("70000"));
+
+        // 无 VAT 制度国家显式零税率：避免调用方误传币种/未知国家码时
+        // 回退到 DEFAULT 20%，导致非欧盟站点利润被多扣 VAT
+        VAT_RATES.put("US", BigDecimal.ZERO);
+        VAT_RATES.put("CN", BigDecimal.ZERO);
+        VAT_RATES.put("JP", BigDecimal.ZERO);
     }
 
     @Override

@@ -1,12 +1,15 @@
 package com.amz.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 多平台统一订单实体。
@@ -47,14 +50,51 @@ public class UnifiedOrder implements Serializable {
     /** 收件国家（ISO 2 位代码，如 US/UK/DE） */
     private String shipCountry;
 
-    /** 商品 SKU */
+    /** 商品 SKU（首行回填，兼容历史单明细展示） */
     private String sku;
 
-    /** 商品名称 */
+    /** 商品名称（首行回填） */
     private String productName;
 
-    /** 购买数量 */
+    /** 购买数量（首行回填） */
     private Integer quantity;
+
+    /**
+     * 订单明细行（一对多，持久化于 items_json 列，读写经 {@link UnifiedOrderItems}）。
+     * <p>
+     * 多商品订单此前只保留首行，其余静默丢失；现全量保留，
+     * 头字段仍回填首行以兼容列表展示与历史数据。
+     */
+    @TableField(exist = false)
+    private List<UnifiedOrderItem> items;
+
+    /** 明细 JSON（amz_unified_order.items_json，Flyway V2 新增列） */
+    private String itemsJson;
+
+    /**
+     * 追加明细行；首行同时回填头字段（仅当头字段仍为空时，避免覆盖调用方预设值）。
+     */
+    public void addItem(String sku, String productName, Integer quantity) {
+        if (items == null) {
+            items = new ArrayList<>();
+        }
+        UnifiedOrderItem item = new UnifiedOrderItem();
+        item.setSku(sku);
+        item.setProductName(productName);
+        item.setQuantity(quantity);
+        items.add(item);
+        if (items.size() == 1) {
+            if (this.sku == null) {
+                this.sku = sku;
+            }
+            if (this.productName == null) {
+                this.productName = productName;
+            }
+            if (this.quantity == null) {
+                this.quantity = quantity;
+            }
+        }
+    }
 
     /** 订单金额（原币种） */
     private BigDecimal originalAmount;

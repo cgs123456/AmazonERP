@@ -1,5 +1,6 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.EmailTemplateMapper;
 import com.amz.mapper.EmailTaskMapper;
@@ -65,6 +66,10 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         if (template.getShopId() == null || template.getTemplateName() == null || template.getBody() == null) {
             throw new AttrIsNullException("店铺ID、模板名称和正文不能为空");
         }
+        // 越权防护：Body-only 创建入口无 shopId 参数可被切面拦截，显式校验目标店铺归属
+        if (!UserContext.isShopAllowed(template.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的邮件模板");
+        }
         if (template.getEnabled() == null) template.setEnabled(1);
         if (template.getTriggerDelayHours() == null) template.setTriggerDelayHours(0);
         if (template.getLanguage() == null) template.setLanguage("en");
@@ -77,6 +82,10 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         if (template.getId() == null) {
             throw new AttrIsNullException("模板ID不能为空");
         }
+        // 越权防护：不信任请求体自带的 shopId，按既有记录校验归属并覆盖写回，
+        // 防止把模板搬到其他店铺（updateById 全字段更新会连带写入请求体 shopId）
+        EmailTemplate existed = mustGetAuthorizedTemplate(template.getId());
+        template.setShopId(existed.getShopId());
         emailTemplateMapper.updateById(template);
         return template;
     }
@@ -94,10 +103,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Override
     public boolean toggleTemplate(Long templateId, boolean enabled) {
-        EmailTemplate template = emailTemplateMapper.selectById(templateId);
-        if (template == null) {
-            throw new AttrIsNullException("模板不存在：id=" + templateId);
-        }
+        EmailTemplate template = mustGetAuthorizedTemplate(templateId);
         template.setEnabled(enabled ? 1 : 0);
         emailTemplateMapper.updateById(template);
         return true;
@@ -226,6 +232,9 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         if (task.getShopId() == null || task.getAmazonOrderId() == null) {
             throw new AttrIsNullException("店铺ID和订单号不能为空");
         }
+        if (!UserContext.isShopAllowed(task.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的邮件任务");
+        }
         task.setSource("MANUAL");
         if (task.getStatus() == null) task.setStatus("PENDING");
         if (task.getScheduledTime() == null) task.setScheduledTime(LocalDateTime.now());
@@ -240,6 +249,9 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     public NegativeReview saveNegativeReview(NegativeReview review) {
         if (review.getShopId() == null || review.getAsin() == null || review.getReviewRating() == null) {
             throw new AttrIsNullException("店铺ID、ASIN和评分不能为空");
+        }
+        if (!UserContext.isShopAllowed(review.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的差评");
         }
         review.setStatus("DETECTED");
         if (review.getVerifiedPurchase() == null) review.setVerifiedPurchase(0);
@@ -264,10 +276,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Override
     public Map<String, Object> matchNegativeReviewToOrder(Long reviewId) {
-        NegativeReview review = negativeReviewMapper.selectById(reviewId);
-        if (review == null) {
-            throw new AttrIsNullException("差评记录不存在：id=" + reviewId);
-        }
+        NegativeReview review = mustGetAuthorizedReview(reviewId);
 
         // 真实匹配需通过 SP-API 查询该 ASIN 在留评日期前 7-30 天的订单。
         // 非 mock 环境诚实失败：伪造订单号落库为 MATCHED 会误导后续索评/跟进流程
@@ -294,10 +303,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public EmailTask followUpNegativeReview(Long reviewId) {
-        NegativeReview review = negativeReviewMapper.selectById(reviewId);
-        if (review == null) {
-            throw new AttrIsNullException("差评记录不存在：id=" + reviewId);
-        }
+        NegativeReview review = mustGetAuthorizedReview(reviewId);
         if (!"MATCHED".equals(review.getStatus()) && !"DETECTED".equals(review.getStatus())) {
             throw new IllegalStateException("仅 DETECTED/MATCHED 状态的差评可跟进，当前状态：" + review.getStatus());
         }
@@ -350,6 +356,9 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         if (rma.getShopId() == null || rma.getAmazonOrderId() == null) {
             throw new AttrIsNullException("店铺ID和订单号不能为空");
         }
+        if (!UserContext.isShopAllowed(rma.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的 RMA");
+        }
         rma.setRmaNo("RMA" + System.currentTimeMillis());
         if (rma.getStatus() == null) rma.setStatus("PENDING");
         if (rma.getReturnType() == null) rma.setReturnType("RETURN");
@@ -373,10 +382,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Override
     public Rma updateRmaStatus(Long rmaId, String status) {
-        Rma rma = rmaMapper.selectById(rmaId);
-        if (rma == null) {
-            throw new AttrIsNullException("RMA不存在：id=" + rmaId);
-        }
+        Rma rma = mustGetAuthorizedRma(rmaId);
         rma.setStatus(status);
         rmaMapper.updateById(rma);
         return rma;
@@ -384,11 +390,55 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Override
     public Rma getRma(Long rmaId) {
+        return mustGetAuthorizedRma(rmaId);
+    }
+
+    /**
+     * 加载邮件模板并做多租户越权校验（与 ProcurementServiceImpl#mustGetAuthorized 同模式）。
+     * <p>
+     * 模板/启停/RMA 端点仅携带记录 ID、无 shopId 参数，ShopScoped 切面无法按参数名拦截，
+     * 故在服务层显式校验记录所属店铺是否在当前用户授权范围内。
+     */
+    private EmailTemplate mustGetAuthorizedTemplate(Long templateId) {
+        EmailTemplate template = emailTemplateMapper.selectById(templateId);
+        if (template == null) {
+            throw new AttrIsNullException("模板不存在：id=" + templateId);
+        }
+        if (!UserContext.isShopAllowed(template.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的邮件模板：id=" + templateId);
+        }
+        return template;
+    }
+
+    /**
+     * 加载 RMA 并做多租户越权校验（同上）。
+     */
+    private Rma mustGetAuthorizedRma(Long rmaId) {
         Rma rma = rmaMapper.selectById(rmaId);
         if (rma == null) {
             throw new AttrIsNullException("RMA不存在：id=" + rmaId);
         }
+        if (!UserContext.isShopAllowed(rma.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的 RMA：id=" + rmaId);
+        }
         return rma;
+    }
+
+    /**
+     * 加载差评并做多租户越权校验（同上）。
+     * <p>
+     * match/followup 端点仅携带 reviewId、无 shopId 参数，切面无法拦截，
+     * 故在此显式校验（防跨租户读写他店差评、冒建他店邮件任务）。
+     */
+    private NegativeReview mustGetAuthorizedReview(Long reviewId) {
+        NegativeReview review = negativeReviewMapper.selectById(reviewId);
+        if (review == null) {
+            throw new AttrIsNullException("差评记录不存在：id=" + reviewId);
+        }
+        if (!UserContext.isShopAllowed(review.getShopId())) {
+            throw new IllegalStateException("无权操作该店铺的差评：id=" + reviewId);
+        }
+        return review;
     }
 
     // ==================== 工具方法 ====================

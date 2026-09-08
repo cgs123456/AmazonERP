@@ -115,18 +115,9 @@ public class SheinRealClient extends AbstractPlatformClient implements SheinClie
         return md5Hex(sb.toString()).toUpperCase();
     }
 
-    private String buildQuery(Map<String, String> params) {
-        StringBuilder sb = new StringBuilder();
-        for (Map.Entry<String, String> e : params.entrySet()) {
-            if (sb.length() > 0) {
-                sb.append("&");
-            }
-            sb.append(e.getKey()).append("=").append(e.getValue());
-        }
-        return sb.toString();
-    }
+    // buildQuery / asTextOrNull 已收敛至 AbstractPlatformClient（B3），此处不再重复实现。
 
-    private List<UnifiedOrder> parseOrders(String resp, Long shopId) throws Exception {
+    List<UnifiedOrder> parseOrders(String resp, Long shopId) throws Exception {
         List<UnifiedOrder> list = new ArrayList<>();
         JsonNode root = objectMapper.readTree(resp);
         if (root.path("code").asInt() != 0 && !root.path("success").asBoolean(false)) {
@@ -152,15 +143,16 @@ public class SheinRealClient extends AbstractPlatformClient implements SheinClie
                 uo.setBuyerNickname(asTextOrNull(o.path("buyerName")));
                 uo.setShipCountry(asTextOrNull(o.path("country")));
                 JsonNode items = o.path("skuList").isEmpty() ? o.path("itemList") : o.path("skuList");
-                if (items.isArray() && items.size() > 0) {
-                    JsonNode p = items.get(0);
-                    uo.setSku(asTextOrNull(p.path("sku")));
-                    uo.setProductName(asTextOrNull(p.path("productName")));
-                    if (!p.path("quantity").isMissingNode() && !p.path("quantity").isNull()) {
-                        uo.setQuantity(p.path("quantity").asInt(1));
+                // B3：全量保留明细行（此前只取首行，多商品订单静默丢数据）；
+                // 头字段由 addItem 回填首行，保持兼容
+                if (items.isArray()) {
+                    for (JsonNode p : items) {
+                        uo.addItem(asTextOrNull(p.path("sku")),
+                                asTextOrNull(p.path("productName")),
+                                parseIntOrNull(p.path("quantity")));
                     }
                 }
-                JsonNode amt = o.path("payAmount").isEmpty() ? o.path("orderAmount") : o.path("payAmount");
+                JsonNode amt = firstPresent(o.path("payAmount"), o.path("orderAmount"));
                 String amtStr = asTextOrNull(amt);
                 if (amtStr != null) {
                     try {
@@ -176,12 +168,5 @@ public class SheinRealClient extends AbstractPlatformClient implements SheinClie
         }
         log.info("Shein fetchRecentOrders shopId={} count={}", shopId, list.size());
         return list;
-    }
-
-    private String asTextOrNull(JsonNode node) {
-        if (node == null || node.isNull() || node.asText("").isEmpty()) {
-            return null;
-        }
-        return node.asText();
     }
 }

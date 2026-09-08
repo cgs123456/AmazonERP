@@ -42,6 +42,9 @@ public class TemuMockClient extends AbstractPlatformClient implements TemuClient
         o1.setSku("SKU-TEMU-001");
         o1.setProductName("无线蓝牙耳机");
         o1.setQuantity(2);
+        // B3：明细与头字段同源（addItem 回填首行，保持一致）
+        o1.addItem("SKU-TEMU-001", "无线蓝牙耳机", 2);
+        o1.addItem("SKU-TEMU-003", "手机支架", 1);
         o1.setOriginalAmount(new BigDecimal("29.98"));
         o1.setCurrency("USD");
         o1.setStatus("PAID");
@@ -57,6 +60,7 @@ public class TemuMockClient extends AbstractPlatformClient implements TemuClient
         o2.setSku("SKU-TEMU-002");
         o2.setProductName("USB-C 快充线");
         o2.setQuantity(5);
+        o2.addItem("SKU-TEMU-002", "USB-C 快充线", 5);
         o2.setOriginalAmount(new BigDecimal("14.95"));
         o2.setCurrency("EUR");
         o2.setStatus("UNPAID");

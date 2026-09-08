@@ -13,6 +13,7 @@ import com.amz.service.SearchService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.elasticsearch.client.elc.NativeQuery;
 import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.elasticsearch.core.SearchHit;
@@ -42,11 +43,27 @@ import java.util.stream.Collectors;
 @Slf4j
 public class SearchServiceImpl implements SearchService {
 
-    private static final int BM25_TOP = 50;
-    private static final int KNN_TOP = 50;
-    private static final long KNN_CANDIDATES = 100L;
-    private static final int RRF_FINAL = 20;
-    private static final double RRF_K = 60.0;
+    /**
+     * 混合检索可调参数（B-2： previously 硬编码常量，外置后可在不改代码的情况下
+     * 做 rank_window / rrfK / 字段权重 A/B 对比；缺省值即原常量，行为零变化）。
+     */
+    @Value("${search.retrieval.bm25-top:50}")
+    private int bm25Top;
+
+    @Value("${search.retrieval.knn-top:50}")
+    private int knnTop;
+
+    @Value("${search.retrieval.knn-candidates:100}")
+    private long knnCandidates;
+
+    @Value("${search.retrieval.final-top:20}")
+    private int rrfFinal;
+
+    @Value("${search.retrieval.rrf-k:60.0}")
+    private double rrfK;
+
+    @Value("#{'${search.retrieval.bm25-fields:title,content,summary}'.split(',')}")
+    private List<String> bm25Fields;
 
     @Autowired
     private ElasticsearchOperations elasticsearchOperations;
@@ -177,22 +194,22 @@ public class SearchServiceImpl implements SearchService {
                 log.warn("混合检索异常，降级为纯 BM25: {}", e.getMessage());
             }
         }
-        return bm25Search(key, RRF_FINAL);
+        return bm25Search(key, rrfFinal);
     }
 
     private List<ProductDoc> hybridSearch(String key) {
         float[] queryEmbedding = embeddingService.embed(key);
         if (queryEmbedding == null) {
             log.warn("查询向量化失败，降级为纯 BM25");
-            return bm25Search(key, RRF_FINAL);
+            return bm25Search(key, rrfFinal);
         }
 
         Query bm25Query = NativeQuery.builder()
                 .withQuery(q -> q.multiMatch(m -> m
                         .query(key)
-                        .fields("title", "content", "summary")
+                        .fields(bm25Fields)
                 ))
-                .withMaxResults(BM25_TOP)
+                .withMaxResults(bm25Top)
                 .build();
         SearchHits<ProductDoc> bm25Hits = elasticsearchOperations.search(
                 bm25Query, ProductDoc.class, IndexCoordinates.of("amz_product"));
@@ -202,9 +219,9 @@ public class SearchServiceImpl implements SearchService {
                 .withQuery(q -> q.knn(k -> k
                         .field("embedding")
                         .queryVector(vector)
-                        .numCandidates(KNN_CANDIDATES)
+                        .numCandidates(knnCandidates)
                 ))
-                .withMaxResults(KNN_TOP)
+                .withMaxResults(knnTop)
                 .build();
         SearchHits<ProductDoc> knnHits = elasticsearchOperations.search(
                 knnQuery, ProductDoc.class, IndexCoordinates.of("amz_product"));
@@ -215,7 +232,7 @@ public class SearchServiceImpl implements SearchService {
         int rank = 1;
         for (SearchHit<ProductDoc> hit : bm25Hits.getSearchHits()) {
             Long id = hit.getContent().getId();
-            rrfScores.merge(id, 1.0 / (RRF_K + rank), Double::sum);
+            rrfScores.merge(id, 1.0 / (rrfK + rank), Double::sum);
             productMap.put(id, hit.getContent());
             rank++;
         }
@@ -223,14 +240,14 @@ public class SearchServiceImpl implements SearchService {
         rank = 1;
         for (SearchHit<ProductDoc> hit : knnHits.getSearchHits()) {
             Long id = hit.getContent().getId();
-            rrfScores.merge(id, 1.0 / (RRF_K + rank), Double::sum);
+            rrfScores.merge(id, 1.0 / (rrfK + rank), Double::sum);
             productMap.putIfAbsent(id, hit.getContent());
             rank++;
         }
 
         List<ProductDoc> result = rrfScores.entrySet().stream()
                 .sorted(Map.Entry.<Long, Double>comparingByValue().reversed())
-                .limit(RRF_FINAL)
+                .limit(rrfFinal)
                 .map(e -> productMap.get(e.getKey()))
                 .collect(Collectors.toList());
 
@@ -243,7 +260,7 @@ public class SearchServiceImpl implements SearchService {
         Query query = NativeQuery.builder()
                 .withQuery(q -> q.multiMatch(m -> m
                         .query(key)
-                        .fields("title", "content", "summary")
+                        .fields(bm25Fields)
                 ))
                 .withMaxResults(size)
                 .build();

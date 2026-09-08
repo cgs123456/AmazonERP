@@ -29,6 +29,12 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
 
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    /** 快照列表安全上限：快照按小时持续写入，无界查询会随时间线性膨胀。 */
+    private static final int SNAPSHOT_LIMIT = 2000;
+
+    /** 趋势回看上限（小时）：防止 hours 传超大值拉全表。 */
+    private static final int MAX_TREND_HOURS = 168;
+
     @Autowired
     private ProfitSnapshotMapper profitSnapshotMapper;
     @Autowired
@@ -128,12 +134,16 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         if (startTime != null) wrapper.ge(ProfitSnapshot::getStatTime, LocalDateTime.parse(startTime, DT_FMT));
         if (endTime != null) wrapper.le(ProfitSnapshot::getStatTime, LocalDateTime.parse(endTime, DT_FMT));
         wrapper.orderByDesc(ProfitSnapshot::getStatTime);
+        // B2：兜底上限（常量拼接，无注入面；调用方传合法时间范围时无行为变化）
+        wrapper.last("LIMIT " + SNAPSHOT_LIMIT);
         return profitSnapshotMapper.selectList(wrapper);
     }
 
     @Override
     public Map<String, Object> profitTrend(Long shopId, String sku, String asin, Integer hours) {
         if (hours == null || hours <= 0) hours = 24;
+        // B2：回看窗口封顶，避免超大 hours 拉全表；结果中的 hours 回显封顶后的实际窗口
+        if (hours > MAX_TREND_HOURS) hours = MAX_TREND_HOURS;
         String since = LocalDateTime.now().minusHours(hours).format(DT_FMT);
         String until = LocalDateTime.now().format(DT_FMT);
         List<ProfitSnapshot> snapshots = listSnapshots(shopId, sku, since, until);
@@ -167,40 +177,31 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
 
     @Override
     public Map<String, Object> profitSummary(Long shopId, String startTime, String endTime) {
-        LambdaQueryWrapper<ProfitSnapshot> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ProfitSnapshot::getShopId, shopId);
-        if (startTime != null) wrapper.ge(ProfitSnapshot::getStatTime, LocalDateTime.parse(startTime, DT_FMT));
-        if (endTime != null) wrapper.le(ProfitSnapshot::getStatTime, LocalDateTime.parse(endTime, DT_FMT));
-        List<ProfitSnapshot> all = profitSnapshotMapper.selectList(wrapper);
-
-        // 按 SKU 聚合
-        Map<String, List<ProfitSnapshot>> bySku = all.stream()
-                .filter(s -> s.getSku() != null)
-                .collect(Collectors.groupingBy(ProfitSnapshot::getSku, LinkedHashMap::new, Collectors.toList()));
+        // B2：聚合下推 SQL（GROUP BY sku），内存占用从 O(快照行数) 降到 O(SKU 数）；
+        // 响应结构与逐行版严格一致（含 asin 取组内 MAX、netProfit 降序）。
+        List<Map<String, Object>> groups = profitSnapshotMapper.sumBySku(shopId, startTime, endTime);
 
         List<Map<String, Object>> skuSummaries = new ArrayList<>();
         BigDecimal totalSales = BigDecimal.ZERO, totalNet = BigDecimal.ZERO;
-        for (Map.Entry<String, List<ProfitSnapshot>> entry : bySku.entrySet()) {
-            List<ProfitSnapshot> group = entry.getValue();
-            BigDecimal sSales = group.stream().map(s -> s.getSalesAmount() != null ? s.getSalesAmount() : BigDecimal.ZERO)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal sNet = group.stream().map(s -> s.getNetProfit() != null ? s.getNetProfit() : BigDecimal.ZERO)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (Map<String, Object> g : groups) {
+            if (g == null) {
+                continue;
+            }
+            BigDecimal sSales = toBigDecimal(g.get("sales"));
+            BigDecimal sNet = toBigDecimal(g.get("netProfit"));
             Map<String, Object> sm = new LinkedHashMap<>();
-            sm.put("sku", entry.getKey());
-            sm.put("asin", group.get(0).getAsin());
+            sm.put("sku", g.get("sku"));
+            sm.put("asin", g.get("asin"));
             sm.put("sales", sSales);
             sm.put("netProfit", sNet);
             sm.put("margin", sSales.compareTo(BigDecimal.ZERO) > 0
                     ? sNet.multiply(new BigDecimal("100")).divide(sSales, 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO);
-            sm.put("snapshotCount", group.size());
+            sm.put("snapshotCount", g.get("snapshotCount"));
             skuSummaries.add(sm);
             totalSales = totalSales.add(sSales);
             totalNet = totalNet.add(sNet);
         }
-
-        skuSummaries.sort((a, b) -> ((BigDecimal) b.get("netProfit")).compareTo((BigDecimal) a.get("netProfit")));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
@@ -220,6 +221,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     public CostAllocation saveAllocation(CostAllocation allocation) {
         if (allocation.getAllocDate() == null) allocation.setAllocDate(LocalDate.now());
         costAllocationMapper.insert(allocation);
+        evictHeadhaulCache(allocation.getShopId());
         log.info("费用分摊记录创建：costType={} amount={} method={}", allocation.getCostType(),
                 allocation.getTotalAmount(), allocation.getAllocMethod());
         return allocation;
@@ -264,6 +266,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
             alloc.setAllocDetails(objectMapper.writeValueAsString(allocation));
             alloc.setAllocDate(LocalDate.now());
             costAllocationMapper.insert(alloc);
+            evictHeadhaulCache(shopId);
         } catch (JsonProcessingException e) {
             log.warn("分摊明细序列化失败 costType={}", costType, e);
         }
@@ -272,6 +275,23 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     }
 
     // ==================== 辅助方法 ====================
+
+    /**
+     * 聚合值为 null 安全转 BigDecimal（SUM 全 NULL 时 JDBC 返回 null）。
+     */
+    private static BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
 
     private List<ProfitDetail> getProfitDetailsInRange(Long shopId, String sku, String startTime, String endTime) {
         LambdaQueryWrapper<ProfitDetail> wrapper = new LambdaQueryWrapper<>();
@@ -282,16 +302,63 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         return profitDetailMapper.selectList(wrapper);
     }
 
+    /** 头程费用缓存 TTL：分摊记录变更低频，短 TTL 即可过滤批量快照的重复解析。 */
+    private static final long HEADHAUL_CACHE_TTL_MS = 5 * 60 * 1000L;
+
+    /** 头程费用缓存上限（条目数，LRU 淘汰）。 */
+    private static final int HEADHAUL_CACHE_MAX_SIZE = 1024;
+
     /**
-     * 估算 SKU 的头程费用（从 CostAllocation 聚合）。
+     * 头程费用缓存：key 为 shopId + sku，value 为 [缓存值, 过期时间戳]。
+     * <p>
+     * 不引入 Caffeine 依赖的原因：此处仅需单机小容量 TTL 缓存，
+     * 同步 LinkedHashMap（access-order LRU）已够用，避免为 report 模块新增依赖。
+     */
+    private final Map<String, Object[]> headhaulCache =
+            Collections.synchronizedMap(new LinkedHashMap<String, Object[]>(128, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest) {
+                    return size() > HEADHAUL_CACHE_MAX_SIZE;
+                }
+            });
+
+    /**
+     * 估算 SKU 的头程费用（从 CostAllocation 聚合，带 5 分钟 TTL 缓存）。
      */
     private BigDecimal getHeadhaulForSku(Long shopId, String sku) {
+        // key 带分隔符：无分隔拼接下店铺 1 的前缀失效会误删店铺 12 的条目
+        String key = shopId + "|" + sku;
+        long now = System.currentTimeMillis();
+        Object[] cached = headhaulCache.get(key);
+        if (cached != null && (Long) cached[1] > now) {
+            return (BigDecimal) cached[0];
+        }
+        BigDecimal total = loadHeadhaulForSku(shopId, sku);
+        headhaulCache.put(key, new Object[]{total, now + HEADHAUL_CACHE_TTL_MS});
+        return total;
+    }
+
+    /**
+     * 分摊记录变更后失效对应店铺的头程缓存（saveAllocation / allocateCost 成功后调用）。
+     */
+    private void evictHeadhaulCache(Long shopId) {
+        if (shopId == null) {
+            return;
+        }
+        String prefix = shopId + "|";
+        // synchronizedMap 的迭代（含 removeIf）必须外部加锁，否则并发 get/put+evict 可抛 CME
+        synchronized (headhaulCache) {
+            headhaulCache.keySet().removeIf(k -> k.startsWith(prefix));
+        }
+    }
+
+    private BigDecimal loadHeadhaulForSku(Long shopId, String sku) {
         // 从分摊记录中查找该 SKU 最近头程费用
         LambdaQueryWrapper<CostAllocation> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(CostAllocation::getShopId, shopId)
-               .eq(CostAllocation::getCostType, "HEADHAUL")
-               .orderByDesc(CostAllocation::getAllocDate)
-               .last("LIMIT 10");
+                .eq(CostAllocation::getCostType, "HEADHAUL")
+                .orderByDesc(CostAllocation::getAllocDate)
+                .last("LIMIT 10");
         List<CostAllocation> allocations = costAllocationMapper.selectList(wrapper);
         BigDecimal total = BigDecimal.ZERO;
         for (CostAllocation a : allocations) {

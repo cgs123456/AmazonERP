@@ -71,7 +71,16 @@ public class TikTokRealClient extends AbstractPlatformClient implements TikTokCl
         }
         String path = "/fulfillment/202309/orders/" + platformOrderNo + "/ship";
         long ts = Instant.now().getEpochSecond();
-        String body = "{\"tracking_number\":\"" + trackingNo + "\",\"shipping_provider_id\":\"OTHER\"}";
+        // trackingNo 经 JSON 序列化构造：字符串拼接在单号含引号/反斜杠时会破坏请求体
+        String body;
+        try {
+            Map<String, String> payload = new LinkedHashMap<>();
+            payload.put("tracking_number", trackingNo);
+            payload.put("shipping_provider_id", "OTHER");
+            body = objectMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            throw new IllegalStateException("发货请求体构造失败 orderNo=" + platformOrderNo, e);
+        }
         String signature = signTikTok(c.getAppSecret(), c.getAppKey(), path, ts, body);
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("x-tts-access-token", c.getAccessToken());
@@ -94,7 +103,7 @@ public class TikTokRealClient extends AbstractPlatformClient implements TikTokCl
      * 解析 TikTok orders/search 响应，归一化为 UnifiedOrder 列表。
      * 字段缺失时跳过对应赋值，避免 NPE；解析到的订单数量由日志输出供排查。
      */
-    private List<UnifiedOrder> parseOrders(String resp, Long shopId) throws Exception {
+    List<UnifiedOrder> parseOrders(String resp, Long shopId) throws Exception {
         List<UnifiedOrder> list = new ArrayList<>();
         JsonNode root = objectMapper.readTree(resp);
         if (root.path("code").asInt() != 0) {
@@ -114,12 +123,13 @@ public class TikTokRealClient extends AbstractPlatformClient implements TikTokCl
                 JsonNode addr = o.path("recipient_address");
                 uo.setShipCountry(asTextOrNull(addr.path("country")));
                 JsonNode products = o.path("product_list");
-                if (products.isArray() && products.size() > 0) {
-                    JsonNode p = products.get(0);
-                    uo.setSku(asTextOrNull(p.path("sku_id")));
-                    uo.setProductName(asTextOrNull(p.path("product_name")));
-                    if (!p.path("quantity").isMissingNode() && !p.path("quantity").isNull()) {
-                        uo.setQuantity(p.path("quantity").asInt(1));
+                // B3：全量保留明细行（此前只取首行，多商品订单静默丢数据）；
+                // 头字段由 addItem 回填首行，保持兼容
+                if (products.isArray()) {
+                    for (JsonNode p : products) {
+                        uo.addItem(asTextOrNull(p.path("sku_id")),
+                                asTextOrNull(p.path("product_name")),
+                                parseIntOrNull(p.path("quantity")));
                     }
                 }
                 JsonNode pay = o.path("payment");
@@ -171,12 +181,5 @@ public class TikTokRealClient extends AbstractPlatformClient implements TikTokCl
      */
     String signTikTok(String secret, String appKey, String path, long ts, String body) {
         return hmacSha256Hex(secret, appKey + path + ts + body);
-    }
-
-    private String asTextOrNull(JsonNode node) {
-        if (node == null || node.isNull() || node.asText("").isEmpty()) {
-            return null;
-        }
-        return node.asText();
     }
 }

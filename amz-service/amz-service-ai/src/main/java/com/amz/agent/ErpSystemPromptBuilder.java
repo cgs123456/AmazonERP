@@ -4,19 +4,20 @@ import org.springframework.stereotype.Component;
 
 /**
  * ERP 运营 Agent 系统提示词构建器。
- * 定义 Agent 可用的工具清单（12 个）+ Few-Shot 示例。
+ * 定义 Agent 可用的工具清单（13 个）+ Few-Shot 示例。
  *
- * 工具分两类：
+ * 工具分三类：
  * 1) 基础 5 Tool（数据查询）：query_orders / query_inventory / query_sales / query_profit / suggest_replenish
  * 2) 新增 7 Tool（P0 模块联动 + AI 智能运营）：
  *    check_inventory_health / cross_marketplace_listing / analyze_ad_performance /
  *    monitor_competitor_price / estimate_fba_fees / translate_listing / generate_promotion_plan
+ * 3) 知识库 1 Tool（B-1 RAG）：query_knowledge_base（SOP / 政策 / 操作规范检索，SOP 类问题优先调用）
  */
 @Component
 public class ErpSystemPromptBuilder {
 
     private static final String TOOL_DESCRIPTIONS = """
-            你是一个跨境电商 Amazon ERP 运营助手。你可以使用以下 12 个工具来回答用户的运营问题。
+            你是一个跨境电商 Amazon ERP 运营助手。你可以使用以下 13 个工具来回答用户的运营问题。
 
             可用工具（基础数据查询 5 个）：
             1. query_orders(shopId, days) - 查询最近N天订单汇总（数量、总金额）
@@ -33,6 +34,9 @@ public class ErpSystemPromptBuilder {
             10. estimate_fba_fees(shopId, sku, weight, sizeTier) - FBA 费用预估（weight=kg, sizeTier=standard/oversize）
             11. translate_listing(shopId, text, sourceLang, targetLang) - 多语种翻译（三级缓存，sourceLang/targetLang 如 en/de/fr/it/es/ja）
             12. generate_promotion_plan(shopId, asin, goal) - AI 促销方案生成（goal 如 提升销量/清库存/新品冷启）
+
+            可用工具（店铺知识库 1 个，B-1 RAG）：
+            13. query_knowledge_base(shopId, query, topN) - 检索店铺知识库 SOP/政策文档片段（topN 默认 5）
 
             调用格式（严格 JSON，不要输出其他内容）：
             {"name":"工具名","arguments":{"参数名":"参数值"}}
@@ -78,6 +82,15 @@ public class ErpSystemPromptBuilder {
             【示例10 - 促销方案生成】
             用户：为 ASIN B08X4 生成一个促销方案，目标是清库存
             助手：{"name":"generate_promotion_plan","arguments":{"shopId":1,"asin":"B08X4","goal":"清库存"}}
+
+            【示例11 - 知识库 SOP 问答】
+            用户：我们店铺的退货政策是怎样的？店铺ID为1
+            助手：{"name":"query_knowledge_base","arguments":{"shopId":1,"query":"退货政策","topN":5}}
+
+            知识库问答规则（SOP 优先）：
+            - 当用户问题涉及 SOP、政策、流程、操作规范时，必须优先调用 query_knowledge_base 检索店铺知识库，再基于检索片段作答
+            - 引用知识库内容作答时必须注明来源文档名（如“依据《退货政策.pdf》”）
+            - 若检索无命中，明确告知用户知识库暂无相关内容，再用通用知识简要回答，不得编造文档依据
 
             规则：
             - 每次只调用一个工具

@@ -12,6 +12,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -19,7 +20,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.Random;
 
 /**
  * 选品服务实现。
@@ -50,7 +51,9 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
     @Autowired(required = false)
     private AiServiceClient aiServiceClient;
 
+    // M13：5 条机会 + 1 条调研同库多 insert，无事务时半失败留孤儿行
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Result analyzeMarket(String keyword, String marketplace) {
         if (keyword == null || keyword.isBlank()) {
             return Result.failure("关键词不能为空");
@@ -64,8 +67,8 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         // ===== 1. 模拟生成该关键词下 Top N 的机会商品 =====
         // 关键词 hash 作为种子，保证同一关键词分析结果稳定可复现
         long seed = keyword.hashCode() + marketplace.hashCode();
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
-        rand.setSeed(seed);
+        // ThreadLocalRandom#setSeed 恒抛 UnsupportedOperationException，改用可播种的 Random
+        Random rand = new Random(seed);
 
         // 优先从当前用户上下文取 shopId，降级为默认值 1L
         Long shopId = UserContext.getShopId() != null ? UserContext.getShopId() : 1L;
@@ -87,14 +90,14 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
                     shopId, keyword, category, marketplace,
                     baseSearchVolume, baseCompetitorCount,
                     baseAvgPrice, baseAvgReviews, baseAvgRating,
-                    i);
+                    i, rand);
             opportunities.add(opp);
             opportunityMapper.insert(opp);
         }
 
         // 关键词调研结果落库
         KeywordResearch research = buildKeywordResearch(shopId, keyword, marketplace,
-                baseSearchVolume, baseCompetitorCount);
+                baseSearchVolume, baseCompetitorCount, rand);
         keywordResearchMapper.insert(research);
 
         Map<String, Object> summary = new HashMap<>();
@@ -156,8 +159,7 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
 
         log.info("竞品分析：asin={} marketplace={}", asin, marketplace);
 
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
-        rand.setSeed((long) asin.hashCode() + marketplace.hashCode());
+        Random rand = new Random((long) asin.hashCode() + marketplace.hashCode());
 
         List<Map<String, Object>> competitors = new ArrayList<>();
         int compCount = 5 + rand.nextInt(0, 8);
@@ -196,15 +198,14 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
 
         log.info("关键词调研：keyword={} marketplace={}", keyword, marketplace);
 
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
-        rand.setSeed((long) keyword.hashCode() + marketplace.hashCode());
+        Random rand = new Random((long) keyword.hashCode() + marketplace.hashCode());
 
         // 优先从当前用户上下文取 shopId，降级为默认值 1L
         Long shopId = UserContext.getShopId() != null ? UserContext.getShopId() : 1L;
         int searchVolume = 1000 + rand.nextInt(0, 80000);
         int competitorCount = 30 + rand.nextInt(0, 400);
 
-        KeywordResearch research = buildKeywordResearch(shopId, keyword, marketplace, searchVolume, competitorCount);
+        KeywordResearch research = buildKeywordResearch(shopId, keyword, marketplace, searchVolume, competitorCount, rand);
         keywordResearchMapper.insert(research);
 
         return Result.success(research);
@@ -279,9 +280,7 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
             Long shopId, String keyword, String category, String marketplace,
             int baseSearchVolume, int baseCompetitorCount,
             BigDecimal baseAvgPrice, int baseAvgReviews, BigDecimal baseAvgRating,
-            int index) {
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
-
+            int index, Random rand) {
         SelectionOpportunity opp = new SelectionOpportunity();
         opp.setShopId(shopId);
         opp.setAsin("B0" + (10000000L + rand.nextInt(0, 90000000)));
@@ -336,7 +335,7 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
     /**
      * 随机生成趋势方向。
      */
-    private String randomTrend(ThreadLocalRandom rand) {
+    private String randomTrend(Random rand) {
         int r = rand.nextInt(0, 100);
         if (r < 45) return "UP";
         if (r < 80) return "FLAT";
@@ -376,8 +375,7 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
      * 构造关键词调研记录。
      */
     private KeywordResearch buildKeywordResearch(Long shopId, String keyword, String marketplace,
-                                                  int searchVolume, int competitorCount) {
-        ThreadLocalRandom rand = ThreadLocalRandom.current();
+                                                  int searchVolume, int competitorCount, Random rand) {
         KeywordResearch research = new KeywordResearch();
         research.setShopId(shopId);
         research.setKeyword(keyword);

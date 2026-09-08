@@ -15,6 +15,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -35,6 +36,18 @@ public class FinanceServiceImpl implements FinanceService {
     private static final String ACCT_BANK = "1002";            // 银行存款
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+
+    /**
+     * 结算币种 → 销售国家码（VatService#calculateVat 第二个参数是国家码而非币种）。
+     * <p>
+     * 仅收录无歧义的映射；欧元等多国共用币种无法反推国家，返回 null 由调用方
+     * 回退原逻辑（VatService 默认税率），避免静默用错税率。
+     */
+    private static final Map<String, String> CURRENCY_COUNTRY = Map.of(
+            "USD", "US",
+            "GBP", "UK",
+            "CNY", "CN",
+            "JPY", "JP");
 
     @Autowired
     private AccountingVoucherMapper voucherMapper;
@@ -85,14 +98,19 @@ public class FinanceServiceImpl implements FinanceService {
         try {
             voucherMapper.insert(v);
         } catch (org.springframework.dao.DuplicateKeyException e) {
-            // 并发窗口兜底：另一线程已插入同源凭证，查询返回既有记录
+            // 并发窗口兜底：另一线程已插入同源凭证，查询返回既有记录。
+            // 注意：走到这里 existing 恒为 null（非空已在方法开头返回），
+            // 若重查仍为空必须抛异常，禁止返回 null 把 NPE 抛给上游。
             AccountingVoucher concurrent = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
                     .eq(AccountingVoucher::getShopId, shopId)
                     .eq(AccountingVoucher::getSourceType, "ORDER")
                     .eq(AccountingVoucher::getSourceNo, orderNo)
                     .last("LIMIT 1"));
+            if (concurrent == null) {
+                throw new IllegalStateException("订单凭证并发写入冲突且重查失败：orderNo=" + orderNo, e);
+            }
             log.warn("订单凭证并发幂等命中：orderNo={}", orderNo);
-            return concurrent != null ? concurrent : existing;
+            return concurrent;
         }
         log.info("订单凭证生成：orderNo={} 原币 {} {} → CNY {}", orderNo, amount, currency, cnyAmount);
         return v;
@@ -145,6 +163,23 @@ public class FinanceServiceImpl implements FinanceService {
     /** 列表查询安全上限：调度器持续写入，无界 selectList 会随时间线性膨胀。 */
     private static final String LIST_LIMIT = "LIMIT 500";
 
+    /**
+     * 聚合值为 null 安全转 BigDecimal（SUM 全 NULL 时 JDBC 返回 null；数字类型直接转换）。
+     */
+    private static BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal) {
+            return (BigDecimal) value;
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException e) {
+            return BigDecimal.ZERO;
+        }
+    }
+
     @Override
     public List<AccountingVoucher> listVouchers(Long shopId, String sourceType) {
         LambdaQueryWrapper<AccountingVoucher> wrapper = new LambdaQueryWrapper<>();
@@ -165,24 +200,37 @@ public class FinanceServiceImpl implements FinanceService {
         //   PLATFORM_FEE 借销售费用 / 贷银行存款        → 平台费用（借方）     - cnyAmount
         //   REFUND       借销售退回 / 贷应收账款        → 退款（借方冲减收入） - cnyAmount
         // 其他类型忽略（向前兼容）
-        LambdaQueryWrapper<AccountingVoucher> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(AccountingVoucher::getShopId, shopId);
-        if (startDate != null) wrapper.ge(AccountingVoucher::getBizDate, startDate);
-        if (endDate != null) wrapper.le(AccountingVoucher::getBizDate, endDate);
-        List<AccountingVoucher> vouchers = voucherMapper.selectList(wrapper);
+        // B2：按 (sourceType, currency) 在 SQL 层聚合，内存占用从 O(凭证行数) 降到 O(分组数）。
+        // 口径与逐行版严格一致：ORDER 加 cny 并按原币计 VAT；PROCUREMENT/PLATFORM_FEE/REFUND 减；其他忽略。
+        List<Map<String, Object>> groups = voucherMapper.sumBySourceType(shopId, startDate, endDate);
 
         BigDecimal profit = BigDecimal.ZERO;
         BigDecimal totalVat = BigDecimal.ZERO;
-        for (AccountingVoucher v : vouchers) {
-            BigDecimal amount = v.getCnyAmount() == null ? BigDecimal.ZERO : v.getCnyAmount();
-            String sourceType = v.getSourceType();
+        for (Map<String, Object> g : groups) {
+            if (g == null) {
+                continue;
+            }
+            BigDecimal amount = toBigDecimal(g.get("totalCny"));
+            String sourceType = g.get("sourceType") == null ? null : g.get("sourceType").toString();
             if ("ORDER".equals(sourceType)) {
                 profit = profit.add(amount);
-                // VAT deduction: calculate VAT on original sales amount
-                BigDecimal originalAmount = v.getOriginalAmount() != null ? v.getOriginalAmount() : BigDecimal.ZERO;
-                BigDecimal vatAmount = vatService.calculateVat(originalAmount, v.getCurrency());
+                // VAT deduction: calculate VAT on original sales amount.
+                // 注意 calculateVat 第二个参数是国家码：币种可明确映射的先转换，
+                // 映射不到（如 EUR）时透传原值、由 VatService 默认税率处理（与修复前一致）。
+                BigDecimal originalAmount = toBigDecimal(g.get("totalOriginal"));
+                Object currency = g.get("currency");
+                String country = currency == null ? null
+                        : CURRENCY_COUNTRY.getOrDefault(currency.toString().toUpperCase(),
+                                currency.toString());
+                BigDecimal vatAmount = vatService.calculateVat(originalAmount, country);
                 if (vatAmount != null) {
-                    totalVat = totalVat.add(vatAmount);
+                    // 币种单位对齐：VAT 按原币算出，必须折成 CNY 才能从 CNY 利润中扣除；
+                    // 无汇率信息时按 1 处理（保持旧口径，不静默放大误差）
+                    BigDecimal rate = toBigDecimal(g.get("rate"));
+                    if (rate.compareTo(BigDecimal.ZERO) <= 0) {
+                        rate = BigDecimal.ONE;
+                    }
+                    totalVat = totalVat.add(vatAmount.multiply(rate));
                 }
             } else if ("PROCUREMENT".equals(sourceType)
                     || "PLATFORM_FEE".equals(sourceType)

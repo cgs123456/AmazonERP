@@ -14,6 +14,8 @@ import com.google.gson.reflect.TypeToken;
 import com.amz.agent.review.ReviewAnalysisResult;
 import com.amz.agent.review.ReviewAnalysisService;
 import com.amz.agent.review.ReviewInfo;
+import com.amz.ai.knowledge.KnowledgeChunk;
+import com.amz.ai.knowledge.KnowledgeSearchService;
 import com.amz.agent.selection.SelectionAnalysisResult;
 import com.amz.agent.selection.SelectionAnalysisService;
 import com.amz.agent.selection.SelectionOpportunityInput;
@@ -35,10 +37,10 @@ import java.util.Set;
  * ERP 运营 Agent 工具调度器。
  * 复用购物 Agent 的 Function Calling 编排架构，工具实现从"购物"改为"运营数据分析"。
  *
- * 工具清单（28 个）：
- * 基础查询 9 Tool + 分析类 7 Tool + 建议类 6 Tool + 操作类 6 Tool
+ * 工具清单（29 个）：
+ * 基础查询 10 Tool + 分析类 7 Tool + 建议类 6 Tool + 操作类 6 Tool
  *
- * 工具 1-18 通过 Feign 调用各微服务获取真实数据；工具 19-28 调用本地 AI 服务或复合逻辑。
+ * 工具 1-18 通过 Feign 调用各微服务获取真实数据；工具 19-29 调用本地 AI 服务或复合逻辑。
  * Feign 调用失败时降级返回错误信息。
  */
 @Slf4j
@@ -50,6 +52,9 @@ public class ErpToolExecutor {
 
     @Autowired
     private SelectionAnalysisService selectionAnalysisService;
+
+    @Autowired
+    private KnowledgeSearchService knowledgeSearchService;
 
     @Autowired(required = false)
     private OrderServiceClient orderServiceClient;
@@ -166,6 +171,7 @@ public class ErpToolExecutor {
             case "optimize_inventory_distribution" -> optimizeInventoryDistribution(args);
             case "create_purchase_plan"       -> createPurchasePlan(args);
             case "auto_reply_message"        -> autoReplyMessage(args);
+            case "query_knowledge_base"      -> queryKnowledgeBase(args);
             default -> fail("未知工具：" + name);
             };
         } catch (RuntimeException e) {
@@ -1282,6 +1288,52 @@ public class ErpToolExecutor {
         reply.put("messageId", messageId);
         reply.put("draftReply", draftReply);
         return ok(AUTO_DRAFT_NOTE + "已生成回复草稿（模板生成，非业务数据，需人工复核后发送）", reply);
+    }
+
+    /**
+     * 工具 29：检索店铺知识库（只读）。
+     * <p>
+     * shopId 越权校验由 execute 入口统一完成；query 为空直接 fail；
+     * 检索失败降级为 fail，不抛异常阻断 Agent 主流程。
+     */
+    private String queryKnowledgeBase(Map<String, Object> args) {
+        Long shopId = toLong(args.get("shopId"));
+        String query = toStr(args.get("query"));
+        int topN = toInt(args.get("topN"), 5);
+        log.info("工具调用 query_knowledge_base shopId={} topN={}", shopId, topN);
+        if (query == null || query.isBlank()) {
+            return fail("检索问题不能为空");
+        }
+        if (knowledgeSearchService == null) {
+            return fail("知识库服务未启用");
+        }
+        try {
+            List<KnowledgeChunk> chunks = knowledgeSearchService.search(shopId, query.trim(), topN);
+            if (chunks == null || chunks.isEmpty()) {
+                return ok("知识库暂无相关内容", List.of());
+            }
+            List<Map<String, Object>> items = new ArrayList<>(chunks.size());
+            for (KnowledgeChunk chunk : chunks) {
+                if (chunk == null) {
+                    continue;
+                }
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("docId", chunk.getDocId());
+                item.put("filename", chunk.getFilename());
+                item.put("chunkIndex", chunk.getChunkIndex());
+                item.put("content", chunk.getContent());
+                item.put("score", chunk.getScore());
+                items.add(item);
+            }
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("query", query.trim());
+            data.put("count", items.size());
+            data.put("chunks", items);
+            return ok(String.format("知识库命中 %d 条相关内容", items.size()), data);
+        } catch (Exception e) {
+            log.error("query_knowledge_base 检索失败 shopId={}", shopId, e);
+            return fail("知识库检索暂时不可用");
+        }
     }
 
     // ===== 工具方法 =====

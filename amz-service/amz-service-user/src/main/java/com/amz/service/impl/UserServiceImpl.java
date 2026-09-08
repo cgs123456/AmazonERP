@@ -69,7 +69,12 @@ public class UserServiceImpl implements UserService {
     @Override
     public Result<User> getUserById(Integer userId) {
         log.info("根据id查询用户信息...");
-        return Result.success(userMapper.selectById(userId));
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            // 用户不存在时明确失败：禁止 success(null) 把 NPE 抛给调用方
+            return Result.failure("用户不存在");
+        }
+        return Result.success(user);
     }
 
     @Override
