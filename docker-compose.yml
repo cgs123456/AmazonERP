@@ -369,6 +369,8 @@ services:
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:}
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      # B1：凭证生成改发 MQ，同步链路强依赖 broker，容器内必须指向 rabbitmq 服务名
+      - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
       - NACOS_SERVER_ADDR=nacos:8848
@@ -568,6 +570,8 @@ services:
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:}
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
+      # B1：凭证 MQ 消费者，容器内必须指向 rabbitmq 服务名
+      - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
       - NACOS_SERVER_ADDR=nacos:8848
@@ -575,6 +579,7 @@ services:
       - nacos
       - mysql
       - redis
+      - rabbitmq
     restart: unless-stopped
 
   # Multi-platform Service (eBay/Shopify/Walmart integrations, port 8104)
