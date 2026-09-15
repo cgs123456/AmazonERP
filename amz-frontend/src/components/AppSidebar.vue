@@ -47,6 +47,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/logistics') }"
+        @click="navigateTo('/logistics')"
+        role="button"
+        aria-label="物流看板"
+        tabindex="0"
+      >
+        <Icon icon="mdi:truck-fast-outline" class="nav-icon" width="24" />
+        <span class="nav-text">物流看板</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/ads') }"
         @click="navigateTo('/ads')"
         role="button"

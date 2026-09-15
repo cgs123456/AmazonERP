@@ -35,6 +35,52 @@ jwt:
   issuer: ${JWT_ISSUER:amz-erp}
   audience: ${JWT_AUDIENCE:amz-erp-client}
 
+# 物流模块配置
+amz:
+  logistics:
+    # 承运商状态文本 → 内部轨迹状态 的补充映射（内置中英文字典之外的自定义项）。
+    # 承运商新增状态词时在此补充即可，无需改代码发版。
+    status-mapping: {}
+    # 第三方轨迹聚合查询（取数入口 B）。默认关闭：未配置时不发起任何外部请求，
+    # 轨迹仍可通过 /logistics/import/* 由外部导入维护（取数入口 A）。
+    tracking:
+      enabled: ${AMZ_TRACKING_ENABLED:false}
+      base-url: ${AMZ_17TRACK_BASE_URL:https://api.17track.net}
+      query-path: /track/v2.2/gettrackinfo
+      # 凭证仅从环境变量注入，不写入仓库
+      api-key: ${AMZ_17TRACK_KEY:}
+      api-key-header: 17token
+      # 单个运单解析出的轨迹点上限，防御对端返回畸形数据
+      max-events-per-shipment: 200
+      # 承运商 → 17track 承运商代码。留空时请求不带 carrier 字段，
+      # 由 17track 按单号特征自动识别（漏配不会导致查不到，只是识别可能较慢）。
+      # 代码值请以 17track 官方文档为准，勿凭猜测填写。
+      carrier-codes: {}
+    # 定时自动同步：取代「运营逐条点同步」，让异常自行浮现
+    sync:
+      # 调度间隔（毫秒），默认 30 分钟；用 fixedDelay 语义，以上一轮结束为起点
+      interval-ms: ${AMZ_LOGISTICS_SYNC_INTERVAL_MS:1800000}
+      # 分布式锁租期（秒），须略小于调度间隔，实例崩溃后下一轮可接手
+      lease-seconds: ${AMZ_LOGISTICS_SYNC_LEASE_SECONDS:1680}
+      # 单轮最多处理货件数：配合按最近取数时间轮换，限量也不会饿死尾部货件
+      max-per-round: ${AMZ_LOGISTICS_SYNC_MAX_PER_ROUND:200}
+    # 延误重判（依据 ETA，与轨迹拉取解耦）
+    delay-check:
+      cron: ${AMZ_LOGISTICS_DELAY_CRON:0 0 1 * * ?}
+      lease-seconds: ${AMZ_LOGISTICS_DELAY_LEASE_SECONDS:1800}
+      # 宽限天数：ETA 已过该天数仍未推进才判延误
+      grace-days: ${AMZ_LOGISTICS_DELAY_GRACE_DAYS:0}
+    # 看板口径参数（随接口返回，避免前端硬编码造成口径不一致）
+    dashboard:
+      # 在途货件超过该时长无取数记录即提示「自动同步可能未覆盖」
+      stale-threshold-hours: ${AMZ_LOGISTICS_STALE_HOURS:48}
+      # 平均头程时效的统计窗口：只统计窗口内送达的样本，避免历史样本拉平近期表现
+      transit-window-days: ${AMZ_LOGISTICS_TRANSIT_WINDOW_DAYS:90}
+      # 调拨单处于在途超过该天数仍未确认到货，视为卡单并进入待跟进清单
+      transfer-stale-days: ${AMZ_LOGISTICS_TRANSFER_STALE_DAYS:7}
+      # 调拨单待审批停留超过该天数，提示审批被卡住
+      transfer-approval-stale-days: ${AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS:3}
+
 # Logging — traceId 注入（与 Skywalking 链路追踪关联）
 logging:
   pattern:

@@ -1,5 +1,6 @@
 package com.amz.handle;
 
+import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
 import com.amz.exception.UserNoExistException;
 import com.amz.result.Result;
@@ -24,8 +25,15 @@ public class GlobalExceptionHandler {
 
     /**
      * 处理业务异常（自定义异常）
+     * <p>
+     * {@link AttrIsNullException} 必须一并列出：它继承 {@code RuntimeException} 但并不属于
+     * {@link CodeErrorException} 的子类，此前未登记在这里，导致所有「属性为空」的业务提示
+     * 都被下面的 {@code RuntimeException} 兜底吞成「服务器内部错误」——
+     * 调用方看不到真正原因（例如「调拨单不存在：id=5」），只能去翻服务端日志。
+     * <p>
+     * 返回码仍是 {@code Result.failure} 的 400，与其余业务异常一致，前端无需适配。
      */
-    @ExceptionHandler({UserNoExistException.class, CodeErrorException.class})
+    @ExceptionHandler({UserNoExistException.class, CodeErrorException.class, AttrIsNullException.class})
     public Result<String> businessException(RuntimeException e) {
         log.error("业务异常: {}", e.getMessage());
         return Result.failure(e.getMessage());

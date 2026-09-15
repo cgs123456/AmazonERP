@@ -23,11 +23,14 @@ CREATE TABLE IF NOT EXISTS amz_shipment (
     freight_cost DECIMAL(10,2) DEFAULT NULL COMMENT '运费（USD）',
     status VARCHAR(15) DEFAULT 'CREATED' COMMENT 'CREATED/IN_TRANSIT/CUSTOMS/DELIVERED/RECEIVED/CLOSED/DELAYED/EXCEPTION',
     eta VARCHAR(20) DEFAULT NULL COMMENT '预计到港日期',
+    data_source VARCHAR(16) DEFAULT 'AUTO' COMMENT '取数来源偏好：IMPORT/API/AUTO',
+    last_track_time DATETIME DEFAULT NULL COMMENT '最近一次轨迹取数时间（导入/API 均写入，含查询成功但无新轨迹）',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_shop (shop_id),
     INDEX idx_status (status),
-    INDEX idx_fba (fba_shipment_id)
+    INDEX idx_fba (fba_shipment_id),
+    INDEX idx_shipment_last_track (last_track_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='头程物流单 / FBA 货件表';
 
 -- 物流轨迹点表
@@ -40,7 +43,10 @@ CREATE TABLE IF NOT EXISTS amz_tracking_event (
     event_time VARCHAR(25) DEFAULT NULL COMMENT '事件发生时间',
     longitude DOUBLE DEFAULT NULL COMMENT '经度（轨迹可视化）',
     latitude DOUBLE DEFAULT NULL COMMENT '纬度（轨迹可视化）',
+    source VARCHAR(16) DEFAULT NULL COMMENT '数据来源：MOCK/IMPORT/API',
+    raw_status VARCHAR(64) DEFAULT NULL COMMENT '承运商原始状态文本（映射前）',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_shipment (shipment_id),
-    INDEX idx_event_time (event_time)
+    INDEX idx_event_time (event_time),
+    INDEX idx_shipment_status_time (shipment_id, event_status, event_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='物流轨迹点表';

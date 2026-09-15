@@ -1,12 +1,15 @@
 package com.amz.model;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 头程费用分摊明细实体。
@@ -34,4 +37,8 @@ public class FreightAllocation implements Serializable {
     private BigDecimal totalCost;
     private BigDecimal unitCost;
     private String allocationMethod;
+
+    /** 分摊写入时间。注意该表没有 update_time（分摊明细按需重算覆盖，不追踪修改）。 */
+    @TableField(value = "create_time", updateStrategy = FieldStrategy.NEVER)
+    private LocalDateTime createTime;
 }
