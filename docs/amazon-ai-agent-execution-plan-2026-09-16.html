@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>亚马逊 AI 全链路 — 可逐项执行方案（28 项 / 4 波次）</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#fff; --ink:#1a1d21; --ink2:#4a5259; --ink3:#79848d;
+    --line:#e3e7eb; --line2:#eef1f4;
+    --p0:#c0392b; --p0bg:#fdf0ee;
+    --p1:#b8860b; --p1bg:#fdf8ec;
+    --p2:#2c6e9b; --p2bg:#eef5fa;
+    --ok:#2e7d52; --okbg:#eef7f1;
+    --acc:#2f5d8c;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --w1:#c0392b; --w2:#7a5aa8; --w3:#2e7d52; --w4:#5a6b78;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    font-size:15px;line-height:1.75;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 28px 100px}
+
+  header{background:linear-gradient(135deg,#1f3550 0%,#2f5d8c 55%,#3b7a9e 100%);color:#fff;padding:44px 0 36px;margin-bottom:0}
+  header .wrap{padding-bottom:0}
+  header .kicker{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#a9cbe3;margin-bottom:12px}
+  header h1{margin:0 0 12px;font-size:29px;line-height:1.32;font-weight:650;letter-spacing:-.01em}
+  header .sub{color:#c9dceb;font-size:14.5px;max-width:800px}
+
+  .bar{position:sticky;top:0;z-index:20;background:rgba(246,247,249,.96);
+    border-bottom:1px solid var(--line);padding:13px 0;backdrop-filter:blur(8px)}
+  .bar .wrap{padding-bottom:0;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  .bar .cnt{font-size:13.4px;color:var(--ink2);white-space:nowrap}
+  .bar .cnt b{font-family:var(--mono);font-size:15px;color:var(--acc)}
+  .track{flex:1;min-width:180px;height:7px;background:#e3e7eb;border-radius:4px;overflow:hidden}
+  .fill{height:100%;width:0;background:var(--ok);border-radius:4px;transition:width .25s ease}
+  .bar button{font-size:12.4px;padding:5px 13px;border:1px solid var(--line);background:#fff;
+    border-radius:6px;color:var(--ink2);cursor:pointer;font-family:inherit}
+  .bar button:hover{border-color:#c3ccd4;color:var(--ink)}
+
+  h2{font-size:21px;margin:50px 0 8px;padding-bottom:11px;border-bottom:2px solid var(--line);
+    font-weight:640;letter-spacing:-.01em;display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  h2 .n{color:var(--acc);font-family:var(--mono);font-size:15px;font-weight:600}
+  h2 .wtag{font-size:11.5px;font-weight:680;padding:3px 10px;border-radius:20px;color:#fff;letter-spacing:.03em}
+  h3{font-size:16.5px;margin:30px 0 10px;font-weight:640}
+  p{margin:9px 0;color:var(--ink2)}
+  .lead{font-size:15.5px;color:var(--ink);margin:14px 0 4px}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.6px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line2);vertical-align:top}
+  th{background:#f0f3f6;font-weight:640;color:var(--ink);font-size:12.8px;
+    border-bottom:1px solid var(--line);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafbfc}
+  .num{font-family:var(--mono);font-size:12.8px;text-align:right}
+
+  code{font-family:var(--mono);font-size:12.5px;background:#eef1f4;padding:1.5px 5px;border-radius:4px;color:#34424e}
+
+  .task{background:var(--panel);border:1px solid var(--line);border-left-width:4px;
+    border-radius:9px;padding:15px 19px 14px;margin:13px 0;transition:opacity .2s}
+  .task.done{opacity:.52}
+  .task.done .ttl{text-decoration:line-through;text-decoration-color:#b9c2c9}
+  .task.w1{border-left-color:var(--w1)}
+  .task.w2{border-left-color:var(--w2)}
+  .task.w3{border-left-color:var(--w3)}
+  .task.w4{border-left-color:var(--w4)}
+
+  .thead{display:flex;align-items:flex-start;gap:11px}
+  .thead input{margin:5px 0 0;width:16px;height:16px;flex:0 0 16px;cursor:pointer;accent-color:#2e7d52}
+  .thead .hmain{flex:1;min-width:0}
+  .ttl{font-size:15.8px;font-weight:650;color:var(--ink);line-height:1.5}
+  .tid{font-family:var(--mono);font-size:12.6px;font-weight:650;color:var(--acc);margin-right:7px}
+  .tags{margin-top:5px;display:flex;flex-wrap:wrap;gap:6px}
+  .tag{display:inline-block;font-size:11px;font-weight:680;letter-spacing:.04em;
+    padding:2px 8px;border-radius:5px;white-space:nowrap}
+  .t-p0{background:var(--p0bg);color:var(--p0);border:1px solid #f0cfc9}
+  .t-p1{background:var(--p1bg);color:#8a6408;border:1px solid #eddfb8}
+  .t-p2{background:var(--p2bg);color:var(--p2);border:1px solid #c9dcec}
+  .t-gray{background:#f0f3f6;color:var(--ink2);border:1px solid var(--line)}
+  .t-ai{background:#f2eefb;color:#5b3f96;border:1px solid #ddd3f2}
+
+  .why{margin:9px 0 0;font-size:13.6px;color:var(--ink2)}
+  .why b{color:var(--ink)}
+  .grid{margin:10px 0 0;display:grid;grid-template-columns:78px 1fr;gap:5px 13px;font-size:13.4px}
+  .grid dt{color:var(--ink3);font-weight:600}
+  .grid dd{margin:0;color:var(--ink2)}
+  ol.acts{margin:5px 0 0;padding-left:19px}
+  ol.acts li{margin:4px 0;font-size:13.5px;color:var(--ink2)}
+  ol.acts li b{color:var(--ink)}
+  .acc{margin:9px 0 0;padding:9px 13px;background:var(--okbg);border:1px solid #c8e2d3;
+    border-radius:7px;font-size:13.2px;color:#205a3b}
+  .acc b{font-weight:680}
+
+  .callout{border-radius:9px;padding:15px 20px;margin:18px 0;font-size:14.2px}
+  .callout.warn{background:var(--p1bg);border:1px solid #eddfb8;color:#6b4f06}
+  .callout.info{background:var(--p2bg);border:1px solid #c9dcec;color:#1e4f72}
+  .callout.good{background:var(--okbg);border:1px solid #c8e2d3;color:#205a3b}
+  .callout b{font-weight:680}
+  .callout ul{margin:7px 0 0;padding-left:20px}
+  .callout li{margin:4px 0}
+
+  .dep{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px 24px;margin:18px 0}
+  .dep .row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:13.5px;flex-wrap:wrap}
+  .dep .chip{font-family:var(--mono);font-size:12.2px;background:#eef1f4;border:1px solid var(--line);
+    padding:2px 8px;border-radius:5px;color:var(--ink2);white-space:nowrap}
+  .dep .arrow{color:var(--ink3);font-family:var(--mono)}
+
+  .foot{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+    font-size:12.6px;color:var(--ink3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+  @media(max-width:760px){
+    .wrap{padding:0 15px 60px}
+    header h1{font-size:22px}
+    .grid{grid-template-columns:1fr;gap:2px 0}
+    .grid dt{margin-top:6px}
+    table{font-size:12.5px}
+    th,td{padding:7px 8px}
+    .thead input{margin-top:3px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="kicker">Execution Plan</div>
+    <h1>亚马逊 AI 全链路自动化<br>可逐项执行方案</h1>
+    <div class="sub">
+      把外部对标调研（GitHub 生态 + 领星 ERP + 亚马逊 2026 平台侧变化）得出的 13 项缺口，
+      拆解为 4 个波次、28 个可独立执行与验收的任务。每项含前置依赖、具体动作、涉及文件、验收标准。
+      页面勾选状态会保存在本地，可直接当进度看板用。
+    </div>
+  </div>
+</header>
+
+<div class="bar">
+  <div class="wrap">
+    <span class="cnt">已完成 <b id="pDone">0</b> / 28</span>
+    <div class="track"><div class="fill" id="pFill"></div></div>
+    <button id="pReset" type="button">重置进度</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+<!-- ===== 01 ===== -->
+<h2><span class="n">01</span>执行总览</h2>
+
+<p class="lead">波次顺序不是按难度排的，而是按<b>依赖关系</b>排的：取数层要先于看板，记忆层要先于编排，不然会返工。</p>
+
+<table>
+  <thead>
+    <tr><th>波次</th><th>主题</th><th class="num">任务</th><th>覆盖缺口</th><th>完成标志（一句话）</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><span class="tag" style="background:var(--w1);color:#fff">Wave 1</span></td>
+      <td><b>向亚马逊要钱</b></td><td class="num">10</td>
+      <td>P0-1 FBA 索赔、P0-2 财务结算与回款</td>
+      <td>能回答「亚马逊少给了我多少钱、要回来了多少」</td>
+    </tr>
+    <tr>
+      <td><span class="tag" style="background:var(--w2);color:#fff">Wave 2</span></td>
+      <td><b>Agent 变聪明</b></td><td class="num">7</td>
+      <td>P0-3 经验记忆 + 编排、P0-4 Rufus 适配</td>
+      <td>同一任务第二遍做，策略更好且有好多少的评分记录</td>
+    </tr>
+    <tr>
+      <td><span class="tag" style="background:var(--w3);color:#fff">Wave 3</span></td>
+      <td><b>运营自动化</b></td><td class="num">7</td>
+      <td>P1 全部 6 项</td>
+      <td>系统从「告诉我出问题」变成「帮我处理掉了」</td>
+    </tr>
+    <tr>
+      <td><span class="tag" style="background:var(--w4);color:#fff">Wave 4</span></td>
+      <td><b>能力出口</b></td><td class="num">3</td>
+      <td>P2 全部 3 项</td>
+      <td>能力可被外部 Agent 复用，且不只活在网页里</td>
+    </tr>
+    <tr>
+      <td><span class="tag t-gray">贯穿</span></td>
+      <td>收尾规范</td><td class="num">1</td>
+      <td>—</td>
+      <td>每波结束完成 README / 测试 / 记忆三件套</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout info">
+  <b>先做 Wave 0 决策（见第 08 节）。</b>
+  有 1 个决策项会直接影响 Wave 2 的任务范围 —— Supervisor-Worker 是「补实现」还是「改口径」。
+  这件事不定，Wave 2 的 T15 就无法开工。其余任务不受影响，可先动 Wave 1。
+</div>
+
+<!-- ===== 02 ===== -->
+<h2><span class="n">02</span>Wave 1 · 向亚马逊要钱 <span class="wtag" style="background:var(--w1)">10 项</span></h2>
+
+<p class="lead">这一波的核心是<b>补取数层</b>。项目里 <code>ReportsClient</code>、<code>FinancesClient</code>、<code>FeesClient</code> 目前全部不存在 —— 没有它们，后面所有财务口径都只能靠估算。好消息是签名、Token、限流、重试这些基础设施已经齐全，新增客户端是「填空」而非「造轮子」。</p>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T01" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T01</span>新增 SP-API Reports 客户端</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 取数</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>Reports API 是平台所有「原表」的唯一来源。领星那套「解析 10+ 张原表」就建立在这上面，没有它就没有真实的成本与利润。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无（Wave 1 起点）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新建 <code>ReportsClient</code> 接口 + <code>ReportsRealClient</code> / <code>ReportsMockClient</code>，复用 <code>AwsSigV4Signer</code>、<code>LwaTokenManager</code>、<code>SpiRateLimiter</code>。</li>
+        <li>实现报表三段式：<b>createReport</b> → <b>getReport</b>（轮询 <code>processingStatus</code>）→ <b>download</b>（GZIP 解压 + 解析）。</li>
+        <li>先接 4 张最关键的表：结算、FBA 库存成本、FBA 费用、退货。</li>
+        <li>Mock 实现返回固定样例数据，保证无凭证也能跑通全链路。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-spapi/.../client/</code>、<code>config/SpApiConfig.java</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>Mock 模式下能完整跑完「建报表 → 轮询 → 下载 → 解析」并返回结构化数据；新增单测覆盖轮询超时与解压失败两条异常路径。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T02" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T02</span>新增 SP-API Finances 客户端（结算与回款）</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 取数</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>这是「订单级回款跟踪」的唯一数据源，也是当前财务模块最大的空白 —— 现在只有 8 个端点，且没有回款概念。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T01（共用限流与签名设施）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新建 <code>FinancesClient</code> + Real / Mock，接入 <code>listFinancialEvents</code> 系列。</li>
+        <li>覆盖三类事件：<b>ShipmentEvent</b>（销售收入）、<b>RefundEvent</b>（退款）、<b>AdjustmentEvent</b>（平台调整，含赔付）。</li>
+        <li>按 <code>postedBefore</code> / <code>postedAfter</code> 做增量拉取，落库时以事件唯一键做幂等去重。</li>
+        <li>与订单模块按 <code>amazonOrderId</code> 建立关联，为 T05 的台账做准备。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-spapi/.../client/</code>、<code>.../model/</code>、<code>.../mapper/</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>给定一批结算事件，能正确区分收入 / 退款 / 平台调整三类并幂等入库；重复拉取同一时间段不产生重复记录。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T03" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T03</span>新增 SP-API Fees 客户端（FBA 费用预估与实际）</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 取数</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>索赔的前提是能拿到「预估费用」和「实际扣费」两份数据做比对。没有 Fees 客户端，索赔就无从判断对错。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T01</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新建 <code>FeesClient</code> + Real / Mock，接入 <code>getMyFeesEstimate</code>（预估）。</li>
+        <li>从 T01 的结算 / 费用原表中提取<b>实际扣费</b>，与预估对齐到同一 SKU + 同一批次。</li>
+        <li>落地「费用项字典」：佣金、FBA 配送费、月度仓储、长期仓储、移除费、入库服务费 —— 便于后续按项比对。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-spapi/.../client/</code>、新增费用项枚举</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>能对给定 SKU 输出「预估费用 vs 实际扣费」两张表，且费用项可逐项对应（不可对应项明确标记为未知而非静默丢弃）。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T04" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T04</span>结算原表落库与解析</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 数据</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>把「能拉到的原表」变成「能查的数据」。这一步做完，财务口径就从估算切换到实算。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T01、T02</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增表 <code>amz_settlement_detail</code>（结算明细，含币种、费用类型、金额、关联订单与 SKU）。</li>
+        <li>Flyway 迁移脚本 <code>V4__settlement_detail.sql</code>；<b>同步三处建表镜像</b>（模块迁移 + <code>docker/init-sql/</code> + <code>init_all_tables.sql</code>）。</li>
+        <li>新增解析服务：报表 CSV → 明细行 → 落库，行级错误进导入报告（不整批失败）。</li>
+        <li>新增每日增量调度，复用 <code>DistributedJobLock</code> 防多实例重复执行。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-finance</code>（或 spapi）+ <code>db/migration/</code> + <code>scheduler/</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>样例结算原表能完整落库，行数、金额合计与源文件一致（差异为 0）；单行格式错误时其余行正常入库并给出错误行号。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T05" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T05</span>订单级回款台账</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 财务</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>卖家最常问的问题是「这笔订单的钱到了没」。目前项目里没有任何回款字段与端点，这是领星明确有、我们明确没有的能力。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T04</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增表 <code>amz_payment_collection</code>：订单号、应收、已回、差额、回款状态、预计结算日。</li>
+        <li>由结算明细聚合出每个订单的回款状态：<b>未回 / 部分回 / 已回 / 有差额</b>。</li>
+        <li>新增端点：<code>GET /finance/collection/list/{shopId}</code>、<code>GET /finance/collection/summary/{shopId}</code>（均 <code>@ShopScoped</code>）。</li>
+        <li>汇总口径同时给出「在途未回金额」与「已回但短款金额」，两者不可混为一谈。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-finance</code>：<code>FinanceController</code>、新增 Service、<code>db/migration/V5</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>造 4 笔不同回款状态的订单，端点返回的状态与差额全部正确；跨店铺查询被拒（<code>@ShopScoped</code> 生效）。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T06" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T06</span>FBA 费用差异比对（索赔候选生成）</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 财务</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>这是把「能发现少了」变成「知道该不该赔」的关键一步。系统要能自己指出索赔理由，而不是等人去翻账。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T03、T04</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增表 <code>amz_fee_discrepancy</code>：维度（SKU / 货件 / 订单）、差异类型、预估额、实际额、差额、证据引用。</li>
+        <li>四类差异识别规则：<b>配送费多收</b>、<b>尺寸重测导致费率跳档</b>、<b>入库货件丢货</b>、<b>仓储费重复计费</b>。</li>
+        <li>准入阈值可配置（如差额低于 1 美元不生成候选），避免噪声淹没真问题。</li>
+        <li>与物流模块的 <code>ReceiptBoard</code> 签收差异打通：签收少收的货件自动进入丢货差异候选。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-finance</code> 新增差异服务；<code>amz-service-logistics</code> 侧提供数据</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>对 4 类差异各造一组数据，系统都能正确识别并给出证据引用；阈值以下不生成候选；同一差异重复扫描不重复生成。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T07" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T07</span>索赔单闭环与状态机</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 财务</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>没有状态机，就只是「发现了一堆差异」，无法推进、无法追踪、无法证明要回来了多少。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T06</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增表 <code>amz_reimbursement_claim</code>：候选来源、索赔理由、索赔金额、提交时间、赔付金额、状态。</li>
+        <li>状态机白名单单向推进：<b>候选 → 已提交 → 已受理 → 已赔付 / 已驳回</b>，跳过前置被拒、重复操作幂等（照抄调拨状态机的既有实现范式）。</li>
+        <li>端点：列表 / 详情 / 提交 / 撤回，写接口加 <code>@RequireRole({"OPERATOR","ADMIN"})</code>，id 型端点归属校验走服务层（统一「不存在或无权访问」）。</li>
+        <li>统计口径：<b>索赔成功率</b>与<b>平均赔付周期</b>，均按已结案单计算。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-finance</code>：新增实体 / Mapper / Service / Controller 端点 + <code>db/migration</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>5 个状态流转全部单测覆盖；越权提交他店索赔被拒；重复提交同一索赔单幂等返回；成功率统计与人工核对一致。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T08" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T08</span>索赔追回金额入账（打通金蝶凭证）</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 财务</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>要回来的钱必须落到账上，否则「追回多少」只是系统里的一个数字，财务那边对不上。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T07</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>索赔转为「已赔付」时，自动生成 <code>AccountingVoucher</code> 并复用已有 <code>syncToKingdee</code> 链路推送。</li>
+        <li>赔付金额与 T02 的 <code>AdjustmentEvent</code> 做双向核对：平台侧到账与系统侧入账必须对应，差异进异常清单。</li>
+        <li>新增「追回金额」统计维度，按店铺 / 按月 / 按差异类型分组。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-finance</code>：<code>FinanceServiceImpl</code>、<code>KingdeeClient</code> 调用链</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>索赔赔付后自动产生凭证且可推送金蝶；平台赔付事件与系统入账对不上时进入异常清单而非静默通过。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T09" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T09</span>真实单品利润重算</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">后端 · 财务</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>行业共识是「真实单品利润」属亚马逊原生 AI 不覆盖、必须自建的能力。目前项目里的<code>单品利润分析</code>口径偏估算，缺退款、仓储、广告与索赔追回。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T04、T05、T08</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>重定义单品利润构成：<b>销售收入 − 佣金 − FBA 配送费 − 仓储费 − 采购成本（FIFO 批次）− 头程分摊 − 广告花费 − 退款 − 退货货损 ＋ 索赔追回</b>。</li>
+        <li>成本侧复用已有 <code>InventoryBatch</code> 的 FIFO 口径与头程分摊结果，不另起一套。</li>
+        <li>输出时明确标注<b>每个字段的数据来源与是否缺失</b> —— 缺失项不许当 0 处理，否则利润会虚高。</li>
+        <li>与 Agent 工具 <code>单品利润分析</code> 对齐同一口径（工具改为调用本服务，避免两套算法）。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-finance</code> / <code>report</code>、<code>RealtimeProfitServiceImpl</code>、AI 工具</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>给定 SKU 人工按公式核算的结果与系统输出一致；缺失数据源时输出明确标注「数据不全」而非给出偏低或偏高的确定值。</div>
+</div>
+
+<div class="task w1">
+  <div class="thead">
+    <input type="checkbox" id="T10" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T10</span>前端：财务与索赔看板</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">前端</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>这一波的价值必须让人一眼看到，否则做了等于没做。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T05、T06、T07、T09</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增「财务」标签页，含 4 个区块：<b>回款概览</b>、<b>费用差异</b>、<b>索赔单</b>、<b>真实利润</b>。</li>
+        <li>首屏 KPI 建议：在途未回金额、短款金额、待提交索赔数、本月追回金额。</li>
+        <li>索赔单列表支持提交与推进，孤儿状态给出明确提示；沿用已有的 <code>warn-banner</code> 与 badge 语义色体系。</li>
+        <li>采懒加载（首屏只拉概览），避免拖慢已有页面。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-frontend/src/views/</code>、<code>src/api/finance.ts</code>、路由与侧边栏</dd>
+  </dl>
+  <div class="acc"><b>验收：</b><code>vue-tsc --noEmit</code> 通过；新增视图测试覆盖懒加载、空态、越权与错误提示；不破坏既有页面测试。</div>
+</div>
+
+<!-- ===== 03 ===== -->
+<h2><span class="n">03</span>Wave 2 · Agent 变聪明 <span class="wtag" style="background:var(--w2)">7 项</span></h2>
+
+<p class="lead">开源生态的一个共识是：<b>Agent 的差异化在「记忆」，不在「工具数」</b>。我们已经有 29 个工具、RAG 知识库和 LLM 评估双轨，缺的正是「打法沉淀」这一层，以及把单 Agent 升级为可编排的多 Agent。</p>
+
+<div class="task w2">
+  <div class="thead">
+    <input type="checkbox" id="T11" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T11</span>经验库落地（表 + 实体 + 读写服务）</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-ai">AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>当前 <code>AgentMemoryController</code> 只存了用户偏好和对话历史 —— 那是「聊天记忆」，不是「打法记忆」。Agent 每次都在从零推理，无法积累。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增表 <code>amz_agent_experience</code>：<b>任务类型</b>、<b>打法内容</b>（推荐策略与参数）、<b>适用条件</b>（店铺 / 品类 / 时段）、<b>成功率</b>、<b>命中次数</b>、<b>状态</b>（启用 / 停用）。</li>
+        <li>新增经验读写服务：按任务类型检索、写入新经验、更新统计。</li>
+        <li>关键设计：经验以<b>自然语言打法</b>为主、结构化参数为辅 —— 便于直接注入 prompt，也便于人工审阅。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-ai/.../agent/memory/</code>（新包）、<code>model/</code>、<code>mapper/</code>、<code>db/migration</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>能按任务类型检索出经验列表；写入后统计字段正确；迁移脚本在三处建表镜像同步。</div>
+</div>
+
+<div class="task w2">
+  <div class="thead">
+    <input type="checkbox" id="T12" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T12</span>经验检索与 prompt 自动注入</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-ai">AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>经验存了不注入就等于没存。这一步让「上一次怎么做的」真正影响「这一次怎么做」。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T11</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>在 <code>MemoryAwareAgentService</code> 的 prompt 组装链路中插入经验层，与已有偏好层、RAG 知识层并列。</li>
+        <li>先做<b>任务类型识别</b>（可复用 Supervisor 的分类能力，或先做关键词 + 工具命中判断）。</li>
+        <li>只注入 Top-N 且状态为「启用」的经验，带成功率标注，让模型知道这条经验有多可信。</li>
+        <li>注入内容进 trace，便于事后复盘「这次为什么这么答」。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>agent/MemoryAwareAgentService.java</code>、<code>agent/ErpSystemPromptBuilder.java</code>、<code>AgentTraceContext</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>同一问题在有 / 无经验两种情况下注入的 prompt 可对比；trace 中能看到注入的经验条目与成功率；停用状态的经验不被注入。</div>
+</div>
+
+<div class="task w2">
+  <div class="thead">
+    <input type="checkbox" id="T13" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T13</span>打分回写与低效经验自动停用</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-ai">AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>这是「越用越准」和「越用越乱」的分水岭。没有淘汰机制，经验库会积累错误打法并污染后续推理。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T12</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>任务结束后回写该次命中的经验：命中次数 +1、按结果更新成功率（滑动平均，保留历史）。</li>
+        <li>停用规则可配置：<b>命中次数达下限且成功率低于阈值</b>则自动置为停用（避免样本太少误杀）。</li>
+        <li>保留人工干预入口：可手动停用 / 复活某条经验，操作留痕。</li>
+        <li>被停用的经验不物理删除 —— 保留用于分析「为什么会错」。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>agent/memory/</code>、<code>AgentEvalLog</code> 复用</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>模拟 5 次成功 + 5 次失败后，经验状态与成功率符合规则；样本不足时不被误停用；手动停用后不再注入。</div>
+</div>
+
+<div class="task w2">
+  <div class="thead">
+    <input type="checkbox" id="T14" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T14</span>把经验效果纳入已有的评估双轨</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-ai">AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>「越用越准」这句话必须能被证伪。项目已有 <code>agent/eval</code> 双轨评分，把经验前后对比接进去，就拿到了可量化的证据。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T13</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>在评估用例集上跑 A/B：<b>关闭经验注入</b> vs <b>开启经验注入</b>，同一批用例。</li>
+        <li>产出对比报告：平均得分、工具调用次数、回答长度、失败率。</li>
+        <li>报告落库并可在 Agent 评估页查看，形成「经验生效前后」的可追溯记录。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>agent/eval/</code>：<code>AgentEvalRunner</code>、<code>AgentEvalReport</code>、<code>LlmEvalScorer</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>能一键跑出 A/B 对比报告，两组用例完全相同、仅注入开关不同；报告含均值与差值，不出现单组样本缺失导致的失真结论。</div>
+</div>
+
+<div class="task w2">
+  <div class="thead">
+    <input type="checkbox" id="T15" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T15</span>Supervisor-Worker 多 Agent 编排</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-ai">AI</span><span class="tag t-gray">依赖决策</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>两个理由。功能上，29 个工具已可按域分组，单 Agent 全量携带会让工具选择变差；口径上，面试表述里的 Supervisor-Worker 目前在本项目<b>没有实现</b>（代码唯一命中是一个名为 <code>workers</code> 的线程池）。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd><b>Wave 0 决策必须已定</b>（见第 08 节）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>把 29 个工具按域分组：<b>财务 / 广告 / 物流 / 选品 / 客服 / 知识库</b>，每组对应一个 Worker。</li>
+        <li>实现 <b>Supervisor</b>：任务分类 → 复杂度评分 → 拆分 → 路由到 1..N 个 Worker → 结果聚合。</li>
+        <li>Worker 只携带本域工具，降低误调用；跨域任务由 Supervisor 并行下发后合并。</li>
+        <li>沿已有 <code>AgentToolEventBus</code> 输出各 Worker 的执行时间线，SSE 流式保留。</li>
+        <li>权限沿用 <code>ToolPermission</code>：Worker 不得拿到超出其域的工具。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>agent/</code> 新增 <code>supervisor/</code> 与 <code>worker/</code> 包；<code>ErpToolExecutor</code>、<code>AgentChatStreamService</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>跨域问题（如「这个 SKU 利润为什么掉了」）能被拆分到财务 + 广告两个 Worker 并正确聚合；单域问题不走多 Agent 路径（避免无谓开销）；每个 Worker 只能调用本域工具，越域调用被拒绝。</div>
+</div>
+
+<div class="task w2">
+  <div class="thead">
+    <input type="checkbox" id="T16" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T16</span>Rufus / AI-SEO 适配度诊断</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-ai">AI</span><span class="tag t-gray">Listing</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>2026 年最大的流量结构变化。Rufus 已更名 Alexa for Shopping（约 3 亿客户、约 120 亿美元下游交易、使用量同比 +400%），同一关键词对不同买家返回不同结果。listing 现在是给 AI 读的，传统关键词健康检查已经不反映真实曝光。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无（可与 T11–T15 并行）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>在 <code>ListingHealth</code> 基础上新增<b>AI 推荐适配分</b>，四个维度：</li>
+        <li>① <b>使用情境覆盖度</b> —— 标题与五点是否写明「谁、什么场景、解决什么」，这是 Rufus 匹配买家的主要依据。</li>
+        <li>② <b>Q&amp;A 盲区</b> —— 买家高频疑问是否在 listing 或 Q&amp;A 中被明确回答。</li>
+        <li>③ <b>结构化规格完整度</b> —— 材质、尺寸、适用人群等结构化字段是否填全。</li>
+        <li>④ <b>A+ 与评论可引用度</b> —— 是否有足够图文素材与优质评论供 AI 引用。</li>
+        <li>用 LLM 生成诊断 + 可执行建议（沿用 AI 服务调用范式），输出评分 + 待补清单。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-product</code>（<code>ListingHealth</code> 扩展）、<code>amz-service-ai</code>（诊断生成）</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>对同一 listing 输出四维评分与具体待补项；评分与待补项可追溯（每条建议指向 listing 的具体位置）；无数据的维度显示「无法评估」而非默认满分。</div>
+</div>
+
+<div class="task w2">
+  <div class="thead">
+    <input type="checkbox" id="T17" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T17</span>前端：Agent 经验管理与适配分展示</div>
+      <div class="tags"><span class="tag t-p0">P0</span><span class="tag t-gray">前端</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>经验库需要人能看懂、能干预，否则自动停用一旦误判就没有纠正手段。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T13、T16</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增「Agent 经验」页：经验列表（任务类型、打法、成功率、命中次数、状态）+ 手动停用 / 复活。</li>
+        <li>展示 T14 的 A/B 对比报告（经验前 vs 经验后得分）。</li>
+        <li>Listing 详情页增加 AI 推荐适配分区块（四维雷达或分值条，沿用项目已有的手写 SVG 风格，不引图表库）。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-frontend/src/views/</code>、<code>src/api/ai.ts</code>、路由与侧边栏</dd>
+  </dl>
+  <div class="acc"><b>验收：</b><code>vue-tsc --noEmit</code> 通过；新增测试覆盖经验停用操作、A/B 报告空态、适配分无数据态。</div>
+</div>
+
+<!-- ===== 04 ===== -->
+<h2><span class="n">04</span>Wave 3 · 运营自动化 <span class="wtag" style="background:var(--w3)">7 项</span></h2>
+
+<p class="lead">这一波的共同主题是<b>把已有的监控接上动作</b>。我们已经能发现很多问题（BuyBox、跟卖、差评、库龄、物流卡单），但绝大多数只停留在「看板提示」。接动作的同时必须配护栏 —— 自动化做错事的代价比不做更大。</p>
+
+<div class="task w3">
+  <div class="thead">
+    <input type="checkbox" id="T18" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T18</span>商品侧自动调价（含护栏）</div>
+      <div class="tags"><span class="tag t-p1">P1</span><span class="tag t-gray">后端 + 前端</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>BuyBox 模块目前只做监控不动作，商品侧调价在整个项目中零命中 —— 而掉 BuyBox 是直接掉单的事。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>基于已有 <code>BuyBox</code> + <code>CompetitorMonitor</code> 数据生成调价建议，参考广告侧 <code>BidScheduleExecutor</code> 的调度范式。</li>
+        <li><b>三道护栏</b>：最低毛利线（低于则不调）、单日调价次数上限、单次调价幅度上限。</li>
+        <li>三种模式：<b>仅建议</b>（默认）/ <b>需审批</b> / <b>自动执行</b> —— 默认必须是最保守的那种。</li>
+        <li>每次调价留痕：调价前价、调价后价、触发原因、是否自动。调度用 <code>DistributedJobLock</code> 防重复。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-product</code>（新增 repricing 服务 + 调度）、前端价格页</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>低于最低毛利线时不产生调价；超过单日次数上限时停止并告警；仅建议模式下不写入任何价格；每条调价记录可追溯到触发原因。</div>
+</div>
+
+<div class="task w3">
+  <div class="thead">
+    <input type="checkbox" id="T19" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T19</span>预警模型扩充（统一 severity 范式）</div>
+      <div class="tags"><span class="tag t-p1">P1</span><span class="tag t-gray">后端 + 前端</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>独立预警实体目前只有 2 个（<code>HijackAlert</code>、<code>NegativeReviewAlert</code>），而成熟 ERP 的规模是 25–29 个模型。好消息是物流看板已经把「分级 severity + 可执行清单」这套范式跑通了，直接平移即可。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>抽出统一预警抽象：<b>类型 / severity（高·中·低）/ 触发条件 / 可执行动作 / 是否已处理</b>。</li>
+        <li>分批补模型，每批 5–6 个：<b>库存域</b>（断货风险、超卖、库龄）、<b>Listing 域</b>（被跟卖、变体异常、评分下滑）、<b>财务域</b>（短款、回款逾期、费用异常）、<b>店铺域</b>（绩效指标、政策风险）。</li>
+        <li>统一从 ops 模块输出，前端做单一「预警中心」页，按 severity 排序、支持一键跳转到处置页。</li>
+        <li>预警必须带<b>下一步动作入口</b> —— 只有提示没有入口的预警等于噪声。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-ops</code>（预警抽象 + 新模型）、前端预警中心</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>预警模型总数达到 20+；每条预警都有 severity 与跳转入口；同一问题重复扫描不重复生成；已处理预警不再出现在待办列表。</div>
+</div>
+
+<div class="task w3">
+  <div class="thead">
+    <input type="checkbox" id="T20" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T20</span>AIGC 合规检查（发布前卡点）</div>
+      <div class="tags"><span class="tag t-p1">P1</span><span class="tag t-gray">后端 + AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>2026 新规要求 AI 生成内容做元数据披露与 AIGC 标注。目前项目对此零覆盖 —— 而我们的 Agent 恰恰是生成内容的主力，风险敞口在自己身上。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>建立合规规则表：<b>AI 人物图元数据披露</b>、<b>短视频 / 图片 AIGC 标注</b>、<b>禁用表述</b>（绝对化用词、医疗功效、竞品贬低）。</li>
+        <li>在内容生成链路出口加检查：Agent 生成的 listing 文案、营销素材、买家回信都要过检查。</li>
+        <li>检查结果分「阻断 / 警告」两级 —— 合规硬要求阻断，风格问题只警告。</li>
+        <li>检查记录留痕，可追溯到是哪次生成、哪个 Agent。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-ai</code>（新增 compliance 包）、与 product 发布链路对接</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>含违规内容的样例被正确拦截并给出理由；合规内容正常通过；检查记录可按生成来源回溯。</div>
+</div>
+
+<div class="task w3">
+  <div class="thead">
+    <input type="checkbox" id="T21" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T21</span>A+ 内容质量诊断</div>
+      <div class="tags"><span class="tag t-p1">P1</span><span class="tag t-gray">后端 + AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>A+ 是 Rufus 获取产品素材的主要来源，质量差会被前端折叠（只显示前 200 像素），直接影响 AI 推荐与被看到的概率。项目当前无 A+ 相关能力。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T16（复用适配分的部分维度）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>按亚马逊官方四维做诊断：<b>内容可读性、信息完整性、视觉呈现、转化效果</b>。</li>
+        <li>识别「会被折叠」的风险项（图片模糊、信息缺失、规格不全）并给出优先级。</li>
+        <li>输出可执行建议：需要补的文案模块与需要重做的图片位（建议文案可直接复制使用）。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-product</code> + <code>amz-service-ai</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>对样例 A+ 输出四维评分与折叠风险等级；每条建议可定位到具体模块；无 A+ 的商品明确提示「未配置」而非给 0 分。</div>
+</div>
+
+<div class="task w3">
+  <div class="thead">
+    <input type="checkbox" id="T22" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T22</span>变体（父子 ASIN）管理</div>
+      <div class="tags"><span class="tag t-p1">P1</span><span class="tag t-gray">后端</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>变体是亚马逊 listing 的基本结构，项目里 <code>variation / parent_asin</code> 检索为零。没有变体概念，SKU 级的库存、广告、利润口径都会错位。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增父子关系模型：父 ASIN、子 ASIN 集合、变体主题（颜色 / 尺寸 / 数量）。</li>
+        <li>把已有库存、销量、广告、利润的口径按「变体族」做汇总视角，同时保留子体明细。</li>
+        <li>识别异常变体结构：<b>孤立子体</b>（无父）、<b>变体主题不一致</b>、<b>父子属性冲突</b>。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-product</code>（新增变体模型与端点）</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>能按父 ASIN 汇总出其子体数据；三类异常结构都能被识别；跨店铺父 ASIN 不串数据。</div>
+</div>
+
+<div class="task w3">
+  <div class="thead">
+    <input type="checkbox" id="T23" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T23</span>ABA 品牌分析与关键词调研深度</div>
+      <div class="tags"><span class="tag t-p1">P1</span><span class="tag t-gray">后端 + AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>关键词能力目前集中在广告模块的搜索词（15 端点）与关键词排名，缺 ABA 口径（搜索频率排名、点击份额、转化份额）—— 而这正是「选品研判」的依据，也是平台不提供、必须自建的能力之一。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T01（ABA 数据同样依赖报表链路）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>接入品牌分析报表（搜索词表现 + 点击 / 转化份额）。</li>
+        <li>在已有搜索词能力上补<b>词库分层</b>：核心词 / 长尾词 / 场景词 / 属性词 / 否定词。</li>
+        <li>输出广告可用的分组建议：精准匹配组、场景广告组、否定词清单。</li>
+        <li>与选品能力打通，支持「按关键词看市场容量与竞争度」。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-ad</code>（<code>SearchTermController</code> 扩展）、<code>amz-service-ai</code>（选品）</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>能对指定 ASIN 输出关键词分层结果与否定词清单；份额数据缺失时明确标注而未接入而非填 0。</div>
+</div>
+
+<div class="task w3">
+  <div class="thead">
+    <input type="checkbox" id="T24" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T24</span>关税与到岸成本</div>
+      <div class="tags"><span class="tag t-p1">P1</span><span class="tag t-gray">后端 · 财务</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>无关税与进口环节成本，跨境场景下利润会系统性失真 —— 而这恰好是 T09「真实单品利润」的最后一块拼图。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T09</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增关税规则表：按目的国 + 商品类目 + 申报价值计算进口环节税费。</li>
+        <li>到岸成本 = 采购成本 + 头程运费（复用头程分摊结果）+ 关税 + 进口增值税。</li>
+        <li>把到岸成本作为 T09 单品利润的成本项之一接入，替换原先的「采购成本」单一口径。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-finance</code>、与 <code>amz-service-logistics</code> 头程分摊结果对接</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>给定目的国与类目能算到岸成本；关税缺规则时明确提示「未覆盖该市场」而非按 0 计；单品利润随之更新且可对比调整前后差异。</div>
+</div>
+
+<!-- ===== 05 ===== -->
+<h2><span class="n">05</span>Wave 4 · 能力出口 <span class="wtag" style="background:var(--w4)">3 项</span></h2>
+
+<div class="task w4">
+  <div class="thead">
+    <input type="checkbox" id="T25" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T25</span>MCP Server 能力出口</div>
+      <div class="tags"><span class="tag t-p2">P2</span><span class="tag t-ai">AI</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>开源生态里「把能力做成 MCP Server」已经是默认做法（多个 Amazon MCP 项目 star 数不低）。我们有 29 个工具 + 约 330 个端点，封装成本低、复用价值高。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T15（工具已按域分组，分组结果正好作为 MCP 工具集边界）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>新增 MCP Server 模块，把只读能力优先暴露（查询类 29 工具 + 看板端点）。</li>
+        <li>写操作单独一批，默认关闭，需显式开启并带权限校验。</li>
+        <li>鉴权沿用现有 JWT + 租户隔离，<b>绝不复用本地测试用的简化凭证</b>。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd>新增模块或 <code>amz-service-ai</code> 内 <code>mcp/</code> 包</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>外部 MCP 客户端能列出工具并成功调用只读接口；未授权调用被拒；写操作在默认配置下不可达。</div>
+</div>
+
+<div class="task w4">
+  <div class="thead">
+    <input type="checkbox" id="T26" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T26</span>消息触达增强（日报与审批）</div>
+      <div class="tags"><span class="tag t-p2">P2</span><span class="tag t-gray">后端</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>我们已有 IM 推送与每日报表调度，属半覆盖。补上「推送里可直接审批」的闭环，价值才完整 —— 否则用户还是要回到电脑前。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>T07、T18（有可审批的对象）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>每日业绩日报推送：销售额、利润、待处理预警数、待审批数（复用已有调度）。</li>
+        <li>推送带轻量审批入口：调拨审批、索赔提交、调价审批可直接在消息端处理。</li>
+        <li>审批动作走与网页端<b>完全相同的服务层校验</b>，不新增绕过路径。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd><code>amz-service-message</code>、<code>amz-service-ai/.../ImPushService</code></dd>
+  </dl>
+  <div class="acc"><b>验收：</b>日报按期推送且数字与看板一致；消息端审批与网页端审批结果一致、权限校验同样生效；重复点击幂等。</div>
+</div>
+
+<div class="task w4">
+  <div class="thead">
+    <input type="checkbox" id="T27" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T27</span>浏览器自动化取数兜底</div>
+      <div class="tags"><span class="tag t-p2">P2</span><span class="tag t-gray">取数</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>竞品评论、站内实时排名这类数据官方 API 拿不到，多个开源项目用浏览器方案补位。这与我们已有的「外部导入 + 第三方 API」双入口思路一致，是第三条通道。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>无（但优先级最低，可在取数需求明确后再做）</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li>评估必要性：先确认哪些指标是官方 API 与现有第三方源（Keepa 等）都拿不到的，<b>只做这些</b>。</li>
+        <li>若确有必要，接入浏览器自动化并纳入已有导入管道，产出走同一套行级校验与报告。</li>
+        <li>限频与合规前置：遵守目标站点规则，不做高频抓取。</li>
+      </ol>
+    </dd>
+    <dt>涉及</dt><dd>取数层新增通道，落库复用现有导入服务</dd>
+  </dl>
+  <div class="acc"><b>验收：</b>新增数据项确实无法由现有通道获得（有评估记录）；抓取结果走统一导入报告；限频可配置且有默认上限。</div>
+</div>
+
+<!-- ===== 06 ===== -->
+<h2><span class="n">06</span>贯穿项 · 收尾规范</h2>
+
+<div class="task w4">
+  <div class="thead">
+    <input type="checkbox" id="T28" data-task>
+    <div class="hmain">
+      <div class="ttl"><span class="tid">T28</span>每波结束的「三件套」收尾（每波各做一次）</div>
+      <div class="tags"><span class="tag t-gray">规范</span><span class="tag t-gray">×4 次</span></div>
+    </div>
+  </div>
+  <p class="why"><b>为什么：</b>项目已有明确规范：文档口径与代码必须一致。前两轮已经出现过 README 测试数字滞后（388/123/550 未及时更新）的情况，靠这条规范防止复发。</p>
+  <dl class="grid">
+    <dt>前置</dt><dd>每波全部任务完成</dd>
+    <dt>动作</dt>
+    <dd>
+      <ol class="acts">
+        <li><b>跑全量测试</b>：后端 <code>mvn test</code>（<b>必须联网</b> —— 离线模式会因 <code>tika-core</code> 下载失败而报错，与代码无关）+ 前端 <code>vitest run</code> + <code>vue-tsc --noEmit</code>。</li>
+        <li><b>同步 README</b>：模块描述、新增端点表、关键设计取舍、已知限制、<b>测试计数表</b>（当前基线 433 / 133 / 605）。</li>
+        <li><b>写项目记忆</b>：追加当日 <code>.workbuddy/memory/YYYY-MM-DD.md</code>，长期结论进 <code>MEMORY.md</code>。</li>
+        <li>新增表需<b>三处建表镜像同步</b>：模块 Flyway 迁移 + <code>docker/init-sql/</code> + <code>init_all_tables.sql</code>。</li>
+      </ol>
+    </dd>
+  </dl>
+  <div class="acc"><b>验收：</b>全量测试 0 失败；README 数字与实际一致（无残留不一致）；迁移脚本三处齐全；记忆已写入。</div>
+</div>
+
+<!-- ===== 07 ===== -->
+<h2><span class="n">07</span>依赖关系与并行建议</h2>
+
+<div class="dep">
+  <h4 style="margin:0 0 12px;font-size:15px">关键依赖链（不可颠倒）</h4>
+  <div class="row"><span class="chip">T01 Reports</span><span class="arrow">→</span><span class="chip">T04 原表落库</span><span class="arrow">→</span><span class="chip">T05 回款台账</span><span class="arrow">→</span><span class="chip">T09 真实利润</span></div>
+  <div class="row"><span class="chip">T03 Fees</span><span class="arrow">→</span><span class="chip">T06 费用差异</span><span class="arrow">→</span><span class="chip">T07 索赔状态机</span><span class="arrow">→</span><span class="chip">T08 入账</span></div>
+  <div class="row"><span class="chip">T11 经验库</span><span class="arrow">→</span><span class="chip">T12 注入</span><span class="arrow">→</span><span class="chip">T13 打分淘汰</span><span class="arrow">→</span><span class="chip">T14 A/B 评估</span></div>
+  <div class="row"><span class="chip">T15 Supervisor</span><span class="arrow">→</span><span class="chip">T25 MCP 出口</span><span style="color:var(--ink3);font-size:12.6px">（工具分组结果即为 MCP 边界）</span></div>
+  <div class="row"><span class="chip">T16 Rufus 适配分</span><span class="arrow">→</span><span class="chip">T21 A+ 诊断</span><span style="color:var(--ink3);font-size:12.6px">（复用其中视觉与素材维度）</span></div>
+  <div class="row"><span class="chip">T24 关税</span><span class="arrow">→</span><span class="chip">T09 真实利润</span><span style="color:var(--ink3);font-size:12.6px">（成本项回填）</span></div>
+</div>
+
+<div class="dep">
+  <h4 style="margin:0 0 12px;font-size:15px">可并行开工的（互不依赖，适合同时推进）</h4>
+  <p style="margin:0 0 8px;font-size:13.6px">T01 / T02 / T03 三条取数线可并行 · T16（Rufus 适配分）可与整条 Wave 2 并行 · T18 / T19 / T20 / T22 四个 P1 项彼此独立 · T27 随时可启动。</p>
+  <p style="margin:0;font-size:13.6px"><b>建议排布</b>：Wave 1 取数线（T01–T03）同时推进 → T04 打通后 T05–T10 串行 → Wave 2 从 T11 起串行、T16 并行插入 → Wave 3 四项并行。</p>
+</div>
+
+<!-- ===== 08 ===== -->
+<h2><span class="n">08</span>唯一需要先决策的事项</h2>
+
+<div class="callout warn">
+  <b>决策项：Supervisor-Worker —— 补实现还是改口径？</b><br>
+  现状：面试口径提到 Supervisor-Worker，但本项目代码中<b>并未实现多 Agent 编排</b>。检索 <code>supervisor / worker / orchestrat</code> 的唯一命中，是 <code>AgentChatStreamService</code> 里一个名为 <code>workers</code> 的<b>线程池</b>。这是容易被追问、一问就穿的表述。
+  <ul>
+    <li><b>方案 ①「补实现」（推荐）</b>：执行 T15。功能上本就受益（29 个工具按域收敛，降低误调用），且经验记忆（T11–T14）与编排天然互补。做完这一项，口径与代码就一致了。</li>
+    <li><b>方案 ②「改口径」</b>：把本项目表述改为「单 Agent ReAct + 29 工具 + 工具级权限治理 + RAG 知识库 + LLM 评估双轨」，把 Supervisor-Worker 明确划到智云项目去讲。同时可删掉 T15，Wave 2 缩短为 6 项。</li>
+  </ul>
+  <b>不建议</b>保持现状含糊处理 —— 这是三种做法里风险最高的。
+</div>
+
+<div class="callout good">
+  <b>同时记住「不该做什么」。</b>
+  亚马逊原生 AI 已免费覆盖：Listing 与 A+ 的文案生成（卖家采纳率约 90%）、AI 素材生成（Creative Studio 图 / 视频 / 音频）、基础关键词建议。这三类自研是重复造轮子，且质量比不过平台原生工具。本方案的 28 项任务里<b>刻意没有包含</b>这些 —— 补能力的判断标准始终是：亚马逊原生 AI 会不会做？会做的就不做。
+</div>
+
+<!-- ===== 09 ===== -->
+<h2><span class="n">09</span>全局验收清单</h2>
+
+<p class="lead">全部完成后，系统应当能对下面这些问题给出确定答案。这是比「测试通过」更本质的验收标准。</p>
+
+<table>
+  <thead><tr><th>验收问题</th><th>由哪些任务支撑</th></tr></thead>
+  <tbody>
+    <tr><td>这个月亚马逊少给了我们多少钱？要回来了多少？</td><td>T03、T06、T07、T08</td></tr>
+    <tr><td>这笔订单的钱到账了没？短款了多少？</td><td>T02、T04、T05</td></tr>
+    <tr><td>这个 SKU 扣掉全部成本后，真实赚了多少？</td><td>T09、T24 + 已有 FIFO 与头程分摊</td></tr>
+    <tr><td>同一个任务第二遍做，Agent 的策略比第一遍好吗？好多少？</td><td>T11–T14（A/B 报告给出数字）</td></tr>
+    <tr><td>为什么这次答案比上次好？是哪个 Worker 出的力？</td><td>T15 + 已有工具事件总线与 trace</td></tr>
+    <tr><td>这个 listing 会被 Rufus 推荐吗？差在哪？</td><td>T16、T21</td></tr>
+    <tr><td>系统只是提醒我，还是已经帮我处理了？</td><td>T18、T19、T26</td></tr>
+    <tr><td>生成的文案和素材合规吗？</td><td>T20</td></tr>
+    <tr><td>这些能力能不能给我另外的 Agent 用？</td><td>T25</td></tr>
+  </tbody>
+</table>
+
+<div class="foot">
+  <span>依据：GitHub 开源生态对标 + 领星 ERP 标杆 + 亚马逊 2026 平台侧变化 · 13 项缺口</span>
+  <span>28 项任务 / 4 波次 · 当前基线 后端 433 测试 · 前端 133 测试</span>
+</div>
+
+</div>
+
+<script>
+(function(){
+  var KEY='amz-exec-plan-v1';
+  var boxes=Array.prototype.slice.call(document.querySelectorAll('input[data-task]'));
+  var done={};
+  try{ done=JSON.parse(localStorage.getItem(KEY)||'{}')||{}; }catch(e){ done={}; }
+  function render(){
+    var n=0;
+    boxes.forEach(function(b){
+      if(done[b.id]){ b.checked=true; n++; b.closest('.task').classList.add('done'); }
+      else { b.checked=false; b.closest('.task').classList.remove('done'); }
+    });
+    document.getElementById('pDone').textContent=n;
+    document.getElementById('pFill').style.width=(n/boxes.length*100).toFixed(1)+'%';
+  }
+  boxes.forEach(function(b){
+    b.addEventListener('change',function(){
+      if(b.checked) done[b.id]=1; else delete done[b.id];
+      try{ localStorage.setItem(KEY,JSON.stringify(done)); }catch(e){}
+      render();
+    });
+  });
+  document.getElementById('pReset').addEventListener('click',function(){
+    done={}; try{ localStorage.removeItem(KEY); }catch(e){} render();
+  });
+  render();
+})();
+</script>
+
+</body>
+</html>
