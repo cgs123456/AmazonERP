@@ -1,6 +1,10 @@
 server:
   port: 8096
 spring:
+  # 默认启用 mock 模式（离线开发，财务域 Reports/Finances/Fees 客户端返回样例数据）。
+  # 生产环境通过 SPRING_PROFILES_ACTIVE 切换为真实客户端（与 product 模块口径一致）。
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:mock}
   application:
     name: amz-service-spapi
   cloud:

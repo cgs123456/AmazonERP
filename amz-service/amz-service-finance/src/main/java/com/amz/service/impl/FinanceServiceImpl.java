@@ -34,6 +34,10 @@ public class FinanceServiceImpl implements FinanceService {
     private static final String ACCT_PAYABLE = "2202";         // 应付账款
     private static final String ACCT_SALES_FEE = "6601";       // 销售费用
     private static final String ACCT_BANK = "1002";            // 银行存款
+    private static final String ACCT_OTHER_REVENUE = "6051";   // 其他业务收入（平台赔付追回）
+
+    /** 凭证来源类型：平台索赔追回（T08）。 */
+    private static final String SOURCE_REIMBURSEMENT = "REIMBURSEMENT";
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -113,6 +117,57 @@ public class FinanceServiceImpl implements FinanceService {
             return concurrent;
         }
         log.info("订单凭证生成：orderNo={} 原币 {} {} → CNY {}", orderNo, amount, currency, cnyAmount);
+        return v;
+    }
+
+    @Override
+    public AccountingVoucher generateReimbursementVoucher(Long shopId, String claimNo,
+                                                          BigDecimal amount, String currency) {
+        // 幂等去重：索赔重试提交 / MQ 重投时返回既有凭证，避免重复计入赔付收入
+        AccountingVoucher existing = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
+                .eq(AccountingVoucher::getShopId, shopId)
+                .eq(AccountingVoucher::getSourceType, SOURCE_REIMBURSEMENT)
+                .eq(AccountingVoucher::getSourceNo, claimNo)
+                .last("LIMIT 1"));
+        if (existing != null) {
+            log.info("索赔追回凭证已存在，幂等返回：shopId={} claimNo={} voucherNo={}",
+                    shopId, claimNo, existing.getVoucherNo());
+            return existing;
+        }
+
+        BigDecimal cnyAmount = currencyConverter.convertToCny(amount, currency);
+        BigDecimal rate = currencyConverter.getRate(currency);
+
+        AccountingVoucher v = new AccountingVoucher();
+        v.setVoucherNo("V" + UUID.randomUUID().toString().replace("-", ""));
+        v.setShopId(shopId);
+        v.setBizDate(LocalDate.now().format(FMT));
+        v.setSummary("平台索赔追回 - " + claimNo);
+        // 借 应收账款（平台应付未付 → 已赔付即收回）/ 贷 其他业务收入
+        v.setDebitAccount(ACCT_RECEIVABLE);
+        v.setCreditAccount(ACCT_OTHER_REVENUE);
+        v.setOriginalAmount(amount);
+        v.setCurrency(currency);
+        v.setExchangeRate(rate);
+        v.setCnyAmount(cnyAmount);
+        v.setSourceType(SOURCE_REIMBURSEMENT);
+        v.setSourceNo(claimNo);
+        v.setKingdeeSyncStatus("PENDING");
+        try {
+            voucherMapper.insert(v);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            AccountingVoucher concurrent = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
+                    .eq(AccountingVoucher::getShopId, shopId)
+                    .eq(AccountingVoucher::getSourceType, SOURCE_REIMBURSEMENT)
+                    .eq(AccountingVoucher::getSourceNo, claimNo)
+                    .last("LIMIT 1"));
+            if (concurrent == null) {
+                throw new IllegalStateException("索赔凭证并发写入冲突且重查失败：claimNo=" + claimNo, e);
+            }
+            log.warn("索赔凭证并发幂等命中：claimNo={}", claimNo);
+            return concurrent;
+        }
+        log.info("索赔追回凭证生成：claimNo={} 原币 {} {} → CNY {}", claimNo, amount, currency, cnyAmount);
         return v;
     }
 
@@ -199,6 +254,7 @@ public class FinanceServiceImpl implements FinanceService {
         //   PROCUREMENT  借库存商品 / 贷应付账款        → 采购成本（借方）     - cnyAmount
         //   PLATFORM_FEE 借销售费用 / 贷银行存款        → 平台费用（借方）     - cnyAmount
         //   REFUND       借销售退回 / 贷应收账款        → 退款（借方冲减收入） - cnyAmount
+        //   REIMBURSEMENT 借应收账款 / 贷其他业务收入     → 平台赔付追回         + cnyAmount
         // 其他类型忽略（向前兼容）
         // B2：按 (sourceType, currency) 在 SQL 层聚合，内存占用从 O(凭证行数) 降到 O(分组数）。
         // 口径与逐行版严格一致：ORDER 加 cny 并按原币计 VAT；PROCUREMENT/PLATFORM_FEE/REFUND 减；其他忽略。
@@ -232,6 +288,9 @@ public class FinanceServiceImpl implements FinanceService {
                     }
                     totalVat = totalVat.add(vatAmount.multiply(rate));
                 }
+            } else if (SOURCE_REIMBURSEMENT.equals(sourceType)) {
+                // 平台索赔追回：借 应收账款 / 贷 其他业务收入 → 收入增加（追回的钱是实打实的利润）
+                profit = profit.add(amount);
             } else if ("PROCUREMENT".equals(sourceType)
                     || "PLATFORM_FEE".equals(sourceType)
                     || "REFUND".equals(sourceType)) {

@@ -22,6 +22,16 @@ public interface FinanceService {
     AccountingVoucher generateOrderVoucher(Long shopId, String orderNo, BigDecimal amount, String currency);
 
     /**
+     * 生成索赔追回凭证（T08）：借 应收账款 / 贷 其他业务收入（平台赔付收入）。
+     * <p>
+     * 幂等：同一 {@code claimNo} 重复调用返回既有凭证 —— 索赔可能被重试提交、MQ 重投，
+     * 重复入账会直接虚增利润。
+     *
+     * @param claimNo 索赔单号（source_no）
+     */
+    AccountingVoucher generateReimbursementVoucher(Long shopId, String claimNo, BigDecimal amount, String currency);
+
+    /**
      * 同步凭证到金蝶。
      */
     boolean syncToKingdee(Long voucherId);
