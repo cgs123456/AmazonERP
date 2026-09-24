@@ -46,17 +46,47 @@ $env:SPAPI_APP_VERSION = '<发布版本>'
 
 被测服务：`amz-service-spapi`，默认端口 **8096**（`application.yml:2`）。
 
-### 1.3 凭证到位当天**必须先补**的三项能力（P0-52，未修复）
+### 1.3 凭证到位当天**必须先补**的三项能力（P0-52；**a 已修复**，b/c 未修复）
 
-本 runbook 的三项要求今天**无法从 API 获得**，必须先补代码；否则 §3 的「一条命令」不可执行，A5 只能靠人工从日志捞取（脆弱、不可审计）。
+本 runbook 的三项要求里 **b/c 今天仍无法从 API 获得**，必须先补代码；否则 §3 的「一条命令」不可执行，A5 只能靠人工从日志捞取（脆弱、不可审计）。
 
 | 编号 | 缺口 | 实测证据 | 最小修复 |
 |---|---|---|---|
-| P0-52a | **平台原始错误码在部分端点被吞** | 已透出 `e.getMessage()`（含平台 body）的端点：`FinancialDataController.java:63/78/93/109/131`；**吞成通用文案**的端点：`SpapiController.java:110`（`"sync failed"`）、`InventoryController.java:80`（`"sync failed"`）、`FeedsController.java:56`（`"feed submit failed"`）、`FeedsController.java:82`（`"feed status failed"`） | 统一错误响应体：`{code, message, platformStatus, platformCode, platformMessage, requestId}`；`code` 取 `SpApiEndpointNotAllowedException.code()` 同风格稳定串 |
+| P0-52a 【**已修复（第 45 轮）**】 | **平台原始错误码在部分端点被吞** | 修复前：`SpapiController.syncOrders`、`InventoryController.sync` 只回 `"sync failed"`，`FeedsController.submit/status` 只回 `"feed submit failed"`/`"feed status failed"`；`FinancialDataController` 虽透出 `e.getMessage()`，却会把预签名 S3 URL 原文带进响应（→ P0-53） | 修复落点：新增 `connector/ErrorSummary.java`（① 沿 `getCause()` 取**最深层根因**——订单/库存的熔断 fallback 把平台错误包在 `degraded (circuit-breaker/exception)` 里，只看最外层会再次丢信息；② 掩掉签名/令牌/密钥/口令；③ 压单行 + 1000 字符上限），9 处边界出口（财务域 5 + 订单/库存/Feeds 4）统一改用它。**仍只是诊断文本，不是结构化错误契约**——`{code, platformStatus, platformCode, platformMessage, requestId}` 响应体仍未实现 |
 | P0-52b | **`x-amzn-RateLimit-Limit` 回填值无结构化出口** | 头已被读取并回填本地窗口（`OrdersClient.java:280-285`、`FbaInventoryClient.java:201-205`、`FeedsClient.java:271-276`、`SpApiGateway.java:169-180`），但只在**收紧时**打一条 WARN（`SpiRateLimiter.java:139-143`），无表、无端点、无指标 | 落 `amz_spapi_rate_limit_observation`（shopId/endpoint/header值/回填后 maxRequests/window/时间）或暴露 Micrometer `spapi.ratelimit.limit` Gauge |
 | P0-52c | **不存在验收 runner** | 全仓 `rg -i acceptance` 命中 0（仅文档引用，见 §3.4） | 新建 `tools/connector-acceptance/`（与 `tools/synthetic-data/` 同风格：Python + `.ps1`/`.sh` 包装） |
 
 > 这三项**不影响**今天就能做的离线取证（§7），但**决定「凭证到位当天能否一条命令出报告」**。计划 DoD 中「`connector-acceptance-runbook.md` 落盘且可执行」当前**只满足前半句**。
+
+### 1.4 P0-53：预签名 S3 URL 经错误文本外泄（**已修复（第 45 轮）**）
+
+`SpApiGateway.downloadBytes` 旧实现在下载非 200 时抛
+`"download failed status=<code> url=<完整预签名 URL>"`；该文本经 `FinancialDataController.downloadDocument`
+的 `e.getMessage()` **直接进入 HTTP 响应体**，同时被 `log.error(..., e)` 写进服务日志。
+预签名 URL 的查询串本身就是凭证：`X-Amz-Credential=AKIA…`、`X-Amz-Signature=…`（样例 `X-Amz-Expires=300`），
+有效期内任何拿到响应或日志的人都能直接下载结算原表（含订单级金额与买家信息）。
+
+修复（同批三处 + 一条链路规则，缺一不可）：
+
+1. **源头（读侧）**：网关只回显「状态码 + 对象路径」——`download failed status=403 path=/report/2026-09-24/settlement.tsv`；
+   不拼接完整 URL，也不回显 S3 错误体（`SignatureDoesNotMatch` 等错误体会内嵌规范请求与凭证材料）；
+   `URI.create` 失败的入口（同样会把完整 URL 回显进 JDK 异常文本）改为只回显对象路径 + 已脱敏原因。
+2. **源头（写侧）**：`FeedsClient.uploadDocument` 是第二个预签名 URL 构造点（`PUT` 上传），
+   修复前同样把 `URI.create` 失败的原话抛到边界——而**上传**预签名 URL 带的是**写权限**（可覆盖 Feed 文档）。
+   现与读侧同构：只回显对象路径 + 已脱敏原因。
+   **口径差异（有意）**：读侧的 403/传输失败路径完全不出现 URL 键名；`URI.create` 失败路径保留 JDK 原因短语
+   （含参数**键名**与主机/对象路径，非机密），但**值**一律掩成 `***`。
+3. **边界**：五个 controller 的失败出口统一走 `ErrorSummary.of(e)`，即使上游（含未来的新调用方）把 URL 写进异常文本，响应侧仍会被掩成 `X-Amz-Signature=***`。
+
+**一条容易忽略的链路规则**：两处源头在 `URI.create` 失败时都**刻意不链 cause**。
+原因：controller 用 `log.error("...", e)` 打印的是**整条异常链**，若链上保留 JDK 原异常
+（其文本形如 `Illegal character in path at index 49: <完整预签名 URL>`），结果就是「响应侧干净了、日志侧还在漏」。
+两条用例因此显式断言 `getCause() == null`，防回归。
+
+锁定用例：`SpApiGatewayDownloadErrorTest`（4 例，E2：URL 原样出站 / 异常文本含状态码与路径但不含签名 / 传输失败不泄露 / `URI.create` 失败不链 cause）、
+`FeedsClientUploadUrlLeakTest`（1 例，E2：写侧同口径——签名与凭证值不出现、不链 cause、失败即停在上传步骤）、
+`FinancialDataControllerErrorTextTest`（3 例，E1：预签名 URL 脱敏、`degraded` 包装透出平台 `QuotaExceeded`、缺凭证显式失败）、
+`ControllerErrorTextContractTest`（5 例，E1：四处固定文案端点 + 上游异常文本带 URL 的兜底）。
 
 ---
 
@@ -201,7 +231,7 @@ python tools/connector-acceptance/acceptance_runner.py \
 | 429 | 在**沙箱 5 rps / burst 15** 之上故意超速（串行 ≤200ms 间隔即可逼近），或在生产按官方指引构造 | 客户端 429 日志（`OrdersClient.java:287-288`）+ §4.4 的限流观测 |
 
 **必须记录的原始字段**：平台响应的 `errors[].code` 与 `errors[].message` 逐字保留（脱敏后）。
-**注意**：`GET /spapi/finance/*` 已把 `e.getMessage()` 透出（`FinancialDataController.java:63/78/93`），而 orders/inventory/feeds 四个端点**会吞掉**平台细节（P0-52a）——在 P0-52a 修复前，这四类只能人工从服务日志捞取，且必须在报告里标注取证方式为 `log-scrape`（弱证据）。
+**注意（P0-52a 已修复，第 45 轮）**：finance / orders / inventory / feeds 五组端点的失败响应现在都带平台细节——根因文本（`status=<code>` + 平台 `errors[].code/message`）经 `ErrorSummary.of(e)` 收敛并脱敏后写入 `Result.message`，报告可直接引用响应体，**不再需要**把 `log-scrape` 当作唯一取证方式（服务日志仍保留完整堆栈，用于逐字复核）。仍未实现的是**结构化错误契约**（`{code, platformStatus, platformCode, requestId}` 字段化响应），当前形态是单行诊断文本；`requestId` 目前也无处可取（见 §8 第 2 条）。
 
 ### 4.4 限流与 `x-amzn-RateLimit-Limit` 回填（A8）
 
@@ -272,7 +302,7 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 & 'C:\Users\Administrator\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd' -B -ntp -pl amz-service/amz-service-spapi -am test
 ```
 
-实测结果：`amz-common` **51/51 PASS**；`amz-service-spapi` **Tests run: 145, Failures: 0, Errors: 0, Skipped: 2**，`BUILD SUCCESS`（2 skip = `SpApiIntegrationTest`，需 `RUN_INTEGRATION_TESTS=true`）。
+实测结果（第 45 轮复跑）：`amz-common` **51/51 PASS**；`amz-service-spapi` **Tests run: 171, Failures: 0, Errors: 0, Skipped: 2**，`BUILD SUCCESS`（2 skip = `SpApiIntegrationTest`，需 `RUN_INTEGRATION_TESTS=true`）。
 
 | 用例类 | 例数 | 对应标准 | 等级上限 |
 |---|---|---|---|
@@ -288,6 +318,11 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 | `com.amz.connector.MarketplaceRegistryTest` | 6 | A1（23 条 marketplace fail-closed） | E3 |
 | `com.amz.connector.ConnectorEvidencePolicyTest` | 10 | A5（本文件的判定逻辑） | E3 |
 | `com.amz.credential.ConnectorStartupCheckTest` | 4 | A2/A3（启动自检） | E3 |
+| `com.amz.connector.ErrorSummaryTest` | 13 | P0-52a/P0-53（错误文本收敛、脱敏、对象路径视图） | E1 |
+| `com.amz.client.SpApiGatewayDownloadErrorTest` | 4 | P0-53 读侧（预签名下载 URL 不进异常文本/日志链） | E2 |
+| `com.amz.client.FeedsClientUploadUrlLeakTest` | 1 | P0-53 写侧（预签名上传 URL 不进异常文本/日志链） | E2 |
+| `com.amz.controller.FinancialDataControllerErrorTextTest` | 3 | P0-52a/P0-53（财务域边界出口） | E1 |
+| `com.amz.controller.ControllerErrorTextContractTest` | 5 | P0-52a（固定文案端点边界出口） | E1 |
 
 **上限声明**：以上全部 ≤ E3。按 `ConnectorEvidencePolicy.offlineCeiling()`，无凭证阶段的整体等级上限由最弱一环决定，**A5 的离线上限是 E1**——故今天对外的正确表述是「**具备对接能力（未联调）**」。
 
@@ -296,10 +331,11 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 ## 8. 未验证与风险（诚实清单）
 
 1. **runner 不存在**（P0-52c）→ 本文件 §3 的命令今天不可执行；「一条命令出报告」是**待实现承诺**，不是现状。
-2. **错误码取证通道不完整**（P0-52a）→ orders/inventory/feeds 四个端点吞掉平台细节，这四类的 A1 错误分类证据在修复前只能来自日志（弱证据，且依赖日志留存策略）。
+2. **错误码只有诊断文本、没有结构化契约**（P0-52a 已修复「可诊断性」，结构化仍缺）→ 五组端点的失败响应现在都带平台 `status` 与 `errors[].code/message`（`ErrorSummary` 收敛 + 脱敏），但输出是**单行文本**，不是 `{code, platformStatus, platformCode, platformMessage, requestId}` 字段化响应；下游若要按错误码自动分类，仍需解析文本（脆弱），且平台 `requestId` 目前没有透出通道（排障时只能靠时间窗对齐服务日志）。
 3. **限流头无结构化出口**（P0-52b）→ A8 的「回填后本地窗口」目前只能从 WARN 日志抄写。
 4. **沙箱覆盖范围未联网复核**：第 22 轮结论为「官方仅说明覆盖 2xx 与 400」；凭证到位当天须以官方文档确认，若沙箱实际不覆盖目标错误码，则 401/403/404/429 必须改到生产（需用户书面确认）。
 5. **本沙箱无法建立 socket**（`IOException: Unable to establish loopback connection`，宿主限制）→ 离线阶段的桩回放全部走**进程内 `RecordingHttpTransport`**，真实 `HttpClient`/DNS/TLS 路径**未经任何测试**。
 6. **A6/A7 今天必然不通过**：能力清单端点（Task 6）与 Outbox/DLQ 重放（A7）均未实现；即使 A1–A5 通过，也只能标「已接通（联调中）」。
 7. **成本与时间未确认**：沙箱注册（企业资质 + 视频核验）、生产授权、Amazon 安全问卷/DPP 时限均为**用户侧投入**，本文件不给出工期承诺。
 8. **`SpApiIntegrationTest` 是唯一的真实网络路径**，且默认跳过；凭证到位当天应先跑它（`RUN_INTEGRATION_TESTS=true` + `TEST_SHOP_ID`）作为**冒烟**，再跑本 runbook 的完整取证。
+9. **预签名 URL 的泄露面已收窄，但没有归零**（P0-53）→ 两个预签名构造点（读侧 `SpApiGateway.downloadBytes`、写侧 `FeedsClient.uploadDocument`）都不再拼 URL，`URI.create` 失败时**不链 cause**，五个边界出口统一脱敏。**仍未覆盖**：① 未做全仓出站扫描——新增调用方若自行把预签名地址写进日志或响应，仍可绕过（现存断言只锁这两个构造点与五个 controller 出口）；② 未引入日志侧 scrub（appender/日志框架过滤器），因此**非** `URI.create` 的传输异常若自带 URL 文本，仍可能进日志；③ 平台返回的 S3 错误体**有意不回显**（会内嵌规范请求/凭证材料），排障只能靠状态码 + 对象路径。
