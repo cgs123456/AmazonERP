@@ -1,7 +1,7 @@
 # AmazonERP 生产化升级设计规格（Draft for Review）
 
 - 文档日期：2026-09-24
-- 审查基线：`master` / `06769b77b291467216007bf9843211de3a0cf14e`
+- 审查基线：`master` / `e50f5d1021d0883c792510f402894a57d884ba32`（本地领先 `origin/master` 2 个纯文档提交，未 push）
 - 当前状态：**设计草案，尚未修改任何业务源码**
 - 目标：把现有“功能覆盖较广的可演示微服务原型”升级为**可审计、可恢复、可运维、可安全上线**的亚马逊 ERP；无真实数据时使用确定性模拟数据，所有模拟数据必须带 `SYNTHETIC` 标识。
 - 重要结论：模拟数据可以替代缺失的业务数据用于开发、测试和容量验证，**不能替代亚马逊开发者资质、真实店铺授权、SP-API 沙箱/生产联调、税务与会计责任、渗透测试、灾备演练和业务验收**。
@@ -21,7 +21,9 @@
 3. **财务事实源**：缺少借贷平衡凭证、真实 FIFO 成本层、多币种汇率、税务规则、结算对账和期末关账。
 4. **集成事实源**：外部调用、Webhook、MQ、缓存和数据库之间没有统一的 Outbox/Inbox、幂等和失败重放机制。
 
-同时存在必须先修复的生产阻断项：默认 mock、租户与店铺校验 fail-open、内部接口公开、SSE/WebSocket 身份上下文丢失、敏感字段权限降级可见、密钥与数据库/基础设施端口暴露、数据库迁移漂移、CI 门禁不完整。
+同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **21 条（P0-01…P0-21）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、以及可实测的供应链漏洞基线。
+
+需要特别说明的一点自查：初稿曾把“AI 工具会写生产数据”当作整体结论，本轮逐行核对后收窄为**只有 `cross_marketplace_listing` 一条真实写入链路**（详见 1.3 节的诚实修正）。同样，“JWT 空密钥静默可用”的假设也被推翻——`JwtUtil.init()` 在密钥为空时直接让服务启动失败，这是正向设计。
 
 ### 0.2 不能被 README 或旧计划证明的事情
 
@@ -29,7 +31,8 @@
 - 前端 `npm run test:run` 与 `npm run build` 曾在当前工作区通过，但这只能证明前端单元测试和构建通过。
 - 后端已在本轮实测通过：19 个模块全量编译成功、后端单测 `527 执行 / 0 失败 / 0 错误 / 2 跳过`（明细见 1.2 节）。这只证明“主代码可编译、现有单测可跑绿”，**不证明**运行期行为、生产配置、多实例一致性或端到端启动正确。
 - 本轮未启动完整 Compose、未做端到端联调、未跑 Playwright、未与真实 SP-API 联通；因此本文**不宣称**系统可端到端启动或已与亚马逊生产接口打通。
-- 仓库文档声明的平台能力必须以真实客户端和真实联调为准。例如 README 声明的 Shopify/eBay/Walmart/Shopee/Lazada 能力，需要与 `amz-service-multiplatform` 的真实客户端实现逐项核对后才能对外宣称。
+- 仓库文档声明的平台能力必须以真实客户端和真实联调为准。**已核对的结论**：`README.md:43` 声明多平台支持 “Shopify/eBay/Walmart/Shopee/Lazada”，但 `amz-service-multiplatform` 只有 **Shein / Temu / TikTok** 三套客户端（接口 + Real/Mock 实现），**不存在** Shopify/eBay/Walmart/Shopee/Lazada 的任何接口、实现或分发分支；`MultiplatformServiceImpl.java:632-635` 与 `706-712` 的 `switch (platform)` 只有 `TEMU/TIKTOK/SHEIN` 三个 case，其它值抛“不支持的平台”，`syncAll`（614-617）同样只同步这三家。因此该 README 条目属于**不实宣称**，必须修正或补齐实现后再对外发布（详见附录 G）。
+- 其它“已声明但无实现证据”的能力同样只能当作待验证项：README 各模块的完成度措辞、`docs/es-native-rrf-check.md` 假定的 `amz_product` 索引已存在，都还没有证据支撑。
 
 ### 0.3 工作假设与需要确认的决策
 
@@ -50,7 +53,8 @@
 
 ### 1.1 已核对的代码规模与结构
 
-- 主 Java 文件约 607 个，测试 Java 文件约 66 个，静态 `@Test` 断言约 527 个。
+- 主 Java 文件 666 个、测试 Java 文件 66 个，合计 732 个（`rg --files -g "*.java"` 与目录遍历双口径一致）；`@Test` 注解 527 处（与 1.2 节实测执行数一致，不是“断言数”）。
+- 测试分布极不均衡：`amz-service-product` 有 50 个主文件、**0 个测试文件**；`amz-service-ai` 16、`amz-service-finance` 9、`amz-service-spapi` 8。也就是说，唯一确认会真实写入外部系统（SP-API Feeds）的商品模块，恰好是唯一完全没有测试的模块。
 - `@TableName` 约 98 处，`@RestController` 约 53 处，`@ShopScoped` 约 258 处，`@RequireRole` 约 34 处，`@FieldPermission` 约 17 处。
 - AI 工具声明 `@Tool(` 约 29 处。
 - 表口径存在冲突：
@@ -69,7 +73,9 @@
 | 后端单测 | `Tests run: 527, Failures: 0, Errors: 0, Skipped: 2`（15 个模块产出报告，累计约 52 秒） | 证明现有单测在隔离环境可跑绿；不证明运行期与生产配置正确 |
 | 跳过用例 | `SpApiIntegrationTest` 2 例跳过 | 由 `@EnabledIfEnvironmentVariable(RUN_INTEGRATION_TESTS=true)` 控制；即**真实 SP-API 联调在默认 CI 中并不执行** |
 | 前端单测/构建 | `npm run test:run` 133/133 通过、`npm run build` 通过 | 只证明前端单测与构建；39 个 Playwright 用例仅枚举、未执行 |
-| 前端依赖漏洞 | `npm audit` 报告 10 个（7 high / 3 moderate） | 未修复，属于发布前必须清零或书面豁免的项 |
+| 前端依赖漏洞 | `npm audit --prefix amz-frontend` 实测 10 项（7 high / 3 moderate，0 critical；prod 52 / dev 260 / 总 311 依赖） | 未修复，属于发布前必须清零或书面豁免的项 |
+| Maven 运行时依赖树 | `mvn -B -ntp dependency:tree -Dscope=runtime` 全 19 模块 `BUILD SUCCESS`（约 41s），解析出 427 个唯一坐标（含 17 个 `com.amz:*` 自身，第三方 410 个） | 说明依赖可完整解析；产物 `target/dependency-tree-runtime.out.log`、`target/maven-coords.txt` |
+| Maven 依赖漏洞（OSV，paired 查询） | 410 个第三方坐标 → 210 组 `(坐标, advisory)` 命中、涉及 67 个坐标、190 条唯一 advisory；严重度分布 18 critical / 80 high / 90 moderate / 22 low；其中 206 组已有修复版本事件，4 个坐标在 OSV 中无修复版本 | 说明“可编译”与“可安全上线”是两件事；`fastjson 1.2.83`（CRITICAL RCE，1.x 无修复）仍随 Seata 进入 17 个模块的运行时类路径 |
 
 复现命令（PowerShell，仓库根目录，工具链路径按本机实际替换）：
 
@@ -102,16 +108,29 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 |---|---|---|---|
 | P0-01 | 生产服务可能默认 mock | 多个服务 `spring.profiles.active` 默认 `mock`，Compose 多数未显式设置生产 profile | 生产配置显式禁用 mock；启动时检测到 mock 依赖直接失败；CI 检查生产配置 |
 | P0-02 | `/internal` 被网关和业务拦截器放行，内部通知接口可被伪造 | `MessageNotifyController`、`BaseAuthInterceptor`、`MyGlobalFilter` | 内部接口只接受 mTLS + 服务 JWT；公网和普通网关请求不可达；消息服务端口不暴露到宿主机 |
-| P0-03 | 租户与店铺校验 fail-open | `UserContext.isShopAllowed()` 在 `shops` 为空时返回 `true`；部分字段权限缓存未命中/异常时返回空集 | 所有租户/店铺/字段权限默认拒绝；缺少上下文视为认证失败，不是“内部调用” |
-| P0-04 | SSE Agent 身份上下文丢失 | `AgentSseController` 从查询参数取 userId；`AgentChatStreamService` 固定线程池只传播 trace；工具依赖 `UserContext` | 身份、tenant、shop scope、trace 一起传播；禁止查询参数覆盖身份 |
+| P0-03 | 租户与店铺校验 fail-open 且覆盖面被高估 | `UserContext.isShopAllowed()` 在 `shops` 为空时返回 `true`；`ShopIdGuardAspect` 在 shops 为 null/空时**放行**（只有切面自身异常时才 fail-closed，两者不对称）；网关只校验 `shopId` 请求头，**不校验 body/query/path**；`@ShopScoped` 仅覆盖 Long 型且名为 `shopId` 的 `@RequestParam/@PathVariable`，且只有方法级注解（无类级） | 所有租户/店铺/字段权限默认拒绝；缺少上下文视为认证失败；资源归属必须来自服务端解析，不能来自请求参数 |
+| P0-04 | SSE Agent 身份与角色双丢失（越权 + 提权） | `AgentSseController` 的 `/ai/chat-stream` 从查询参数取 `userId`（`defaultValue="1"`）；`AgentChatStreamService.streamChat` 的固定线程池只传播 trace，不传播 `UserContext`；`ErpToolExecutor.execute` 入口校验因此 fail-open，`hasOperatePermission()` 在 role 为 null 时 `return true`，8 个 `OPERATE_TOOLS` 全部可被越权调用 | 身份、tenant、shop scope、**role**、trace 一起传播；禁止查询参数覆盖身份；写操作工具必须服务端鉴权 + 干跑/审批 |
 | P0-05 | 新用户注册很可能失败 | `User` 实体未映射数据库 `username/password NOT NULL` 字段；登录服务插入字段不足 | 注册、登录、迁移使用同一用户模型；DDL 与实体自动校验 |
 | P0-06 | 验证码并未真正发送短信 | `LoginServiceImpl.send()` 只写 Redis 并返回成功文案 | 接入真实短信供应商或明确返回“未配置”；生产启动时验证短信通道 |
 | P0-07 | 报表服务数据库与初始化漂移 | 报表默认 mock；`amz_report` 未在 01 初始化中创建，升级脚本却直接 `USE amz_report`；Compose 未传 `MYSQL_HOST`/profile | 单一迁移入口；全新环境和存量环境都能迁移；启动前检查 schema 版本 |
 | P0-08 | 任意用户可读取他人资料 | `GET /user/getUserById/{userId}` 无本人/ADMIN 校验 | 改为本人或明确授权角色；服务间调用使用服务身份；响应按字段最小化 |
 | P0-09 | 字段权限异常时可见全部字段 | `FieldPermissionServiceImpl` 的降级策略、`FieldPermissionAspect` 的 null 跳过、`isFieldVisible` 的 null 返回 true | 权限服务不可用时拒绝敏感字段；规则缺失只允许“无敏感字段可读”，不能“全网可见” |
 | P0-10 | WebSocket 握手未在首帧前完成鉴权 | `WebSocketHandler.channelRead0()` 先处理 ping，再处理 token | 握手或首帧鉴权失败即关闭连接；会话绑定 tenant/user/shop；支持撤销和单点清理 |
-| P0-11 | 店铺凭证非多副本一致事实源 | `ShopCredentialStore` 进程内缓存 + DB，DB 写失败只告警，无版本/失效机制 | 凭证以 KMS/Vault/数据库单一事实源为准；带版本、轮换、失效和审计 |
+| P0-11 | 店铺凭证非多副本一致事实源 | `ShopCredentialStore` 用 `shopCredentialMapper.selectList(null)`（第 56 行）把**全部店铺凭证**一次性装入进程内缓存，DB 写失败只告警，无版本/失效机制 | 凭证以 KMS/Vault/数据库单一事实源为准；带版本、轮换、失效和审计；禁止全表加载到 JVM |
 | P0-12 | 基础设施与内部端口公开、默认凭据占位 | Compose 暴露 3306/6379/5672/9200/8888/8889 等；`k8s/secret.yaml` 为已提交占位值；ES 无安全；Nacos/Grafana 默认配置 | 基础设施仅集群内访问；Secret 由外部密钥系统注入；TLS、认证、网络策略和默认拒绝全部生效 |
+| P0-13 | 广告域完全没有租户/店铺隔离 | `AdServiceImpl` 返回硬编码 `camp-001/camp-002`；广告端点不校验 shopId 归属；指标无 `(shop_id, profile_id, date, entity)` 唯一键 | 广告数据按 `shop_id + profile_id` 建模；读写均校验归属；指标唯一键与归因窗口固定并可重放 |
+| P0-14 | Agent 记忆与偏好可被任意用户读写（IDOR） | `AgentMemoryController` 六个端点从 query/path/body 取 `userId`，无本人/角色校验；`history` 会话名 `"sess-"+userId`；`updatePreference` 整段 body 落库 | 记忆/偏好归属从服务端会话派生；跨用户读写返回 403/404；写入字段白名单 + 大小上限 + 审计 |
+| P0-15 | 订单接口可伪造下单人 | `OrderController.saveOrder` 无守卫 → `OrderServiceImpl.saveOrder` 把 body 中的 `userId` 发 MQ → `processOrderMessage` 用该值落库（`saveOrderInternal`）；与 `syncAmazonOrder`（shopId + `@GlobalTransactional` + afterCommit）模型不一致 | 订单写入身份来自认证上下文；B2C 与店铺订单共用同一事实模型（含 shop_id/marketplace_id）；MQ 消息带幂等键与来源校验 |
+| P0-16 | 刷新令牌经网关必然失败，且无轮换/吊销 | `BaseAuthInterceptor` 白名单不含 `/user/refresh`；`parseToken` 对 `refresh:{id}` 做 `Integer.valueOf` 抛 `NumberFormatException` 返回 401；`JwtUtil.verifyRefreshToken` 本身实现正确，但无轮换、吊销或设备绑定，被盗 token 在 TTL（7 天）内可重放 | 刷新接口可达且语义正确；refresh token 一次性轮换、可吊销、绑定设备/会话并记录审计；重放被检出并拒绝 |
+| P0-17 | 物流/仓库/客服写操作缺归属校验 | `LogisticsController.createShipment` → `LogisticsServiceImpl.createShipment` 直接 insert（对照同文件 `requireAccessible` 才是正向模式）；`WarehouseServiceImpl.decreaseInventory` 只按 `warehouseId + sku`，不含 shop；`CustomerController.receiveMessage` 信任 body 的 ticket/shopId，`replyTicket` 为 `selectById → updateById` | 所有写操作以 `shop_id` 为强制过滤条件；复用已有正向模式统一收口；越权返回 404 而非 403 以避免存在性泄漏 |
+| P0-18 | 搜索与知识库索引无租户/店铺过滤 | `SearchServiceImpl.hybridSearch` 的 BM25（207–216 行）与 kNN（218–228 行）两条路径都固定在 `IndexCoordinates.of("amz_product")` 且无 filter，`bm25Search`（259–270 行）同样；`/search/search/{key}` 无守卫；知识库向量检索同构 | 索引文档必须含 `tenant_id/shop_id/marketplace_id/visibility`；BM25 与 kNN **两条路径**都要带服务端注入的过滤；索引别名切换而非在线删索引 |
+| P0-19 | 选品模块可读写他人记录并硬编码店铺 1 | `ProductSelectionServiceImpl` 第 74、204 行 `UserContext.getShopId() != null ? ... : 1L`；`aiSuggestion` 第 220 行 `selectById` 无归属校验，231/263/269 行 `updateById` 写回；结果由 `keyword.hashCode()+marketplace.hashCode()` 确定性生成，**未标 `SYNTHETIC`**，外观上与真实经营数据无异 | 归属校验 fail-closed；模拟结果显式标记 `SYNTHETIC` 并与真实数据隔离；写回前再次校验归属 |
+| P0-20 | 多平台 Webhook 无验签且跨租户错配 | `MultiplatformController.receiveWebhook`（132–137 行）无守卫、传 `shopId=null`；`MultiplatformServiceImpl.receiveWebhook`（395–443 行）**没有任何入站签名校验**（全仓库仅存在出站签名工具），`shopId` 为空时按 platform 反查“最新创建的账号”（408–420 行），去重只按 `event_id`，`handleWebhookEvent` 仅打日志 | 每平台独立验签实现 + 时间戳/重放窗口；事件唯一键 `(platform, shop_id, event_id)`；无法确定归属时拒绝落库；处理逻辑实现真实业务动作而非仅记录 |
+| P0-21 | 依赖供应链存在未修复的严重漏洞且无 SCA 门禁 | 本轮实测：410 个第三方运行时坐标命中 210 组 `(坐标, advisory)`、67 个坐标、190 条唯一 advisory（18 critical / 80 high / 90 moderate / 22 low，详见 5.7 与附录 F）；`fastjson 1.2.83` 为 CRITICAL RCE 且 **1.x 无修复版本**，仍随 `seata-all 2.0.0` 进入 17 个模块类路径；`tika 2.9.2` 的 XXE 可由知识库文档上传触达；网关最外层 `netty-all 4.1.115.Final` 含 CRITICAL 级 SNI 绕过与 HTTP/2 DoS 修复项；`npm audit` 7 high / 3 moderate | 依赖升级到修复版本或移除（含排除传递依赖）；CI 强制 SCA + SBOM + 镜像扫描并在高危未豁免时阻断；网关、文件解析、反序列化三类路径额外做运行时缓解 |
+
+> 关于 P0-04 的**诚实修正**：8 个 `OPERATE_TOOLS` 中，**只有 `cross_marketplace_listing` 已确认会真实写外部系统**（`ProductController.copyListing` → `ListingCopyService.createCopyTask` → `@Async executeCopyTaskAsync` → `listingsClient.submitFeed` → SP-API Feeds，且 `pollFeedStatus` 以 `Thread.sleep(15s)` 轮询最长 5 分钟）。`optimize_ad_campaign`、`optimize_listing_seo`、`optimize_shipping_route`、`optimize_inventory_distribution` 是只读查询 + 规则文本；`create_purchase_plan`（返回 `DRAFT` Map，`planNo=System.currentTimeMillis()`）与 `auto_reply_message`（返回草稿）都不落库；`generate_promotion_plan` 是 `@GetMapping("/promotion/plan")` + `@ShopScoped`，返回**硬编码**的 Lightning Deal 方案，**完全不写数据**。
+>
+> 这条修正很重要：它把“AI 工具可以写生产数据”的指控收窄到一条真实链路，同时也暴露了这条链路的两个新问题——`ListingCopyService` 第 55 行 `DEFAULT_PRODUCT_TYPE = "PRODUCT"` 是占位值，真实类目不符会被 Amazon 判为 FATAL；且该链路在 SSE worker 中执行时没有 `UserContext`，第 90 行的 `isShopAllowed` 校验会被 fail-open 绕过。
 
 ### 1.4 业务模型缺口
 
@@ -125,7 +144,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | 财务 | 结算解析要求过宽；一次加载全店明细；成本是加权平均；VAT 硬编码；金蝶客户端仍可能返回 mock；凭证只覆盖部分订单收入 | 双分录账本、费用/退款/汇率/税务、FIFO、结算对账、期末关账、外部总账 |
 | 广告 | 真实客户端未真正完成 refresh token 交换；分页、429、Retry-After、nextToken 不完整；服务返回硬编码 campaign | OAuth/profile 隔离、统一限流与分页、日指标唯一键、归因窗口、自动化护栏、变更审计 |
 | 商品/Listing | 更新未同步 ES；MongoDB 属性与 MySQL 无一致性机制；A+ 永远 true；Feed 超时后未下载结果报告 | 版本化 Listing、Feed 结果闭环、Outbox 派生同步、ES 强制租户/店铺过滤 |
-| 多平台 | Webhook 无鉴权/验签；事件唯一键不含店铺；同步去重键不含店铺；部分事件只写日志 | 平台适配层、签名验证、`(platform, shop_id, event_id)` 唯一、统一订单映射与重放 |
+| 多平台 | Webhook 端点无守卫、无任何入站签名校验（全仓库仅有出站签名工具）；`shopId` 为空时按 platform 反查“最新创建的账号”造成跨租户错配；去重键仅为全局 `event_id`；`handleWebhookEvent` 只写日志；**真客户端只有 TEMU/TIKTOK/SHEIN**（`MultiplatformServiceImpl.java:632-635`、`706-712` 的 `switch(platform)` 只有这三个 case，其它平台串抛“不支持的平台”；`syncAll` 614-617 也只同步这三家），README 声明的 Shopify/eBay/Walmart/Shopee/Lazada **无任何实现**；默认 profile（非 `mock`）加载 `*RealClient` | 平台适配层（补实现或撤回宣称）+ 每平台验签与时间窗；事件唯一键 `(platform, shop_id, event_id)`；归属无法确定时拒绝落库；事件处理实现真实业务动作并可重放 |
 | 消息/异步 | 部分消费者有手动 ack 与 DLQ，但通知消费者只记日志；分布式锁 Redis 不可用时 fail-open；异步线程丢上下文 | Inbox/Outbox、幂等消费、重试/DLQ/重放、锁 fail-closed、上下文传播 |
 
 ### 1.5 外部对标
@@ -172,6 +191,20 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 10. 模拟数据必须固定 seed、可重复生成并显式标记 `SYNTHETIC`；不得伪装成真实经营数据。
 
 ---
+
+### 1.8 已核实为正向、整改时必须保持的设计
+
+审计如果只列缺陷，会把“本来做对的部分”一起改坏。以下行为本轮已核实为正向，改造时必须保留或推广：
+
+| 位置 | 已核实行为 | 为什么必须在整改中保持 |
+|---|---|---|
+| `amz-common/.../util/JwtUtil.java` `init()`（50–58 行） | 密钥为空/空白时抛 `IllegalStateException`，服务**拒绝启动**而不是降级 | 避免了“空密钥静默可用”这类最危险的配置事故；其他密钥/外部凭据应复制这一模式 |
+| `SpapiController` 的 `/credential`（66–82 行）、`FeedsController` 的 `/submit`（38–56）与 `/status`（59–81） | 访问下游前显式 `isShopAllowed(shopId)` | 本仓库现成的正确范式；应收敛为统一拦截器，而不是让每个域各自实现 |
+| `FeignAuthRelayConfig`（59–99 行） | 凭据透传有明确优先级：显式头 > 当前请求上下文 > `UserContext` 现签 >>> 都没有时不加凭据；并文档化了 `RequestContextHolder` 在 `@Async`/线程池中丢失的限制 | 跨服务身份链是闭环前提；后续改造在其上加服务身份与 mTLS，而不是绕开它 |
+| `ProductServiceImpl`（41 行注释） | 已修复 `selectList(null)` 引起的跨店暴露 | 说明该缺陷类别已被团队识别；应补回归测试固化，而不是只留注释 |
+| `SearchServiceImpl` 热搜实现 | ZSET 有 1000 条上限 + 7 天 TTL | 防无界增长；“上限 + TTL”应成为所有缓存的默认约束 |
+| `OpsServiceImpl`（60–75、107–121、137–154 行） | 扫描类操作有 mock 门禁 | 与 P0-01 同向；应扩展为“生产启动检测到 mock 即失败” |
+| `DistributedJobLock` | 注释与实现明确记录了 Redis 不可用时的 fail-open 行为 | 记录清楚才可能被修；但生产要求是 fail-closed，**不能把注释当作已缓解** |
 
 ## 2. 目标架构、租户模型与运行单元
 
@@ -463,6 +496,15 @@ projected_available  = on_hand - reserved - allocated - safety_stock
 - 对消费者搜索、运营搜索和 AI 检索分别定义可见范围；AI 不得越过用户店铺权限。
 - 索引重建采用别名切换，禁止在线上直接删除索引；嵌入生成失败时可降级 BM25。
 
+**现状（本轮实测，2026-09-24，作为本节目标的整改输入）**：
+
+- **索引名单点硬编码**：`ProductDoc.java:17` 声明 `@Document(indexName = "amz_product")`，`SearchServiceImpl.java:215/227/268` 三处 `IndexCoordinates.of("amz_product")` 直接写死；没有别名（alias）与重建流程，无法做不停机的 mapping 变更。
+- **无租户/店铺过滤（对应 P0-17）**：`ProductDoc` 已存 `shopId`（第 52 行）与 `userId`（第 56 行），但 BM25（`bm25Search`）、kNN（`hybridSearch`）与 RRF 融合三条路径**都没有把这两个字段加入查询过滤**，融合后也没有二次过滤。结果是任何登录用户的搜索请求都会跨店铺召回。
+- **mapping 与集群能力未固化**：`ik_max_word`/`ik_smart`（`ProductDoc.java:27/31/35`）要求 ES 预装 IK 分析插件，但 `docker-compose.yml:137-150` 的 `elasticsearch:8.15.3` 是官方镜像、未挂载任何插件；仓库内也没有 index template / ILM / 自定义分词器定义（全仓库仅 `ProductDoc` 注解里出现 analyzer）。官方镜像不含 IK：首次写入创建索引会因未知分析器失败，除非手工装插件。`docs/es-native-rrf-check.md` 描述的“索引已存在且有 embedding 数据”是**验证前置条件，不是已完成的事实**。
+- **连接与超时未配置**：`amz-service-search/src/main/resources/application.yml:27-28` 只有 `spring.elasticsearch.uris: ${ES_URIS:http://localhost:9200}`，无 connect/socket 超时、无连接池上限、无认证与 TLS 配置（`application-local.yml` 同样只有裸 `uris`）；compose 里 ES 显式 `xpack.security.enabled=false`，属于**仅限本地**的配置。
+- **向量维度与模型耦合**：`ProductDoc.java:59` 硬编码 `dims = 1024`，更换 embedding 模型必须重建索引；`embedding.enabled` 默认 `false`（`application.yml:32`），默认检索路径是纯 BM25。
+- **分页与结果窗口**：查询只使用 `withMaxResults(bm25Top|knnTop|rrfFinal)`（默认 50/50/20，已外置为 `search.retrieval.*`），没有 `from/size` 深分页，也没有显式设置 `index.max_result_window`；`es-native-rrf-check.md` 里的 `rank_window_size` A/B 只有 playbook、没有执行结果。
+
 ### 3.9 跨域事件清单
 
 至少定义并版本化以下事件：
@@ -576,6 +618,8 @@ webhook_event(
 
 ### 4.5 Webhook 安全
 
+**现状（本轮实测，作为设计输入）**：`MultiplatformController.receiveWebhook`（132–137 行）没有 `@ShopScoped`/`@RequireRole`，也把 `shopId` 直接传 `null`；`MultiplatformServiceImpl.receiveWebhook`（395–443 行）全流程没有任何签名/时间戳校验，缺口时按 `platform` 反查“最新创建的账号”来猜归属，去重只看 `event_id`，处理函数只写日志。也就是说：这个接口目前既能被匿名伪造写入，也可能把事件挂到别的租户店铺上。
+
 - 每个平台独立验签实现；验签失败直接拒绝并告警。
 - 校验时间戳，拒绝超过允许时钟窗口的重放；保存事件 ID 和 payload hash。
 - 唯一键为 `(tenant_id, platform, shop_id, event_id)`，不是全局 `event_id`。
@@ -635,6 +679,7 @@ OPEN -> TRIAGED -> IN_PROGRESS -> WAITING_EXTERNAL -> RESOLVED -> CLOSED
 
 - 首选 OIDC Authorization Code + PKCE；管理端使用短期 access token 与可轮换 refresh token。
 - access token 有效期建议 10–15 分钟；refresh token 使用一次性轮换、重用检测和令牌族撤销。
+- **现状（本轮实测，作为设计输入）**：`/user/refresh` 经网关必然 401——`BaseAuthInterceptor` 的白名单没有该路径，且 `parseToken` 会对 `refresh:{id}` 形式的 subject 执行 `Integer.valueOf`，抛 `NumberFormatException`。`JwtUtil.verifyRefreshToken`（172–188 行）实现本身正确，但因为没有轮换/吊销/设备绑定存储，即使修好可达性，被盗 refresh token 仍可在 TTL（7 天）内重复使用。
 - 高权限角色强制 MFA；登录、重置密码、绑定设备、权限变更产生安全审计。
 - 支持会话列表、设备撤销、管理员强制下线、离职/停用后 24 小时内撤权。
 - 禁止以手机号验证码作为唯一管理员长期认证方式；验证码仅作为辅助因素。
@@ -667,6 +712,7 @@ OPEN -> TRIAGED -> IN_PROGRESS -> WAITING_EXTERNAL -> RESOLVED -> CLOSED
 - 断线重连使用一次性 ticket 或 Cookie，不使用可长期泄露的 URL token。
 - 连接关闭、权限变更、用户停用、密码修改时，服务端主动清理相关会话。
 - 消息推送必须按 `tenant_id + user_id` 路由，禁止向广播频道泄露其他租户数据。
+- **现状（本轮实测，作为设计输入）**：`AgentMemoryController` 全部 6 个端点（37/49/57/66/79/89 行）从 query/path/body 取 `userId` 且不校验归属，`history` 用 `"sess-"+userId` 拼接会话；这是一个独立的 IDOR 面，和 SSE 上下文丢失是两回事，需要分别修。`KnowledgeController` 的上传端点虽然做了 `isShopAllowed` 与 10MB 限制，但 Tika 2.9.2 的 XXE（见 5.7）可从上传文件触发。
 - `/internal/message/notify` 必须改成受服务身份保护的内部命令，并移除网关公开路由。
 
 ### 5.3 授权与信任边界
@@ -678,6 +724,7 @@ OPEN -> TRIAGED -> IN_PROGRESS -> WAITING_EXTERNAL -> RESOLVED -> CLOSED
 - 采用“边缘认证 + 服务内二次授权”：网关通过不代表业务对象访问一定合法；每个聚合根都要校验租户和店铺。
 - 角色权限使用 RBAC + 资源范围（tenant/shop/warehouse）、字段权限和数据范围；管理员也应有审计的 break-glass 流程。
 - 高风险操作支持审批、双人复核和时限授权；紧急访问自动过期并触发事后审计。
+- **现状（本轮实测，作为设计输入）**：当前守卫链的覆盖面容易被高估。`amz-gateway` 的 `MyGlobalFilter` 只校验 `shopId` **请求头**（115–133 行），body/query/path 里的 shopId 不受保护；`ShopIdGuardAspect` 只覆盖 Long 型、且名为 `shopId` 的 `@RequestParam/@PathVariable`（48–52 行 shops 为空时放行）；`@RequireRole`/`@ShopScoped` 均为 `@Target(METHOD)`，**没有任何类级注解**——“方法上没有注解”不等于“公网无认证”，反过来“类上有注解”也不成立。本轮 328 个端点里 82 个没有任何守卫注解，其中一部分是靠白名单或内部调用约定成立的，必须逐条判定而不是按数量收敛。
 
 ### 5.4 PII 与数据分类
 
@@ -757,6 +804,16 @@ OPEN -> TRIAGED -> IN_PROGRESS -> WAITING_EXTERNAL -> RESOLVED -> CLOSED
 - 文件上传需要类型/大小/病毒扫描；报表解析防 XXE、压缩炸弹、CSV 注入和路径穿越。
 - AI Agent 需要工具白名单、参数 schema、写操作审批、提示注入防护、输出脱敏和调用预算；工具不能绕过业务权限。
 - API 具有分页上限、请求体上限、超时、限流和幂等键；防止批量查询和导出打垮数据库。
+**现状（本轮实测，作为设计输入）**：运行时依赖树 427 个坐标（第三方 410），OSV 配对查询命中 210 组 `(坐标, advisory)`、67 个坐标、190 条唯一 advisory（18 critical / 80 high / 90 moderate / 22 low），其中 4 个坐标在 OSV 中没有修复版本。重点项：
+
+- `com.alibaba:fastjson:1.2.83`——CRITICAL RCE，1.x 线无修复版本；它不在任何 `pom.xml` 中显式声明、也没有任何 Java 代码 import，而是随 `io.seata:seata-all:2.0.0` 进入 **17 个模块**的运行时类路径（另有 `1.2.83_noneautotype` 随 sentinel 传送模块进入）。整改方向是升级/移除上游、显式排除并回归 Seata 序列化，或迁移到 Jackson；不能靠“代码没直接用”当作已缓解。
+- `org.apache.tika:tika-core / tika-parsers-standard-package:2.9.2`——CRITICAL XXE（修复版本 3.2.2+），且可由 `amz-service-ai` 的知识库文档上传路径（`KnowledgeController` → `DocumentParser` → `Tika.parseToString`）触达，属真实可达而非纯理论。
+- `io.netty:*:4.1.115.Final`——多条 HIGH/CRITICAL（SNI 路由绕过、HTTP/2 MadeYouReset、HTTP 请求走私、解压炸弹），修复版本在 4.1.13x 一线上；**最外层网关正好使用 `netty-all 4.1.115.Final`**，是互联网暴露面。
+- `org.apache.tomcat.embed:tomcat-embed-core:10.1.31`——32 条 advisory（含 CAPTURE 重放、DIGEST 认证绕过、部分 PUT RCE），需随 Spring Boot 升级到修复版本。
+- 其他需处理项：`org.apache.opennlp:opennlp-tools:1.9.4`（经 `dev.langchain4j:langchain4j:0.36.2` 引入，CRITICAL XXE / 任意类实例化）、`org.bouncycastle:*:1.77/1.78`（CRITICAL，1.80.2+/1.85 修复）、`com.mysql:mysql-connector-j:8.0.33`（接管漏洞，8.2.0+）、`com.rabbitmq:amqp-client:5.21.0`（多条 HIGH DoS，5.33+）、`commons-io:2.11.0`（2.14.0+）、`commons-fileupload:1.5`（1.6.0+）、`micrometer-core:1.13.6`、`protobuf-java:3.21.9`、`jackson-databind 2.17.2`（多态校验绕过，2.18.8+）。
+- 前端：`npm audit --prefix amz-frontend` 报 7 high / 3 moderate（`axios`、`rollup`、`nanoid`、`postcss` 等），需清零或书面豁免。
+- 方法与限制：本机 Maven 镜像索引可能滞后，上述修复版本来自 OSV advisory 的 `fixed` 事件；实施阶段必须在能访问完整 Central 的环境重跑 `dependency:tree` 与 SCA 复核，不能照抄版本号。
+
 - CI 加入 SAST、依赖漏洞扫描、容器镜像扫描、IaC 扫描、secret scanning 和 SBOM；高危漏洞按 Amazon 安全要求时限处理。
 - 生产镜像使用固定 digest、最小基础镜像、非 root、只读根文件系统和签名验证；禁止 `latest`。
 
@@ -931,6 +988,35 @@ SLO 要区分“服务可用”与“业务正确”：返回 200 但订单金�
 - 前端列表使用虚拟滚动或服务端分页，避免一次渲染数万行；路由懒加载和按页面拆包。
 - 搜索/推荐可降级：Embedding 不可用时纯 BM25；报表服务不可用时显示缓存并明确数据时间。
 
+**现状（本轮静态扫描定位，作为整改清单）**：
+
+- **全表加载进 JVM**：`ShopCredentialStore.java:56` 的 `selectList(null)` 会把全部店铺凭证一次性载入进程内缓存；店铺数增长时既是内存问题也是爆炸半径问题。
+- **占用异步池的长阻塞**：`ListingCopyService.java:223` 用 `Thread.sleep(15s)` 轮询 Feed，最长 5 分钟，直接占用 `@Async` 线程；`AgentChatStreamService.java:40`、`OrderAuditServiceImpl.java:182-183`、`WebSocketServer.java:30` 各自 `new Thread`/固定池，缺少统一线程池与队列上限。
+- **硬编码 LIMIT 泛滥**：`MemoryServiceImpl:156`、`ProcurementServiceImpl:148`（LIMIT 500）、`CustomerEmailServiceImpl:165`（1000）/`318`（1）、`LogisticsTrackingSyncScheduler:198`、`RealtimeProfitServiceImpl:138/361`、`OrderController:198/205`、`ProfitCalculator:221`、`FinanceServiceImpl:76/112/131/163`、`MultiplatformServiceImpl:414`（`LIMIT 1` 反查归属）、`ProductSelectionServiceImpl:146`。这些“看起来有上限”的写法实际是无游标分页，超过阈值后**静默丢数据**。
+- **Mapper 调用密度**：`selectList/selectCount/selectOne/selectById` 共 236 处（排除测试），仓库内 `@Cacheable` / `@CacheEvict` / `CacheManager` **零命中**，缓存实现分散在 Caffeine / `ConcurrentHashMap` / 同步 `LinkedHashMap` / Redis 四套，键维度见下表。
+- **缓存键逐条审查（本轮完成）**：结论是**多数已带 shop 维度，只有一处缺少租户维度、一处取的是全局静态值**。
+
+| 缓存位置 | 实现 | 键 | 上限 / TTL | 判定 |
+|---|---|---|---|---|
+| `ShopCredentialStore.java:35/56` | ConcurrentHashMap + `selectList(null)` | `Long shopId` | 无 TTL，全量预热 | 键正向；**全表加载需改懒加载** |
+| `LwaTokenManager.java:51/57/87-92` | ConcurrentHashMap + 每键锁 | `clientId` + `refreshToken` | 过期前 5 分钟刷新 | 正向（含同键 single-flight） |
+| `AdvertisingApiRealClient.java:59-60/193` | 两个 ConcurrentHashMap | `"shop:" + shopId` | 1 小时 | 键正向，但**所有店铺拿到的是同一个静态配置 token**（见 P0-13） |
+| `FieldPermissionServiceImpl.java:40/126` | ConcurrentHashMap + Redis 回退 | `role` → `entity` | 无 TTL，`loaded` 一次性加载 | **无租户维度**；规则表当前是全局表，一旦允许租户自定义字段权限，此键必须加租户前缀，否则跨租户串规则 |
+| `TranslationService.java:49-51` | Caffeine | 文本 + 目标语言 | `maximumSize(10000)`，TTL 10min | 正向（内容寻址，无租户敏感性） |
+| `SearchServiceImpl.java:151-186` | ConcurrentHashMap | `userId` | 5min 正缓存 + 30s 负缓存，>10000 机会式清理 | 键正向；注意缓存的是用户对象（PII 需按 5.4 治理） |
+| `RealtimeProfitServiceImpl.java:317-351` | 同步 LinkedHashMap（LRU） | `shopId` 前缀 + `sku`（分隔符为竖线字符） | TTL 5min，上限 1024，写入时按店铺前缀失效 | **正向范本**：键、上限、TTL、失效四要素齐全，可直接推广 |
+| `ProfitCalculator.java:76/266-275` | ConcurrentHashMap | `shopId` | TTL 计数缓存 | 键正向 |
+| `SpiRateLimiter.java:60/66/87` | ConcurrentHashMap | `shopId + ":" + endpoint` | 滑动窗口，按端点策略 | 键正向（按店铺 + 端点隔离） |
+| `EmbeddingServiceImpl.java:47-82` | ConcurrentHashMap | 归一化文本 | 上限 512，超限 `clear()` 全清 | 有上限，但**超限全清**会造成周期性抖动，建议改 LRU/分段淘汰 |
+
+- **N+1 与逐行往返（本轮逐条核对，含推翻项）**：
+  - 确认存在逐行 DB 往返：`AdReportSyncScheduler.java:112-133`（天数 × 渠道行，每行一次 `selectOne` 再 insert/update）、`SearchTermServiceImpl.java:296`（`saveAsinKeywords` 在一个事务里逐行 `selectOne` 再 update/insert）。两者都应改成批量 `IN` 查询 + 批量 upsert。
+  - 确认存在逐项外部调用：`KeepaCompetitorScheduler.java:89`（按去重后的 ASIN 串行调 Keepa，无速率上限；批次内已按 ASIN 去重属于部分缓解）。
+  - **推翻上一轮的怀疑**：`RealtimeProfitServiceImpl` 与 `RealReportServiceImpl` 的循环体**没有**逐行 DB/Feign 往返——`RealtimeProfitServiceImpl:80` 是对已取回明细的内存聚合、`:186` 是对 GROUP BY 结果的再组装、`:364` 是解析分摊 JSON；`RealReportServiceImpl:230/267/308` 是对单次 Feign 响应列表的内存遍历。真正的成本是**跨服务扇出次数**：一次仪表盘请求触发 4+ 次 Feign（利润、订单数、广告、趋势），应在阶段 2 用批量聚合接口替代。
+  - **正向写法**：`MultiplatformServiceImpl.java:658` 的 `loadExistingOrderKeys` 用 `IN` 批量查 + 内存去重，可作为其它 upsert 循环的改写模板。
+- **分布式锁 fail-open**：`DistributedJobLock` 在 Redis 不可达时退化为直接执行，多副本会重复跑批。
+- 正向参照：`SearchServiceImpl` 热搜 ZSET 的上限 + TTL、用户信息的 5 分钟 TTL + 30s 负缓存、`RealtimeProfitServiceImpl` 头程缓存的“键 / 上限 / TTL / 按店铺失效”四要素——把这三种模式推广为默认规范。
+
 ### 6.6 异步、调度与故障恢复
 
 - MQ 使用 Quorum Queue（或等价持久化队列）+ DLX + 重试队列；设置消息 TTL、最大重试和死信告警。
@@ -1037,6 +1123,7 @@ seed        = 固定整数或字符串
 - 前端测试模式显示明显的 `SYNTHETIC` 横幅和颜色，不允许和真实环境混淆。
 - 报表、导出文件、通知和审计记录保留来源标记。
 - 生产环境的模拟数据加载器默认关闭；只有显式 `test/synthetic` profile 可启用。
+- **确定性 ≠ 已标注**：`ProductSelectionServiceImpl` 用 `keyword.hashCode() + marketplace.hashCode()` 生成稳定结果，可复现且看似合理，但**没有任何 `SYNTHETIC` 标记**，外观上与真实经营数据无法区分。凡是“算法生成但具备经营语义”的数据（选品评分、AI 建议、趋势预测、广告优化建议）都必须带来源标记，否则会污染报表、决策和对外承诺。
 - 模拟数据不得复用真实生产数据库连接或真实对象存储 bucket。
 
 ### 7.3 确定性生成器
@@ -1228,6 +1315,10 @@ seed        = 固定整数或字符串
 - `amz-common/src/main/java/com/amz/lock/DistributedJobLock.java`
 - `amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java`
 - `amz-gateway/src/main/resources/application.yml`
+- `amz-common/src/main/java/com/amz/util/JwtUtil.java`（50–58 行密钥为空即启动失败；172–188 行 refresh 校验）
+- `amz-service/amz-service-ai/src/main/java/com/amz/controller/AgentMemoryController.java`（6 个端点 userId 来自请求）
+- `amz-service/amz-service-ai/src/main/java/com/amz/controller/KnowledgeController.java` 与 `.../ai/knowledge/DocumentParser.java`（Tika 解析入口）
+- `amz-service/amz-service-ops/src/main/java/com/amz/service/impl/ProductSelectionServiceImpl.java`（硬编码店铺 1、IDOR、未标 SYNTHETIC）
 
 ### A.2 用户、AI、消息
 
@@ -1240,7 +1331,8 @@ seed        = 固定整数或字符串
 - `amz-service/amz-service-message/src/main/java/com/amz/controller/MessageNotifyController.java`
 - `amz-service/amz-service-message/src/main/java/com/amz/handler/WebSocketHandler.java`
 - `amz-service/amz-service-message/src/main/java/com/amz/mq/consumer/MessageNoticeConsumer.java`
-- `amz-service/amz-service-search/src/main/java/com/amz/service/impl/SearchServiceImpl.java`
+- `amz-service/amz-service-search/src/main/java/com/amz/service/impl/SearchServiceImpl.java`（hybridSearch BM25/kNN 无租户过滤）
+- `amz-service/amz-service-ai/src/main/java/com/amz/agent/AgentChatStreamService.java`、`.../agent/ErpToolExecutor.java`（线程池只传 trace；OPERATE_TOOLS 鉴权 fail-open）
 
 ### A.3 业务与集成
 
@@ -1262,7 +1354,13 @@ seed        = 固定整数或字符串
 - `amz-service/amz-service-logistics/src/main/java/com/amz/mapper/WarehouseInventoryMapper.java`
 - `amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java`
 - `amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java`
-- `amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java`
+- `amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java`（395–443 行 Webhook 无验签 + 归属反查）
+- `amz-service/amz-service-multiplatform/src/main/java/com/amz/controller/MultiplatformController.java`（132–137 行无守卫 webhook；167–172 行 `/oauth/token`）
+- `amz-service/amz-service-ad/src/main/java/com/amz/service/impl/AdServiceImpl.java`
+- `amz-service/amz-service-order/src/main/java/com/amz/controller/OrderController.java`
+- `amz-service/amz-service-logistics/src/main/java/com/amz/controller/LogisticsController.java`、`.../service/impl/LogisticsServiceImpl.java`、`.../service/impl/WarehouseServiceImpl.java`
+- `amz-service/amz-service-customer/src/main/java/com/amz/controller/CustomerController.java`
+- `amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java`（唯一确认的真实写链路，含 PRODUCT 占位与 Thread.sleep 轮询）
 
 ### A.4 部署、迁移与 CI
 
@@ -1279,6 +1377,10 @@ seed        = 固定整数或字符串
 - `docs/erp-improvement-plan-2026-08-17.md`
 - `docs/item7-shopid-audit-report.md`
 - `docs/item6b-key-externalization-plan.md`
+- `pom.xml`（`micrometer.version`、`mysql-connector-j` 等版本治理点）
+- `amz-service/amz-service-ai/pom.xml`（Tika 依赖声明）
+- `amz-frontend/package.json`（前端依赖与脚本）
+- 本轮审计产物（不随仓库分发）：`target/dependency-tree-runtime.out.log`、`target/maven-coords.txt`、`target/osv/osv-pairs.csv`、`target/osv/osv-matrix.csv`、`target/osv/details/*.json`
 
 ## 附录 B：表与迁移口径冲突
 
@@ -1332,3 +1434,93 @@ seed        = 固定整数或字符串
 - 一致性：本文假设与前面设计章节的工作假设保持一致；若评审推翻部署形态或数据库选择，需要重新评估租户、迁移和成本章节。
 - 范围：本文覆盖业务、性能、安全、可靠性、运维、合规、数据迁移和验收；不包含具体源码实现，符合“设计先行”的流程。
 - 歧义：PII 保留、税务、RPO/RTO、容量、预算和运行单元收敛均列为待确认决策，未伪装成已确定事实。
+- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本。
+---
+
+## 附录 F：328 端点守卫矩阵与 82 条无守卫清单（本轮实测）
+
+**方法**：对 19 个模块中所有 `@RestController` 做静态扫描，逐个抽取 `@GetMapping/@PostMapping/@PutMapping/@DeleteMapping` 的 HTTP 方法、路径、方法级守卫注解（`@ShopScoped` / `@RequireRole`）以及是否存在 `shopId` 参数，得到 328 个端点矩阵。数据列：`Controller, Module, Http, Path, Guards, HasShopIdArg, SigLine, File`。
+
+### F.1 守卫分布（合计 328）
+
+| 守卫组合 | 端点数 |
+|---|---|
+| `GetMapping,ShopScoped` | 132 |
+| `PostMapping,ShopScoped` | 75 |
+| `PostMapping`（无守卫注解） | 47 |
+| `GetMapping`（无守卫注解） | 23 |
+| `PostMapping,RequireRole,ShopScoped` | 23 |
+| `PutMapping`（无守卫注解） | 9 |
+| `PostMapping,RequireRole` | 7 |
+| `PutMapping,ShopScoped` | 6 |
+| `DeleteMapping`（无守卫注解） | 3 |
+| `DeleteMapping,ShopScoped` | 3 |
+| **无任何守卫注解合计** | **82** |
+
+参数维度：`HasShopIdArg=false` 160 个、`true` 168 个。也就是说约一半端点根本没有 shopId 入参——这些端点要么是平台级/用户级资源（需要另一种归属模型），要么就是缺归属校验（需要逐个判定）。
+
+### F.2 模块分布（合计 328）
+
+logistics 54、ad 39、procurement 34、finance 28、multiplatform 26、product 24、report 23、customer 21、order 18、spapi 18、ai 16、ops 12、user 7、message 4、search 4。
+
+### F.3 如何正确使用这 82 条
+
+**82 个无守卫端点 ≠ 82 个漏洞**。分类判定必须逐个读服务实现：
+
+- **A 类（真缺口）**：无守卫且直接读写业务数据，归属来自请求参数。已在 P0-13…P0-20 逐条列出，例如 `/webhook/{platform}/{eventType}`、`/order/saveOrder`、`/customer/receiveMessage`、Agent 记忆全部端点、`/ai/eval/run`。
+- **B 类（设计如此但需加固）**：登录、验证码、注册等本就应在认证前的端点，以及集群内 `/internal/**`。这类不是“漏加注解”，而是需要服务身份、mTLS、限流和网段限制。
+- **C 类（看似安全但有隐藏依赖）**：靠方法内手工 `isShopAllowed`、靠 `@RequireRole` 上游、或靠 Feign 只被内部调用。这类要显式记录下来，避免后续重构时“顺手删掉一行校验”。
+
+### F.4 必须保留的三条更正（避免后续引用出错）
+
+1. **废弃文件**：早期审计产出的 `endpoint-matrix.csv` 存在列错位问题，**已废弃**，只在阅读历史记录时作为反例。有效数据是 `endpoint-matrix2.csv`（328 行）与 `endpoint-unguarded-triage.csv`（82 行，列：`Module, Http, Path, Controller, Line, Checks, ShopIdArg, File`）。它们生成于仓库外（`~/.cache/codex-tools/`），不随仓库分发，可按 F 节方法重新生成。
+2. **注解计数口径**：`@ShopScoped` 258 处、`@RequireRole` 34 处是**注解出现次数**，既不是端点数也不是类级覆盖；两者都是 `@Target(METHOD)`，本仓库**没有任何类级** `@ShopScoped`/`@RequireRole`。因此“方法上没有注解”不能推断为无认证，反过来也不能假设类级注解提供了覆盖。
+3. **OSV 口径**：`querybatch` 只返回 `{id, modified}`，不含 severity/summary/fixed；要给结论必须对去重后的 ID 再调 `GET /v1/vulns/{id}`。同时必须保留 `(坐标, advisory)` 配对——早期“按未过滤坐标列表错位映射”的表格**已作废，不得引用**。正确口径见 1.2 与 5.7 节：210 组配对、190 条唯一 advisory、67 个坐标。
+
+### F.5 复现命令（PowerShell）
+
+```powershell
+# 端点矩阵：统计守卫组合与无守卫清单（需自行实现扫描脚本，输出同 F.1 的列）
+$m = Import-Csv endpoint-matrix2.csv
+$m | Group-Object Guards | Sort-Object Count -Descending
+($m | Where-Object { $_.Guards -notmatch 'ShopScoped|RequireRole' }).Count   # 应为 82
+
+# 依赖坐标
+mvn -B -ntp dependency:tree -Dscope=runtime > target/dependency-tree-runtime.out.log
+
+# OSV 配对查询（保留索引对应关系），再逐 ID 取详情
+# POST https://api.osv.dev/v1/querybatch  { queries: [{package:{name,ecosystem:'Maven'},version}] }
+# GET  https://api.osv.dev/v1/vulns/{id}
+```
+## 附录 G：仓库内已失效的既有文档与对外宣称核对
+
+### G.1 `docs/item7-shopid-audit-report.md` 的核心结论已失效
+
+该报告是仓库内**已提交**的审计文档，但其结论与 2026-09-24 的逐行实测矛盾，**不得作为整改基线**：
+
+| 报告位置 | 原文口径 | 实测结论 |
+|---|---|---|
+| 第 50 行 | “所有涉及多租户业务数据的 Controller 均已覆盖 `@ShopScoped`，合计约 **16 个 Controller、50+ 方法**” | 328 个端点中 **82 个没有任何守卫注解**，且包含已确认的真缺口：`/webhook/{platform}/{eventType}`、`/order/saveOrder`、Agent 记忆全部端点、`/search/**`、`/customer/receiveMessage`、`/logistics/createShipment`、选品相关端点（详见 P0-13…P0-21、附录 F） |
+| 第 23 行 | `OrderController` “✅ 全量” | 存在无守卫写入口 `saveOrder`：订单归属来自请求 body，经 MQ 落库（见 P0-15） |
+| 第 43 行 | `MultiplatformController` “✅ 全量” | 26 个端点中只有 `/webhook/list/{shopId}` 等少数带 `@ShopScoped`；`/webhook/{platform}/{eventType}`、`/product/sync/**`、`/order/{orderId}/ship` 等均无注解（`markShipped` 内部手工 `isShopAllowed`，属 C 类） |
+| 第 44 行 | `CustomerController` / `CustomerEmailController` “✅ 全量” | 客服域存在无守卫端点，且写操作缺少店铺归属校验 |
+| 第 54 行 | `ErpToolExecutor` “在入口（第 100 行）对携带 `shopId` 的工具强制 `UserContext.isShopAllowed(argShopId)`，覆盖全部 28 个工具” | 入口校验确实存在（`ErpToolExecutor.java:121`），但 `hasOperatePermission()`（196-201）在 `role == null` 时 **`return true`**，属于 **fail-open**；“有校验” ≠ “校验 fail-closed”（见 P0-04） |
+
+该报告第 61 行“`analyze_sales_trend` 已从 `TOOLS_IGNORING_SHOP_ID` 白名单移除”（`ErpToolExecutor.java:81-83`）经核对是**真实**的，但它只解决“工具是否需要 shopId”这一层，不解决身份缺失时的放行问题。两类结论必须分开引用，不能互相替代。
+
+### G.2 对外能力宣称与代码事实核对表
+
+| 宣称来源 | 原文 | 代码事实 | 处置 |
+|---|---|---|---|
+| `README.md:43` | 多平台支持 Shopify/eBay/Walmart/Shopee/Lazada | 只有 Temu/TikTok/Shein 有接口与 Real/Mock 实现；无任何其它平台类或分发分支 | 修正 README 或补齐实现 |
+| `docs/es-native-rrf-check.md` | “索引 `amz_product` 存在且有 `embedding` 数据” | 仓库内无 index template、compose 的 ES 官方镜像未装 IK 插件、无索引初始化脚本 | 该文档是**验证前置条件**，不是既成事实；需先建索引再验证 |
+| `docker-compose.yml:137-150` | ES 作为检索依赖 | `xpack.security.enabled=false`、单节点、512m 堆、无插件 | 仅限本地；共享/生产环境必须重建拓扑与安全配置 |
+| README 模块清单与“完成”措辞 | 各服务能力描述 | 见 1.4 业务模型缺口与 1.3 P0 清单 | 以本规格为准 |
+
+### G.3 使用规则
+
+1. 本文档与仓库内既有审计文档冲突时，**以本文档标注的源码行号为准**，并重新执行 F.5 的复现命令核对。
+2. 任何“已完成 / 已支持 / 已通过”的表述，必须同时给出来源：源码路径 + 行号、测试命令 + 输出、或联调记录。三者缺一即为待验证。
+3. 对外材料（README、官网、销售材料、投标文件）在阶段 0 结束前**不得**引用未经核对的模块能力与安全结论。
+
+---
