@@ -2,18 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让「提供凭证即可用」在 SP-API 主链路上真正成立——凭证表能自动创建、缺凭证显式失败、生产 profile 拒绝 mock、Reports/Feeds 闭环正确、限流按官方配额，并提供连接器能力清单与自检端点。第 13 轮追加边界：**“有凭证”必须同时包含“凭证能到达进程”**——16 份部署清单与代码占位符双向对齐（Task 8）、Redis 配置去掉硬编码公网地址（Task 9）。
+**Goal:** 让「提供凭证即可用」在 SP-API 主链路上真正成立——凭证表能自动创建、缺凭证显式失败、生产 profile 拒绝 mock、Reports/Feeds 闭环正确、限流按官方配额，并提供连接器能力清单与自检端点。第 13 轮追加边界：**“有凭证”必须同时包含“凭证能到达进程”**——16 份部署清单与代码占位符双向对齐（Task 8）、Redis 配置去掉硬编码公网地址（Task 9）。第 18 轮追加部署边界：**“能迁移”必须先于“能用凭证”**——Compose 只建空库、k8s 用 Job 建空库、表结构只由 Flyway 维护（Task 1 / Task 4 / Task 10）。
 
-**Architecture:** 不改变现有模块划分与调用方向；改动集中在 `amz-service/amz-service-spapi` 模块内部（凭证、限流、报表闭环、自检），跨模块仍只用既有 Feign 接口（product 的 `SpapiFeedsClient` ↔ spapi 的 `FeedsController`；finance 的 `SpApiFinanceClient` ↔ spapi 的 `FinancialDataController`）。所有新增 HTTP 端点必须带 `@RequireRole` 或 `@ShopScoped` 守卫。
+**Architecture:** 不改变现有模块划分与调用方向；改动集中在 `amz-service/amz-service-spapi` 模块内部（凭证、限流、报表闭环、自检），跨模块仍只用既有 Feign 接口（product 的 `SpapiFeedsClient` ↔ spapi 的 `FeedsController`；finance 的 `SpApiFinanceClient` ↔ spapi 的 `FinancialDataController`）。所有新增 HTTP 端点必须带 `@RequireRole` 或 `@ShopScoped` 守卫。部署侧不改变代码调用方向，但明确禁止把表结构放进 MySQL 初始化目录；Compose 与 k8s 只负责创建空库，Flyway 是唯一建表事实源。
 
 **Tech Stack:** Java 17、Spring Boot 3.3.5、MyBatis-Plus、Flyway 10.20（`flyway-core` + `flyway-mysql`）、dynamic-datasource、MySQL 8、Redis、JUnit 5 + Mockito（`spring-boot-starter-test`）。
 
-**Spec:** `docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`（§1.9 A1–A8、§4.2、§4.6、§4.8 含 4.8.1 配置覆盖率实测、附录 A.3，以及 P0-01 / P0-23 / P0-24 / P0-25 / P0-27 / P0-28 / P0-29 / P0-30 / P0-31 / P0-32）
+**Spec:** `docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`（§1.9 A1–A8、§4.2、§4.6、§4.8 含 4.8.1 配置覆盖率实测、附录 A.3、附录 B，以及 P0-01 / P0-07 / P0-23 / P0-24 / P0-25 / P0-27 / P0-28 / P0-29 / P0-30 / P0-31 / P0-32 / P0-33 / P0-34）
 
 ## Global Constraints
 
 - JDK 17；Maven 用 `C:\Users\Administrator\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd`，并设 `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp`（本机沙箱必需，否则测试失败）。
 - 迁移文件只许递增新增：`V2__shop_credential.sql`、`V3__feed_result_error.sql`；**禁止**修改已发布的 `V1__init.sql`。
+- 表结构只能由 Flyway 创建：`docker/init-sql/` 只保留 `01-init-databases.sql` 且该文件不得含 `CREATE TABLE`/`ALTER TABLE`/`INSERT`；k8s 建库 Job 同样只建空库。禁止再新增 `34_*.sql`、`35_*.sql` 之类的表结构镜像。
+- 所有带 datasource 的 14 个服务显式配置 `spring.flyway.baseline-on-migrate: true` 与 `baseline-version: 1`：空库仍执行 V1；由旧 init SQL 建出的非空库以 V1 为基线后继续执行 V2+。
 - 凭证敏感字段一律 AES-256-GCM 密文落库（`amz-common` 的 `CryptoUtil`），列名以 `_encrypted` 结尾，禁止明文列。
 - 缺凭证 / 未启用**不得**返回空列表、null、`*_MOCK_` 占位单号（A2）；三者必须与"调用失败"用不同返回值表达。
 - 新增端点必须带守卫注解；附录 F 的 82 条无守卫端点只能减少，不能新增。
@@ -31,7 +33,9 @@
 |---|---|---|
 | Create | `amz-service/amz-service-spapi/src/main/resources/db/migration/V2__shop_credential.sql` | SP-API 凭证表，进入 Flyway 唯一入口 |
 | Create | `amz-service/amz-service-spapi/src/main/resources/db/migration/V3__feed_result_error.sql` | Feed 结果报告逐行错误清单 |
-| Create | `docker/init-sql/34_amz_shop_credential.sql`、`docker/init-sql/35_amz_feed_result_error.sql` | Compose 建库镜像（与 Flyway 保持一致） |
+| Modify | `docker/init-sql/01-init-databases.sql` | 唯一建库入口：只建 14 个空库（含 `amz_report`），不建表 |
+| Delete | `docker/init-sql/02-…33-*.sql`、`init_all_tables.sql` | 旧表结构镜像退役；表结构只由 Flyway 维护（Task 1 / Task 10） |
+| Create | `k8s/infra/mysql-init-job.yaml` | k8s 幂等建库 Job，只创建空库（Task 10） |
 | Create | `amz-service/amz-service-spapi/src/main/java/com/amz/credential/ConnectorStartupCheck.java` | 生产启动自检（缺凭证/未启用即拒绝启动） |
 | Create | `amz-service/amz-service-spapi/src/main/java/com/amz/connector/ConnectorRegistry.java` | 连接器能力清单与启用状态的事实源 |
 | Create | `amz-service/amz-service-spapi/src/main/java/com/amz/controller/ConnectorController.java` | `GET /api/connectors`、`POST /api/connectors/{code}/self-test` |
@@ -46,46 +50,51 @@
 
 ---
 
-### Task 1: 凭证表进入唯一迁移入口
+### Task 1: 凭证表进入唯一迁移入口，并补齐所有业务库建库基线
 
 **Files:**
 - Create: `amz-service/amz-service-spapi/src/main/resources/db/migration/V2__shop_credential.sql`
-- Create: `docker/init-sql/34_amz_shop_credential.sql`
+- Modify: `docker/init-sql/01-init-databases.sql`
+- Modify: `docker-compose.yml`（mysql 初始化挂载只保留 `01-init-databases.sql`）
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/credential/CredentialSchemaContractTest.java`
-- Read（勿改）: `amz-service/amz-service-spapi/src/main/resources/db/schema.sql:11-24`、`init_all_tables.sql:459`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DatabaseBootstrapContractTest.java`
+- Read（勿改）: `amz-service/amz-service-spapi/src/main/resources/db/schema.sql:11-24`
 
 **Interfaces:**
 - Produces: 表 `amz_shop_credential`（列 `shop_id` PK、`client_id`、`client_secret_encrypted`、`refresh_token_encrypted`、`access_key_encrypted`、`secret_key_encrypted`、`region`、`marketplace_id`、`seller_id`、`create_time`、`update_time`），供 Task 2、Task 6 使用。
+- Produces: 唯一建库入口 `01-init-databases.sql`，只创建 14 个空库：`amz_user`、`amz_product`、`amz_order`、`amz_search`、`amz_spapi`、`amz_ad`、`amz_procurement`、`amz_customer`、`amz_logistics`、`amz_ops`、`amz_finance`、`amz_multiplatform`、`amz_ai`、`amz_report`。**不得包含任何建表/改表/数据写入语句**。
 
 - [ ] **Step 1: 写失败测试**
 
-新建 `CredentialSchemaContractTest`，从仓库根（`Paths.get(System.getProperty("user.dir")).getParent().getParent()`）读三处 SQL：`amz-service/amz-service-spapi/src/main/resources/db/migration/V2__shop_credential.sql`、`docker/init-sql/34_amz_shop_credential.sql`、`init_all_tables.sql`，断言：三处都含 `CREATE TABLE` + `amz_shop_credential`，且抽取出的列名集合完全一致。
+`CredentialSchemaContractTest` 从仓库根（`Paths.get(System.getProperty("user.dir")).getParent().getParent()`）读取 `V2__shop_credential.sql` 与 `db/schema.sql:11-24`，断言：① V2 含 `CREATE TABLE IF NOT EXISTS amz_shop_credential`；② 从两处抽取的列名集合完全一致；③ `docker/init-sql/**/*.sql` 中没有任何一份复制该表的 `CREATE TABLE`。
+
+`DatabaseBootstrapContractTest` 断言：① `01-init-databases.sql` 的 `CREATE DATABASE` 集合恰好等于上述 14 个库；② 其内容不含 `CREATE TABLE`、`ALTER TABLE`、`INSERT`、`UPDATE`、`DELETE`、`DROP`；③ `docker-compose.yml` 的 mysql 初始化挂载是单文件 `./docker/init-sql/01-init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql:ro`，不是目录挂载；④ `docker/init-sql/` 下只允许这一份 `.sql`。
 
 - [ ] **Step 2: 运行确认失败**
 
-Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=CredentialSchemaContractTest`
-Expected: FAIL（`V2__shop_credential.sql` 与 `34_amz_shop_credential.sql` 不存在）
+Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest='CredentialSchemaContractTest,DatabaseBootstrapContractTest'`
+Expected: FAIL（V2 不存在；`amz_report` 未建；Compose 挂载整个目录；`docker/init-sql` 仍有 31 份旧表结构脚本）
 
 - [ ] **Step 3: 新增 Flyway V2 迁移**
 
-内容取 `db/schema.sql:11-24` 的 DDL，改为 `CREATE TABLE IF NOT EXISTS`，字符集 `utf8mb4`；不写 `DROP`。
+内容取 `db/schema.sql:11-24` 的 DDL，改为 `CREATE TABLE IF NOT EXISTS`，字符集 `utf8mb4`；不写 `DROP`。V2 是 `amz_shop_credential` 的唯一建表入口。
 
-- [ ] **Step 4: 新增 Compose 镜像 `docker/init-sql/34_amz_shop_credential.sql`**
+- [ ] **Step 4: 收敛建库入口并退役旧镜像**
 
-与 V2 完全同构（镜像目录编号 01–33 缺 03，下一个可用号为 34）。
+把 `01-init-databases.sql` 改成只创建 14 个空库并补齐 `amz_report`；删除 `docker/init-sql/02-…33-*.sql` 与根目录 `init_all_tables.sql`（Git 历史仍保留原始内容，不再作为可执行入口）。修改 `docker-compose.yml` 只挂载 `01-init-databases.sql`。**不要新增 `34_amz_shop_credential.sql` 或 `35_amz_feed_result_error.sql`。**
 
 - [ ] **Step 5: 运行测试通过**
 
-Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=CredentialSchemaContractTest`
+Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest='CredentialSchemaContractTest,DatabaseBootstrapContractTest'`
 Expected: PASS
 
-- [ ] **Step 6: 记录 Flyway × dynamic-datasource 的实测结论**
+- [ ] **Step 6: 记录真实启动验证（本机当前无 MySQL 时必须标记未验证）**
 
-在 Task 完成说明里写清：Flyway 默认 `locations=classpath:db/migration`，会与 `dynamic-datasource` 的 `DynamicRoutingDataSource` 组合；必须在目标环境用 `SHOW TABLES LIKE 'amz_shop_credential'` 验证迁移落在 `amz_spapi` 库的 master 节点（本地无 MySQL 时该步留空并标记未验证）。
+在 Task 完成说明中写清预期验证命令与结果位置：全新卷启动 MySQL 后，每个业务库都应由自身 Flyway 生成 `flyway_schema_history`，`amz_spapi` 在 V1 之后执行 V2；用 `SHOW TABLES LIKE 'amz_shop_credential'` 验证迁移落在 `amz_spapi` 的 master 节点。**不要用旧 init SQL 建表后再声称验证通过。**
 
 - [ ] **Step 7: 提交**
 
-`git add` 上述 3 个文件 + 测试；`git commit -m "fix(spapi): 凭证表进入 Flyway 唯一迁移入口并同步 Compose 镜像"`
+`git add` 上述迁移、建库 SQL、Compose 与测试；`git commit -m "fix(spapi,deploy): 凭证表进入 Flyway 唯一入口，Compose 只建空库并补 amz_report"`
 
 ---
 
@@ -187,7 +196,6 @@ Expected: 三个命令均 BUILD SUCCESS
 
 **Files:**
 - Create: `amz-service/amz-service-spapi/src/main/resources/db/migration/V3__feed_result_error.sql`
-- Create: `docker/init-sql/35_amz_feed_result_error.sql`
 - Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java`
 - Modify: `amz-service/amz-service-product/src/main/java/com/amz/service/impl/ListingCopyService.java:236-256`
 - Test: `amz-service/amz-service-spapi/src/test/java/com/amz/client/FeedsResultDocumentTest.java`、`amz-service/amz-service-spapi/src/test/resources/feeds/result-sample.json`
@@ -205,9 +213,9 @@ Expected: 三个命令均 BUILD SUCCESS
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=FeedsResultDocumentTest`
 Expected: FAIL（`fetchFeedResult` 不存在）
 
-- [ ] **Step 3: 新增 V3 迁移与 Compose 镜像**
+- [ ] **Step 3: 新增 V3 迁移（唯一入口）**
 
-表 `amz_feed_result_error`，主键 `id BIGINT AUTO_INCREMENT`，唯一键 `(feed_id, row_index)`，索引 `(shop_id, create_time)`。
+表 `amz_feed_result_error`，主键 `id BIGINT AUTO_INCREMENT`，唯一键 `(feed_id, row_index)`，索引 `(shop_id, create_time)`。只修改 `db/migration/V3__feed_result_error.sql`；不新增 `docker/init-sql/35_*.sql`，旧表结构镜像已在 Task 1 退役。
 
 - [ ] **Step 4: 实现下载与解析**
 
@@ -362,18 +370,18 @@ Expected: 均 BUILD SUCCESS
 ③ `docker-compose.yml` 的 16 个业务服务段满足①②，且 `env_file` 策略显式（统一 `env_file: .env` 或逐项注入，二选一，不允许“看似会加载、实际没有”）；
 ④ `.env.example` 覆盖全部非 Secret 键，且与 k8s ConfigMap 键集合一致；
 ⑤ `k8s/secret.yaml` 的 `AMZ_CRYPTO_KEY` base64 解码后**恰好 32 字节**，`JWT_SECRET_KEY` 满足 `JwtUtil` 长度要求；
-⑥ **反向断言**：`amz-service-report` 这类无 datasource 的模块不得出现 DB/Rabbit/Redis 注入项（当前 19 项属过度注入）。
+⑥ **report 数据源断言**：`amz-service-report` 有 6 个 MyBatis `BaseMapper`、6 个 `@TableName`、Flyway V1 与 MySQL 依赖，必须补齐 `jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/amz_report`、`DB_USERNAME`、`DB_PASSWORD`；不得按“无 DB 模块”删掉 k8s 中对应注入。反向断言只针对真正没有 JDBC/MyBatis 的模块。
 
 `PlaceholderCoverageContractTest` 用正则 `\$\{([A-Z][A-Z0-9_]*)(?::([^}]*))?\}` 提取占位符，**必须显式剔除 `application-local.yml`**——第 13 轮已实测 `MQ_USERNAME`/`MQ_PASSWORD` 只出现在该文件，未剔除会产生假阳性。
 
 - [ ] **Step 2: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest='DeploymentManifestContractTest,PlaceholderCoverageContractTest'`
-Expected: FAIL（当前 15/16 份 Deployment 缺 `NACOS_ADDR`；logistics 缺 15 项、search 缺 10 项、product 缺 7 项、user/procurement 各缺 5 项；Compose `REDIS_HOST` 0 命中、`MYSQL_HOST` 仅 spapi；report 反向多注入）
+Expected: FAIL（当前 15/16 份 Deployment 缺 `NACOS_ADDR`；logistics 缺 15 项、search 缺 10 项、product 缺 7 项、user/procurement 各缺 5 项；Compose `REDIS_HOST` 0 命中、`MYSQL_HOST` 仅 spapi；report 代码已写 6 张表却缺 datasource）
 
 - [ ] **Step 3: 按实测差集修正三处**
 
-以代码占位符为唯一事实源，逐模块补齐 `NACOS_ADDR`、`SPRING_PROFILES_ACTIVE`、`AD_PROFILE_ID`、`MONGO_HOST`、`OSS_ACCESS_KEY_ID/SECRET/BUCKET_NAME`、`ES_URIS`、`EMBEDDING_API_KEY/API_URL/ENABLED/MODEL`、`AMZ_17TRACK_BASE_URL/KEY`、`AMZ_LOGISTICS_*`、`AMZ_TRACKING_ENABLED`、`ALIBABA_APP_KEY/APP_SECRET/REFRESH_TOKEN`、`KINGDEE_APP_ID/APP_SECRET`、`AGENT_AI_CHAT_URL`、`SENTINEL_DASHBOARD` 等缺失键；16 份统一为 `NACOS_ADDR`（删除 `NACOS_SERVER_ADDR` 不一致用法）；Compose 补齐 `MYSQL_HOST`/`REDIS_HOST`/`RABBITMQ_HOST` 到所有依赖模块；Secret 改为外部注入（Sealed Secret / External Secrets / KMS），仓库内只保留长度合法的占位。
+先给 `amz-service-report` 补 datasource 配置（`amz_report` + `MYSQL_HOST`/`MYSQL_PORT`/`DB_USERNAME`/`DB_PASSWORD`），再以代码占位符为唯一事实源，逐模块补齐 `NACOS_ADDR`、`SPRING_PROFILES_ACTIVE`、`AD_PROFILE_ID`、`MONGO_HOST`、`OSS_ACCESS_KEY_ID/SECRET/BUCKET_NAME`、`ES_URIS`、`EMBEDDING_API_KEY/API_URL/ENABLED/MODEL`、`AMZ_17TRACK_BASE_URL/KEY`、`AMZ_LOGISTICS_*`、`AMZ_TRACKING_ENABLED`、`ALIBABA_APP_KEY/APP_SECRET/REFRESH_TOKEN`、`KINGDEE_APP_ID/APP_SECRET`、`AGENT_AI_CHAT_URL`、`SENTINEL_DASHBOARD` 等缺失键；16 份统一为 `NACOS_ADDR`（删除 `NACOS_SERVER_ADDR` 不一致用法）；Compose 补齐 `MYSQL_HOST`/`REDIS_HOST`/`RABBITMQ_HOST` 到所有依赖模块；Secret 改为外部注入（Sealed Secret / External Secrets / KMS），仓库内只保留长度合法的占位。
 
 - [ ] **Step 4: 运行测试通过**
 
@@ -421,11 +429,89 @@ Expected: PASS
 
 ---
 
+### Task 10: k8s 建库 Job、Flyway 基线与两条部署路径一致性门禁
+
+**Files:**
+- Create: `k8s/infra/mysql-init-job.yaml`
+- Modify: 14 个带 datasource 的 `amz-service/*/src/main/resources/application.yml`（ad / ai / customer / finance / logistics / multiplatform / ops / order / procurement / product / report / search / spapi / user）
+- Modify: `k8s/services/*.yaml`（14 个 DB 模块增加等待本模块 schema 的 initContainer）
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentSchemaBootstrapContractTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/deploy/FlywayBaselineContractTest.java`
+- Modify: `README.md`（数据库迁移说明改为“Compose/k8s 只建空库，Flyway 唯一建表”）
+- 依赖：Task 1 已完成 `01-init-databases.sql` 收敛；Task 8 已补齐 report datasource 与部署环境变量。
+
+**Interfaces:**
+- Produces: k8s `amz-mysql-init` Job 幂等创建与 Compose 完全相同的 14 个空库；Job 先等待 MySQL ready，再执行建库 SQL，成功条件为 `Complete`。
+- Produces: 14 个服务统一显式 `spring.flyway.baseline-on-migrate: true`、`baseline-version: 1`、`locations: classpath:db/migration`；由旧 `docker/init-sql` 建出的非空库不会再把 14 个服务全部卡死在启动阶段。
+- Produces: CI 同时守护“Compose 不挂表结构”“k8s 不内嵌表结构”“应用配置不丢 Flyway 基线”“14 个模块等待各自 schema”四类回归。
+
+- [ ] **Step 1: 写失败测试**
+
+`DeploymentSchemaBootstrapContractTest` 断言：
+① `docker/init-sql/` 仅含 `01-init-databases.sql`，且该文件无任何表 DDL/DML；仓库根不再存在可执行的 `init_all_tables.sql`；
+② `docker-compose.yml` 的 mysql 初始化只挂载该单文件；
+③ `k8s/infra/mysql-init-job.yaml` 中的 ConfigMap SQL 抽出的库集合与 `01-init-databases.sql` 完全一致，且不包含 `CREATE TABLE`；Job 从 `amz-erp-secret` 读取 `DB_USERNAME/DB_PASSWORD`，并在 `mysqladmin ping` 成功后才执行；
+④ `k8s/services/*.yaml` 中 14 个 DB 模块分别等待 `amz_user` / `amz_product` / `amz_order` / `amz_search` / `amz_spapi` / `amz_ad` / `amz_procurement` / `amz_customer` / `amz_logistics` / `amz_ops` / `amz_finance` / `amz_multiplatform` / `amz_ai` / `amz_report`，不得缺项或串库。
+
+`FlywayBaselineContractTest` 断言：
+① 14 个 application.yml 均显式包含 `baseline-on-migrate: true` 与 `baseline-version: 1`，不依赖框架默认或命令行参数；
+② `locations` 均为 `classpath:db/migration`；
+③ 扫描全部 `db/migration/*.sql`，唯一表集合仍为 106 张，且不含 `docker/init-sql` 的第二建表入口；
+④ 两条部署路径的建库集合严格等于 14 个库，不能多也不能少。
+
+- [ ] **Step 2: 运行确认失败**
+
+Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest='DeploymentSchemaBootstrapContractTest,FlywayBaselineContractTest'`
+Expected: FAIL（k8s Job 不存在；14 份 application.yml 无 Flyway 基线；仍有模块缺少 schema 等待；当前仓库保留旧表结构镜像）
+
+- [ ] **Step 3: 配置 Flyway 基线**
+
+在 14 个 `application.yml` 的 `spring` 下增加：
+
+```yaml
+  flyway:
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 1
+```
+
+空库仍从 V1 执行；非空存量库由 Flyway 写入 V1 baseline 后执行 V2+。不得再把 `--spring.flyway.baseline-on-migrate=true` 只放在 `.start-backend-final.bat` 里。
+
+- [ ] **Step 4: 新增 k8s 建库 Job 与 schema 等待**
+
+`mysql-init-job.yaml` 包含：只建 14 个空库的 ConfigMap、`batch/v1` Job（`backoffLimit`、`activeDeadlineSeconds`、`restartPolicy: Never`），以及等待 MySQL ready 的 shell 循环。14 个 Deployment 增加 initContainer：连接 `$MYSQL_HOST:$MYSQL_PORT`，查询 `information_schema.schemata` 确认本模块 schema 已存在后才启动主容器。Job 与 initContainer 均不得包含表结构。
+
+- [ ] **Step 5: 更新 README 并运行测试通过**
+
+README 删除“挂载 init-sql 目录初始化全部表”的暗示，改为“Compose/k8s 只建空库，各服务启动时由 Flyway 迁移”。随后运行与 Step 2 相同命令，Expected: PASS。
+
+- [ ] **Step 6: 目标环境真实验证（本机无 Docker/MySQL 时不得声称通过）**
+
+```powershell
+# 仅在可丢弃的本地卷上执行；会删除当前 Compose 数据
+docker compose down -v
+docker compose up -d mysql
+docker compose ps
+# 目标环境分别验证 amz_spapi / amz_report 的 flyway_schema_history、V1/V2 版本与表集合
+
+kubectl apply -f k8s/infra/mysql-init-job.yaml
+kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
+```
+
+记录每个库的 `SELECT version, success FROM flyway_schema_history ORDER BY installed_rank;`，并验证 14 个库均存在。若无法执行，标记“静态验证通过、运行未验证”。
+
+- [ ] **Step 7: 提交**
+
+`git commit -m "fix(deploy): k8s 建库 Job + 14 模块 Flyway 基线 + schema 引导契约测试"`
+
+---
+
 ## 验证与完成定义（Definition of Done）
 
 - [ ] 单模块：`mvn -B -ntp -pl amz-service/amz-service-spapi -am test` 全绿；受影响模块（product / finance / logistics）各自全绿。
 - [ ] 全量：`mvn -B -ntp clean test`（19 模块）全绿；后端用例数不少于当前 527。
-- [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）在 CI 中运行且不可跳过。
+- [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）、schema 引导/建库契约测试（Task 10）在 CI 中运行且不可跳过。
+- [ ] 部署 schema：`docker/init-sql/` 只有 `01-init-databases.sql` 且无表 DDL；Compose 与 k8s 都只建 14 个空库；14 个服务显式配置 `baseline-on-migrate: true`；Flyway 唯一表集合为 106 张。
 - [ ] 配置卫生：`grep -r "121.37.250.15"` 命中 0；`grep -rn "spring\.redis\.host"` 命中 0；`NACOS_SERVER_ADDR` 在部署清单中命中 0（统一 `NACOS_ADDR`）。
 - [ ] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
@@ -440,6 +526,8 @@ Expected: PASS
 5. Task 9 的运行时探针只证明了“连不上第三方公网地址”（45,292 ms 超时）。目标环境 Redis 可达后，仍需验证密码、DB index、Sentinel/Cluster 拓扑三项；不能以“端口能连”替代这三点。
 6. Task 8 的差集基线取自 2026-09-24 的仓库快照（PyYAML 6.0.3 解析）。若实现期新增配置键，契约测试会立即失败——这是刻意设计，修清单而不是放松断言。
 7. **`JSON_LISTINGS_FEED` 的专属配额未取到官方正文**：developer-docs 页面本轮抓取失败，Task 5 先按 `createFeed` 默认值 0.0083/15 实现并在代码注释中标注差异；拿到官方 guide 数值后必须补分档。同理，`FeedsClient.java:54` 的 `Content-Type: application/json`（无 `charset`）是否被官方接受，只能由沙箱联调确认，不得凭猜测修改。
+8. **P0-33 / P0-34 目前是静态推断**：本机无 MySQL/Redis、Docker daemon 未运行，尚未复跑 Compose/k8s。必须在可丢弃环境执行 Task 10 Step 6，确认空库路径能跑通 V1/V2、旧非空库能按 V1 baseline 后跑 V2；未执行前只能称“静态验证通过、运行未验证”。
+9. **baseline 可能跳过 V1 的校验**：Flyway 对非空且无 history 的旧库以 V1 建基线时，不会重新执行/校验 V1。虽然建表脚本与迁移的**表集合**已实测覆盖，但列、索引、默认值仍可能漂移；上线前需对存量库做 schema 对照与抽样校验，不能把 `baseline-on-migrate=true` 当作 schema 正确性的证明。
 
 ## 后续计划（不在本计划内）
 
