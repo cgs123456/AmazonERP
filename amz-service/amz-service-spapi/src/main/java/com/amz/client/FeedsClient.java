@@ -3,6 +3,7 @@ package com.amz.client;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.ErrorSummary;
 import com.amz.connector.HttpTransport;
 import com.amz.connector.MarketplaceRegistry;
 import com.amz.connector.SpApiEndpointResolver;
@@ -207,9 +208,21 @@ public class FeedsClient {
      * 将 Feed 内容 PUT 上传到 S3 预签名地址（无需额外 AWS 签名，预签名 URL 已携带鉴权参数）。
      */
     private void uploadDocument(String uploadUrl, String contentType, String content) {
-        // 预签名 URL 自带鉴权参数：绝不注入 LWA token / AWS 签名（P0-50）
-        HttpRequest request = requestFactory.presigned("PUT", uploadUrl, contentType, content,
-                Duration.ofSeconds(30));
+        HttpRequest request;
+        try {
+            // 预签名 URL 自带鉴权参数：绝不注入 LWA token / AWS 签名（P0-50）
+            request = requestFactory.presigned("PUT", uploadUrl, contentType, content,
+                    Duration.ofSeconds(30));
+        } catch (RuntimeException e) {
+            // 与 SpApiGateway.downloadBytes 同一漏洞面（P0-53），只是入口在写侧：
+            // URI.create 失败时 JDK 会把完整预签名 URL 回显进异常文本，而**上传**预签名 URL
+            // 携带的是写权限。只回显对象路径 + 已脱敏原因，且不链 cause
+            // （controller 的 log.error(..., e) 会打印整条链，链上原异常仍带完整 URL）。
+            String path = ErrorSummary.objectPath(uploadUrl);
+            String reason = ErrorSummary.redact(e.getMessage());
+            log.warn("presigned upload rejected path={} reason={}", path, reason);
+            throw new RuntimeException("upload request rejected path=" + path + " reason=" + reason);
+        }
         try {
             HttpResponse<String> response = httpTransport.send(request,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
@@ -221,7 +234,8 @@ public class FeedsClient {
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            throw new RuntimeException("uploadDocument error: " + e.getMessage(), e);
+            // 传输层异常文本同样过脱敏：HttpClient 的传输异常一般不嵌 URL，但不做假设（P0-53）
+            throw new RuntimeException("uploadDocument error: " + ErrorSummary.redact(e.getMessage()), e);
         }
     }
 

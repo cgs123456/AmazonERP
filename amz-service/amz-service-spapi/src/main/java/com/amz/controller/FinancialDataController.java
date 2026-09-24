@@ -7,6 +7,7 @@ import com.amz.client.ReportsClient;
 import com.amz.client.dto.FeeEstimate;
 import com.amz.client.dto.FinancialEvent;
 import com.amz.client.dto.ReportInfo;
+import com.amz.connector.ErrorSummary;
 import com.amz.result.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +61,7 @@ public class FinancialDataController {
             return Result.success(reportId);
         } catch (Exception e) {
             log.error("requestReport failed shopId={} reportType={}", shopId, reportType, e);
-            return Result.failure("报表请求失败：" + e.getMessage());
+            return Result.failure("报表请求失败：" + ErrorSummary.of(e));
         }
     }
 
@@ -75,7 +76,7 @@ public class FinancialDataController {
             return Result.success(reportsClient.getReport(shopId, reportId));
         } catch (Exception e) {
             log.error("getReport failed shopId={} reportId={}", shopId, reportId, e);
-            return Result.failure("报表状态查询失败：" + e.getMessage());
+            return Result.failure("报表状态查询失败：" + ErrorSummary.of(e));
         }
     }
 
@@ -90,7 +91,7 @@ public class FinancialDataController {
             return Result.success(reportsClient.downloadDocument(shopId, documentId));
         } catch (Exception e) {
             log.error("downloadDocument failed shopId={} documentId={}", shopId, documentId, e);
-            return Result.failure("报表文档下载失败：" + e.getMessage());
+            return Result.failure("报表文档下载失败：" + ErrorSummary.of(e));
         }
     }
 
@@ -106,7 +107,7 @@ public class FinancialDataController {
             return Result.success(financesClient.listFinancialEvents(shopId, postedAfter, postedBefore));
         } catch (Exception e) {
             log.error("listEvents failed shopId={}", shopId, e);
-            return Result.failure("结算事件拉取失败：" + e.getMessage());
+            return Result.failure("结算事件拉取失败：" + ErrorSummary.of(e));
         }
     }
 
@@ -131,7 +132,7 @@ public class FinancialDataController {
             return Result.failure(e.getMessage());
         } catch (Exception e) {
             log.error("estimateFees failed shopId={} idType={} idValue={}", shopId, idType, idValue, e);
-            return Result.failure("费用预估失败：" + e.getMessage());
+            return Result.failure("费用预估失败：" + ErrorSummary.of(e));
         }
     }
 }

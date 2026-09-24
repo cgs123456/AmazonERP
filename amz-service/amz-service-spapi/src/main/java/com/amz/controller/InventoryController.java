@@ -1,6 +1,7 @@
 package com.amz.controller;
 import com.amz.annotation.ShopScoped;
 
+import com.amz.connector.ErrorSummary;
 import com.amz.mapper.FbaInventoryMapper;
 import com.amz.model.FbaInventory;
 import com.amz.result.Result;
@@ -77,7 +78,7 @@ public class InventoryController {
             return Result.success(synced);
         } catch (Exception e) {
             log.error("manual sync inventory failed shopId={}", shopId, e);
-            return Result.failure("sync failed");
+            return Result.failure("sync failed: " + ErrorSummary.of(e));
         }
     }
 }

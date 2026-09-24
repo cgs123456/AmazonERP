@@ -1,6 +1,7 @@
 package com.amz.controller;
 
 import com.amz.client.FeedsClient;
+import com.amz.connector.ErrorSummary;
 import com.amz.context.UserContext;
 import com.amz.result.Result;
 import com.google.gson.JsonElement;
@@ -53,7 +54,7 @@ public class FeedsController {
             return Result.success(feedId);
         } catch (Exception e) {
             log.error("FeedsController.submit failed shopId={}", request.getShopId(), e);
-            return Result.failure("feed submit failed");
+            return Result.failure("feed submit failed: " + ErrorSummary.of(e));
         }
     }
 
@@ -79,7 +80,7 @@ public class FeedsController {
             return Result.success(map);
         } catch (Exception e) {
             log.error("FeedsController.status failed shopId={} feedId={}", shopId, feedId, e);
-            return Result.failure("feed status failed");
+            return Result.failure("feed status failed: " + ErrorSummary.of(e));
         }
     }
 

@@ -2,6 +2,7 @@ package com.amz.controller;
 
 import com.amz.annotation.ShopScoped;
 import com.amz.client.OrdersClient;
+import com.amz.connector.ErrorSummary;
 import com.amz.context.UserContext;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
@@ -107,7 +108,7 @@ public class SpapiController {
             return Result.success(orders.size());
         } catch (Exception e) {
             log.error("manual sync orders failed shopId={}", shopId, e);
-            return Result.failure("sync failed");
+            return Result.failure("sync failed: " + ErrorSummary.of(e));
         }
     }
 

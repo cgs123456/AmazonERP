@@ -3,6 +3,7 @@ package com.amz.client;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.ErrorSummary;
 import com.amz.connector.HttpTransport;
 import com.amz.connector.MarketplaceRegistry;
 import com.amz.connector.SpApiEndpointResolver;
@@ -131,20 +132,40 @@ public class SpApiGateway {
 
     /**
      * 下载任意 URL 的原始字节（用于 S3 预签名文档地址，无需再签名）。
+     * <p>
+     * <b>P0-53</b>：{@code url} 是<b>预签名地址</b>——{@code X-Amz-Signature} / {@code X-Amz-Credential}
+     * 等查询参数本身就是凭证（有效期内可被任何人直接下载结算原表）。而本方法抛出的异常文本
+     * 会被 controller 返回给调用方并写入错误日志，因此这里<b>只回显状态码 + 对象路径</b>，
+     * 不拼接完整 URL，也不回显 S3 错误体（{@code SignatureDoesNotMatch} 等错误体会内嵌规范请求/凭证材料）。
+     * 上层如需更强的兜底，边界层还会再走 {@link com.amz.connector.ErrorSummary#redact(String)}。
      */
     public byte[] downloadBytes(String url) {
-        // 预签名 URL 自带鉴权参数：绝不注入 LWA token / AWS 签名（P0-50）
-        HttpRequest request = requestFactory.presigned("GET", url, null, null, Duration.ofSeconds(60));
+        HttpRequest request;
+        try {
+            // 预签名 URL 自带鉴权参数：绝不注入 LWA token / AWS 签名（P0-50）
+            request = requestFactory.presigned("GET", url, null, null, Duration.ofSeconds(60));
+        } catch (RuntimeException e) {
+            // URI 构造失败时 JDK 会把完整 URL 回显在异常文本里（与 P0-53 同类泄露，只是入口不同）。
+            // 刻意**不链 cause**：controller 用 log.error(..., e) 打印整条异常链，
+            // 链上原异常仍带完整预签名 URL，等于把漏洞从响应搬到日志。
+            String path = ErrorSummary.objectPath(url);
+            String reason = ErrorSummary.redact(e.getMessage());
+            log.warn("presigned download rejected path={} reason={}", path, reason);
+            throw new RuntimeException("download request rejected path=" + path + " reason=" + reason);
+        }
         try {
             HttpResponse<byte[]> response = httpTransport.send(request, HttpResponse.BodyHandlers.ofByteArray());
             if (response.statusCode() != 200) {
-                throw new RuntimeException("download failed status=" + response.statusCode() + " url=" + url);
+                log.warn("presigned download failed status={} path={}", response.statusCode(), ErrorSummary.objectPath(url));
+                throw new RuntimeException("download failed status=" + response.statusCode()
+                        + " path=" + ErrorSummary.objectPath(url));
             }
             return response.body();
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            throw new RuntimeException("download error: " + e.getMessage(), e);
+            throw new RuntimeException("download error path=" + ErrorSummary.objectPath(url)
+                    + ": " + ErrorSummary.redact(e.getMessage()), e);
         }
     }
 
