@@ -27,7 +27,8 @@
 
 - README 或旧计划中的“全部完成”“测试通过”“546 单测通过”不能证明生产成熟度；测试数量不是生产准入条件，安全、功能、恢复和数据正确性验证才是。
 - 前端 `npm run test:run` 与 `npm run build` 曾在当前工作区通过，但这只能证明前端单元测试和构建通过。
-- 本轮未在本地编译后端、未执行后端单测、未启动完整 Compose；因此本文**不宣称**后端测试或端到端启动通过。
+- 后端已在本轮实测通过：19 个模块全量编译成功、后端单测 `527 执行 / 0 失败 / 0 错误 / 2 跳过`（明细见 1.2 节）。这只证明“主代码可编译、现有单测可跑绿”，**不证明**运行期行为、生产配置、多实例一致性或端到端启动正确。
+- 本轮未启动完整 Compose、未做端到端联调、未跑 Playwright、未与真实 SP-API 联通；因此本文**不宣称**系统可端到端启动或已与亚马逊生产接口打通。
 - 仓库文档声明的平台能力必须以真实客户端和真实联调为准。例如 README 声明的 Shopify/eBay/Walmart/Shopee/Lazada 能力，需要与 `amz-service-multiplatform` 的真实客户端实现逐项核对后才能对外宣称。
 
 ### 0.3 工作假设与需要确认的决策
@@ -58,7 +59,42 @@
   - README 写 54 张。
   这说明建表源、升级脚本和文档之间没有单一事实源。
 
-### 1.2 生产阻断项（P0）
+### 1.2 本轮实测的构建与测试基线（可复现）
+
+在评审基线上，使用仓库外的便携工具链（Microsoft OpenJDK 17.0.20.1 + Apache Maven 3.9.11，不污染仓库）实测：
+
+| 项目 | 本轮实测结果 | 能证明什么 / 不能证明什么 |
+|---|---|---|
+| 全量编译 | 19/19 模块 `BUILD SUCCESS` | 证明主代码可编译；仅 deprecation/unchecked 警告 |
+| 后端单测 | `Tests run: 527, Failures: 0, Errors: 0, Skipped: 2`（15 个模块产出报告，累计约 52 秒） | 证明现有单测在隔离环境可跑绿；不证明运行期与生产配置正确 |
+| 跳过用例 | `SpApiIntegrationTest` 2 例跳过 | 由 `@EnabledIfEnvironmentVariable(RUN_INTEGRATION_TESTS=true)` 控制；即**真实 SP-API 联调在默认 CI 中并不执行** |
+| 前端单测/构建 | `npm run test:run` 133/133 通过、`npm run build` 通过 | 只证明前端单测与构建；39 个 Playwright 用例仅枚举、未执行 |
+| 前端依赖漏洞 | `npm audit` 报告 10 个（7 high / 3 moderate） | 未修复，属于发布前必须清零或书面豁免的项 |
+
+复现命令（PowerShell，仓库根目录，工具链路径按本机实际替换）：
+
+```powershell
+$env:JAVA_HOME='<jdk17-home>'; $env:PATH="$env:JAVA_HOME\bin;$env:PATH"
+mvn -B -ntp -fae test
+```
+
+**环境陷阱（不是项目缺陷，但会污染结论）**：在 Codex Desktop for Windows 的子进程环境中，JDK 的 NIO selector 初始化会失败：
+
+```
+java.io.UncheckedIOException: ... Unable to establish loopback connection
+Caused by: java.net.SocketException: Invalid argument: connect
+    at sun.nio.ch.UnixDomainSockets.connect0
+```
+
+该现象由宿主环境引起，与仓库代码无关（公开问题单：`openai/codex` issue #40902，状态 open）。它表现为 `com.amz.auth.LwaTokenManagerTest` 9 个用例报错、后续模块被跳过，从而把“527 全绿”误读成“9 errors”。同一 JDK 在外层普通 PowerShell 中可正常运行；在同类沙箱中执行测试时，需显式设置：
+
+```powershell
+$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
+```
+
+**为什么不把“测试全绿”当作上线依据**：本基线中没有任何用例覆盖真实 SP-API、真实数据库迁移、多实例一致性、限流退避、Outbox/Inbox 重放、PII 留存或灾备恢复；这些恰恰是 P0/P1 缺口所在。测试全绿与生产可上线是两件事。
+
+### 1.3 生产阻断项（P0）
 
 以下是“必须修复后才能上线”的问题，而不是普通优化项。
 
@@ -77,7 +113,7 @@
 | P0-11 | 店铺凭证非多副本一致事实源 | `ShopCredentialStore` 进程内缓存 + DB，DB 写失败只告警，无版本/失效机制 | 凭证以 KMS/Vault/数据库单一事实源为准；带版本、轮换、失效和审计 |
 | P0-12 | 基础设施与内部端口公开、默认凭据占位 | Compose 暴露 3306/6379/5672/9200/8888/8889 等；`k8s/secret.yaml` 为已提交占位值；ES 无安全；Nacos/Grafana 默认配置 | 基础设施仅集群内访问；Secret 由外部密钥系统注入；TLS、认证、网络策略和默认拒绝全部生效 |
 
-### 1.3 业务模型缺口
+### 1.4 业务模型缺口
 
 | 域 | 当前状态 | 生产缺口 |
 |---|---|---|
@@ -92,7 +128,7 @@
 | 多平台 | Webhook 无鉴权/验签；事件唯一键不含店铺；同步去重键不含店铺；部分事件只写日志 | 平台适配层、签名验证、`(platform, shop_id, event_id)` 唯一、统一订单映射与重放 |
 | 消息/异步 | 部分消费者有手动 ack 与 DLQ，但通知消费者只记日志；分布式锁 Redis 不可用时 fail-open；异步线程丢上下文 | Inbox/Outbox、幂等消费、重试/DLQ/重放、锁 fail-closed、上下文传播 |
 
-### 1.4 外部对标
+### 1.5 外部对标
 
 已调研的代表性项目如下。它们只能作为工程参考，不能直接假定许可证或能力适配本项目的商业使用。
 
@@ -103,7 +139,7 @@
 | wimoor-erp/wimoor | 亚马逊 ERP 业务域覆盖广；MIT 许可证 | Spring Boot 2.0/JDK 8 技术栈偏旧，不宜照搬 |
 | mcp-amazon-sp-api | 55+ SP-API 工具、自动分页、throttle-aware retry | 只解决集成调用层，不解决 ERP 事实模型 |
 
-### 1.5 Amazon 官方约束摘要
+### 1.6 Amazon 官方约束摘要
 
 以下为工程设计依据，具体条款以官方最新文档和法务意见为准：
 
@@ -122,7 +158,7 @@
   - https://developer-docs.amazon.com/sp-api/lang-US/docs/guidance-to-address-key-security-controls-in-sp-api-integration
   - https://developer-docs.amazon.com/sp-api/docs/mcf-best-practices
 
-### 1.6 十条生产准入门槛
+### 1.7 十条生产准入门槛
 
 1. 生产环境禁 mock；任何 mock/模拟依赖在 `prod` profile 启动时必须失败。
 2. 身份、租户、店铺、字段权限全部 fail-closed；内部接口必须服务身份 + mTLS。
