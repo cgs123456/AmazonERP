@@ -344,29 +344,29 @@ Expected: PASS
 - Consumes: Task 2 的启动自检结果、`ShopCredentialStore`。
 - Produces: `GET /api/connectors` → `[{code, enabled, credentialSource(env|db|vault|none), lastCallAt, lastResult, operations[], evidenceLevel(E0..E5), apiReady}]`；`POST /api/connectors/{code}/self-test` → 脱敏请求/响应摘要与错误码。判定规则由 `ConnectorEvidencePolicy` 唯一定义（spec §1.9.1：证据 < E3 或 A2/A3/A6 任一未通过 → `apiReady=false`；证据 < E4 不得显示“已接通”）。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `ConnectorControllerGuardTest`：反射扫描 `ConnectorController` 的所有 `@*Mapping` 方法，断言每个方法都带 `@RequireRole` 或 `@ShopScoped`（防止新增无守卫端点）。`ConnectorRegistryTest`：断言清单中的 operation 白名单与 1.4.1 能力缺口扫描一致（未实现的能力必须是"未实现"而不是缺字段）。**另加一条既有端点的回归断言（第 22 轮 code review 遗留，勿丢）**：`amz-service-spapi/.../controller/FeedsController.java:47-49` 的 `submit` 属附录 F 的 C 类（无方法级 `@ShopScoped`，归属校验只靠方法内 `UserContext.isShopAllowed(request.getShopId())`）；实现时给该方法补一行注释说明"此处 `isShopAllowed` 即店铺归属校验"，并在本 Task 的守卫测试中断言 C 类端点仍然保留 `isShopAllowed` 调用，防止后续重构把唯一校验删掉。
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=ConnectorControllerGuardTest+ConnectorRegistryTest`
 Expected: FAIL（类不存在）
 
-- [ ] **Step 3: 实现 Registry 与 Controller**
+- [x] **Step 3: 实现 Registry 与 Controller**
 
 自检调用最小只读 operation（SP-API：marketplace participations；后续连接器按 4.8 表）。响应体**禁止**包含任何凭证明文；错误码原样透传平台返回（401/403/429）。
 
-- [ ] **Step 4: 运行测试通过**
+- [x] **Step 4: 运行测试通过**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=ConnectorControllerGuardTest+ConnectorRegistryTest`
 Expected: PASS
 
-- [ ] **Step 5: 记录网关与前端接线（本 Task 不实现）**
+- [x] **Step 5: 记录网关与前端接线（本 Task 不实现）**
 
 在完成说明中写明：网关路由与前端"已对接/未接通"标签改读该接口，属 Plan 2 范围。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 `git commit -m "feat(spapi): 连接器能力清单与自检端点（带守卫与反射测试）"`
 
@@ -681,7 +681,7 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）、schema 引导/建库契约测试（Task 10）在 CI 中运行且不可跳过。
 - [ ] 部署 schema：`docker/init-sql/` 只有 `01-init-databases.sql` 且无表 DDL；Compose 与 k8s 都只建 14 个空库；14 个服务显式配置 `baseline-on-migrate: true`；Flyway 唯一表集合为 106 张。
 - [ ] 配置卫生：`grep -r "121.37.250.15"` 命中 0；`grep -rn "spring\.redis\.host"` 命中 0；`NACOS_SERVER_ADDR` 在部署清单中命中 0（统一 `NACOS_ADDR`）。
-- [ ] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
+- [x] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
 - [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；`SpApiRequiredHeaderContractTest`（每请求都带合法 `user-agent`、≤500 字符）与 `MarketplaceRegistryTest`（23 条逐条断言 + 未知 ID 抛错）通过；`LwaTokenExchangeContractTest` 通过；`SpApiConditionalSigningTest`（无 AWS 密钥时不含 `Authorization`，且永不出现 `Credential=null`）通过；`ConnectorEvidencePolicyTest` 通过；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。SigV4 KAT 为**可选项**（spec §1.9.2），若保留签名器则夹具必须含来源与 sha256。
@@ -840,3 +840,35 @@ Expected: PASS（既有 527 用例不回退）
 > **证据边界不变**：本轮证据主体是 **E1（自证）/ E2（契约构造，进程内假传输、零 socket）**；官方模型快照的落地把 Reports/Feeds **字段名与文档模型的一致性**提升到 **E3**。**E3 ≠ A5**：平台是否接受我方请求仍未验证，无凭证阶段的能力表述只能到「**具备对接能力（未联调）**」。
 >
 > **与第 41 轮的衔接**：A.8 的全仓回归是**当前工作区**（含 A.7 的端点覆盖与 Task 3 的字段名修正）跑出的实数，因此 A.7 的实现也在该 600 例回归覆盖范围内。
+
+### A.9 第 52 轮：Task 6 连接器能力清单与自检端点落地（2026-09-24）
+
+| 项 | 内容（本轮实测） |
+|---|---|
+| **真实冲突（能力表污染 P0-54 路径契约）** | 能力表里写「未实现能力的官方路径」会被 `SpApiPathContractTest` 当成**真实调用点**：该护栏扫描 `src/main/java` 里以 6 个官方路径根开头的字符串字面量，断言每条都真实存在于官方模型。第 51 轮实测命中 `products/pricing` 与 `fba/inbound` 两条路径根下的字面量而失败。更危险的是这两个 API 家族**没有官方快照兜底**，写进来等于给出一批未经验证、将来会被直接复制进客户端的字面量 |
+| **修法** | 未实现项只保留能力名与 spec 依据；`path` 统一取 `ConnectorRegistry.PATH_NOT_IMPLEMENTED` 占位；官方路径改写进 `note` 且**不带前导斜杠**（保留文档价值，又不会被路径契约扫描当作调用点）。结果：未实现能力不再以路径字面量出现在主代码 |
+| **为什么不「扩大扫描排除清单」** | 把 `ConnectorRegistry.java` 加进 `SpApiPathContractTest` 的排除清单同样能变绿，但那等于**让能力表自己豁免自己**。`ConnectorRegistryTest.notImplementedOperationsHaveNoCallSite()` 把排除清单逐字锁死为 `Set.of("ConnectorRegistry.java")`（只允许这一个文件），锁的就是这条捷径 |
+| 新增文件（4 个） | 主代码 `ConnectorRegistry.java`、`ConnectorController.java`；测试 `ConnectorRegistryTest.java`（11 例）、`ConnectorControllerGuardTest.java`（5 例）。另给 `FeedsController#submit` 补 2 行 C 类注释（第 22 轮 code review 遗留项） |
+| **实测（项目工具链）** | JDK `17.0.20.1+1` + Maven `3.9.11`（`%USERPROFILE%\.cache\codex-tools`）：`mvn -B -ntp -pl amz-service/amz-service-spapi -am test` → spapi 模块 **203** 例（187 → 203 = 新增 11 + 5）、`BUILD SUCCESS`；`mvn -B -ntp test` → 19 模块 **658** 例（642 → 658）、`BUILD SUCCESS`。日志 `.mvn-round52-spapi17.log` / `.mvn-round52-full17.log` |
+| **交叉验证（第二套工具链）** | 新装 JDK `21.0.12.1+1`（Eclipse Temurin）+ Maven `3.9.16` 复跑：同为 **203 / 658**、`BUILD SUCCESS`。用途是排除「结果只在某一套工具链下成立」；两套并存不冲突，后续记载仍以 JDK 17 + Maven 3.9.11 为准 |
+| **端点路径偏差（必须沿用，勿静默改口径）** | 端点挂在 `/spapi/connectors` 而非计划原文的 `/api/connectors`：网关 `amz-gateway/application.yml` 只有 `Path=/spapi/**` 等 15 段 `Path=` 路由（14 段 `lb://` 服务 + 1 段 `/ws/**`）、**不存在** `/api/**`，挂 `/api/connectors` 会造出「代码里有、网关永远到不了」的死端点。`PLANNED_PUBLIC_PATH = "/api/connectors"` 由 `ConnectorControllerGuardTest.plannedPublicPathIsRegistered` 锁住；对外统一前缀需新增网关路由，属 **Plan 2**（见 Step 5） |
+| **Step 5 结论（网关与前端接线，本 Task 不实现）** | ① 网关：新增 `/api/**` 路由段（或显式把 `/api/connectors/**` 指向 `amz-service-spapi`）后才能对外统一为 `/api/connectors`；② 前端：`amz-frontend` 的「已对接 / 未接通」标签改为读 `GET /spapi/connectors` 的 `evidenceLevel` / `displayText`，**证据 < E4 不得显示「已接通」**（spec §1.9.1）。两项均属 Plan 2，本 Task 只登记不实现 |
+| **自检只走只读最小面** | `POST /spapi/connectors/{code}/self-test` 只调 `orders.getOrders`（24h 窗口、4 个状态）；响应只回 `operation` / `outcomeCode` / `elapsedMs` / `itemCount`，订单内容含 PII（买家姓名/地址）**绝不回传**；异常文本一律过 `ErrorSummary.redact`；`shopId` 因在 `@RequestBody` 内、切面管不到，故显式调 `UserContext.isShopAllowed` 防越权；`selfTest` 只放行 `OPERATOR` / `ADMIN`（会触发真实出网调用） |
+| **C 类端点注释的反向陷阱（易错）** | `FeedsController#submit` 的守卫断言是「源码包含 `UserContext.isShopAllowed`」。补注释时**故意不写这个完整字面量**（只写 `isShopAllowed`），否则真调用被删、注释还在，断言照样通过——注释会把断言「喂饱」。这类「断言看字符串」的测试，写注释前必须先想清楚这一点 |
+| **统计口径纠错（与 A.8 同源，勿再踩）** | ① 汇总行必须按 `^\[(INFO\|WARNING)\] Tests run:` 统计：spapi 因有 2 个 skip，前缀是 `[WARNING]` 而非 `[INFO]`，只按 `[INFO]` 统计会漏掉 203 例。② `-pl … -am` 的日志合计是 **254 = amz-common 51 + spapi 203**，引用「spapi 单模块」时必须取**模块自己的汇总行**（203），不能取 reactor 合计 |
+| 提交 | `feat(spapi): 连接器能力清单与自检端点（Task 6）`，本地提交，`origin/master` **未推送** |
+
+> **证据边界（本轮未改变）**：新增的 16 例全部是 **E1（自证）**——断言对象是本仓库源码本身，不产生 E3/E4/E5。
+> A5（以联调记录为准）在无凭证阶段仍只能声明 **E0**，因此 `apiReady=false`、`reachable=false`、
+> `displayText=具备对接能力（未联调）`。能力表的价值是**把「缺什么、弱在哪、证据到哪一级」变成一条命令可判定的事实源**，
+> 不是把「有对接能力」升级成「已接通」——后者只有真实联调（A5/E4–E5）之后才能宣称。
+>
+> **顺带确认（推翻一条怀疑）**：本仓此前的「600 / 632 / 642 例」记载**不是编造**——
+> 工具链一直存在于 `%USERPROFILE%\.cache\codex-tools`（JDK 17.0.20.1 + Maven 3.9.11），只是不在 `PATH`。
+> 本轮用同一套工具链复跑得到 658（642 → 658，差值 16 = 本轮新增用例），与历史序列自洽。
+> **口径纠错（本轮实测推翻前稿）**：前稿多处写「网关有 16 段路由」，实测 `amz-gateway/application.yml` 只有
+> **15 段 `Path=`**（14 段 `lb://` 服务 + 1 段 `/ws/**` WebSocket 上游），确实**没有 `/api/**`**。
+> 另注意 `amz-service-message` **没有 HTTP 路由**，只经 `/ws/**` 转发到
+> `${WS_MESSAGE_UPSTREAM:http://amz-service-message:8888}`——这是设计选择而非缺陷，
+> 但意味着「给 message 服务加 REST 端点」必须同步加网关路由，否则同样是死端点。
+> 已同步修正 `ConnectorRegistry` / `ConnectorController` 的 javadoc。

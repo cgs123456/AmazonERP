@@ -45,6 +45,8 @@ public class FeedsController {
                 || request.getMarketplaceId() == null || request.getContent() == null) {
             return Result.failure("shopId / marketplaceId / content 均不能为空");
         }
+        // 附录 F C 类端点：本方法无 @ShopScoped，下面这行 isShopAllowed 是唯一的店铺归属校验。
+        // 删除它 submit 就变成无归属校验的写端点；ConnectorControllerGuardTest 会锁住这行。
         if (!UserContext.isShopAllowed(request.getShopId())) {
             return Result.failure("无权限操作该店铺 shopId=" + request.getShopId());
         }

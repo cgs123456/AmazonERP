@@ -460,7 +460,7 @@ pwsh -File tools/connector-acceptance/run.ps1 -Selftest
 
 ---
 
-### 7.1 第 50 轮复跑（Task 5 限流改造后）
+### 7.3 第 50 轮复跑（Task 5 限流改造后）
 
 同一组命令的复跑结果（2026-09-24）：
 
@@ -487,6 +487,50 @@ pwsh -File tools/connector-acceptance/run.ps1 -Selftest
 （A5 需凭证联调）。
 
 ---
+
+### 7.4 第 52 轮复跑（Task 6：连接器能力清单与自检端点）
+
+命令（实测，2026-09-24，项目自有工具链）：
+
+```powershell
+$env:JAVA_HOME = "$env:USERPROFILE\.cache\codex-tools\jdk-17.0.20.1+1"
+& "$env:USERPROFILE\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd" -B -ntp -pl amz-service/amz-service-spapi -am test
+& "$env:USERPROFILE\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd" -B -ntp test
+```
+
+| 项 | 实测结果 |
+|---|---|
+| `amz-service-spapi` 单模块 | **Tests run: 203, Failures: 0, Errors: 0, Skipped: 2**，`BUILD SUCCESS`（187 → 203 = 本轮新增 `ConnectorRegistryTest` **11 例** + `ConnectorControllerGuardTest` **5 例**） |
+| 全仓 `mvn -B -ntp test` | 19 模块 `BUILD SUCCESS`，**Tests run: 658, Failures: 0, Errors: 0, Skipped: 2**（642 → 658） |
+| 交叉验证（第二套工具链） | 新装 JDK `21.0.12.1+1` + Maven `3.9.16` 复跑同为 **203 / 658**、`BUILD SUCCESS`（排除工具链偏差） |
+| `SpApiPathContractTest` | 仍 **4/4 PASS**——本轮未放宽任何断言即解决冲突（详见下条） |
+
+本轮解决的一个**真实冲突**（写入能力表时踩到，勿重犯）：
+
+能力表最初把「未实现能力的官方路径」写进 `path` 字段，结果被 `SpApiPathContractTest`（P0-54 护栏）
+当成**真实调用点**——该测试扫描 `src/main/java` 里以 6 个官方路径根开头的字符串字面量并断言其存在于官方模型，
+实测命中 `products/pricing` 与 `fba/inbound`。修法是**不让未实现项以路径字面量出现在主代码**：
+`path` 取占位值 `PATH_NOT_IMPLEMENTED`，真实官方路径写进 `note` 且不带前导斜杠。
+**没有**采用「把 `ConnectorRegistry.java` 加进扫描排除清单」这条捷径——那等于让能力表自己豁免自己。
+
+`ConnectorRegistryTest` 的 11 个用例（要点）：
+
+| 用例 | 断言 |
+|---|---|
+| `implementedOperationsHaveRealCallSites` | 已实现的 11 条 operation 必须在 `src/main/java` 有真实调用点（排除能力表自身，排除集被逐字锁死） |
+| `notImplementedOperationsHaveNoCallSite` | 7 条未实现能力的关键词在 `src/main/java` 命中 **0**（否则「未实现」是假声明） |
+| `notImplementedOperationsCarryEvidenceNote` | 未实现项必须显式在列且 `note` 非空（防止前端把「无代码」渲染成「未配置」） |
+| `a5IsE0WithoutRealIntegration` + `assessmentStaysHonest` | A5 无联调记录 → 声明 E0，`apiReady=false`、`reachable=false`、`displayText=具备对接能力（未联调）` |
+| `credentialSourceNeverClaimsUnimplementedSources` | `credentialSource` 只输出 `db` / `none`，永不输出未实现的 `env` / `vault` |
+| `mockProfileIsReported` | mock profile 激活时如实上报 `mockActive`，且此时 `apiReady=false`（mock 下的「成功」不算证据） |
+| `selfTestResultIsRecorded` | 自检结果可回读、可清除回 `NEVER_RUN`；`lastCallAt` 从未执行时为 null（不伪造时间） |
+| `operationsAreImmutable` / `describeAllContainsOnlyRegisteredConnectors` | 能力表不可变；渲染结果不含 `clientSecret` / `refreshToken` / `AKIA` 等任何凭证字段 |
+
+**证据边界**：本条列全部为 **E1（自证）**——断言对象是本仓库源码。它让「支持什么、缺什么、证据到哪一级」
+变成一条命令可判定的事实源，但**不证明平台会接受我方请求**；后者仍要等凭证到位、按 §3 对真实服务跑一次（A5 / E4–E5）。
+
+> 口径提醒：全仓计数必须按 `^\[(INFO\|WARNING)\] Tests run:` 统计（spapi 汇总行因有 skip 而是 `[WARNING]` 前缀）；
+> `-pl … -am` 的 reactor 合计是 **254 = amz-common 51 + spapi 203**，引用「spapi 单模块」时取 203。
 
 ## 8. 未验证与风险（诚实清单）
 
