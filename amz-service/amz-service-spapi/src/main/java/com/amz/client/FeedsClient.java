@@ -1,10 +1,12 @@
 package com.amz.client;
 
-import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.HttpTransport;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiRequestFactory;
+import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -12,22 +14,19 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Map;
 
 /**
  * Amazon SP-API Feeds v2021-06-30 真实客户端。
  * <p>
  * 鉴权与容错模式与 {@link FbaInventoryClient} 保持一致：LWA Token（LwaTokenManager）
- * + AWS Sig V4 签名（AwsSigV4Signer）+ 429 指数退避重试（sendWithRetry）。
+ * + 统一请求构造（SpApiRequestFactory：必填 user-agent、条件签名、预签名 URL 不携带凭证）
+ * + 429 指数退避重试（sendWithRetry）。
  * 区域（NA/EU/FE）到 SP-API 端点与签名区域的映射也与 FbaInventoryClient 一致。
  * <p>
  * 完整实现 Listing Feed 提交流程：
@@ -64,31 +63,35 @@ public class FeedsClient {
      * 未登记的 marketplaceId 或 region 直接抛 {@link com.amz.connector.UnknownMarketplaceException}，
      * 不再静默回落默认区域。
      */
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
-
-    @Autowired
-    private LwaTokenManager lwaTokenManager;
-
-    @Autowired
-    private AwsSigV4Signer awsSigV4Signer;
-
-    @Autowired
-    private ShopCredentialStore shopCredentialStore;
+    private final HttpTransport httpTransport;
+    private final LwaTokenManager lwaTokenManager;
+    private final ShopCredentialStore shopCredentialStore;
+    private final SpApiRequestFactory requestFactory;
 
     /**
      * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
      */
-    @Autowired(required = false)
-    private ObjectProvider<MeterRegistry> meterRegistryProvider;
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
 
     /**
      * 统一滑动窗口限流器（feeds 端点默认 30 req/30s 兜底，按店铺维度隔离）。
      * SP-API Feeds 官方配额较紧（createFeed 约 0.0083 req/s），此处保守前置限流。
      */
-    @Autowired
-    private com.amz.ratelimit.SpiRateLimiter spiRateLimiter;
+    private final SpiRateLimiter spiRateLimiter;
+
+    public FeedsClient(HttpTransport httpTransport,
+                       LwaTokenManager lwaTokenManager,
+                       ShopCredentialStore shopCredentialStore,
+                       SpiRateLimiter spiRateLimiter,
+                       SpApiRequestFactory requestFactory,
+                       ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this.httpTransport = httpTransport;
+        this.lwaTokenManager = lwaTokenManager;
+        this.shopCredentialStore = shopCredentialStore;
+        this.spiRateLimiter = spiRateLimiter;
+        this.requestFactory = requestFactory;
+        this.meterRegistryProvider = meterRegistryProvider;
+    }
 
     /**
      * 提交 Listing Feed，返回 SP-API feedId。
@@ -133,18 +136,11 @@ public class FeedsClient {
         String accessToken = lwaTokenManager.getToken(shop.credential);
 
         String path = FEEDS_PATH + "/" + feedId;
-        Map<String, String> signedHeaders = awsSigV4Signer.sign(
-                "GET", shop.host, path, "", "",
-                shop.credential.getAccessKey(), shop.credential.getSecretKey(), shop.region);
+        HttpRequest request = requestFactory.spApi(
+                "GET", shop.endpoint, shop.host, shop.awsRegion, path, null, null,
+                accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(shop.endpoint + path))
-                .timeout(Duration.ofSeconds(30))
-                .GET();
-        signedHeaders.forEach(builder::header);
-        builder.header("x-amz-access-token", accessToken);
-
-        HttpResponse<String> response = sendWithRetry(builder.build());
+        HttpResponse<String> response = sendWithRetry(request);
         if (response == null || response.statusCode() != 200) {
             int status = response == null ? -1 : response.statusCode();
             // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
@@ -178,7 +174,9 @@ public class FeedsClient {
                 marketplaceId, credential.getMarketplaceId(), credential.getRegion(), "shopId=" + shopId);
         String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
         String host = MarketplaceRegistry.resolveHost(region);
-        return new ResolvedShop(credential, region, endpoint, host);
+        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
+        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
+        return new ResolvedShop(credential, region, endpoint, host, awsRegion);
     }
 
     /**
@@ -189,18 +187,11 @@ public class FeedsClient {
         req.addProperty("contentType", contentType);
         String body = req.toString();
 
-        Map<String, String> signedHeaders = awsSigV4Signer.sign(
-                "POST", shop.host, DOCUMENTS_PATH, "", body,
-                shop.credential.getAccessKey(), shop.credential.getSecretKey(), shop.region);
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(shop.endpoint + DOCUMENTS_PATH))
-                .timeout(Duration.ofSeconds(30))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
-        signedHeaders.forEach(builder::header);
-        builder.header("x-amz-access-token", accessToken);
+        HttpRequest request = requestFactory.spApi(
+                "POST", shop.endpoint, shop.host, shop.awsRegion, DOCUMENTS_PATH, null, body,
+                accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        HttpResponse<String> response = sendWithRetry(builder.build());
+        HttpResponse<String> response = sendWithRetry(request);
         if (response == null || (response.statusCode() != 200 && response.statusCode() != 201)) {
             throw new RuntimeException("createFeedDocument failed status="
                     + (response == null ? -1 : response.statusCode())
@@ -213,14 +204,11 @@ public class FeedsClient {
      * 将 Feed 内容 PUT 上传到 S3 预签名地址（无需额外 AWS 签名，预签名 URL 已携带鉴权参数）。
      */
     private void uploadDocument(String uploadUrl, String contentType, String content) {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(uploadUrl))
-                .timeout(Duration.ofSeconds(30))
-                .header("Content-Type", contentType)
-                .PUT(HttpRequest.BodyPublishers.ofString(content, StandardCharsets.UTF_8))
-                .build();
+        // 预签名 URL 自带鉴权参数：绝不注入 LWA token / AWS 签名（P0-50）
+        HttpRequest request = requestFactory.presigned("PUT", uploadUrl, contentType, content,
+                Duration.ofSeconds(30));
         try {
-            HttpResponse<String> response = httpClient.send(request,
+            HttpResponse<String> response = httpTransport.send(request,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
                 throw new RuntimeException("uploadDocument failed status=" + response.statusCode()
@@ -247,18 +235,11 @@ public class FeedsClient {
         req.addProperty("inputFeedDocumentId", feedDocumentId);
         String body = req.toString();
 
-        Map<String, String> signedHeaders = awsSigV4Signer.sign(
-                "POST", shop.host, FEEDS_PATH, "", body,
-                shop.credential.getAccessKey(), shop.credential.getSecretKey(), shop.region);
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(shop.endpoint + FEEDS_PATH))
-                .timeout(Duration.ofSeconds(30))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
-        signedHeaders.forEach(builder::header);
-        builder.header("x-amz-access-token", accessToken);
+        HttpRequest request = requestFactory.spApi(
+                "POST", shop.endpoint, shop.host, shop.awsRegion, FEEDS_PATH, null, body,
+                accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        HttpResponse<String> response = sendWithRetry(builder.build());
+        HttpResponse<String> response = sendWithRetry(request);
         if (response == null || (response.statusCode() != 200 && response.statusCode() != 202)) {
             throw new RuntimeException("createFeed failed status="
                     + (response == null ? -1 : response.statusCode())
@@ -274,7 +255,7 @@ public class FeedsClient {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                response = httpTransport.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("HTTP send interrupted attempt={}", attempt);
@@ -332,19 +313,24 @@ public class FeedsClient {
     }
 
     /**
-     * 店铺解析结果：凭证 + 区域 + 端点 + 主机名。
+     * 店铺解析结果：凭证 + 分组区域码 + 端点 + 主机名 + AWS region。
+     * <p>
+     * {@code region} 是分组码（NA/EU/FE，决定端点主机），{@code awsRegion} 参与 SigV4 作用域。
      */
     private static final class ResolvedShop {
         final ShopCredential credential;
         final String region;
         final String endpoint;
         final String host;
+        final String awsRegion;
 
-        ResolvedShop(ShopCredential credential, String region, String endpoint, String host) {
+        ResolvedShop(ShopCredential credential, String region, String endpoint, String host,
+                     String awsRegion) {
             this.credential = credential;
             this.region = region;
             this.endpoint = endpoint;
             this.host = host;
+            this.awsRegion = awsRegion;
         }
     }
 }

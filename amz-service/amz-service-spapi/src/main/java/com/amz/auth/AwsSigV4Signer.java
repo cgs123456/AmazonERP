@@ -55,6 +55,17 @@ public class AwsSigV4Signer {
         String amzDate = now.format(TIME_FORMAT);
         String dateStamp = now.format(DATE_FORMAT);
 
+        // P0-38 有条件签名：缺 AK/SK（含仅空白）时不进签名分支，只给 x-amz-date。
+        // 依据（一手）：官方 connecting-to-the-selling-partner-api 页的 "no signing information"
+        // 示例只带 host / user-agent / x-amz-access-token / x-amz-date，没有 Authorization；
+        // Amazon 自 2023-10-02 起忽略 SigV4。保留签名能力仅作前向保险，
+        // 且绝不允许产出 Credential=null 之类的垃圾头。
+        if (isBlank(accessKey) || isBlank(secretKey)) {
+            Map<String, String> unsigned = new LinkedHashMap<>();
+            unsigned.put("x-amz-date", amzDate);
+            return unsigned;
+        }
+
         String canonicalHeaders = "host:" + host + "\n"
                 + "x-amz-date:" + amzDate + "\n";
         String signedHeaders = "host;x-amz-date";
@@ -81,6 +92,10 @@ public class AwsSigV4Signer {
         headers.put("x-amz-date", amzDate);
         headers.put("Authorization", authorizationHeader);
         return headers;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     /**

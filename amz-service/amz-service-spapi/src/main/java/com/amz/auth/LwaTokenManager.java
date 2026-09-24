@@ -1,6 +1,7 @@
 package com.amz.auth;
 
 import com.amz.config.SpApiConfig;
+import com.amz.connector.HttpTransport;
 import com.amz.credential.ShopCredential;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -19,7 +20,6 @@ import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -34,6 +34,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * 提供 {@link #invalidate(String)}（按 clientId 批量驱逐）与
  * {@link #invalidate(ShopCredential)}（精确驱逐单店铺）两种失效方式，
  * 在凭证失效（如 401）时主动清除缓存。
+ * <p>
+ * <b>出站传输（Task 11）：</b>token 交换走 {@link HttpTransport}，因此请求契约
+ * （endpoint / 表单 / 状态码 / 失败面）可在零 socket 的进程内桩上断言（证据 E2）。
+ * 生产装配由 Spring 注入 {@code HttpTransport} Bean；保留无参构造器供既有单测与
+ * 显式装配使用，此时在**首次出站**才惰性创建 JDK {@code HttpClient}
+ * （构造期不建连接，缺少网络栈的环境也能构造并使用缓存路径）。
+ * <p>
+ * <b>失败策略（P0-49）：</b>全部 fail-closed——缺 access_token、非 200、传输异常、
+ * 摘要算法不可用，一律抛异常，绝不返回空 token 或退化摘要继续调用。
  */
 @Component
 public class LwaTokenManager {
@@ -44,6 +53,9 @@ public class LwaTokenManager {
      * Token 提前刷新阈值：过期前 5 分钟视为即将过期，触发刷新。
      */
     private static final Duration REFRESH_AHEAD = Duration.ofMinutes(5);
+
+    /** LWA token 端点请求超时（官方端点对端到端时延敏感）。 */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
 
     /**
      * key = clientId:sha256(refreshToken)，value = 对应的 token 缓存条目。
@@ -56,12 +68,37 @@ public class LwaTokenManager {
      */
     private final ConcurrentHashMap<String, Object> keyLocks = new ConcurrentHashMap<>();
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    /**
+     * 显式注入的出站传输（生产由 Spring 注入；亦由契约测试注入进程内桩）。
+     */
+    private final HttpTransport injectedTransport;
 
+    /**
+     * 无参构造路径惰性创建的默认传输；volatile + 双重检查，避免每次出站都重建。
+     */
+    private volatile HttpTransport lazyTransport;
+
+    /**
+     * 保留字段注入：兼容既有单测（ReflectionTestUtils 注入）与无参构造路径。
+     */
     @Autowired
     private SpApiConfig spApiConfig;
+
+    /**
+     * 无参构造器：保留给既有单测与显式装配；出站传输在首次使用时惰性创建。
+     */
+    public LwaTokenManager() {
+        this.injectedTransport = null;
+    }
+
+    /**
+     * 生产构造路径：显式注入出站传输与配置（Task 11 契约测试锁定该签名）。
+     */
+    @Autowired
+    public LwaTokenManager(HttpTransport transport, SpApiConfig spApiConfig) {
+        this.injectedTransport = transport;
+        this.spApiConfig = spApiConfig;
+    }
 
     /**
      * 计算凭证对应的缓存键。包内可见以便单测复用同一套键推导逻辑。
@@ -127,6 +164,10 @@ public class LwaTokenManager {
 
     /**
      * 调用 LWA 端点刷新 access_token。
+     * <p>
+     * 官方契约（一手）：{@code POST https://api.amazon.com/auth/o2/token}，
+     * {@code Content-Type: application/x-www-form-urlencoded}，表单含
+     * {@code grant_type=refresh_token} / {@code refresh_token} / {@code client_id} / {@code client_secret}。
      */
     private TokenEntry refreshToken(ShopCredential credential) {
         String form = "grant_type=refresh_token"
@@ -137,19 +178,28 @@ public class LwaTokenManager {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(spApiConfig.getLwaEndpoint()))
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .timeout(Duration.ofSeconds(15))
+                .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(form, StandardCharsets.UTF_8))
                 .build();
 
         try {
-            HttpResponse<String> response = httpClient.send(request,
+            HttpResponse<String> response = transport().send(request,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() != 200) {
                 throw new RuntimeException("LWA token refresh failed status=" + response.statusCode()
                         + " body=" + response.body());
             }
             JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
+            if (!json.has("access_token") || json.get("access_token").isJsonNull()) {
+                throw new RuntimeException("LWA token refresh response missing access_token clientId="
+                        + credential.getClientId());
+            }
             String accessToken = json.get("access_token").getAsString();
+            if (accessToken.isBlank()) {
+                // 空白 token 会导致后续请求全部 401，必须在源头失败
+                throw new RuntimeException("LWA token refresh returned blank access_token clientId="
+                        + credential.getClientId());
+            }
             int expiresIn = json.has("expires_in") && !json.get("expires_in").isJsonNull()
                     ? json.get("expires_in").getAsInt() : 3600;
             Instant expiresAt = Instant.now().plusSeconds(expiresIn);
@@ -162,10 +212,50 @@ public class LwaTokenManager {
         }
     }
 
+    /**
+     * 返回本次出站使用的传输：优先显式注入的实现，否则惰性创建 JDK HttpClient 适配器。
+     */
+    private HttpTransport transport() {
+        HttpTransport explicit = injectedTransport;
+        if (explicit != null) {
+            return explicit;
+        }
+        HttpTransport lazy = lazyTransport;
+        if (lazy == null) {
+            synchronized (this) {
+                lazy = lazyTransport;
+                if (lazy == null) {
+                    lazy = createDefaultTransport();
+                    lazyTransport = lazy;
+                }
+            }
+        }
+        return lazy;
+    }
+
+    private static HttpTransport createDefaultTransport() {
+        try {
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+            return httpClient::send;
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "无法创建默认 JDK HttpClient（缺少可用网络栈/事件循环）：请注入 HttpTransport Bean", e);
+        }
+    }
+
     private String encode(String value) {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
     }
 
+    /**
+     * 计算 SHA-256 十六进制摘要（用于缓存键，避免明文 refresh_token 进日志/堆转储）。
+     * <p>
+     * P0-49：旧实现 catch 后静默退化为 {@code Integer.toHexString(hashCode)}——
+     * 那是 32 位非密码学摘要，会让不同 refresh_token 碰撞到同一缓存键（跨店铺串号）。
+     * 现在 fail-closed：算法不可用即抛异常，绝不降级。
+     */
     private static String sha256Hex(String input) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -176,8 +266,7 @@ public class LwaTokenManager {
             }
             return sb.toString();
         } catch (Exception e) {
-            // JVM 均支持 SHA-256，理论不可达；兜底退化为 hashCode 避免中断鉴权链路
-            return Integer.toHexString(Objects.hashCode(input));
+            throw new IllegalStateException("SHA-256 不可用，拒绝退化为非密码学摘要（fail-closed）", e);
         }
     }
 

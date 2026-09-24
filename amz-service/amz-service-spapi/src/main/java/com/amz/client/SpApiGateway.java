@@ -1,10 +1,12 @@
 package com.amz.client;
 
-import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.HttpTransport;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiRequestFactory;
+import com.amz.ratelimit.SpiRateLimiter;
 import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -12,12 +14,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +25,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * SP-API 统一调用网关：签名 + LWA Token + 限流 + 429 退避重试 + 指标。
+ * SP-API 统一调用网关：统一请求构造（条件签名 + 必填 user-agent）+ LWA Token + 限流 + 429 退避重试 + 指标。
  * <p>
  * 与 {@link FeedsClient} / {@link OrdersClient} 内部实现保持同一套容错模式
  * （429 指数退避、RateLimit 头回填本地窗口、401/403 驱逐 LWA 缓存），
@@ -48,25 +47,27 @@ public class SpApiGateway {
      * 未登记的 marketplaceId 或 region 直接抛 {@link com.amz.connector.UnknownMarketplaceException}，
      * 不再静默回落默认区域。
      */
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    private final HttpTransport httpTransport;
+    private final LwaTokenManager lwaTokenManager;
+    private final ShopCredentialStore shopCredentialStore;
+    private final SpApiRequestFactory requestFactory;
 
-    @Autowired
-    private LwaTokenManager lwaTokenManager;
+    private final SpiRateLimiter spiRateLimiter;
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
 
-    @Autowired
-    private AwsSigV4Signer awsSigV4Signer;
-
-    @Autowired
-    private ShopCredentialStore shopCredentialStore;
-
-    @Autowired
-    private SpiRateLimiter spiRateLimiter;
-
-    /** Micrometer 指标注册表（软依赖，未配置时退化为无指标）。 */
-    @Autowired(required = false)
-    private ObjectProvider<MeterRegistry> meterRegistryProvider;
+    public SpApiGateway(HttpTransport httpTransport,
+                        LwaTokenManager lwaTokenManager,
+                        ShopCredentialStore shopCredentialStore,
+                        SpiRateLimiter spiRateLimiter,
+                        SpApiRequestFactory requestFactory,
+                        ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this.httpTransport = httpTransport;
+        this.lwaTokenManager = lwaTokenManager;
+        this.shopCredentialStore = shopCredentialStore;
+        this.spiRateLimiter = spiRateLimiter;
+        this.requestFactory = requestFactory;
+        this.meterRegistryProvider = meterRegistryProvider;
+    }
 
     /**
      * 解析店铺凭证与 SP-API 端点/区域信息（P0-36 fail-closed）。
@@ -84,7 +85,9 @@ public class SpApiGateway {
                 marketplaceId, credential.getMarketplaceId(), credential.getRegion(), "shopId=" + shopId);
         String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
         String host = MarketplaceRegistry.resolveHost(region);
-        return new ResolvedShop(credential, region, endpoint, host);
+        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
+        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
+        return new ResolvedShop(credential, region, endpoint, host, awsRegion);
     }
 
     /**
@@ -103,27 +106,13 @@ public class SpApiGateway {
         String accessToken = lwaTokenManager.getToken(shop.credential);
         spiRateLimiter.acquire(shop.credential.getShopId(), endpointTag);
 
-        String canonicalQuery = query == null ? "" : query;
-        String canonicalBody = body == null ? "" : body;
-        Map<String, String> signedHeaders = awsSigV4Signer.sign(
-                method, shop.host, path, canonicalQuery, canonicalBody,
-                shop.credential.getAccessKey(), shop.credential.getSecretKey(), shop.region);
+        // 统一构造点：host / x-amz-date / 条件 Authorization / 必填 user-agent / x-amz-access-token
+        // （P0-35 / P0-38 / P0-48 / P0-50 的规则全部收敛在 SpApiRequestFactory）
+        HttpRequest request = requestFactory.spApi(
+                method, shop.endpoint, shop.host, shop.awsRegion, path, query, body,
+                accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        String uri = shop.endpoint + path
-                + (canonicalQuery.isEmpty() ? "" : "?" + canonicalQuery);
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(uri))
-                .timeout(Duration.ofSeconds(30));
-        if ("POST".equalsIgnoreCase(method)) {
-            builder.header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(canonicalBody, StandardCharsets.UTF_8));
-        } else {
-            builder.GET();
-        }
-        signedHeaders.forEach(builder::header);
-        builder.header("x-amz-access-token", accessToken);
-
-        HttpResponse<String> response = sendWithRetry(builder.build(), endpointTag, shop);
+        HttpResponse<String> response = sendWithRetry(request, endpointTag, shop);
         int status = response == null ? -1 : response.statusCode();
         if (status == 401 || status == 403) {
             lwaTokenManager.invalidate(shop.credential);
@@ -142,13 +131,10 @@ public class SpApiGateway {
      * 下载任意 URL 的原始字节（用于 S3 预签名文档地址，无需再签名）。
      */
     public byte[] downloadBytes(String url) {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(60))
-                .GET()
-                .build();
+        // 预签名 URL 自带鉴权参数：绝不注入 LWA token / AWS 签名（P0-50）
+        HttpRequest request = requestFactory.presigned("GET", url, null, null, Duration.ofSeconds(60));
         try {
-            HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> response = httpTransport.send(request, HttpResponse.BodyHandlers.ofByteArray());
             if (response.statusCode() != 200) {
                 throw new RuntimeException("download failed status=" + response.statusCode() + " url=" + url);
             }
@@ -168,7 +154,7 @@ public class SpApiGateway {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                response = httpTransport.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("HTTP send interrupted attempt={}", attempt);
@@ -247,19 +233,25 @@ public class SpApiGateway {
     }
 
     /**
-     * 店铺解析结果：凭证 + 区域 + 端点 + 主机名。
+     * 店铺解析结果：凭证 + 分组区域码 + 端点 + 主机名 + AWS region。
+     * <p>
+     * {@code region} 是分组码（NA/EU/FE，决定端点主机），{@code awsRegion} 是
+     * 参与 SigV4 作用域的真实 AWS region（P0-48：两者不可混用）。
      */
     public static final class ResolvedShop {
         public final ShopCredential credential;
         public final String region;
         public final String endpoint;
         public final String host;
+        public final String awsRegion;
 
-        public ResolvedShop(ShopCredential credential, String region, String endpoint, String host) {
+        public ResolvedShop(ShopCredential credential, String region, String endpoint, String host,
+                            String awsRegion) {
             this.credential = credential;
             this.region = region;
             this.endpoint = endpoint;
             this.host = host;
+            this.awsRegion = awsRegion;
         }
     }
 }

@@ -1,10 +1,12 @@
 package com.amz.client;
 
-import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.HttpTransport;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiRequestFactory;
+import com.amz.ratelimit.SpiRateLimiter;
 import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -13,18 +15,14 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 
-import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -35,8 +33,9 @@ import java.util.TreeMap;
 /**
  * Amazon SP-API Orders v0 客户端。
  * <p>
- * 使用 JDK HttpClient + Gson 调用 /orders/v0/orders 接口，
- * 通过 {@link LwaTokenManager} 获取 access_token，{@link AwsSigV4Signer} 进行 Sig V4 签名。
+ * 使用 {@link com.amz.connector.HttpTransport} 发送、Gson 解析响应；
+ * 出站请求统一由 {@link com.amz.connector.SpApiRequestFactory} 构造
+ * （必填 user-agent / 条件 Sig V4 签名 / LWA token）。
  * 内置 429 限流重试与 NextToken 分页拉取。
  */
 @Component
@@ -61,31 +60,35 @@ public class OrdersClient {
      * 未登记的 marketplaceId 或 region 直接抛 {@link com.amz.connector.UnknownMarketplaceException}，
      * 不再静默回落默认区域。
      */
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
-
-    @Autowired
-    private LwaTokenManager lwaTokenManager;
-
-    @Autowired
-    private AwsSigV4Signer awsSigV4Signer;
-
-    @Autowired
-    private ShopCredentialStore shopCredentialStore;
+    private final HttpTransport httpTransport;
+    private final LwaTokenManager lwaTokenManager;
+    private final ShopCredentialStore shopCredentialStore;
+    private final SpApiRequestFactory requestFactory;
 
     /**
      * SP-API 通用限流器：按 (shopId, endpoint) 维度滑动窗口，并支持根据
      * x-amzn-RateLimit-Limit 响应头动态收紧窗口上限。
      */
-    @Autowired
-    private SpiRateLimiter spiRateLimiter;
+    private final SpiRateLimiter spiRateLimiter;
 
     /**
      * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
      */
-    @Autowired(required = false)
-    private ObjectProvider<MeterRegistry> meterRegistryProvider;
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
+
+    public OrdersClient(HttpTransport httpTransport,
+                        LwaTokenManager lwaTokenManager,
+                        ShopCredentialStore shopCredentialStore,
+                        SpiRateLimiter spiRateLimiter,
+                        SpApiRequestFactory requestFactory,
+                        ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this.httpTransport = httpTransport;
+        this.lwaTokenManager = lwaTokenManager;
+        this.shopCredentialStore = shopCredentialStore;
+        this.spiRateLimiter = spiRateLimiter;
+        this.requestFactory = requestFactory;
+        this.meterRegistryProvider = meterRegistryProvider;
+    }
 
     /**
      * Orders 端点标识，用于限流维度与动态调整。
@@ -117,25 +120,20 @@ public class OrdersClient {
         String region = MarketplaceRegistry.resolveRegion(marketplaceId);
         String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
         String host = MarketplaceRegistry.resolveHost(region);
+        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
+        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
 
         String accessToken = lwaTokenManager.getToken(credential);
 
         spiRateLimiter.acquire(shopId, ORDERS_ENDPOINT);
 
         String path = ORDER_ITEMS_PATH + amazonOrderId + "/orderItems";
-        Map<String, String> signedHeaders = awsSigV4Signer.sign(
-                "GET", host, path, "", "",
-                credential.getAccessKey(), credential.getSecretKey(), region);
-
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint + path))
-                .timeout(Duration.ofSeconds(30))
-                .GET();
-        signedHeaders.forEach(builder::header);
-        builder.header("x-amz-access-token", accessToken);
+        HttpRequest request = requestFactory.spApi(
+                "GET", endpoint, host, awsRegion, path, null, null,
+                accessToken, credential.getAccessKey(), credential.getSecretKey());
 
         try {
-            HttpResponse<String> response = sendWithRetry(builder.build(), ORDERS_ENDPOINT);
+            HttpResponse<String> response = sendWithRetry(request, ORDERS_ENDPOINT);
             if (response == null || response.statusCode() != 200) {
                 log.warn("fetchOrderItems failed orderId={} status={}",
                         amazonOrderId, response == null ? -1 : response.statusCode());
@@ -178,6 +176,8 @@ public class OrdersClient {
         String region = MarketplaceRegistry.resolveRegion(marketplaceId);
         String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
         String host = MarketplaceRegistry.resolveHost(region);
+        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
+        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
 
         String accessToken = lwaTokenManager.getToken(credential);
 
@@ -200,20 +200,11 @@ public class OrdersClient {
             }
             String queryString = buildCanonicalQueryString(params);
 
-            Map<String, String> signedHeaders = awsSigV4Signer.sign(
-                    "GET", host, ORDERS_PATH, queryString, "",
-                    credential.getAccessKey(), credential.getSecretKey(), region);
+            HttpRequest request = requestFactory.spApi(
+                    "GET", endpoint, host, awsRegion, ORDERS_PATH, queryString, null,
+                    accessToken, credential.getAccessKey(), credential.getSecretKey());
 
-            String url = endpoint + ORDERS_PATH + "?" + queryString;
-            HttpRequest.Builder builder = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(30))
-                    .GET();
-            signedHeaders.forEach(builder::header);
-            // LWA access_token 通过 x-amz-access-token 透传，不参与 Sig V4 签名
-            builder.header("x-amz-access-token", accessToken);
-
-            HttpResponse<String> response = sendWithRetry(builder.build(), ORDERS_ENDPOINT);
+            HttpResponse<String> response = sendWithRetry(request, ORDERS_ENDPOINT);
             if (response == null || response.statusCode() != 200) {
                 int status = response == null ? -1 : response.statusCode();
                 // 401/403：access_token 失效或被吊销，主动驱逐缓存，
@@ -269,7 +260,7 @@ public class OrdersClient {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                response = httpTransport.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("HTTP send interrupted attempt={}", attempt);

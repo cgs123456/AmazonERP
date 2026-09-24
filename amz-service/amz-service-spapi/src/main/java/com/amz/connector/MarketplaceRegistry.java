@@ -54,6 +54,24 @@ public final class MarketplaceRegistry {
         HOST_BY_REGION = Collections.unmodifiableMap(hosts);
     }
 
+    /**
+     * 分组码（NA/EU/FE）→ 官方 AWS region（P0-48）。
+     * <p>
+     * 依据（一手，2026-09-24）：官方 connecting-to-the-selling-partner-api 页给出
+     * 北美 us-east-1、欧洲 eu-west-1、远东 us-west-2。
+     * <b>分组码不是 AWS region</b>：旧实现把 "NA" 直接塞进 SigV4 作用域，
+     * 产出 {@code .../NA/execute-api/aws4_request} 这类无效凭证作用域。
+     */
+    private static final Map<String, String> AWS_REGION_BY_GROUP;
+
+    static {
+        Map<String, String> awsRegions = new LinkedHashMap<>();
+        awsRegions.put(REGION_NA, "us-east-1");
+        awsRegions.put(REGION_EU, "eu-west-1");
+        awsRegions.put(REGION_FE, "us-west-2");
+        AWS_REGION_BY_GROUP = Collections.unmodifiableMap(awsRegions);
+    }
+
     /** marketplaceId → 条目（LinkedHashMap 保持官方表格顺序，便于日志与测试对齐）。 */
     private static final Map<String, Marketplace> BY_ID = buildIndex();
 
@@ -172,6 +190,31 @@ public final class MarketplaceRegistry {
     /** 解析 marketplaceId → region（fail-closed）。 */
     public static String resolveRegion(String marketplaceId) {
         return resolve(marketplaceId).region();
+    }
+
+    /**
+     * 解析分组码 → AWS region（P0-48，fail-closed）。
+     * <p>
+     * 只接受 NA / EU / FE 三个分组码；传入 AWS region 形态（如 us-east-1）、带空格或 null
+     * 一律抛异常——不做 trim / 大小写归一，静默归一化会掩盖凭证或请求里的脏数据。
+     *
+     * @throws UnknownMarketplaceException {@link UnknownMarketplaceException#CODE_UNSUPPORTED_REGION}
+     */
+    public static String resolveAwsRegion(String groupCode) {
+        String awsRegion = groupCode == null ? null : AWS_REGION_BY_GROUP.get(groupCode);
+        if (awsRegion == null) {
+            throw new UnknownMarketplaceException(
+                    UnknownMarketplaceException.CODE_UNSUPPORTED_REGION,
+                    "不支持的 SP-API 分组码=\"" + groupCode + "\"（仅支持 " + AWS_REGION_BY_GROUP.keySet()
+                            + "）：AWS region 必须显式映射，拒绝回落（fail-closed）",
+                    null, groupCode);
+        }
+        return awsRegion;
+    }
+
+    /** 供测试与诊断使用：分组码 → AWS region（只读）。 */
+    public static Map<String, String> awsRegionByGroup() {
+        return AWS_REGION_BY_GROUP;
     }
 
     /** 解析 marketplaceId → 官方国家码（fail-closed）。 */

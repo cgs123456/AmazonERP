@@ -1,10 +1,12 @@
 package com.amz.client;
 
-import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.HttpTransport;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiRequestFactory;
+import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -12,18 +14,14 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 
-import java.net.URI;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +31,8 @@ import java.util.TreeMap;
  * Amazon SP-API FBA Inventory v1 客户端。
  * <p>
  * 调用 /fba/inventory/v1/summaries 接口拉取 FBA 库存汇总。
- * 实现与 {@link OrdersClient} 一致的风格：LWA Token + Sig V4 签名 + 429 重试 + NextToken 分页。
+ * 实现与 {@link OrdersClient} 一致的风格：LWA Token + 统一请求构造（SpApiRequestFactory）
+ * + 429 重试 + NextToken 分页。
  * 在此基础上额外实现滑动窗口限流：30 秒内最多 25 次请求，超过则阻塞等待。
  */
 @Component
@@ -61,30 +60,34 @@ public class FbaInventoryClient {
     // 且窗口按客户端实例而非 (shopId, endpoint) 维度统计。现与 OrdersClient 对齐，
     // 统一委托 SpiRateLimiter（按 shopId:endpoint 隔离 + x-amzn-RateLimit-Limit 动态收紧）。
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
-
-    @Autowired
-    private LwaTokenManager lwaTokenManager;
-
-    @Autowired
-    private AwsSigV4Signer awsSigV4Signer;
-
-    @Autowired
-    private ShopCredentialStore shopCredentialStore;
+    private final HttpTransport httpTransport;
+    private final LwaTokenManager lwaTokenManager;
+    private final ShopCredentialStore shopCredentialStore;
+    private final SpApiRequestFactory requestFactory;
 
     /**
      * 统一滑动窗口限流器（fba-inventory 默认 25 req/30s，按店铺维度隔离）。
      */
-    @Autowired
-    private com.amz.ratelimit.SpiRateLimiter spiRateLimiter;
+    private final SpiRateLimiter spiRateLimiter;
 
     /**
      * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
      */
-    @Autowired(required = false)
-    private ObjectProvider<MeterRegistry> meterRegistryProvider;
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
+
+    public FbaInventoryClient(HttpTransport httpTransport,
+                              LwaTokenManager lwaTokenManager,
+                              ShopCredentialStore shopCredentialStore,
+                              SpiRateLimiter spiRateLimiter,
+                              SpApiRequestFactory requestFactory,
+                              ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this.httpTransport = httpTransport;
+        this.lwaTokenManager = lwaTokenManager;
+        this.shopCredentialStore = shopCredentialStore;
+        this.spiRateLimiter = spiRateLimiter;
+        this.requestFactory = requestFactory;
+        this.meterRegistryProvider = meterRegistryProvider;
+    }
 
     /**
      * 拉取指定店铺在某 marketplace 下的全量 FBA 库存汇总。
@@ -104,6 +107,8 @@ public class FbaInventoryClient {
         String region = MarketplaceRegistry.resolveRegion(marketplaceId);
         String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
         String host = MarketplaceRegistry.resolveHost(region);
+        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
+        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
 
         String accessToken = lwaTokenManager.getToken(credential);
 
@@ -125,20 +130,11 @@ public class FbaInventoryClient {
             }
             String queryString = buildCanonicalQueryString(params);
 
-            Map<String, String> signedHeaders = awsSigV4Signer.sign(
-                    "GET", host, INVENTORY_PATH, queryString, "",
-                    credential.getAccessKey(), credential.getSecretKey(), region);
+            HttpRequest request = requestFactory.spApi(
+                    "GET", endpoint, host, awsRegion, INVENTORY_PATH, queryString, null,
+                    accessToken, credential.getAccessKey(), credential.getSecretKey());
 
-            String url = endpoint + INVENTORY_PATH + "?" + queryString;
-            HttpRequest.Builder builder = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(30))
-                    .GET();
-            signedHeaders.forEach(builder::header);
-            // LWA access_token 通过 x-amz-access-token 透传，不参与 Sig V4 签名
-            builder.header("x-amz-access-token", accessToken);
-
-            HttpResponse<String> response = sendWithRetry(builder.build());
+            HttpResponse<String> response = sendWithRetry(request);
             if (response == null || response.statusCode() != 200) {
                 int status = response == null ? -1 : response.statusCode();
                 // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
@@ -187,7 +183,7 @@ public class FbaInventoryClient {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
-                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                response = httpTransport.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("HTTP send interrupted attempt={}", attempt);

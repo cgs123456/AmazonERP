@@ -67,6 +67,16 @@ spapi:
   aws-secret-key: ${AWS_SECRET_KEY:}
   region: ${AWS_REGION:us-east-1}
   lwa-endpoint: https://api.amazon.com/auth/o2/token
+  # ====== 官方必填 user-agent（P0-35）======
+  # SP-API 要求每个请求都带 user-agent，格式：App名/版本 (Language=<语言>/<版本>[; Platform=<平台>])。
+  # 留空时的回退策略（SpApiUserAgent.value()）：app-name/app-version 回退内置默认值，
+  # language 回退 Java/<JVM 版本>，并打一次 warn 提示配置不完整；不得依赖静默回退上线。
+  # 需要逐字指定整串时用 SPAPI_USER_AGENT（优先级最高）。
+  app-name: ${SPAPI_APP_NAME:AmazonERP}
+  app-version: ${SPAPI_APP_VERSION:1.0-SNAPSHOT}
+  language: ${SPAPI_LANGUAGE:}
+  platform: ${SPAPI_PLATFORM:}
+  user-agent: ${SPAPI_USER_AGENT:}
   # 生产启动自检开关（spec §1.9 A3），默认 false 保持离线开发/CI 口径不变。
   # 置为 true 后：启用 mock profile 或 amz_shop_credential 无任何凭证 → 拒绝启动。
   # 生产由 application-prod.yml 置为 true；仅离线开发可显式关闭。

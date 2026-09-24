@@ -560,6 +560,7 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 可选（前向保险）：`AwsSigV4KnownAnswerTest`（固定输入 + AWS 官方 `aws4_testsuite` 期望 `Authorization` 逐字符比对；夹具来源见 spec §1.9.2）。**注意**：既有 23 个签名相关 `@Test` 只是 E1 自证，不构成 A1 证据（spec §1.9.1 G4）。
 
 > **进度（第 31 轮，2026-09-24）**：本步 7 个必做测试中 **`MarketplaceRegistryTest` 已落地并 6/6 PASS**（证据见附 A.5）；`SpApiRequiredHeaderContractTest` / `LwaTokenExchangeContractTest` / `SpApiEndpointOverrideSafetyTest` / `SpApiProtocolStubTest` / `ConnectorEvidencePolicyTest` / `SpApiConditionalSigningTest` 尚未创建。
+> **进度（第 36 轮，2026-09-24）**：7 个必做测试中已落地 **4 个**——`MarketplaceRegistryTest`（6 例）、`SpApiRequiredHeaderContractTest`（5 例）、`LwaTokenExchangeContractTest`（5 例）、`SpApiConditionalSigningTest`（6 例），另增 `SpApiUserAgentTest`（7 例）。桩回放按上文修订改用**进程内假传输**（`com.amz.testsupport.RecordingHttpTransport`，零 socket）。**仍未创建**：`SpApiEndpointOverrideSafetyTest`、`SpApiProtocolStubTest`、`ConnectorEvidencePolicyTest`（分别对应未落地的端点覆盖/allowlist、Feeds 全链路桩回放、证据门禁），故本步**未勾选**。证据与实数见附 A.6。
 >
 > **桩回放方式修订（有依据，不改验收目标）**：本沙箱**无法构造 JDK `HttpClient`**（见「未验证与风险」第 18 条：`IOException: Unable to establish loopback connection`；`-Djdk.net.useUnixDomainSockets=false` 等已实测无效），故 `com.sun.net.httpserver` + JDK `HttpClient` 的桩回放方式在本机**不可执行**。第 1 项测试改为**进程内假传输**（record-and-replay `HttpTransport`）：断言**请求构造契约**（方法、URI、每个请求的 `user-agent`、`x-amz-access-token`、`x-amz-date`、`Authorization` 的有无），**不覆盖真实网络栈**，因此证据上限 **E2**，不得据此宣称 A1/A5 通过。
 
@@ -575,6 +576,9 @@ Expected: FAIL（类不存在 / 断言失败）
 > **进度（第 31 轮，2026-09-24）**：市场映射部分**已完成**——`MarketplaceRegistry`（官方 23 条，NA 4 / EU 16 / FE 3）为唯一事实源，四份副本与 `getOrDefault(..., "NA")` 已从主源码清零（`grep` 核验见附 A.5），未知 `marketplaceId` / region **抛错**而非回落默认区域（`MarketplaceRegistryTest` 6/6 PASS）。
 >
 > **其余部分尚未开始**：端点覆盖与 allowlist、`user-agent` 必填头（P0-35）、有条件签名（P0-38）、`HttpClient` 构造注入。落地顺序定为「**传输抽象（`HttpTransport` 构造注入）→ 必填头 → 端点覆盖 → 有条件签名**」——传输抽象必须先行：不做注入，本沙箱连被测类实例都构造不出来（`LwaTokenManagerTest` 9 例 error 即因此）。
+> **进度（第 36 轮，2026-09-24）**：本步的**传输抽象 / 必填头 / 有条件签名 / region 映射**四片已落地——新增 `HttpTransport`（`@FunctionalInterface`；泛型 `send` 不能用 lambda 实现，须方法引用）、`HttpClientConfig`（唯一 `HttpClient` 装配点）、`SpApiRequestFactory`（SP-API 主机与预签名 URL 的唯一请求构造点）；4 个客户端删除自建 `HttpClient` 字段，改 6 参构造器注入（`HttpTransport` / `LwaTokenManager` / `ShopCredentialStore` / `SpiRateLimiter` / `SpApiRequestFactory` / `ObjectProvider<MeterRegistry>`）；9 个出站调用点收敛为 7 个 `requestFactory.spApi(...)` + 2 个 `requestFactory.presigned(...)`（P0-50）；`user-agent` 由 `SpApiUserAgent` 唯一构造（P0-35）；AK/SK 任一为空/空白时不进签名分支（P0-38）；签名作用域改用 `MarketplaceRegistry.resolveAwsRegion(...)`（P0-48）。
+>
+> **本步仍未完成**：端点覆盖键与 allowlist（`spapi.base-url-override` / `spapi.lwa-endpoint-override`、prod 非空即启动失败、非 allowlist 主机不得携带 `x-amz-access-token`）——即 `SpApiEndpointOverrideSafetyTest` 所对应的实现部分；`ConnectorEvidencePolicy`（Step 1 第 6 项）同样未开始。
 
 - [ ] **Step 4: LWA 契约夹具落地（必做）；SigV4 KAT 夹具（可选）**
 
@@ -584,6 +588,7 @@ Expected: FAIL（类不存在 / 断言失败）
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test`
 Expected: PASS（既有 527 用例不回退）
+> **进度（第 36 轮，2026-09-24，实数）**：`mvn -B -ntp -pl amz-service/amz-service-spapi -am clean test` → `amz-common` **51/51 PASS**；`amz-service-spapi` **Tests run: 105, Failures: 0, Errors: 0, Skipped: 2**（2 skip = `SpApiIntegrationTest` 的 `@EnabledIfEnvironmentVariable(RUN_INTEGRATION_TESTS)`），`BUILD SUCCESS`。同命令改造前对照：82 例 / **9 errors**（全部是 `LwaTokenManagerTest.setUp:47` 的 `IOException: Unable to establish loopback connection`）→ 现在 **0 errors**（传输注入后构造期不再建 `HttpClient`）。另：`mvn -B -ntp -DskipTests clean test-compile` **19 模块 BUILD SUCCESS**，`mvn -B -ntp test` 全仓 **19 模块 BUILD SUCCESS**（合计 **560 用例 / 0 failures / 0 errors / 2 skipped**，≥ 基线 527）。但本 Task 的测试面仍不完整（端点覆盖 / Feeds 全链路桩回放 / 证据门禁三项未落地），**故本步暂不勾选**。
 
 - [ ] **Step 6: 落 runbook**
 
@@ -628,7 +633,7 @@ Expected: PASS（既有 527 用例不回退）
 15. **marketplace 表会漂移**：23 条取自 2026-09-24 的官方 `store-identifiers.md` 快照。Amazon 新增站点时，`MarketplaceRegistryTest` 会因新 ID 未登记的 fail-closed 行为而报错——这是**刻意设计**（宁可显式失败，不可静默打到 NA 端点），修复方式是补表而不是放宽断言。
 16. **P0-38 与 P0-35/P0-36 是同一条链路上的前置条件**：把 AWS 密钥降为可选（spec §1.9.2）**必须**与“有条件签名”同时实施，否则只给 LWA 凭证的用户会发出 `Credential=null` 的畸形 `Authorization` 头（第 22 轮已用真实编译产物实测）。今日 Amazon 忽略该头，所以它不表现为立即失败，而是**静默错误**——不得因为“现在能跑”就不修。
 17. **RDT（P0-37）不在本计划的实现范围**：本计划只登记它与业务后果（客服/RMA/面单在无 RDT 时不可交付）。RDT 实现属 Plan 4（安全与 PII）的相邻范围，须在客服域交付前完成。
-18. **本沙箱无法构造 JDK `HttpClient`/`Selector`（环境限制，非代码缺陷，第 30 轮实测）**：本机 JVM 任意 `Selector.open()` 与 `HttpClient.newBuilder().build()` 均抛 `IOException: Unable to establish loopback connection`。最小复现（独立 Java 程序，与仓库代码无关）：TCP 回环 `127.0.0.1` / `::1` 的 bind+connect **成功**，AF_UNIX `bind` **成功**，但 AF_UNIX **`connect` 抛 `SocketException: Invalid argument: connect`**；JDK 17 的 `sun.nio.ch.PipeImpl` 在 Windows 上优先走 AF_UNIX 且该路径失败后不回落 TCP，因此凡构造 `Selector`/`HttpClient` 的代码必然失败。影响：① `LwaTokenManagerTest` 9 例在本沙箱必然 error（其余 67 例正常，含 Task 2 新增 4 例）；② **Task 11 的桩回放测试（`com.sun.net.httpserver` 桩 + JDK `HttpClient`）在本沙箱不可执行**，必须改到不受该限制的环境（用户本机直跑或 CI）执行，或在实现时把出站 HTTP 抽象成可注入接口、用假实现替代 JDK `HttpClient`（推荐，见 Task 11 Step 3 的 `HttpClient 可注入` 条目）；③ 本轮因此**无法复跑“后端 527 用例全绿”基线**，该基线数字仍是历史记录，不是本轮证据。**不得**把本条解读为“代码有问题”，也不得据本沙箱结论修改业务代码绕过签名/HTTP 栈。
+18. **本沙箱无法构造 JDK `HttpClient`/`Selector`（环境限制，非代码缺陷，第 30 轮实测）**：本机 JVM 任意 `Selector.open()` 与 `HttpClient.newBuilder().build()` 均抛 `IOException: Unable to establish loopback connection`。最小复现（独立 Java 程序，与仓库代码无关）：TCP 回环 `127.0.0.1` / `::1` 的 bind+connect **成功**，AF_UNIX `bind` **成功**，但 AF_UNIX **`connect` 抛 `SocketException: Invalid argument: connect`**；JDK 17 的 `sun.nio.ch.PipeImpl` 在 Windows 上优先走 AF_UNIX 且该路径失败后不回落 TCP，因此凡构造 `Selector`/`HttpClient` 的代码必然失败。影响：① `LwaTokenManagerTest` 9 例在本沙箱必然 error（其余 67 例正常，含 Task 2 新增 4 例）；② **Task 11 的桩回放测试（`com.sun.net.httpserver` 桩 + JDK `HttpClient`）在本沙箱不可执行**，必须改到不受该限制的环境（用户本机直跑或 CI）执行，或在实现时把出站 HTTP 抽象成可注入接口、用假实现替代 JDK `HttpClient`（推荐，见 Task 11 Step 3 的 `HttpClient 可注入` 条目）；③ 本轮因此**无法复跑“后端 527 用例全绿”基线**，该基线数字仍是历史记录，不是本轮证据。**不得**把本条解读为“代码有问题”，也不得据本沙箱结论修改业务代码绕过签名/HTTP 栈。 **第 36 轮更新（部分解除）**：spapi 出站已改为 `HttpTransport` 注入，`LwaTokenManagerTest` 9 例不再需要真实 `HttpClient`（改前 9 error → 现 9/9 PASS）；`mvn -B -ntp -pl amz-service/amz-service-spapi -am clean test` 与全仓 `mvn -B -ntp test` 均已跑绿（全仓 560 用例 / 0 failures / 0 errors / 2 skipped）。本条限制对 spapi 单测已解除，但**对真实 socket 路径（`SpApiIntegrationTest`、沙箱联调）仍然成立**：该测试仍靠 `@EnabledIfEnvironmentVariable(RUN_INTEGRATION_TESTS)` 默认跳过。
 
 ## 后续计划（不在本计划内）
 
@@ -704,3 +709,23 @@ Expected: PASS（既有 527 用例不回退）
 > **边界不变**：本轮证据为 **E1（自证）/ E2（契约构造）**，不产生任何 E3/E4/E5；A5 真实联调仍只能由凭证到位当天的 runbook 产出（spec §1.9.1(5)）。`MarketplaceRegistry` 的 23 条取自 spec §1.9.2（官方 `store-identifiers.md`，2026-09-24 快照），**本轮未重新抓取官方页面二次核对**；Amazon 新增站点时必须显式补表（刻意设计）。
 
 > **未开始（不得含糊）**：`SpApiUserAgent`（P0-35）、端点覆盖与 allowlist、LWA 契约夹具与交换测试、P0-38 有条件签名、`ConnectorEvidencePolicy`（E0–E5）、`connector-acceptance-runbook.md`、`HttpClient` 构造注入均**未开始**——故本沙箱目前**无法构造任何出站客户端实例**。
+>
+> **第 36 轮更新**：该段中 `SpApiUserAgent`（P0-35）、P0-38 有条件签名、`HttpClient` 构造注入、LWA 交换契约测试**均已落地**（见 A.6）；仍未开始的是端点覆盖与 allowlist、`ConnectorEvidencePolicy`、`connector-acceptance-runbook.md`、Step 4 的契约夹具 README。
+
+### A.6 第 36 轮：Task 11 第二片（传输抽象 + 必填头 + 有条件签名 + AWS region 映射）已落地（2026-09-24）
+
+| 项 | 证据 |
+|---|---|
+| P0-48（新增） | **分组码被当成 AWS region 写进 SigV4 作用域**：7 个签名调用点把 `MarketplaceRegistry` 的 NA/EU/FE 分组码直传签名器，产出 `.../NA/execute-api/aws4_request` 形式的无效作用域。新增 `MarketplaceRegistry.resolveAwsRegion(groupCode)`（唯一映射 + fail-closed：非 NA/EU/FE、null、带空格、传 AWS region 形态一律抛 `SPAPI_UNSUPPORTED_REGION`）。一手依据：官方 connecting-to-the-selling-partner-api 页（`https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api`，2026-09-24 抓取）给出 NA→`us-east-1`、EU→`eu-west-1`、FE→`us-west-2` |
+| P0-49（新增） | **LWA 缓存键摘要算法失败时静默降级为 32 位 `hashCode`**：`LwaTokenManager.sha256Hex` 旧 catch 分支返回 `Integer.toHexString(hashCode)`，而缓存键 = `clientId:sha256(refreshToken)`，退化后不同 refresh_token 可碰撞同一 key → 跨店铺串用 access_token（跨租户凭证泄漏）。现 catch 分支改抛 `IllegalStateException`（fail-closed，绝不退化）；并复核 token 交换全路径：缺 `access_token`、非 200、传输异常一律抛 |
+| P0-50（新增） | **预签名 S3 URL 被当成 SP-API 主机对待**：Feeds `uploadDocument`（PUT）与报表文档下载（GET）走的是 S3 预签名地址，旧实现按 SP-API 口径构造请求头，会把 `x-amz-access-token` 发给第三方存储桶。新增 `SpApiRequestFactory.presigned(...)`：只带 `user-agent`（+ 调用方给的 `Content-Type`），**不带** token、不带 `Authorization`；契约测试覆盖两条预签名路径 |
+| 新增类 | `connector/HttpTransport.java`、`connector/SpApiRequestFactory.java`、`auth/SpApiUserAgent.java`、`config/HttpClientConfig.java`；测试支撑 `testsupport/{RecordingHttpTransport,TestCredentials,StubCredentialStore}.java` |
+| 改造 | `SpApiGateway` / `OrdersClient` / `FeedsClient` / `FbaInventoryClient` 删除 `private final HttpClient httpClient = HttpClient.newBuilder()...` 字段初始化器，改 6 参构造器注入；`LwaTokenManager` 保留无参构造器（既有单测 + 显式装配，出站传输惰性创建）与 `(HttpTransport, SpApiConfig)` 注入构造器；`AwsSigV4Signer.sign` 在 AK/SK 任一空白时只返回 `x-amz-date` |
+| 配置 | `application.yml` 的 `spapi` 段新增 `app-name` / `app-version` / `language` / `platform` / `user-agent`（`SPAPI_APP_NAME` / `SPAPI_APP_VERSION` / `SPAPI_LANGUAGE` / `SPAPI_PLATFORM` / `SPAPI_USER_AGENT`）；`application-prod.yml` 说明生产继承同一来源、留空走 warn 回退。两份 YAML 均以 `yaml.safe_load` 校验可解析 |
+| 测试（实数） | `mvn -B -ntp -pl amz-service/amz-service-spapi -am clean test` → `amz-common` **51/51**；`amz-service-spapi` **Tests run: 105, Failures: 0, Errors: 0, Skipped: 2**，`BUILD SUCCESS`。逐类：`AwsSigV4SignerTest` 13、`LwaTokenExchangeContractTest` 5、`LwaTokenManagerTest` 9（**改造前 9 例全 error**）、`SpApiConditionalSigningTest` 6、`SpApiUserAgentTest` 7、`FinancialEventParserTest` 6、`ReportDocumentDecoderTest` 5、`SpApiFinanceMockClientsTest` 8、`SpApiRequiredHeaderContractTest` 5、`MarketplaceRegistryTest` 6、`ConnectorStartupCheckTest` 4、`HybridReplenishmentEngineTest` 6、`ReplenishmentEngineTest` 23、`SpApiIntegrationTest` 2（skip） |
+| 全仓回归（实数） | `mvn -B -ntp -DskipTests clean test-compile` → **19 模块 SUCCESS**（含全部测试源码，证明构造器签名变更未击穿 product / finance / logistics / report 等下游模块）；`mvn -B -ntp test` → **19 模块 BUILD SUCCESS**，合计 **560 用例 / 0 failures / 0 errors / 2 skipped**（较基线 527 增加 33） |
+| 变异测试（RED 证据） | 4 次受控变异（改后立即从备份还原，`RESTORED_OK=True` 且 SHA-256 一致）：① 删 `spApi()` 的 `user-agent` 头 → `SpApiRequiredHeaderContractTest` 5 例中 **2 例 FAIL**；② 关掉 `AwsSigV4Signer` 的空白密钥短路 → `SpApiConditionalSigningTest` 6 例中 **2 例 FAIL**；③ `resolveAwsRegion` 直接回传分组码 → `SpApiConditionalSigningTest` **1 例 FAIL**（同时 `MarketplaceRegistryTest` 6/6 仍绿，说明该断言确由新测试承担）；④ 预签名分支注入 `x-amz-access-token` → `SpApiRequiredHeaderContractTest` **1 例 FAIL**。**顺带发现的工装缺陷**：还原文件沿用旧 mtime 时 `maven-compiler-plugin` 判定「无需重编」，会复用被变异的 `target/classes`（本轮曾因此跑出一次假 FAIL）；**变异/补丁类实验后必须 `clean test`**，A.6 的最终证据即取自 `clean test` |
+
+> **证据边界不变**：本轮全部证据为 **E1（自证）/ E2（契约构造，进程内假传输、零 socket）**，不产生 E3/E4/E5；`user-agent` 契约、LWA 交换契约、有条件签名都**不**代表平台已接受我方请求。官方依据：`https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api` 逐字「You must include a `user-agent` header in every request to the SP-API.」（≤500 字符；格式 `App/Version (Language=Java/x.y.z; Platform=...)`），以及同页 “no signing information” 示例只带 `host` / `user-agent` / `x-amz-access-token` / `x-amz-date`（Amazon 自 2023-10-02 起忽略 SigV4）。
+>
+> **「未验证与风险」第 18 条部分解除**：传输注入后 `LwaTokenManagerTest` 9 例不再依赖真实 `HttpClient`，且全仓 `mvn test` 已可跑绿（560 用例）；但 `SpApiIntegrationTest` 仍为 `@EnabledIfEnvironmentVariable` 默认跳过，**本沙箱仍无法执行任何真实 socket 路径**。
