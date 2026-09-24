@@ -121,29 +121,29 @@ Expected: PASS
 - Consumes: Task 1 的表与既有 `ShopCredentialStore`（`loadFromDb()`、`get(shopId)`）。
 - Produces: `ConnectorStartupCheck.verify()`（`@PostConstruct` 调用）在 `spapi.startup.require-credentials=true` 时：mock profile → 抛 `IllegalStateException`；凭证表为空 → 抛 `IllegalStateException`；通过则记录每个连接器的启用状态供 Task 6 读取。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `ConnectorStartupCheckTest` 三个用例：①`require-credentials=true` + `activeProfiles=mock` → 抛异常且消息含 `mock`；②`require-credentials=true` + 凭证表空 → 抛异常且消息含 `amz_shop_credential`；③`require-credentials=false` → 不抛异常。
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=ConnectorStartupCheckTest`
 Expected: FAIL（类不存在）
 
-- [ ] **Step 3: 实现自检组件**
+- [x] **Step 3: 实现自检组件**
 
 读取 `spring.profiles.active`、`spapi.startup.require-credentials`；缺凭证信息从 `ShopCredentialStore` 暴露的只读方法获取（若现在没有，允许新增 `int loadedCount()`，禁止把凭证内容暴露给调用方）。
 
-- [ ] **Step 4: 新增 `application-prod.yml`**
+- [x] **Step 4: 新增 `application-prod.yml`**
 
 至少包含 `spapi.startup.require-credentials: true`，并注释说明：生产 profile 必须显式设置，禁止继承 `mock`。
 
-- [ ] **Step 5: 运行测试通过**
+- [x] **Step 5: 运行测试通过**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=ConnectorStartupCheckTest`
 Expected: PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 `git commit -m "feat(spapi): 生产启动自检——缺凭证与 mock profile 拒绝启动"`
 ---
@@ -620,6 +620,7 @@ Expected: PASS（既有 527 用例不回退）
 15. **marketplace 表会漂移**：23 条取自 2026-09-24 的官方 `store-identifiers.md` 快照。Amazon 新增站点时，`MarketplaceRegistryTest` 会因新 ID 未登记的 fail-closed 行为而报错——这是**刻意设计**（宁可显式失败，不可静默打到 NA 端点），修复方式是补表而不是放宽断言。
 16. **P0-38 与 P0-35/P0-36 是同一条链路上的前置条件**：把 AWS 密钥降为可选（spec §1.9.2）**必须**与“有条件签名”同时实施，否则只给 LWA 凭证的用户会发出 `Credential=null` 的畸形 `Authorization` 头（第 22 轮已用真实编译产物实测）。今日 Amazon 忽略该头，所以它不表现为立即失败，而是**静默错误**——不得因为“现在能跑”就不修。
 17. **RDT（P0-37）不在本计划的实现范围**：本计划只登记它与业务后果（客服/RMA/面单在无 RDT 时不可交付）。RDT 实现属 Plan 4（安全与 PII）的相邻范围，须在客服域交付前完成。
+18. **本沙箱无法构造 JDK `HttpClient`/`Selector`（环境限制，非代码缺陷，第 30 轮实测）**：本机 JVM 任意 `Selector.open()` 与 `HttpClient.newBuilder().build()` 均抛 `IOException: Unable to establish loopback connection`。最小复现（独立 Java 程序，与仓库代码无关）：TCP 回环 `127.0.0.1` / `::1` 的 bind+connect **成功**，AF_UNIX `bind` **成功**，但 AF_UNIX **`connect` 抛 `SocketException: Invalid argument: connect`**；JDK 17 的 `sun.nio.ch.PipeImpl` 在 Windows 上优先走 AF_UNIX 且该路径失败后不回落 TCP，因此凡构造 `Selector`/`HttpClient` 的代码必然失败。影响：① `LwaTokenManagerTest` 9 例在本沙箱必然 error（其余 67 例正常，含 Task 2 新增 4 例）；② **Task 11 的桩回放测试（`com.sun.net.httpserver` 桩 + JDK `HttpClient`）在本沙箱不可执行**，必须改到不受该限制的环境（用户本机直跑或 CI）执行，或在实现时把出站 HTTP 抽象成可注入接口、用假实现替代 JDK `HttpClient`（推荐，见 Task 11 Step 3 的 `HttpClient 可注入` 条目）；③ 本轮因此**无法复跑“后端 527 用例全绿”基线**，该基线数字仍是历史记录，不是本轮证据。**不得**把本条解读为“代码有问题”，也不得据本沙箱结论修改业务代码绕过签名/HTTP 栈。
 
 ## 后续计划（不在本计划内）
 
@@ -669,3 +670,12 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] spec §7.9 的产物与本文档证据一致，P0-39…P0-47 可在 spec §1.3 交叉检索。
 
 > **边界不变**：本轮实测不产生任何 E4/E5 证据；A5 仍只能由凭证到位当天的 runbook 产出（spec §1.9.1(5)）。
+
+### A.4 第 30 轮：Task 2 已落地，Task 11 首片待做（2026-09-24）
+
+| 项 | 证据 |
+|---|---|
+| Task 2 实现 | `ConnectorStartupCheck`（`com.amz.credential`）+ `application-prod.yml` + `application.yml` 开关，提交 `271fbfb` |
+| Task 2 测试 | TDD：先跑出编译失败（类不存在），实现后 `-Dtest=ConnectorStartupCheckTest` → 4/4 PASS；单模块全量 76 用例中 67 通过、9 例为环境 error（见「未验证与风险」第 18 条）、2 例 skip |
+| 工具链提交 | `cdb501c`：`run.ps1` 补 `-TruncateFirst` 开关；产出与已校验工件 **141/141 文件逐字节一致**，不加开关时 `truncate_first=false` 且 TRUNCATE 行数 0（负向对照） |
+| 待办 | Task 11 首片（`MarketplaceRegistry` 23 条 + 删 4 份副本 + fail-closed）可在本沙箱验证（纯 POJO，不依赖 `HttpClient`）；其桩回放测试按第 18 条另寻环境 |
