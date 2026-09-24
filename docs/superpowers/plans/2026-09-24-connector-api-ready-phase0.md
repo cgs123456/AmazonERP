@@ -460,25 +460,25 @@ Expected: PASS
 - Produces: Redisson 解析出的 host/port/password 与 `spring.data.redis.*`（及 `SPRING_DATA_REDIS_*` 环境变量）一致；仓库内不存在任何指向公网 IP 的默认值。
 - 依赖：本 Task 与 Task 8 的 Compose `REDIS_HOST` 注入必须一起验证，否则测试环境仍解析不到地址。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `RedissonConfigTest` 用 `ApplicationContextRunner`（或 `ReflectionTestUtils` 读取 `@Value` 字段）断言：① `spring.data.redis.host=redis` 时解析结果是 `redis:6379`；② 设 `SPRING_DATA_REDIS_HOST=127.0.0.1` 后可覆盖；③ 无任何配置时**不得**回落到 `121.37.250.15`（默认只允许 `localhost`，或直接启动失败）。
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-order -am test -Dtest=RedissonConfigTest`、`mvn -B -ntp -pl amz-service/amz-service-product -am test -Dtest=RedissonConfigTest`
 Expected: FAIL（当前 `${spring.redis.host:121.37.250.15}` 命中第三方公网地址）
 
-- [ ] **Step 3: 单一配置源 + 启动自检**
+- [x] **Step 3: 单一配置源 + 启动自检**
 
 二选一：删除两份自定义 `RedissonConfig` 让 starter 走 `spring.data.redis.*` 自动配置；或保留 Bean 但改读 `spring.data.redis.*` 且默认值改为 `localhost`。生产 profile 增加一次带超时的 Redis 连通性自检（与 Task 2 的 `ConnectorStartupCheck` 同一入口），失败即拒绝启动。
 
-- [ ] **Step 4: 运行测试通过**
+- [x] **Step 4: 运行测试通过**
 
 Run: 同 Step 2（两条命令）
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 `git commit -m "fix(order,product): Redisson 改走 spring.data.redis.*，移除公网默认地址"`
 
@@ -681,6 +681,7 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）、schema 引导/建库契约测试（Task 10）在 CI 中运行且不可跳过。
 - [ ] 部署 schema：`docker/init-sql/` 只有 `01-init-databases.sql` 且无表 DDL；Compose 与 k8s 都只建 14 个空库；14 个服务显式配置 `baseline-on-migrate: true`；Flyway 唯一表集合为 106 张。
 - [ ] 配置卫生：`grep -r "121.37.250.15"` 命中 0；`grep -rn "spring\.redis\.host"` 命中 0；`NACOS_SERVER_ADDR` 在部署清单中命中 0（统一 `NACOS_ADDR`）。
+> 第 53 轮实测（口径扩展）：`121.37.250.15` 在主代码/主配置中命中 **0**（剩余命中仅 README、spec/plan 的说明文字，以及 order/product 的 `RedissonConfigTest`——该文件用 `String.join` 拼接而非字面量，故仓库级 grep 仍为 0）；`NACOS_SERVER_ADDR` 在部署清单中命中 **0**（16 段 compose + 16 份 k8s 清单 + configmap 已统一为 `NACOS_ADDR`）。**口径修正**：原 DoD 只查一个 Redis IP，本轮另发现同类缺陷——17 份 Spring 配置把 Nacos 默认地址写成第三方公网地址（P0-55），故配置卫生的判据应升格为「**主配置中不得出现任何非私网 IPv4**」，已由 `NacosAddressContractTest` 与两份 `RedissonConfigTest` 共同守卫。
 - [x] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
@@ -872,3 +873,24 @@ Expected: PASS（既有 527 用例不回退）
 > `${WS_MESSAGE_UPSTREAM:http://amz-service-message:8888}`——这是设计选择而非缺陷，
 > 但意味着「给 message 服务加 REST 端点」必须同步加网关路由，否则同样是死端点。
 > 已同步修正 `ConnectorRegistry` / `ConnectorController` 的 javadoc。
+
+
+### A.10 第 53 轮：Task 9 落地 + 新发现 P0-55/P0-56（Nacos 默认公网地址与变量名错配）（2026-09-24）
+
+| 项 | 内容（本轮实测） |
+|---|---|
+| **Task 9 处置结论（删而非改）** | 两份 `RedissonConfig` 读 `${spring.redis.host:<第三方公网地址>}`（Spring Boot 3 下该键已改名 `spring.data.redis.*`，且无任何 yml/环境变量能覆盖）；更关键的是 `RedissonClient` 在 order / product **自始至终零使用**（order 只有 import 与字段，幂等去重实际靠 `RedisTemplate#setIfAbsent`）。零消费者的依赖不该留，故**删除**而非「改读 `spring.data.redis`」。product 侧 `TranslationService` 是 `@Autowired(required=false)` + 判空降级，删 Bean 后仍可降级（E1 源码形状断言，非行为测试） |
+| **新发现 P0-55（同类、影响面更大）** | 在给 Task 9 加「主配置不得出现任何非私网 IPv4」这条**通用**断言后，扫描立刻抓到：16 份 `bootstrap.yml` + `amz-common/seata-default.yml`（共 **17 份**）把 Nacos 默认值写成第三方公网地址 `123.206.101.247:8848`。影响面是**全部 16 个进程的服务注册与配置拉取**。已改为 `127.0.0.1:8848`（未注入时快速失败，而不是静默连向陌生主机） |
+| **新发现 P0-56（注入无效）** | `docker-compose.yml` 的 16 个服务段、15 份 k8s service 清单注入的变量名是 **`NACOS_SERVER_ADDR`**，而 16 份 `bootstrap.yml` 读的是 **`NACOS_ADDR`**——**注入了也读不到**，于是必然走默认值。k8s 侧仅 `amz-service-spapi.yaml` 同时写了两个名字（唯一「碰巧正确」的服务）。已统一为 `NACOS_ADDR`（compose 16 段 + k8s 16 份 + configmap 去重 + `.env.example` 补该项）。注意 `.env.example` 原本**根本没有**这一项：用户照模板填出的 `.env` 不会注入，Compose 路径必触发 P0-55 |
+| **缺陷链的意义（为何单看任一条都不够）** | 三条单独看都像「小配置问题」，叠加后的真实后果是：**两条部署路径都拿不到正确的注册中心地址**，且失败方式最坏——不报错，而是 16 个服务静默连向不属于使用者的主机。这也是把 DoD「配置卫生」判据从「查一个 IP」升格为「查任何非私网 IPv4」的原因 |
+| **守卫测试的两次自噬（诚实记录）** | ① 首跑扫到 **32** 份配置文件而非 17：`Files.walk` 把 `target/` 下编译产物副本也算进来 → 加 `notBuildOutput` 过滤；② `.env.example` 里我自己写的注释含禁用变量名 `NACOS_SERVER_ADDR`，被自己的守卫扫到 → 注释改写。**两次都是守卫在正常工作**，不是断言写错，但也说明「扫描型断言」必须同时断言**文件数量**，否则扫到 0 个文件时断言会假通过 |
+| **实测（项目工具链）** | JDK `17.0.20.1+1` + Maven `3.9.11`：`-Dtest=RedissonConfigTest` → order **4/4**、product **4/4** PASS；`-pl amz-common,order,product -am test` → amz-common **56**（51 → 56）、BUILD SUCCESS；`mvn -B -ntp test` → 19 模块 **671 例 / 0F / 0E / 2S**（666 → 671 = 新增 `NacosAddressContractTest` 5 例）、BUILD SUCCESS。日志 `.mvn-round53-*.log` |
+| **未做（诚实登记，不冒充已完成）** | Task 9 Step 3 提到的「生产 profile 启动期 Redis 连通性自检」**未实现**：默认值为 `127.0.0.1:8848` 只能做到「连不上时快速失败」，做不到「未显式注入即拒绝启动」。同理 Nacos 也缺这条 prod 门禁。两者同属一个缺口：**生产 profile 应要求关键中间件地址显式注入**，已登记为 Task 8 增补项，未做的原因是不引入跨 16 模块的自动装配组件（风险高于收益，需随 Task 8 统一设计） |
+| **全仓公网 IP 复扫（结论）** | 对 `*.java / *.yml / *.yaml / *.properties / *.xml / *.sql`（排除 `target` / `.git`）全量复扫：主代码与主配置**已无非私网 IPv4**。剩余命中两类均为误报或刻意：① JDK/依赖版本号（`1.8.0.221`、`17.0.20.1`）；② 合成数据 `tools/synthetic-data/out/**` 用的 `192.0.2.x`——这是 **RFC 5737 TEST-NET-1 文档地址段**，模拟数据刻意用它避免污染真实地址空间，**属正确实践，不是缺陷** |
+| 提交 | `fix(order,product): 删除零消费者 Redisson 配置…（Task 9，P0-31）` + `fix(config,deploy): Nacos 默认地址去公网化 + 部署清单变量名与代码统一（P0-55/P0-56）`，两笔均在本地，`origin/master` **未推送** |
+
+> **证据边界（本轮未改变）**：新增 13 例（order 4 + product 4 + amz-common 5）全部是 **E1（自证）**——
+> 断言对象是本仓库的配置文本与源码形状，不起 Spring 上下文、不连 Nacos/Redis。
+> 它们证明的是「**配置一致 + 默认不指向第三方**」，**不**证明 Nacos/Redis 可达——后者仍需 A5 联调。
+> 特别提示：`NacosAddressContractTest` 里的 `16` 与 `17` 是**硬编码期望值**，新增/删除服务时必须同步更新，
+> 否则要么假通过（扫不到文件）要么误报——这是数量断言的固有代价，已用「文件数相等」断言对冲扫空风险。

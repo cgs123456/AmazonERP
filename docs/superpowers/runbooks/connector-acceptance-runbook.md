@@ -532,6 +532,28 @@ $env:JAVA_HOME = "$env:USERPROFILE\.cache\codex-tools\jdk-17.0.20.1+1"
 > 口径提醒：全仓计数必须按 `^\[(INFO\|WARNING)\] Tests run:` 统计（spapi 汇总行因有 skip 而是 `[WARNING]` 前缀）；
 > `-pl … -am` 的 reactor 合计是 **254 = amz-common 51 + spapi 203**，引用「spapi 单模块」时取 203。
 
+### 7.5 第 53 轮复跑（Task 9：Redis/Redisson 基线；新发现 P0-55/56：Nacos 地址）
+
+命令（实测，2026-09-24，项目自有工具链）：
+
+```powershell
+$env:JAVA_HOME = "$env:USERPROFILE\.cache\codex-tools\jdk-17.0.20.1+1"
+$m = "$env:USERPROFILE\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd"
+& $m -B -ntp -pl amz-service/amz-service-order,amz-service/amz-service-product -am test `
+     -Dtest=RedissonConfigTest -Dsurefire.failIfNoSpecifiedTests=false   # 注意：不要用 -D.surefire...（会报 Unknown lifecycle phase）
+& $m -B -ntp test    # 全仓
+```
+
+| 项 | 实测结果 |
+|---|---|
+| Redisson 基线 | order **4/4**、product **4/4** PASS；两份 `RedissonConfig.java` 已删，`OrderServiceImpl` 的 `RedissonClient` 注入已移除（该字段零使用） |
+| Nacos 契约 | `NacosAddressContractTest`（amz-common）**5/5** PASS：17 份 Spring 配置默认值不含非私网 IPv4、部署清单无 `NACOS_SERVER_ADDR`、compose 注入 16 段、k8s 16 份全部引用、`.env.example` 已声明 |
+| 全仓回归 | 19 模块 **671 例 / 0F / 0E / 2S**（666 → 671），BUILD SUCCESS |
+
+**部署前必须人工确认（本轮新增，写到验收清单里）**：目标环境的 `NACOS_ADDR` 必须显式注入且指向**自己的** Nacos。
+未注入时服务会连 `127.0.0.1:8848` 并快速失败（**不再**连第三方主机），但**不会**因此拒绝启动——
+生产 profile 的「关键中间件地址未显式注入即拒绝启动」门禁**尚未实现**（已登记为 Task 8 增补项）。
+
 ## 8. 未验证与风险（诚实清单）
 
 1. **runner 已存在，但从未对真实服务跑过**（P0-52c 第 48 轮修复）→ §3 的命令现在可执行，且**只有 C1 全绿才会产出记录**；但迄今所有执行都对着**本地桩**（`stub=true` + `--allow-stub`，A5 封顶 E2），因此「一条命令出**真实联调**报告」**仍是待验证承诺**，不是现状。
@@ -548,3 +570,12 @@ $env:JAVA_HOME = "$env:USERPROFILE\.cache\codex-tools\jdk-17.0.20.1+1"
     只扫 `src/main/java` 的**字符串字面量**、只认 6 个路径根，且**不覆盖**运行时拼接出的动态段
     （如 marketplace / 日期 / 分页参数）；将来新增 API 家族或改用配置化路径时必须同步扩表。
     另外它断言的是「与官方模型一致」（E3），**不能**替代 A5 的真实联调。
+
+11. **中间件地址的注入门禁尚未 fail-closed（第 53 轮新增）** → P0-55/56 修复后，Nacos 的默认值已从第三方公网地址
+    改为 `127.0.0.1:8848`，Redis 改走 `spring.data.redis.*`；但**未显式注入时服务仍会启动**（只是连不上）。
+    凭证到位当天部署前，须人工核对 `NACOS_ADDR` / `REDIS_HOST` 等确实注入；自动门禁（prod profile 拒绝启动）
+    尚未实现，不要在验收记录里把它写成「已有」。
+12. **配置卫生的守卫是扫描型断言，有固有盲区** → `NacosAddressContractTest` 与两份 `RedissonConfigTest`
+    只扫固定路径下的配置文件，且硬编码期望数量（16 / 17）。新增服务、改名或迁移目录时必须同步更新，
+    否则断言会**假通过**（扫空）或误报；它们也**不覆盖**运行时从配置中心拉到的值——
+    Nacos 上的配置内容不在本仓库扫描范围内。
