@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让「提供凭证即可用」在 SP-API 主链路上真正成立——凭证表能自动创建、缺凭证显式失败、生产 profile 拒绝 mock、Reports/Feeds 闭环正确、限流按官方配额，并提供连接器能力清单与自检端点。
+**Goal:** 让「提供凭证即可用」在 SP-API 主链路上真正成立——凭证表能自动创建、缺凭证显式失败、生产 profile 拒绝 mock、Reports/Feeds 闭环正确、限流按官方配额，并提供连接器能力清单与自检端点。第 13 轮追加边界：**“有凭证”必须同时包含“凭证能到达进程”**——16 份部署清单与代码占位符双向对齐（Task 8）、Redis 配置去掉硬编码公网地址（Task 9）。
 
 **Architecture:** 不改变现有模块划分与调用方向；改动集中在 `amz-service/amz-service-spapi` 模块内部（凭证、限流、报表闭环、自检），跨模块仍只用既有 Feign 接口（product 的 `SpapiFeedsClient` ↔ spapi 的 `FeedsController`；finance 的 `SpApiFinanceClient` ↔ spapi 的 `FinancialDataController`）。所有新增 HTTP 端点必须带 `@RequireRole` 或 `@ShopScoped` 守卫。
 
 **Tech Stack:** Java 17、Spring Boot 3.3.5、MyBatis-Plus、Flyway 10.20（`flyway-core` + `flyway-mysql`）、dynamic-datasource、MySQL 8、Redis、JUnit 5 + Mockito（`spring-boot-starter-test`）。
 
-**Spec:** `docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`（§1.9 A1–A8、§4.2、§4.6、§4.8、附录 A.3，以及 P0-23 / P0-24 / P0-27 / P0-28 / P0-29 / P0-30）
+**Spec:** `docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`（§1.9 A1–A8、§4.2、§4.6、§4.8 含 4.8.1 配置覆盖率实测、附录 A.3，以及 P0-01 / P0-23 / P0-24 / P0-25 / P0-27 / P0-28 / P0-29 / P0-30 / P0-31 / P0-32）
 
 ## Global Constraints
 
@@ -19,6 +19,8 @@
 - 新增端点必须带守卫注解；附录 F 的 82 条无守卫端点只能减少，不能新增。
 - 每个 Task 先写失败测试再写实现，结束时单独提交；单模块测试命令统一为
   `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=<TestClass>`。
+- 配置键名统一：Redis 一律走 `spring.data.redis.*`（环境变量 `SPRING_DATA_REDIS_HOST/PORT/PASSWORD`）；Nacos 一律 `NACOS_ADDR`，禁止 `NACOS_SERVER_ADDR` 双写；禁止任何默认值指向公网地址或第三方 IP。
+- 部署清单以代码占位符为唯一事实源做**双向**差集校验（既不许缺、也不许多）；清单契约测试不可 skip。
 - 本计划只是计划：**未经批准不落实现代码**。
 
 ---
@@ -37,7 +39,8 @@
 | Modify | `amz-service/amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java` | 补结果报告下载与逐行错误解析 |
 | Modify | `amz-service/amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java` | 逐 operation 官方配额、按店铺隔离、去锁内 sleep、可恢复 |
 | Modify | `amz-service/amz-service-spapi/src/main/resources/application.yml`、新增 `application-prod.yml` | profile 与自检开关 |
-| Modify | `.env.example`、`docker-compose.yml`、`k8s/secret.yaml`、`k8s/services/amz-service-spapi.yaml`、`k8s/configmap.yaml` | 配置三处对齐 |
+| Modify | `.env.example`、`docker-compose.yml`（16 个业务服务段）、`k8s/secret.yaml`、`k8s/configmap.yaml`、`k8s/services/*.yaml`（16 份逐份对齐） | 配置三处双向对齐（Task 8） |
+| Modify | `amz-service/amz-service-order/src/main/java/com/amz/config/RedissonConfig.java:16-22`、`amz-service/amz-service-product/src/main/java/com/amz/config/RedissonConfig.java:16-22` | 移除公网 Redis 默认值，改走 `spring.data.redis.*`（Task 9） |
 | Create | `amz-service/amz-service-spapi/src/test/resources/contracts/reports_2021-06-30.json` | 官方模型快照（Apache-2.0，锁 commit） |
 | Create | `amz-service/amz-service-spapi/src/test/java/...`（见各 Task） | 契约测试与行为测试 |
 
@@ -324,36 +327,80 @@ Expected: 均 BUILD SUCCESS
 
 ---
 
-### Task 8: 配置与部署清单对齐（含自动化清单校验）
+### Task 8: 配置与部署清单双向对齐（16 模块，不只 spapi 一段）
 
 **Files:**
-- Modify: `.env.example`、`docker-compose.yml`（spapi 段）、`k8s/secret.yaml`、`k8s/services/amz-service-spapi.yaml`、`k8s/configmap.yaml`
-- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java`
+- Modify: `.env.example`、`docker-compose.yml`（**全部 16 个业务服务段**）、`k8s/configmap.yaml`、`k8s/secret.yaml`、`k8s/services/*.yaml`（16 份逐份对齐）
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java`（清单侧断言）
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/deploy/PlaceholderCoverageContractTest.java`（代码侧占位符扫描 + 双向差集）
 
 **Interfaces:**
-- Produces: 静态校验测试，CI 中即可拦住"部署清单缺变量 / 密钥长度非法"两类回归（对应 P0-25、P0-29）。
+- Produces: CI 可拦四类回归——清单缺变量、清单多变量、键名不一致、密钥长度非法（对应 P0-01 / P0-25 / P0-29 / P0-32）。
 
 - [ ] **Step 1: 写失败测试**
 
-`DeploymentManifestContractTest` 断言：①`docker-compose.yml` 的 spapi 服务同时包含 `SPRING_PROFILES_ACTIVE` 与 `NACOS_ADDR`；②`k8s/services/amz-service-spapi.yaml` 同样包含两者；③`.env.example` 含 `AMZ_CRYPTO_KEY`、`NACOS_ADDR`、`AMZ_SPAPI_CLIENT_ID` 等必需键；④`k8s/secret.yaml` 的 `AMZ_CRYPTO_KEY` base64 解码后**恰好 32 字节**。
+`DeploymentManifestContractTest` 断言：
+① 16 份 `k8s/services/*.yaml` 的 Deployment `env` **逐模块**覆盖该模块 `src/main/resources/*.yml` 的全部 `${UPPER_SNAKE}` 占位符，且不包含未被读取的多余项；
+② 每份 Deployment 显式包含 `SPRING_PROFILES_ACTIVE`（取值 `prod`，spapi 另有 `application-prod.yml`，见 Task 2）；禁止依赖 `JAVA_OPTS` 传递 profile；
+③ `docker-compose.yml` 的 16 个业务服务段满足①②，且 `env_file` 策略显式（统一 `env_file: .env` 或逐项注入，二选一，不允许“看似会加载、实际没有”）；
+④ `.env.example` 覆盖全部非 Secret 键，且与 k8s ConfigMap 键集合一致；
+⑤ `k8s/secret.yaml` 的 `AMZ_CRYPTO_KEY` base64 解码后**恰好 32 字节**，`JWT_SECRET_KEY` 满足 `JwtUtil` 长度要求；
+⑥ **反向断言**：`amz-service-report` 这类无 datasource 的模块不得出现 DB/Rabbit/Redis 注入项（当前 19 项属过度注入）。
+
+`PlaceholderCoverageContractTest` 用正则 `\$\{([A-Z][A-Z0-9_]*)(?::([^}]*))?\}` 提取占位符，**必须显式剔除 `application-local.yml`**——第 13 轮已实测 `MQ_USERNAME`/`MQ_PASSWORD` 只出现在该文件，未剔除会产生假阳性。
 
 - [ ] **Step 2: 运行确认失败**
 
-Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=DeploymentManifestContractTest`
-Expected: FAIL（当前 compose 缺 profile、Secret 为 34 字节）
+Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest='DeploymentManifestContractTest,PlaceholderCoverageContractTest'`
+Expected: FAIL（当前 15/16 份 Deployment 缺 `NACOS_ADDR`；logistics 缺 15 项、search 缺 10 项、product 缺 7 项、user/procurement 各缺 5 项；Compose `REDIS_HOST` 0 命中、`MYSQL_HOST` 仅 spapi；report 反向多注入）
 
-- [ ] **Step 3: 修正清单与密钥**
+- [ ] **Step 3: 按实测差集修正三处**
 
-Secret 一律改为外部注入（Sealed Secret / External Secrets / KMS），仓库内只保留占位并保证长度合法；compose 与 k8s 统一变量名 `NACOS_ADDR`（删除 `NACOS_SERVER_ADDR` 的不一致用法）。
+以代码占位符为唯一事实源，逐模块补齐 `NACOS_ADDR`、`SPRING_PROFILES_ACTIVE`、`AD_PROFILE_ID`、`MONGO_HOST`、`OSS_ACCESS_KEY_ID/SECRET/BUCKET_NAME`、`ES_URIS`、`EMBEDDING_API_KEY/API_URL/ENABLED/MODEL`、`AMZ_17TRACK_BASE_URL/KEY`、`AMZ_LOGISTICS_*`、`AMZ_TRACKING_ENABLED`、`ALIBABA_APP_KEY/APP_SECRET/REFRESH_TOKEN`、`KINGDEE_APP_ID/APP_SECRET`、`AGENT_AI_CHAT_URL`、`SENTINEL_DASHBOARD` 等缺失键；16 份统一为 `NACOS_ADDR`（删除 `NACOS_SERVER_ADDR` 不一致用法）；Compose 补齐 `MYSQL_HOST`/`REDIS_HOST`/`RABBITMQ_HOST` 到所有依赖模块；Secret 改为外部注入（Sealed Secret / External Secrets / KMS），仓库内只保留长度合法的占位。
 
 - [ ] **Step 4: 运行测试通过**
 
-Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=DeploymentManifestContractTest`
+Run: 同 Step 2
 Expected: PASS
 
 - [ ] **Step 5: 提交**
 
-`git commit -m "chore(deploy): 配置三处对齐并加部署清单契约测试"`
+`git commit -m "chore(deploy): 16 模块清单双向对齐 + profile/密钥契约测试"`
+
+---
+
+### Task 9: Redis / Redisson 配置基线（移除硬编码公网地址）
+
+**Files:**
+- Modify: `amz-service/amz-service-order/src/main/java/com/amz/config/RedissonConfig.java:16-22`、`amz-service/amz-service-product/src/main/java/com/amz/config/RedissonConfig.java:16-22`
+- Modify: `amz-service/amz-service-order/src/main/resources/application.yml`、`amz-service/amz-service-product/src/main/resources/application.yml`（确认 `spring.data.redis.*` 为唯一配置源；两模块现有 17 处 `redis:` 块父级均已是 `spring.data.redis`）
+- Create: `amz-service/amz-service-order/src/test/java/com/amz/config/RedissonConfigTest.java`、`amz-service/amz-service-product/src/test/java/com/amz/config/RedissonConfigTest.java`
+
+**Interfaces:**
+- Produces: Redisson 解析出的 host/port/password 与 `spring.data.redis.*`（及 `SPRING_DATA_REDIS_*` 环境变量）一致；仓库内不存在任何指向公网 IP 的默认值。
+- 依赖：本 Task 与 Task 8 的 Compose `REDIS_HOST` 注入必须一起验证，否则测试环境仍解析不到地址。
+
+- [ ] **Step 1: 写失败测试**
+
+`RedissonConfigTest` 用 `ApplicationContextRunner`（或 `ReflectionTestUtils` 读取 `@Value` 字段）断言：① `spring.data.redis.host=redis` 时解析结果是 `redis:6379`；② 设 `SPRING_DATA_REDIS_HOST=127.0.0.1` 后可覆盖；③ 无任何配置时**不得**回落到 `121.37.250.15`（默认只允许 `localhost`，或直接启动失败）。
+
+- [ ] **Step 2: 运行确认失败**
+
+Run: `mvn -B -ntp -pl amz-service/amz-service-order -am test -Dtest=RedissonConfigTest`、`mvn -B -ntp -pl amz-service/amz-service-product -am test -Dtest=RedissonConfigTest`
+Expected: FAIL（当前 `${spring.redis.host:121.37.250.15}` 命中第三方公网地址）
+
+- [ ] **Step 3: 单一配置源 + 启动自检**
+
+二选一：删除两份自定义 `RedissonConfig` 让 starter 走 `spring.data.redis.*` 自动配置；或保留 Bean 但改读 `spring.data.redis.*` 且默认值改为 `localhost`。生产 profile 增加一次带超时的 Redis 连通性自检（与 Task 2 的 `ConnectorStartupCheck` 同一入口），失败即拒绝启动。
+
+- [ ] **Step 4: 运行测试通过**
+
+Run: 同 Step 2（两条命令）
+Expected: PASS
+
+- [ ] **Step 5: 提交**
+
+`git commit -m "fix(order,product): Redisson 改走 spring.data.redis.*，移除公网默认地址"`
 
 ---
 
@@ -361,7 +408,8 @@ Expected: PASS
 
 - [ ] 单模块：`mvn -B -ntp -pl amz-service/amz-service-spapi -am test` 全绿；受影响模块（product / finance / logistics）各自全绿。
 - [ ] 全量：`mvn -B -ntp clean test`（19 模块）全绿；后端用例数不少于当前 527。
-- [ ] 契约：官方模型契约测试（Task 3）与部署清单契约测试（Task 8）在 CI 中运行且不可跳过。
+- [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）在 CI 中运行且不可跳过。
+- [ ] 配置卫生：`grep -r "121.37.250.15"` 命中 0；`grep -rn "spring\.redis\.host"` 命中 0；`NACOS_SERVER_ADDR` 在部署清单中命中 0（统一 `NACOS_ADDR`）。
 - [ ] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
@@ -372,10 +420,12 @@ Expected: PASS
 2. 无真实 SP-API 凭证：Task 3/4 只能做到"官方模型契约 + 夹具测试"级别，协议正确性仍需沙箱联调。
 3. 限流官方值来自官方模型 `description` 的 Usage Plan（2026-09-24 核验）；Amazon 允许按卖家提额，因此实现必须保留 `x-amzn-RateLimit-Limit` 动态调整。
 4. 本计划**不含**跨域事实模型、Outbox/Inbox、多租户隔离收敛与安全整改，那些属 Plan 2 及以后。
+5. Task 9 的运行时探针只证明了“连不上第三方公网地址”（45,292 ms 超时）。目标环境 Redis 可达后，仍需验证密码、DB index、Sentinel/Cluster 拓扑三项；不能以“端口能连”替代这三点。
+6. Task 8 的差集基线取自 2026-09-24 的仓库快照（PyYAML 6.0.3 解析）。若实现期新增配置键，契约测试会立即失败——这是刻意设计，修清单而不是放松断言。
 
 ## 后续计划（不在本计划内）
 
-- Plan 2：订单/库存事实模型与 Outbox/Inbox（P0-01…P0-10 相关项）。
+- Plan 2：订单/库存事实模型与 Outbox/Inbox（P0-01…P0-10、P0-32 相关项）。
 - Plan 3：租户与权限收敛（`@ShopScoped` 覆盖到 100%、82 条无守卫端点清零）。
 - Plan 4：安全整改（SSE/WebSocket 身份、Agent 记忆 IDOR、刷新令牌链路、PII 分类）。
 - Plan 5：可观测性与部署基线（SLO、告警、备份演练、成本看板）。
