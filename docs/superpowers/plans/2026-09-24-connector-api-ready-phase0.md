@@ -142,7 +142,20 @@ Expected: PASS
 
 - [ ] **Step 1: 落官方模型快照**
 
-从 `https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/reports-api-model/reports_2021-06-30.json` 下载（Apache-2.0），在 `contracts/README.md` 记录：来源 URL、抓取日期、sha256、许可证。**锁定文件内容，不做任何改写。**
+从 `https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/reports-api-model/reports_2021-06-30.json` 下载（Apache-2.0），在 `contracts/README.md` 记录：来源 URL、抓取日期、**字节数**、sha256、许可证。**锁定文件内容，不做任何改写。**
+
+2026-09-24 实测基准（写进 `contracts/README.md`，测试直接断言字节数与 sha256；**不锁 commit SHA**——上游 `main` 会漂移，被替换的 commit 可能被 GC，只有内容哈希能自证）：
+
+| 模型文件（仓库内相对路径） | 字节数 | sha256 |
+|---|---|---|
+| `models/reports-api-model/reports_2021-06-30.json` | 83,685 | `d72db9e5280262a92933a0e45e2207c150272f1d66177b2517c20671d69c732c` |
+| `models/feeds-api-model/feeds_2021-06-30.json` | 55,901 | `ab235b4a0e5ce21083b885dd4f2b8cae7a6f597d7adf2647b47b90d6f5098a16` |
+| `models/orders-api-model/ordersV0.json` | 226,555 | `027ac6f5c97126647c6925db9be09f78c7c741cd1d8727a5367374a1846bedc5` |
+| `models/product-fees-api-model/productFeesV0.json` | 49,426 | `d06ad35f909d8c0985845f21420c1f75599531465b27f46d4946f7d7f522fc35` |
+| `models/finances-api-model/financesV0.json` | 134,109 | `d80e881091367b0eccd4bde3ce834ed08877d3cf51095239eb8b1e328c0d19d6` |
+| `models/fba-inventory-api-model/fbaInventory.json` | 36,985 | `7c14bcdb22de8ca2df45e5a40f2a422cff344d45985a68b9515b2e800edcc5ab` |
+
+抓取陷阱（实测）：`models/fba-inventory-api-model/` 下 `fbaInventory_2020-10-01.json` 与 `inventory_2020-10-01.json` 都只返回 **14 字节**的 `404: Not Found` 响应体；必须校验字节数与 sha256，不能只看 HTTP 状态码。
 
 - [ ] **Step 2: 写失败测试**
 
@@ -228,7 +241,7 @@ Expected: 均 BUILD SUCCESS
 
 - [ ] **Step 1: 写失败测试**
 
-四个用例：①按官方值断言 `orders.getOrders=0.0167/20`、`reports.createReport=0.0167/15`、`reports.getReportDocument=2/15`、`feeds.createFeedDocument=0.0083/15`、`fees.getMyFeesEstimate=1/2`、`fbaInventory.getInventorySummaries=2/2`；②店铺 A 触发收紧不影响店铺 B；③A 店 sleep 期间 B 店可立即获得许可（验证未持锁睡眠）；④`updateLimit` 收到更高观测值后可恢复。
+四个用例：①按官方值断言 `orders.getOrders=0.0167/20`、`reports.createReport=0.0167/15`、`reports.getReport=2/15`、`reports.getReportDocument=0.0167/15`、`feeds.createFeedDocument=0.5/15`、`feeds.createFeed=0.0083/15`、`fees.getMyFeesEstimates=0.5/1`、`fbaInventory.getInventorySummaries=2/2`（**2026-09-24 按官方模型逐项复核并锁定 sha256；本计划前稿此处的 reports / feeds / fees 断言值是错的**）；②店铺 A 触发收紧不影响店铺 B；③A 店 sleep 期间 B 店可立即获得许可（验证未持锁睡眠）；④`updateLimit` 收到更高观测值后可恢复。
 
 - [ ] **Step 2: 运行确认失败**
 
@@ -238,6 +251,10 @@ Expected: FAIL（策略仍为 endpoint 维度、默认值宽松）
 - [ ] **Step 3: 实现 operation 维度策略表**
 
 `policies` 键改为 `operationId`（如 `orders.getOrders`）；`windows` 键改为 `shopId:operationId`；删除 `listings` 死策略或补齐调用方。
+
+`UsagePlan` 必须支持可选 `feedType` 维度：官方 `createFeed` 的 `description` 原文写明 `JSON_LISTINGS_FEED` 的限流与 `createFeed` operation **不同**（具体配额见 *Building Listings Management Workflows Guide*，本轮抓取 developer-docs 失败，**不得填入猜测值**）。本仓库 `FeedsClient.java:53` 硬编码该 feedType，因此 `feeds.createFeed` 策略至少要以注释标注该差异，拿到官方数值后立即分档。
+
+参照实现（已逐行核验）：`wimoor-amazon/amazon-boot/src/main/java/com/wimoor/amazon/auth/pojo/entity/AmazonAuthority.java:206-240`（读 `x-amzn-RateLimit-Limit` → 解析 → 回写每店铺门控实体）与同目录 `AmzAuthApiTimelimit.java:70-77`（放行条件 `restore == null || 距上次放行秒数 × restore > 1`）。**不要抄**：`AmazonAuthority.java:344-348` 的 `getTimeOut()` 返回 `Long.MAX_VALUE`，以及 `amazon-sp-api/src/main/java/com/amazon/spapi/SellingPartnerAPIAA/RateLimitConfigurationOnRequests.java:36-37` 的空实现 `return null`。
 
 - [ ] **Step 4: 去锁内 sleep + 可恢复**
 
@@ -422,6 +439,7 @@ Expected: PASS
 4. 本计划**不含**跨域事实模型、Outbox/Inbox、多租户隔离收敛与安全整改，那些属 Plan 2 及以后。
 5. Task 9 的运行时探针只证明了“连不上第三方公网地址”（45,292 ms 超时）。目标环境 Redis 可达后，仍需验证密码、DB index、Sentinel/Cluster 拓扑三项；不能以“端口能连”替代这三点。
 6. Task 8 的差集基线取自 2026-09-24 的仓库快照（PyYAML 6.0.3 解析）。若实现期新增配置键，契约测试会立即失败——这是刻意设计，修清单而不是放松断言。
+7. **`JSON_LISTINGS_FEED` 的专属配额未取到官方正文**：developer-docs 页面本轮抓取失败，Task 5 先按 `createFeed` 默认值 0.0083/15 实现并在代码注释中标注差异；拿到官方 guide 数值后必须补分档。同理，`FeedsClient.java:54` 的 `Content-Type: application/json`（无 `charset`）是否被官方接受，只能由沙箱联调确认，不得凭猜测修改。
 
 ## 后续计划（不在本计划内）
 
