@@ -2,6 +2,7 @@ package com.amz.scheduler;
 
 import com.amz.analytics.InventoryHealthAnalyzer;
 import com.amz.client.FbaInventoryClient;
+import com.amz.connector.SpApiEndpointResolver;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.lock.DistributedJobLock;
@@ -56,6 +57,12 @@ public class InventorySyncScheduler {
     @Autowired
     private FbaInventoryClient fbaInventoryClient;
 
+    /**
+     * P0-51：端点覆盖生效时，库存同步必须跳过——桩数据不得写入业务表。
+     */
+    @Autowired
+    private SpApiEndpointResolver spApiEndpointResolver;
+
     @Autowired
     private InventoryHealthAnalyzer inventoryHealthAnalyzer;
 
@@ -82,6 +89,9 @@ public class InventorySyncScheduler {
     }
 
     private void doSyncInventory() {
+        if (skipBecauseEndpointOverride("syncInventory")) {
+            return;
+        }
         Set<Long> shopIds = shopCredentialStore.getActiveShopIds();
         if (shopIds.isEmpty()) {
             log.info("syncInventory: no active shops, skipping");
@@ -100,12 +110,30 @@ public class InventorySyncScheduler {
     }
 
     /**
+     * P0-51：端点覆盖生效（非生产桩/联调）期间禁止落库。
+     * 定时任务与手动触发共用同一判定，避免把桩数据写进业务表。
+     */
+    private boolean skipBecauseEndpointOverride(String caller) {
+        if (spApiEndpointResolver == null || !spApiEndpointResolver.isOverrideActive()) {
+            return false;
+        }
+        log.warn("{} skipped: {}={} 生效（仅限非生产的桩/联调地址），"
+                        + "为避免桩数据污染业务表，本次不调用平台也不落库；恢复真实同步请清空该配置。",
+                caller, SpApiEndpointResolver.OVERRIDE_PROPERTY, spApiEndpointResolver.baseUrlOverride());
+        return true;
+    }
+
+    /**
      * 同步单个店铺的 FBA 库存。供定时任务与手动触发共用。
      *
      * @param shopId 店铺 ID
      * @return 本次同步落库的 SKU 记录数
      */
     public int syncShopInventory(Long shopId) {
+        // 手动触发同样受 P0-51 约束（不得只拦定时任务而放过 HTTP 入口）
+        if (skipBecauseEndpointOverride("syncShopInventory shopId=" + shopId)) {
+            return 0;
+        }
         ShopCredential credential = shopCredentialStore.get(shopId);
         if (credential == null || credential.getMarketplaceId() == null) {
             log.warn("syncShopInventory skip shopId={}: credential or marketplaceId missing", shopId);

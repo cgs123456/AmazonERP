@@ -129,7 +129,7 @@ public final class RecordingHttpTransport implements HttpTransport {
             throw e.getCause();
         }
         HttpResponse.ResponseInfo info = new Info(reply.status(),
-                HttpHeaders.of(Map.of(), (name, value) -> true), HttpClient.Version.HTTP_1_1);
+                HttpHeaders.of(reply.headers(), (name, value) -> true), HttpClient.Version.HTTP_1_1);
         HttpResponse.BodySubscriber<T> subscriber = handler.apply(info);
         subscriber.onSubscribe(new Flow.Subscription() {
             @Override
@@ -142,17 +142,53 @@ public final class RecordingHttpTransport implements HttpTransport {
                 // no-op
             }
         });
-        byte[] bytes = reply.body() == null ? new byte[0] : reply.body().getBytes(StandardCharsets.UTF_8);
+        byte[] bytes = reply.bodyAsBytes();
         if (bytes.length > 0) {
             subscriber.onNext(List.of(ByteBuffer.wrap(bytes)));
         }
         subscriber.onComplete();
         T body = subscriber.getBody().toCompletableFuture().join();
-        return new FakeResponse<>(reply.status(), request, body);
+        return new FakeResponse<>(reply.status(), reply.headers(), request, body);
     }
 
-    /** 预置响应：状态码 + 文本体。 */
-    public record Reply(int status, String body) {
+    /**
+     * 预置响应：状态码 + 文本体 + 响应头。
+     * <p>
+     * 响应头是必需能力（而非装饰）：{@code x-amzn-RateLimit-Limit} 回填本地限流窗口
+     * （P0-51 桩回放）只有读到真实响应头才可断言。
+     */
+    public record Reply(int status, String body, Map<String, List<String>> headers, byte[] rawBody) {
+
+        /** 兼容无响应头场景（等价于空头集）。 */
+        public Reply(int status, String body) {
+            this(status, body, Map.of(), null);
+        }
+
+        /** 兼容既有三参调用点（等价于无二进制体）。 */
+        public Reply(int status, String body, Map<String, List<String>> headers) {
+            this(status, body, headers, null);
+        }
+
+        /** 单值响应头构造器（如 {@code x-amzn-RateLimit-Limit: 0.1}）。 */
+        public static Reply withHeader(int status, String body, String name, String value) {
+            return new Reply(status, body, Map.of(name, List.of(value)), null);
+        }
+
+        /**
+         * 原始字节响应体：GZIP 等二进制文档（结算原表）必须走这里。
+         * 文本体会按 UTF-8 编码；二进制体不会再被二次编码（否则 GZIP 字节会被破坏）。
+         */
+        public static Reply ofBytes(int status, byte[] rawBody) {
+            return new Reply(status, null, Map.of(), rawBody);
+        }
+
+        /** 响应体字节：优先 rawBody，其次 UTF-8 编码的文本体。 */
+        public byte[] bodyAsBytes() {
+            if (rawBody != null) {
+                return rawBody;
+            }
+            return body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8);
+        }
     }
 
     private record Info(int statusCode, HttpHeaders headers, HttpClient.Version version)
@@ -162,11 +198,13 @@ public final class RecordingHttpTransport implements HttpTransport {
     private static final class FakeResponse<T> implements HttpResponse<T> {
 
         private final int statusCode;
+        private final Map<String, List<String>> headers;
         private final HttpRequest request;
         private final T body;
 
-        FakeResponse(int statusCode, HttpRequest request, T body) {
+        FakeResponse(int statusCode, Map<String, List<String>> headers, HttpRequest request, T body) {
             this.statusCode = statusCode;
+            this.headers = headers;
             this.request = request;
             this.body = body;
         }
@@ -188,7 +226,7 @@ public final class RecordingHttpTransport implements HttpTransport {
 
         @Override
         public HttpHeaders headers() {
-            return HttpHeaders.of(Map.of(), (name, value) -> true);
+            return HttpHeaders.of(headers, (name, value) -> true);
         }
 
         @Override

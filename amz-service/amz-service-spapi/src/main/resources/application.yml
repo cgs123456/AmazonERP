@@ -67,6 +67,18 @@ spapi:
   aws-secret-key: ${AWS_SECRET_KEY:}
   region: ${AWS_REGION:us-east-1}
   lwa-endpoint: https://api.amazon.com/auth/o2/token
+  # ====== 端点覆盖与出站主机白名单（P0-51，仅限非生产）======
+  # 用途：把出站指向本地桩 / 录制回放代理，取得 E2 级桩回放证据（无凭证阶段的唯一取证路径）。
+  # 硬规则：prod profile 下两项覆盖任一非空 → SpApiEndpointResolver 构造期拒绝启动；
+  #         非生产也必须是官方主机或 allowlist 内的精确匹配主机，否则同样拒绝。
+  # 覆盖生效期间订单/库存定时同步跳过并告警，避免桩数据落业务表。
+  # 示例（仅 dev/联调）：
+  #   SPAPI_BASE_URL_OVERRIDE=http://127.0.0.1:19099
+  #   SPAPI_LWA_ENDPOINT_OVERRIDE=http://127.0.0.1:19099/auth/o2/token
+  #   SPAPI_ALLOWLIST=stub.internal.example.com,stub2.internal.example.com
+  base-url-override: ${SPAPI_BASE_URL_OVERRIDE:}
+  lwa-endpoint-override: ${SPAPI_LWA_ENDPOINT_OVERRIDE:}
+  allowlist: ${SPAPI_ALLOWLIST:}
   # ====== 官方必填 user-agent（P0-35）======
   # SP-API 要求每个请求都带 user-agent，格式：App名/版本 (Language=<语言>/<版本>[; Platform=<平台>])。
   # 留空时的回退策略（SpApiUserAgent.value()）：app-name/app-version 回退内置默认值，

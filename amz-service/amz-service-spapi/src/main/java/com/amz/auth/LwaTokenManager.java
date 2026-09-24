@@ -2,7 +2,9 @@ package com.amz.auth;
 
 import com.amz.config.SpApiConfig;
 import com.amz.connector.HttpTransport;
+import com.amz.connector.SpApiEndpointResolver;
 import com.amz.credential.ShopCredential;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.slf4j.Logger;
@@ -79,6 +81,12 @@ public class LwaTokenManager {
     private volatile HttpTransport lazyTransport;
 
     /**
+     * 端点解析器（P0-51）：非空且存在覆盖时，LWA 交换走覆盖端点。
+     * 为 null（无参/两参构造路径）时回退 {@link SpApiConfig#getLwaEndpoint()}。
+     */
+    private final SpApiEndpointResolver endpointResolver;
+
+    /**
      * 保留字段注入：兼容既有单测（ReflectionTestUtils 注入）与无参构造路径。
      */
     @Autowired
@@ -89,15 +97,25 @@ public class LwaTokenManager {
      */
     public LwaTokenManager() {
         this.injectedTransport = null;
+        this.endpointResolver = null;
     }
 
     /**
-     * 生产构造路径：显式注入出站传输与配置（Task 11 契约测试锁定该签名）。
+     * 生产构造路径：显式注入出站传输、配置与端点解析器（P0-51，Spring 装配走这一个）。
      */
     @Autowired
-    public LwaTokenManager(HttpTransport transport, SpApiConfig spApiConfig) {
+    public LwaTokenManager(HttpTransport transport, SpApiConfig spApiConfig,
+                           SpApiEndpointResolver endpointResolver) {
         this.injectedTransport = transport;
         this.spApiConfig = spApiConfig;
+        this.endpointResolver = endpointResolver;
+    }
+
+    /**
+     * 兼容构造路径（无端点覆盖）：保留给既有契约测试与显式装配。
+     */
+    public LwaTokenManager(HttpTransport transport, SpApiConfig spApiConfig) {
+        this(transport, spApiConfig, null);
     }
 
     /**
@@ -176,7 +194,7 @@ public class LwaTokenManager {
                 + "&client_secret=" + encode(credential.getClientSecret());
 
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(spApiConfig.getLwaEndpoint()))
+                .uri(URI.create(lwaEndpoint()))
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .timeout(REQUEST_TIMEOUT)
                 .POST(HttpRequest.BodyPublishers.ofString(form, StandardCharsets.UTF_8))
@@ -190,18 +208,13 @@ public class LwaTokenManager {
                         + " body=" + response.body());
             }
             JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
-            if (!json.has("access_token") || json.get("access_token").isJsonNull()) {
-                throw new RuntimeException("LWA token refresh response missing access_token clientId="
-                        + credential.getClientId());
+            String accessToken = requiredString(json, "access_token", credential.getClientId());
+            String tokenType = requiredString(json, "token_type", credential.getClientId());
+            if (!"bearer".equalsIgnoreCase(tokenType)) {
+                throw new RuntimeException("LWA token refresh returned invalid token_type="
+                        + tokenType + " clientId=" + credential.getClientId());
             }
-            String accessToken = json.get("access_token").getAsString();
-            if (accessToken.isBlank()) {
-                // 空白 token 会导致后续请求全部 401，必须在源头失败
-                throw new RuntimeException("LWA token refresh returned blank access_token clientId="
-                        + credential.getClientId());
-            }
-            int expiresIn = json.has("expires_in") && !json.get("expires_in").isJsonNull()
-                    ? json.get("expires_in").getAsInt() : 3600;
+            int expiresIn = requiredPositiveInt(json, "expires_in", credential.getClientId());
             Instant expiresAt = Instant.now().plusSeconds(expiresIn);
             log.info("LWA token refreshed for clientId={} expires_in={}s", credential.getClientId(), expiresIn);
             return new TokenEntry(accessToken, expiresAt);
@@ -210,6 +223,65 @@ public class LwaTokenManager {
         } catch (Exception e) {
             throw new RuntimeException("LWA token refresh error for clientId=" + credential.getClientId(), e);
         }
+    }
+
+    /**
+     * 读取官方成功响应中的必填字符串字段；缺失、null、非字符串或空白均 fail-closed。
+     */
+    private static String requiredString(JsonObject json, String field, String clientId) {
+        JsonElement element = json.get(field);
+        if (element == null || element.isJsonNull() || !element.isJsonPrimitive()
+                || !element.getAsJsonPrimitive().isString()) {
+            throw new RuntimeException("LWA token refresh response missing or invalid " + field
+                    + " clientId=" + clientId);
+        }
+        String value = element.getAsString();
+        if (value.isBlank()) {
+            throw new RuntimeException("LWA token refresh response returned blank " + field
+                    + " clientId=" + clientId);
+        }
+        return value;
+    }
+
+    /**
+     * 读取官方成功响应中的必填正整数 {@code expires_in}；缺失、非法或非正数均 fail-closed。
+     */
+    private static int requiredPositiveInt(JsonObject json, String field, String clientId) {
+        JsonElement element = json.get(field);
+        if (element == null || element.isJsonNull() || !element.isJsonPrimitive()
+                || !element.getAsJsonPrimitive().isNumber()) {
+            throw new RuntimeException("LWA token refresh response missing or invalid " + field
+                    + " clientId=" + clientId);
+        }
+        final int value;
+        try {
+            value = element.getAsInt();
+        } catch (RuntimeException e) {
+            throw new RuntimeException("LWA token refresh response invalid " + field
+                    + " clientId=" + clientId, e);
+        }
+        if (value <= 0) {
+            throw new RuntimeException("LWA token refresh response returned non-positive " + field
+                    + "=" + value + " clientId=" + clientId);
+        }
+        return value;
+    }
+
+    /**
+     * 本次 LWA 交换使用的端点：解析器给出的覆盖端点优先，否则回退配置项。
+     * （两者都为空时回退官方默认端点，绝不落到相对/空 URL。）
+     */
+    private String lwaEndpoint() {
+        if (endpointResolver != null) {
+            String overridden = endpointResolver.lwaEndpoint();
+            if (overridden != null && !overridden.isBlank()) {
+                return overridden;
+            }
+        }
+        String configured = spApiConfig == null ? null : spApiConfig.getLwaEndpoint();
+        return configured == null || configured.isBlank()
+                ? SpApiEndpointResolver.DEFAULT_LWA_ENDPOINT
+                : configured;
     }
 
     /**

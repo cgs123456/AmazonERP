@@ -1,0 +1,32 @@
+{
+  "fixtureVersion": 1,
+  "source": {
+    "publisher": "Amazon",
+    "document": "Connect to the SP-API",
+    "canonicalUrl": "https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api",
+    "markdownUrl": "https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api.md",
+    "documentUpdatedAt": "2026-09-09T22:32:25.000Z",
+    "snapshotRetrievedAt": "2026-09-24T19:04:34+08:00",
+    "snapshotBytes": 19403,
+    "snapshotSha256": "d8ff4f0d83ab41f04cbbe3266b17d65b47e966cb814b88464e7010f399a344cb",
+    "requestSnippetLines": "40-48",
+    "responseSnippetLines": "75-85"
+  },
+  "generatedBy": "tools/contract-fixtures/generate_lwa_fixtures.py",
+  "officialSdk": {
+    "used": false,
+    "reason": "The official documentation contains a complete known-answer request and response example; no SDK execution is needed for this fixture."
+  },
+  "files": {
+    "refresh-token-request.json": {
+      "bytes": 453,
+      "sha256": "adf3fb2828c4669a24365fc1e2b52f4597cefe776b46dbc8080b18cc70c3a81d",
+      "lines": 16
+    },
+    "refresh-token-success.json": {
+      "bytes": 192,
+      "sha256": "c11025da5bf607940bb61069d72f29ddf87b39cddde72c98b95e5d307b9f3ae0",
+      "lines": 6
+    }
+  }
+}

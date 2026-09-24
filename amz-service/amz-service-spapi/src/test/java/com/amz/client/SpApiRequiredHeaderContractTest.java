@@ -4,6 +4,7 @@ import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.auth.SpApiUserAgent;
 import com.amz.config.SpApiConfig;
+import com.amz.connector.SpApiEndpointResolver;
 import com.amz.connector.SpApiRequestFactory;
 import com.amz.ratelimit.SpiRateLimiter;
 import com.amz.testsupport.RecordingHttpTransport;
@@ -67,8 +68,8 @@ class SpApiRequiredHeaderContractTest {
         config.setLanguage("Java/17.0.20.1");
 
         LwaTokenManager tokenManager = new LwaTokenManager(transport, config);
-        SpApiRequestFactory requestFactory =
-                new SpApiRequestFactory(new AwsSigV4Signer(), new SpApiUserAgent(config));
+        SpApiRequestFactory requestFactory = new SpApiRequestFactory(
+                new AwsSigV4Signer(), new SpApiUserAgent(config), SpApiEndpointResolver.officialOnly());
         SpiRateLimiter rateLimiter = new SpiRateLimiter();
         ObjectProvider<MeterRegistry> metrics = noMetrics();
 
@@ -194,7 +195,7 @@ class SpApiRequiredHeaderContractTest {
         String host = request.uri().getHost();
         if ("api.amazon.com".equals(host)) {
             return new RecordingHttpTransport.Reply(200,
-                    "{\"access_token\":\"" + TOKEN + "\",\"expires_in\":3600}");
+                    "{\"access_token\":\"" + TOKEN + "\",\"token_type\":\"bearer\",\"expires_in\":3600}");
         }
         if (host.contains("s3.amazonaws.com")) {
             return new RecordingHttpTransport.Reply(200, "");

@@ -14,6 +14,10 @@
 # 4) user-agent（P0-35）不在本文件重复配置：生产同样继承 application.yml 的
 #    spapi.app-name / app-version / language（可用 SPAPI_LANGUAGE 等环境变量覆盖）。
 #    留空会走 SpApiUserAgent 的一次性 warn 回退，生产建议显式设置 SPAPI_LANGUAGE。
+# 5) P0-51：spapi.base-url-override 与 spapi.lwa-endpoint-override 在生产**必须为空**。
+#    任一非空会被 SpApiEndpointResolver 在构造 Bean 时抛 IllegalStateException → 应用拒绝启动，
+#    不是打印一条 warn 后继续跑。原因：端点覆盖会把 LWA access token 与业务 payload 交给该主机。
+#    本地桩/沙箱联调请改用不含 prod 的 profile（如 dev/sandbox），不要在生产放开覆盖。
 spapi:
   startup:
     require-credentials: true

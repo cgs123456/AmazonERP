@@ -41,10 +41,33 @@ public class SpApiRequestFactory {
 
     private final AwsSigV4Signer signer;
     private final SpApiUserAgent userAgent;
+    private final SpApiEndpointResolver endpointResolver;
 
-    public SpApiRequestFactory(AwsSigV4Signer signer, SpApiUserAgent userAgent) {
+    public SpApiRequestFactory(AwsSigV4Signer signer, SpApiUserAgent userAgent,
+                               SpApiEndpointResolver endpointResolver) {
         this.signer = signer;
         this.userAgent = userAgent;
+        this.endpointResolver = endpointResolver;
+    }
+
+    /**
+     * 解析某分组（NA/EU/FE）当前生效的 SP-API 端点（P0-51）。
+     * <p>
+     * 客户端不再各自调用 {@link MarketplaceRegistry#resolveEndpointForRegion(String)}：
+     * 端点来源必须与出站主机白名单校验同源，否则「解析到的端点」与「校验的主机」可能不一致。
+     */
+    public SpApiEndpointResolver.Endpoint resolveEndpoint(String region) {
+        return endpointResolver.resolve(region);
+    }
+
+    /** 当前生效的主机白名单策略（与 {@link #spApi} 使用同一份判定）。 */
+    public SpApiHostPolicy hostPolicy() {
+        return endpointResolver.hostPolicy();
+    }
+
+    /** 端点解析器（供诊断端点/日志读取当前覆盖状态，不得用于注入 token）。 */
+    public SpApiEndpointResolver endpointResolver() {
+        return endpointResolver;
     }
 
     /** 当前生效的官方必填 user-agent 值。 */
@@ -72,6 +95,16 @@ public class SpApiRequestFactory {
         String canonicalQueryString = canonicalQuery == null ? "" : canonicalQuery;
         String canonicalBody = body == null ? "" : body;
         String httpMethod = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+
+        // P0-51：所有出站主机在注入 access token 之前先过白名单（fail-closed）。
+        // 顺序不可调换：先校验、后构造头，token 根本不会进入被拒绝的请求对象。
+        hostPolicy().requireAllowed(host, "endpoint=" + endpoint + "; caller=spApi");
+        String endpointHost = SpApiHostPolicy.normalizeHost(URI.create(endpoint).getHost());
+        if (!SpApiHostPolicy.normalizeHost(host).equals(endpointHost)) {
+            throw new SpApiEndpointNotAllowedException(
+                    "endpoint 主机与签名 host 不一致（拒绝发送，避免签名作用域错位）：host=\"" + host
+                            + "\"，endpoint=" + endpoint, host);
+        }
 
         Map<String, String> signedHeaders = signer.sign(
                 httpMethod, host, path, canonicalQueryString, canonicalBody,

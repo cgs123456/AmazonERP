@@ -5,6 +5,7 @@ import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.connector.HttpTransport;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiEndpointResolver;
 import com.amz.connector.SpApiRequestFactory;
 import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonArray;
@@ -172,8 +173,10 @@ public class FeedsClient {
         // 旧实现在三者全空时静默回落 NA 端点，会把请求发到未经确认的区域。
         String region = MarketplaceRegistry.resolveRegion(
                 marketplaceId, credential.getMarketplaceId(), credential.getRegion(), "shopId=" + shopId);
-        String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
-        String host = MarketplaceRegistry.resolveHost(region);
+        // P0-51：端点解析统一走 requestFactory（官方主机或非生产覆盖，与出站主机校验同源）
+        SpApiEndpointResolver.Endpoint ep = requestFactory.resolveEndpoint(region);
+        String endpoint = ep.baseUrl();
+        String host = ep.host();
         // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
         String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
         return new ResolvedShop(credential, region, endpoint, host, awsRegion);

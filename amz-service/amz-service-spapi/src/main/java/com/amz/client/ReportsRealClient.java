@@ -6,7 +6,6 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -40,8 +39,14 @@ public class ReportsRealClient implements ReportsClient {
     /** Reports 端点标识，用于限流指标维度。 */
     private static final String REPORTS_ENDPOINT = "reports";
 
-    @Autowired
-    private SpApiGateway gateway;
+    /**
+     * 统一 SP-API 网关（构造器注入：缺少该 Bean 时启动即失败，而不是首次调用时才 NPE）。
+     */
+    private final SpApiGateway gateway;
+
+    public ReportsRealClient(SpApiGateway gateway) {
+        this.gateway = gateway;
+    }
 
     @Override
     public String createReport(Long shopId, String marketplaceId, String reportType,
@@ -77,7 +82,7 @@ public class ReportsRealClient implements ReportsClient {
         info.setReportId(str(resp, "reportId"));
         info.setReportType(str(resp, "reportType"));
         info.setProcessingStatus(str(resp, "processingStatus"));
-        info.setDocumentId(str(resp, "resultDocumentId"));
+        info.setDocumentId(str(resp, "reportDocumentId"));
         return info;
     }
 

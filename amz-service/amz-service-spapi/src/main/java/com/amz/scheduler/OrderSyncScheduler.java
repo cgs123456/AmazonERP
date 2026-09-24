@@ -5,6 +5,7 @@ import com.amz.constant.MqConstant;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiEndpointResolver;
 import com.amz.lock.DistributedJobLock;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
@@ -61,6 +62,12 @@ public class OrderSyncScheduler {
     @Autowired
     private OrdersClient ordersClient;
 
+    /**
+     * P0-51：端点覆盖生效时，定时同步必须跳过——桩数据不得经 MQ 进入业务表。
+     */
+    @Autowired
+    private SpApiEndpointResolver spApiEndpointResolver;
+
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
@@ -87,6 +94,12 @@ public class OrderSyncScheduler {
     }
 
     private void doSyncOrders() {
+        if (spApiEndpointResolver != null && spApiEndpointResolver.isOverrideActive()) {
+            log.warn("syncOrders skipped: {}={} 生效（仅限非生产的桩/联调地址）。"
+                            + "为避免桩数据经 MQ 进入业务表，本轮不调用平台也不落库；恢复真实同步请清空该配置。",
+                    SpApiEndpointResolver.OVERRIDE_PROPERTY, spApiEndpointResolver.baseUrlOverride());
+            return;
+        }
         Set<Long> shopIds = shopCredentialStore.getActiveShopIds();
         if (shopIds.isEmpty()) {
             log.info("syncOrders: no active shops, skipping");
