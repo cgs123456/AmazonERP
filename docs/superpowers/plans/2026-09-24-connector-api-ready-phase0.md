@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让「提供凭证即可用」在 SP-API 主链路上真正成立——凭证表能自动创建、缺凭证显式失败、生产 profile 拒绝 mock、Reports/Feeds 闭环正确、限流按官方配额，并提供连接器能力清单与自检端点。第 13 轮追加边界：**“有凭证”必须同时包含“凭证能到达进程”**——16 份部署清单与代码占位符双向对齐（Task 8）、Redis 配置去掉硬编码公网地址（Task 9）。第 18 轮追加部署边界：**“能迁移”必须先于“能用凭证”**——Compose 只建空库、k8s 用 Job 建空库、表结构只由 Flyway 维护（Task 1 / Task 4 / Task 10）。
+**Goal:** 让「提供凭证即可用」在 SP-API 主链路上真正成立——凭证表能自动创建、缺凭证显式失败、生产 profile 拒绝 mock、Reports/Feeds 闭环正确、限流按官方配额，并提供连接器能力清单与自检端点。第 13 轮追加边界：**“有凭证”必须同时包含“凭证能到达进程”**——16 份部署清单与代码占位符双向对齐（Task 8）、Redis 配置去掉硬编码公网地址（Task 9）。第 18 轮追加部署边界：**“能迁移”必须先于“能用凭证”**——Compose 只建空库、k8s 用 Job 建空库、表结构只由 Flyway 维护（Task 1 / Task 4 / Task 10）。第 19 轮追加取证边界：**“有 API 就能用”必须可取证**——端点覆盖仅限非生产且 fail-closed、签名必须有已知答案测试（KAT）、连接器状态必须带证据等级（Task 11）；A5 联调记录不可伪造。
 
 **Architecture:** 不改变现有模块划分与调用方向；改动集中在 `amz-service/amz-service-spapi` 模块内部（凭证、限流、报表闭环、自检），跨模块仍只用既有 Feign 接口（product 的 `SpapiFeedsClient` ↔ spapi 的 `FeedsController`；finance 的 `SpApiFinanceClient` ↔ spapi 的 `FinancialDataController`）。所有新增 HTTP 端点必须带 `@RequireRole` 或 `@ShopScoped` 守卫。部署侧不改变代码调用方向，但明确禁止把表结构放进 MySQL 初始化目录；Compose 与 k8s 只负责创建空库，Flyway 是唯一建表事实源。
 
@@ -23,6 +23,9 @@
   `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=<TestClass>`。
 - 配置键名统一：Redis 一律走 `spring.data.redis.*`（环境变量 `SPRING_DATA_REDIS_HOST/PORT/PASSWORD`）；Nacos 一律 `NACOS_ADDR`，禁止 `NACOS_SERVER_ADDR` 双写；禁止任何默认值指向公网地址或第三方 IP。
 - 部署清单以代码占位符为唯一事实源做**双向**差集校验（既不许缺、也不许多）；清单契约测试不可 skip。
+- 端点覆盖（`spapi.base-url-override` / `spapi.lwa-endpoint-override`）只允许非生产 profile 生效；prod 下非空即启动失败；只允许 loopback 或显式 allowlist 主机，发往非 allowlist 主机时禁止携带 `x-amz-access-token`（Task 11）。
+- 参与签名的实现必须注入 `Clock`；每个签名算法至少一条期望值来自官方文档或官方 SDK 的已知答案测试（KAT）；**禁止**用本仓库实现生成期望值（Task 11）。
+- 连接器状态必须带 `evidenceLevel`（E0–E5）：证据 < E3 或 A2/A3/A6 任一未通过 → `apiReady=false`；证据 < E4 不得显示“已接通”（Task 6 / Task 11，口径见 spec §1.9.1）。
 - 本计划只是计划：**未经批准不落实现代码**。
 
 ---
@@ -46,6 +49,10 @@
 | Modify | `.env.example`、`docker-compose.yml`（16 个业务服务段）、`k8s/secret.yaml`、`k8s/configmap.yaml`、`k8s/services/*.yaml`（16 份逐份对齐） | 配置三处双向对齐（Task 8） |
 | Modify | `amz-service/amz-service-order/src/main/java/com/amz/config/RedissonConfig.java:16-22`、`amz-service/amz-service-product/src/main/java/com/amz/config/RedissonConfig.java:16-22` | 移除公网 Redis 默认值，改走 `spring.data.redis.*`（Task 9） |
 | Create | `amz-service/amz-service-spapi/src/test/resources/contracts/reports_2021-06-30.json` | 官方模型快照（Apache-2.0，锁 commit） |
+| Create | `amz-service/amz-service-spapi/src/test/resources/contracts/sigv4-kat/`（README + 夹具 JSON） | 签名已知答案测试夹具（期望值取自官方文档/SDK，锁 sha256）（Task 11） |
+| Create | `amz-service/amz-service-spapi/src/main/java/com/amz/connector/ConnectorEvidencePolicy.java` | 证据等级 E0–E5 与 `apiReady` 判定规则的唯一事实源（Task 11） |
+| Create | `docs/superpowers/runbooks/connector-acceptance-runbook.md` | 凭证到位当天的一次性验收 runbook（A5 取证）（Task 11） |
+| Modify | `OrdersClient.java:61-65`、`FeedsClient.java:61-65`、`FbaInventoryClient.java:56-60`、`SpApiGateway.java:45-49`、`AwsSigV4Signer.java:54`、`LwaTokenManager.java:59-61`、`amz-service-spapi/src/main/resources/application.yml:69` | 端点覆盖（非生产、fail-closed）与注入 `Clock`/`HttpClient`（Task 11） |
 | Create | `amz-service/amz-service-spapi/src/test/java/...`（见各 Task） | 契约测试与行为测试 |
 
 ---
@@ -287,7 +294,7 @@ Expected: PASS
 
 **Interfaces:**
 - Consumes: Task 2 的启动自检结果、`ShopCredentialStore`。
-- Produces: `GET /api/connectors` → `[{code, enabled, credentialSource(env|db|vault|none), lastCallAt, lastResult, operations[], apiReady}]`；`POST /api/connectors/{code}/self-test` → 脱敏请求/响应摘要与错误码。
+- Produces: `GET /api/connectors` → `[{code, enabled, credentialSource(env|db|vault|none), lastCallAt, lastResult, operations[], evidenceLevel(E0..E5), apiReady}]`；`POST /api/connectors/{code}/self-test` → 脱敏请求/响应摘要与错误码。判定规则由 `ConnectorEvidencePolicy` 唯一定义（spec §1.9.1：证据 < E3 或 A2/A3/A6 任一未通过 → `apiReady=false`；证据 < E4 不得显示“已接通”）。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -506,6 +513,56 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 
 ---
 
+### Task 11: 零凭证取证基座（端点覆盖 + Clock 注入 + KAT + 桩回放 + 证据门禁）
+
+**Files:**
+- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/auth/AwsSigV4Signer.java`（注入 `Clock`，`sign` 接收 `Instant`）
+- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/client/OrdersClient.java`、`FeedsClient.java`、`FbaInventoryClient.java`、`SpApiGateway.java`（端点解析改为可覆盖，生产仍是官方主机）
+- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/auth/LwaTokenManager.java`（`HttpClient` 可注入、LWA 端点可覆盖、`sha256Hex` 异常分支禁止静默退化）
+- Modify: `amz-service/amz-service-spapi/src/main/resources/application.yml`（新增 override 键，默认空）、`application-prod.yml`
+- Create: `amz-service/amz-service-spapi/src/main/java/com/amz/connector/ConnectorEvidencePolicy.java`
+- Create: `amz-service/amz-service-spapi/src/test/resources/contracts/sigv4-kat/README.md` + 夹具 JSON
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/AwsSigV4KnownAnswerTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiEndpointOverrideSafetyTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiProtocolStubTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/connector/ConnectorEvidencePolicyTest.java`
+- Create: `docs/superpowers/runbooks/connector-acceptance-runbook.md`
+
+**Interfaces:**
+- Produces: `SpApiEndpointResolver.resolve(region, profile)`；`AwsSigV4Signer.sign(..., Instant)`；`ConnectorEvidencePolicy.evaluate(evidence)` → `{evidenceLevel, apiReady, reachable}`。
+- Consumes: spec §1.9.1 证据等级表、4.8 契约表、Task 6 的能力清单。
+
+- [ ] **Step 1: 先写失败测试（5 个）**
+
+`AwsSigV4KnownAnswerTest`（固定输入 + 夹具期望 `Authorization` 逐字符比对，当前无 `Clock` → FAIL）、`SpApiEndpointOverrideSafetyTest`（prod 非空 → 拒绝启动；非 allowlist → 拒绝；非 prod + `http://127.0.0.1:<port>` → 通过；发往非 allowlist 主机时**不含** `x-amz-access-token`）、`SpApiProtocolStubTest`（用 JDK 自带 `com.sun.net.httpserver.HttpServer`，127.0.0.1:0，**不新增依赖**；跑 Feeds 全链路 createFeedDocument → PUT → createFeed → getFeedStatus → 下载结果报告，断言请求序列/路径/必带头/幂等键，以及 429 退避与 `x-amzn-RateLimit-Limit` 读取）、`ConnectorEvidencePolicyTest`（E0–E5 × A1–A8 判定表）、既有 23 个签名相关 `@Test` 回归（注意：它们只是 E1 自证，不构成 A1 证据，见 spec §1.9.1 G4）。
+
+- [ ] **Step 2: 运行确认失败**
+
+Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=AwsSigV4KnownAnswerTest+SpApiEndpointOverrideSafetyTest+SpApiProtocolStubTest+ConnectorEvidencePolicyTest`
+Expected: FAIL（类不存在 / 断言失败）
+
+- [ ] **Step 3: 端点覆盖与依赖注入（fail-closed 优先）**
+
+覆盖键默认空；仅非生产生效，prod 非空即启动失败；allowlist 默认 `127.0.0.1`、`localhost`；非 allowlist 主机不得携带 `x-amz-access-token`，其响应也不得写入业务表（避免桩数据污染）。`AwsSigV4Signer`、`LwaTokenManager` 与 4 个客户端的 `HttpClient` 改为构造注入。
+
+- [ ] **Step 4: KAT 夹具落地（本步骤可能阻塞）**
+
+期望值来源二选一：(a) 官方文档示例的完整已知答案；(b) 官方 AWS SDK（test scope，如 `software.amazon.awssdk:auth`）在固定输入下的输出。README 记录来源 URL / SDK 坐标与版本 / 生成脚本 / 字节数 / sha256。**若本机取不到官方夹具或 SDK 依赖，本 Task 阻塞**：禁止用本仓库实现自造期望值补绿，完成说明里必须标注“A1 证据停留在 E1/E2”。
+
+- [ ] **Step 5: 运行测试通过**
+
+Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test`
+Expected: PASS（既有 527 用例不回退）
+
+- [ ] **Step 6: 落 runbook**
+
+按 spec §1.9.1（5）写 `docs/superpowers/runbooks/connector-acceptance-runbook.md`：一条命令、产出 JSON 与 sha256、覆盖 401/403/404/429、限流头回填、Reports 文档下载断言、A1–A8 逐项结论；**不含任何明文密钥**。
+
+- [ ] **Step 7: 提交**
+
+`git commit -m "test(spapi): 零凭证取证基座（端点覆盖 fail-closed + Clock/KAT + 桩回放 + 证据等级门禁）"`
+
+---
 ## 验证与完成定义（Definition of Done）
 
 - [ ] 单模块：`mvn -B -ntp -pl amz-service/amz-service-spapi -am test` 全绿；受影响模块（product / finance / logistics）各自全绿。
@@ -516,6 +573,8 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 - [ ] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
+- [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；至少一条签名 KAT 通过且夹具含来源与 sha256；`ConnectorEvidencePolicyTest` 通过。
+- [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘且可执行。
 
 ## 未验证与风险（诚实记录）
 
@@ -528,6 +587,9 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 7. **`JSON_LISTINGS_FEED` 的专属配额未取到官方正文**：developer-docs 页面本轮抓取失败，Task 5 先按 `createFeed` 默认值 0.0083/15 实现并在代码注释中标注差异；拿到官方 guide 数值后必须补分档。同理，`FeedsClient.java:54` 的 `Content-Type: application/json`（无 `charset`）是否被官方接受，只能由沙箱联调确认，不得凭猜测修改。
 8. **P0-33 / P0-34 目前是静态推断**：本机无 MySQL/Redis、Docker daemon 未运行，尚未复跑 Compose/k8s。必须在可丢弃环境执行 Task 10 Step 6，确认空库路径能跑通 V1/V2、旧非空库能按 V1 baseline 后跑 V2；未执行前只能称“静态验证通过、运行未验证”。
 9. **baseline 可能跳过 V1 的校验**：Flyway 对非空且无 history 的旧库以 V1 建基线时，不会重新执行/校验 V1。虽然建表脚本与迁移的**表集合**已实测覆盖，但列、索引、默认值仍可能漂移；上线前需对存量库做 schema 对照与抽样校验，不能把 `baseline-on-migrate=true` 当作 schema 正确性的证明。
+10. **桩回放只能证明“我方与假设一致”**：E1/E2 证据（含现有 23 个签名测试）都不能证明平台接受我方请求。若 Task 11 Step 4 取不到官方 KAT 夹具，A1 在凭证到位前最高只能到 E2，对外只能宣称“具备对接能力（未联调）”，**不得**宣称“有 API 即可直接使用”。
+11. **沙箱与错误码覆盖本轮未联网复核**：raw.githubusercontent.com 与 developer-docs 抓取失败，runbook 中 401/403/404/429 的触发方式需在凭证到位时以官方文档确认；沙箱按保守假设（需要应用注册与凭证）处理。
+12. **端点覆盖是新增攻击面**：override 若在 prod 生效或 allowlist 过宽，等于把 SP-API access token 与 AWS 凭证交给任意主机。CI 必须断言“prod 拒绝 + 非 allowlist 不携带 token”，这两条断言不可 skip。
 
 ## 后续计划（不在本计划内）
 
