@@ -610,7 +610,7 @@ Expected: PASS（既有 527 用例不回退）
 5. Task 9 的运行时探针只证明了“连不上第三方公网地址”（45,292 ms 超时）。目标环境 Redis 可达后，仍需验证密码、DB index、Sentinel/Cluster 拓扑三项；不能以“端口能连”替代这三点。
 6. Task 8 的差集基线取自 2026-09-24 的仓库快照（PyYAML 6.0.3 解析）。若实现期新增配置键，契约测试会立即失败——这是刻意设计，修清单而不是放松断言。
 7. **`JSON_LISTINGS_FEED` 的专属配额未取到官方正文**：developer-docs 页面本轮抓取失败，Task 5 先按 `createFeed` 默认值 0.0083/15 实现并在代码注释中标注差异；拿到官方 guide 数值后必须补分档。同理，`FeedsClient.java:54` 的 `Content-Type: application/json`（无 `charset`）是否被官方接受，只能由沙箱联调确认，不得凭猜测修改。
-8. **P0-33 / P0-34 目前是静态推断**：本机无 MySQL/Redis、Docker daemon 未运行，尚未复跑 Compose/k8s。必须在可丢弃环境执行 Task 10 Step 6，确认空库路径能跑通 V1/V2、旧非空库能按 V1 baseline 后跑 V2；未执行前只能称“静态验证通过、运行未验证”。
+8. **P0-33 / P0-34 目前是静态推断**：必须在可丢弃环境执行 Task 10 Step 6，确认空库路径能跑通 V1/V2、旧非空库能按 V1 baseline 后跑 V2；未执行前只能称“静态验证通过、运行未验证”。**第 28 轮更新**：本机已具备 Docker + `mysql:8.0.46`，Compose 侧已部分复跑——原始 `docker/init-sql/` 在 `14-init-tables-ops.sql` 处即中止（P0-43，容器 `Exited (1)`），因此 P0-33 的“Flyway 撞非空 schema”**尚未触达**、仍属未验证；Task 10 Step 6 必须在修完 P0-39/43/45/47 后重跑，并把“真实 MySQL 8 执行 init-sql 至 `rc=0`”纳入验收。
 9. **baseline 可能跳过 V1 的校验**：Flyway 对非空且无 history 的旧库以 V1 建基线时，不会重新执行/校验 V1。虽然建表脚本与迁移的**表集合**已实测覆盖，但列、索引、默认值仍可能漂移；上线前需对存量库做 schema 对照与抽样校验，不能把 `baseline-on-migrate=true` 当作 schema 正确性的证明。
 10. **桩回放只能证明“我方与假设一致”**：E1/E2 证据（含现有 23 个签名测试）都不能证明平台接受我方请求。若 Task 11 Step 4 取不到官方 KAT 夹具，A1 在凭证到位前最高只能到 E2，对外只能宣称“具备对接能力（未联调）”，**不得**宣称“有 API 即可直接使用”。
 11. **沙箱与错误码覆盖本轮未联网复核**：raw.githubusercontent.com 与 developer-docs 抓取失败，runbook 中 401/403/404/429 的触发方式需在凭证到位时以官方文档确认；沙箱按保守假设（需要应用注册与凭证）处理。
@@ -627,4 +627,45 @@ Expected: PASS（既有 527 用例不回退）
 - Plan 3：租户与权限收敛（`@ShopScoped` 覆盖到 100%、82 条无守卫端点清零）。
 - Plan 4：安全整改（SSE/WebSocket 身份、Agent 记忆 IDOR、刷新令牌链路、PII 分类）。
 - Plan 5：可观测性与部署基线（SLO、告警、备份演练、成本看板）。
-- Plan 6：确定性模拟数据生成器（第 7 章，固定 seed、显式 SYNTHETIC、错误堆栈注入）。
+- Plan 6：确定性模拟数据生成器（第 7 章）——**第 28 轮已落地并完成 MySQL 8 端到端实测**（spec §7.9），见文末「附 A」。
+
+
+---
+
+## 附 A：第 28 轮 MySQL 8 实测补充（2026-09-24，不改变本计划实施顺序）
+
+本计划主体（Task 1–12）针对 SP-API 连接器与部署配置。第 28 轮在实现**模拟数据工具链**（spec §7.9）时，用真实 MySQL 8.0.46 对仓库 DDL 做了端到端实测，暴露 9 个新编号 P0（净新增 7 条独立缺陷）。这些发现**不改变 Task 顺序**，但扩大 Task 10（schema 引导）与 Task 8（部署清单契约）的范围，且是 Task 2「启动自检」的前置事实。
+
+### A.1 实测事实（可复现）
+
+| 项 | 结果 |
+|---|---|
+| 生成器 | `tools/synthetic-data/` 已落地：ci 档 69 张有行表 / **21,604 行** / `rc=0` / 0 errors / 2.3 s；`verify.ps1` 六类全绿；141 文件二次生成逐字节一致 |
+| 灌入 | 空库 + 完整 DDL 后 `load-all.sql` 全量成功；`amz_order.tracking_number IS NULL = 400` 与 manifest 一致 |
+| 幂等加载 | `--truncate-first` 在 `mysql:8.0.46` **连灌两次 `rc=0`**、逐表行数向量零差异；且使实测行数与 manifest **69/69 精确相等**（默认空库首灌为 57 符合 + 12 不符，差额 79 行**全部**来自仓库自带种子行，已用空表实测钉死） |
+| 原始 DDL | **未打补丁的 `docker/init-sql/` 在 `14-init-tables-ops.sql` 处中止**（`rank` 保留字 / `ERROR 1064`），MySQL 容器 `Exited (1)`，只建出 **37 张表 / 10 库**（15–33 号脚本从未执行） |
+| 补丁后 | 修 5 类问题后建出 **105** 张；28–33 号脚本仍无 `USE`，需手工 `DBMAP` 才能建对库 |
+| 28 号脚本单测 | 直接 `source` 报 `ERROR 1046 (3D000) No database selected`、`rc=1` |
+
+### A.2 新增 P0 与归属
+
+| 编号 | 摘要 | 归属 |
+|---|---|---|
+| P0-39 | MySQL 8 不支持 `ADD COLUMN IF NOT EXISTS`（7 处） | Task 10 扩大范围 |
+| P0-40 | `amz_order.uk_amazon_order` 单列唯一键与 spec §7.6 冲突 | Plan 2（订单事实模型） |
+| P0-41 | 5 处引用列类型与父键不一致 | Task 10 + Plan 2 |
+| P0-42 | Compose 缺 `amz_agent_eval_log`（净新增）/ `amz_shop_credential`（=P0-23） | Task 10 |
+| P0-43 | `rank` 保留字致 Compose 首次启动**崩库** | Task 10（最高优先） |
+| P0-44 | `amz_report` 无建库（=P0-07） | Task 10 |
+| P0-45 | `amz_inventory_alert` 的 `NOT NULL` 与 `INSERT NULL` 自相矛盾 | Task 10 |
+| P0-46 | 合成数据 `load-all.sql` 不可重复执行 | **工具侧已修**（`--truncate-first`） |
+| P0-47 | 28–33 号脚本无 `USE`，22 张表库归属未定义 | Task 10 |
+
+### A.3 Definition of Done 增补（不替代正文 DoD）
+
+- [ ] `docker/init-sql/` 由**真实 MySQL 8 容器**执行完、`rc=0`，且建表集合 == 迁移集合（当前原始路径在第 14 个文件即崩库）。
+- [ ] 每个 init-sql 文件显式声明库归属，执行日志无 `No database selected`（P0-47）。
+- [x] `tools/synthetic-data/` 的 `--truncate-first` 模式连灌两次 `rc=0`（P0-46）——**第 28 轮补测通过**：两次 `rc=0`、非警告 stderr 行 0、逐表行数向量零差异、69/69 与 manifest 精确相等（容器 `amz-mysql-syntax-test`）。
+- [ ] spec §7.9 的产物与本文档证据一致，P0-39…P0-47 可在 spec §1.3 交叉检索。
+
+> **边界不变**：本轮实测不产生任何 E4/E5 证据；A5 仍只能由凭证到位当天的 runbook 产出（spec §1.9.1(5)）。

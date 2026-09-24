@@ -64,3 +64,7 @@ logs/
 dist/
 test-output.txt
 .hsk/
+
+# Synthetic data toolchain artefacts (regenerate with tools/synthetic-data/run.ps1)
+tools/synthetic-data/out/
+tools/synthetic-data/__pycache__/

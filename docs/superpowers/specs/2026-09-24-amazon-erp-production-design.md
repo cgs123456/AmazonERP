@@ -21,7 +21,7 @@
 3. **财务事实源**：缺少借贷平衡凭证、真实 FIFO 成本层、多币种汇率、税务规则、结算对账和期末关账。
 4. **集成事实源**：外部调用、Webhook、MQ、缓存和数据库之间没有统一的 Outbox/Inbox、幂等和失败重放机制。
 
-同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **38 条（P0-01…P0-38）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、可实测的供应链漏洞基线，以及**“Real 客户端”名不副实与失败静默降级**（P0-22）。第 10 轮针对“暂时没有 API，但必须做到有凭证就能直接用”这一目标又补了 8 条（P0-23…P0-30）：凭证表 DDL 无任何自动执行路径、SP-API 默认 profile 为 `mock` 使财务域三类客户端在部署形态下返回样例数据、Nacos 地址变量在 Compose 与代码之间不一致且 16 份 `bootstrap.yml` 在当前依赖下不生效、spapi 是订单与库存关键路径的单点却只实现 6 类客户端、`ReportsRealClient` 读错官方字段名使结算报表文档 ID 恒为 null、限流默认配额最高比官方宽松约 120 倍且 3 个在用 endpointTag 无策略、k8s 自带 Secret 的 `AMZ_CRYPTO_KEY` 解码为 34 字节使 spapi 启动即崩、Feeds 结果报告永不下载使被拒行永久丢失。第 13 轮用真 YAML 解析器（PyYAML 6.0.3）与 JVM 运行时探针再钉死两类部署期缺陷（P0-31、P0-32）：order/product 的 `RedissonConfig` 硬编码第三方公网 Redis `121.37.250.15:6379`，且所读 `spring.redis.host` 键在 Spring Boot 3 下已改名、全仓无任何 yml 或环境变量可覆盖（实测 45,292 ms 后抛 `RedisConnectionException`）；`docker-compose.yml` 实测 31 个 service、`env_file` 0 次、`REDIS_HOST` 0 次、`RABBITMQ_HOST` 仅 order+finance、`MYSQL_HOST` 仅 spapi，16 份 k8s Deployment 全部不注入 `SPRING_PROFILES_ACTIVE`（`JAVA_OPTS` 已逐字核对为纯 JVM 参数），使 15 个 `@Profile("mock")` 客户端在两种部署形态下都会伪造成功。第 17 轮再追加 2 条**部署期 schema 引导**阻断（P0-33、P0-34）：Compose 路径会先由 `docker/init-sql/` 建表、再撞上从未配置过的 Flyway 基线，k8s 路径则连 14 个业务库都没有，两条路径都起不来。第 22 轮先用官方文档纠正一条**被写进早期前提的假设**（SP-API 自 2023-10-02 起不再要求 AWS SigV4，见 1.9.2），再追加 4 条 P0：**P0-35** 官方必填头 `user-agent` 全仓缺失（实测命中 0，JDK 默认 UA 不含 App 名与版本）、**P0-36** marketplace→region 映射 23 个 ID 缺 13 个且未知值静默回落 NA（fail-open）、**P0-37** 无 Restricted Data Token 使订单 PII 没有合规获取路径（客服/RMA 整链不可交付）、**P0-38** AWS 密钥缺失时不跳过签名而是发出 `Credential=null` 畸形头（把 AWS 密钥改成可选的**前置修复**）。
+同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **38 条（P0-01…P0-38）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、可实测的供应链漏洞基线，以及**“Real 客户端”名不副实与失败静默降级**（P0-22）。第 10 轮针对“暂时没有 API，但必须做到有凭证就能直接用”这一目标又补了 8 条（P0-23…P0-30）：凭证表 DDL 无任何自动执行路径、SP-API 默认 profile 为 `mock` 使财务域三类客户端在部署形态下返回样例数据、Nacos 地址变量在 Compose 与代码之间不一致且 16 份 `bootstrap.yml` 在当前依赖下不生效、spapi 是订单与库存关键路径的单点却只实现 6 类客户端、`ReportsRealClient` 读错官方字段名使结算报表文档 ID 恒为 null、限流默认配额最高比官方宽松约 120 倍且 3 个在用 endpointTag 无策略、k8s 自带 Secret 的 `AMZ_CRYPTO_KEY` 解码为 34 字节使 spapi 启动即崩、Feeds 结果报告永不下载使被拒行永久丢失。第 13 轮用真 YAML 解析器（PyYAML 6.0.3）与 JVM 运行时探针再钉死两类部署期缺陷（P0-31、P0-32）：order/product 的 `RedissonConfig` 硬编码第三方公网 Redis `121.37.250.15:6379`，且所读 `spring.redis.host` 键在 Spring Boot 3 下已改名、全仓无任何 yml 或环境变量可覆盖（实测 45,292 ms 后抛 `RedisConnectionException`）；`docker-compose.yml` 实测 31 个 service、`env_file` 0 次、`REDIS_HOST` 0 次、`RABBITMQ_HOST` 仅 order+finance、`MYSQL_HOST` 仅 spapi，16 份 k8s Deployment 全部不注入 `SPRING_PROFILES_ACTIVE`（`JAVA_OPTS` 已逐字核对为纯 JVM 参数），使 15 个 `@Profile("mock")` 客户端在两种部署形态下都会伪造成功。第 17 轮再追加 2 条**部署期 schema 引导**阻断（P0-33、P0-34）：Compose 路径会先由 `docker/init-sql/` 建表、再撞上从未配置过的 Flyway 基线，k8s 路径则连 14 个业务库都没有，两条路径都起不来。第 22 轮先用官方文档纠正一条**被写进早期前提的假设**（SP-API 自 2023-10-02 起不再要求 AWS SigV4，见 1.9.2），再追加 4 条 P0：**P0-35** 官方必填头 `user-agent` 全仓缺失（实测命中 0，JDK 默认 UA 不含 App 名与版本）、**P0-36** marketplace→region 映射 23 个 ID 缺 13 个且未知值静默回落 NA（fail-open）、**P0-37** 无 Restricted Data Token 使订单 PII 没有合规获取路径（客服/RMA 整链不可交付）、**P0-38** AWS 密钥缺失时不跳过签名而是发出 `Credential=null` 畸形头（把 AWS 密钥改成可选的**前置修复**）。 **第 28 轮**把上述判断推进到可执行层面：模拟数据工具链已落地并通过 MySQL 8.0.46 端到端实测（69 张有行表 / 21,604 行 / `rc=0` / 0 errors，见 §7.9），同时用**未打补丁的原始 DDL**实测出 9 个新编号（P0-39…P0-47），其中 P0-42 的凭证表部分与 P0-23 重叠、P0-44 与 P0-07 完全重叠（只作实证强化）、P0-46 是工具项，**净新增 7 条独立缺陷**：MySQL 8 不支持 `ADD COLUMN IF NOT EXISTS`（P0-39）、`uk_amazon_order` 单列唯一键（P0-40）、5 处引用列类型与父键不一致（P0-41）、`amz_agent_eval_log` 在 Compose 无建表路径（P0-42 净新增部分）、`rank` 保留字致 Compose 首次启动崩库（P0-43）、`amz_inventory_alert` 的 NULL 语义自相矛盾（P0-45）、28–33 号脚本库归属未定义（P0-47）。**去重后 P0 总数为 45 条**。其中 P0-43 的爆炸半径经真实 entrypoint 证实：MySQL 容器 `Exited (1)`、只建出 37/105 张表、15–33 号脚本从未执行——即“Compose 路径能建出 105 张表”这一旧口径**不成立**，105 张是打补丁后的结果。
 
 需要特别说明的一点自查：初稿曾把“AI 工具会写生产数据”当作整体结论，本轮逐行核对后收窄为**只有 `cross_marketplace_listing` 一条真实写入链路**（详见 1.3 节的诚实修正）。同样，“JWT 空密钥静默可用”的假设也被推翻——`JwtUtil.init()` 在密钥为空时直接让服务启动失败，这是正向设计。
 
@@ -66,6 +66,7 @@
   - 各服务 `db/migration`（Flyway）实测 106 张（唯一多出的是 `amz_agent_eval_log`）；
   - README 写 54 张。
   三者并集 107 张。这说明建表源、升级脚本和文档之间没有单一事实源（精确口径见附录 B）。
+- **第 28 轮把上述静态口径推进到真实执行**：用未打补丁的 `docker/init-sql/` + MySQL 8.0.46 跑真实 entrypoint，**第 14 个文件即崩溃**（`rank` 保留字，P0-43），容器 `Exited (1)`、只建出 **37 张表 / 10 个库**；修掉 5 类语法/建库问题后才达到 105 张，且 28–33 号文件仍需手工映射库才能建对（P0-47）。**结论：Compose 的“105 张表”不是可复现路径，而是打补丁后的结果**；原始仓库在 MySQL 8 上连数据库容器都起不来。
 
 ### 1.2 本轮实测的构建与测试基线（可复现）
 
@@ -148,6 +149,15 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | P0-36 | **marketplace→region 映射缺 13 个 ID，未知值静默回落 NA（fail-open）** | 官方 `store-identifiers.md` 全表 **23** 个 marketplaceId；本仓库 **4 份完全相同**的硬编码表各仅 **10** 条（`OrdersClient.java:70-81`、`FeedsClient.java`、`FbaInventoryClient.java`、`SpApiGateway.java:51-62`），解析统一为 `MARKETPLACE_REGION.getOrDefault(marketplaceId, "NA")`（`SpApiGateway.java:250-252` 的 javadoc 自述“未知时默认 NA”）；缺失 13 个：**NA** `A2Q3Y263D00KWC`(BR，属 NA 端点)、**EU** `A28R8C7NBKEWEA`(IE)/`AMEN7PMS3EDWL`(BE)/`A1805IZSGTT6HS`(NL)/`A2NODRKZP88ZB9`(SE)/`AE08WJ6YKNBMC`(ZA)/`A1C3SOZRARQ6R3`(PL)/`ARBP9OOSHTCHU`(EG)/`A33AVAJ2PDY3EV`(TR)/`A17E79C6D8DWNP`(SA)/`A2VIGQ35RCS4UG`(AE)/`A21TJRUUN4KGV`(IN)、**FE** `A19VAU5U5O7RUS`(SG) | 建立单一事实源 `MarketplaceRegistry`（23 条：marketplaceId → region → 国家码 → 官方主机），删除四份副本；未知 ID **抛明确异常**（区分“未知 marketplace”与“区域不支持”），**禁止**回落；契约测试逐条断言 23 条 region 与 host 解析，冲突 §1.7 第 2 条 fail-closed |
 | P0-37 | **无 Restricted Data Token，订单 PII 无合规获取路径** | 全仓 `restrictedDataToken` / `RestrictedDataToken` / `createRestrictedDataToken` / `tokens/2021` 命中 **0**（`git grep` 排除 `target/`）；官方 AA Java 库含 `RestrictedDataTokenSigner` 可直接借鉴（第 22 轮 tree 确认） | 实现 RDT 申请与按 operation 复用（缓存至过期）；订单 PII（姓名/地址/邮箱/电话）只经 RDT 读取并加密落库、按 DPP 30 天删除；**RDT 落地前，客服/RMA/面单等依赖收件信息的功能一律标“未接通”**，不得宣称可用 |
 | P0-38 | **AWS 密钥缺失时不跳过签名，而是发出畸形 `Authorization` 头** | 第 22 轮实测（真实编译产物 `target/classes` + JDK 17 探针）：`AwsSigV4Signer.sign(..., null, null, "us-east-1")` **不抛异常**，返回 `Authorization: AWS4-HMAC-SHA256 Credential=null/20260924/us-east-1/execute-api/aws4_request, SignedHeaders=host;x-amz-date, Signature=…` 与 `x-amz-date`；空串入参得到 `Credential=/…`。根因：`AwsSigV4Signer.java:102-108` 的 `("AWS4" + key)` 在 `key=null` 时按字符串拼接得到 `"AWS4null"`，不触发任何校验；而 4 个客户端在 **7 处**（`SpApiGateway.java:130-132`、`OrdersClient.java:147`/`:227`、`FeedsClient.java:149`/`:213`/`:271`、`FbaInventoryClient.java:150`）**无条件**调用签名器 | 改为**有条件签名**：仅当 `accessKey` 与 `secretKey` **同时非空**才注入 `Authorization`，否则完全跳过签名（保留官方头 `host`/`x-amz-access-token`/`x-amz-date`/`user-agent`）；**禁止**发出含 `null`/空凭证的 `Authorization`；契约测试断言两条分支的头集合（有密钥 → 含 `Authorization`；无密钥 → 不含） |
+| P0-39 | **MySQL 8 不支持 `ADD COLUMN IF NOT EXISTS`，7 处升级语句必然报 1064** | 第 28 轮 MySQL 8.0.46 实测：`docker/init-sql/19-init-tables-field-permission.sql:29`（1 处）与 `23-init-tables-procurement-upgrade.sql:118-123`（6 处）合计 **7 处**使用 MariaDB 扩展语法（MySQL 8.0 无此支持），未打补丁时均报 `ERROR 1064`；`19` 号脚本失败会让 `amz_user.role` 列缺失，直接击穿 `@RequireRole` / ADMIN 判定链（该列正是 `19-init-tables-field-permission.sql` 新增的） | 改为 `information_schema.COLUMNS` 存在性判断 + 预处理语句，或由 Flyway 版本化迁移承接；CI 增加 **MySQL 8 方言**语法门禁，禁止只在 MariaDB / 语法模拟器上验证 |
+| P0-40 | **`amz_order.uk_amazon_order` 是 `amazon_order_id` 单列唯一键，与 §7.6 第 1 条直接冲突** | `schema-snapshot.json` 实测：`amz_order.amz_order` 的 `unique_keys = [{name: uk_amazon_order, columns: [amazon_order_id]}]`，而 §7.6 第 1 条要求“同一 `amazon_order_id` 出现在不同店铺/市场，不能互相覆盖”→ 数据库唯一键会把不同店铺的同号订单判为重复，upsert 时**跨店互相覆盖**；合成数据工具只能靠“全局唯一 `amazon_order_id`”规避，并把该规避写入 `manifest.known_schema_conflicts`（登记 ≠ 解决） | 唯一键改为 `(shop_id, marketplace_id, amazon_order_id)`（或内部订单主键 + 平台订单号唯一），按 §3.1 重建订单事实表；迁移必须含存量重键与冲突检测方案 |
+| P0-41 | **5 处引用列类型与父表主键不一致（宽/窄化 + 隐式转换）** | 快照实测：`amz_ad.amz_ad_search_term.keyword_id` `VARCHAR(50)` ↔ `amz_ad.amz_ad_keyword.id` `BIGINT`；`amz_finance.amz_payment_collection.order_id` 与 `amz_settlement_detail.order_id` 均 `VARCHAR(64)` ↔ `amz_order.amz_order.id` `BIGINT`；`amz_order.amz_order.product_id` / `user_id` 均 `INT` ↔ `amz_product.amz_product.id` / `amz_user.amz_user.id` `BIGINT`；因显式外键实测为 0，MySQL 不阻止写入异构值，JOIN 走隐式转换会**丢索引并产生错误匹配** | 按父键统一为 BIGINT（或统一为同长字符串）并补显式外键/应用层约束；迁移前统计两侧不兼容存量值；CI 增加“引用列类型 == 父键类型”静态检查 |
+| P0-42 | **Compose 初始化产物比 DDL 快照少 2 张表；其中 `amz_agent_eval_log` 为净新增，`amz_shop_credential` 部分与 P0-23 重叠** | 第 28 轮实测（打补丁后）：compose `docker/init-sql/` 建 **105** 张表，三源并集 **107** 张；独有 ① `amz_spapi.amz_shop_credential`（仅 `amz-service/amz-service-spapi/src/main/resources/db/schema.sql` 与 `init_all_tables.sql:459` = P0-23）② `amz_ai.amz_agent_eval_log`（仅 `amz-service/amz-service-ai/src/main/resources/db/migration/V2__agent_eval_log.sql`）→ AI Agent 评测日志在 Compose 路径下**无表可写** | 两条部署路径合并到单一迁移入口（附录 B 第 6 条）；CI 断言“迁移表集合 == 部署建表集合”；`amz_agent_eval_log` 纳入版本化迁移 |
+| P0-43 | **`rank` 未加反引号：MySQL 8 实测使 Compose 首次启动直接崩库（爆炸半径最大的一条）** | 第 28 轮用**未打补丁**的 `docker/init-sql/` + `mysql:8.0.46` 复跑真实 entrypoint：`14-init-tables-ops.sql:49` 的 `rank INT DEFAULT NULL`（MySQL 8 保留字）报 `ERROR 1064 (42000) at line 44`，**entrypoint 立即中止、MySQL 容器 `Exited (1)`**；15–33 号文件全部未执行，最终只建出 **37 张表 / 10 个库**（目标 105 张 / 14 库），依赖它的 14 个服务全部无法启动；同仓库 `init_all_tables.sql:867` 已写作 `` `rank` ``，说明修法存在但从未回写 compose 脚本 | 加反引号并全量排查保留字；CI 用真实 MySQL 8 容器执行**全部** `docker/init-sql/` 并断言 `rc=0` + 表集合与快照一致——禁止用文本比对或“语法模拟器”替代真实执行 |
+| P0-44 | **`amz_report` 全仓无 `CREATE DATABASE`，两个脚本指向不存在的库（P0-07 的运行时实证，编号保留用于交叉引用，不重复计入净新增）** | 第 28 轮实测：`docker/init-sql/01-init-databases.sql` 只建 5 库（`amz_user/product/order/search/spapi`），而 `26-init-tables-report-upgrade.sql:7` 直接 `USE amz_report`（未打补丁时报 `ERROR 1049 Unknown database 'amz_report'`）；`30-init-tables-p1-realtime-profit.sql` 连 `USE` 都没有，其 2 张表（`amz_profit_snapshot` / `amz_cost_allocation`）库归属未定义（见 P0-47） | 与 P0-07 同一修复项：14 库建库清单统一、报表域表显式落 `amz_report`、`amz-service-report` datasource 补齐 |
+| P0-45 | **`amz_inventory_alert` DDL 自相矛盾：列声明 `NOT NULL` 却在同文件插入 `NULL`** | 第 28 轮实测：`docker/init-sql/31-init-tables-p1-multi-warehouse.sql:34` 定义 `sku VARCHAR(64) NOT NULL COMMENT 'SKU（NULL=全局）'`（注释自述允许 NULL 表示全局），同文件 `:49-54` 插入 5 行 `sku = NULL` → `ERROR 1048 Column 'sku' cannot be null`；该文件同时无 `USE`（P0-47） | 二选一并保持一致：`sku` 改可空（保留“全局预警”语义），或删除 NULL 预置行并改注释；预置数据、DDL、应用校验三者必须同源 |
+| P0-46 | 【**工具/规范项，不计入仓库 P0**】合成数据 `load-all.sql` 不可重复执行 | 第 28 轮实测：第二次执行同一 `load-all.sql` 报 `ERROR 1062 Duplicate entry '900000000000500000' for key 'amz_ad_campaign.PRIMARY'`，`rc=1` 中断（保留号段 + 普通 `INSERT` 的组合）；根因在工具侧而非仓库 | 已在 `tools/synthetic-data/generate.py` 落地 `--truncate-first`（默认关闭）：开启时在 `load-all.sql` 头部按逆序生成 `TRUNCATE TABLE`（含 `SET FOREIGN_KEY_CHECKS=0/1` 与醒目警告）；默认模式在文档中明确“仅支持空库首次加载”；CI 用 `--truncate-first` 连灌两次验证幂等（§7.9） |
+| P0-47 | **28–33 号脚本无 `USE` / `CREATE DATABASE`：22 张表的库归属未由脚本声明（修掉 P0-43 之后的第二层必崩点）** | 第 28 轮实测：`28/29/30/31/32/33-init-tables-p*.sql` **均无 `USE`**（26/27 有），6 个文件合计 **22 条 `CREATE TABLE`**（逐个文件：28→5、29→3、30→2、31→2、32→7、33→3，实测计数与文档一致）；`docker-compose.yml` 中 `MYSQL_DATABASE` 出现 **0 次**（只有 `MYSQL_ROOT_PASSWORD`/`TZ`），因此**不存在默认库兜底**——失败模式是硬的：直接 `source` 28 号文件报 `ERROR 1046 (3D000) No database selected`、退出码 1，在 entrypoint 下等同再一次中止初始化。**目标库本身有权威判定依据（第 28 轮补测）**：这 22 张表**全部**出现在对应服务模块的 Flyway `V1__init.sql` 中，且各服务 `application.yml` 的数据源 URL 锁定库名——`amz-service-product→amz_product`(5 表)、`amz-service-order→amz_order`(3)、`amz-service-report→amz_report`(2)、`amz-service-logistics→amz_logistics`(2)、`amz-service-multiplatform→amz_multiplatform`(7)、`amz-service-ai→amz_ai`(3)，与上一轮手工 `DBMAP` **22/22 全部吻合**（含命名易误判的 `amz_logistics_quote` 确属 `amz_ai`）。注意区分两件事：**“脚本未声明库”是缺陷（本节）**，而**“该表属于哪个库”已有答案**——不要因为前者而把后者也当成未知。| 把已有权威归属写回脚本：每个脚本显式 `USE <目标库>`（归属值见左栏，无需重新设计），或统一由单一迁移入口按模块目录解析库归属；CI 断言“每个 init-sql 文件的每张表都落在其声明的库”且无 `No database selected` |
 
 > 关于 P0-04 的**诚实修正**：8 个 `OPERATE_TOOLS` 中，**只有 `cross_marketplace_listing` 已确认会真实写外部系统**（`ProductController.copyListing` → `ListingCopyService.createCopyTask` → `@Async executeCopyTaskAsync` → `listingsClient.submitFeed` → SP-API Feeds，且 `pollFeedStatus` 以 `Thread.sleep(15s)` 轮询最长 5 分钟）。`optimize_ad_campaign`、`optimize_listing_seo`、`optimize_shipping_route`、`optimize_inventory_distribution` 是只读查询 + 规则文本；`create_purchase_plan`（返回 `DRAFT` Map，`planNo=System.currentTimeMillis()`）与 `auto_reply_message`（返回草稿）都不落库；`generate_promotion_plan` 是 `@GetMapping("/promotion/plan")` + `@ShopScoped`，返回**硬编码**的 Lightning Deal 方案，**完全不写数据**。
 >
@@ -462,6 +472,49 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 #### （6）优先级重排（相对第 19–21 轮）
 
 `user-agent`（P0-35）与 marketplace 全表 fail-closed（P0-36）都是**零凭证可离线完成、且直接决定“凭证到位当天能否跑通”**的项，优先级**高于** SigV4 KAT；RDT（P0-37）是**业务可用性的前置条件**。据此把实施计划 Task 11 的目标从“SigV4 签名 KAT”调整为“**LWA token 交换 + 请求构造契约测试（含必填头与 marketplace 解析）**”，SigV4 KAT 与 Clock 注入**保留但降级为前向保险**。
+
+### 1.9.3 第 28 轮：模拟数据工具链已落地，MySQL 8 端到端实测通过（离线基座，不等于联调）
+
+**口径未变**：用户口径仍是“暂时没有对接 API，但需要有对接能力，有 API 就可以直接使用”。本节只登记一件可验证的新事实：**第 7 章的模拟数据工具链已从设计变为可执行产物**，并因此把部署/schema 侧的隐藏阻断从“静态推断”升级为“MySQL 8 实测”。
+
+**（1）实测环境与结果**
+
+| 项 | 值 |
+|---|---|
+| 数据库 | Docker `mysql:8.0.46`、`--default-character-set=utf8mb4`、空库 + 完整 14 库 |
+| 仓库状态 | `master@d8dc8b0`（工作区新增 `tools/synthetic-data/` + `.gitignore` 两行，未 push） |
+| 数据集 | `ci` 档、seed `20260924`、`data_origin=SYNTHETIC` |
+| 命令 | `python tools/synthetic-data/generate.py --tier ci --reset` → `mysql < out/ci/load-all.sql` |
+| 灌入结果 | **rc=0 / 0 errors**；69 张有行表全部成功；**21,604 行** |
+| 生成规模 | `sql_bytes=5,200,351`、`jsonl_bytes=8,357,559`、耗时 **2.3 s**、`unique_key_repairs=0` |
+| 校验 | `verify.ps1` 六类全绿（structure / references / markers / determinism / manifest / snapshot）；141 个文件二次生成**逐字节一致** |
+| NULL 往返 | `amz_order.tracking_number IS NULL = 400`，与 `manifest.nulls_injected` 一致 |
+
+**（2）无凭证阶段因此可以被证明的事**
+
+- 生成器确定性、标记完整性（71 个标记列 0 违规、1 个“名字命中规则但 DDL 非文本类型”的列显式计入 skipped）可复现。
+- 合成 SQL 能被**真实 MySQL 8** 接受（不是语法模拟器），NULL/唯一键/类型规则经数据库往返存活。
+- 已知 schema 冲突被显式登记（`manifest.known_schema_conflicts`，含 P0-40 的 `uk_amazon_order`），而不是被静默绕过。
+
+**（3）仍然不能被证明的事（必须诚实标注）**
+
+- **A5 完全未取证**：本次实测只覆盖“本地 MySQL 接受合成 SQL”，与 SP-API 零交互，不能算 E2/E3，更不能替代 E4/E5。
+- “有 API 就能直接用”的四个硬前置（P0-23 凭证表无自动建表路径、`ShopCredentialStore` fail-open、`SpApiConfig` 无 `user-agent`、`CryptoUtil` 与 k8s Secret 34 字节不匹配）**一个都没修**；未修完前，即使当天拿到凭证也跑不起来。
+- 本轮同时暴露的部署阻断（P0-39/40/41/42/43/44/45/47）与连接器协议缺陷（P0-35/36/37/38）**全部仍在**。
+
+**（4）对 A1–A8 的影响**
+
+| 标准 | 变化 |
+|---|---|
+| A2 缺凭证显式失败 / A3 启动自检 | 无变化（需 Task 2 落地后才能取证） |
+| A5 联调记录 | 无变化：**唯一取证路径仍是凭证到位当天的 runbook**（§1.9.1(5)） |
+| A6 能力清单 / A7 失败可重放 / A8 限流 | 合成数据可作为**失败注入与重放测试的输入**（`--chaos`），但证据等级上限仍是 E1/E2，不因本次实测上升 |
+
+**（5）由此产生的工程纪律**
+
+1. **禁止用静态解析代替真实执行**：`docker/init-sql` 的表口径必须由真实 MySQL 8 容器执行后统计——P0-43 这类“文本看着没问题、一跑就崩”的缺陷只有真实执行能发现。
+2. **合成数据不得进入生产库**：`load-all.sql` 全文带 `SYNTHETIC` 标记；默认只支持空库首次加载，重复加载必须显式开启 `--truncate-first`（P0-46）。
+3. **产物与证据分离**：大文件不入 Git（`out/` 已 gitignore），只提交生成器 + DDL 快照 + seed；每份产物在 `manifest.json` 中带 SHA-256。
 
 ## 2. 目标架构、租户模型与运行单元
 
@@ -1617,61 +1670,84 @@ seed        = 固定整数或字符串
 - 每个异常场景有自动化测试、预期结果和证据。
 - 压测数据可重复使用，并能生成报表/对账案例而不污染生产。
 
-### 7.9 首批交付物与固定 seed（设计，待批准后才落代码）
+### 7.9 首批交付物与固定 seed（第 28 轮：已落地并通过 MySQL 8 端到端实测）
 
-用户已确认：**暂无真实数据，也暂无任何平台凭证**。因此模拟数据是开发与验收的主要输入。下列内容为**设计**，未经批准不写实现代码。
+用户已确认：**暂无真实数据，也暂无任何平台凭证**，模拟数据是开发与验收的主要输入。本节记录**实际交付物与实测证据**；原始设计（固定 seed、`SYNTHETIC` 标记、DDL 单一来源、异常场景注入）已全部实现。工具链属“测试基础设施”，不改变“设计批准前不写业务实现代码”的纪律。
 
-| 产物 | 建议路径 | 说明 |
+**（1）实际交付物（全部位于 `tools/synthetic-data/`）**
+
+| 产物 | 路径 | 说明 |
 |---|---|---|
-| 生成器 | `tools/synthetic-data/`（独立目录，不依赖任何业务模块） | 固定 seed、稳定 UUID v5、输出 SQL/JSONL |
-| 数据集元数据 | `tools/synthetic-data/datasets/{tier}/dataset.json` | `dataset_id`、`seed`、规模、生成时间、行数、文件哈希 |
-| demo 档产物 | `tools/synthetic-data/out/demo/*.sql` | 1 租户 / 3 店铺 / 3 市场 / 1 万订单 |
-| ci 档产物 | `tools/synthetic-data/out/ci/*.sql` | 1 租户 / 2 店铺 / 2 市场 / 1,000 订单 |
-| 校验脚本 | `tools/synthetic-data/verify.ps1` 与 `verify.sh` | 行数、哈希、外键、标记字段校验 |
+| DDL 快照与解析 | `schema/schema-snapshot.json`（v1.1.0）、`schema/SCHEMA_REPORT.md`、`schema/DDL_SOURCES.json` | 三源解析（`docker/init-sql/` + 14 个服务 `db/migration` + `init_all_tables.sql`）：**107 张表**、无主键表 0、显式外键 0、视图 1、5 张表 7 个条件列、5 条 `ALTER`、`parse_issues` 为空 |
+| 生成器 | `generate.py` | 固定 seed、稳定 UUID v5、列定义从 DDL 自动推导；`--chaos` 注入异常场景；`--truncate-first` 生成幂等加载脚本（P0-46） |
+| 校验器 | `verify.py` + `verify.ps1` / `verify.sh` | structure / references / markers / determinism / manifest / snapshot 六类校验 |
+| 入口脚本 | `run.ps1` / `run.sh`、`verify.ps1` / `verify.sh` | 一条命令生成、一条命令校验 |
+| 产物（不入库） | `out/{ci,demo}/` | `load-all.sql`、69 个 `sql/*.sql`、69 个 `jsonl/*.jsonl`、`manifest.json`、`00-load-order.txt`；`out/` 已在 `.gitignore` 中排除 |
 
-首批固定值：
+固定值（与设计一致）：`dataset_id=synthetic-amazon-erp-v1`、`seed=20260924`、`data_origin=SYNTHETIC`、tenant `900000000000000001`、shop `900000000000000101/102/103`。
 
-```text
-dataset_id  = synthetic-amazon-erp-v1
-seed        = 20260924
-data_origin = SYNTHETIC
-tenant_id   = 900000000000000001
-shop_id     = 900000000000000101 / 900000000000000102 / 900000000000000103
-```
-
-要求：
-
-1. **列定义只从既有 DDL 取**：`docker/init-sql/`（32 个文件、105 条 `CREATE TABLE`）与各服务 `db/migration`；生成器的列清单必须从 DDL 自动推导或与 DDL 做哈希比对，禁止手抄，避免再出现 §7 之外的新 schema 副本（附录 B）。
-2. 大文件不提交 Git：只提交生成器、DDL 快照与固定 seed；产物写对象存储或本地临时目录并附 SHA-256。
-3. `amz_shop_credential` 合成行（用于验证“凭证即插即用”入口，**不含任何真实范围值**）：
+**（2）实测证据（2026-09-24，ci 档，`--reset`）**
 
 ```text
-shop_id                 = 900000000000000101
-client_id               = SYNTHETIC_LWA_CLIENT_ID
-client_secret_encrypted = CryptoUtil 加密 "SYNTHETIC_CLIENT_SECRET"
-refresh_token_encrypted = CryptoUtil 加密 "SYNTHETIC_REFRESH_TOKEN"
-access_key_encrypted    = CryptoUtil 加密 "SYNTHETIC_AWS_ACCESS_KEY"
-secret_key_encrypted    = CryptoUtil 加密 "SYNTHETIC_AWS_SECRET_KEY"
-region                  = NA
-marketplace_id          = SYNTHETIC_MARKETPLACE_ID
-seller_id               = SYNTHETIC_SELLER_ID
+tables_with_rows  = 69 / 107      （其余 38 张无合适行源，不造空表）
+rows              = 21,604
+sql_bytes         = 5,200,351
+jsonl_bytes       = 8,357,559
+unique_key_repairs= 0
+生成耗时          = 2.3 s
+verify.ps1        = structure/references/markers/determinism(141 文件逐字节一致)/manifest/snapshot 全 OK
 ```
 
-**前置条件（必须先修，否则这一步直接失败）**：`CryptoUtil.init()` 要求 `AMZ_CRYPTO_KEY` 解码后恰为 32 字节，而 `k8s/secret.yaml` 现有值解码为 34 字节（P0-29），且该表当前没有任何自动建表路径（P0-23）。生成合成凭证前必须先替换为合法密钥（例如 `openssl rand -base64 32`）并把凭证表纳入迁移。
+MySQL 8 端到端（`mysql:8.0.46`，空库 + 完整 DDL 后执行 `load-all.sql`）：
 
-校验命令（示例，实现后固化进 CI）：
+```text
+[load]  load-all.sql rc=0 errors=0
+[count] tables=69 expected_rows=21604 actual_rows=21683 matched=57 mismatched=12 missing=0
+[spot]  amz_order.tracking_number IS NULL = 400   （=== manifest 的 NULL 注入数，NULL 规则经数据库往返存活）
+```
+
+> **12 处“行数不符”的解释（第 28 轮补测钉实，防误读）**：全部来自**仓库自带的预置种子数据**，**不是生成器缺陷**，但原先“全部是 `INSERT IGNORE`”的措辞**不准确，已修正**。实测口径：`docker/init-sql/` 共 **16 条**种子 `INSERT`（10 条 `INSERT IGNORE`、4 条 `INSERT … ON DUPLICATE KEY UPDATE`、2 条裸 `INSERT`），真实值元组 **90 个 → 空表实测落库 90 行**（元组数 = 落库行数，**无丢弃**）；其中 **79 行落在 69 张生成表上、跨 12 张表**，与基线差额 `21,683 − 21,604 = 79` 逐行吻合。例：`amz_user` 9 vs 8、`amz_field_permission` 71 vs 54、`amz_supplier` 11 vs 8。核对行数时必须先扣除仓库预置行。
+>
+> ⚠️ **计数陷阱（本轮实测踩过，记录以免复现）**：用“统计 `VALUES` 之后的顶层括号组”来数种子行数时，会把 upsert 子句里的 `VALUES(col)` **函数调用**也数成一个元组，导致 4 条 upsert 各多算 1、合计虚增 4（90 → 94）。正确做法是先截断 `ON DUPLICATE KEY UPDATE` 子句再计数。由该陷阱得出的“4 行被 `IGNORE` 静默丢弃 / 种子内部存在唯一键碰撞”推断**已作废**，不得引用。
+
+**（2b）幂等加载实测（`--truncate-first`，2026-09-24 补测，对应 P0-46）**
+
+在同一 `mysql:8.0.46` 容器内**连续执行两次**同一份 `load-all.sql`（TRUNCATE 模式）：
+
+```text
+[load#1] rc=0  非警告 stderr 行=0   total_rows=21,604   matched=69/69  mismatched=0
+[load#2] rc=0  非警告 stderr 行=0   total_rows=21,604   matched=69/69  mismatched=0
+[assert] 两次加载后的逐表行数向量完全一致（差异 0 处）
+```
+
+> 结论：TRUNCATE 模式**幂等**，且使实测行数与 `manifest.json` **逐表精确相等（69/69）**——默认（空库首灌）模式的 `21,683 / 57+12` 与它的差额 79 行，即上一条说明的仓库预置种子行，二者已完全闭环解释。
+> TRUNCATE 段结构（生成即可核对）：按加载顺序**全局逆序**、**每条 `TRUNCATE` 前带 `USE`**、整段包在 `SET FOREIGN_KEY_CHECKS=0/1` 之间，且文件头部带“会删除数据、禁止指向生产库”的醒目警告。
+
+**（3）与仓库缺陷的关系（工具链暴露但不在此修）**
+
+- 生成器消费的三源 DDL 本身不一致（附录 B）；P0-23/P0-42 导致的缺口已写入 `manifest.known_schema_conflicts`。
+- P0-40 使生成器只能全局唯一化 `amazon_order_id`——这是**显式登记的规避**，修 schema 前不得视为已解决。
+- P0-41 的 5 处引用列类型不一致在生成器内按父键类型兼容写入，但数据库层不会拒绝异构值（显式外键为 0），仍属 schema 缺陷。
+
+**（4）使用方式**
 
 ```powershell
-# 1) 确定性：生成两次，产物哈希必须一致
-Get-FileHash tools/synthetic-data/out/ci/*.sql -Algorithm SHA256 | Sort-Object Path
-# 2) 标记完整性：所有生成脚本与产物都带 SYNTHETIC 标记
-git grep -n "SYNTHETIC" -- tools/synthetic-data
-# 3) 部署后确认凭证表真实存在（P0-23 的回归检查）
-# SELECT COUNT(*) FROM information_schema.tables
-#  WHERE table_schema = 'amz_spapi' AND table_name = 'amz_shop_credential';
+# 生成 + 校验（不接触数据库）
+pwsh tools/synthetic-data/run.ps1    -Tier ci --reset
+pwsh tools/synthetic-data/verify.ps1 -Tier ci
+
+# 灌入测试库（仅合成数据集专用库；默认要求空库/首次加载）
+mysql --default-character-set=utf8mb4 -h HOST -u USER -p < tools/synthetic-data/out/ci/load-all.sql
+
+# 需重复灌入时显式启用幂等模式（会 TRUNCATE 目标表，禁止指向生产库）
+python tools/synthetic-data/generate.py --tier ci --reset --truncate-first
 ```
 
-上述产物（生成器、数据集、校验脚本）均列为**待批准项**；在用户批准实施计划之前，本文只保留设计，不落地代码或数据文件。
+**前置条件与边界（不可越界）**
+
+1. `CryptoUtil.init()` 要求 `AMZ_CRYPTO_KEY` 解码后恰为 32 字节（P0-29）、凭证表必须先进迁移（P0-23）——这两条决定合成凭证行能否被应用真实读取，与 `load-all.sql` 能否执行无关。
+2. 本工具链只证明“系统内部一致性与 schema 可执行性”，**不证明 Amazon 接受我方请求**；A5 仍以 §1.9.1(5) 的凭证到位 runbook 为唯一取证路径。
+3. **不提供任何真实凭证**：合成凭证行只含 `SYNTHETIC_*` 占位值（§7.2），不得用于任何真实调用。
 
 ---
 
@@ -1692,6 +1768,8 @@ git grep -n "SYNTHETIC" -- tools/synthetic-data
 - 运维：开启 TLS、Actuator 限制、NetworkPolicy、备份和基础告警。
 - CI：Checkstyle 阻断、全模块编译、迁移测试、secret/依赖/镜像扫描。
 - 连接器协议合规：补 SP-API 必填 `user-agent`（P0-35）、marketplace→region 单一事实源且未知值 fail-closed（P0-36）、RDT 在客服/RMA 交付前落地（P0-37）、AWS 密钥缺失时跳过签名而不是发出 `Credential=null` 畸形头（P0-38）；AWS 密钥整体降为可选、不再作为接入门槛（1.9.2）。
+- schema 引导（第 28 轮 MySQL 8 实测新增）：`docker/init-sql/` 在 MySQL 8.0.46 上**首次启动即崩库**——修 `rank` 保留字（P0-43）、7 处 `ADD COLUMN IF NOT EXISTS`（P0-39）、`amz_report` 建库（P0-44/P0-07）、`amz_inventory_alert` 的 NULL 语义（P0-45）、28–33 号脚本的库归属（P0-47）；补 `amz_agent_eval_log` 与 `amz_shop_credential` 建表路径（P0-42/P0-23）；CI 用真实 MySQL 8 容器跑全量 init-sql，断言 `rc=0` 且建表集合 == 迁移集合。
+- 订单键与引用类型：`uk_amazon_order` 收敛为 `(shop_id, marketplace_id, amazon_order_id)`（P0-40）；5 处引用列类型对齐父键 BIGINT（P0-41）。
 
 验收门槛：P0 表中每项有修复、自动化测试和证据；没有未处理的 critical/high 安全问题。
 
@@ -1911,6 +1989,8 @@ git grep -n "SYNTHETIC" -- tools/synthetic-data
 
 **三处建表镜像已经破损（第 10 轮实测，第 17 轮补精确数字）**：`init_all_tables.sql`（58 张）、`docker/init-sql/`（32 个文件，编号 01–33、缺 03，共 105 条 `CREATE TABLE`）、各服务 `db/migration`（22 个文件，106 张）三套口径并存，并且已经出现真实缺口：`amz_shop_credential` 只在 `amz-service/amz-service-spapi/src/main/resources/db/schema.sql:11` 与 `init_all_tables.sql:459` 各定义一次，`docker/init-sql/` 对 `credential` **0 命中**，spapi 的 `db/migration/V1__init.sql` 也不含此表 → 用 Compose 或 Flyway 部署时该表**根本不存在**，凭证写入直接失败（P0-23）。`amz_report` 库**全仓没有任何 `CREATE DATABASE`**：`init_all_tables.sql:40-52` 建了 13 个库（缺 `amz_report`）、`docker/init-sql/01-init-databases.sql` 只建了 5 个库（`amz_user`/`amz_product`/`amz_order`/`amz_search`/`amz_spapi`），而 `docker/init-sql/26-init-tables-report-upgrade.sql:7` 直接 `USE amz_report`（P0-07）。这说明“多处镜像”不是风格问题，而是已经在制造不可用功能。
 
+**第 28 轮把上述静态口径升级为真实执行（MySQL 8.0.46）**：用仓库原始的 `docker/init-sql/` 跑真实 entrypoint，**在 `14-init-tables-ops.sql` 处中止**（`rank` 保留字，`ERROR 1064`），容器 `Exited (1)`，最终只建出 **37 张表 / 10 个库**；修掉 5 类语法/建库问题（`rank`、7 处 `ADD COLUMN IF NOT EXISTS`、`amz_report` 建库、`amz_inventory_alert` 的 `sku` 可空）后达 **105 张**；28–33 号脚本因无 `USE` 仍会报 `ERROR 1046 No database selected`（上一轮的 105 张依赖我方手工 `DBMAP` 用 `-D` 注入默认库）。因此：**105 张不是“Compose 路径的表数”，而是“打补丁后的表数”**；在 P0-39/43/45/47 修复前，Compose 的 MySQL 容器无法完成首次初始化。
+
 ## 附录 C：不建议的做法
 
 - 为了“看起来生产化”而只增加 K8s 副本数，不修复数据事实源。
@@ -1948,7 +2028,7 @@ git grep -n "SYNTHETIC" -- tools/synthetic-data
 - 一致性：本文假设与前面设计章节的工作假设保持一致；若评审推翻部署形态或数据库选择，需要重新评估租户、迁移和成本章节。
 - 范围：本文覆盖业务、性能、安全、可靠性、运维、合规、数据迁移和验收；不包含具体源码实现，符合“设计先行”的流程。
 - 歧义：PII 保留、税务、RPO/RTO、容量、预算和运行单元收敛均列为待确认决策，未伪装成已确定事实。
-- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。(10) 前几轮“k8s HPA 多副本会导致调度任务双跑”的推测被**撤回**——实测 `DistributedJobLock.runWithLock` 被 10 个调度器使用，互斥成立；该类别缺陷应改记为 `DistributedJobLock` 自身在 Redis 不可用时 fail-open（§1.8 已如实记录）；(11) “`SpiRateLimiter` 已参考官方配额”被推翻——默认 `orders=30/30s` 与官方 0.0167 req/s 相差约 60 倍，`feeds`/`fees`/`finances` 三个在用 endpointTag 没有策略，`listings` 策略无调用方；(12) “SP-API 客户端已可用”被收窄——`ReportsRealClient:80` 取错官方字段名（应为 `reportDocumentId`），结算报表文档 ID 恒为 null；(13) “k8s 已具备可部署 Secret”被推翻——`AMZ_CRYPTO_KEY` 解码为 34 字节，`CryptoUtil` 硬校验 32 字节会让 spapi 启动失败；(14) “Feeds 提交流程已闭环”被推翻——`FeedsClient` 从不下载 `resultFeedDocumentId`，被拒行没有读取渠道；(15) “SP-API 默认加载真实实现”被推翻——默认 profile 为 `mock`，部署清单也不设置 profile，财务域三类客户端返回样例数据；(16) 本规格第 1～7 轮整体未审查 `amz-service-spapi`，本轮补审（附录 G.4）。 (17) “`JAVA_OPTS` 可能带 `-Dspring.profiles.active`”的假设被**推翻**——`k8s/configmap.yaml:47-48` 两处 `JAVA_OPTS`/`JAVA_OPTS_GATEWAY` 均只含堆内存与 GC 参数，16 份 Deployment 无其它 profile 来源（即“k8s 部署会跑 mock”结论**成立且覆盖全部 16 份**）。(18) Redisson 硬编码公网 IP 的影响面**收窄**为 order / product 两个模块——spapi 虽引 `redisson-spring-boot-starter` 但无自定义 `RedissonConfig`；同时该配置键在 `spring.data.*` 迁移后**必然失效**（不是“可能失效”），实测 45.3 s 连接超时。(19) `.env.example` 键数口径修正为 **71 行 / 36 个键**（此前“37 键”说法作废，以本轮正则 `^[A-Z][A-Z0-9_]*=` 计数为准）；“缺 Nacos 与平台凭证”的结论方向不变。(20) `docker-compose.yml` 服务数口径修正为 **31 个 service**（README “17 服务”与旧审计“约 30”均作废）；`env_file` 命中 0，不存在“compose 会统一加载 .env 补齐变量”的兜底路径。(21) 本规格 4.6 表的官方限流数值**自我纠错**——第 16 轮逐文件比对官方 OpenAPI 模型后确认 5 处与模型原文不符（`getReportDocument` 官方 0.0167/15 而非 2/15，使“比官方更严”的结论反向；`reports.getReport` 2/15 未单列；`createFeedDocument` 官方 0.5/15 与 `createFeed` 官方 0.0083/15 被写反；`getFeed`/`cancelFeed` 官方 2/15 而非 0.0222/10；`fees` 实际调用的是 `getMyFeesEstimates`（0.5/1）而非 `getMyFeesEstimateForASIN`（1/2）），以修订后的 4.6 与 1.5.1 为准；(22) “wimoor 技术栈偏旧（Spring Boot 2.0 / JDK 8）”被**推翻**——实测根 `pom.xml` 为 spring-boot-starter-parent **2.6.13** + `<java.version>9</java.version>`，且其每店铺持久化限流门控与文档解密/解压链是本项目可逐行参照的实现（1.5.1 第 8、9 条）；(23) “`x-amzn-RateLimit-Limit` 全仓只读取不闭环”被**收窄**——`FeedsClient.sendWithRetry:308-315` 已在 429 分支读取响应头并回写限流器，缺陷是覆盖面（单端点、仅 429、不恢复、不持久化、不跨进程）。(24) 附录 F.3 增补**本轮复核实例**与**已排除项**——`FeedsController` 的 2 个端点与 `SpapiController#saveCredential` 属“无方法级注解但方法内 `isShopAllowed`”的 C 类（不是 A 类缺口），`GET /spapi/status` 属 B 类探针；`InventoryController`/`ReplenishmentController`/`FinancialDataController`/`FinanceController`/`ReportController`/`OrderAuditController` 经 328 行矩阵复核**无守卫端点均为 0**，后续审计不必重复排查。 (25) 第 17 轮新增两条部署期 schema 引导阻断并修正附录 B 口径——(a) **P0-33**：`baseline-on-migrate` 全仓唯一出现处是 `.start-backend-final.bat:9` 的命令行参数，配置文件 **0 处**，而 `docker-compose.yml:41` 会先把 105 张表建好，Flyway 10.20.0 在“非空 schema + 无 history 表 + baseline=false”下抛 `Found non-empty schema(s) …`，故 Compose 路径 14 个服务首启必失败（**静态推断**：依赖存在 + 配置缺失 + Flyway 自身错误串；本机无 MySQL 未复跑，需一次真实启动确认）。(b) **P0-34**：`k8s/infra/mysql-statefulset.yaml` 只挂 `mysql-data`，`k8s/` 全域无 init SQL / Job / initContainer，14 个业务库一个都不存在。(c) 附录 B 由“约 57 / 约 105”改为实测 **58 / 105 / 106（并集 107）**，并确认 `init_all_tables.sql` 缺 49 张、`amz_report` 全仓无 `CREATE DATABASE`。 (26) 第 18 轮纠正 `amz-service-report` 的“无 datasource/靠 Feign 聚合”结论：源码实测 6 个 `extends BaseMapper`、6 个 `@TableName`、`mysql-connector-j`/`flyway-core` 依赖与 `db/migration/V1__init.sql`，但 `application.yml` 没有 datasource；因此 P0-07 的修复方向是把 `amz_report` 纳入建库并补 datasource，P0-32/附录 F 中“report 反向过度注入”的旧口径作废。 (27) 第 19 轮新增 §1.9.1「零凭证条件下的 API-Ready 取证规范」，并**下调两处既有结论的证据等级**：(a) 全仓 3 个签名测试文件共 **23 个 `@Test` 中 0 条已知答案测试（KAT）**——`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写同一拼接公式，属 E1 自证，不得再作为 A1 的证据；(b) 实测“取证能力”本身有 6 条缺口（`sellingpartnerapi-{na,eu,fe}` 硬编码 18 处且无覆盖键、`HttpClient` 字段自建 5 处、`AwsSigV4Signer.java:54` 内部取 `ZonedDateTime.now()`、`application.yml:69` LWA 端点写死、全仓无 HTTP 桩）。据此把“有 API 就能直接用”重新定义为 E1–E5 分级取证 + 凭证到位当天的一次性 runbook，并明确 **A5 联调记录不可伪造**（无凭证阶段上限 E1）。 (28) 第 22 轮据官方文档**推翻“SP-API 必须 SigV4”这一早期前提**（2023-10-02 起 Amazon 忽略该签名，见 1.9.2），同时新增 P0-35（必填头 `user-agent` 全仓缺失，实测命中 0 且 JDK 默认 UA 不含 App 名/版本）、P0-36（marketplace→region 四份副本各仅 10 条、缺 13 个、未知值静默回落 NA）、P0-37（无 RDT，订单 PII 无合规路径）；并把“沙箱可自助注册但需企业证件 + 视频核验”“沙箱限流 5 rps / burst 15”“`Retry-After` 官方命中 0 次”“`x-amzn-RateLimit-Limit` 仅见于 20x/400/404”“GitHub 无成熟开源亚马逊 ERP 可直接替换”等结论一并固化，避免后续轮次重复排查。**同轮修正**：第 22 轮的文档编辑脚本在追加本项时，把 §1.9.1 整节（69 行）与本文自检第 (27) 条各重复写入一次；已在同一轮删除重复副本（提交净 −70 行，250,863 → 241,765 字节），内容无净增减。
+- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。(10) 前几轮“k8s HPA 多副本会导致调度任务双跑”的推测被**撤回**——实测 `DistributedJobLock.runWithLock` 被 10 个调度器使用，互斥成立；该类别缺陷应改记为 `DistributedJobLock` 自身在 Redis 不可用时 fail-open（§1.8 已如实记录）；(11) “`SpiRateLimiter` 已参考官方配额”被推翻——默认 `orders=30/30s` 与官方 0.0167 req/s 相差约 60 倍，`feeds`/`fees`/`finances` 三个在用 endpointTag 没有策略，`listings` 策略无调用方；(12) “SP-API 客户端已可用”被收窄——`ReportsRealClient:80` 取错官方字段名（应为 `reportDocumentId`），结算报表文档 ID 恒为 null；(13) “k8s 已具备可部署 Secret”被推翻——`AMZ_CRYPTO_KEY` 解码为 34 字节，`CryptoUtil` 硬校验 32 字节会让 spapi 启动失败；(14) “Feeds 提交流程已闭环”被推翻——`FeedsClient` 从不下载 `resultFeedDocumentId`，被拒行没有读取渠道；(15) “SP-API 默认加载真实实现”被推翻——默认 profile 为 `mock`，部署清单也不设置 profile，财务域三类客户端返回样例数据；(16) 本规格第 1～7 轮整体未审查 `amz-service-spapi`，本轮补审（附录 G.4）。 (17) “`JAVA_OPTS` 可能带 `-Dspring.profiles.active`”的假设被**推翻**——`k8s/configmap.yaml:47-48` 两处 `JAVA_OPTS`/`JAVA_OPTS_GATEWAY` 均只含堆内存与 GC 参数，16 份 Deployment 无其它 profile 来源（即“k8s 部署会跑 mock”结论**成立且覆盖全部 16 份**）。(18) Redisson 硬编码公网 IP 的影响面**收窄**为 order / product 两个模块——spapi 虽引 `redisson-spring-boot-starter` 但无自定义 `RedissonConfig`；同时该配置键在 `spring.data.*` 迁移后**必然失效**（不是“可能失效”），实测 45.3 s 连接超时。(19) `.env.example` 键数口径修正为 **71 行 / 36 个键**（此前“37 键”说法作废，以本轮正则 `^[A-Z][A-Z0-9_]*=` 计数为准）；“缺 Nacos 与平台凭证”的结论方向不变。(20) `docker-compose.yml` 服务数口径修正为 **31 个 service**（README “17 服务”与旧审计“约 30”均作废）；`env_file` 命中 0，不存在“compose 会统一加载 .env 补齐变量”的兜底路径。(21) 本规格 4.6 表的官方限流数值**自我纠错**——第 16 轮逐文件比对官方 OpenAPI 模型后确认 5 处与模型原文不符（`getReportDocument` 官方 0.0167/15 而非 2/15，使“比官方更严”的结论反向；`reports.getReport` 2/15 未单列；`createFeedDocument` 官方 0.5/15 与 `createFeed` 官方 0.0083/15 被写反；`getFeed`/`cancelFeed` 官方 2/15 而非 0.0222/10；`fees` 实际调用的是 `getMyFeesEstimates`（0.5/1）而非 `getMyFeesEstimateForASIN`（1/2）），以修订后的 4.6 与 1.5.1 为准；(22) “wimoor 技术栈偏旧（Spring Boot 2.0 / JDK 8）”被**推翻**——实测根 `pom.xml` 为 spring-boot-starter-parent **2.6.13** + `<java.version>9</java.version>`，且其每店铺持久化限流门控与文档解密/解压链是本项目可逐行参照的实现（1.5.1 第 8、9 条）；(23) “`x-amzn-RateLimit-Limit` 全仓只读取不闭环”被**收窄**——`FeedsClient.sendWithRetry:308-315` 已在 429 分支读取响应头并回写限流器，缺陷是覆盖面（单端点、仅 429、不恢复、不持久化、不跨进程）。(24) 附录 F.3 增补**本轮复核实例**与**已排除项**——`FeedsController` 的 2 个端点与 `SpapiController#saveCredential` 属“无方法级注解但方法内 `isShopAllowed`”的 C 类（不是 A 类缺口），`GET /spapi/status` 属 B 类探针；`InventoryController`/`ReplenishmentController`/`FinancialDataController`/`FinanceController`/`ReportController`/`OrderAuditController` 经 328 行矩阵复核**无守卫端点均为 0**，后续审计不必重复排查。 (25) 第 17 轮新增两条部署期 schema 引导阻断并修正附录 B 口径——(a) **P0-33**：`baseline-on-migrate` 全仓唯一出现处是 `.start-backend-final.bat:9` 的命令行参数，配置文件 **0 处**，而 `docker-compose.yml:41` 会先把 105 张表建好，Flyway 10.20.0 在“非空 schema + 无 history 表 + baseline=false”下抛 `Found non-empty schema(s) …`，故 Compose 路径 14 个服务首启必失败（**静态推断**：依赖存在 + 配置缺失 + Flyway 自身错误串；本机无 MySQL 未复跑，需一次真实启动确认）。(b) **P0-34**：`k8s/infra/mysql-statefulset.yaml` 只挂 `mysql-data`，`k8s/` 全域无 init SQL / Job / initContainer，14 个业务库一个都不存在。(c) 附录 B 由“约 57 / 约 105”改为实测 **58 / 105 / 106（并集 107）**，并确认 `init_all_tables.sql` 缺 49 张、`amz_report` 全仓无 `CREATE DATABASE`。 (26) 第 18 轮纠正 `amz-service-report` 的“无 datasource/靠 Feign 聚合”结论：源码实测 6 个 `extends BaseMapper`、6 个 `@TableName`、`mysql-connector-j`/`flyway-core` 依赖与 `db/migration/V1__init.sql`，但 `application.yml` 没有 datasource；因此 P0-07 的修复方向是把 `amz_report` 纳入建库并补 datasource，P0-32/附录 F 中“report 反向过度注入”的旧口径作废。 (27) 第 19 轮新增 §1.9.1「零凭证条件下的 API-Ready 取证规范」，并**下调两处既有结论的证据等级**：(a) 全仓 3 个签名测试文件共 **23 个 `@Test` 中 0 条已知答案测试（KAT）**——`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写同一拼接公式，属 E1 自证，不得再作为 A1 的证据；(b) 实测“取证能力”本身有 6 条缺口（`sellingpartnerapi-{na,eu,fe}` 硬编码 18 处且无覆盖键、`HttpClient` 字段自建 5 处、`AwsSigV4Signer.java:54` 内部取 `ZonedDateTime.now()`、`application.yml:69` LWA 端点写死、全仓无 HTTP 桩）。据此把“有 API 就能直接用”重新定义为 E1–E5 分级取证 + 凭证到位当天的一次性 runbook，并明确 **A5 联调记录不可伪造**（无凭证阶段上限 E1）。 (28) 第 22 轮据官方文档**推翻“SP-API 必须 SigV4”这一早期前提**（2023-10-02 起 Amazon 忽略该签名，见 1.9.2），同时新增 P0-35（必填头 `user-agent` 全仓缺失，实测命中 0 且 JDK 默认 UA 不含 App 名/版本）、P0-36（marketplace→region 四份副本各仅 10 条、缺 13 个、未知值静默回落 NA）、P0-37（无 RDT，订单 PII 无合规路径）；并把“沙箱可自助注册但需企业证件 + 视频核验”“沙箱限流 5 rps / burst 15”“`Retry-After` 官方命中 0 次”“`x-amzn-RateLimit-Limit` 仅见于 20x/400/404”“GitHub 无成熟开源亚马逊 ERP 可直接替换”等结论一并固化，避免后续轮次重复排查。**同轮修正**：第 22 轮的文档编辑脚本在追加本项时，把 §1.9.1 整节（69 行）与本文自检第 (27) 条各重复写入一次；已在同一轮删除重复副本（提交净 −70 行，250,863 → 241,765 字节），内容无净增减。 (29) 第 28 轮把模拟数据工具链从设计落地为可执行产物并完成 MySQL 8 端到端实测（69 张有行表 / 21,604 行 / `rc=0` / 0 errors / 2.3 s，§7.9），同时新增 9 个 P0 编号（P0-39…P0-47）并**再次自我纠错两处过强结论**：(a) “Compose 路径建出 105 张表”不成立——用未打补丁的原始 `docker/init-sql/` 跑真实 entrypoint，在 `14-init-tables-ops.sql` 的 `rank` 保留字处中止，MySQL 容器 `Exited (1)`，只建出 **37 张表 / 10 库**，15–33 号脚本从未执行；105 张是打补丁（`rank` + 7 处 `ADD COLUMN IF NOT EXISTS` + `amz_report` 建库 + `amz_inventory_alert.sku` 可空）后的结果。(b) “`amz_report_template` 落在 `amz_ai`”不成立——28–33 号脚本**均无 `USE`**，直接执行报 `ERROR 1046 No database selected`，库归属实为“未定义”，上一轮的库映射是我方手工推测。**去重口径**：P0-42 的凭证表部分与 P0-23 重叠、P0-44 与 P0-07 完全重叠（只作实证强化）、P0-46 为工具项不计入，净新增 7 条独立缺陷，**P0 总数由 38 条修正为 45 条**。证据脚本：`%TEMP%\amz-e2e4.py`（打补丁后 e2e 主证据）+ 原始 entrypoint 实测（37 张 / `Exited (1)`）+ 28 号脚本 `ERROR 1046` 复现。 (30) 第 28 轮**补测**把 §7.9「12 处行数不符」的归因从推断升级为实测，并纠正两处错误表述：(a) 原写“全部来自 `INSERT IGNORE`”不准确——`docker/init-sql/` 的 16 条种子实为 10 条 `INSERT IGNORE` + 4 条 `INSERT … ON DUPLICATE KEY UPDATE` + 2 条裸 `INSERT`，空表实测落库 **90 行**，其中 **79 行**落在 69 张生成表上、跨 **12 张表**，与基线差额 `21,683 − 21,604 = 79` 逐行吻合；(b) 本轮中途我自己给出的“4 行被 `IGNORE` 静默丢弃 / 种子内部有唯一键碰撞”推断**不成立并已撤回**，真因是统计脚本把 upsert 子句里的 `VALUES(col)` 函数调用误计为值元组（虚增 94，真实 90），元组数与落库行数本来就相等。同轮还用 `--truncate-first` 在同一容器**连灌两次**（两次 `rc=0`、逐表行数向量零差异），证明 TRUNCATE 模式幂等，且使实测行数与 manifest **69/69 精确相等**。教训固化：**对 `INSERT` 做静态行数统计必须先剥离 `ON DUPLICATE KEY UPDATE` 子句**；任何“静默丢弃/碰撞”结论都必须在空表上实测行数后才能成立。
 ---
 
 ## 附录 F：328 端点守卫矩阵与 82 条无守卫清单（本轮实测）
