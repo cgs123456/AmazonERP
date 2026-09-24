@@ -24,7 +24,8 @@
 - 配置键名统一：Redis 一律走 `spring.data.redis.*`（环境变量 `SPRING_DATA_REDIS_HOST/PORT/PASSWORD`）；Nacos 一律 `NACOS_ADDR`，禁止 `NACOS_SERVER_ADDR` 双写；禁止任何默认值指向公网地址或第三方 IP。
 - 部署清单以代码占位符为唯一事实源做**双向**差集校验（既不许缺、也不许多）；清单契约测试不可 skip。
 - 端点覆盖（`spapi.base-url-override` / `spapi.lwa-endpoint-override`）只允许非生产 profile 生效；prod 下非空即启动失败；只允许 loopback 或显式 allowlist 主机，发往非 allowlist 主机时禁止携带 `x-amz-access-token`（Task 11）。
-- 参与签名的实现必须注入 `Clock`；每个签名算法至少一条期望值来自官方文档或官方 SDK 的已知答案测试（KAT）；**禁止**用本仓库实现生成期望值（Task 11）。
+- SP-API 出站请求必须带合法 `user-agent`（≤500 字符，含 App 名 / 版本 / 语言，按官方转义规则拼接）；marketplace→region 只允许**单一事实源**，未知 ID **必须抛错**，禁止 `getOrDefault(..., "NA")` 式静默回落（spec §1.9.2、P0-35/P0-36，Task 11）。
+- 参与签名的实现必须注入 `Clock`；**SP-API 的 AWS SigV4 自 2023-10-02 起已非必需**（spec §1.9.2，官方 changelog 逐字确认 Amazon 忽略该签名），因此本计划**必做**的契约测试是 `user-agent` 必填头、marketplace 全表 fail-closed 与 LWA token 交换；SigV4 KAT 为**可选项**，仅在保留签名器（前向保险）时要求。任何 KAT 的期望值只能来自官方文档或官方 SDK，**禁止**用本仓库实现生成期望值（Task 11）。
 - 连接器状态必须带 `evidenceLevel`（E0–E5）：证据 < E3 或 A2/A3/A6 任一未通过 → `apiReady=false`；证据 < E4 不得显示“已接通”（Task 6 / Task 11，口径见 spec §1.9.1）。
 - 本计划只是计划：**未经批准不落实现代码**。
 
@@ -49,10 +50,13 @@
 | Modify | `.env.example`、`docker-compose.yml`（16 个业务服务段）、`k8s/secret.yaml`、`k8s/configmap.yaml`、`k8s/services/*.yaml`（16 份逐份对齐） | 配置三处双向对齐（Task 8） |
 | Modify | `amz-service/amz-service-order/src/main/java/com/amz/config/RedissonConfig.java:16-22`、`amz-service/amz-service-product/src/main/java/com/amz/config/RedissonConfig.java:16-22` | 移除公网 Redis 默认值，改走 `spring.data.redis.*`（Task 9） |
 | Create | `amz-service/amz-service-spapi/src/test/resources/contracts/reports_2021-06-30.json` | 官方模型快照（Apache-2.0，锁 commit） |
-| Create | `amz-service/amz-service-spapi/src/test/resources/contracts/sigv4-kat/`（README + 夹具 JSON） | 签名已知答案测试夹具（期望值取自官方文档/SDK，锁 sha256）（Task 11） |
+| Create | `amz-service/amz-service-spapi/src/main/java/com/amz/connector/MarketplaceRegistry.java` | 23 条 marketplaceId→region→host 的**单一事实源**，未知 ID 抛错（fail-closed）（Task 11） |
+| Create | `amz-service/amz-service-spapi/src/main/java/com/amz/auth/SpApiUserAgent.java` | 按官方转义规则构造必填 `user-agent`（≤500 字符）（Task 11） |
+| Create | `amz-service/amz-service-spapi/src/test/resources/contracts/lwa-token/`（README + 夹具 JSON） | LWA token 交换契约夹具（期望值取自官方文档，锁 sha256）（Task 11） |
+| Create（可选） | `amz-service/amz-service-spapi/src/test/resources/contracts/sigv4-kat/`（README + 夹具 JSON） | SigV4 前向保险的已知答案测试夹具（AWS 官方 `aws4_testsuite`，锁 sha256）；**非必需项**（Task 11） |
 | Create | `amz-service/amz-service-spapi/src/main/java/com/amz/connector/ConnectorEvidencePolicy.java` | 证据等级 E0–E5 与 `apiReady` 判定规则的唯一事实源（Task 11） |
 | Create | `docs/superpowers/runbooks/connector-acceptance-runbook.md` | 凭证到位当天的一次性验收 runbook（A5 取证）（Task 11） |
-| Modify | `OrdersClient.java:61-65`、`FeedsClient.java:61-65`、`FbaInventoryClient.java:56-60`、`SpApiGateway.java:45-49`、`AwsSigV4Signer.java:54`、`LwaTokenManager.java:59-61`、`amz-service-spapi/src/main/resources/application.yml:69` | 端点覆盖（非生产、fail-closed）与注入 `Clock`/`HttpClient`（Task 11） |
+| Modify | `OrdersClient.java:61-65`、`FeedsClient.java:61-65`、`FbaInventoryClient.java:56-60`、`SpApiGateway.java:45-49`、`AwsSigV4Signer.java:54`、`LwaTokenManager.java:59-61`、`amz-service-spapi/src/main/resources/application.yml:69` | 端点覆盖（非生产、fail-closed）与注入 `HttpClient`；`Clock` 注入为**可选**前向保险（Task 11） |
 | Create | `amz-service/amz-service-spapi/src/test/java/...`（见各 Task） | 契约测试与行为测试 |
 
 ---
@@ -513,41 +517,58 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 
 ---
 
-### Task 11: 零凭证取证基座（端点覆盖 + Clock 注入 + KAT + 桩回放 + 证据门禁）
+### Task 11: 零凭证取证基座（必填头 + 市场映射 + 端点覆盖 + LWA 契约 + 桩回放 + 证据门禁）
+
+**目标修订（第 22 轮，依据 spec §1.9.2）**：原目标“SigV4 签名 KAT”建立在错误前提上——SP-API 自 2023-10-02 起不再要求 AWS SigV4，Amazon 会忽略该签名（官方 changelog 逐字确认）。因此本 Task 的**必做目标**调整为：**官方必填头 `user-agent`**（P0-35）、**marketplace→region 单一事实源且 fail-closed**（P0-36）、**LWA token 交换契约测试**、端点覆盖与桩回放、证据门禁；SigV4 KAT 与 `Clock` 注入**保留但降级为前向保险**。
 
 **Files:**
-- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/auth/AwsSigV4Signer.java`（注入 `Clock`，`sign` 接收 `Instant`）
-- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/client/OrdersClient.java`、`FeedsClient.java`、`FbaInventoryClient.java`、`SpApiGateway.java`（端点解析改为可覆盖，生产仍是官方主机）
+- Create: `amz-service/amz-service-spapi/src/main/java/com/amz/connector/MarketplaceRegistry.java`（23 条：marketplaceId → region → 国家码 → host；未知 ID 抛 `UnknownMarketplaceException`）
+- Create: `amz-service/amz-service-spapi/src/main/java/com/amz/auth/SpApiUserAgent.java`（官方转义规则 + ≤500 字符校验）
+- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/config/SpApiConfig.java`（新增 `appName` / `appVersion` / `userAgent`，缺省由前两者拼装）
+- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/client/OrdersClient.java`（`:70-81` 与 `:390`）、`FeedsClient.java`（`:359`）、`FbaInventoryClient.java`（`:298`）、`SpApiGateway.java`（`:51-62` 与 `:250-252`）：删除四份 MARKETPLACE_REGION 副本，统一委托 `MarketplaceRegistry`；四个客户端与 `FeedsClient`/`OrdersClient` 的每个出站请求统一注入 `user-agent`
+- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/client/OrdersClient.java:61-65`、`FeedsClient.java:61-65`、`FbaInventoryClient.java:56-60`、`SpApiGateway.java:45-49`（端点解析改为可覆盖，生产仍是官方主机）
 - Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/auth/LwaTokenManager.java`（`HttpClient` 可注入、LWA 端点可覆盖、`sha256Hex` 异常分支禁止静默退化）
-- Modify: `amz-service/amz-service-spapi/src/main/resources/application.yml`（新增 override 键，默认空）、`application-prod.yml`
+- Modify（可选，前向保险）: `amz-service/amz-service-spapi/src/main/java/com/amz/auth/AwsSigV4Signer.java`（注入 `Clock`，`sign` 接收 `Instant`）
+- Modify: `amz-service/amz-service-spapi/src/main/resources/application.yml`（新增 `spapi.app-name`/`spapi.app-version` 与 override 键，默认空）、`application-prod.yml`
 - Create: `amz-service/amz-service-spapi/src/main/java/com/amz/connector/ConnectorEvidencePolicy.java`
-- Create: `amz-service/amz-service-spapi/src/test/resources/contracts/sigv4-kat/README.md` + 夹具 JSON
-- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/AwsSigV4KnownAnswerTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/resources/contracts/lwa-token/README.md` + 夹具 JSON
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/SpApiRequiredHeaderContractTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/connector/MarketplaceRegistryTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/LwaTokenExchangeContractTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiEndpointOverrideSafetyTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiProtocolStubTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/connector/ConnectorEvidencePolicyTest.java`
+- Create（可选）: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/AwsSigV4KnownAnswerTest.java` + `src/test/resources/contracts/sigv4-kat/`
 - Create: `docs/superpowers/runbooks/connector-acceptance-runbook.md`
 
 **Interfaces:**
-- Produces: `SpApiEndpointResolver.resolve(region, profile)`；`AwsSigV4Signer.sign(..., Instant)`；`ConnectorEvidencePolicy.evaluate(evidence)` → `{evidenceLevel, apiReady, reachable}`。
-- Consumes: spec §1.9.1 证据等级表、4.8 契约表、Task 6 的能力清单。
+- Produces: `MarketplaceRegistry.resolveRegion(String marketplaceId)`（未知即抛）、`MarketplaceRegistry.resolveHost(String region)`；`SpApiUserAgent.build(config)`；`SpApiEndpointResolver.resolve(region, profile)`；`ConnectorEvidencePolicy.evaluate(evidence)` → `{evidenceLevel, apiReady, reachable}`；`AwsSigV4Signer.sign(..., Instant)`（可选，前向保险）。
+- Consumes: spec §1.9.1 证据等级表、spec §1.9.2（SigV4 事实 + 23 条 marketplace 全表）、4.8 契约表、Task 6 的能力清单。
 
-- [ ] **Step 1: 先写失败测试（5 个）**
+- [ ] **Step 1: 先写失败测试（6 必做 + 1 可选）**
 
-`AwsSigV4KnownAnswerTest`（固定输入 + 夹具期望 `Authorization` 逐字符比对，当前无 `Clock` → FAIL）、`SpApiEndpointOverrideSafetyTest`（prod 非空 → 拒绝启动；非 allowlist → 拒绝；非 prod + `http://127.0.0.1:<port>` → 通过；发往非 allowlist 主机时**不含** `x-amz-access-token`）、`SpApiProtocolStubTest`（用 JDK 自带 `com.sun.net.httpserver.HttpServer`，127.0.0.1:0，**不新增依赖**；跑 Feeds 全链路 createFeedDocument → PUT → createFeed → getFeedStatus → 下载结果报告，断言请求序列/路径/必带头/幂等键，以及 429 退避与 `x-amzn-RateLimit-Limit` 读取）、`ConnectorEvidencePolicyTest`（E0–E5 × A1–A8 判定表）、既有 23 个签名相关 `@Test` 回归（注意：它们只是 E1 自证，不构成 A1 证据，见 spec §1.9.1 G4）。
+必做：
+1. `SpApiRequiredHeaderContractTest`：用 `com.sun.net.httpserver.HttpServer`（127.0.0.1:0，**不新增依赖**）挂载桩，驱动 `SpApiGateway`、`OrdersClient`、`FeedsClient`、`FbaInventoryClient`、`LwaTokenManager` 的每个出站路径，断言**每个请求**都带 `user-agent`、长度 ≤500、且含 App 名/版本/语言；同时断言 App 名含 `/`、版本含 `(` 时按官方规则转义（当前全仓无该头 → FAIL）。
+2. `MarketplaceRegistryTest`：**逐条断言官方 23 条** marketplaceId 的 region 与 host；断言未知 ID（如 `"NOT_A_MARKETPLACE"`、空串、null）**抛异常**而**不是**返回 `NA`；断言 4 个客户端与 `SpApiGateway` 不再各自持有映射副本（反射或静态扫描）。
+3. `LwaTokenExchangeContractTest`：固定 `clientId`/`clientSecret`/`refreshToken`，对桩断言 token 交换的路径、`Content-Type`、body 表单字段、`grant_type=refresh_token`，以及响应解析（`access_token`/`expires_in`）与**缺字段时显式失败**；夹具记录来源 URL / 字节数 / sha256。
+4. `SpApiEndpointOverrideSafetyTest`：prod 非空 → 拒绝启动；非 allowlist → 拒绝；非 prod + `http://127.0.0.1:<port>` → 通过；发往非 allowlist 主机时**不含** `x-amz-access-token`。
+5. `SpApiProtocolStubTest`：跑 Feeds 全链路 createFeedDocument → PUT → createFeed → getFeedStatus → 下载结果报告，断言请求序列/路径/必带头/幂等键，以及 429 退避与 `x-amzn-RateLimit-Limit` 读取。
+6. `ConnectorEvidencePolicyTest`：E0–E5 × A1–A8 判定表。
+
+可选（前向保险）：`AwsSigV4KnownAnswerTest`（固定输入 + AWS 官方 `aws4_testsuite` 期望 `Authorization` 逐字符比对；夹具来源见 spec §1.9.2）。**注意**：既有 23 个签名相关 `@Test` 只是 E1 自证，不构成 A1 证据（spec §1.9.1 G4）。
 
 - [ ] **Step 2: 运行确认失败**
 
-Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=AwsSigV4KnownAnswerTest+SpApiEndpointOverrideSafetyTest+SpApiProtocolStubTest+ConnectorEvidencePolicyTest`
+Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=SpApiRequiredHeaderContractTest+MarketplaceRegistryTest+LwaTokenExchangeContractTest+SpApiEndpointOverrideSafetyTest+SpApiProtocolStubTest+ConnectorEvidencePolicyTest`
 Expected: FAIL（类不存在 / 断言失败）
 
-- [ ] **Step 3: 端点覆盖与依赖注入（fail-closed 优先）**
+- [ ] **Step 3: 端点覆盖、必填头与市场映射（fail-closed 优先）**
 
-覆盖键默认空；仅非生产生效，prod 非空即启动失败；allowlist 默认 `127.0.0.1`、`localhost`；非 allowlist 主机不得携带 `x-amz-access-token`，其响应也不得写入业务表（避免桩数据污染）。`AwsSigV4Signer`、`LwaTokenManager` 与 4 个客户端的 `HttpClient` 改为构造注入。
+覆盖键默认空；仅非生产生效，prod 非空即启动失败；allowlist 默认 `127.0.0.1`、`localhost`；非 allowlist 主机不得携带 `x-amz-access-token`，其响应也不得写入业务表（避免桩数据污染）。`MarketplaceRegistry` 成为唯一事实源，四份副本删除；`getOrDefault(..., "NA")` 必须从代码中消失（DoD 用 `grep` 断言）。`user-agent` 由 `SpApiUserAgent` 统一构造并注入全部出站客户端。`LwaTokenManager` 与 4 个客户端的 `HttpClient` 改为构造注入。`AwsSigV4Signer` 的 `Clock` 注入为可选项（前向保险）。
 
-- [ ] **Step 4: KAT 夹具落地（本步骤可能阻塞）**
+- [ ] **Step 4: LWA 契约夹具落地（必做）；SigV4 KAT 夹具（可选）**
 
-期望值来源二选一：(a) 官方文档示例的完整已知答案；(b) 官方 AWS SDK（test scope，如 `software.amazon.awssdk:auth`）在固定输入下的输出。README 记录来源 URL / SDK 坐标与版本 / 生成脚本 / 字节数 / sha256。**若本机取不到官方夹具或 SDK 依赖，本 Task 阻塞**：禁止用本仓库实现自造期望值补绿，完成说明里必须标注“A1 证据停留在 E1/E2”。
+期望值来源：(a) 官方文档示例的完整已知答案；(b) 官方 SDK 在固定输入下的输出。README 记录来源 URL / SDK 坐标与版本 / 生成脚本 / 字节数 / sha256。**若 LWA 契约夹具取不到，A1 证据上限为 E2**，完成说明必须标注；SigV4 部分取不到不阻塞本 Task（它不是必需路径）。
 
 - [ ] **Step 5: 运行测试通过**
 
@@ -556,11 +577,13 @@ Expected: PASS（既有 527 用例不回退）
 
 - [ ] **Step 6: 落 runbook**
 
-按 spec §1.9.1（5）写 `docs/superpowers/runbooks/connector-acceptance-runbook.md`：一条命令、产出 JSON 与 sha256、覆盖 401/403/404/429、限流头回填、Reports 文档下载断言、A1–A8 逐项结论；**不含任何明文密钥**。
+按 spec §1.9.1（5）写 `docs/superpowers/runbooks/connector-acceptance-runbook.md`：一条命令、产出 JSON 与 sha256、覆盖 401/403/404/429、限流头回填、Reports 文档下载断言、A1–A8 逐项结论；**不含任何明文密钥**。runbook 需写明**沙箱限流 5 rps / burst 15** 与“沙箱仅覆盖 2xx/400，其余错误码须在生产或按官方指引构造”（spec §1.9.2(5)）。
 
 - [ ] **Step 7: 提交**
 
-`git commit -m "test(spapi): 零凭证取证基座（端点覆盖 fail-closed + Clock/KAT + 桩回放 + 证据等级门禁）"`
+`git commit -m "test(spapi): 零凭证取证基座（user-agent 必填头 + marketplace fail-closed + 端点覆盖 + LWA 契约 + 桩回放 + 证据门禁）"`
+
+> **实施顺序建议（待用户确认，不擅自改序）**：Task 2（启动自检）→ Task 11（本 Task）→ Task 6（能力清单）→ Task 1/4。理由：P0-35/P0-36 为零凭证可离线完成项，直接决定“凭证到位当天能否跑通”；启动自检必须先于能力清单，否则清单无法可信。
 
 ---
 ## 验证与完成定义（Definition of Done）
@@ -573,7 +596,7 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
-- [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；至少一条签名 KAT 通过且夹具含来源与 sha256；`ConnectorEvidencePolicyTest` 通过。
+- [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；`SpApiRequiredHeaderContractTest`（每请求都带合法 `user-agent`、≤500 字符）与 `MarketplaceRegistryTest`（23 条逐条断言 + 未知 ID 抛错）通过；`LwaTokenExchangeContractTest` 通过；`ConnectorEvidencePolicyTest` 通过；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。SigV4 KAT 为**可选项**（spec §1.9.2），若保留签名器则夹具必须含来源与 sha256。
 - [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘且可执行。
 
 ## 未验证与风险（诚实记录）
@@ -589,7 +612,11 @@ Expected: PASS（既有 527 用例不回退）
 9. **baseline 可能跳过 V1 的校验**：Flyway 对非空且无 history 的旧库以 V1 建基线时，不会重新执行/校验 V1。虽然建表脚本与迁移的**表集合**已实测覆盖，但列、索引、默认值仍可能漂移；上线前需对存量库做 schema 对照与抽样校验，不能把 `baseline-on-migrate=true` 当作 schema 正确性的证明。
 10. **桩回放只能证明“我方与假设一致”**：E1/E2 证据（含现有 23 个签名测试）都不能证明平台接受我方请求。若 Task 11 Step 4 取不到官方 KAT 夹具，A1 在凭证到位前最高只能到 E2，对外只能宣称“具备对接能力（未联调）”，**不得**宣称“有 API 即可直接使用”。
 11. **沙箱与错误码覆盖本轮未联网复核**：raw.githubusercontent.com 与 developer-docs 抓取失败，runbook 中 401/403/404/429 的触发方式需在凭证到位时以官方文档确认；沙箱按保守假设（需要应用注册与凭证）处理。
-12. **端点覆盖是新增攻击面**：override 若在 prod 生效或 allowlist 过宽，等于把 SP-API access token 与 AWS 凭证交给任意主机。CI 必须断言“prod 拒绝 + 非 allowlist 不携带 token”，这两条断言不可 skip。
+12. **端点覆盖是新增攻击面**：override 若在 prod 生效或 allowlist 过宽，等于把 SP-API access token 交给任意主机。CI 必须断言"prod 拒绝 + 非 allowlist 不携带 token"，这两条断言不可 skip。
+13. **SigV4 已非必需（前提纠正，第 22 轮）**：官方 changelog 逐字确认 2023-10-02 起 Amazon **忽略** SigV4 签名（spec §1.9.2）。本计划因此把 SigV4 KAT 降为可选，**但不删除签名器**：保留为前向保险（Amazon 可能恢复校验、其它 AWS 系接口可复用）。若将来恢复校验，必须**同时**把 `spapi.region` 从写死的 `us-east-1` 改为按 region 派生（EU `eu-west-1` / FE `us-west-2`），否则 EU/FE 必然失败。
+14. **`user-agent` 是否被判拒无法离线证明**：官方只写"必须在每个请求中包含"，未写不合规的状态码。本计划能证明的只是"头存在、格式合法、长度合规"（E3 上限）；平台是否接受属 A5（E4/E5），不得用契约测试冒充联调。
+15. **marketplace 表会漂移**：23 条取自 2026-09-24 的官方 `store-identifiers.md` 快照。Amazon 新增站点时，`MarketplaceRegistryTest` 会因新 ID 未登记的 fail-closed 行为而报错——这是**刻意设计**（宁可显式失败，不可静默打到 NA 端点），修复方式是补表而不是放宽断言。
+16. **RDT（P0-37）不在本计划的实现范围**：本计划只登记它与业务后果（客服/RMA/面单在无 RDT 时不可交付）。RDT 实现属 Plan 4（安全与 PII）的相邻范围，须在客服域交付前完成。
 
 ## 后续计划（不在本计划内）
 
