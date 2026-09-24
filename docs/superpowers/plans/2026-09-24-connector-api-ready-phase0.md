@@ -152,15 +152,26 @@ Expected: PASS
 
 **Files:**
 - Create: `amz-service/amz-service-spapi/src/test/resources/contracts/reports_2021-06-30.json`
+- Create: `amz-service/amz-service-spapi/src/test/resources/contracts/feeds_2021-06-30.json`（第 42 轮新增：登记上游 description 笔误的证据文件，见 Step 2）
 - Create: `amz-service/amz-service-spapi/src/test/resources/contracts/README.md`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/ReportsFieldContractTest.java`
-- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/client/ReportsRealClient.java:80`
-- Modify: `amz-service/amz-service-product/src/main/java/com/amz/client/impl/ListingsMockClient.java:43`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/ReportsRealClientStubTest.java`（第 42 轮新增：响应字段回环 + 文档解码，进程内假传输）
+- Modify: `amz-service/amz-service-spapi/src/main/java/com/amz/client/ReportsRealClient.java:85`（字段名修正；同文件 `:45/:47` 的 `@Autowired` 字段注入改构造器注入）
+- Modify: `amz-service/amz-service-product/src/main/java/com/amz/client/ListingsMockClient.java:42,44`（**路径修正**：本计划早期写的 `client/impl/` 不存在，实际包路径为 `com.amz.client`）
 
 **Interfaces:**
 - Produces: 契约测试断言「源码中出现的响应字段名 ⊆ 官方模型属性集」，供后续所有连接器复制该模式（附录 G.4 教训 2）。
 
-- [ ] **Step 1: 落官方模型快照**
+> **进度（第 42 轮，2026-09-24）：本 Task 的 Step 1–6 已全部落地并勾选。**
+> - 快照：`reports_2021-06-30.json` **83,685 B** / `d72db9e5280262a92933a0e45e2207c150272f1d66177b2517c20671d69c732c`；`feeds_2021-06-30.json` **55,901 B** / `ab235b4a0e5ce21083b885dd4f2b8cae7a6f597d7adf2647b47b90d6f5098a16`；`contracts/README.md` 记录来源/日期/字节数/sha256 与许可证，并逐字登记**上游笔误**（`feeds` 第 691 行 description 里的 `resultDocumentId`）。
+> - 新增文件 3 个：`ReportsFieldContractTest`（3 例）、`ReportsRealClientStubTest`（3 例，第 42 轮补）、`contracts/` 资源目录（含 `lwa-token/` 由 Task 11 提供）。
+> - 两处字段名修正：`ReportsRealClient.java:85` → `reportDocumentId`；`ListingsMockClient.java:42,44` → `feedId` / `resultFeedDocumentId`。
+> - 顺带加固：`ReportsRealClient` 改**构造器注入** `SpApiGateway`；`RecordingHttpTransport` 增 `Reply.headers` / `Reply.rawBody` / `withHeader(...)` / `ofBytes(...)` / `bodyAsBytes()`（GZIP 二进制体回放必需）。
+> - 证据（实数）：`mvn -B -ntp -pl amz-service/amz-service-spapi -am clean test` → `amz-common` 51/51、**spapi 145 例 / 0F / 0E / 2S**、`BUILD SUCCESS`；全仓 `mvn -B -ntp clean test` → **19 模块 BUILD SUCCESS，合计 600 例 / 0F / 0E / 2S**（15 个模块汇总行逐行相加，本轮独立复核）。
+> - 反证：把 `reportDocumentId` 改回 `resultDocumentId` → 契约测试 **3 例中 2 例 FAIL**、`BUILD FAILURE`；还原后 `RESTORED_OK=True`、前后 SHA-256 一致（`33AEE3E5…45454`）、复跑 3/3 PASS（完整 SHA-256 与逐类实数见附 A.8）。
+> - **口径纠错**：`amz-service-product` **无 `src/test`**，历史“product 51/51 PASS”是误把 `amz-common` 计数当成 product（详见 Step 5 注与附 A.8）。
+
+- [x] **Step 1: 落官方模型快照**
 
 从 `https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/reports-api-model/reports_2021-06-30.json` 下载（Apache-2.0），在 `contracts/README.md` 记录：来源 URL、抓取日期、**字节数**、sha256、许可证。**锁定文件内容，不做任何改写。**
 
@@ -177,29 +188,36 @@ Expected: PASS
 
 抓取陷阱（实测）：`models/fba-inventory-api-model/` 下 `fbaInventory_2020-10-01.json` 与 `inventory_2020-10-01.json` 都只返回 **14 字节**的 `404: Not Found` 响应体；必须校验字节数与 sha256，不能只看 HTTP 状态码。
 
-- [ ] **Step 2: 写失败测试**
+- [x] **Step 2: 写失败测试**
 
-`ReportsFieldContractTest`：读取官方模型 JSON，取 `definitions.Report.properties` 与 `definitions.ReportDocument.properties`；正则扫描 `ReportsRealClient.java` 里所有 `str(<var>, "<literal>")` 的字面量，断言每个字面量都存在于官方属性集；并断言源码中**不含** `resultDocumentId`。
+`ReportsFieldContractTest`：读取官方模型 JSON，取 `definitions.Report.properties` 与 `definitions.ReportDocument.properties`；用正则扫描**本仓源文件** `ReportsRealClient.java` 里所有 `str(<var>, "<literal>")` 的字面量，断言每个字面量都存在于官方属性集；并断言**本仓源码**中**不含** `resultDocumentId`。
 
-- [ ] **Step 3: 运行确认失败**
+**扫描范围纪律（第 42 轮澄清，勿删源码断言）**：对**本仓源码**做窄范围子串断言是合法且必要的（目标是自家代码）；**禁止**的是对**官方模型 JSON** 做裸字符串扫描——`feeds_2021-06-30.json` **第 691 行** `getFeed` 的 description 逐字含 `` `resultDocumentId` ``（**Amazon 自己的笔误**，该 definition 的 schema 属性实为 `resultFeedDocumentId`），裸扫必然假阳性。因此契约测试第 3 例（`legacyWrongFieldNameIsGone`）同时断言三件事：源码不含旧名、`definitions.Report` 的 `properties` 键集不含旧名、**且上游笔误仍存在**（一旦 Amazon 修正，该断言失败以提醒更新夹具，而不是静默失效）。
+
+- [x] **Step 3: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=ReportsFieldContractTest`
 Expected: FAIL（`resultDocumentId` 不在官方属性集内）
 
-- [ ] **Step 4: 改字段名**
+> **RED 反证（第 42 轮，受控变异，实测）**：把已修正的 `str(resp,"reportDocumentId")` 改回 `resultDocumentId`（源码 1 处命中）后复跑本命令 → **Tests run: 3, Failures: 2, Errors: 0**、`BUILD FAILURE`（失败断言为 `everyResponseFieldReadIsDeclaredByOfficialModel` 与 `legacyWrongFieldNameIsGone`；字节/sha256 锁定的第 3 例仍 PASS，符合预期）；还原后 `RESTORED_OK=True`、前后 SHA-256 一致、复跑 3/3 PASS。证明该测试确实盯住 P0-27，而不是事后补写的空断言。
 
-`ReportsRealClient.java:80`：`str(resp,"resultDocumentId")` → `str(resp,"reportDocumentId")`；同步修正 product 模块 `ListingsMockClient.java:43` 的同名字段，保证 mock 与 real 使用同一字段名。
+- [x] **Step 4: 改字段名**
 
-- [ ] **Step 5: 运行测试通过 + 回归两个模块**
+`ReportsRealClient.java:85`：`str(resp,"resultDocumentId")` → `str(resp,"reportDocumentId")`；同步修正 product 模块 `ListingsMockClient.java:42,44` 的 mock 响应——`feedSubmissionId` → `feedId`、`resultDocumentId` → `resultFeedDocumentId`（对齐官方 `definitions.Feed`）；并把 `ReportsRealClient` 的 `@Autowired` 字段注入改为**构造器注入**（缺 `SpApiGateway` Bean 时启动即失败，而不是首次调用 NPE）。
+
+原文（计划初稿措辞，行号已漂移，保留以便追溯）：`ReportsRealClient.java:80`：`str(resp,"resultDocumentId")` → `str(resp,"reportDocumentId")`；同步修正 product 模块 `ListingsMockClient.java:43` 的同名字段，保证 mock 与 real 使用同一字段名。
+
+- [x] **Step 5: 运行测试通过 + 回归两个模块**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=ReportsFieldContractTest`
 Run: `mvn -B -ntp -pl amz-service/amz-service-finance -am test`（结算链路消费方）
 Run: `mvn -B -ntp -pl amz-service/amz-service-product -am test`
-Expected: 三个命令均 BUILD SUCCESS
+> **口径修正（第 42 轮实测，勿再沿用旧记载）**：第三条命令里 **product 模块没有 `src/test` 目录**（实测 `*Test*.java` 命中 0），Maven 输出 `No sources to compile` / `No tests to run.`，**不构成任何回归证据**；历史上“product 51/51 PASS”是误把 `amz-common` 的 51 例当成 product 的计数，该记载**作废**。因此 product 侧 `ListingsMockClient` 的字段名改动目前**零自动化覆盖**，只有静态审查。
+Expected: 前两条 BUILD SUCCESS；第三条 `BUILD SUCCESS` 但**无测试执行**（`amz-service-finance` 侧第 42 轮实测 **94 例 / 0F / 0E / 0S**）。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**（提交动作随本轮收尾一并执行）
 
-`git commit -m "fix(spapi): Reports 文档 ID 字段名对齐官方模型，并加契约测试"`
+`git commit -m "fix(spapi): Reports 文档 ID 字段名对齐官方模型（P0-27）"`
 
 ---
 
@@ -546,7 +564,7 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 - Produces: `MarketplaceRegistry.resolveRegion(String marketplaceId)`（未知即抛）、`MarketplaceRegistry.resolveHost(String region)`；`SpApiUserAgent.build(config)`；`SpApiEndpointResolver.resolve(region, profile)`；`ConnectorEvidencePolicy.evaluate(evidence)` → `{evidenceLevel, apiReady, reachable}`；`AwsSigV4Signer.sign(..., Instant)`（可选，前向保险）。
 - Consumes: spec §1.9.1 证据等级表、spec §1.9.2（SigV4 事实 + 23 条 marketplace 全表）、4.8 契约表、Task 6 的能力清单。
 
-- [ ] **Step 1: 先写失败测试（7 必做 + 1 可选）**
+- [x] **Step 1: 先写失败测试（7 必做 + 1 可选）**
 
 必做：
 1. `SpApiRequiredHeaderContractTest`：用 `com.sun.net.httpserver.HttpServer`（127.0.0.1:0，**不新增依赖**）挂载桩，驱动 `SpApiGateway`、`OrdersClient`、`FeedsClient`、`FbaInventoryClient`、`LwaTokenManager` 的每个出站路径，断言**每个请求**都带 `user-agent`、长度 ≤500、且含 App 名/版本/语言；同时断言 App 名含 `/`、版本含 `(` 时按官方规则转义（当前全仓无该头 → FAIL）。
@@ -564,12 +582,14 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 >
 > **桩回放方式修订（有依据，不改验收目标）**：本沙箱**无法构造 JDK `HttpClient`**（见「未验证与风险」第 18 条：`IOException: Unable to establish loopback connection`；`-Djdk.net.useUnixDomainSockets=false` 等已实测无效），故 `com.sun.net.httpserver` + JDK `HttpClient` 的桩回放方式在本机**不可执行**。第 1 项测试改为**进程内假传输**（record-and-replay `HttpTransport`）：断言**请求构造契约**（方法、URI、每个请求的 `user-agent`、`x-amz-access-token`、`x-amz-date`、`Authorization` 的有无），**不覆盖真实网络栈**，因此证据上限 **E2**，不得据此宣称 A1/A5 通过。
 
-- [ ] **Step 2: 运行确认失败**
+> **进度（第 42 轮，2026-09-24）：7 个必做测试全部落地，本步勾选。** 逐类实数（`%TEMP%\fullrepo-r42.log`）——`MarketplaceRegistryTest` 6、`SpApiRequiredHeaderContractTest` 5、`LwaTokenExchangeContractTest` 11、`SpApiConditionalSigningTest` 6、`SpApiEndpointOverrideSafetyTest` **12**、`SpApiProtocolStubTest` **6**、`ConnectorEvidencePolicyTest` **10**，另 `SpApiUserAgentTest` 7；spapi 合计 **145 例 / 0F / 0E / 2S**（2 skip = `SpApiIntegrationTest`）。Step 1 第 4/5/6 项此前“未创建”的三只测试均已就位（第 41 轮落地，见附 A.7）。
+
+- [x] **Step 2: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=SpApiRequiredHeaderContractTest+MarketplaceRegistryTest+LwaTokenExchangeContractTest+SpApiEndpointOverrideSafetyTest+SpApiProtocolStubTest+ConnectorEvidencePolicyTest`
 Expected: FAIL（类不存在 / 断言失败）
 
-- [ ] **Step 3: 端点覆盖、必填头与市场映射（fail-closed 优先）**
+- [x] **Step 3: 端点覆盖、必填头与市场映射（fail-closed 优先）**
 
 覆盖键默认空；仅非生产生效，prod 非空即启动失败；allowlist 默认 `127.0.0.1`、`localhost`；非 allowlist 主机不得携带 `x-amz-access-token`，其响应也不得写入业务表（避免桩数据污染）。`MarketplaceRegistry` 成为唯一事实源，四份副本删除；`getOrDefault(..., "NA")` 必须从代码中消失（DoD 用 `grep` 断言）。7 处签名调用改为**有条件签名**：`accessKey`/`secretKey` 同时非空才注入 `Authorization`，否则跳过（P0-38），**不得**依赖 `"AWS4" + null` 的当前行为。`user-agent` 由 `SpApiUserAgent` 统一构造并注入全部出站客户端。`LwaTokenManager` 与 4 个客户端的 `HttpClient` 改为构造注入。`AwsSigV4Signer` 的 `Clock` 注入为可选项（前向保险）。
 
@@ -579,20 +599,28 @@ Expected: FAIL（类不存在 / 断言失败）
 > **进度（第 36 轮，2026-09-24）**：本步的**传输抽象 / 必填头 / 有条件签名 / region 映射**四片已落地——新增 `HttpTransport`（`@FunctionalInterface`；泛型 `send` 不能用 lambda 实现，须方法引用）、`HttpClientConfig`（唯一 `HttpClient` 装配点）、`SpApiRequestFactory`（SP-API 主机与预签名 URL 的唯一请求构造点）；4 个客户端删除自建 `HttpClient` 字段，改 6 参构造器注入（`HttpTransport` / `LwaTokenManager` / `ShopCredentialStore` / `SpiRateLimiter` / `SpApiRequestFactory` / `ObjectProvider<MeterRegistry>`）；9 个出站调用点收敛为 7 个 `requestFactory.spApi(...)` + 2 个 `requestFactory.presigned(...)`（P0-50）；`user-agent` 由 `SpApiUserAgent` 唯一构造（P0-35）；AK/SK 任一为空/空白时不进签名分支（P0-38）；签名作用域改用 `MarketplaceRegistry.resolveAwsRegion(...)`（P0-48）。
 >
 > **本步仍未完成**：端点覆盖键与 allowlist（`spapi.base-url-override` / `spapi.lwa-endpoint-override`、prod 非空即启动失败、非 allowlist 主机不得携带 `x-amz-access-token`）——即 `SpApiEndpointOverrideSafetyTest` 所对应的实现部分；`ConnectorEvidencePolicy`（Step 1 第 6 项）同样未开始。
+>
+> **进度（第 42 轮，2026-09-24）：本步已完成并勾选。** 端点覆盖与 allowlist 落地为 `connector/SpApiEndpointResolver`（`spapi.base-url-override` / `spapi.lwa-endpoint-override` / `spapi.allowlist`；**prod + override 非空 → 构造期 `IllegalStateException` 拒绝启动**）+ `connector/SpApiHostPolicy`（精确匹配，无后缀/通配/DNS；**非白名单主机在注入 token 之前**抛 `SpApiEndpointNotAllowedException`，`code=SPAPI_ENDPOINT_NOT_ALLOWED`）；一条 `base-url-override` 同时作用 NA/EU/FE；`presigned(...)`（S3 预签名）不做主机白名单校验（自带鉴权），只带 `user-agent`，**不带** token/`Authorization`/`x-amz-date`。`OrderSyncScheduler` / `InventorySyncScheduler`（含手动 `syncShopInventory`）在 `isOverrideActive()` 时**不调平台、不落库**，避免桩数据污染业务表。测试 `SpApiEndpointOverrideSafetyTest` **12 例**、`ConnectorEvidencePolicyTest` **10 例** 全绿；配置说明见 `application.yml`（三个键默认空）与 `application-prod.yml` 第 5 条。
 
-- [ ] **Step 4: LWA 契约夹具落地（必做）；SigV4 KAT 夹具（可选）**
+- [x] **Step 4: LWA 契约夹具落地（必做）；SigV4 KAT 夹具（可选）**
 
 期望值来源：(a) 官方文档示例的完整已知答案；(b) 官方 SDK 在固定输入下的输出。README 记录来源 URL / SDK 坐标与版本 / 生成脚本 / 字节数 / sha256。**若 LWA 契约夹具取不到，A1 证据上限为 E2**，完成说明必须标注；SigV4 部分取不到不阻塞本 Task（它不是必需路径）。
 
-- [ ] **Step 5: 运行测试通过**
+> **进度（第 42 轮，2026-09-24）：LWA 夹具已落地并勾选。** 目录 `src/test/resources/contracts/lwa-token/`：`README.md` 2,779 B + `provenance.json` 1,237 B + `refresh-token-request.json` 453 B + `refresh-token-success.json` 192 B（生成脚本 `tools/contract-fixtures/generate_lwa_fixtures.py` 6,644 B，来源/字节数/sha256 逐项登记）；`LwaTokenExchangeContractTest` **11 例**通过。**SigV4 KAT 仍为未落地的可选项**（不阻塞本 Task，且本沙箱无法做真实 socket）。
+
+- [x] **Step 5: 运行测试通过**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test`
 Expected: PASS（既有 527 用例不回退）
 > **进度（第 36 轮，2026-09-24，实数）**：`mvn -B -ntp -pl amz-service/amz-service-spapi -am clean test` → `amz-common` **51/51 PASS**；`amz-service-spapi` **Tests run: 105, Failures: 0, Errors: 0, Skipped: 2**（2 skip = `SpApiIntegrationTest` 的 `@EnabledIfEnvironmentVariable(RUN_INTEGRATION_TESTS)`），`BUILD SUCCESS`。同命令改造前对照：82 例 / **9 errors**（全部是 `LwaTokenManagerTest.setUp:47` 的 `IOException: Unable to establish loopback connection`）→ 现在 **0 errors**（传输注入后构造期不再建 `HttpClient`）。另：`mvn -B -ntp -DskipTests clean test-compile` **19 模块 BUILD SUCCESS**，`mvn -B -ntp test` 全仓 **19 模块 BUILD SUCCESS**（合计 **560 用例 / 0 failures / 0 errors / 2 skipped**，≥ 基线 527）。但本 Task 的测试面仍不完整（端点覆盖 / Feeds 全链路桩回放 / 证据门禁三项未落地），**故本步暂不勾选**。
+>
+> **进度（第 42 轮，2026-09-24，补记并勾选）**：上条所述三项缺口**已全部补齐**——`mvn -B -ntp -pl amz-service/amz-service-spapi -am clean test` → `amz-common` 51/51、**spapi 145 例 / 0F / 0E / 2S**、`BUILD SUCCESS`；全仓 `mvn -B -ntp clean test` → **19 模块 BUILD SUCCESS，600 例 / 0F / 0E / 2S**。**统计陷阱（第 42 轮踩到）**：spapi 汇总行前缀是 `[WARNING]`（因存在 skip）而非 `[INFO]`，用 `^\[INFO\] Tests run:` 统计会漏掉 145 例、把全仓误算成 455。
 
-- [ ] **Step 6: 落 runbook**
+- [x] **Step 6: 落 runbook**
 
 按 spec §1.9.1（5）写 `docs/superpowers/runbooks/connector-acceptance-runbook.md`：一条命令、产出 JSON 与 sha256、覆盖 401/403/404/429、限流头回填、Reports 文档下载断言、A1–A8 逐项结论；**不含任何明文密钥**。runbook 需写明**沙箱限流 5 rps / burst 15** 与“沙箱仅覆盖 2xx/400，其余错误码须在生产或按官方指引构造”（spec §1.9.2(5)）。
+
+> **进度（第 42 轮，2026-09-24）：runbook 已落盘并勾选本步。** `docs/superpowers/runbooks/connector-acceptance-runbook.md`（20,664 B / 305 行 / LF / 无 BOM）。**诚实边界**：runbook 只满足“落盘”，**“一条命令”今天不存在**（P0-52c），且平台错误码透出（P0-52a）与 `x-amzn-RateLimit-Limit` 结构化出口（P0-52b）缺失——见该文件 §1.3 与 §3.4。验收实际执行（A5）仍需真实凭证。
 
 - [ ] **Step 7: 提交**
 
@@ -604,7 +632,9 @@ Expected: PASS（既有 527 用例不回退）
 ## 验证与完成定义（Definition of Done）
 
 - [ ] 单模块：`mvn -B -ntp -pl amz-service/amz-service-spapi -am test` 全绿；受影响模块（product / finance / logistics）各自全绿。
+> 第 42 轮实测：spapi 145/0F/0E/2S、`amz-service-finance` 94/94 PASS、`amz-service-logistics` 77/77 PASS；**`amz-service-product` 无 `src/test`（`No tests to run.`）**，该模块无法用本项取证——本行因此**保持未勾选**。
 - [ ] 全量：`mvn -B -ntp clean test`（19 模块）全绿；后端用例数不少于当前 527。
+> 第 42 轮实测：**19 模块 BUILD SUCCESS、600 例 / 0F / 0E / 2S**（≥ 527）。本行因同组其它项（Task 6 等）未完成而保持未勾选。
 - [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）、schema 引导/建库契约测试（Task 10）在 CI 中运行且不可跳过。
 - [ ] 部署 schema：`docker/init-sql/` 只有 `01-init-databases.sql` 且无表 DDL；Compose 与 k8s 都只建 14 个空库；14 个服务显式配置 `baseline-on-migrate: true`；Flyway 唯一表集合为 106 张。
 - [ ] 配置卫生：`grep -r "121.37.250.15"` 命中 0；`grep -rn "spring\.redis\.host"` 命中 0；`NACOS_SERVER_ADDR` 在部署清单中命中 0（统一 `NACOS_ADDR`）。
@@ -612,7 +642,8 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
 - [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；`SpApiRequiredHeaderContractTest`（每请求都带合法 `user-agent`、≤500 字符）与 `MarketplaceRegistryTest`（23 条逐条断言 + 未知 ID 抛错）通过；`LwaTokenExchangeContractTest` 通过；`SpApiConditionalSigningTest`（无 AWS 密钥时不含 `Authorization`，且永不出现 `Credential=null`）通过；`ConnectorEvidencePolicyTest` 通过；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。SigV4 KAT 为**可选项**（spec §1.9.2），若保留签名器则夹具必须含来源与 sha256。
-- [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘且可执行。
+> 第 42 轮实测：`SpApiEndpointOverrideSafetyTest` **12 例**、`SpApiProtocolStubTest` **6 例**、`ConnectorEvidencePolicyTest` **10 例**、`ReportsFieldContractTest` **3 例**、`ReportsRealClientStubTest` **3 例**、`LwaTokenExchangeContractTest` **11 例**均已落地且全绿；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。本行其余项（CI 不可 skip 等）需在 CI 配置落地后勾选。
+- [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘（**第 42 轮已落盘**）且可执行（**尚不满足**：runbook §1.3 登记 P0-52a/b/c 三项前置缺口，§3.4 明确“这条命令今天不存在”）；另本项要求的 `GET /api/connectors`（Task 6）**尚未实现**。
 
 ## 未验证与风险（诚实记录）
 
@@ -730,3 +761,38 @@ Expected: PASS（既有 527 用例不回退）
 > **证据边界不变**：本轮全部证据为 **E1（自证）/ E2（契约构造，进程内假传输、零 socket）**，不产生 E3/E4/E5；`user-agent` 契约、LWA 交换契约、有条件签名都**不**代表平台已接受我方请求。官方依据：`https://developer-docs.amazon.com/sp-api/docs/connecting-to-the-selling-partner-api` 逐字「You must include a `user-agent` header in every request to the SP-API.」（≤500 字符；格式 `App/Version (Language=Java/x.y.z; Platform=...)`），以及同页 “no signing information” 示例只带 `host` / `user-agent` / `x-amz-access-token` / `x-amz-date`（Amazon 自 2023-10-02 起忽略 SigV4）。
 >
 > **「未验证与风险」第 18 条部分解除**：传输注入后 `LwaTokenManagerTest` 9 例不再依赖真实 `HttpClient`，且全仓 `mvn test` 已可跑绿（560 用例）；但 `SpApiIntegrationTest` 仍为 `@EnabledIfEnvironmentVariable` 默认跳过，**本沙箱仍无法执行任何真实 socket 路径**。
+
+---
+
+### A.7 第 41 轮：Task 11 第三片（端点覆盖 + allowlist + 证据门禁）已落地（2026-09-24）
+
+| 项 | 内容（本轮实测） |
+|---|---|
+| 新增主源 | `connector/SpApiEndpointResolver.java`（11,310 B）、`connector/SpApiHostPolicy.java`（5,532 B）、`connector/SpApiEndpointNotAllowedException.java`（1,367 B；`code = SPAPI_ENDPOINT_NOT_ALLOWED`，附 `host()`）、`connector/ConnectorEvidencePolicy.java`（11,120 B） |
+| 端点覆盖口径 | 构造期解析；`spapi.base-url-override` **一条同时作用于 NA/EU/FE**，`spapi.lwa-endpoint-override` 单独作用于 LWA token 端点；**prod + 任一 override 非空 → `IllegalStateException` 拒绝启动**（不是警告、不是静默回退） |
+| allowlist 口径 | `spapi.allowlist` **精确匹配**（不做后缀/通配/DNS）；非白名单主机在**注入 token 之前**拒绝（`SpApiEndpointNotAllowedException`）；`presigned(...)`（S3 预签名 PUT/GET）不做主机白名单校验（预签名自带鉴权），只带 `user-agent`，**绝不带** token / `Authorization` / `x-amz-date` |
+| 定时任务闸门 | `OrderSyncScheduler` / `InventorySyncScheduler` 在 `isOverrideActive()` 时跳过且**不落库**；`InventorySyncScheduler.syncShopInventory`（手动同步入口）同样受限 |
+| 证据门禁 | `ConnectorEvidencePolicy.Assessment.displayText()` 三种输出：`API-Ready（已联调）` / `已接通（联调中）` / `具备对接能力（未联调）`；证据 < E4 不得显示“已接通” |
+| 配置 | `application.yml` 新增 `spapi.base-url-override` / `lwa-endpoint-override` / `allowlist`（默认空）；`application-prod.yml` 加第 5 条说明（prod 必须为空，构造期拒启动） |
+| 测试（实数） | `mvn -B -ntp -pl amz-service/amz-service-spapi -am clean test`（`%TEMP%\spapi-r41-clean.log`）→ spapi **145 例 / 0F / 0E / 2S**、`BUILD SUCCESS`；逐类：`AwsSigV4SignerTest` 13、`LwaTokenExchangeContractTest` 11、`LwaTokenManagerTest` 9、`SpApiConditionalSigningTest` 6、`SpApiUserAgentTest` 7、`FinancialEventParserTest` 6、`ReportDocumentDecoderTest` 5、`ReportsFieldContractTest` 3、`ReportsRealClientStubTest` 3、`SpApiEndpointOverrideSafetyTest` 12、`SpApiFinanceMockClientsTest` 8、`SpApiProtocolStubTest` 6、`SpApiRequiredHeaderContractTest` 5、`ConnectorEvidencePolicyTest` 10、`MarketplaceRegistryTest` 6、`ConnectorStartupCheckTest` 4、`HybridReplenishmentEngineTest` 6、`ReplenishmentEngineTest` 23、`SpApiIntegrationTest` 2（skip）。**合计 145 与逐类相加一致** |
+| 未完成（如实登记） | Task 6 的 `GET /api/connectors`（`evidenceLevel` 的结构化出口）**未实现**：`ConnectorEvidencePolicy` 目前只有类与单测，没有 HTTP 出口（runbook §1.3 已登记）；错误码透出与限流头结构化出口见 P0-52 |
+
+> **证据边界**：端点覆盖 / allowlist / 桩回放的断言全部走**进程内假传输（零 socket）**，属 **E1/E2**。它们能证明“我方不会把 token 发到白名单外的主机、覆盖生效时不落库”，**不能**证明任何真实主机已接受我方请求（A5 仍缺失）。
+
+### A.8 第 42 轮：Task 3 完成（Reports 字段名对齐 + 官方模型契约测试）与全仓 600 例回归（2026-09-24）
+
+| 项 | 内容（本轮实测） |
+|---|---|
+| 官方模型快照 | `contracts/reports_2021-06-30.json` **83,685 B** / `d72db9e5280262a92933a0e45e2207c150272f1d66177b2517c20671d69c732c`；`contracts/feeds_2021-06-30.json` **55,901 B** / `ab235b4a0e5ce21083b885dd4f2b8cae7a6f597d7adf2647b47b90d6f5098a16`。来源 `https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/...`（Apache-2.0），抓取时间 `2026-09-24T21:07:54+08:00`；测试以**字节数 + sha256 双重锁定**，禁止改写 |
+| 上游笔误（成因，官方事实） | `feeds_2021-06-30.json` **第 691 行** `getFeed` 的 description 逐字含 `` `resultDocumentId` ``，而 `definitions.Feed` 的 schema 属性是 **`resultFeedDocumentId`**——**这是 Amazon 自己的笔误，也正是原开发者抄错字段名的来源**。`resultDocumentId` **不是任何官方模型的属性**（E3 证据：快照 + 哈希，非猜测） |
+| 字段名修正（2 处） | ① `ReportsRealClient.java:85`：`str(resp,"resultDocumentId")` → `str(resp,"reportDocumentId")`（官方 `definitions.Report` 属性名）；② `ListingsMockClient.java:42,44`：`feedSubmissionId` → `feedId`、`resultDocumentId` → `resultFeedDocumentId`（对齐官方 `definitions.Feed`） |
+| 顺带加固 | `ReportsRealClient` 的 `@Autowired` 字段注入改**构造器注入**（缺 `SpApiGateway` Bean 时启动即失败，而非首次调用 NPE）；`RecordingHttpTransport.Reply` 增 `headers` / `rawBody` 与 `withHeader(...)` / `ofBytes(...)` / `bodyAsBytes()`（GZIP 二进制响应体回放必需） |
+| 契约测试（实数） | `ReportsFieldContractTest` **3 例**：① 快照字节/sha256 锁定；② 源码响应字段 ⊆ 官方 `properties`；③ 旧字段名在本仓源码与官方键集中都不存在，**且上游笔误仍存在**（防止静默脱节）。`ReportsRealClientStubTest` **3 例**：字段回环 + 文档解码（进程内假传输） |
+| 变异反证（RED → GREEN） | 把 `reportDocumentId` 改回 `resultDocumentId`（1 处命中）→ `-Dtest=ReportsFieldContractTest` **Tests run: 3, Failures: 2, Errors: 0**、`BUILD FAILURE`（断言消息实测打印字段集 `[reportId, reportType, processingStatus, resultDocumentId, url, compressionAlgorithm]`；字节/哈希的第 3 例仍 PASS，符合预期）；还原后 `RESTORED_OK=True`、前后 SHA-256 一致（`33AEE3E5790D361A0F5CA92485A6F8A68B869FF802CBA4C078DD5B2B6D645454`）、复跑 **3/3 PASS** |
+| 全仓回归（实数） | `mvn -B -ntp clean test`（`%TEMP%\fullrepo-r42.log`）：**19 模块 BUILD SUCCESS**，用例合计 **600 / 0F / 0E / 2S**（该日志 15 个模块汇总行逐行相加 = 600，本轮独立复核，非引用历史数字）；逐模块：amz-common 51、user 9、search 3、order 17、message 8、ai 86、spapi 145（2 skip）、ad 12、procurement 30、customer 17、logistics 77、ops 11、report 12、finance 94、multiplatform 28 |
+| **口径纠错（重要，勿沿用旧记载）** | ① **`amz-service-product` 没有 `src/test`**（实测 `*Test*.java` 命中 0；各模块测试文件数：ad 1 / ai 16 / customer 2 / finance 9 / logistics 5 / message 1 / multiplatform 5 / ops 2 / order 3 / procurement 4 / **product 0** / report 2 / search 1 / spapi 22 / user 2 / amz-common 5），`mvn -pl amz-service-product -am test` 实际输出 `No tests to run.`；历史上“product 51/51 PASS”是**把 `amz-common` 的 51 例当成 product 的计数，该记载作废**。② 因此本轮 `ListingsMockClient` 的字段名修正**零自动化覆盖**，仅经静态审查。③ **统计陷阱**：spapi 汇总行前缀是 `[WARNING]`（有 skip）而非 `[INFO]`，按 `^\[INFO\] Tests run:` 统计会漏掉 145 例，把全仓误算成 455 |
+| 提交 | `fix(spapi): Reports 文档 ID 字段名对齐官方模型（P0-27）` + `test(spapi): 零凭证取证基座（user-agent 必填头 + marketplace fail-closed + 端点覆盖 + LWA 契约 + 桩回放 + 证据门禁）`，两笔均在本地，`origin/master` **未推送** |
+
+> **证据边界不变**：本轮证据主体是 **E1（自证）/ E2（契约构造，进程内假传输、零 socket）**；官方模型快照的落地把 Reports/Feeds **字段名与文档模型的一致性**提升到 **E3**。**E3 ≠ A5**：平台是否接受我方请求仍未验证，无凭证阶段的能力表述只能到「**具备对接能力（未联调）**」。
+>
+> **与第 41 轮的衔接**：A.8 的全仓回归是**当前工作区**（含 A.7 的端点覆盖与 Task 3 的字段名修正）跑出的实数，因此 A.7 的实现也在该 600 例回归覆盖范围内。
