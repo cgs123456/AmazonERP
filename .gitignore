@@ -68,3 +68,7 @@ test-output.txt
 # Synthetic data toolchain artefacts (regenerate with tools/synthetic-data/run.ps1)
 tools/synthetic-data/out/
 tools/synthetic-data/__pycache__/
+
+# Connector acceptance runner artefacts (tools/connector-acceptance/)
+tools/connector-acceptance/__pycache__/
+acceptance-out/

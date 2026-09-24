@@ -2,8 +2,10 @@ package com.amz.controller;
 
 import com.amz.annotation.ShopScoped;
 import com.amz.client.OrdersClient;
+import com.amz.connector.ConnectorSelfDescription;
 import com.amz.connector.ErrorSummary;
 import com.amz.context.UserContext;
+import com.amz.credential.ConnectorStartupCheck;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.mapper.FbaInventoryMapper;
@@ -16,6 +18,7 @@ import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * SP-API 服务对外接口。
@@ -47,6 +51,19 @@ public class SpapiController {
     @Autowired
     private ShopCredentialStore shopCredentialStore;
 
+    /**
+     * 启动自检快照来源（P0-52d）：用于让 {@code GET /spapi/status} 回报
+     * <b>启动时</b>真实生效的 profile / mock 开关 / 已加载凭证条数。
+     */
+    @Autowired
+    private ConnectorStartupCheck connectorStartupCheck;
+
+    /**
+     * 实时 Spring 环境（启动自检未执行时的回落来源）。
+     */
+    @Autowired
+    private Environment environment;
+
     @Autowired
     private OrdersClient ordersClient;
 
@@ -57,11 +74,27 @@ public class SpapiController {
     private ReplenishmentSuggestionMapper replenishmentSuggestionMapper;
 
     /**
-     * 服务健康检查。
+     * 服务健康检查 + 连接器自描述（P0-52d）。
+     * <p>
+     * 返回固定键集合的只读视图：{@code service} / {@code connector} / {@code profile} /
+     * {@code mockClientsActive} / {@code startupCheckRan} / {@code startupRequireCredentials} /
+     * {@code loadedCredentialCount}。字段含义与装配见
+     * {@link ConnectorSelfDescription}。
+     * <p>
+     * <b>为什么不只是健康检查：</b>凭证到位当天的验收记录有硬约束「被测服务必须以
+     * {@code SPRING_PROFILES_ACTIVE=prod} 启动」——mock profile 下财务域三类客户端返回
+     * 离线样例数据，据此产出的「成功样例」是假证据。固定串响应让这条约束在进程外无法核验，
+     * 只能靠人工声明；现在验收 runner（{@code tools/connector-acceptance/}）可以直接读到
+     * 生效 profile 与 mock 开关并据此<b>拒绝</b>产出记录。
+     * <p>
+     * <b>不返回任何机密</b>：只回报 profile 名、布尔开关与凭证<b>条数</b>
+     * （clientId / clientSecret / refreshToken / accessKey / secretKey / access_token 一律不出现）。
      */
     @GetMapping("/status")
-    public Result<String> status() {
-        return Result.success("SP-API service running");
+    public Result<Map<String, Object>> status() {
+        return Result.success(ConnectorSelfDescription.of(
+                environment,
+                connectorStartupCheck == null ? null : connectorStartupCheck.getLastState()));
     }
 
     /**
