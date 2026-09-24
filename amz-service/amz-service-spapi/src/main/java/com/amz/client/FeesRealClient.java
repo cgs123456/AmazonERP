@@ -31,8 +31,12 @@ public class FeesRealClient implements FeesClient {
 
     private static final String FEES_PATH = "/products/fees/v0/feesEstimate";
 
-    /** Fees 端点标识，用于限流指标维度。 */
-    private static final String FEES_ENDPOINT = "fees";
+    /**
+     * 官方 operationId（限流维度；数值见 contracts/productFeesV0.json 的 Usage Plan 表：
+     * 0.5 req/s、burst 1）。旧实现用粗粒度 {@code "fees"} 命中兜底 1 req/s、burst 30，
+     * 速率越权约 2 倍、突发越权约 30 倍。
+     */
+    private static final String OP_GET_MY_FEES_ESTIMATES = "fees.getMyFeesEstimates";
 
     @Autowired
     private SpApiGateway gateway;
@@ -67,7 +71,7 @@ public class FeesRealClient implements FeesClient {
         JsonObject body = new JsonObject();
         body.add("FeesEstimateRequestList", requestList);
 
-        JsonObject resp = gateway.callJson("POST", shop, FEES_ENDPOINT, FEES_PATH,
+        JsonObject resp = gateway.callJson("POST", shop, OP_GET_MY_FEES_ESTIMATES, FEES_PATH,
                 SpApiGateway.canonicalQuery(Map.of("MarketplaceId", marketplaceId)),
                 body.toString());
 

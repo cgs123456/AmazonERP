@@ -102,7 +102,7 @@ class SpApiRequiredHeaderContractTest {
     void unsignedCallWhenShopHasNoAwsKeys() {
         credentials.with(TestCredentials.northAmerica());
 
-        gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
+        gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports.getReports",
                 "/reports/2021-06-30/reports", "reportTypes=GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL", null);
 
         HttpRequest request = transport.lastRequest();
@@ -119,7 +119,7 @@ class SpApiRequiredHeaderContractTest {
     void signedCallUsesAwsRegionInScope() {
         credentials.with(TestCredentials.withAwsKeys(TestCredentials.northAmerica()));
 
-        gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
+        gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports.getReports",
                 "/reports/2021-06-30/reports", null, null);
 
         String authorization = transport.lastRequest().headers().firstValue("Authorization").orElse(null);
@@ -166,7 +166,7 @@ class SpApiRequiredHeaderContractTest {
     }
 
     private void driveAllSpApiCallSites() {
-        gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
+        gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports.getReports",
                 "/reports/2021-06-30/reports", null, null);
         ordersClient.fetchOrders(SHOP_ID, MARKETPLACE_ID, Instant.parse("2026-09-01T00:00:00Z"), null);
         ordersClient.fetchOrderItems(SHOP_ID, MARKETPLACE_ID, "123-1234567-1234567");

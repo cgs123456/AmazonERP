@@ -460,6 +460,34 @@ pwsh -File tools/connector-acceptance/run.ps1 -Selftest
 
 ---
 
+### 7.1 第 50 轮复跑（Task 5 限流改造后）
+
+同一组命令的复跑结果（2026-09-24）：
+
+| 项 | 实测结果 |
+|---|---|
+| `amz-service-spapi` 单模块 | **Tests run: 187, Failures: 0, Errors: 0, Skipped: 2**，`BUILD SUCCESS`（181 → 187 = 本轮新增 `SpiRateLimiterTest` **6 例**） |
+| 全仓 `mvn -B -ntp test` | 19 模块 `BUILD SUCCESS`，**Tests run: 642, Failures: 0, Errors: 0, Skipped: 2**（636 → 642） |
+| runner 自检（Python 与 `.ps1` 两条入口） | 仍全绿、退出码 0、未连接任何服务 |
+
+`SpiRateLimiterTest` 的 6 个用例：
+
+| 用例 | 断言 |
+|---|---|
+| `burstExhaustionWaitsAtOfficialRate` | `fees.getMyFeesEstimates`（0.5 req/s、burst 1）第二次 acquire 必须等 1500–6000 ms（旧实现按 endpoint 兜底直接放行） |
+| `burstIsCappedAtOfficialValue` | `reports.createReport`（0.0167 req/s、burst 15）第 16 次必须阻塞；阻塞中中断必须抛 `RateLimitException` 且线程退出 |
+| `tighteningOneShopDoesNotAffectAnother` | A 店观测收紧到 0.01 req/s 后，B 店仍是官方 0.5 req/s、burst 仍为 1，且首次 acquire 立即放行 |
+| `waitingDoesNotBlockOtherShopsOrOperations` | A 店 `orders.getOrders` 长等待期间，B 店同 operation 与 A 店 `fees.getMyFeesEstimates` 均 < 500 ms 放行（证明等待在锁外） |
+| `observedRateRecoveryRestoresOfficialPlan` | 收紧 → 观测值回升即恢复官方速率与 burst；观测值高于官方值时封顶不放大；非法/空/null 响应头被忽略 |
+| `officialPlansMatchContractSnapshots` | 解析 6 份快照 Usage Plan 表（字节数 + sha256 双重锁定）与 `officialPlans()` **双向比对**：条目数 33、键集合一致、rate/burst 逐项一致；并反向断言无配额表的 operation 与 `JSON_LISTINGS_FEED` 分档**不得被凭空登记** |
+
+**证据边界**：本条列全部 ≤ **E3**（官方模型 + 哈希锁 + 官方限流数值）。它证明了「本地限流器的
+速率/burst 与官方模型一致、按店铺与 operation 隔离、观测收紧可恢复」，**没有**证明平台的
+真实限流算法与本实现一致（**假设 1/4**，见 spec §4.6），也**没有**证明平台接受我方请求
+（A5 需凭证联调）。
+
+---
+
 ## 8. 未验证与风险（诚实清单）
 
 1. **runner 已存在，但从未对真实服务跑过**（P0-52c 第 48 轮修复）→ §3 的命令现在可执行，且**只有 C1 全绿才会产出记录**；但迄今所有执行都对着**本地桩**（`stub=true` + `--allow-stub`，A5 封顶 E2），因此「一条命令出**真实联调**报告」**仍是待验证承诺**，不是现状。

@@ -1033,6 +1033,54 @@ webhook_event(
 - **`JSON_LISTINGS_FEED` 的专属限流未落实（待验证，暂不升 P0）**：`FeedsClient.java:53` 硬编码 `FEED_TYPE = "JSON_LISTINGS_FEED"`，而官方 `createFeed` 的 `description` 原文写明 “The rate limit for the `JSON_LISTINGS_FEED` feed type differs from the rate limit for the `createFeed` operation”，并指向 *Building Listings Management Workflows Guide*。因此 Task 5 的 `UsagePlan` 必须支持按 `feedType` 分档，或至少在策略表中显式注释该差异。**该 guide 的具体配额以官方页面为准——本轮抓取 developer-docs 失败，不写入未核实数值。**
 - **Feeds 上传 `Content-Type` 未带 `charset`（待联调定级，暂不升 P0）**：`FeedsClient.java:54` 为裸类型 `application/json`。官方模型中 `CreateFeedDocumentSpecification.contentType` 只是自由 `string`（required，无 enum、无 pattern），模型本身不约束取值；实际是否要求 `; charset=UTF-8` 只能由真实联调确认。处理方式：Task 3 的契约测试先固定当前取值，联调后再决定是否修改，避免现在凭猜测改动。
 
+**第 50 轮实测：Task 5 已落地（限流从「endpoint 滑动窗口」改为「官方 usage plan 令牌桶」）**
+
+- **实现形态**（`amz-service/amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java` 重写）：
+  按 `(shopId, operationId[, variant])` 维护**令牌桶**——初始令牌数 = 官方 `burst`，之后按官方
+  `rate` 匀速补充。旧实现的「窗口内计数」被整个删除：它的突发上限由窗口长度决定、与官方
+  `burst` 无关，既可能在窗口内越权（`fees.getMyFeesEstimates` 官方 burst=1 被放大到 30），
+  也可能因窗口固定而长时间误伤。
+- **官方表 33 个 operation**（`UsagePlan` 新增，键值 `{@code 分组.operationId}`）：逐项来自 6 份
+  官方模型快照 `description` 的 Usage Plan 表，与上表逐行一致。**未知 operationId 落到保守兜底
+  1 req/s + burst 30（与旧实现 30 req/30s 等效，行为不倒退）并打一次 WARN**，绝不静默放大配额。
+- **调用点改造**（旧 `updateLimit(String endpoint, String header)` 已删除，签名变为按店铺）：
+  `SpApiGateway.callJson` 的第 3 参从 `endpointTag` 改为 `operationId`；`OrdersClient` 拆出
+  `orders.getOrders` / `orders.getOrderItems` 两个桶；`FbaInventoryClient` →
+  `fbaInventory.getInventorySummaries`；`FeedsClient` 拆出 `feeds.createFeedDocument` /
+  `feeds.createFeed|JSON_LISTINGS_FEED` / `feeds.getFeed` 三个桶；
+  `ReportsRealClient` → `createReport` / `getReport` / `getReportDocument` 三个桶；
+  `FeesRealClient` → `fees.getMyFeesEstimates`；`FinancesRealClient` → `finances.listFinancialEvents`。
+  中间的 **S3 预签名 PUT / GET 不是 SP-API 调用，不消耗任何令牌**（`FeedsClient.uploadDocument`
+  与 `SpApiGateway.downloadBytes` 均不做 acquire）。
+- **新发现并同轮修复的缺陷 P0-55**：`FeedsClient.getFeedStatus` 旧实现**完全没有限流**
+  （官方 `feeds.getFeed` = 2 req/s、burst 15）。轮询 `processingStatus` 是全仓最密集的调用点，
+  缺限流必然撞 429。已补 `feeds.getFeed` 的 acquire。
+- **动态调整改为可恢复**：`x-amzn-RateLimit-Limit` 观测值按 `(shopId, operationId)` 记录，只会
+  收紧、**且观测值回升时撤销收紧恢复官方默认**；观测值高于官方值时按官方值封顶（不放大）。
+  旧实现是「只收紧不恢复 + endpoint 维度」，单店被限流会永久拖慢所有店铺。
+- **等待在锁外**：`acquire()` 在锁内算等待时长、在锁外 `Thread.sleep`，被中断时恢复中断标志并抛
+  `RateLimitException`。旧实现在 `synchronized(deque)` 内 sleep，同键请求被串行化。
+- **指标口径变化（已实测影响面为 0）**：`spapi.throttle.count` 的指标名与标签名
+  `endpoint` **保持不变**，但标签值从粗粒度端点（`"reports"`）升级为官方 operationId
+  （`"reports.createReport"`）。实测全仓 grep：除 Java 源码外只有
+  `docs/erp-improvement-plan-2026-08-17.md:117` 一处**提案文本**提及该指标名，
+  **没有任何 Prometheus/Grafana 配置引用它**，因此本次口径变化不破坏既有仪表盘。
+- **测试**：新增 `SpiRateLimiterTest` **6 例**（官方 rate/burst 阻塞、burst 只允许官方额度、
+  店铺隔离、等待不阻塞其它店铺/其它 operation、观测收紧可恢复、`officialPlans()` 与 6 份快照
+  Usage Plan 表逐项双向一致）。复跑：`amz-service-spapi` **181 → 187 例 / 0F / 0E / 2S**，
+  全仓 **636 → 642 例 / 19 模块 / 0F / 0E / 2S**；Python 与 `.ps1` 两条验收自检入口仍全绿。
+- **新增 P0 编号**：**P0-55**（`getFeedStatus` 无限制流）→ 本轮已修复。**当前独立缺陷 53 条、
+  编号至 P0-55**（口径同前：P0-44 与 P0-07 完全重叠、P0-46 为工具项，不计入独立缺陷）。
+
+**第 50 轮的 4 条技术假设（无凭证无法验证，必须在文档中显式标注为假设而非事实）**
+
+| # | 假设 | 依据与风险 |
+|---|---|---|
+| 1 | `burst` 按「令牌桶容量 = burst」实现 | Amazon 措辞是“可以突发发送的请求数”。官方模型只给 rate+burst 两个数、不描述具体算法；若平台实为其它算法，`burst` 的瞬时语义会与平台不一致。**属 A5 联调项** |
+| 2 | 观测值 `x-amzn-RateLimit-Limit` **≥ 官方值时按官方值封顶、不放大** | 官方 `description` 原文：“Selling partners whose business demands require higher throughput may see higher rate and burst values than those shown here.” 即高吞吐卖家的响应头可能**高于**默认值。本实现选择「不放大」，是**保守选择**：代价是高配额卖家的吞吐被压到官方默认值（可通过放宽该策略换取吞吐，但会撞平台配额）。**需在联调时按响应头实测值决策** |
+| 3 | `JSON_LISTINGS_FEED` 未登记配额，只做**窗口隔离** | 官方说明该 feedType 的限流与 `createFeed` operation 不同，但数值在 *Building Listings Management Workflows Guide*（不在模型快照内）。未取得官方数值前**不填猜测值**：沿用 `feeds.createFeed` 默认速率、以 `feeds.createFeed|JSON_LISTINGS_FEED` 独立窗口隔离，靠响应头观测收敛 |
+| 4 | 收紧只改速率、**burst 仍取官方值** | 收紧后仍允许官方 burst 的瞬时突发；若平台在收紧时同时压低 burst，本实现会短时超发。**属 A5 联调项** |
+
 ### 4.7 对账体系
 
 至少四类对账：

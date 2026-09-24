@@ -55,8 +55,16 @@ public class FeedsClient {
     private static final String FEED_TYPE = "JSON_LISTINGS_FEED";
     private static final String CONTENT_TYPE = "application/json";
 
-    /** Feed 端点标识，用于限流指标维度。 */
-    private static final String FEEDS_ENDPOINT = "feeds";
+    /**
+     * 官方 operationId（限流维度；数值见 contracts/feeds_2021-06-30.json 的 Usage Plan 表）。
+     * <p>
+     * 旧实现三个 operation 共用一个粗粒度 {@code "feeds"} 桶（命中兜底 1 req/s、
+     * burst 30）：对 0.0083 req/s 的 {@code createFeed} 越权约 120 倍，而
+     * {@code createFeedDocument}（0.5 req/s）反被拖慢——两种偏差同时存在。
+     */
+    private static final String OP_CREATE_FEED = "feeds.createFeed";
+    private static final String OP_CREATE_FEED_DOCUMENT = "feeds.createFeedDocument";
+    private static final String OP_GET_FEED = "feeds.getFeed";
 
     private static final int MAX_RETRIES = 3;
 
@@ -107,8 +115,10 @@ public class FeedsClient {
         ResolvedShop shop = resolveShop(shopId, marketplaceId);
         String accessToken = lwaTokenManager.getToken(shop.credential);
 
-        // 前置滑动窗口限流（按 shopId + feeds 端点维度）
-        spiRateLimiter.acquire(shopId, FEEDS_ENDPOINT);
+        // 限流按各自官方 operationId 逐步取令牌，不再在入口按粗粒度 "feeds" 取一次：
+        //   ① createFeedDocument → feeds.createFeedDocument（0.5 req/s、burst 15）
+        //   ② createFeed         → feeds.createFeed|JSON_LISTINGS_FEED（见 OFFICIAL_PLANS）
+        // 中间的 S3 预签名 PUT 不是 SP-API 调用，不消耗任何令牌。
 
         // 1. 创建 Feed 文档
         JsonObject doc = createFeedDocument(shop, accessToken, CONTENT_TYPE);
@@ -137,12 +147,16 @@ public class FeedsClient {
         ResolvedShop shop = resolveShop(shopId, null);
         String accessToken = lwaTokenManager.getToken(shop.credential);
 
+        // 旧实现漏了这一步：getFeedStatus 完全不限流（官方 feeds.getFeed 为 2 req/s、
+        // burst 15）。轮询 processingStatus 是全仓最密集的调用点，缺限流必然撞 429。
+        spiRateLimiter.acquire(shopId, OP_GET_FEED);
+
         String path = FEEDS_PATH + "/" + feedId;
         HttpRequest request = requestFactory.spApi(
                 "GET", shop.endpoint, shop.host, shop.awsRegion, path, null, null,
                 accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        HttpResponse<String> response = sendWithRetry(request);
+        HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_FEED, null);
         if (response == null || response.statusCode() != 200) {
             int status = response == null ? -1 : response.statusCode();
             // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
@@ -187,6 +201,8 @@ public class FeedsClient {
      * 创建 Feed 文档（POST /feeds/2021-06-30/documents），返回 feedDocumentId 与 S3 预签名上传地址。
      */
     private JsonObject createFeedDocument(ResolvedShop shop, String accessToken, String contentType) {
+        spiRateLimiter.acquire(shop.credential.getShopId(), OP_CREATE_FEED_DOCUMENT);
+
         JsonObject req = new JsonObject();
         req.addProperty("contentType", contentType);
         String body = req.toString();
@@ -195,7 +211,8 @@ public class FeedsClient {
                 "POST", shop.endpoint, shop.host, shop.awsRegion, DOCUMENTS_PATH, null, body,
                 accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        HttpResponse<String> response = sendWithRetry(request);
+        HttpResponse<String> response = sendWithRetry(request, shop.credential.getShopId(),
+                OP_CREATE_FEED_DOCUMENT, null);
         if (response == null || (response.statusCode() != 200 && response.statusCode() != 201)) {
             throw new RuntimeException("createFeedDocument failed status="
                     + (response == null ? -1 : response.statusCode())
@@ -244,6 +261,11 @@ public class FeedsClient {
      */
     private JsonObject createFeed(ResolvedShop shop, String accessToken, String feedType,
                                  String marketplaceId, String feedDocumentId) {
+        // 分档维度：官方说明 JSON_LISTINGS_FEED 的限流与 createFeed operation 不同，
+        // 数值在未纳入模型快照的 Guide 里 → 先用 feedType 隔离窗口、不填猜测值，
+        // 取得官方数值或观测头后再收敛（见 SpiRateLimiter.OFFICIAL_PLANS 注释）。
+        spiRateLimiter.acquire(shop.credential.getShopId(), OP_CREATE_FEED, feedType);
+
         JsonObject req = new JsonObject();
         req.addProperty("feedType", feedType);
         JsonArray mks = new JsonArray();
@@ -256,7 +278,8 @@ public class FeedsClient {
                 "POST", shop.endpoint, shop.host, shop.awsRegion, FEEDS_PATH, null, body,
                 accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        HttpResponse<String> response = sendWithRetry(request);
+        HttpResponse<String> response = sendWithRetry(request, shop.credential.getShopId(),
+                OP_CREATE_FEED, feedType);
         if (response == null || (response.statusCode() != 200 && response.statusCode() != 202)) {
             throw new RuntimeException("createFeed failed status="
                     + (response == null ? -1 : response.statusCode())
@@ -267,8 +290,17 @@ public class FeedsClient {
 
     /**
      * 发送 HTTP 请求，遇到 429 限流时按指数退避重试。
+     * <p>
+     * 429 时把 {@code x-amzn-RateLimit-Limit} 回填到 {@code (shopId, operationId[, variant])}
+     * 维度：只收紧本店铺本 operation 的速率，观测值回升时自动恢复官方默认上限。
+     *
+     * @param request     已构建好的 HTTP 请求
+     * @param shopId      店铺 ID（限流按店铺隔离）
+     * @param operationId 官方 operationId（如 {@code feeds.createFeedDocument}）
+     * @param variant     分档值（如 {@code JSON_LISTINGS_FEED}）；无分档传 {@code null}
      */
-    private HttpResponse<String> sendWithRetry(HttpRequest request) {
+    private HttpResponse<String> sendWithRetry(HttpRequest request, Long shopId, String operationId,
+                                              String variant) {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -283,12 +315,12 @@ public class FeedsClient {
                 continue;
             }
             if (response.statusCode() == 429) {
-                recordThrottle(FEEDS_ENDPOINT);
-                // 读取 x-amzn-RateLimit-Limit（req/s），收紧本地窗口
+                recordThrottle(operationId);
+                // 读取 x-amzn-RateLimit-Limit（req/s），收紧本店铺该 operation 的速率
                 String rateLimitHeader = response.headers()
                         .firstValue("x-amzn-RateLimit-Limit").orElse(null);
                 if (rateLimitHeader != null && !rateLimitHeader.isBlank()) {
-                    spiRateLimiter.updateLimit(FEEDS_ENDPOINT, rateLimitHeader);
+                    spiRateLimiter.updateLimit(shopId, operationId, variant, rateLimitHeader);
                 }
                 long backoff = (1L << attempt) * 1000L;
                 log.warn("Rate limited (429), retrying after {}ms attempt={}", backoff, attempt);
@@ -304,9 +336,10 @@ public class FeedsClient {
      * 记录 SP-API 429 限流触发次数到 Micrometer，供 Prometheus 抓取。
      * 软依赖：未引入指标注册表时不抛异常、不影响主链路。
      *
-     * @param endpoint SP-API 资源标识（如 {@code "feeds"}）
+     * @param operationId 官方 operationId（如 {@code "feeds.createFeed"}）；
+     *                    指标标签名仍为 {@code endpoint}，值升级为 operationId
      */
-    private void recordThrottle(String endpoint) {
+    private void recordThrottle(String operationId) {
         if (meterRegistryProvider == null) {
             return;
         }
@@ -315,7 +348,7 @@ public class FeedsClient {
             return;
         }
         try {
-            registry.counter("spapi.throttle.count", "endpoint", endpoint).increment();
+            registry.counter("spapi.throttle.count", "endpoint", operationId).increment();
         } catch (Exception e) {
             log.debug("SP-API throttle metric record failed: {}", e.getMessage());
         }

@@ -91,9 +91,15 @@ public class OrdersClient {
     }
 
     /**
-     * Orders 端点标识，用于限流维度与动态调整。
+     * 官方 operationId（限流维度；数值见 contracts/ordersV0.json 的 Usage Plan 表）。
+     * <p>
+     * 旧实现用粗粒度 {@code "orders"}（命中兜底 30 req/30s ≈ 1 req/s），对官方
+     * 0.0167 req/s 的 {@code getOrders} 越权约 60 倍——分页稍多就会撞 429。
      */
-    private static final String ORDERS_ENDPOINT = "orders";
+    private static final String OP_GET_ORDERS = "orders.getOrders";
+
+    /** {@code orders.getOrderItems}：官方 0.5 req/s、burst 30（旧实现同样走 1 req/s 兜底）。 */
+    private static final String OP_GET_ORDER_ITEMS = "orders.getOrderItems";
 
     /**
      * 订单行级接口路径前缀（/orders/v0/orders/{orderId}/orderItems）。
@@ -105,7 +111,8 @@ public class OrdersClient {
      * <p>
      * 供订单同步调度器为<b>新订单</b>补全利润核算所需的真实 SKU
      * （列表接口不含行级数据，旧实现以 amazonOrderId 冒充 SKU 导致 COGS 恒缺失）。
-     * 复用 orders 端点限流桶；官方配额较紧，调用方应仅对新订单调用。
+     * 限流走独立令牌桶 {@code orders.getOrderItems}（官方 0.5 req/s、burst 30），
+     * 与 {@code orders.getOrders}（0.0167 req/s）互不挤占；调用方应仅对新订单调用。
      *
      * @param shopId        店铺 ID
      * @param marketplaceId Marketplace ID
@@ -127,7 +134,7 @@ public class OrdersClient {
 
         String accessToken = lwaTokenManager.getToken(credential);
 
-        spiRateLimiter.acquire(shopId, ORDERS_ENDPOINT);
+        spiRateLimiter.acquire(shopId, OP_GET_ORDER_ITEMS);
 
         String path = ORDER_ITEMS_PATH + amazonOrderId + "/orderItems";
         HttpRequest request = requestFactory.spApi(
@@ -135,7 +142,7 @@ public class OrdersClient {
                 accessToken, credential.getAccessKey(), credential.getSecretKey());
 
         try {
-            HttpResponse<String> response = sendWithRetry(request, ORDERS_ENDPOINT);
+            HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_ORDER_ITEMS);
             if (response == null || response.statusCode() != 200) {
                 log.warn("fetchOrderItems failed orderId={} status={}",
                         amazonOrderId, response == null ? -1 : response.statusCode());
@@ -190,8 +197,8 @@ public class OrdersClient {
         int pageCount = 0;
 
         do {
-            // 主动限流：按 (shopId, orders) 维度滑动窗口阻塞等待，避免触发 429
-            spiRateLimiter.acquire(shopId, ORDERS_ENDPOINT);
+            // 主动限流：按 (shopId, orders.getOrders) 维度令牌桶阻塞等待，避免触发 429
+            spiRateLimiter.acquire(shopId, OP_GET_ORDERS);
 
             TreeMap<String, String> params = new TreeMap<>();
             params.put("CreatedAfter", ISO_INSTANT.format(createdAfter));
@@ -208,7 +215,7 @@ public class OrdersClient {
                     "GET", endpoint, host, awsRegion, ORDERS_PATH, queryString, null,
                     accessToken, credential.getAccessKey(), credential.getSecretKey());
 
-            HttpResponse<String> response = sendWithRetry(request, ORDERS_ENDPOINT);
+            HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_ORDERS);
             if (response == null || response.statusCode() != 200) {
                 int status = response == null ? -1 : response.statusCode();
                 // 401/403：access_token 失效或被吊销，主动驱逐缓存，
@@ -255,12 +262,13 @@ public class OrdersClient {
      * 发送请求，遇到 429 限流或 5xx 服务端错误时按指数退避重试。
      * <p>
      * 429 时读取 {@code x-amzn-RateLimit-Limit} 响应头，通过 {@link SpiRateLimiter#updateLimit}
-     * 动态收紧本地滑动窗口上限，使后续请求与 Amazon 实际配额对齐。
+     * 收紧**该店铺该 operation** 的令牌桶速率（观测值回升时自动恢复官方默认上限）。
      *
-     * @param request  已构建好的 HTTP 请求
-     * @param endpoint 端点标识（如 {@code "orders"}），用于限流维度动态调整
+     * @param request     已构建好的 HTTP 请求
+     * @param shopId      店铺 ID（限流按店铺隔离，避免单店被限流拖慢其它店铺）
+     * @param operationId 官方 operationId（如 {@code "orders.getOrders"}），用于限流维度动态调整
      */
-    private HttpResponse<String> sendWithRetry(HttpRequest request, String endpoint) {
+    private HttpResponse<String> sendWithRetry(HttpRequest request, Long shopId, String operationId) {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -276,12 +284,12 @@ public class OrdersClient {
             }
             int code = response.statusCode();
             if (code == 429) {
-                recordThrottle(ORDERS_ENDPOINT);
-                // 读取 x-amzn-RateLimit-Limit 响应头（req/s），动态收紧本地窗口
+                recordThrottle(operationId);
+                // 读取 x-amzn-RateLimit-Limit 响应头（req/s），收紧本店铺该 operation 的速率
                 String rateLimitHeader = response.headers()
                         .firstValue("x-amzn-RateLimit-Limit").orElse(null);
                 if (rateLimitHeader != null && !rateLimitHeader.isBlank()) {
-                    spiRateLimiter.updateLimit(endpoint, rateLimitHeader);
+                    spiRateLimiter.updateLimit(shopId, operationId, rateLimitHeader);
                 }
                 long backoff = (1L << attempt) * 1000L;
                 log.warn("Rate limited (429), limit={} retrying after {}ms attempt={}",
@@ -304,9 +312,10 @@ public class OrdersClient {
      * 记录 SP-API 429 限流触发次数到 Micrometer，供 Prometheus 抓取。
      * 软依赖：未引入指标注册表时不抛异常、不影响主链路。
      *
-     * @param endpoint SP-API 资源标识（如 {@code "orders"}）
+     * @param operationId 官方 operationId（如 {@code "orders.getOrders"}）；
+     *                    指标标签名仍为 {@code endpoint}，值升级为 operationId
      */
-    private void recordThrottle(String endpoint) {
+    private void recordThrottle(String operationId) {
         if (meterRegistryProvider == null) {
             return;
         }
@@ -315,7 +324,7 @@ public class OrdersClient {
             return;
         }
         try {
-            registry.counter("spapi.throttle.count", "endpoint", endpoint).increment();
+            registry.counter("spapi.throttle.count", "endpoint", operationId).increment();
         } catch (Exception e) {
             log.debug("SP-API throttle metric record failed: {}", e.getMessage());
         }

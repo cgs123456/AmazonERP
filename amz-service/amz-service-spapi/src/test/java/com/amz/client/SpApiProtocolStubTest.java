@@ -193,7 +193,10 @@ class SpApiProtocolStubTest {
         assertEquals("feed-1", client.submitFeed(SHOP_ID, MARKETPLACE_ID, "{\"header\":{}}"));
 
         assertEquals(2, documentCalls.get(), "429 后必须重试同一请求（不得跳过步骤）");
-        Mockito.verify(rateLimiter).updateLimit("feeds", "0.1");
+        // 429 发生在 POST /feeds/2021-06-30/documents（feeds.createFeedDocument，官方 0.5 req/s）
+        // 断言按 (shopId, operationId, variant) 四参形态回填：只影响本店铺本 operation，
+        // 且 429 收紧只收紧速率、不影响 burst（见 SpiRateLimiterTest.observedRateRecoveryRestoresOfficialPlan）
+        Mockito.verify(rateLimiter).updateLimit(SHOP_ID, "feeds.createFeedDocument", null, "0.1");
         long documentRequests = transport.requests().stream()
                 .filter(request -> "/feeds/2021-06-30/documents".equals(request.uri().getPath()))
                 .count();
@@ -258,7 +261,7 @@ class SpApiProtocolStubTest {
 
         for (int i = 0; i < 2; i++) {
             RuntimeException e = assertThrows(RuntimeException.class, () -> gateway.callJson(
-                    "GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
+                    "GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports.getReports",
                     "/reports/2021-06-30/reports", null, null));
             assertTrue(e.getMessage().contains("401"), e.getMessage());
         }

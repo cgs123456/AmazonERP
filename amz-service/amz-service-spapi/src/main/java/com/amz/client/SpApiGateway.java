@@ -98,16 +98,17 @@ public class SpApiGateway {
      *
      * @param method      HTTP 方法（GET / POST）
      * @param shop        已解析的店铺信息（含端点与凭证）
-     * @param endpointTag 限流端点标识（如 "reports"）
+     * @param operationId 官方 operationId（限流维度，如 {@code reports.createReport}）；
+     *                    未知 operationId 落到保守兜底（1 req/s、burst 30）并打一次 WARN
      * @param path        请求路径，如 /reports/2021-06-30/reports
      * @param query       规范查询串（参数名字典序、URI 编码、&amp; 拼接；无查询传 null）
      * @param body        JSON 请求体（GET 传 null）
      * @return 响应 JSON（HTTP 200 才返回，否则抛 RuntimeException）
      */
-    public JsonObject callJson(String method, ResolvedShop shop, String endpointTag,
+    public JsonObject callJson(String method, ResolvedShop shop, String operationId,
                                String path, String query, String body) {
         String accessToken = lwaTokenManager.getToken(shop.credential);
-        spiRateLimiter.acquire(shop.credential.getShopId(), endpointTag);
+        spiRateLimiter.acquire(shop.credential.getShopId(), operationId);
 
         // 统一构造点：host / x-amz-date / 条件 Authorization / 必填 user-agent / x-amz-access-token
         // （P0-35 / P0-38 / P0-48 / P0-50 的规则全部收敛在 SpApiRequestFactory）
@@ -115,7 +116,7 @@ public class SpApiGateway {
                 method, shop.endpoint, shop.host, shop.awsRegion, path, query, body,
                 accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
 
-        HttpResponse<String> response = sendWithRetry(request, endpointTag, shop);
+        HttpResponse<String> response = sendWithRetry(request, operationId, shop);
         int status = response == null ? -1 : response.statusCode();
         if (status == 401 || status == 403) {
             lwaTokenManager.invalidate(shop.credential);
@@ -171,9 +172,10 @@ public class SpApiGateway {
 
     /**
      * 发送 HTTP 请求，遇到 429 限流时按指数退避重试
-     * （模式与 FeedsClient.sendWithRetry 一致：RateLimit 头回填本地窗口）。
+     * （模式与 FeedsClient.sendWithRetry 一致：429 时把 {@code x-amzn-RateLimit-Limit}
+     * 回填到 {@code (shopId, operationId)} 维度，只影响本店铺本 operation 的后续配额）。
      */
-    private HttpResponse<String> sendWithRetry(HttpRequest request, String endpointTag, ResolvedShop shop) {
+    private HttpResponse<String> sendWithRetry(HttpRequest request, String operationId, ResolvedShop shop) {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -188,15 +190,15 @@ public class SpApiGateway {
                 continue;
             }
             if (response.statusCode() == 429) {
-                recordThrottle(endpointTag);
+                recordThrottle(operationId);
                 String rateLimitHeader = response.headers()
                         .firstValue("x-amzn-RateLimit-Limit").orElse(null);
                 if (rateLimitHeader != null && !rateLimitHeader.isBlank()) {
-                    spiRateLimiter.updateLimit(endpointTag, rateLimitHeader);
+                    spiRateLimiter.updateLimit(shop.credential.getShopId(), operationId, rateLimitHeader);
                 }
                 long backoff = (1L << attempt) * 1000L;
-                log.warn("Rate limited (429), retrying after {}ms attempt={} endpoint={}",
-                        backoff, attempt, endpointTag);
+                log.warn("Rate limited (429), retrying after {}ms attempt={} operation={}",
+                        backoff, attempt, operationId);
                 sleep(backoff);
                 continue;
             }
@@ -207,8 +209,13 @@ public class SpApiGateway {
 
     /**
      * 记录 SP-API 429 限流触发次数到 Micrometer（软依赖，不影响主链路）。
+     * <p>
+     * 指标名与标签名（{@code spapi.throttle.count} / {@code endpoint}）保持不变，
+     * 但标签值从粗粒度端点（{@code "reports"}）升级为官方 operationId
+     * （{@code "reports.createReport"}）：按指标名聚合的仪表盘不受影响，
+     * 按端点值过滤的查询需要同步更新（口径变化已在 spec 第 50 轮登记）。
      */
-    private void recordThrottle(String endpoint) {
+    private void recordThrottle(String operationId) {
         if (meterRegistryProvider == null) {
             return;
         }
@@ -217,7 +224,7 @@ public class SpApiGateway {
             return;
         }
         try {
-            registry.counter("spapi.throttle.count", "endpoint", endpoint).increment();
+            registry.counter("spapi.throttle.count", "endpoint", operationId).increment();
         } catch (Exception e) {
             log.debug("SP-API throttle metric record failed: {}", e.getMessage());
         }

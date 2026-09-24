@@ -43,8 +43,12 @@ public class FbaInventoryClient {
 
     private static final String INVENTORY_PATH = "/fba/inventory/v1/summaries";
 
-    /** FBA Inventory 端点标识，用于限流指标维度。 */
-    private static final String FBA_INVENTORY_ENDPOINT = "fba-inventory";
+    /**
+     * 官方 operationId（限流维度；数值见 contracts/fbaInventory.json 的 Usage Plan 表：
+     * 2 req/s、burst 2）。旧实现用粗粒度 {@code "fba-inventory"} 命中兜底 1 req/s、burst 30，
+     * 速率越权约 2 倍、突发越权约 15 倍。
+     */
+    private static final String OP_GET_INVENTORY_SUMMARIES = "fbaInventory.getInventorySummaries";
 
     /**
      * 429 限流重试次数上限。
@@ -120,8 +124,8 @@ public class FbaInventoryClient {
         int pageCount = 0;
 
         do {
-            // 发请求前按 (shopId, endpoint) 维度滑动窗口限流（与 OrdersClient 一致）
-            spiRateLimiter.acquire(shopId, FBA_INVENTORY_ENDPOINT);
+            // 发请求前按 (shopId, operationId) 维度令牌桶限流（与 OrdersClient 一致）
+            spiRateLimiter.acquire(shopId, OP_GET_INVENTORY_SUMMARIES);
 
             TreeMap<String, String> params = new TreeMap<>();
             params.put("details", "true");
@@ -137,7 +141,7 @@ public class FbaInventoryClient {
                     "GET", endpoint, host, awsRegion, INVENTORY_PATH, queryString, null,
                     accessToken, credential.getAccessKey(), credential.getSecretKey());
 
-            HttpResponse<String> response = sendWithRetry(request);
+            HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_INVENTORY_SUMMARIES);
             if (response == null || response.statusCode() != 200) {
                 int status = response == null ? -1 : response.statusCode();
                 // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
@@ -180,9 +184,14 @@ public class FbaInventoryClient {
 
     /**
      * 发送请求，遇到 429 限流时按指数退避重试，
-     * 并读取 {@code x-amzn-RateLimit-Limit} 头动态收紧本地窗口（与 OrdersClient 对齐）。
+     * 并读取 {@code x-amzn-RateLimit-Limit} 头收紧**该店铺该 operation** 的速率
+     * （与 OrdersClient 对齐：观测值回升时自动恢复官方默认上限）。
+     *
+     * @param request     已构建好的 HTTP 请求
+     * @param shopId      店铺 ID（限流按店铺隔离）
+     * @param operationId 官方 operationId（{@code fbaInventory.getInventorySummaries}）
      */
-    private HttpResponse<String> sendWithRetry(HttpRequest request) {
+    private HttpResponse<String> sendWithRetry(HttpRequest request, Long shopId, String operationId) {
         HttpResponse<String> response = null;
         for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -197,12 +206,12 @@ public class FbaInventoryClient {
                 continue;
             }
             if (response.statusCode() == 429) {
-                recordThrottle(FBA_INVENTORY_ENDPOINT);
-                // 读取 x-amzn-RateLimit-Limit（req/s），收紧本地窗口，降低后续被限流概率
+                recordThrottle(operationId);
+                // 读取 x-amzn-RateLimit-Limit（req/s），收紧本店铺该 operation 的速率
                 String rateLimitHeader = response.headers()
                         .firstValue("x-amzn-RateLimit-Limit").orElse(null);
                 if (rateLimitHeader != null && !rateLimitHeader.isBlank()) {
-                    spiRateLimiter.updateLimit(FBA_INVENTORY_ENDPOINT, rateLimitHeader);
+                    spiRateLimiter.updateLimit(shopId, operationId, rateLimitHeader);
                 }
                 long backoff = (1L << attempt) * 1000L;
                 log.warn("Rate limited (429), retrying after {}ms attempt={}", backoff, attempt);
@@ -218,9 +227,10 @@ public class FbaInventoryClient {
      * 记录 SP-API 429 限流触发次数到 Micrometer，供 Prometheus 抓取。
      * 软依赖：未引入指标注册表时不抛异常、不影响主链路。
      *
-     * @param endpoint SP-API 资源标识（如 {@code "fba-inventory"}）
+     * @param operationId 官方 operationId（{@code fbaInventory.getInventorySummaries}）；
+     *                    指标标签名仍为 {@code endpoint}，值升级为 operationId
      */
-    private void recordThrottle(String endpoint) {
+    private void recordThrottle(String operationId) {
         if (meterRegistryProvider == null) {
             return;
         }
@@ -229,7 +239,7 @@ public class FbaInventoryClient {
             return;
         }
         try {
-            registry.counter("spapi.throttle.count", "endpoint", endpoint).increment();
+            registry.counter("spapi.throttle.count", "endpoint", operationId).increment();
         } catch (Exception e) {
             log.debug("SP-API throttle metric record failed: {}", e.getMessage());
         }

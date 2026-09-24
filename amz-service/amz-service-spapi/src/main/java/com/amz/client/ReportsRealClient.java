@@ -36,8 +36,15 @@ public class ReportsRealClient implements ReportsClient {
     private static final String REPORTS_PATH = "/reports/2021-06-30/reports";
     private static final String DOCUMENTS_PATH = "/reports/2021-06-30/documents";
 
-    /** Reports 端点标识，用于限流指标维度。 */
-    private static final String REPORTS_ENDPOINT = "reports";
+    /**
+     * 官方 operationId（限流维度；数值见 contracts/reports_2021-06-30.json 的 Usage Plan 表）。
+     * <p>
+     * 旧实现三个 operation 共用一个粗粒度 {@code "reports"} 桶（兜底 1 req/s、burst 30）：
+     * 对 0.0167 req/s 的 {@code createReport} 越权约 60 倍。
+     */
+    private static final String OP_CREATE_REPORT = "reports.createReport";
+    private static final String OP_GET_REPORT = "reports.getReport";
+    private static final String OP_GET_REPORT_DOCUMENT = "reports.getReportDocument";
 
     /**
      * 统一 SP-API 网关（构造器注入：缺少该 Bean 时启动即失败，而不是首次调用时才 NPE）。
@@ -65,7 +72,7 @@ public class ReportsRealClient implements ReportsClient {
             body.addProperty("dataEndTime", dataEndTime);
         }
 
-        JsonObject resp = gateway.callJson("POST", shop, REPORTS_ENDPOINT, REPORTS_PATH,
+        JsonObject resp = gateway.callJson("POST", shop, OP_CREATE_REPORT, REPORTS_PATH,
                 null, body.toString());
         String reportId = resp.has("reportId") ? resp.get("reportId").getAsString() : null;
         log.info("createReport shopId={} reportType={} reportId={}", shopId, reportType, reportId);
@@ -75,7 +82,7 @@ public class ReportsRealClient implements ReportsClient {
     @Override
     public ReportInfo getReport(Long shopId, String reportId) {
         SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, null);
-        JsonObject resp = gateway.callJson("GET", shop, REPORTS_ENDPOINT,
+        JsonObject resp = gateway.callJson("GET", shop, OP_GET_REPORT,
                 REPORTS_PATH + "/" + reportId, null, null);
 
         ReportInfo info = new ReportInfo();
@@ -89,7 +96,9 @@ public class ReportsRealClient implements ReportsClient {
     @Override
     public String downloadDocument(Long shopId, String documentId) {
         SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, null);
-        JsonObject meta = gateway.callJson("GET", shop, REPORTS_ENDPOINT,
+        // 注意：只对取文档元数据这一次 SP-API 调用限流；随后的 S3 预签名下载
+        // （gateway.downloadBytes）不是 SP-API 调用，不消耗令牌。
+        JsonObject meta = gateway.callJson("GET", shop, OP_GET_REPORT_DOCUMENT,
                 DOCUMENTS_PATH + "/" + documentId, null, null);
         String url = str(meta, "url");
         String compression = str(meta, "compressionAlgorithm");

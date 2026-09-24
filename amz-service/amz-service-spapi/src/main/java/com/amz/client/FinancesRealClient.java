@@ -30,8 +30,12 @@ public class FinancesRealClient implements FinancesClient {
 
     private static final String FINANCES_PATH = "/finances/v0/financialEvents";
 
-    /** Finances 端点标识，用于限流指标维度。 */
-    private static final String FINANCES_ENDPOINT = "finances";
+    /**
+     * 官方 operationId（限流维度；数值见 contracts/financesV0.json 的 Usage Plan 表：
+     * 0.5 req/s、burst 30）。旧实现用粗粒度 {@code "finances"} 命中兜底 1 req/s、burst 30，
+     * 速率越权约 2 倍。
+     */
+    private static final String OP_LIST_FINANCIAL_EVENTS = "finances.listFinancialEvents";
 
     /** 翻页上限：单次拉取超过 10 页（约 3200 条）视为异常窗口，截断并告警。 */
     private static final int MAX_PAGES = 10;
@@ -60,7 +64,7 @@ public class FinancesRealClient implements FinancesClient {
             if (nextToken != null) {
                 params.put("NextToken", nextToken);
             }
-            JsonObject resp = gateway.callJson("GET", shop, FINANCES_ENDPOINT,
+            JsonObject resp = gateway.callJson("GET", shop, OP_LIST_FINANCIAL_EVENTS,
                     FINANCES_PATH, SpApiGateway.canonicalQuery(params), null);
 
             JsonObject payload = resp.has("payload") && resp.get("payload").isJsonObject()

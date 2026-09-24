@@ -285,16 +285,16 @@ Expected: 均 BUILD SUCCESS
 **Interfaces:**
 - Produces: `UsagePlan`（`ratePerSecond`、`burst`、`operationId`）与 `SpiRateLimiter#acquire(Long shopId, String operationId)`；`updateLimit(shopId, operationId, observedRate)` 只影响该店铺该 operation，且可在观测值回升时恢复至官方默认上限。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 四个用例：①按官方值断言 `orders.getOrders=0.0167/20`、`reports.createReport=0.0167/15`、`reports.getReport=2/15`、`reports.getReportDocument=0.0167/15`、`feeds.createFeedDocument=0.5/15`、`feeds.createFeed=0.0083/15`、`fees.getMyFeesEstimates=0.5/1`、`fbaInventory.getInventorySummaries=2/2`（**2026-09-24 按官方模型逐项复核并锁定 sha256；本计划前稿此处的 reports / feeds / fees 断言值是错的**）；②店铺 A 触发收紧不影响店铺 B；③A 店 sleep 期间 B 店可立即获得许可（验证未持锁睡眠）；④`updateLimit` 收到更高观测值后可恢复。
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=SpiRateLimiterTest`
 Expected: FAIL（策略仍为 endpoint 维度、默认值宽松）
 
-- [ ] **Step 3: 实现 operation 维度策略表**
+- [x] **Step 3: 实现 operation 维度策略表**
 
 `policies` 键改为 `operationId`（如 `orders.getOrders`）；`windows` 键改为 `shopId:operationId`；删除 `listings` 死策略或补齐调用方。
 
@@ -302,19 +302,36 @@ Expected: FAIL（策略仍为 endpoint 维度、默认值宽松）
 
 参照实现（已逐行核验）：`wimoor-amazon/amazon-boot/src/main/java/com/wimoor/amazon/auth/pojo/entity/AmazonAuthority.java:206-240`（读 `x-amzn-RateLimit-Limit` → 解析 → 回写每店铺门控实体）与同目录 `AmzAuthApiTimelimit.java:70-77`（放行条件 `restore == null || 距上次放行秒数 × restore > 1`）。**不要抄**：`AmazonAuthority.java:344-348` 的 `getTimeOut()` 返回 `Long.MAX_VALUE`，以及 `amazon-sp-api/src/main/java/com/amazon/spapi/SellingPartnerAPIAA/RateLimitConfigurationOnRequests.java:36-37` 的空实现 `return null`。
 
-- [ ] **Step 4: 去锁内 sleep + 可恢复**
+- [x] **Step 4: 去锁内 sleep + 可恢复**
 
 `acquire()`：计算等待时间后在**锁外**等待，循环重试；`updateLimit()` 允许在观测值高于当前值时上调，但不超过官方默认 burst。
 
-- [ ] **Step 5: 运行测试通过**
+- [x] **Step 5: 运行测试通过**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=SpiRateLimiterTest`
 Expected: PASS
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 `git commit -m "perf(spapi): 限流改为逐 operation 官方配额与按店铺隔离，去掉锁内 sleep"`
 ---
+
+
+**第 50 轮实测口径（Task 5 已落地）**
+
+- RED：先写 `SpiRateLimiterTest` 前 2 例，实测 `Tests run: 2, Failures: 2`——两次 acquire 都是
+  **0 ms 直接放行**，失败文案即「旧实现兜底 30 req/30s 越权」。
+- GREEN：令牌桶 + 官方 usage plan 实现后 **6 例全绿**（第 5 例 `officialPlansMatchContractSnapshots`
+  为官方夹具双向比对；计划原定 4 例，实际补到 6 例，多出的是「观测收紧可恢复」与「官方契约比对」）。
+- 调用点改造超出原计划范围：`SpApiGateway.callJson` 的 `endpointTag` 参数更名为 `operationId`，
+  6 个客户端全部改为传官方 operationId；`OrdersClient` / `FbaInventoryClient` 的私有
+  `sendWithRetry` 增加 `shopId` 参数（限流按店铺隔离需要）；`FeedsClient` 的私有
+  `sendWithRetry` 增加 `shopId` + `operationId` + `variant` 三个参数。
+- **同轮修复计划外缺陷 P0-55**：`FeedsClient.getFeedStatus` 旧实现完全没有限流。
+- 指标口径：`spapi.throttle.count` 的标签值升级为 operationId（标签名不变），实测无仪表盘引用。
+- 复跑：`amz-service-spapi` **187 例 / 0F / 0E / 2S**，全仓 **642 例 / 19 模块 / 0F / 0E / 2S**。
+- 假设与未验证项（burst 语义、观测值不放大、JSON_LISTINGS_FEED 未登记、收紧不改 burst）
+  已登记到 spec §4.6 的「第 50 轮的 4 条技术假设」表，**均属 A5 联调项，不得当作已核实事实**。
 
 ### Task 6: 连接器能力清单与自检端点
 
