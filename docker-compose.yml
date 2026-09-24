@@ -266,7 +266,7 @@ services:
       # Swagger/OpenAPI 文档端点开关：本地/内网默认放行，生产置 false 收紧
       - GATEWAY_DOCS_ENABLED=${GATEWAY_DOCS_ENABLED:-true}
       # 通过 compose 网络内服务名访问基础设施
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
       # WebSocket 上游：/ws/** 路由转发到 message 服务 Netty 端口（显式声明，避免依赖 yml 默认值）
       - WS_MESSAGE_UPSTREAM=http://amz-service-message:8888
     depends_on:
@@ -298,7 +298,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
       # 读写分离：主库写、从库读
       - MYSQL_HOST=mysql
       - MYSQL_SLAVE_HOST=mysql-slave
@@ -326,7 +326,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -348,7 +348,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -373,7 +373,7 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -395,7 +395,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -418,7 +418,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -440,7 +440,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -462,7 +462,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -484,7 +484,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -506,7 +506,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -528,7 +528,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -550,7 +550,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -574,7 +574,7 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -597,7 +597,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql
@@ -621,7 +621,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:}
-      - NACOS_SERVER_ADDR=nacos:8848
+      - NACOS_ADDR=nacos:8848
     depends_on:
       - nacos
       - mysql

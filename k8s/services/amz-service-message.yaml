@@ -34,7 +34,7 @@ spec:
             - { name: http, containerPort: 8889, protocol: TCP }
             - { name: ws, containerPort: 8888, protocol: TCP }
           env:
-            - { name: NACOS_SERVER_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_SERVER_ADDR } } }
+            - { name: NACOS_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } } }
             - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }
             - { name: MYSQL_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } } }
             - { name: REDIS_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST } } }

@@ -9,13 +9,13 @@ seata:
   config:
     type: nacos
     nacos:
-      server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
       group: SEATA_GROUP
       namespace: ""
   registry:
     type: nacos
     nacos:
       application: seata-server
-      server-addr: ${NACOS_ADDR:123.206.101.247:8848}
+      server-addr: ${NACOS_ADDR:127.0.0.1:8848}
       group: SEATA_GROUP
       namespace: ""

@@ -45,11 +45,11 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
-            - name: NACOS_SERVER_ADDR
+            - name: NACOS_ADDR
               valueFrom:
                 configMapKeyRef:
                   name: amz-erp-config
-                  key: NACOS_SERVER_ADDR
+                  key: NACOS_ADDR
             - name: MYSQL_HOST
               valueFrom:
                 configMapKeyRef:

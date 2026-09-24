@@ -45,8 +45,8 @@ spec:
               containerPort: 8095
               protocol: TCP
           env:
-            - name: NACOS_SERVER_ADDR
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_SERVER_ADDR } }
+            - name: NACOS_ADDR
+              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } }
             - name: MYSQL_HOST
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } }
             - name: MYSQL_PORT
