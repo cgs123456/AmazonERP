@@ -2,8 +2,10 @@
 
 This directory stores **verbatim** OpenAPI model snapshots published by Amazon in
 [`amzn/selling-partner-api-models`](https://github.com/amzn/selling-partner-api-models)
-(license: Apache-2.0). They are the known-answer source for field-name contract
-tests (`ReportsFieldContractTest` today, Feeds in Task 4).
+(license: Apache-2.0). They are the known-answer source for contract tests against
+Amazon-published facts: field names (`ReportsFieldContractTest`), request paths and
+version segments (`SpApiPathContractTest`, P0-54), and the Feeds result-report loop
+(Task 4).
 
 Rules:
 
@@ -22,10 +24,20 @@ Rules:
 |---|---|---|---:|---|
 | `reports_2021-06-30.json` | [reports_2021-06-30.json](https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/reports-api-model/reports_2021-06-30.json) | `2026-09-24T21:07:54+08:00` | 83685 | `d72db9e5280262a92933a0e45e2207c150272f1d66177b2517c20671d69c732c` |
 | `feeds_2021-06-30.json` | [feeds_2021-06-30.json](https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/feeds-api-model/feeds_2021-06-30.json) | `2026-09-24T21:07:54+08:00` | 55901 | `ab235b4a0e5ce21083b885dd4f2b8cae7a6f597d7adf2647b47b90d6f5098a16` |
+| `ordersV0.json` | [ordersV0.json](https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/orders-api-model/ordersV0.json) | `2026-09-24T22:31:54+08:00` | 226555 | `027ac6f5c97126647c6925db9be09f78c7c741cd1d8727a5367374a1846bedc5` |
+| `productFeesV0.json` | [productFeesV0.json](https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/product-fees-api-model/productFeesV0.json) | `2026-09-24T22:33:37+08:00` | 49426 | `d06ad35f909d8c0985845f21420c1f75599531465b27f46d4946f7d7f522fc35` |
+| `financesV0.json` | [financesV0.json](https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/finances-api-model/financesV0.json) | `2026-09-24T22:31:58+08:00` | 134109 | `d80e881091367b0eccd4bde3ce834ed08877d3cf51095239eb8b1e328c0d19d6` |
+| `fbaInventory.json` | [fbaInventory.json](https://raw.githubusercontent.com/amzn/selling-partner-api-models/main/models/fba-inventory-api-model/fbaInventory.json) | `2026-09-24T22:34:01+08:00` | 36985 | `7c14bcdb22de8ca2df45e5a40f2a422cff344d45985a68b9515b2e800edcc5ab` |
 
-Both byte counts and hashes were reproduced twice on 2026-09-24 (direct download and
+The byte counts and hashes of the two Task-3 snapshots (`reports_2021-06-30.json`,
+`feeds_2021-06-30.json`) were reproduced twice on 2026-09-24 (direct download and
 post-copy re-hash) and match the baseline recorded in
 `docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md` (Task 3 Step 1).
+The four snapshots added in round 49 (`ordersV0` / `productFeesV0` / `financesV0` /
+`fbaInventory`) were **re-downloaded from upstream at `2026-09-24T22:43:24+08:00`
+and compared byte-for-byte with the in-tree copies — all four identical** (upstream
+raw fetches were flaky, so each download was retried until it returned a >1 KB body;
+the 14-byte `404: Not Found` bodies fail that size gate on purpose).
 
 ## What the snapshots pin down (verified against the files above)
 
@@ -61,6 +73,7 @@ re-pinning the snapshot forces a review of this section.
 | Test | Asserts |
 |---|---|
 | `src/test/java/com/amz/client/ReportsFieldContractTest.java` | Snapshot byte count + SHA-256; every `str(<var>, "<literal>")` field name in `ReportsRealClient` is a property of `Report`/`ReportDocument` (compared against **parsed property keys**, never raw text); no schema property anywhere is named `resultDocumentId`; source contains no `resultDocumentId`; source still maps `reportDocumentId`; the upstream Feeds prose typo is still present and documented above |
+| `src/test/java/com/amz/client/SpApiPathContractTest.java` | Snapshot byte count + SHA-256 for **all six** models; every SP-API path literal in `src/main/java` (roots `/orders/` `/reports/` `/feeds/` `/fba/` `/finances/` `/products/`) must be declared by the parsed official `paths` (exact match, or covered as a `literal + "/"` prefix because clients build `PATH + "/" + id`); the unpublished Reports version `2021-09-01` must not appear in `src/main/java` or `src/test/java` (the guard class itself is the only exception, and the scan asserts it inspected >= 20 files so the exclusion cannot silently degenerate); Reports/Feeds version segments pinned to `2021-06-30` |
 | `src/test/java/com/amz/client/ReportsRealClientStubTest.java` | In-process stub replay: a `DONE` report whose `reportDocumentId` is set maps to `ReportInfo.documentId`; the pre-Task-3 field name would not |
 
 Feeds-side contract assertions land with Task 4 (result report closed loop).

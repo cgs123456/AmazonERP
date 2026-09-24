@@ -259,7 +259,7 @@ class SpApiProtocolStubTest {
         for (int i = 0; i < 2; i++) {
             RuntimeException e = assertThrows(RuntimeException.class, () -> gateway.callJson(
                     "GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
-                    "/reports/2021-09-01/reports", null, null));
+                    "/reports/2021-06-30/reports", null, null));
             assertTrue(e.getMessage().contains("401"), e.getMessage());
         }
 

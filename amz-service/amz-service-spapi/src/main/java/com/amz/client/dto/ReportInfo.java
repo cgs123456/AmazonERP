@@ -3,7 +3,7 @@ package com.amz.client.dto;
 import lombok.Data;
 
 /**
- * SP-API 报表状态（Reports API 2021-09-01）。
+ * SP-API 报表状态（Reports API 2021-06-30）。
  */
 @Data
 public class ReportInfo {

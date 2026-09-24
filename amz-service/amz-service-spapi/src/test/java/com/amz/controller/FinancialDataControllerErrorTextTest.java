@@ -64,7 +64,7 @@ class FinancialDataControllerErrorTextTest {
     @DisplayName("degraded 包装：响应给平台 errors 原文（status + code），不把包装文案当结论")
     void degradedWrapperSurfacesPlatformCode() {
         RuntimeException platform = new RuntimeException(
-                "SP-API call failed method=GET path=/reports/2021-09-01/reports/r-1 status=429"
+                "SP-API call failed method=GET path=/reports/2021-06-30/reports/r-1 status=429"
                         + " body={\"errors\":[{\"code\":\"QuotaExceeded\",\"message\":\"Request is throttled\"}]}");
         RuntimeException degraded = new RuntimeException(
                 "getReport degraded (circuit-breaker/exception) shopId=1001", platform);

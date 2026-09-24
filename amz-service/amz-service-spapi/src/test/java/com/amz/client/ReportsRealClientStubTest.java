@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * 覆盖的三件事：
  * <ol>
- *   <li>{@code GET /reports/2021-09-01/reports/{reportId}} 的 {@code reportDocumentId}
+ *   <li>{@code GET /reports/2021-06-30/reports/{reportId}} 的 {@code reportDocumentId}
  *       必须落到 {@link ReportInfo#getDocumentId()}——这是修复前恒为 null 的那一格；</li>
  *   <li>该断言不是橡皮图章：把响应里的字段换回旧名 {@code resultDocumentId} 时，
  *       {@code documentId} 必须仍为 null（证明夹具真的能区分两个名字）；</li>
@@ -55,8 +55,8 @@ class ReportsRealClientStubTest {
 
     private static final String REPORT_ID = "r-1";
     private static final String DOCUMENT_ID = "doc-9";
-    private static final String REPORT_PATH = "/reports/2021-09-01/reports/" + REPORT_ID;
-    private static final String DOCUMENT_META_PATH = "/reports/2021-09-01/documents/" + DOCUMENT_ID;
+    private static final String REPORT_PATH = "/reports/2021-06-30/reports/" + REPORT_ID;
+    private static final String DOCUMENT_META_PATH = "/reports/2021-06-30/documents/" + DOCUMENT_ID;
 
     /** LWA 令牌交换端点（预签名 URL 之外唯一的非 SP-API 主机请求）。 */
     private static final String LWA_PATH = "/auth/o2/token";

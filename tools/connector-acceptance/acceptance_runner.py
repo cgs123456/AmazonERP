@@ -329,9 +329,9 @@ OPERATION_PLAN = (
     ('feeds', 'POST /spapi/feeds/submit + GET /spapi/feeds/status/{shopId}/{feedId}',
      'POST /feeds/2021-06-30/documents + POST /feeds/2021-06-30/feeds'),
     ('reports', 'POST /spapi/finance/report/request + GET /spapi/finance/report/{reportId}',
-     'POST /reports/2021-09-01/reports + GET /reports/2021-09-01/reports/{reportId}'),
+     'POST /reports/2021-06-30/reports + GET /reports/2021-06-30/reports/{reportId}'),
     ('reports-download', 'GET /spapi/finance/document/{documentId}',
-     'GET /reports/2021-09-01/documents/{reportDocumentId} + S3 预签名下载'),
+     'GET /reports/2021-06-30/documents/{reportDocumentId} + S3 预签名下载'),
     ('finances', 'GET /spapi/finance/events?shopId=', 'GET /finances/v0/financialEvents'),
     ('fees', 'POST /spapi/finance/fees/estimate?shopId=&...', 'POST /products/fees/v0/feesEstimate'),
 )
@@ -619,7 +619,7 @@ class AcceptanceRun:
             ('reports.getReport(missing)', 'GET',
              '/spapi/finance/report/' + quote_path(self.options.missing_report_id),
              {'shopId': self.options.shop_id},
-             'GET /reports/2021-09-01/reports/{reportId}', 'reports.getReport',
+             'GET /reports/2021-06-30/reports/{reportId}', 'reports.getReport',
              '用不存在的 reportId={0} 触发平台 404'.format(self.options.missing_report_id)),
             ('feeds.status(missing)', 'GET',
              '/spapi/feeds/status/' + quote_path(self.options.shop_id) + '/'
@@ -1110,7 +1110,7 @@ class AcceptanceRun:
             'reports.request', 'POST', '/spapi/finance/report/request',
             query={'shopId': shop, 'marketplaceId': self.options.marketplace_id,
                    'reportType': self.options.report_type},
-            platform_endpoint='POST /reports/2021-09-01/reports')
+            platform_endpoint='POST /reports/2021-06-30/reports')
         report_id = parsed.get('data') if isinstance(parsed.get('data'), str) else None
         request['response']['values'] = {'reportId': report_id}
         records = [request['name']]
@@ -1127,7 +1127,7 @@ class AcceptanceRun:
             status_record, status_parsed = self.recorder.observe(
                 'reports.status', 'GET', '/spapi/finance/report/' + quote_path(report_id),
                 query={'shopId': shop},
-                platform_endpoint='GET /reports/2021-09-01/reports/{reportId}')
+                platform_endpoint='GET /reports/2021-06-30/reports/{reportId}')
             records.append(status_record['name'])
             data = status_parsed.get('data')
             latest = {}
@@ -1173,7 +1173,7 @@ class AcceptanceRun:
         record, parsed = self.recorder.observe(
             'reports.downloadDocument', 'GET', '/spapi/finance/document/' + quote_path(document_id),
             query={'shopId': self.options.shop_id},
-            platform_endpoint='GET /reports/2021-09-01/documents/{reportDocumentId} + S3 预签名下载')
+            platform_endpoint='GET /reports/2021-06-30/documents/{reportDocumentId} + S3 预签名下载')
         record_name.append(record['name'])
         content = parsed.get('data') if isinstance(parsed.get('data'), str) else None
         blockers = []
@@ -1650,7 +1650,7 @@ def run_selftest():
     check('parse_platform_error.empty', parse_platform_error('')['status'] is None)
 
     print('[selftest] 脱敏')
-    presigned = ('download failed status=403 path=/reports/2021-09-01/documents/r-1'
+    presigned = ('download failed status=403 path=/reports/2021-06-30/documents/r-1'
                  '?x-amz-signature=abc123&x-amz-credential=AKIAEXAMPLE&x-amz-security-token=t0ken')
     cleaned = redact(presigned)
     check('redact.presigned-values', 'abc123' not in cleaned and 'AKIAEXAMPLE' not in cleaned

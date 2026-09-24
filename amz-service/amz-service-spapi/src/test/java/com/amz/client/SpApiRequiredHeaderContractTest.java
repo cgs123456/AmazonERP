@@ -103,7 +103,7 @@ class SpApiRequiredHeaderContractTest {
         credentials.with(TestCredentials.northAmerica());
 
         gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
-                "/reports/2021-09-01/reports", "reportTypes=GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL", null);
+                "/reports/2021-06-30/reports", "reportTypes=GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL", null);
 
         HttpRequest request = transport.lastRequest();
         assertNull(request.headers().firstValue("Authorization").orElse(null),
@@ -120,7 +120,7 @@ class SpApiRequiredHeaderContractTest {
         credentials.with(TestCredentials.withAwsKeys(TestCredentials.northAmerica()));
 
         gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
-                "/reports/2021-09-01/reports", null, null);
+                "/reports/2021-06-30/reports", null, null);
 
         String authorization = transport.lastRequest().headers().firstValue("Authorization").orElse(null);
         assertNotNull(authorization, "有 AK/SK 时应生成 SigV4 Authorization");
@@ -167,7 +167,7 @@ class SpApiRequiredHeaderContractTest {
 
     private void driveAllSpApiCallSites() {
         gateway.callJson("GET", gateway.resolveShop(SHOP_ID, MARKETPLACE_ID), "reports",
-                "/reports/2021-09-01/reports", null, null);
+                "/reports/2021-06-30/reports", null, null);
         ordersClient.fetchOrders(SHOP_ID, MARKETPLACE_ID, Instant.parse("2026-09-01T00:00:00Z"), null);
         ordersClient.fetchOrderItems(SHOP_ID, MARKETPLACE_ID, "123-1234567-1234567");
         feedsClient.submitFeed(SHOP_ID, MARKETPLACE_ID, "{\"header\":{}}");
@@ -219,7 +219,7 @@ class SpApiRequiredHeaderContractTest {
         if (uri.contains("/fba/inventory/v1/summaries")) {
             return new RecordingHttpTransport.Reply(200, "{\"payload\":{\"inventorySummaries\":[]}}");
         }
-        if (uri.contains("/reports/2021-09-01/reports")) {
+        if (uri.contains("/reports/2021-06-30/reports")) {
             return new RecordingHttpTransport.Reply(200, "{\"payload\":{\"reports\":[]}}");
         }
         return new RecordingHttpTransport.Reply(200, "{\"payload\":{}}");

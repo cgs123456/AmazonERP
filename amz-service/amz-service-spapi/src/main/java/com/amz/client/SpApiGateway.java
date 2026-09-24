@@ -99,7 +99,7 @@ public class SpApiGateway {
      * @param method      HTTP 方法（GET / POST）
      * @param shop        已解析的店铺信息（含端点与凭证）
      * @param endpointTag 限流端点标识（如 "reports"）
-     * @param path        请求路径，如 /reports/2021-09-01/reports
+     * @param path        请求路径，如 /reports/2021-06-30/reports
      * @param query       规范查询串（参数名字典序、URI 编码、&amp; 拼接；无查询传 null）
      * @param body        JSON 请求体（GET 传 null）
      * @return 响应 JSON（HTTP 200 才返回，否则抛 RuntimeException）

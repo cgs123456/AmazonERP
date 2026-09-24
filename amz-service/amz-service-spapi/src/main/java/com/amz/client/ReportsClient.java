@@ -3,7 +3,7 @@ package com.amz.client;
 import com.amz.client.dto.ReportInfo;
 
 /**
- * SP-API Reports API（2021-09-01）客户端。
+ * SP-API Reports API（2021-06-30）客户端。
  * <p>
  * 覆盖报表三段式流程：
  * <ol>

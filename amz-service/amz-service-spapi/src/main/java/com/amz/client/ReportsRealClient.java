@@ -13,13 +13,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * SP-API Reports API（2021-09-01）真实客户端。
+ * SP-API Reports API（2021-06-30）真实客户端。
  * <p>
  * 三段式流程：
  * <ol>
- *   <li>POST /reports/2021-09-01/reports —— 创建报表请求</li>
- *   <li>GET /reports/2021-09-01/reports/{reportId} —— 查询 processingStatus</li>
- *   <li>GET /reports/2021-09-01/documents/{documentId} —— 取文档元数据（S3 预签名地址 + 压缩格式），
+ *   <li>POST /reports/2021-06-30/reports —— 创建报表请求</li>
+ *   <li>GET /reports/2021-06-30/reports/{reportId} —— 查询 processingStatus</li>
+ *   <li>GET /reports/2021-06-30/documents/{documentId} —— 取文档元数据（S3 预签名地址 + 压缩格式），
  *       下载后按元数据解压（结算原表为 TSV + GZIP）</li>
  * </ol>
  * <p>
@@ -33,8 +33,8 @@ public class ReportsRealClient implements ReportsClient {
 
     private static final Logger log = LoggerFactory.getLogger(ReportsRealClient.class);
 
-    private static final String REPORTS_PATH = "/reports/2021-09-01/reports";
-    private static final String DOCUMENTS_PATH = "/reports/2021-09-01/documents";
+    private static final String REPORTS_PATH = "/reports/2021-06-30/reports";
+    private static final String DOCUMENTS_PATH = "/reports/2021-06-30/documents";
 
     /** Reports 端点标识，用于限流指标维度。 */
     private static final String REPORTS_ENDPOINT = "reports";

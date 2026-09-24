@@ -230,7 +230,7 @@ class StubHandler(BaseHTTPRequestHandler):
         if missing:
             return 200, self._fail(platform_diagnostic(
                 'getReport', query.get('shopId') or '0', 404,
-                detail={'path': '/reports/2021-09-01/documents/r-not-exists',
+                detail={'path': '/reports/2021-06-30/documents/r-not-exists',
                         'documentUrl': DECOY_PRESIGNED}))
         if self.server.report_status_calls < self.server.report_pending_polls:
             self.server.report_status_calls += 1
