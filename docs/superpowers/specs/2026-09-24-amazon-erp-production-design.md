@@ -1,7 +1,7 @@
 # AmazonERP 生产化升级设计规格（Draft for Review）
 
 - 文档日期：2026-09-24
-- 审查基线：`master` / `bebbd7051ae1cfc90156ee753502de0a2f08529c`（本地领先 `origin/master` 3 个纯文档提交，未 push；`origin/master` = `06769b77b291467216007bf9843211de3a0cf14e`）
+- 审查基线：`master` / `19207ff6d295adbf6782c4ea1fa5b4342eb6e9fc`（本地领先 `origin/master` 4 个纯文档提交，未 push；`origin/master` = `06769b77b291467216007bf9843211de3a0cf14e`）
 - 当前状态：**设计草案，尚未修改任何业务源码**
 - 目标：把现有“功能覆盖较广的可演示微服务原型”升级为**可审计、可恢复、可运维、可安全上线**的亚马逊 ERP；无真实数据时使用确定性模拟数据，所有模拟数据必须带 `SYNTHETIC` 标识。
 - 重要结论：模拟数据可以替代缺失的业务数据用于开发、测试和容量验证，**不能替代亚马逊开发者资质、真实店铺授权、SP-API 沙箱/生产联调、税务与会计责任、渗透测试、灾备演练和业务验收**。
@@ -21,7 +21,7 @@
 3. **财务事实源**：缺少借贷平衡凭证、真实 FIFO 成本层、多币种汇率、税务规则、结算对账和期末关账。
 4. **集成事实源**：外部调用、Webhook、MQ、缓存和数据库之间没有统一的 Outbox/Inbox、幂等和失败重放机制。
 
-同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **22 条（P0-01…P0-22）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、可实测的供应链漏洞基线，以及**“Real 客户端”名不副实与失败静默降级**（P0-22）。
+同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **30 条（P0-01…P0-30）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、可实测的供应链漏洞基线，以及**“Real 客户端”名不副实与失败静默降级**（P0-22）。第 10 轮针对“暂时没有 API，但必须做到有凭证就能直接用”这一目标又补了 8 条（P0-23…P0-30）：凭证表 DDL 无任何自动执行路径、SP-API 默认 profile 为 `mock` 使财务域三类客户端在部署形态下返回样例数据、Nacos 地址变量在 Compose 与代码之间不一致且 16 份 `bootstrap.yml` 在当前依赖下不生效、spapi 是订单与库存关键路径的单点却只实现 6 类客户端、`ReportsRealClient` 读错官方字段名使结算报表文档 ID 恒为 null、限流默认配额最高比官方宽松约 120 倍且 3 个在用 endpointTag 无策略、k8s 自带 Secret 的 `AMZ_CRYPTO_KEY` 解码为 34 字节使 spapi 启动即崩、Feeds 结果报告永不下载使被拒行永久丢失。
 
 需要特别说明的一点自查：初稿曾把“AI 工具会写生产数据”当作整体结论，本轮逐行核对后收窄为**只有 `cross_marketplace_listing` 一条真实写入链路**（详见 1.3 节的诚实修正）。同样，“JWT 空密钥静默可用”的假设也被推翻——`JwtUtil.init()` 在密钥为空时直接让服务启动失败，这是正向设计。
 
@@ -130,6 +130,14 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | P0-20 | 多平台 Webhook 无验签且跨租户错配 | `MultiplatformController.receiveWebhook`（132–137 行）无守卫、传 `shopId=null`；`MultiplatformServiceImpl.receiveWebhook`（395–443 行）**没有任何入站签名校验**（全仓库仅存在出站签名工具），`shopId` 为空时按 platform 反查“最新创建的账号”（408–420 行），去重只按 `event_id`，`handleWebhookEvent` 仅打日志 | 每平台独立验签实现 + 时间戳/重放窗口；事件唯一键 `(platform, shop_id, event_id)`；无法确定归属时拒绝落库；处理逻辑实现真实业务动作而非仅记录 |
 | P0-21 | 依赖供应链存在未修复的严重漏洞且无 SCA 门禁 | 本轮实测：410 个第三方运行时坐标命中 210 组 `(坐标, advisory)`、67 个坐标、190 条唯一 advisory（18 critical / 80 high / 90 moderate / 22 low，详见 5.7 与附录 F）；`fastjson 1.2.83` 为 CRITICAL RCE 且 **1.x 无修复版本**，仍随 `seata-all 2.0.0` 进入 17 个模块类路径；`tika 2.9.2` 的 XXE 可由知识库文档上传触达；网关最外层 `netty-all 4.1.115.Final` 含 CRITICAL 级 SNI 绕过与 HTTP/2 DoS 修复项；`npm audit` 7 high / 3 moderate | 依赖升级到修复版本或移除（含排除传递依赖）；CI 强制 SCA + SBOM + 镜像扫描并在高危未豁免时阻断；网关、文件解析、反序列化三类路径额外做运行时缓解 |
 | P0-22 | 外部连接器的“Real 实现”名不副实，失败时静默降级为空结果 | 逐类核对（详见 4.1 现状表）：`KingdeeRealClient` 在 48–51 行无条件返回 `KINGDEE_MOCK_` 占位号，`FinanceServiceImpl` 205–206 行据此把凭证置为 `SYNCING`，而认领条件（190–194 行）只接受 `PENDING/FAILED` → 该凭证**永远无法再次同步**、也不是“已过账”；`Alibaba1688Signer:24`、`Alibaba1688TokenManager:26`、`Alibaba1688RealClient:37-38`、`SheinRealClient:103`、`TemuRealClient:94`、`TikTokRealClient:177` 全部自述“未校准”；`MessagingApiRealClient` 127–128 行只发 `Bearer` + `x-amz-access-token`、**无 AWS SigV4**，`/messaging/v1/orders` 与真实 SP-API Messaging 资源模型不符；`AdvertisingApiRealClient` 用全局单套 `advertising.profile-id`/`spapi.lwa.access-token`（52–56 行），182 行 ClientId 在 profileId 不含 `:` 时返回空串，失败即 `emptyList()`；`KeepaRealClient`、`LogisticsTrackingRealClient` 缺凭证时返回 null/空轨迹 | 每个连接器在生产启动时校验“真实且已校准”，否则拒绝启动或显式标记不可用并向调用方返回明确错误；禁止把占位号写进业务状态机；失败必须分类重试或进入隔离队列，不允许静默返回空结果冒充“无数据”；凭证按 tenant/shop 隔离并支持轮换 |
+| P0-23 | 凭证表 `amz_shop_credential` 没有任何自动建表路径，“给凭证就能用”缺前置条件 | 全仓该表只有 2 处 `CREATE TABLE`：`amz-service/amz-service-spapi/src/main/resources/db/schema.sql:11` 与 `init_all_tables.sql:459`；Compose 初始化目录 `docker/init-sql/`（32 个文件，编号 01–33、缺 03）对 `credential` **0 命中** → Compose 起库后该表不存在；spapi 自带 Flyway 迁移 `db/migration/V1__init.sql` 只建 7 张表（`amz_fba_inventory`、`amz_product_sales_stats`、`amz_inventory_sync_log`、`amz_replenishment_suggestion`、`amz_sales_history`、`amz_seasonal_index`、`amz_promotion_calendar`），不含凭证表；全仓 `spring.sql.init.schema-locations` 0 命中，且 `db/schema.sql` 不在 classpath 根（Spring Boot 默认只匹配 `classpath*:schema.sql`）；`ShopCredentialStore.loadFromDb()`（55–64 行）抛异常时只 `log.warn`，以空缓存继续启动 | 凭证表纳入唯一迁移入口并进入 clean-install 与 upgrade 流水线；凭证加载失败必须 fail-closed 拒绝启动；写入有唯一键、归属校验与审计 |
+| P0-24 | SP-API 默认 profile 是 `mock`，部署形态下财务域客户端返回样例数据 | `amz-service-spapi/src/main/resources/application.yml:7` → `active: ${SPRING_PROFILES_ACTIVE:mock}`；`ReportsMockClient`/`FinancesMockClient`/`FeesMockClient` 标注 `@Profile("mock")`，这是**唯一**带 profile 分支的三对客户端（Orders/Feeds/FbaInventory 是单一实现，无 profile 切换）；`docker-compose.yml` 的 spapi 段与 `k8s/services/amz-service-spapi.yaml`（实测 24 个环境变量）**都不传** `SPRING_PROFILES_ACTIVE`（grep 命中 0）→ 部署后仍是 mock；与 finance 模块口径相反（`amz-service-finance/application.yml:10` 默认为空 → 加载 Real 实现） | 生产 profile 必须显式且默认非 mock；启动时检测到 mock 实现直接失败；CI 对生产配置做静态校验（见 1.9） |
+| P0-25 | Nacos 配置多处断裂，Compose 路径下注册与发现实际不可用 | (a) `docker-compose.yml` 16 处只注入 `NACOS_SERVER_ADDR=nacos:8848`（269、301 等行），而代码统一读 `${NACOS_ADDR:localhost:8848}`（如 `amz-gateway/application.yml:9`）→ 容器内回落到 localhost 自指；(b) 16 份 `bootstrap.yml`（含 gateway）写 `${NACOS_ADDR:123.206.101.247:8848}`，但全仓无 `spring-cloud-starter-bootstrap`、无 `nacos-config`、无 `spring.config.import` → 在 Spring Cloud 2023.0.x 下这些文件**不会生效**；(c) `amz-common/src/main/resources/seata-default.yml:12/19` 硬编码同一公网 IP，全仓引用点 0，属随仓库分发的死配置；(d) 只有 k8s 路径正常（`k8s/configmap.yaml:10-11` 两个变量都定义，`k8s/services/amz-service-spapi.yaml:49-51` 双双注入）；(e) `.env.example` 不含 `NACOS_ADDR`/`NACOS_SERVER_ADDR` | 变量名全仓统一并加启动自检（注册/配置拉取失败即拒绝启动）；删除或修复死配置文件；任何环境不得内置第三方公网 IP |
+| P0-26 | spapi 是订单/库存关键路径的单点，但只实现 6 类客户端 | 已实现：Orders、Feeds、FbaInventory、Reports、Finances、Fees（`client/` 目录 + `SpApiGateway`）；跨模块 Feign 双向核对通过（product `SpapiFeedsClient` ↔ `FeedsController`；finance `SpApiFinanceClient` ↔ `FinancialDataController`）；`SpapiFeedsClientFallbackFactory` 返回 `Result.failure` 不伪造成功（正向）；`SpapiController` 的 `/credential` 在无凭证时返回 `no credential for shopId=…`（94–96 行，正向）。缺 Notifications、RDT、Listings Items、Product Pricing、Catalog Items、Sellers、Inbound FBA（关键词命中全为 0，见 1.4.1） | 关键路径不得依赖无降级的单一模块；能力清单必须与实现一致，未实现能力对外显示“不可用”而不是留白 |
+| P0-27 | `ReportsRealClient` 读错官方字段名，结算报表文档 ID 恒为 null | `ReportsRealClient.java:80` 用 `str(resp, "resultDocumentId")` 取文档 ID，而官方 `reports_2021-06-30` 模型的 `Report` 属性是 **`reportDocumentId`**；全仓 `reportDocumentId` 命中 0、`resultDocumentId` 命中 2（另一处是 product 模块 `ListingsMockClient.java:43`）；连锁影响：finance `SettlementServiceImpl.java:88/193` 拿 null 去 `downloadDocument`，结算原表下载链路整条失效，而报表状态仍被置 `DONE`（“报表完成了但取不到文件”） | 响应映射必须由官方 OpenAPI 模型生成或与之做契约测试，禁止手写字段名；报表 `DONE` 必须伴随可下载文档 ID，否则进入错误状态并告警 |
+| P0-28 | `SpiRateLimiter` 默认配额最高比官方宽松约 120 倍，且不按店铺隔离策略 | 文件位于 `amz-service/amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java`（155 行）；70–73 行默认 `orders=30/30s`、`fba-inventory=25/30s`、`listings=10/30s`、`reports=5/60s`，注释自称“SP-API 官方默认配额（保守值）”，而官方 `getOrders` 为 0.0167 req/s（本实现宽松约 60 倍）、`createFeedDocument` 为 0.0083 req/s（兜底策略宽松约 120 倍）；实际使用的 6 个 endpointTag 为 `orders`/`fba-inventory`/`feeds`/`fees`/`finances`/`reports`，其中 `feeds`/`fees`/`finances` **无策略**（落到 `DEFAULT_MAX_REQUESTS=30`/`DEFAULT_WINDOW=30s`），而 `listings` 策略**无任何调用方**；`updateLimit()`（126–148 行）只在更严格时收紧（139–143 行），进程生命周期内不会恢复；`windows` 按 `shopId:endpoint` 分键但 `policies` 只有 endpoint 维度 → 单店触发收紧会影响所有店铺；`acquire()` 在持有 `Deque` 锁的同步块内 `Thread.sleep`（96–113 行），`@Scheduled` 单线程池下多店串行阻塞 | 按官方 usage plan 逐 operation 配置 rate 与 burst；按 `shop_id + endpoint` 隔离预算；支持依据 `x-amzn-RateLimit-Limit` 动态调整且可恢复；限流等待不得持有锁、不得阻塞调度线程 |
+| P0-29 | k8s 自带 Secret 的加密密钥长度非法，spapi 启动即崩 | `k8s/secret.yaml` 的 `AMZ_CRYPTO_KEY` base64 解码为 `change_me_32_bytes_key_please_256!`，**实际 34 字节**（注释自称 32 字节）；`amz-common/src/main/java/com/amz/util/CryptoUtil.java:62-65` 对 `keyBytes.length != 32` 直接抛 `IllegalStateException`；注入链：`k8s/services/amz-service-spapi.yaml:83-84` → `application.yml:83` 的 `crypto.key: ${AMZ_CRYPTO_KEY:}`；同文件其它占位值：`JWT_SECRET_KEY` 解码 63 字节、`AWS_ACCESS_KEY=AKIACHANGEME`、`AWS_SECRET_KEY=secretchangeme` | Secret 一律由外部密钥系统注入，并在启动时做长度/格式校验；占位密钥禁止进入任何可部署清单；密钥轮换有流程与演练 |
+| P0-30 | Feeds 结果报告永不下载，被拒行永久丢失 | `amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java`（378 行）只实现 4 步：createFeedDocument → PUT 上传 → createFeed → getFeedStatus；全类对 `resultFeedDocumentId` 与 `GET /feeds/2021-06-30/documents/{feedDocumentId}` 的命中为 **0**（`FEEDS_PATH`/`DOCUMENTS_PATH` 仅是 49–50 行的路径常量）；与 product 域 `ListingCopyService.java:236-242`（Feed `DONE` 即置 `SUCCESS`）是同一根因的两个断面：被拒的行没有任何地方能读到原因 | Feed 闭环必须包含结果报告下载、逐行错误解析与业务处置；未取到结果报告的 Feed 不得置为终态成功；失败行必须有可查询的错误清单与重提路径 |
 
 > 关于 P0-04 的**诚实修正**：8 个 `OPERATE_TOOLS` 中，**只有 `cross_marketplace_listing` 已确认会真实写外部系统**（`ProductController.copyListing` → `ListingCopyService.createCopyTask` → `@Async executeCopyTaskAsync` → `listingsClient.submitFeed` → SP-API Feeds，且 `pollFeedStatus` 以 `Thread.sleep(15s)` 轮询最长 5 分钟）。`optimize_ad_campaign`、`optimize_listing_seo`、`optimize_shipping_route`、`optimize_inventory_distribution` 是只读查询 + 规则文本；`create_purchase_plan`（返回 `DRAFT` Map，`planNo=System.currentTimeMillis()`）与 `auto_reply_message`（返回草稿）都不落库；`generate_promotion_plan` 是 `@GetMapping("/promotion/plan")` + `@ShopScoped`，返回**硬编码**的 Lightning Deal 方案，**完全不写数据**。
 >
@@ -150,17 +158,41 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | 多平台 | Webhook 端点无守卫、无任何入站签名校验（全仓库仅有出站签名工具）；`shopId` 为空时按 platform 反查“最新创建的账号”造成跨租户错配；去重键仅为全局 `event_id`；`handleWebhookEvent` 只写日志；**真客户端只有 TEMU/TIKTOK/SHEIN**（`MultiplatformServiceImpl.java:632-635`、`706-712` 的 `switch(platform)` 只有这三个 case，其它平台串抛“不支持的平台”；`syncAll` 614-617 也只同步这三家），README 声明的 Shopify/eBay/Walmart/Shopee/Lazada **无任何实现**；默认 profile（非 `mock`）加载 `*RealClient`，且三家 RealClient 自述未校准、`fetchRecentOrders` 固定第 1 页（无翻页、无增量时间窗）、`markShipped` 内部 `cred(null)` 回退到该平台任意首个账号凭证（`PlatformCredentialService:23-24`） | 平台适配层（补实现或撤回宣称）+ 每平台验签与时间窗；事件唯一键 `(platform, shop_id, event_id)`；归属无法确定时拒绝落库；事件处理实现真实业务动作并可重放 |
 | 消息/异步 | 部分消费者有手动 ack 与 DLQ，但通知消费者只记日志；分布式锁 Redis 不可用时 fail-open；异步线程丢上下文 | Inbox/Outbox、幂等消费、重试/DLQ/重放、锁 fail-closed、上下文传播 |
 
+### 1.4.1 SP-API 能力缺口（第 10 轮关键词全仓扫描）
+
+扫描范围：`*.java`、`*.yml`、`*.yaml`、`*.sql`，排除 `target/`。命中为 0 即代表仓库内**没有**该能力的代码、配置或依赖。
+
+| 官方能力 | 关键词 | 命中 | 结论 |
+|---|---|---|---|
+| Notifications（SQS 事件） | `/notifications/v1` | 0 | 未实现；订单与授权变更只能靠轮询，与官方“优先 Notifications”的指引冲突 |
+| Restricted Data Token | `restrictedDataToken` / `RestrictedDataToken` / `createRestrictedDataToken` | 0 / 0 / 0 | 未实现；订单 PII 字段无法走官方要求的 RDT 路径 |
+| Listings Items API | `listings/2021-08-01` | 0 | 未实现；`ListingsRealClient`（94 行，`@Profile("!mock")`）只经 Feign 调 spapi `/spapi/feeds` 提交 `JSON_LISTINGS_FEED` |
+| Product Pricing | `productPricing` | 0 | 未实现；价格与 competitive pricing 数据只能间接来自 Feed 或报表 |
+| Catalog Items | `catalog/2022-04-01` | 0 | 未实现；类目与属性校验没有官方来源，`DEFAULT_PRODUCT_TYPE` 仍是占位值 |
+| Sellers | `sellers/v1` | 0 | 未实现；无法校验授权范围内的 marketplace 参与状态 |
+| FBA Inbound | `fba/inbound` | 0 | 未实现；补货建议无法落成真实入库计划 |
+| 限流响应头 | `x-amzn-RateLimit-Limit` | 15 | 已有读取与解析（正向），但受 P0-28 的配额与隔离缺陷拖累 |
+| LWA token 端点 | `amazon.com/auth` | 4 | 存在：`SpApiConfig.java:33`、spapi `application.yml:69`、`LwaTokenManagerTest.java:49`、`k8s/configmap.yaml:43`；其中 `k8s/configmap.yaml:43` 的 `AWS_LWA_ENDPOINT` **代码不读**（代码读 `spapi.lwa-endpoint`），是又一个死配置项 |
+
 ### 1.5 外部对标
 
-已调研的代表性项目如下。它们只能作为工程参考，不能直接假定许可证或能力适配本项目的商业使用。
+下表 Star 数、最近推送时间与许可证于 **2026-09-24** 通过 GitHub REST API（`GET /repos/{owner}/{repo}`）实时核验；Star 数随时间变化，引用时应注明访问日期。它们只能作为工程参考，**不能**假定其许可证或能力适配本项目的商业使用。
 
-| 项目 | 可借鉴点 | 重要限制 |
-|---|---|---|
-| KubeRiva/OMS | 每组织独立 PostgreSQL data-plane；SP-API 轮询 + fulfillment push；库存节点/调整/调拨/预占；Webhook HMAC、退避、投递历史 | Python 技术栈不同；需核查版本与许可证 |
-| openoms-org/openoms | PostgreSQL RLS 多租户；大量 REST 端点/页面/worker；Playwright、Trivy、Helm | Elastic License 2.0 属于 source-available，不是宽松 OSI 许可证；Amazon SP-API 仍标为开发中 |
-| wimoor-erp/wimoor | 亚马逊 ERP 业务域覆盖广；MIT 许可证 | Spring Boot 2.0/JDK 8 技术栈偏旧，不宜照搬 |
-| mcp-amazon-sp-api | 55+ SP-API 工具、自动分页、throttle-aware retry | 只解决集成调用层，不解决 ERP 事实模型 |
+| 项目 | Star | 最近推送 | 许可证 | 主要语言 | 可借鉴点 | 对“凭证即可用”做对了什么 |
+|---|---|---|---|---|---|---|
+| [amzn/selling-partner-api-models](https://github.com/amzn/selling-partner-api-models) | 912 | 2026-09-22 | Apache-2.0 | OpenAPI/Swagger | 字段名、枚举与 usage plan 的官方事实源 | 提供完整模型，可直接派生契约测试（P0-27 正是缺这一环） |
+| [saleweaver/python-amazon-sp-api](https://github.com/saleweaver/python-amazon-sp-api) | 680 | 2026-09-22 | MIT | Python | 自动分页、throttle 感知重试、按端点限流 | 凭证 + 端点即可调用，限流表来自官方模型 |
+| [jlevers/selling-partner-api](https://github.com/jlevers/selling-partner-api) | 437 | 2026-09-02 | BSD-3-Clause | PHP | 由 OpenAPI 生成客户端，避免手写 DTO | 生成式客户端天然跟随官方字段变更 |
+| [penghaiping/amazon-sp-api](https://github.com/penghaiping/amazon-sp-api) | 139 | 2023-03-19 | 无 | Java | Java 侧早期参考实现 | 已停更，仅作历史参考 |
+| [nplszfl/OmniTradeERP](https://github.com/nplszfl/OmniTradeERP) | 80 | 2026-09-24 | 无 | Java + Vue + TypeScript | 同类 Java ERP 的模块划分与页面组织 | 许可证缺失，不可直接取用代码 |
+| [zach22-1999/lingxing-mcp](https://github.com/zach22-1999/lingxing-mcp) | 42 | 2026-07-14 | MIT | Python | 领星 ERP 的 MCP 封装形态 | 与 Amazon 直连无关，属第三方 ERP 集成 |
+| [jackspeng/shop](https://github.com/jackspeng/shop) | 102 | 2020-06-30 | 无 | Java | MWS 时代 ERP 的历史结构 | 已停更且 MWS 已下线，不可参考 |
+| [holodilina/spring-transactional-outbox-kafka](https://github.com/hodilina/spring-transactional-outbox-kafka) | 0 | 2026-07-16 | Apache-2.0 | Java | Spring 事务性 Outbox 的最小样板 | 与本文 4.4 的 Outbox 目标态直接对应 |
+| [KubeRiva/OMS](https://github.com/KubeRiva/OMS) | 23 | 2026-05-11 | NOASSERTION | Python + TypeScript | 每组织独立 data-plane；SP-API 轮询 + fulfillment push；Webhook HMAC、退避、投递历史 | 连接器有投递历史与重试，失败可回放 |
+| [openoms-org/openoms](https://github.com/openoms-org/openoms) | 25 | 2026-09-02 | NOASSERTION（实为 Elastic License 2.0，source-available） | Go + TypeScript + PLpgSQL | PostgreSQL RLS 多租户；Helm/Trivy/Playwright 齐备 | 多租户隔离下沉到数据库层；SP-API 仍标为开发中 |
+| [wimoor-erp/wimoor](https://github.com/wimoor-erp/wimoor) | **1376** | 2026-09-24 | MIT | Java + Vue + JS | 与本项目最贴近的 Java/Vue 亚马逊 ERP，业务域覆盖广 | 技术栈偏旧（Spring Boot 2.0/JDK 8），集成层不便照搬 |
 
+> 纠错（推翻前稿表述）：此前草稿把 `KubeRiva/OMS` 描述为“纯 Python”、把 `openoms` 描述为“PostgreSQL RLS 多租户”的单栈项目，两处均不准确——前者是 Python + TypeScript，后者是 Go + TypeScript + PLpgSQL，且采用 source-available 许可证而非 OSI 宽松许可证。以本表为准。
 ### 1.6 Amazon 官方约束摘要
 
 以下为工程设计依据，具体条款以官方最新文档和法务意见为准：
@@ -208,6 +240,33 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | `SearchServiceImpl` 热搜实现 | ZSET 有 1000 条上限 + 7 天 TTL | 防无界增长；“上限 + TTL”应成为所有缓存的默认约束 |
 | `OpsServiceImpl`（60–75、107–121、137–154 行） | 扫描类操作有 mock 门禁 | 与 P0-01 同向；应扩展为“生产启动检测到 mock 即失败” |
 | `DistributedJobLock` | 注释与实现明确记录了 Redis 不可用时的 fail-open 行为 | 记录清楚才可能被修；但生产要求是 fail-closed，**不能把注释当作已缓解** |
+| `DistributedJobLock.runWithLock` | 实测被 **10 个调度器**使用：ad 2（`AdReportSyncScheduler:62/69`、`BidScheduleExecutor:48/56`）、ai 1（`DailyReportScheduler:51/63/124`）、finance 1（`SettlementSyncScheduler:32/56/91`）、logistics 1（`LogisticsTrackingSyncScheduler:73/107/119`）、ops 1（`OpsMonitorScheduler:43/52/84`）、product 1（`KeepaCompetitorScheduler:60/68`）、spapi 3（`InventorySyncScheduler:69/78`、`OrderSyncScheduler:67/82`、`ReplenishmentScheduler:56/65`），多副本互斥成立 | 前几轮“k8s HPA 多副本会导致调度任务双跑”的猜测已被实测推翻（附录 E）；整改时不得把这些调度器换成无锁 `@Scheduled` |
+| `OrderSyncScheduler`（80、82–85、116–131、276–320 行） | `@Scheduled(fixedDelay=15min)` + 14 分钟锁租期；Redis `setIfAbsent(dedupeKey,"1",14 天)` 做发布去重（注释核算 7 天窗 × 15 分钟 ≈ 600 次重复）；Redis 异常时降级为“不去重”而非丢单；金额全程 `String`/`BigDecimal` | 这是“宁可重复不丢单”的正确取舍；应在保留该语义的前提下叠加持久化 Inbox（4.4），而不是用 Redis 取代事实源 |
+| `SpapiController` 的 `/credential`（69–82 行，校验在 74–80 行） | 除 `@ShopScoped` 外显式校验 `@RequestBody` 内嵌 `shopId` 的归属，因为切面只覆盖 `@RequestParam`/`@PathVariable` | “注解覆盖不到的地方手工补校验”的正向范式；应收敛为统一的 body/query/path 全量归属校验，而不是删除该手工校验 |
+| `ShopCredentialStore` | 敏感字段 AES-256-GCM 加密后同时写缓存与 DB，`get()` 返回解密副本而非内部引用 | 加密与防泄漏语义正确；**不能**因此判定“凭证管理已完成”——全表加载（56 行）与启动静默降级（62–64 行）仍属 P0-11、P0-23 |
+| `SpapiFeedsClientFallbackFactory` | Feign 降级返回 `Result.failure`，不伪造成功 | 与 4.1 “禁止静默降级”同向；应推广到 Messaging / Ads / Keepa / 17TRACK |
+
+### 1.9 连接器「凭证即插即用」验收标准（API-Ready）
+
+用户口径（2026-09-24 确认）：**暂时没有平台 API 凭证，但系统必须具备对接能力——一旦提供凭证即可直接使用**。这句话在工程上等价于下面 8 条可验收标准；任何一条不满足，都不得对外宣称“支持对接”。
+
+| # | 标准 | 本仓库现状（反例） |
+|---|---|---|
+| A1 | **凭证即插即用**：按官方协议完整实现认证（LWA / SigV4 / OAuth / HMAC）、分页、限流、幂等与错误分类；提供合法凭证后无需改代码即可跑通 | 1688 / SHEIN / TEMU / TikTok 自述“未校准”；Messaging / Ads 无 SigV4 且为单套全局 token |
+| A2 | **缺凭证显式失败**：返回明确错误码与可操作提示，**绝不**返回空列表 / null / false / 占位号 | `KeepaRealClient`、`LogisticsTrackingRealClient` 静默返回 null 或空轨迹；`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_` 占位号（P0-22） |
+| A3 | **启动自检**：生产 profile 启动时校验每个启用连接器的凭证存在性与格式（如 `AMZ_CRYPTO_KEY` 必须为 32 字节 base64）、端点可达性、profile 非 mock；不通过即拒绝启动 | spapi 默认 `mock`（P0-24）；k8s Secret 的 `AMZ_CRYPTO_KEY` 为 34 字节，启动即崩（P0-29） |
+| A4 | **凭证归属与轮换**：按 `tenant_id + shop_id + connector` 存储、加密落库、可轮换可吊销并有审计；禁止一套全局凭证服务多店 | finance / procurement / message / ad 仍是全局 `@Value` 单套凭证；SP-API 凭证表的多副本事实源与自动建表都不成立（P0-11、P0-23） |
+| A5 | **以联调记录为准**：每个连接器必须提供沙箱或生产联调记录（请求样例、响应样例、错误码覆盖、限流验证），否则在能力清单与前端显示为“未接通” | 全仓无任何联调记录；`@Profile("!mock")` 与类名 `*RealClient` 被当作“已对接”的依据 |
+| A6 | **能力清单与实现一致**：支持哪些 operation 就写哪些，未实现的（如 Notifications / RDT / Listings Items）明确标注“未实现” | README 宣称 Shopify / eBay / Walmart / Shopee / Lazada，实际只有 TEMU / TIKTOK / SHEIN（附录 G.2）；SP-API 缺 7 类能力（1.4.1） |
+| A7 | **失败可重放**：调用失败进入持久化重试 / DLQ，原始响应加密留存，支持按店铺与时间窗重放 | 无 Outbox / Inbox（4.4）；Redis 去重不能作为唯一事实源 |
+| A8 | **限流与配额真实**：按官方 usage plan 逐 operation 配置 rate 与 burst，按店铺隔离，可依据 `x-amzn-RateLimit-Limit` 动态调整 | `SpiRateLimiter` 默认值最高宽松约 120 倍（`orders` 约 60 倍），3 个在用 endpointTag 无策略（P0-28） |
+
+补充口径：
+
+- **“有 API 就能用”不等于“有 API 就能跑对”**：A1–A4 只保证链路可通；业务正确性还需要 4.5 的验签、4.7 的对账与 7.7 的数据质量校验。
+- 每个连接器必须同时通过 **A1–A8**；只通过 A1 只能标为“可联调”，不能标为“可生产”。
+- 模拟数据（第 7 章）**不能**替代 A5 的联调记录：模拟数据验证的是系统内部行为，不是与平台的协议正确性。
+- 前端与服务目录中的“已对接 / 已完成”标签必须以本节 8 条为唯一判定口径（附录 G.4、G.5 的使用规则）。
 
 ## 2. 目标架构、租户模型与运行单元
 
@@ -577,6 +636,7 @@ reconciliation.case.closed.v1
 
 | 连接器 | 实现与 profile | 本轮核实事实 | 生产可用性 |
 |---|---|---|---|
+| SP-API 核心链路（Orders / Feeds / FBA Inventory / Reports / Finances / Fees） | `OrdersClient`、`FeedsClient`、`FbaInventoryClient`、`ReportsClient`+`ReportsRealClient`/`ReportsMockClient`、`FinancesClient`+`FinancesRealClient`/`FinancesMockClient`、`FeesClient`+`FeesRealClient`/`FeesMockClient`（spapi 模块，默认 profile `mock`） | **框架真实**：LWA refresh_token 换 access_token（`https://api.amazon.com/auth/o2/token`，3600s）+ AWS SigV4 签名 + `x-amzn-RateLimit-Limit` 解析 + 429 退避已实现；跨模块 Feign 双向核对通过（product `SpapiFeedsClient` ↔ `FeedsController`；finance `SpApiFinanceClient` ↔ `FinancialDataController`）；`SpapiFeedsClientFallbackFactory` 返回 `Result.failure` 不伪造成功；`/sync/orders` 无凭证时显式失败（`SpapiController:94-96`）。**但**：凭证表无自动建表路径（P0-23）、部署形态默认加载 mock（P0-24）、`ReportsRealClient:80` 字段名错误使文档 ID 恒 null（P0-27）、限流配额最高比官方宽松约 120 倍且不按店铺隔离（P0-28）、Feeds 不下载结果报告（P0-30）、缺 Notifications/RDT 等 7 类能力（1.4.1） | LWA/SigV4/限流**框架**真实实现 ✅；凭证表缺失 ⛔、默认 mock ⛔、Reports 字段名错 ⛔、限流形同虚设 ⛔ |
 | 金蝶云星空 | `KingdeeRealClient`（`!mock`）/ `KingdeeMockClient`（`mock`） | `syncVoucher` 48–51 行无条件返回 `KINGDEE_MOCK_` 占位号；finance `application.yml:6-10` 默认 profile 为空 → 默认加载 Real 实现；凭证被置 `SYNCING` 后无法再次认领（认领条件只接受 `PENDING/FAILED`） | 未对接（占位） |
 | 1688 | `Alibaba1688RealClient`（`!mock`） | 37–38 行自述签名/token 端点未校准；`Alibaba1688Signer:24`、`Alibaba1688TokenManager:26` 同类标注；凭据为单套全局值（`alibaba.refresh-token` + Redis 全局 key） | 未校准 · 单租户 |
 | SHEIN | `SheinRealClient`（`!mock`） | 56–58 行硬编码 `page_no=1`、`page_size=50`、`order_status=PAID`；103–106 行自述未校准；`markShipped` 以 `cred(null)` 解析凭证 | 未校准 · 可能用错店铺 |
@@ -605,6 +665,13 @@ reconciliation.case.closed.v1
 - SQS 标准队列允许重复和乱序；按 `notificationId` 持久化去重，并允许状态版本倒序到达。
 - 任何 Notification 处理失败都必须进入重试/DLQ，不得直接 ack 丢弃。
 - 对账不是可选优化，而是生产必须具备的备用机制。
+
+**现状（第 10 轮实测，作为设计输入）**
+
+- 实时通知链路**不存在**：全仓 `/notifications/v1` 命中 0，没有 SQS 消费者；订单变化只能靠 `OrderSyncScheduler.java:80` 的 `@Scheduled(fixedDelay = 15 分钟)` 轮询。
+- 增量拉取链路**部分存在**：实际调用的 6 个 endpointTag 为 `orders`/`fba-inventory`/`feeds`/`fees`/`finances`/`reports`（见各客户端 `*_ENDPOINT` 常量），其中 `feeds`/`fees`/`finances` 在 `SpiRateLimiter` 无策略（P0-28）。
+- 批量对账链路**断裂**：finance `SettlementServiceImpl.java:88/193` 依赖的报表 `documentId` 恒为 null（P0-27）；`FeedsClient` 不下载 `resultFeedDocumentId`（P0-30），而 product 域 `ListingCopyService.java:236-242` 仍在 Feed `DONE` 时直接置 `SUCCESS`。
+- 凭证入口**部分正常**：`SpapiController` 的 `/credential`（69–82 行）校验 body 内 `shopId` 归属后写入 `ShopCredentialStore`；`/sync/orders` 在无凭证时返回 `no credential for shopId=…`（94–96 行）而不是静默成功——这两个行为应保留并推广，但凭证表本身无自动建表路径（P0-23）。
 
 ### 4.3 统一错误分类
 
@@ -675,6 +742,28 @@ webhook_event(
 - 定期任务带抖动，避免整点同时触发；支持暂停、取消、重跑和查看游标。
 - MQ 队列设置最大长度和死信队列；消费者根据积压和错误率背压，而不是无限拉取。
 - 批量任务分批提交，保存 checkpoint；重跑从 checkpoint 继续，避免重复扣库存或重复凭证。
+
+**现状（第 10 轮实测）与官方差距**
+
+- `OrderSyncScheduler.java:80` 用 `@Scheduled(fixedDelay = 15 分钟)` 全量轮询，`InventorySyncScheduler` 同类；官方明确“**不要硬编码定时器**”，应基于本地预算与真实限流反馈动态调度，并优先用 Notifications 替代轮询。
+- `SpiRateLimiter`（`amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java:70-73`）默认策略与官方 usage plan 对照：
+
+| 操作 | 官方 Rate（req/s） | 官方 Burst | 本仓库当前默认 | 结论 |
+|---|---|---|---|---|
+| `getOrders` | 0.0167 | 20 | `orders` = 30/30s（= 1 req/s） | 宽松约 60 倍 |
+| `createReport` | 0.0167 | 15 | `reports` = 5/60s | 宽松约 5 倍 |
+| `getReport` / `cancelReport` / `getReportSchedules` | 0.0222 | 10 | 与 `createReport` 共用 `reports` 一条策略 | 未按 operation 拆分 |
+| `getReportDocument` | 2 | 15 | 同上 | **比官方更严**，批量下载会被自己卡住 |
+| `createFeedDocument` | 0.0083 | 15 | `feeds` 无策略 → 兜底 30/30s（= 1 req/s） | 宽松约 120 倍 |
+| `createFeed` | 0.5 | 15 | 同上 | 宽松约 2 倍，且未按 operation 拆分 |
+| `getFeed` | 0.0222 | 10 | 同上 | 宽松约 45 倍 |
+| `listFinancialEvents` | 0.5 | 30 | `finances` 无策略 → 兜底 30/30s | 宽松约 2 倍 |
+| `getMyFeesEstimateForASIN/SKU` | 1 | 2 | `fees` 无策略 → 兜底 30/30s | 速率相当，但 burst 从 2 放大到 30（约 15 倍） |
+| `getInventorySummaries` | 2 | 2 | `fba-inventory` = 25/30s（≈ 0.83 req/s） | 速率反比官方更严（约 0.4 倍），但 burst 从 2 放大到 25（约 12 倍），突发仍越权 |
+
+- 结构性缺陷（同一文件）：`windows` 按 `shopId:endpoint` 分键，但 `policies` 只有 endpoint 维度 → **单店触发收紧会影响所有店铺**；`updateLimit()`（139–143 行）只收紧不恢复；`acquire()` 在持有 `Deque` 锁的同步块内 `Thread.sleep`（103 行），`@Scheduled` 单线程池下多店串行阻塞；`listings` 策略无任何调用方，是死配置。
+- 官方 Rate/Burst 数值取自 `amzn/selling-partner-api-models` 各模型文件内 `description` 的 “Usage Plan” 表（2026-09-24 核验）；`getInventorySummaries` 的 2/2 来自 `models/fba-inventory-api-model/fbaInventory.json`。本仓库兜底策略为 `DEFAULT_MAX_REQUESTS=30` / `DEFAULT_WINDOW=30s`（源码 37/42 行），即 1 req/s，下表“宽松倍数”= 兜底速率 ÷ 官方速率。
+- 唯一正向：`x-amzn-RateLimit-Limit` 有读取与解析（全仓 15 处命中），方向正确，但当前实现只把窗口上限调小，且缺少按 operation 与店铺的恢复机制。
 
 ### 4.7 对账体系
 
@@ -1239,6 +1328,62 @@ seed        = 固定整数或字符串
 - 每个异常场景有自动化测试、预期结果和证据。
 - 压测数据可重复使用，并能生成报表/对账案例而不污染生产。
 
+### 7.9 首批交付物与固定 seed（设计，待批准后才落代码）
+
+用户已确认：**暂无真实数据，也暂无任何平台凭证**。因此模拟数据是开发与验收的主要输入。下列内容为**设计**，未经批准不写实现代码。
+
+| 产物 | 建议路径 | 说明 |
+|---|---|---|
+| 生成器 | `tools/synthetic-data/`（独立目录，不依赖任何业务模块） | 固定 seed、稳定 UUID v5、输出 SQL/JSONL |
+| 数据集元数据 | `tools/synthetic-data/datasets/{tier}/dataset.json` | `dataset_id`、`seed`、规模、生成时间、行数、文件哈希 |
+| demo 档产物 | `tools/synthetic-data/out/demo/*.sql` | 1 租户 / 3 店铺 / 3 市场 / 1 万订单 |
+| ci 档产物 | `tools/synthetic-data/out/ci/*.sql` | 1 租户 / 2 店铺 / 2 市场 / 1,000 订单 |
+| 校验脚本 | `tools/synthetic-data/verify.ps1` 与 `verify.sh` | 行数、哈希、外键、标记字段校验 |
+
+首批固定值：
+
+```text
+dataset_id  = synthetic-amazon-erp-v1
+seed        = 20260924
+data_origin = SYNTHETIC
+tenant_id   = 900000000000000001
+shop_id     = 900000000000000101 / 900000000000000102 / 900000000000000103
+```
+
+要求：
+
+1. **列定义只从既有 DDL 取**：`docker/init-sql/`（32 个文件、105 条 `CREATE TABLE`）与各服务 `db/migration`；生成器的列清单必须从 DDL 自动推导或与 DDL 做哈希比对，禁止手抄，避免再出现 §7 之外的新 schema 副本（附录 B）。
+2. 大文件不提交 Git：只提交生成器、DDL 快照与固定 seed；产物写对象存储或本地临时目录并附 SHA-256。
+3. `amz_shop_credential` 合成行（用于验证“凭证即插即用”入口，**不含任何真实范围值**）：
+
+```text
+shop_id                 = 900000000000000101
+client_id               = SYNTHETIC_LWA_CLIENT_ID
+client_secret_encrypted = CryptoUtil 加密 "SYNTHETIC_CLIENT_SECRET"
+refresh_token_encrypted = CryptoUtil 加密 "SYNTHETIC_REFRESH_TOKEN"
+access_key_encrypted    = CryptoUtil 加密 "SYNTHETIC_AWS_ACCESS_KEY"
+secret_key_encrypted    = CryptoUtil 加密 "SYNTHETIC_AWS_SECRET_KEY"
+region                  = NA
+marketplace_id          = SYNTHETIC_MARKETPLACE_ID
+seller_id               = SYNTHETIC_SELLER_ID
+```
+
+**前置条件（必须先修，否则这一步直接失败）**：`CryptoUtil.init()` 要求 `AMZ_CRYPTO_KEY` 解码后恰为 32 字节，而 `k8s/secret.yaml` 现有值解码为 34 字节（P0-29），且该表当前没有任何自动建表路径（P0-23）。生成合成凭证前必须先替换为合法密钥（例如 `openssl rand -base64 32`）并把凭证表纳入迁移。
+
+校验命令（示例，实现后固化进 CI）：
+
+```powershell
+# 1) 确定性：生成两次，产物哈希必须一致
+Get-FileHash tools/synthetic-data/out/ci/*.sql -Algorithm SHA256 | Sort-Object Path
+# 2) 标记完整性：所有生成脚本与产物都带 SYNTHETIC 标记
+git grep -n "SYNTHETIC" -- tools/synthetic-data
+# 3) 部署后确认凭证表真实存在（P0-23 的回归检查）
+# SELECT COUNT(*) FROM information_schema.tables
+#  WHERE table_schema = 'amz_spapi' AND table_name = 'amz_shop_credential';
+```
+
+上述产物（生成器、数据集、校验脚本）均列为**待批准项**；在用户批准实施计划之前，本文只保留设计，不落地代码或数据文件。
+
 ---
 
 ## 8. 路线图、迁移与生产验收
@@ -1386,6 +1531,15 @@ seed        = 固定整数或字符串
 - `amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialStore.java`
 - `amz-service/amz-service-spapi/src/main/java/com/amz/client/OrdersClient.java`
 - `amz-service/amz-service-spapi/src/main/java/com/amz/client/ReportsRealClient.java`
+- `amz-service/amz-service-spapi/` 模块重点路径（第 10 轮补审）：
+  - `src/main/java/com/amz/ratelimit/SpiRateLimiter.java`（70–73 行默认配额；96–113 行锁内 `Thread.sleep`；139–143 行只收紧不恢复）
+  - `src/main/java/com/amz/client/FeedsClient.java`（378 行；无 `resultFeedDocumentId` 处理）
+  - `src/main/java/com/amz/config/SpApiConfig.java`（33 行 `spapi.lwa-endpoint` 默认值）
+  - `src/main/resources/application.yml`（7 行默认 `mock`；69 行 LWA 端点；83 行 `crypto.key`）
+  - `src/main/resources/db/schema.sql`（11–24 行 `amz_shop_credential`）与 `src/main/resources/db/migration/V1__init.sql`（只建 7 张表，不含凭证表）
+  - `src/main/java/com/amz/credential/ShopCredentialStore.java`（56 行全表加载；62–64 行加载失败仅 warn）
+  - `src/main/java/com/amz/controller/SpapiController.java`（69–82 行凭证写入与 body 内 shopId 校验；94–96 行缺凭证显式失败）
+  - `src/main/java/com/amz/scheduler/OrderSyncScheduler.java`（80、82–85、116–131 行）
 - `amz-service/amz-service-product/src/main/java/com/amz/client/SpapiFeedsClient.java`
 - `amz-service/amz-service-finance/src/main/java/com/amz/service/impl/SettlementServiceImpl.java`
 - `amz-service/amz-service-finance/src/main/java/com/amz/parse/SettlementParser.java`
@@ -1447,6 +1601,8 @@ seed        = 固定整数或字符串
 4. 每次变更生成 schema 差异报告；禁止只改实体或只改 SQL。
 5. 建立数据库字典，标注租户/店铺/版本/PII/保留期/分区和索引。
 
+**三处建表镜像已经破损（第 10 轮实测）**：`init_all_tables.sql`（约 57 张唯一表）、`docker/init-sql/`（32 个文件，编号 01–33、缺 03，共 105 条 `CREATE TABLE`）、各服务 `db/migration`（Flyway）三套口径并存，并且已经出现真实缺口：`amz_shop_credential` 只在 `amz-service/amz-service-spapi/src/main/resources/db/schema.sql:11` 与 `init_all_tables.sql:459` 各定义一次，`docker/init-sql/` 对 `credential` **0 命中**，spapi 的 `db/migration/V1__init.sql` 也不含此表 → 用 Compose 或 Flyway 部署时该表**根本不存在**，凭证写入直接失败（P0-23）。这说明“多处镜像”不是风格问题，而是已经在制造不可用功能。
+
 ## 附录 C：不建议的做法
 
 - 为了“看起来生产化”而只增加 K8s 副本数，不修复数据事实源。
@@ -1474,7 +1630,8 @@ seed        = 固定整数或字符串
 8. 期望的首期容量、SLO、RPO/RTO 和预算范围是什么？
 9. 是否允许引入 Keycloak、Vault/KMS、外部对象存储、企业短信和外部 IdP？
 10. 是否确认各外部连接器的真实状态（金蝶未对接、1688/SHEIN/TEMU/TikTok 未沙箱校准、Messaging/Ads 为骨架且静默降级、Keepa/17TRACK 静默空值）？是否接受“阶段 0 完成前不对外宣称任何真实平台对接能力”？
-11. 是否批准进入实施计划阶段；批准前不修改业务源码。
+11. 是否接受连接器「凭证即插即用」（API-Ready）验收口径（见 1.9）：提供凭证即可跑通、缺凭证显式失败、生产启动自检、每个连接器必须有沙箱或生产联调记录？
+12. 是否批准进入实施计划阶段；批准前不修改业务源码。
 
 ## 附录 E：本文自检
 
@@ -1483,7 +1640,7 @@ seed        = 固定整数或字符串
 - 一致性：本文假设与前面设计章节的工作假设保持一致；若评审推翻部署形态或数据库选择，需要重新评估租户、迁移和成本章节。
 - 范围：本文覆盖业务、性能、安全、可靠性、运维、合规、数据迁移和验收；不包含具体源码实现，符合“设计先行”的流程。
 - 歧义：PII 保留、税务、RPO/RTO、容量、预算和运行单元收敛均列为待确认决策，未伪装成已确定事实。
-- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。
+- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。(10) 前几轮“k8s HPA 多副本会导致调度任务双跑”的推测被**撤回**——实测 `DistributedJobLock.runWithLock` 被 10 个调度器使用，互斥成立；该类别缺陷应改记为 `DistributedJobLock` 自身在 Redis 不可用时 fail-open（§1.8 已如实记录）；(11) “`SpiRateLimiter` 已参考官方配额”被推翻——默认 `orders=30/30s` 与官方 0.0167 req/s 相差约 60 倍，`feeds`/`fees`/`finances` 三个在用 endpointTag 没有策略，`listings` 策略无调用方；(12) “SP-API 客户端已可用”被收窄——`ReportsRealClient:80` 取错官方字段名（应为 `reportDocumentId`），结算报表文档 ID 恒为 null；(13) “k8s 已具备可部署 Secret”被推翻——`AMZ_CRYPTO_KEY` 解码为 34 字节，`CryptoUtil` 硬校验 32 字节会让 spapi 启动失败；(14) “Feeds 提交流程已闭环”被推翻——`FeedsClient` 从不下载 `resultFeedDocumentId`，被拒行没有读取渠道；(15) “SP-API 默认加载真实实现”被推翻——默认 profile 为 `mock`，部署清单也不设置 profile，财务域三类客户端返回样例数据；(16) 本规格第 1～7 轮整体未审查 `amz-service-spapi`，本轮补审（附录 G.4）。
 ---
 
 ## 附录 F：328 端点守卫矩阵与 82 条无守卫清单（本轮实测）
@@ -1572,7 +1729,7 @@ mvn -B -ntp dependency:tree -Dscope=runtime > target/dependency-tree-runtime.out
 
 | 该文档位置 | 原文口径 | 实测结论 |
 |---|---|---|
-| 第 5 行 | “全部 8 项已完成 … 546 单测全绿” | 本轮实测后端 `@Test` 527 处、执行 527（0 失败 / 2 跳过），前端 133 用例；数字口径与 546 不符，且“全部完成”与 1.3 的 22 条 P0、1.4 的业务缺口直接矛盾 |
+| 第 5 行 | “全部 8 项已完成 … 546 单测全绿” | 本轮实测后端 `@Test` 527 处、执行 527（0 失败 / 2 跳过），前端 133 用例；数字口径与 546 不符，且“全部完成”与 1.3 的 30 条 P0、1.4 的业务缺口直接矛盾 |
 | 第 14 行 | 第 2 项“1688 开放平台真实对接 ✅ 已完成” | **同文档第 55 行**自述该客户端是“`log.warn` + 返回 `1688_MOCK_` 占位”的骨架；代码侧 `Alibaba1688Signer:24`、`Alibaba1688TokenManager:26`、`Alibaba1688RealClient:37-38` 均自述未校准 |
 | 第 16 行 | 第 4 项“多平台签名按官方校准 ✅ 已完成” | `SheinRealClient:103-106`、`TemuRealClient:94-96`、`TikTokRealClient:177-180` 均自述“未校准”，待平台沙箱确认 |
 | 第 18 行 | 第 6 项“凭证管理（密管+多租户）✅ 已完成” | 只有 multiplatform 域实现按 `(shopId, platform)` 解析（`PlatformCredentialService`）；finance（金蝶）、procurement（1688）、message（Messaging）、ad（Ads）仍是全局 `@Value` 单套凭据 |
@@ -1581,7 +1738,19 @@ mvn -B -ntp dependency:tree -Dscope=runtime > target/dependency-tree-runtime.out
 
 对照：`docs/amazon-ai-agent-execution-plan-2026-09-16.html` 的进度看板默认显示“已完成 0 / 28”（第 139 行），且勾选状态只存在浏览器本地（第 132 行）——它不能作为完成度证据，但至少没有宣称已全部完成。
 
-### G.4 使用规则
+### G.4 漏审教训与本轮方法论（第 10 轮新增）
+
+| # | 教训 | 依据 |
+|---|---|---|
+| 1 | **前 7 轮审计整体漏掉了 `amz-service-spapi` 模块**，导致凭证表缺失、默认 mock、Reports 字段名错误、限流配额失真四个 P0 长期未被发现 | 本文 P0-23、P0-24、P0-27、P0-28 均为第 10 轮首次记录；此前章节的“SP-API 已接入”判断缺这一模块的逐行核对 |
+| 2 | **“用官方 OpenAPI 模型反查代码”应成为所有连接器的强制验收手段** | 一次比对 `reports_2021-06-30.json` 即同时查出字段名错误（P0-27）与配额量级差异（P0-28），成本远低于沙箱联调 |
+| 3 | **审计必须覆盖“配置的加载路径”，而不只是配置的存在** | P0-25 的三个断面（变量名不一致、`bootstrap.yml` 在当前依赖下不生效、死配置文件）都只能通过追踪“谁真正读了它”发现 |
+| 4 | **“能启动”不等于“表存在”** | `ShopCredentialStore` 在表缺失时只 warn 并空缓存启动（P0-23），使部署成功与功能可用被混淆 |
+| 5 | **自测通过会掩盖协议级错误** | 527 个后端用例全绿，但 `resultDocumentId` 与 `reportDocumentId` 的差异、Feeds 结果报告缺失都不会被现有用例覆盖 |
+
+后续审计与验收的执行规则：每个连接器必须同时给出（a）官方模型或文档依据，（b）真实读取凭证/配置的代码行号，（c）正例与反例各一条，三者缺一即记为“未核对”。
+
+### G.5 使用规则
 
 1. 本文档与仓库内既有审计文档冲突时，**以本文档标注的源码行号为准**，并重新执行 F.5 的复现命令核对。
 2. 任何“已完成 / 已支持 / 已通过”的表述，必须同时给出来源：源码路径 + 行号、测试命令 + 输出、或联调记录。三者缺一即为待验证。
