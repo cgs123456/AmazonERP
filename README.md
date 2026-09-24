@@ -1,6 +1,9 @@
 # Amazon ERP — 微服务跨境电商管理平台
 
-基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务全业务闭环，内置 AI 运营 Agent（29 工具）与可观测性三栈。
+基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务业务闭环，内置 AI 运营 Agent（29 工具）与可观测性三栈。
+
+> ⚠️ **当前状态（2026-09-24 审计结论）**：本仓库**不能按现状视为可直接生产部署**。实测存在 **32 条 P0 级生产阻断项**，包括：7 个模块默认 `spring.profiles.active=mock` 且 16 份 k8s 清单与 Compose 均不设置 profile、SP-API 凭证表无任何自动建表路径、order/product 硬编码第三方公网 Redis 地址 `121.37.250.15:6379`（实测 45.3 秒连接超时）、16 份 k8s Deployment 与代码占位符大面积不匹配（logistics 缺 15 项、search 缺 10 项）。
+> 上文「业务闭环」指**模块与代码路径已具备**，不代表外部平台已完成真实对接或沙箱联调；多个 `*RealClient` 仍返回占位值或静默降级。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
 
 ## 🏗 技术栈
 
@@ -277,7 +280,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-> docker-compose.yml 包含 17 服务：nacos + mysql(主+从) + redis + rabbitmq + mongodb + elasticsearch + prometheus + grafana + skywalking-oap + skywalking-ui + logstash + kibana + alertmanager + 网关 + spapi + 前端
+> `docker-compose.yml` 实测包含 **31 个 service**（基础设施 + 网关 + 业务服务 + 前端；2026-09-24 以文件为准，旧口径「17 服务」已过期）。注意：Compose 当前不注入 `SPRING_PROFILES_ACTIVE`、`REDIS_HOST` 全域缺失、`MYSQL_HOST` 仅 spapi 有值，直接 `up -d` 只能用于本地演示，不能作为部署基线。
 
 ### 4. 启动业务服务
 
@@ -339,9 +342,9 @@ AmazonERP/
 ├── scripts/              # 工具脚本（TLS 证书生成等）
 ├── ml/                   # LightGBM 训练脚本
 ├── loadtest/             # Gatling + JMeter 压测
-├── docker-compose.yml    # 17 服务全栈编排
+├── docker-compose.yml    # 31 service 全栈编排（实测）
 ├── Dockerfile            # 多阶段构建
-├── .env.example          # 环境变量模板 ≥20 项
+├── .env.example          # 环境变量模板（实测 71 行 / 36 个键）
 └── .github/workflows/    # CI（checkstyle + 全模块测试 + Docker build）
 ```
 
