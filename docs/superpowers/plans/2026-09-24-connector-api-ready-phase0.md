@@ -302,7 +302,7 @@ Expected: PASS
 
 - [ ] **Step 1: 写失败测试**
 
-`ConnectorControllerGuardTest`：反射扫描 `ConnectorController` 的所有 `@*Mapping` 方法，断言每个方法都带 `@RequireRole` 或 `@ShopScoped`（防止新增无守卫端点）。`ConnectorRegistryTest`：断言清单中的 operation 白名单与 1.4.1 能力缺口扫描一致（未实现的能力必须是"未实现"而不是缺字段）。
+`ConnectorControllerGuardTest`：反射扫描 `ConnectorController` 的所有 `@*Mapping` 方法，断言每个方法都带 `@RequireRole` 或 `@ShopScoped`（防止新增无守卫端点）。`ConnectorRegistryTest`：断言清单中的 operation 白名单与 1.4.1 能力缺口扫描一致（未实现的能力必须是"未实现"而不是缺字段）。**另加一条既有端点的回归断言（第 22 轮 code review 遗留，勿丢）**：`amz-service-spapi/.../controller/FeedsController.java:47-49` 的 `submit` 属附录 F 的 C 类（无方法级 `@ShopScoped`，归属校验只靠方法内 `UserContext.isShopAllowed(request.getShopId())`）；实现时给该方法补一行注释说明"此处 `isShopAllowed` 即店铺归属校验"，并在本 Task 的守卫测试中断言 C 类端点仍然保留 `isShopAllowed` 调用，防止后续重构把唯一校验删掉。
 
 - [ ] **Step 2: 运行确认失败**
 
