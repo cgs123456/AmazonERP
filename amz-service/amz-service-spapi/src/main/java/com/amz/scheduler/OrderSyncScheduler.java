@@ -4,6 +4,7 @@ import com.amz.client.OrdersClient;
 import com.amz.constant.MqConstant;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.MarketplaceRegistry;
 import com.amz.lock.DistributedJobLock;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
@@ -102,7 +103,8 @@ public class OrderSyncScheduler {
                 continue;
             }
             String marketplaceId = credential.getMarketplaceId();
-            String region = ordersClient.mapMarketplaceToRegion(marketplaceId);
+            // P0-36：映射统一走单一事实源；未登记 marketplaceId 会抛异常（由外层 catch 记录到该店铺）
+            String region = MarketplaceRegistry.resolveRegion(marketplaceId);
             try {
                 List<JsonObject> orders = ordersClient.fetchOrders(
                         shopId, marketplaceId, createdAfter, DEFAULT_ORDER_STATUSES);

@@ -4,6 +4,7 @@ import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.MarketplaceRegistry;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -58,25 +59,11 @@ public class FeedsClient {
 
     private static final int MAX_RETRIES = 3;
 
-    private static final Map<String, String> SPAPI_ENDPOINTS = Map.of(
-            "NA", "https://sellingpartnerapi-na.amazon.com",
-            "EU", "https://sellingpartnerapi-eu.amazon.com",
-            "FE", "https://sellingpartnerapi-fe.amazon.com"
-    );
-
-    private static final Map<String, String> MARKETPLACE_REGION = Map.ofEntries(
-            Map.entry("ATVPDKIKX0DER", "NA"),
-            Map.entry("A2EUQ1WTGCTBG2", "NA"),
-            Map.entry("A1AM78C64UM0Y8", "NA"),
-            Map.entry("A1F83G8C2ARO7P", "EU"),
-            Map.entry("A13V1IB3VIYZZH", "EU"),
-            Map.entry("A1PA6795UKMFR9", "EU"),
-            Map.entry("A1RKKUPIHCS9HS", "EU"),
-            Map.entry("APJ6JRA9NG5V4", "EU"),
-            Map.entry("A39IBJ37TRP1C6", "FE"),
-            Map.entry("A1VC38T7YXB528", "FE")
-    );
-
+    /**
+     * 区域与官方端点统一由 {@link MarketplaceRegistry} 解析（P0-36 单一事实源）：
+     * 未登记的 marketplaceId 或 region 直接抛 {@link com.amz.connector.UnknownMarketplaceException}，
+     * 不再静默回落默认区域。
+     */
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
@@ -176,29 +163,21 @@ public class FeedsClient {
     }
 
     /**
-     * 解析店铺凭证与 SP-API 端点/区域信息。
-     * 优先用显式 marketplaceId 映射区域；缺失时回退到凭证登记的 marketplaceId，再回退到凭证区域，最后默认 NA。
+     * 解析店铺凭证与 SP-API 端点/区域信息（P0-36 fail-closed）。
+     * 优先用显式 marketplaceId 映射区域；缺失时回退到凭证登记的 marketplaceId，再回退到凭证区域；
+     * 三者都缺失或非法时**抛异常**，不再回落默认区域。
      */
     private ResolvedShop resolveShop(Long shopId, String marketplaceId) {
         ShopCredential credential = shopCredentialStore.get(shopId);
         if (credential == null) {
             throw new IllegalArgumentException("No credential found for shopId=" + shopId);
         }
-        String region;
-        if (marketplaceId != null) {
-            region = mapMarketplaceToRegion(marketplaceId);
-        } else if (credential.getMarketplaceId() != null) {
-            region = mapMarketplaceToRegion(credential.getMarketplaceId());
-        } else if (credential.getRegion() != null) {
-            region = credential.getRegion();
-        } else {
-            region = "NA";
-        }
-        String endpoint = SPAPI_ENDPOINTS.get(region);
-        if (endpoint == null) {
-            throw new IllegalArgumentException("No SP-API endpoint for region=" + region);
-        }
-        String host = endpoint.replace("https://", "");
+        // fail-closed（P0-36）：显式 marketplaceId → 凭证 marketplaceId → 凭证 region → 抛异常。
+        // 旧实现在三者全空时静默回落 NA 端点，会把请求发到未经确认的区域。
+        String region = MarketplaceRegistry.resolveRegion(
+                marketplaceId, credential.getMarketplaceId(), credential.getRegion(), "shopId=" + shopId);
+        String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
+        String host = MarketplaceRegistry.resolveHost(region);
         return new ResolvedShop(credential, region, endpoint, host);
     }
 
@@ -350,13 +329,6 @@ public class FeedsClient {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    /**
-     * 将 Marketplace ID 映射到 SP-API 区域（NA/EU/FE），未知时默认 NA。
-     */
-    public String mapMarketplaceToRegion(String marketplaceId) {
-        return MARKETPLACE_REGION.getOrDefault(marketplaceId, "NA");
     }
 
     /**

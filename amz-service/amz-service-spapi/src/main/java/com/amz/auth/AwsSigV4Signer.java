@@ -39,7 +39,7 @@ public class AwsSigV4Signer {
      * （包含 x-amz-date 与 Authorization）。
      *
      * @param method               HTTP 方法（GET/POST/...）
-     * @param host                 请求主机名（不含协议与端口），如 sellingpartnerapi-na.amazon.com
+     * @param host                 请求主机名（不含协议与端口），由 MarketplaceRegistry 统一提供
      * @param path                 请求路径，如 /orders/v0/orders
      * @param canonicalQueryString 规范查询串（参数名按字典序排序、URI 编码后以 & 拼接）
      * @param body                 请求体（GET 请求传空串）

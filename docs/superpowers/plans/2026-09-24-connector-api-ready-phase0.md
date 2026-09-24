@@ -559,6 +559,10 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 
 可选（前向保险）：`AwsSigV4KnownAnswerTest`（固定输入 + AWS 官方 `aws4_testsuite` 期望 `Authorization` 逐字符比对；夹具来源见 spec §1.9.2）。**注意**：既有 23 个签名相关 `@Test` 只是 E1 自证，不构成 A1 证据（spec §1.9.1 G4）。
 
+> **进度（第 31 轮，2026-09-24）**：本步 7 个必做测试中 **`MarketplaceRegistryTest` 已落地并 6/6 PASS**（证据见附 A.5）；`SpApiRequiredHeaderContractTest` / `LwaTokenExchangeContractTest` / `SpApiEndpointOverrideSafetyTest` / `SpApiProtocolStubTest` / `ConnectorEvidencePolicyTest` / `SpApiConditionalSigningTest` 尚未创建。
+>
+> **桩回放方式修订（有依据，不改验收目标）**：本沙箱**无法构造 JDK `HttpClient`**（见「未验证与风险」第 18 条：`IOException: Unable to establish loopback connection`；`-Djdk.net.useUnixDomainSockets=false` 等已实测无效），故 `com.sun.net.httpserver` + JDK `HttpClient` 的桩回放方式在本机**不可执行**。第 1 项测试改为**进程内假传输**（record-and-replay `HttpTransport`）：断言**请求构造契约**（方法、URI、每个请求的 `user-agent`、`x-amz-access-token`、`x-amz-date`、`Authorization` 的有无），**不覆盖真实网络栈**，因此证据上限 **E2**，不得据此宣称 A1/A5 通过。
+
 - [ ] **Step 2: 运行确认失败**
 
 Run: `mvn -B -ntp -pl amz-service/amz-service-spapi -am test -Dtest=SpApiRequiredHeaderContractTest+MarketplaceRegistryTest+LwaTokenExchangeContractTest+SpApiEndpointOverrideSafetyTest+SpApiProtocolStubTest+ConnectorEvidencePolicyTest`
@@ -567,6 +571,10 @@ Expected: FAIL（类不存在 / 断言失败）
 - [ ] **Step 3: 端点覆盖、必填头与市场映射（fail-closed 优先）**
 
 覆盖键默认空；仅非生产生效，prod 非空即启动失败；allowlist 默认 `127.0.0.1`、`localhost`；非 allowlist 主机不得携带 `x-amz-access-token`，其响应也不得写入业务表（避免桩数据污染）。`MarketplaceRegistry` 成为唯一事实源，四份副本删除；`getOrDefault(..., "NA")` 必须从代码中消失（DoD 用 `grep` 断言）。7 处签名调用改为**有条件签名**：`accessKey`/`secretKey` 同时非空才注入 `Authorization`，否则跳过（P0-38），**不得**依赖 `"AWS4" + null` 的当前行为。`user-agent` 由 `SpApiUserAgent` 统一构造并注入全部出站客户端。`LwaTokenManager` 与 4 个客户端的 `HttpClient` 改为构造注入。`AwsSigV4Signer` 的 `Clock` 注入为可选项（前向保险）。
+
+> **进度（第 31 轮，2026-09-24）**：市场映射部分**已完成**——`MarketplaceRegistry`（官方 23 条，NA 4 / EU 16 / FE 3）为唯一事实源，四份副本与 `getOrDefault(..., "NA")` 已从主源码清零（`grep` 核验见附 A.5），未知 `marketplaceId` / region **抛错**而非回落默认区域（`MarketplaceRegistryTest` 6/6 PASS）。
+>
+> **其余部分尚未开始**：端点覆盖与 allowlist、`user-agent` 必填头（P0-35）、有条件签名（P0-38）、`HttpClient` 构造注入。落地顺序定为「**传输抽象（`HttpTransport` 构造注入）→ 必填头 → 端点覆盖 → 有条件签名**」——传输抽象必须先行：不做注入，本沙箱连被测类实例都构造不出来（`LwaTokenManagerTest` 9 例 error 即因此）。
 
 - [ ] **Step 4: LWA 契约夹具落地（必做）；SigV4 KAT 夹具（可选）**
 
@@ -679,3 +687,20 @@ Expected: PASS（既有 527 用例不回退）
 | Task 2 测试 | TDD：先跑出编译失败（类不存在），实现后 `-Dtest=ConnectorStartupCheckTest` → 4/4 PASS；单模块全量 76 用例中 67 通过、9 例为环境 error（见「未验证与风险」第 18 条）、2 例 skip |
 | 工具链提交 | `cdb501c`：`run.ps1` 补 `-TruncateFirst` 开关；产出与已校验工件 **141/141 文件逐字节一致**，不加开关时 `truncate_first=false` 且 TRUNCATE 行数 0（负向对照） |
 | 待办 | Task 11 首片（`MarketplaceRegistry` 23 条 + 删 4 份副本 + fail-closed）可在本沙箱验证（纯 POJO，不依赖 `HttpClient`）；其桩回放测试按第 18 条另寻环境 |
+
+### A.5 第 31 轮：Task 11 首片（P0-36 marketplace 单一事实源 + fail-closed）已落地（2026-09-24）
+
+| 项 | 证据 |
+|---|---|
+| 新增 | `amz-service/amz-service-spapi/src/main/java/com/amz/connector/MarketplaceRegistry.java`（官方 23 条全表，NA 4 / EU 16 / FE 3；补齐此前缺失 13 条，如 `A2Q3Y263D00KWC` = BR 属 **NA**、`A28R8C7NBKEWEA` = IE、`A19VAU5U5O7RUS` = SG）；`UnknownMarketplaceException.java`（`code = SPAPI_UNKNOWN_MARKETPLACE` / `SPAPI_UNSUPPORTED_REGION`，附 `marketplaceId()` / `region()`） |
+| 单点化 | `OrdersClient` / `FeedsClient` / `FbaInventoryClient` / `SpApiGateway` 的 `MARKETPLACE_REGION`、`SPAPI_ENDPOINTS` 副本与 `mapMarketplaceToRegion(...)` **全部删除**；官方主机字面量在 spapi 主源码**仅**出现在 `MarketplaceRegistry:51-53` |
+| fail-closed | `SpApiGateway.resolveShop` / `FeedsClient.resolveShop` 兜底链改为 `MarketplaceRegistry.resolveRegion(marketplaceId, credMarketplaceId, credRegion, ref)`：**三者全空即抛**，不再回落 NA。刻意不做 trim / 大小写归一——脏数据必须显式失败 |
+| 自检 | 静态初始化断言：条数 ≠ 23 或分布 ≠ 4/16/3 → `IllegalStateException`（改表时误删即启动失败） |
+| 测试 | 新增 `MarketplaceRegistryTest` **6 例**：逐条断言 23 条 region/国家码/host/endpoint；未知 ID（null / 空串 / 空白 / 大小写不符 / 首尾空格）抛错而非返回 NA；未知 region 抛错；凭证兜底链 fail-closed；四客户端无映射副本（反射字段 + 源码扫描）；官方主机字面量单点化 |
+| TDD 证据 | RED：先跑 `-Dtest=MarketplaceRegistryTest` → **编译失败**（`找不到符号`，类不存在，20+ 条）；GREEN：同上 → `Tests run: 6, Failures: 0, Errors: 0, Skipped: 0`、`BUILD SUCCESS` |
+| 单模块全量（**实数**） | `mvn -B -ntp -pl amz-service/amz-service-spapi -am test` → `AmzErp` / `amz-common` SUCCESS；`amz-service-spapi`：**`Tests run: 82, Failures: 0, Errors: 9, Skipped: 2`**；9 例 error **全部**是 `LwaTokenManagerTest.setUp:47` 的 `IOException: Unable to establish loopback connection`（本沙箱限制），**无断言失败**；聚合 `BUILD FAILURE` 由这 9 例环境 error 引起。上一轮基线 76 例，本轮 +6 |
+| 静态核验 | `getOrDefault` 在 spapi 主源码仅剩 `MarketplaceRegistry:123-125`（内部计数）与 javadoc 命中，`getOrDefault(marketplaceId, "NA")` **归零**；`sellingpartnerapi-` 仅命中 `MarketplaceRegistry:51-53` |
+
+> **边界不变**：本轮证据为 **E1（自证）/ E2（契约构造）**，不产生任何 E3/E4/E5；A5 真实联调仍只能由凭证到位当天的 runbook 产出（spec §1.9.1(5)）。`MarketplaceRegistry` 的 23 条取自 spec §1.9.2（官方 `store-identifiers.md`，2026-09-24 快照），**本轮未重新抓取官方页面二次核对**；Amazon 新增站点时必须显式补表（刻意设计）。
+
+> **未开始（不得含糊）**：`SpApiUserAgent`（P0-35）、端点覆盖与 allowlist、LWA 契约夹具与交换测试、P0-38 有条件签名、`ConnectorEvidencePolicy`（E0–E5）、`connector-acceptance-runbook.md`、`HttpClient` 构造注入均**未开始**——故本沙箱目前**无法构造任何出站客户端实例**。

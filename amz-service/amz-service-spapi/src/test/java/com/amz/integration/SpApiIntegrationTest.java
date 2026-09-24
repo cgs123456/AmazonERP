@@ -4,6 +4,7 @@ import com.amz.auth.LwaTokenManager;
 import com.amz.client.OrdersClient;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.MarketplaceRegistry;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -84,7 +85,7 @@ class SpApiIntegrationTest {
 
         assertNotNull(orders, "fetchOrders 返回不应为 null");
         // 验证区域映射正确：美国站应映射到 NA
-        String region = ordersClient.mapMarketplaceToRegion(marketplaceId);
+        String region = MarketplaceRegistry.resolveRegion(marketplaceId);
         assertTrue(List.of("NA", "EU", "FE").contains(region),
                 "区域映射应在 NA/EU/FE 之中");
     }

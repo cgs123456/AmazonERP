@@ -4,6 +4,7 @@ import com.amz.auth.AwsSigV4Signer;
 import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
+import com.amz.connector.MarketplaceRegistry;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -51,30 +52,10 @@ public class FbaInventoryClient {
     private static final int MAX_RETRIES = 3;
 
     /**
-     * SP-API 各区域端点（NA/EU/FE）。
+     * 区域与官方端点统一由 {@link MarketplaceRegistry} 解析（P0-36 单一事实源）：
+     * 未登记的 marketplaceId 或 region 直接抛 {@link com.amz.connector.UnknownMarketplaceException}，
+     * 不再静默回落默认区域。
      */
-    private static final Map<String, String> SPAPI_ENDPOINTS = Map.of(
-            "NA", "https://sellingpartnerapi-na.amazon.com",
-            "EU", "https://sellingpartnerapi-eu.amazon.com",
-            "FE", "https://sellingpartnerapi-fe.amazon.com"
-    );
-
-    /**
-     * 常见 Marketplace ID 到区域（NA/EU/FE）的映射。
-     */
-    private static final Map<String, String> MARKETPLACE_REGION = Map.ofEntries(
-            Map.entry("ATVPDKIKX0DER", "NA"),  // 美国
-            Map.entry("A2EUQ1WTGCTBG2", "NA"),  // 加拿大
-            Map.entry("A1AM78C64UM0Y8", "NA"),  // 墨西哥
-            Map.entry("A1F83G8C2ARO7P", "EU"),  // 英国
-            Map.entry("A13V1IB3VIYZZH", "EU"),  // 法国
-            Map.entry("A1PA6795UKMFR9", "EU"),  // 德国
-            Map.entry("A1RKKUPIHCS9HS", "EU"),  // 西班牙
-            Map.entry("APJ6JRA9NG5V4", "EU"),   // 意大利
-            Map.entry("A39IBJ37TRP1C6", "FE"),  // 澳大利亚
-            Map.entry("A1VC38T7YXB528", "FE")   // 日本
-    );
-
     // ==================== 限流（统一走 SpiRateLimiter） ====================
     // 旧实现为本类私有 synchronized 滑动窗口：持锁 Thread.sleep 会阻塞所有店铺线程，
     // 且窗口按客户端实例而非 (shopId, endpoint) 维度统计。现与 OrdersClient 对齐，
@@ -120,13 +101,10 @@ public class FbaInventoryClient {
             throw new IllegalArgumentException("No credential found for shopId=" + shopId);
         }
 
-        String region = mapMarketplaceToRegion(marketplaceId);
-        String endpoint = SPAPI_ENDPOINTS.get(region);
-        if (endpoint == null) {
-            throw new IllegalArgumentException("No SP-API endpoint for region=" + region);
-        }
+        String region = MarketplaceRegistry.resolveRegion(marketplaceId);
+        String endpoint = MarketplaceRegistry.resolveEndpointForRegion(region);
+        String host = MarketplaceRegistry.resolveHost(region);
 
-        String host = endpoint.replace("https://", "");
         String accessToken = lwaTokenManager.getToken(credential);
 
         List<JsonObject> allItems = new ArrayList<>();
@@ -289,12 +267,5 @@ public class FbaInventoryClient {
                 .replace("+", "%20")
                 .replace("*", "%2A")
                 .replace("%7E", "~");
-    }
-
-    /**
-     * 将 Marketplace ID 映射到 SP-API 区域（NA/EU/FE），未知时默认 NA。
-     */
-    public String mapMarketplaceToRegion(String marketplaceId) {
-        return MARKETPLACE_REGION.getOrDefault(marketplaceId, "NA");
     }
 }
