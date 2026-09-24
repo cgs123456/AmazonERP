@@ -67,7 +67,11 @@ spapi:
   aws-secret-key: ${AWS_SECRET_KEY:}
   region: ${AWS_REGION:us-east-1}
   lwa-endpoint: https://api.amazon.com/auth/o2/token
-
+  # 生产启动自检开关（spec §1.9 A3），默认 false 保持离线开发/CI 口径不变。
+  # 置为 true 后：启用 mock profile 或 amz_shop_credential 无任何凭证 → 拒绝启动。
+  # 生产由 application-prod.yml 置为 true；仅离线开发可显式关闭。
+  startup:
+    require-credentials: ${SPAPI_REQUIRE_CREDENTIALS:false}
 # JWT security config
 jwt:
   secret-key: ${JWT_SECRET_KEY:}

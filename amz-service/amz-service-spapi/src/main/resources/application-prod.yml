@@ -1,0 +1,16 @@
+# 生产 profile（SPRING_PROFILES_ACTIVE=prod）。
+#
+# 本文件只做一件事：把“缺凭证 / 误用 mock profile”从**静默降级**变成**启动失败**（fail-closed）。
+# 依据 spec §1.9 A3：生产 profile 启动时必须校验凭证存在性，不通过即拒绝启动。
+#
+# 注意：
+#   1) 生产环境必须显式设置 SPRING_PROFILES_ACTIVE=prod。
+#      默认值是 application.yml 中的 mock（离线样例数据），**禁止**继承到生产：
+#      带着 mock 启动不会报错，只会返回样例数据，把“未接通”伪装成“正常”。
+#   2) 若误把 mock 与 prod 同时激活（如 SPRING_PROFILES_ACTIVE=prod,mock），
+#      ConnectorStartupCheck 会直接拒绝启动，而不是静默取其一。
+#   3) 凭证写入路径见 spec §4.8；加密密钥 AMZ_CRYPTO_KEY 必须是 32 字节 base64，
+#      否则 CryptoUtil 在自身初始化阶段即失败（不会读到半可用状态）。
+spapi:
+  startup:
+    require-credentials: true
