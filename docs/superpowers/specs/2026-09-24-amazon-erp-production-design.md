@@ -21,7 +21,7 @@
 3. **财务事实源**：缺少借贷平衡凭证、真实 FIFO 成本层、多币种汇率、税务规则、结算对账和期末关账。
 4. **集成事实源**：外部调用、Webhook、MQ、缓存和数据库之间没有统一的 Outbox/Inbox、幂等和失败重放机制。
 
-同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **38 条（P0-01…P0-38）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、可实测的供应链漏洞基线，以及**“Real 客户端”名不副实与失败静默降级**（P0-22）。第 10 轮针对“暂时没有 API，但必须做到有凭证就能直接用”这一目标又补了 8 条（P0-23…P0-30）：凭证表 DDL 无任何自动执行路径、SP-API 默认 profile 为 `mock` 使财务域三类客户端在部署形态下返回样例数据、Nacos 地址变量在 Compose 与代码之间不一致且 16 份 `bootstrap.yml` 在当前依赖下不生效、spapi 是订单与库存关键路径的单点却只实现 6 类客户端、`ReportsRealClient` 读错官方字段名使结算报表文档 ID 恒为 null、限流默认配额最高比官方宽松约 120 倍且 3 个在用 endpointTag 无策略、k8s 自带 Secret 的 `AMZ_CRYPTO_KEY` 解码为 34 字节使 spapi 启动即崩、Feeds 结果报告永不下载使被拒行永久丢失。第 13 轮用真 YAML 解析器（PyYAML 6.0.3）与 JVM 运行时探针再钉死两类部署期缺陷（P0-31、P0-32）：order/product 的 `RedissonConfig` 硬编码第三方公网 Redis `121.37.250.15:6379`，且所读 `spring.redis.host` 键在 Spring Boot 3 下已改名、全仓无任何 yml 或环境变量可覆盖（实测 45,292 ms 后抛 `RedisConnectionException`）；`docker-compose.yml` 实测 31 个 service、`env_file` 0 次、`REDIS_HOST` 0 次、`RABBITMQ_HOST` 仅 order+finance、`MYSQL_HOST` 仅 spapi，16 份 k8s Deployment 全部不注入 `SPRING_PROFILES_ACTIVE`（`JAVA_OPTS` 已逐字核对为纯 JVM 参数），使 15 个 `@Profile("mock")` 客户端在两种部署形态下都会伪造成功。第 17 轮再追加 2 条**部署期 schema 引导**阻断（P0-33、P0-34）：Compose 路径会先由 `docker/init-sql/` 建表、再撞上从未配置过的 Flyway 基线，k8s 路径则连 14 个业务库都没有，两条路径都起不来。第 22 轮先用官方文档纠正一条**被写进早期前提的假设**（SP-API 自 2023-10-02 起不再要求 AWS SigV4，见 1.9.2），再追加 3 条 P0：**P0-35** 官方必填头 `user-agent` 全仓缺失（实测命中 0，JDK 默认 UA 不含 App 名与版本）、**P0-36** marketplace→region 映射 23 个 ID 缺 13 个且未知值静默回落 NA（fail-open）、**P0-37** 无 Restricted Data Token 使订单 PII 没有合规获取路径（客服/RMA 整链不可交付）、**P0-38** AWS 密钥缺失时不跳过签名而是发出 `Credential=null` 畸形头（把 AWS 密钥改成可选的**前置修复**）。
+同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **38 条（P0-01…P0-38）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、可实测的供应链漏洞基线，以及**“Real 客户端”名不副实与失败静默降级**（P0-22）。第 10 轮针对“暂时没有 API，但必须做到有凭证就能直接用”这一目标又补了 8 条（P0-23…P0-30）：凭证表 DDL 无任何自动执行路径、SP-API 默认 profile 为 `mock` 使财务域三类客户端在部署形态下返回样例数据、Nacos 地址变量在 Compose 与代码之间不一致且 16 份 `bootstrap.yml` 在当前依赖下不生效、spapi 是订单与库存关键路径的单点却只实现 6 类客户端、`ReportsRealClient` 读错官方字段名使结算报表文档 ID 恒为 null、限流默认配额最高比官方宽松约 120 倍且 3 个在用 endpointTag 无策略、k8s 自带 Secret 的 `AMZ_CRYPTO_KEY` 解码为 34 字节使 spapi 启动即崩、Feeds 结果报告永不下载使被拒行永久丢失。第 13 轮用真 YAML 解析器（PyYAML 6.0.3）与 JVM 运行时探针再钉死两类部署期缺陷（P0-31、P0-32）：order/product 的 `RedissonConfig` 硬编码第三方公网 Redis `121.37.250.15:6379`，且所读 `spring.redis.host` 键在 Spring Boot 3 下已改名、全仓无任何 yml 或环境变量可覆盖（实测 45,292 ms 后抛 `RedisConnectionException`）；`docker-compose.yml` 实测 31 个 service、`env_file` 0 次、`REDIS_HOST` 0 次、`RABBITMQ_HOST` 仅 order+finance、`MYSQL_HOST` 仅 spapi，16 份 k8s Deployment 全部不注入 `SPRING_PROFILES_ACTIVE`（`JAVA_OPTS` 已逐字核对为纯 JVM 参数），使 15 个 `@Profile("mock")` 客户端在两种部署形态下都会伪造成功。第 17 轮再追加 2 条**部署期 schema 引导**阻断（P0-33、P0-34）：Compose 路径会先由 `docker/init-sql/` 建表、再撞上从未配置过的 Flyway 基线，k8s 路径则连 14 个业务库都没有，两条路径都起不来。第 22 轮先用官方文档纠正一条**被写进早期前提的假设**（SP-API 自 2023-10-02 起不再要求 AWS SigV4，见 1.9.2），再追加 4 条 P0：**P0-35** 官方必填头 `user-agent` 全仓缺失（实测命中 0，JDK 默认 UA 不含 App 名与版本）、**P0-36** marketplace→region 映射 23 个 ID 缺 13 个且未知值静默回落 NA（fail-open）、**P0-37** 无 Restricted Data Token 使订单 PII 没有合规获取路径（客服/RMA 整链不可交付）、**P0-38** AWS 密钥缺失时不跳过签名而是发出 `Credential=null` 畸形头（把 AWS 密钥改成可选的**前置修复**）。
 
 需要特别说明的一点自查：初稿曾把“AI 工具会写生产数据”当作整体结论，本轮逐行核对后收窄为**只有 `cross_marketplace_listing` 一条真实写入链路**（详见 1.3 节的诚实修正）。同样，“JWT 空密钥静默可用”的假设也被推翻——`JwtUtil.init()` 在密钥为空时直接让服务启动失败，这是正向设计。
 
@@ -161,7 +161,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | 库存 | `amz_fba_inventory` 主要是亚马逊快照；`avg7Days/avg30Days` 未完整填充；null 被当 0 可能导致 DOS 误判；upsert 先查后写 | 外部快照层、内部库存台账层、可售补货层；预占/扣减/冲销/调拨/退货；原子条件更新 |
 | 采购 | 1688 真实客户端自述“未校准”（`Alibaba1688Signer:24`、`Alibaba1688TokenManager:26`、`Alibaba1688RealClient:37-38`）；token 未按店铺隔离（单值 `alibaba.refresh-token` + Redis 全局 key）；FBA FIFO 出库无行锁和条件更新；多批次取首条 | 供应商生命周期、收货、发票、付款、三单匹配、容差、批次和状态机 |
 | 物流 | 有仓库和库存表，但出库、拣货、打包、面单、轨迹、调拨不完整；多仓保存非原子 | WMS 作业单据、库位、两阶段调拨、承运商和轨迹、库存移动账 |
-| 客服 | 工单/RMA 表存在，但店铺归属校验和状态机不完整；PII 无生命周期；买家消息客户端 `MessagingApiRealClient` 无 SigV4 且端点与真实 SP-API Messaging 不符，缺 token 时静默返回空列表/false | SLA、RMA 收货/检验/退款/补发、邮箱与聊天 PII 治理、可审计操作 |
+| 客服 | 工单/RMA 表存在，但店铺归属校验和状态机不完整；PII 无生命周期；买家消息客户端 `MessagingApiRealClient` 端点与真实 SP-API Messaging 不符（`MessagingApiRealClient.java:38` 默认主机 `https://sellingpartnerapi.amazon.com` 不是三个官方主机之一）、且 41 行只读单套全局 `spapi.lwa.access-token`（多店必然串用），缺 token 时静默返回空列表/false —— 注意：**根因不是“缺 SigV4”**，该签名自 2023-10-02 起对 SP-API 已无意义（见 1.9.2） | SLA、RMA 收货/检验/退款/补发、邮箱与聊天 PII 治理、可审计操作 |
 | 财务 | 结算解析要求过宽；一次加载全店明细；成本是加权平均；VAT 硬编码；金蝶“真实”客户端无条件返回 `KINGDEE_MOCK_` 占位号且凭证落 `SYNCING` 后无法重试（`FinanceServiceImpl:190-206`）；结算行 `row_key` 不含 `shop_id/currency` 却全局唯一，跨店同业务行静默丢失（`V2__settlement_detail.sql:22`） | 双分录账本、费用/退款/汇率/税务、FIFO、结算对账、期末关账、外部总账 |
 | 广告 | 真实客户端为骨架：全局单套 profile/token（`AdvertisingApiRealClient:52-56`）、ClientId 可能为空串（182 行）、失败静默 `emptyList()`；未真正完成 refresh token 交换；分页、429、Retry-After、nextToken 不完整；服务返回硬编码 campaign | OAuth/profile 隔离、统一限流与分页、日指标唯一键、归因窗口、自动化护栏、变更审计 |
 | 商品/Listing | 更新未同步 ES；MongoDB 属性与 MySQL 无一致性机制；A+ 永远 true；Feed `DONE` 即置 `SUCCESS` 但从不下载 `resultDocumentId` 结果报告、超时后任务永久停留 `SUBMITTED`（`ListingCopyService:236-257`）；`DEFAULT_PRODUCT_TYPE` 为占位值 | 版本化 Listing、Feed 结果闭环、Outbox 派生同步、ES 强制租户/店铺过滤 |
@@ -391,9 +391,9 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 
 **为什么不能省这一步**：模拟数据（第 7 章）与桩回放验证的是系统内部行为与协议结构，不验证平台是否接受我方请求。把 E1/E2 当 E4 用，正是“看起来能对接、上线才发现跑不通”的主要成因。
 
-### 1.9.2 SP-API 认证事实与三处协议级缺陷（第 22 轮，含官方定论）
+### 1.9.2 SP-API 认证事实与四处协议级缺陷（第 22 轮，含官方定论）
 
-**本节先纠正一条被写进早期设计前提的假设，再登记 3 条新 P0。任何与本节冲突的旧表述，以本节为准。**
+**本节先纠正一条被写进早期设计前提的假设，再登记 4 条新 P0。任何与本节冲突的旧表述，以本节为准。**
 
 #### （1）定论：SP-API 自 2023-10-02 起不再要求 AWS SigV4
 
@@ -462,76 +462,6 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 #### （6）优先级重排（相对第 19–21 轮）
 
 `user-agent`（P0-35）与 marketplace 全表 fail-closed（P0-36）都是**零凭证可离线完成、且直接决定“凭证到位当天能否跑通”**的项，优先级**高于** SigV4 KAT；RDT（P0-37）是**业务可用性的前置条件**。据此把实施计划 Task 11 的目标从“SigV4 签名 KAT”调整为“**LWA token 交换 + 请求构造契约测试（含必填头与 marketplace 解析）**”，SigV4 KAT 与 Clock 注入**保留但降级为前向保险**。
-
-### 1.9.1 零凭证条件下的 API-Ready 取证规范（第 19 轮新增）
-
-**本节回答的问题**：用户口径是“暂时没有对接 API，但需要有对接能力，有 API 就可以直接使用”。要把它变成工程承诺，必须先划清**可证明的边界**：
-
-- 没有凭证时**可以**证明：我方代码严格按官方契约实现（字段名、路径、签名算法、错误分类、分页、限流配额与幂等）。
-- 没有凭证时**不能**证明：平台是否接受我方实现。自建桩由我方编写，只能证明“客户端与我的假设一致”；它不能替代一次真实交互。
-
-因此本节把“有 API 就能直接用”定义为**两级交付**：(a) 无凭证阶段把 A1–A8 中可离线取证的部分取到最高等级，并固化为 CI 门禁；(b) 凭证到位当天用一条固定 runbook 产出 A5 要求的联调记录，**不需要改代码、不需要临时拼脚本**。
-
-**（1）证据等级**
-
-| 等级 | 名称 | 取证方式 | 无凭证可得 | 说明 |
-|---|---|---|---|---|
-| E0 | 无证据 | —— | 是 | 类名 `*RealClient`、`@Profile("!mock")`、人工声明都不算证据 |
-| E1 | 自证 | 测试内重写同一公式/假设后比对 | 是 | 只能证明实现与测试同源一致，**不能**作为 A1 通过依据 |
-| E2 | 桩回放 | 本地 stub 按官方模型返回样例，断言路径/查询/头/分页/错误码 | 是 | 证明协议**结构**一致，仍不证明平台接受 |
-| E3 | 契约锁定 | 官方 OpenAPI 模型快照 + 哈希锁 + 已知答案测试（KAT，期望值取自官方文档或官方 SDK） | 是 | 无凭证阶段的**最高**等级 |
-| E4 | 沙箱联调 | 真实凭证打通平台沙箱或最小只读 operation | **否** | 沙箱仍需应用注册与凭证；**本轮未能联网复核**“沙箱是否覆盖全部 operation、是否与生产等价”，凭证到位时以官方文档确认 |
-| E5 | 生产联调 | 生产凭证 + 真实店铺 + 覆盖 429/限流头/文档下载 | **否** | “可生产”的必要条件 |
-
-**（2）A1–A8 的最低证据（无凭证阶段的上限）**
-
-| 标准 | 无凭证阶段可达 | 凭证到位后必须补证 |
-|---|---|---|
-| A1 认证/分页/幂等/错误分类 | E3（KAT + 官方模型 + 桩回放） | E4：真实 401/403/404/429 各一次 |
-| A2 缺凭证显式失败 | E3（断言错误码，且**不**返回空列表/null/占位号；可完全离线） | 无 |
-| A3 启动自检 | E3（非法密钥长度、缺凭证、mock profile 三种情形均拒绝启动） | E4：真实凭证下自检通过 |
-| A4 凭证归属与轮换 | E3（两店隔离 + 密文落库 + 轮换/吊销） | E4：两店真实 token 互不串用 |
-| A5 以联调记录为准 | **不可伪造，上限 E1** | **E4/E5，这是唯一取证路径** |
-| A6 能力清单一致 | E3（静态扫描：实现 operation ⊆ 清单，未实现项显式标注） | 无 |
-| A7 失败可重放 | E3（注入失败桩 + 重试/DLQ/重放测试） | E4：真实 429/5xx 触发重放 |
-| A8 限流与配额真实 | E3（逐 operation 配额与官方 usage plan 逐条比对 + 虚拟时钟验证不阻塞） | E4：实测 `x-amzn-RateLimit-Limit` 回填 |
-
-**（3）本轮实测：取证能力本身有缺口（源码证据）**
-
-| 编号 | 缺口 | 证据（实测） | 影响 |
-|---|---|---|---|
-| G1 | SP-API 端点不可覆盖 | 全仓 `sellingpartnerapi-{na,eu,fe}.amazon.com` 命中 **18** 处：`OrdersClient.java:61-65`、`FeedsClient.java:61-65`、`FbaInventoryClient.java:56-60`、`SpApiGateway.java:45-49` 各 3 个主机常量，`AwsSigV4Signer.java:42` javadoc 1 处，`AwsSigV4SignerTest.java` 5 处；全仓搜索 `base-url-override` / `SPAPI_ENDPOINT` / `SPAPI_BASE` / `spapi.base` **命中 0**，`SpApiConfig` 只有 `awsAccessKey`/`awsSecretKey`/`region`/`lwaEndpoint` 四个字段 | 客户端无法指向本地桩 → A1/A7/A8 连 E2 都取不到 |
-| G2 | HTTP 客户端不可注入 | 5 处字段级自建 `HttpClient`：`OrdersClient.java:83`、`FeedsClient.java:80`、`FbaInventoryClient.java:83`、`SpApiGateway.java:64-66`、`LwaTokenManager.java:59-61` | 连接/超时/重试没有可替换缝，桩回放必须先改代码 |
-| G3 | 时钟不可注入 | `AwsSigV4Signer.java:54` 在 `sign()` 内部取 `ZonedDateTime.now(ZoneOffset.UTC)`；`AwsSigV4SignerTest.java:196-209` 的测试注释自己写明“时间敏感场景的幂等性需 mock 时钟”，并把断言降级为 `assertNotNull` | 同一输入两次调用结果不同 → 无法做 KAT |
-| G4 | **23 个签名测试中 0 条 KAT** | `AwsSigV4SignerTest`（13）+ `Alibaba1688SignerTest`（7）+ `PlatformSignerCalibrationTest`（3）= 23 个 `@Test`；全仓测试源码里 64 位十六进制字面量只有 3 处，且都是空串的 SHA-256（`AwsSigV4SignerTest.java:44/82/93`），**没有一处是期望签名**；`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写了同一拼接公式 | 属 E1 自证：签名算法写错也全绿。这是“有 API 就能用”最危险的假阳性 |
-| G5 | LWA 端点不可覆盖 | `amz-service-spapi/src/main/resources/application.yml:69` 写死 `https://api.amazon.com/auth/o2/token`；`k8s/configmap.yaml:43` 注入的 `AWS_LWA_ENDPOINT` 代码不读（死配置，见 1.3） | token 交换同样无法桩测 |
-| G6 | 全仓无 HTTP 桩 | 测试源码中 `WireMock`/`MockWebServer`/`com.sun.net.httpserver` 命中 0；`okhttp3` 仅出现在 `amz-service-ai` 的 `ImPushServiceTest.java:3-8`（传递依赖，非显式 test 依赖） | A2/A7/A8 的离线取证缺少基座 |
-
-> 本节附带发现（下一轮并入 P0 登记表统一编号）：`LwaTokenManager.java:169-182` 的 `sha256Hex` 在异常分支**静默退化**为 `Integer.toHexString(Objects.hashCode(input))`（注释自称“理论不可达”），而该值是多店 token 缓存键的一部分；一旦触发，不同店铺的缓存键可能碰撞，导致跨店串用 access token（A4）。同文件 `:57` 的 `keyLocks` 只增不删，凭证轮换会持续累积。
-
-**（4）目标设计要求（对实施的硬约束）**
-
-1. **端点覆盖必须存在，且必须 fail-closed**：新增 `spapi.base-url-override` 与 `spapi.lwa-endpoint-override`，仅非生产 profile 生效；生产 profile 下该键非空即**启动失败**；覆盖值只允许 `http://127.0.0.1[:port]`、`http://localhost[:port]` 或显式 allowlist 域名；**禁止**把 `x-amz-access-token` 或 AWS 凭证发往 allowlist 之外的主机（防 SSRF 与凭证外泄）。
-2. **时钟注入**：`AwsSigV4Signer` 及所有参与签名的 `Instant.now()` / `System.currentTimeMillis()` 改为注入 `Clock`（生产 `Clock.systemUTC()`），使 KAT 可复现。
-3. **KAT 夹具纪律**：期望签名只能来自官方文档示例或**官方 SDK**在固定输入下的输出；夹具记录来源 URL、抓取日期、字节数、sha256（与 4.8/Task 3 的模型快照同纪律）。**禁止**用本仓库实现生成期望值，否则又回到 E1。
-4. **契约三件套**：官方模型（E3）→ 桩回放（E2）→ KAT（E3）全部进 CI 且不可 skip。
-5. **能力清单必须带证据等级**：`GET /api/connectors` 每个连接器返回 `evidenceLevel` 与 `apiReady`；`apiReady=true` 的最低条件是 A2/A3/A6 全通过且证据 ≥ E3；**“已接通”必须 ≥ E4**，“可生产”必须 E5 且 4.5/4.7/7.7 通过；前端标签只读该字段（4.8、附录 G.4/G.5）。
-
-**（5）凭证到位当天的一次性验收 runbook（A5 的唯一取证路径）**
-
-一条命令跑完并产出 `connector-acceptance-<connector>-<yyyyMMddHHmmss>.json`（另存 sha256），内容必须包含：
-
-| 项 | 要求 |
-|---|---|
-| 身份 | appId / sellerId / marketplaceId / region（**不含**任何明文密钥） |
-| 覆盖 operation | 每个启用 operation 至少一次成功样例（脱敏） |
-| 错误码 | 至少覆盖 401 / 403 / 404 / 429，记录平台原始 `code`/`message` |
-| 限流 | 至少一次读取 `x-amzn-RateLimit-Limit`，记录回填后的本地窗口 |
-| 文档链路 | Reports 必须取到 `reportDocumentId` 并成功下载（P0-27 / P0-30 的闭环证明） |
-| 时间与版本 | 执行时间、镜像 digest、配置文件版本 |
-| 结论 | A1–A8 逐项通过/不通过与证据指针；任一 A5 项缺失即“未接通” |
-
-**为什么不能省这一步**：模拟数据（第 7 章）与桩回放验证的是系统内部行为与协议结构，不验证平台是否接受我方请求。把 E1/E2 当 E4 用，正是“看起来能对接、上线才发现跑不通”的主要成因。
 
 ## 2. 目标架构、租户模型与运行单元
 
@@ -1761,7 +1691,7 @@ git grep -n "SYNTHETIC" -- tools/synthetic-data
 - 数据：修复报表数据库漂移；建立单一迁移入口；阻止 Compose/mock 进入生产。
 - 运维：开启 TLS、Actuator 限制、NetworkPolicy、备份和基础告警。
 - CI：Checkstyle 阻断、全模块编译、迁移测试、secret/依赖/镜像扫描。
-- 连接器协议合规：补 SP-API 必填 `user-agent`（P0-35）、marketplace→region 单一事实源且未知值 fail-closed（P0-36）、AWS 密钥降为可选且不再作为门槛（1.9.2）、RDT 在客服/RMA 交付前落地（P0-37）。
+- 连接器协议合规：补 SP-API 必填 `user-agent`（P0-35）、marketplace→region 单一事实源且未知值 fail-closed（P0-36）、RDT 在客服/RMA 交付前落地（P0-37）、AWS 密钥缺失时跳过签名而不是发出 `Credential=null` 畸形头（P0-38）；AWS 密钥整体降为可选、不再作为接入门槛（1.9.2）。
 
 验收门槛：P0 表中每项有修复、自动化测试和证据；没有未处理的 critical/high 安全问题。
 
@@ -2018,7 +1948,7 @@ git grep -n "SYNTHETIC" -- tools/synthetic-data
 - 一致性：本文假设与前面设计章节的工作假设保持一致；若评审推翻部署形态或数据库选择，需要重新评估租户、迁移和成本章节。
 - 范围：本文覆盖业务、性能、安全、可靠性、运维、合规、数据迁移和验收；不包含具体源码实现，符合“设计先行”的流程。
 - 歧义：PII 保留、税务、RPO/RTO、容量、预算和运行单元收敛均列为待确认决策，未伪装成已确定事实。
-- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。(10) 前几轮“k8s HPA 多副本会导致调度任务双跑”的推测被**撤回**——实测 `DistributedJobLock.runWithLock` 被 10 个调度器使用，互斥成立；该类别缺陷应改记为 `DistributedJobLock` 自身在 Redis 不可用时 fail-open（§1.8 已如实记录）；(11) “`SpiRateLimiter` 已参考官方配额”被推翻——默认 `orders=30/30s` 与官方 0.0167 req/s 相差约 60 倍，`feeds`/`fees`/`finances` 三个在用 endpointTag 没有策略，`listings` 策略无调用方；(12) “SP-API 客户端已可用”被收窄——`ReportsRealClient:80` 取错官方字段名（应为 `reportDocumentId`），结算报表文档 ID 恒为 null；(13) “k8s 已具备可部署 Secret”被推翻——`AMZ_CRYPTO_KEY` 解码为 34 字节，`CryptoUtil` 硬校验 32 字节会让 spapi 启动失败；(14) “Feeds 提交流程已闭环”被推翻——`FeedsClient` 从不下载 `resultFeedDocumentId`，被拒行没有读取渠道；(15) “SP-API 默认加载真实实现”被推翻——默认 profile 为 `mock`，部署清单也不设置 profile，财务域三类客户端返回样例数据；(16) 本规格第 1～7 轮整体未审查 `amz-service-spapi`，本轮补审（附录 G.4）。 (17) “`JAVA_OPTS` 可能带 `-Dspring.profiles.active`”的假设被**推翻**——`k8s/configmap.yaml:47-48` 两处 `JAVA_OPTS`/`JAVA_OPTS_GATEWAY` 均只含堆内存与 GC 参数，16 份 Deployment 无其它 profile 来源（即“k8s 部署会跑 mock”结论**成立且覆盖全部 16 份**）。(18) Redisson 硬编码公网 IP 的影响面**收窄**为 order / product 两个模块——spapi 虽引 `redisson-spring-boot-starter` 但无自定义 `RedissonConfig`；同时该配置键在 `spring.data.*` 迁移后**必然失效**（不是“可能失效”），实测 45.3 s 连接超时。(19) `.env.example` 键数口径修正为 **71 行 / 36 个键**（此前“37 键”说法作废，以本轮正则 `^[A-Z][A-Z0-9_]*=` 计数为准）；“缺 Nacos 与平台凭证”的结论方向不变。(20) `docker-compose.yml` 服务数口径修正为 **31 个 service**（README “17 服务”与旧审计“约 30”均作废）；`env_file` 命中 0，不存在“compose 会统一加载 .env 补齐变量”的兜底路径。(21) 本规格 4.6 表的官方限流数值**自我纠错**——第 16 轮逐文件比对官方 OpenAPI 模型后确认 5 处与模型原文不符（`getReportDocument` 官方 0.0167/15 而非 2/15，使“比官方更严”的结论反向；`reports.getReport` 2/15 未单列；`createFeedDocument` 官方 0.5/15 与 `createFeed` 官方 0.0083/15 被写反；`getFeed`/`cancelFeed` 官方 2/15 而非 0.0222/10；`fees` 实际调用的是 `getMyFeesEstimates`（0.5/1）而非 `getMyFeesEstimateForASIN`（1/2）），以修订后的 4.6 与 1.5.1 为准；(22) “wimoor 技术栈偏旧（Spring Boot 2.0 / JDK 8）”被**推翻**——实测根 `pom.xml` 为 spring-boot-starter-parent **2.6.13** + `<java.version>9</java.version>`，且其每店铺持久化限流门控与文档解密/解压链是本项目可逐行参照的实现（1.5.1 第 8、9 条）；(23) “`x-amzn-RateLimit-Limit` 全仓只读取不闭环”被**收窄**——`FeedsClient.sendWithRetry:308-315` 已在 429 分支读取响应头并回写限流器，缺陷是覆盖面（单端点、仅 429、不恢复、不持久化、不跨进程）。(24) 附录 F.3 增补**本轮复核实例**与**已排除项**——`FeedsController` 的 2 个端点与 `SpapiController#saveCredential` 属“无方法级注解但方法内 `isShopAllowed`”的 C 类（不是 A 类缺口），`GET /spapi/status` 属 B 类探针；`InventoryController`/`ReplenishmentController`/`FinancialDataController`/`FinanceController`/`ReportController`/`OrderAuditController` 经 328 行矩阵复核**无守卫端点均为 0**，后续审计不必重复排查。 (25) 第 17 轮新增两条部署期 schema 引导阻断并修正附录 B 口径——(a) **P0-33**：`baseline-on-migrate` 全仓唯一出现处是 `.start-backend-final.bat:9` 的命令行参数，配置文件 **0 处**，而 `docker-compose.yml:41` 会先把 105 张表建好，Flyway 10.20.0 在“非空 schema + 无 history 表 + baseline=false”下抛 `Found non-empty schema(s) …`，故 Compose 路径 14 个服务首启必失败（**静态推断**：依赖存在 + 配置缺失 + Flyway 自身错误串；本机无 MySQL 未复跑，需一次真实启动确认）。(b) **P0-34**：`k8s/infra/mysql-statefulset.yaml` 只挂 `mysql-data`，`k8s/` 全域无 init SQL / Job / initContainer，14 个业务库一个都不存在。(c) 附录 B 由“约 57 / 约 105”改为实测 **58 / 105 / 106（并集 107）**，并确认 `init_all_tables.sql` 缺 49 张、`amz_report` 全仓无 `CREATE DATABASE`。 (26) 第 18 轮纠正 `amz-service-report` 的“无 datasource/靠 Feign 聚合”结论：源码实测 6 个 `extends BaseMapper`、6 个 `@TableName`、`mysql-connector-j`/`flyway-core` 依赖与 `db/migration/V1__init.sql`，但 `application.yml` 没有 datasource；因此 P0-07 的修复方向是把 `amz_report` 纳入建库并补 datasource，P0-32/附录 F 中“report 反向过度注入”的旧口径作废。 (27) 第 19 轮新增 §1.9.1「零凭证条件下的 API-Ready 取证规范」，并**下调两处既有结论的证据等级**：(a) 全仓 3 个签名测试文件共 **23 个 `@Test` 中 0 条已知答案测试（KAT）**——`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写同一拼接公式，属 E1 自证，不得再作为 A1 的证据；(b) 实测“取证能力”本身有 6 条缺口（`sellingpartnerapi-{na,eu,fe}` 硬编码 18 处且无覆盖键、`HttpClient` 字段自建 5 处、`AwsSigV4Signer.java:54` 内部取 `ZonedDateTime.now()`、`application.yml:69` LWA 端点写死、全仓无 HTTP 桩）。据此把“有 API 就能直接用”重新定义为 E1–E5 分级取证 + 凭证到位当天的一次性 runbook，并明确 **A5 联调记录不可伪造**（无凭证阶段上限 E1）。 (28) 第 22 轮据官方文档**推翻“SP-API 必须 SigV4”这一早期前提**（2023-10-02 起 Amazon 忽略该签名，见 1.9.2），同时新增 P0-35（必填头 `user-agent` 全仓缺失，实测命中 0 且 JDK 默认 UA 不含 App 名/版本）、P0-36（marketplace→region 四份副本各仅 10 条、缺 13 个、未知值静默回落 NA）、P0-37（无 RDT，订单 PII 无合规路径）；并把“沙箱可自助注册但需企业证件 + 视频核验”“沙箱限流 5 rps / burst 15”“`Retry-After` 官方命中 0 次”“`x-amzn-RateLimit-Limit` 仅见于 20x/400/404”“GitHub 无成熟开源亚马逊 ERP 可直接替换”等结论一并固化，避免后续轮次重复排查。 (27) 第 19 轮新增 §1.9.1「零凭证条件下的 API-Ready 取证规范」，并**下调两处既有结论的证据等级**：(a) 全仓 3 个签名测试文件共 **23 个 `@Test` 中 0 条已知答案测试（KAT）**——`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写同一拼接公式，属 E1 自证，不得再作为 A1 的证据；(b) 实测“取证能力”本身有 6 条缺口（`sellingpartnerapi-{na,eu,fe}` 硬编码 18 处且无覆盖键、`HttpClient` 字段自建 5 处、`AwsSigV4Signer.java:54` 内部取 `ZonedDateTime.now()`、`application.yml:69` LWA 端点写死、全仓无 HTTP 桩）。据此把“有 API 就能直接用”重新定义为 E1–E5 分级取证 + 凭证到位当天的一次性 runbook，并明确 **A5 联调记录不可伪造**（无凭证阶段上限 E1）。
+- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。(10) 前几轮“k8s HPA 多副本会导致调度任务双跑”的推测被**撤回**——实测 `DistributedJobLock.runWithLock` 被 10 个调度器使用，互斥成立；该类别缺陷应改记为 `DistributedJobLock` 自身在 Redis 不可用时 fail-open（§1.8 已如实记录）；(11) “`SpiRateLimiter` 已参考官方配额”被推翻——默认 `orders=30/30s` 与官方 0.0167 req/s 相差约 60 倍，`feeds`/`fees`/`finances` 三个在用 endpointTag 没有策略，`listings` 策略无调用方；(12) “SP-API 客户端已可用”被收窄——`ReportsRealClient:80` 取错官方字段名（应为 `reportDocumentId`），结算报表文档 ID 恒为 null；(13) “k8s 已具备可部署 Secret”被推翻——`AMZ_CRYPTO_KEY` 解码为 34 字节，`CryptoUtil` 硬校验 32 字节会让 spapi 启动失败；(14) “Feeds 提交流程已闭环”被推翻——`FeedsClient` 从不下载 `resultFeedDocumentId`，被拒行没有读取渠道；(15) “SP-API 默认加载真实实现”被推翻——默认 profile 为 `mock`，部署清单也不设置 profile，财务域三类客户端返回样例数据；(16) 本规格第 1～7 轮整体未审查 `amz-service-spapi`，本轮补审（附录 G.4）。 (17) “`JAVA_OPTS` 可能带 `-Dspring.profiles.active`”的假设被**推翻**——`k8s/configmap.yaml:47-48` 两处 `JAVA_OPTS`/`JAVA_OPTS_GATEWAY` 均只含堆内存与 GC 参数，16 份 Deployment 无其它 profile 来源（即“k8s 部署会跑 mock”结论**成立且覆盖全部 16 份**）。(18) Redisson 硬编码公网 IP 的影响面**收窄**为 order / product 两个模块——spapi 虽引 `redisson-spring-boot-starter` 但无自定义 `RedissonConfig`；同时该配置键在 `spring.data.*` 迁移后**必然失效**（不是“可能失效”），实测 45.3 s 连接超时。(19) `.env.example` 键数口径修正为 **71 行 / 36 个键**（此前“37 键”说法作废，以本轮正则 `^[A-Z][A-Z0-9_]*=` 计数为准）；“缺 Nacos 与平台凭证”的结论方向不变。(20) `docker-compose.yml` 服务数口径修正为 **31 个 service**（README “17 服务”与旧审计“约 30”均作废）；`env_file` 命中 0，不存在“compose 会统一加载 .env 补齐变量”的兜底路径。(21) 本规格 4.6 表的官方限流数值**自我纠错**——第 16 轮逐文件比对官方 OpenAPI 模型后确认 5 处与模型原文不符（`getReportDocument` 官方 0.0167/15 而非 2/15，使“比官方更严”的结论反向；`reports.getReport` 2/15 未单列；`createFeedDocument` 官方 0.5/15 与 `createFeed` 官方 0.0083/15 被写反；`getFeed`/`cancelFeed` 官方 2/15 而非 0.0222/10；`fees` 实际调用的是 `getMyFeesEstimates`（0.5/1）而非 `getMyFeesEstimateForASIN`（1/2）），以修订后的 4.6 与 1.5.1 为准；(22) “wimoor 技术栈偏旧（Spring Boot 2.0 / JDK 8）”被**推翻**——实测根 `pom.xml` 为 spring-boot-starter-parent **2.6.13** + `<java.version>9</java.version>`，且其每店铺持久化限流门控与文档解密/解压链是本项目可逐行参照的实现（1.5.1 第 8、9 条）；(23) “`x-amzn-RateLimit-Limit` 全仓只读取不闭环”被**收窄**——`FeedsClient.sendWithRetry:308-315` 已在 429 分支读取响应头并回写限流器，缺陷是覆盖面（单端点、仅 429、不恢复、不持久化、不跨进程）。(24) 附录 F.3 增补**本轮复核实例**与**已排除项**——`FeedsController` 的 2 个端点与 `SpapiController#saveCredential` 属“无方法级注解但方法内 `isShopAllowed`”的 C 类（不是 A 类缺口），`GET /spapi/status` 属 B 类探针；`InventoryController`/`ReplenishmentController`/`FinancialDataController`/`FinanceController`/`ReportController`/`OrderAuditController` 经 328 行矩阵复核**无守卫端点均为 0**，后续审计不必重复排查。 (25) 第 17 轮新增两条部署期 schema 引导阻断并修正附录 B 口径——(a) **P0-33**：`baseline-on-migrate` 全仓唯一出现处是 `.start-backend-final.bat:9` 的命令行参数，配置文件 **0 处**，而 `docker-compose.yml:41` 会先把 105 张表建好，Flyway 10.20.0 在“非空 schema + 无 history 表 + baseline=false”下抛 `Found non-empty schema(s) …`，故 Compose 路径 14 个服务首启必失败（**静态推断**：依赖存在 + 配置缺失 + Flyway 自身错误串；本机无 MySQL 未复跑，需一次真实启动确认）。(b) **P0-34**：`k8s/infra/mysql-statefulset.yaml` 只挂 `mysql-data`，`k8s/` 全域无 init SQL / Job / initContainer，14 个业务库一个都不存在。(c) 附录 B 由“约 57 / 约 105”改为实测 **58 / 105 / 106（并集 107）**，并确认 `init_all_tables.sql` 缺 49 张、`amz_report` 全仓无 `CREATE DATABASE`。 (26) 第 18 轮纠正 `amz-service-report` 的“无 datasource/靠 Feign 聚合”结论：源码实测 6 个 `extends BaseMapper`、6 个 `@TableName`、`mysql-connector-j`/`flyway-core` 依赖与 `db/migration/V1__init.sql`，但 `application.yml` 没有 datasource；因此 P0-07 的修复方向是把 `amz_report` 纳入建库并补 datasource，P0-32/附录 F 中“report 反向过度注入”的旧口径作废。 (27) 第 19 轮新增 §1.9.1「零凭证条件下的 API-Ready 取证规范」，并**下调两处既有结论的证据等级**：(a) 全仓 3 个签名测试文件共 **23 个 `@Test` 中 0 条已知答案测试（KAT）**——`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写同一拼接公式，属 E1 自证，不得再作为 A1 的证据；(b) 实测“取证能力”本身有 6 条缺口（`sellingpartnerapi-{na,eu,fe}` 硬编码 18 处且无覆盖键、`HttpClient` 字段自建 5 处、`AwsSigV4Signer.java:54` 内部取 `ZonedDateTime.now()`、`application.yml:69` LWA 端点写死、全仓无 HTTP 桩）。据此把“有 API 就能直接用”重新定义为 E1–E5 分级取证 + 凭证到位当天的一次性 runbook，并明确 **A5 联调记录不可伪造**（无凭证阶段上限 E1）。 (28) 第 22 轮据官方文档**推翻“SP-API 必须 SigV4”这一早期前提**（2023-10-02 起 Amazon 忽略该签名，见 1.9.2），同时新增 P0-35（必填头 `user-agent` 全仓缺失，实测命中 0 且 JDK 默认 UA 不含 App 名/版本）、P0-36（marketplace→region 四份副本各仅 10 条、缺 13 个、未知值静默回落 NA）、P0-37（无 RDT，订单 PII 无合规路径）；并把“沙箱可自助注册但需企业证件 + 视频核验”“沙箱限流 5 rps / burst 15”“`Retry-After` 官方命中 0 次”“`x-amzn-RateLimit-Limit` 仅见于 20x/400/404”“GitHub 无成熟开源亚马逊 ERP 可直接替换”等结论一并固化，避免后续轮次重复排查。
 ---
 
 ## 附录 F：328 端点守卫矩阵与 82 条无守卫清单（本轮实测）
