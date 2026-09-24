@@ -621,6 +621,10 @@ Expected: PASS（既有 527 用例不回退）
 按 spec §1.9.1（5）写 `docs/superpowers/runbooks/connector-acceptance-runbook.md`：一条命令、产出 JSON 与 sha256、覆盖 401/403/404/429、限流头回填、Reports 文档下载断言、A1–A8 逐项结论；**不含任何明文密钥**。runbook 需写明**沙箱限流 5 rps / burst 15** 与“沙箱仅覆盖 2xx/400，其余错误码须在生产或按官方指引构造”（spec §1.9.2(5)）。
 
 > **进度（第 42 轮，2026-09-24）：runbook 已落盘并勾选本步。** `docs/superpowers/runbooks/connector-acceptance-runbook.md`（20,664 B / 305 行 / LF / 无 BOM）。**诚实边界**：runbook 只满足“落盘”，**“一条命令”今天不存在**（P0-52c），且平台错误码透出（P0-52a）与 `x-amzn-RateLimit-Limit` 结构化出口（P0-52b）缺失——见该文件 §1.3 与 §3.4。验收实际执行（A5）仍需真实凭证。
+> **进度（第 48 轮，2026-09-24）：P0-52c / P0-52d 已落地，runbook §3 的命令现已可执行。**
+新增 `tools/connector-acceptance/`（`acceptance_runner.py` + `run.ps1` + `run.sh` + 桩 `fake-service.py`）与 `amz-service-spapi` 的 `connector/ConnectorSelfDescription.java`（`GET /spapi/status` 现返回 `{service, connector, profile, mockClientsActive, startupCheckRan, startupRequireCredentials, loadedCredentialCount}`，使 runbook 硬约束 C1 在**进程外**可核验；`data` 由字符串变对象属响应结构变更，本仓已核对无调用方依赖）。
+两道闸门：①C1 不满足 → 退出码 2 且**不产出记录**；②桩自描述 `stub=true` 默认拒绝，须显式 `--allow-stub` 且 A5 封顶 E2。
+**诚实边界**：以上只在**本地桩**上实测（runner 自检 38 条断言全绿、桩端到端 `RC=1`；补齐 operator attestation 后 A1–A4/A6/A8 达标，只剩 A5 与 A7）——**从未对真实 `amz-service-spapi` 跑过**。第 42 轮的历史标注（“命令不存在”）在 §3.4 保留不改。P0-52b（限流头结构化出口）仍未修复。
 
 - [ ] **Step 7: 提交**
 
@@ -633,8 +637,10 @@ Expected: PASS（既有 527 用例不回退）
 
 - [ ] 单模块：`mvn -B -ntp -pl amz-service/amz-service-spapi -am test` 全绿；受影响模块（product / finance / logistics）各自全绿。
 > 第 42 轮实测：spapi 145/0F/0E/2S、`amz-service-finance` 94/94 PASS、`amz-service-logistics` 77/77 PASS；**`amz-service-product` 无 `src/test`（`No tests to run.`）**，该模块无法用本项取证——本行因此**保持未勾选**。
+> 第 48 轮实测（追加口径）：spapi **177 例 / 0F / 0E / 2S**（171 → 177，新增 `ConnectorSelfDescriptionTest` 6 例）；同轮复跑 `amz-service-finance` 94/94、`amz-service-logistics` 77/77 未变；`amz-service-product` 仍无 `src/test`。本行保持未勾选的理由与第 42 轮相同（受影响模块全绿已满足，但同组其它 DoD 项未完成）。
 - [ ] 全量：`mvn -B -ntp clean test`（19 模块）全绿；后端用例数不少于当前 527。
 > 第 42 轮实测：**19 模块 BUILD SUCCESS、600 例 / 0F / 0E / 2S**（≥ 527）。本行因同组其它项（Task 6 等）未完成而保持未勾选。
+> 第 48 轮实测（追加口径）：`mvn -B -ntp test` **19 模块 BUILD SUCCESS、632 例 / 0F / 0E / 2S**（≥ 527）。历史 600（第 42 轮）与 626（spapi=171 时点）保留原样；632 − 626 = 6 = 本轮新增例数。本行因 Task 6 等未完成而保持未勾选。
 - [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）、schema 引导/建库契约测试（Task 10）在 CI 中运行且不可跳过。
 - [ ] 部署 schema：`docker/init-sql/` 只有 `01-init-databases.sql` 且无表 DDL；Compose 与 k8s 都只建 14 个空库；14 个服务显式配置 `baseline-on-migrate: true`；Flyway 唯一表集合为 106 张。
 - [ ] 配置卫生：`grep -r "121.37.250.15"` 命中 0；`grep -rn "spring\.redis\.host"` 命中 0；`NACOS_SERVER_ADDR` 在部署清单中命中 0（统一 `NACOS_ADDR`）。
@@ -644,6 +650,7 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；`SpApiRequiredHeaderContractTest`（每请求都带合法 `user-agent`、≤500 字符）与 `MarketplaceRegistryTest`（23 条逐条断言 + 未知 ID 抛错）通过；`LwaTokenExchangeContractTest` 通过；`SpApiConditionalSigningTest`（无 AWS 密钥时不含 `Authorization`，且永不出现 `Credential=null`）通过；`ConnectorEvidencePolicyTest` 通过；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。SigV4 KAT 为**可选项**（spec §1.9.2），若保留签名器则夹具必须含来源与 sha256。
 > 第 42 轮实测：`SpApiEndpointOverrideSafetyTest` **12 例**、`SpApiProtocolStubTest` **6 例**、`ConnectorEvidencePolicyTest` **10 例**、`ReportsFieldContractTest` **3 例**、`ReportsRealClientStubTest` **3 例**、`LwaTokenExchangeContractTest` **11 例**均已落地且全绿；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。本行其余项（CI 不可 skip 等）需在 CI 配置落地后勾选。
 - [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘（**第 42 轮已落盘**）且可执行（**尚不满足**：runbook §1.3 登记 P0-52a/b/c 三项前置缺口，§3.4 明确“这条命令今天不存在”）；另本项要求的 `GET /api/connectors`（Task 6）**尚未实现**。
+> 第 48 轮更新：本行前半句的「`connector-acceptance-runbook.md` 可执行」**已满足**（§3.4 现可直接取用 `run.ps1` / `run.sh`；实测见 runbook §7.1），且 P0-52d 让 C1 可在进程外核验；但 `GET /api/connectors`（Task 6）**仍未实现**，且命令从未对真实服务执行过，故本行保持未勾选。
 
 ## 未验证与风险（诚实记录）
 

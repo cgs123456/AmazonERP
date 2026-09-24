@@ -46,17 +46,18 @@ $env:SPAPI_APP_VERSION = '<发布版本>'
 
 被测服务：`amz-service-spapi`，默认端口 **8096**（`application.yml:2`）。
 
-### 1.3 凭证到位当天**必须先补**的三项能力（P0-52；**a 已修复**，b/c 未修复）
+### 1.3 凭证到位当天**必须先补**的前置能力（P0-52；**a/c/d 已修复**，b 未修复）
 
-本 runbook 的三项要求里 **b/c 今天仍无法从 API 获得**，必须先补代码；否则 §3 的「一条命令」不可执行，A5 只能靠人工从日志捞取（脆弱、不可审计）。
+本 runbook 的前置要求里 **b 今天仍无法从 API 获得**，必须先补代码；**c/d 已于第 48 轮落地**（见下表与 §3.4 / §7.1）。未补齐时 §3 的「一条命令」不可执行，A5 只能靠人工从日志捞取（脆弱、不可审计）。
 
 | 编号 | 缺口 | 实测证据 | 最小修复 |
 |---|---|---|---|
 | P0-52a 【**已修复（第 45 轮）**】 | **平台原始错误码在部分端点被吞** | 修复前：`SpapiController.syncOrders`、`InventoryController.sync` 只回 `"sync failed"`，`FeedsController.submit/status` 只回 `"feed submit failed"`/`"feed status failed"`；`FinancialDataController` 虽透出 `e.getMessage()`，却会把预签名 S3 URL 原文带进响应（→ P0-53） | 修复落点：新增 `connector/ErrorSummary.java`（① 沿 `getCause()` 取**最深层根因**——订单/库存的熔断 fallback 把平台错误包在 `degraded (circuit-breaker/exception)` 里，只看最外层会再次丢信息；② 掩掉签名/令牌/密钥/口令；③ 压单行 + 1000 字符上限），9 处边界出口（财务域 5 + 订单/库存/Feeds 4）统一改用它。**仍只是诊断文本，不是结构化错误契约**——`{code, platformStatus, platformCode, platformMessage, requestId}` 响应体仍未实现 |
 | P0-52b | **`x-amzn-RateLimit-Limit` 回填值无结构化出口** | 头已被读取并回填本地窗口（`OrdersClient.java:280-285`、`FbaInventoryClient.java:201-205`、`FeedsClient.java:271-276`、`SpApiGateway.java:169-180`），但只在**收紧时**打一条 WARN（`SpiRateLimiter.java:139-143`），无表、无端点、无指标 | 落 `amz_spapi_rate_limit_observation`（shopId/endpoint/header值/回填后 maxRequests/window/时间）或暴露 Micrometer `spapi.ratelimit.limit` Gauge |
-| P0-52c | **不存在验收 runner** | 全仓 `rg -i acceptance` 命中 0（仅文档引用，见 §3.4） | 新建 `tools/connector-acceptance/`（与 `tools/synthetic-data/` 同风格：Python + `.ps1`/`.sh` 包装） |
+| P0-52c 【**已修复（第 48 轮）**】 | **不存在验收 runner** | 修复前：全仓 `rg -i acceptance` 命中 0（仅文档引用，见 §3.4） | 落点 `tools/connector-acceptance/`（与 `tools/synthetic-data/` 同风格：Python + `.ps1`/`.sh` 包装）：`acceptance_runner.py` + `run.ps1` + `run.sh` + 桩 `fake-service.py`。两道闸门：①C1 不满足 → 退出码 2 **且不产出记录**；②桩自描述 `stub=true` 默认拒绝，须显式 `--allow-stub` 且 **A5 封顶 E2** |
+| P0-52d 【**已修复（第 48 轮）**】 | **连接器自描述缺失**：`GET /spapi/status` 只回固定串 `"SP-API service running"`，C1 的四条硬约束（prod / 非 mock / 自检已跑 / 凭证 ≥1）在**进程外无法核验** | 修复前 mock profile 下 `ReportsMockClient`/`FinancesMockClient`/`FeesMockClient` 返回离线样例，「成功样例」是假证据 | 落点 `connector/ConnectorSelfDescription.java` + `SpapiController.status()`：返回 `{service, connector, profile, mockClientsActive, startupCheckRan, startupRequireCredentials, loadedCredentialCount}`（启动快照优先；未跑自检时如实写 `startupCheckRan=false`、`loadedCredentialCount=-1`；**不含任何机密**）；`ConnectorSelfDescriptionTest` 6 例锁死键集合。**副作用**：`data` 由字符串变对象，接入方若有外部消费者需同步 |
 
-> 这三项**不影响**今天就能做的离线取证（§7），但**决定「凭证到位当天能否一条命令出报告」**。计划 DoD 中「`connector-acceptance-runbook.md` 落盘且可执行」当前**只满足前半句**。
+> 这三项（b/c/d）**不影响**今天就能做的离线取证（§7），但**决定「凭证到位当天能否一条命令出报告」**。计划 DoD 中「`connector-acceptance-runbook.md` 落盘且可执行」自第 48 轮起前后半句均已满足——但「可执行」是在**本地桩**上验证的（§7.1），真实服务仍未跑过。
 
 ### 1.4 P0-53：预签名 S3 URL 经错误文本外泄（**已修复（第 45 轮）**）
 
@@ -187,10 +188,18 @@ python tools/connector-acceptance/acceptance_runner.py \
 
 `displayText` 只能取 `ConnectorEvidencePolicy.Assessment.displayText()` 的三种值之一（「API-Ready（已联调）」/「已接通（联调中）」/「具备对接能力（未联调）」）。
 
-### 3.4 诚实标注：这条命令今天**不存在**
+### 3.4 诚实标注：第 42 轮时这条命令**不存在**（第 48 轮已修复）
 
-全仓实测（排除 `dist`/`node_modules`/`target`/`out`）：`rg -i acceptance` 仅命中 5 处**文档**引用（本文件、spec §1.9.1(5)、plan Task 11、`src/test/resources/contracts/README.md:73`），**零命中** `tools/` 与任何可执行脚本。
-→ 因此 §3.1 的两条命令当前必然失败（找不到文件）。这不是笔误，是 P0-52c 的原始形态。
+**历史事实（第 42 轮，保留不改）**：全仓实测（排除 `dist`/`node_modules`/`target`/`out`）：`rg -i acceptance` 仅命中 5 处**文档**引用（本文件、spec §1.9.1(5)、plan Task 11、`src/test/resources/contracts/README.md:73`），**零命中** `tools/` 与任何可执行脚本。→ 因此 §3.1 的两条命令当时必然失败（找不到文件）。这不是笔误，是 P0-52c 的原始形态。
+
+**第 48 轮更新（P0-52c 修复）**：`tools/connector-acceptance/` 已落地——`acceptance_runner.py`（runner 本体）、`run.ps1` / `run.sh`（包装，纯 ASCII）、`fake-service.py`（本地桩，**非证据**）。§3.1 的两条命令现在可执行；先跑自检与预览：
+
+```powershell
+pwsh -File tools/connector-acceptance/run.ps1 -Selftest   # 只自检，不连服务、不产出记录
+pwsh -File tools/connector-acceptance/run.ps1 -DryRun     # 只打印计划，不建 socket
+```
+
+**仍未被证明的**：这两条命令**从未对真实 `amz-service-spapi` 跑过**（§7.1 的全部实测都对着本地桩）。因此「一条命令出**真实联调**报告」仍是待验证承诺；已被验证的是「夹具上机械正确 + 闸门能拦住假证据」。
 
 ---
 
@@ -264,6 +273,41 @@ GET  /spapi/finance/document/{reportDocumentId}?shopId=<id>
 | marketplaceId / region / reportId / feedId | 原样保留（非秘密，是取证必需） |
 | 买家 PII（姓名/地址/电话/邮箱） | 一律不入报告；需要时只记「字段存在」 |
 | 平台错误 `message` | 保留原文，但先扫一遍是否回显了请求头/token（Amazon 不回显，但仍需脚本断言） |
+| 本机绝对路径（`generator.options.outDir` / `configFile` / `attestationFile.path`） | **原样写入**（可审计性取舍）；报告对外分享前必须替换或删除，否则会暴露本机用户名与目录结构 |
+
+### 4.7 operator 证据文件（`--attest`）的最小模板
+
+有三条标准 runner **观测不到**，只能由 operator 提供证据：A3 的两例「拒绝启动」、A4 的两条店铺 token 摘要差异、A8 的 `x-amzn-RateLimit-Limit` 回填窗口。
+缺证据时对应标准判 `E0`（**不猜**）。文件必须是**已脱敏**的 JSON，`schemaVersion` 固定为 `connector-acceptance-attestation/1`；
+含明文机密（`AKIA…` / JWT / `x-amz-signature` / 刷新令牌）会被 runner **拒绝执行**（退出码 2，不产出记录）。
+
+```json
+{
+  "schemaVersion": "connector-acceptance-attestation/1",
+  "target": { "imageDigest": "sha256:<容器镜像摘要，64 位十六进制>" },
+  "identity": { "appId": "amzn1.sp.solution.<...>", "sellerId": "<真实 sellerId；写入记录时会自动打码>", "region": "na" },
+  "a3": { "startupRefusals": [
+    { "case": "prod-without-credentials", "refused": true, "note": "<复现步骤 / 日志行号>" },
+    { "case": "mock-profile",             "refused": true, "note": "<复现步骤 / 日志行号>" }
+  ] },
+  "a4": { "tokenObservations": [
+    { "shopId": 1001, "accessTokenSha256": "<sha256(店铺 A 的 access_token)>" },
+    { "shopId": 1002, "accessTokenSha256": "<sha256(店铺 B 的 access_token)>" }
+  ] },
+  "a8": { "rateLimitObservations": [
+    { "endpoint": "GET /orders/v0/orders", "header": "x-amzn-RateLimit-Limit: 0.5",
+      "localWindowAfter": { "maxRequests": 30, "windowMs": 1000 }, "evidence": "<观测点>" }
+  ] }
+}
+```
+
+填写要点：
+
+- `a4` 只放 **sha256 摘要**，**不放 token 本体**；两条摘要必须**不同**（同一 token 串两个店会被判为无证据）。
+- `a3` 的 `case` 名必须逐字为 `prod-without-credentials` 与 `mock-profile`，且 `refused=true`；否则 A3 停在 E1。
+- `target.imageDigest` 缺失不致命，但 A3 需要 `target.binding`——既无镜像摘要又无配置文件哈希时，A3 只能到 E1。
+- 该文件自身的 sha256 会写进记录的 `generator.options.attestationFile`（路径 + 哈希），可事后审计「谁在何时提供了什么证据」。
+- 模板只描述**结构**；`<...>` 占位符必须换成真实观测值。**直接提交未替换占位符的文件等于伪造证据**，runner 虽然无法识别，但记录会绑定该文件的哈希，审计时无法解释。
 
 ---
 
@@ -304,6 +348,8 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 
 实测结果（第 45 轮复跑）：`amz-common` **51/51 PASS**；`amz-service-spapi` **Tests run: 171, Failures: 0, Errors: 0, Skipped: 2**，`BUILD SUCCESS`（2 skip = `SpApiIntegrationTest`，需 `RUN_INTEGRATION_TESTS=true`）。
 
+> **第 48 轮复跑（2026-09-24，追加口径，不改上一行）**：`amz-service-spapi` **Tests run: 177, Failures: 0, Errors: 0, Skipped: 2**（171 → 177 = 本轮新增 `ConnectorSelfDescriptionTest` 6 例），`BUILD SUCCESS`；同轮另跑**全仓** `mvn -B -ntp test`（19 模块）：**Tests run: 632, Failures: 0, Errors: 0, Skipped: 2**，`Reactor Summary` 逐模块 `SUCCESS`。历史口径 626 是 spapi=171 时点值，632 − 626 = 6 与本轮新增例数自洽。
+
 | 用例类 | 例数 | 对应标准 | 等级上限 |
 |---|---|---|---|
 | `com.amz.auth.LwaTokenExchangeContractTest` | 11 | A1（认证交换契约） | E3 |
@@ -323,14 +369,35 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 | `com.amz.client.FeedsClientUploadUrlLeakTest` | 1 | P0-53 写侧（预签名上传 URL 不进异常文本/日志链） | E2 |
 | `com.amz.controller.FinancialDataControllerErrorTextTest` | 3 | P0-52a/P0-53（财务域边界出口） | E1 |
 | `com.amz.controller.ControllerErrorTextContractTest` | 5 | P0-52a（固定文案端点边界出口） | E1 |
+| `com.amz.connector.ConnectorSelfDescriptionTest`（第 48 轮新增） | 6 | P0-52d（自描述键集合冻结 + 无机密 + 未跑自检时如实回报） | E2 |
 
 **上限声明**：以上全部 ≤ E3。按 `ConnectorEvidencePolicy.offlineCeiling()`，无凭证阶段的整体等级上限由最弱一环决定，**A5 的离线上限是 E1**——故今天对外的正确表述是「**具备对接能力（未联调）**」。
+
+### 7.1 第 48 轮新增：验收 runner 的桩级实测（P0-52c / P0-52d）
+
+`tools/connector-acceptance/` 落地后，本轮用**本地桩**（`fake-service.py`，自描述恒带 `stub=true`）做了端到端实测。
+**这组结果只证明 runner 的机械正确性与闸门有效性，不构成联调证据**（桩回放 ≤ E2）。
+
+| 场景 | 命令要点 | 实测结果 |
+|---|---|---|
+| runner 自检 | `python tools/connector-acceptance/acceptance_runner.py --selftest` | **全绿**：脱敏 6 + 参数校验 6 + 键集合冻结 4 + 结构与隐私 7 + 判定 4 + 落盘 4 = **38 条断言**，退出码 0；**未连接任何服务** |
+| 计划预览 | `--dry-run` | 退出码 0，打印调用计划；**未建 socket、未产出任何文件** |
+| 参数/边界（8 例） | 坏 URL / 未知 connector / 未知 operation / 快速轮询 / 缺 marketplace-id … | 全部退出码 2，stderr **无值泄漏** |
+| 桩护栏 | 对 `stub=true` 的服务跑真实验收，**不带** `--allow-stub` | 退出码 2，理由「桩夹具不构成联调证据」，**未产出记录**（输出目录不存在） |
+| C1 闸门 | 桩以 `--profile mock` 启动 | 退出码 2（`profile=mock 不含 prod`），**未产出记录** |
+| 桩端到端 A1–A8 | 带 `--allow-stub`；orders / inventory / feeds / reports / reports-download / finances / fees + 401 / 403 / 404 / 429 + 报表状态轮询（前 2 次 `IN_PROGRESS`） | 退出码 **1**（已执行但有缺项）。`A1 E4`、`A2 E4`、`A3 E1`、`A4 E1`、**`A5` 被桩自描述压到 `E2`**、`A6 E0`（`/api/connectors` 404 → Task 6 未实现）、`A7 E0`（无观测点，恒不通过）、`A8 E0`；`displayText` = 「具备对接能力（未联调）」，`apiReady=false`、`reachable=false` |
+| 桩端到端 + operator attestation | 同上，另加 `--attest`（`a3.startupRefusals` 两例 / `a4.tokenObservations` 两条不同摘要 / `a8.rateLimitObservations` / `target.imageDigest`），桩开启 `/api/connectors` | 退出码 **1**，阻断项只剩 **`A5(E2<E4)` 与 `A7(E0<E4)`**；`A1/A2/A3/A4/A8 = E4`、`A6 = E3`。即除 A5（需真实部署）与 A7（Outbox/DLQ 未实现）外**全部自动达标** |
+| 产物契约 | 读回 `.json` 与 `.sha256` | 顶层键集合 = 冻结 12 键；`.sha256` 为 `<hex>  <filename>\n`（**两空格**）；JSON 以 LF 结尾且与 `.sha256` 第一段**逐字节一致**；`conclusion.secretScan.verdict = PASS`；诱饵（`x-amz-signature` / `AKIA…` / 会话 token / JWT）**全部被掩且不误报**；`identity.sellerIdMasked` 打码生效（`A1STUBLOCAL0001` → `A1ST****`）；`generator.options` 只记 `authTokenFileProvided=true`，**不含 JWT 与其路径** |
+
+**这组实测回答的问题**：「有 API 之后，除了 A5 真实联调与 A7（未实现）之外，其余判据能否自动达标？」
+→ 在桩上补齐 operator 证据后，**A1–A4、A6、A8 全部达标，只剩 A5 与 A7**。含义是：凭证到位当天的制约项是**可枚举**的，不是黑箱；
+但**桩不是真实部署**，A5 的真实联调、A3 的「拒绝启动」实机复现、A8 的平台限流头回填仍需在凭证到位当天完成。
 
 ---
 
 ## 8. 未验证与风险（诚实清单）
 
-1. **runner 不存在**（P0-52c）→ 本文件 §3 的命令今天不可执行；「一条命令出报告」是**待实现承诺**，不是现状。
+1. **runner 已存在，但从未对真实服务跑过**（P0-52c 第 48 轮修复）→ §3 的命令现在可执行，且**只有 C1 全绿才会产出记录**；但迄今所有执行都对着**本地桩**（`stub=true` + `--allow-stub`，A5 封顶 E2），因此「一条命令出**真实联调**报告」**仍是待验证承诺**，不是现状。
 2. **错误码只有诊断文本、没有结构化契约**（P0-52a 已修复「可诊断性」，结构化仍缺）→ 五组端点的失败响应现在都带平台 `status` 与 `errors[].code/message`（`ErrorSummary` 收敛 + 脱敏），但输出是**单行文本**，不是 `{code, platformStatus, platformCode, platformMessage, requestId}` 字段化响应；下游若要按错误码自动分类，仍需解析文本（脆弱），且平台 `requestId` 目前没有透出通道（排障时只能靠时间窗对齐服务日志）。
 3. **限流头无结构化出口**（P0-52b）→ A8 的「回填后本地窗口」目前只能从 WARN 日志抄写。
 4. **沙箱覆盖范围未联网复核**：第 22 轮结论为「官方仅说明覆盖 2xx 与 400」；凭证到位当天须以官方文档确认，若沙箱实际不覆盖目标错误码，则 401/403/404/429 必须改到生产（需用户书面确认）。
