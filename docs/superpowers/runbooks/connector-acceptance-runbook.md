@@ -89,6 +89,41 @@ $env:SPAPI_APP_VERSION = '<发布版本>'
 `FinancialDataControllerErrorTextTest`（3 例，E1：预签名 URL 脱敏、`degraded` 包装透出平台 `QuotaExceeded`、缺凭证显式失败）、
 `ControllerErrorTextContractTest`（5 例，E1：四处固定文案端点 + 上游异常文本带 URL 的兜底）。
 
+### 1.5 P0-54：Reports 路径版本号 `2021-09-01` **从未由 Amazon 发布**（**已修复（第 49 轮）**）
+
+**症状**：客户端把 Reports 路径写成 `/reports/2021-09-01/reports` 与
+`/reports/2021-09-01/documents`。该版本号不存在，意味着凭证到位当天
+`createReport` → `getReport` → `downloadDocument` 整条结算/对账链路**必然 404**，
+不是降级、不是空数据。本 runbook §4.5 的 Reports 闭环步骤在修复前**不可能通过**。
+
+**三源核实（2026-09-24 实测，均为外部事实而非本仓自证）**：
+
+| 来源 | 结果 |
+|---|---|
+| 官方模型仓库目录清单 `amzn/selling-partner-api-models` → `models/reports-api-model/` | **只有** `reports_2020-09-04.md`（158 B，废弃指针）与 `reports_2021-06-30.json`（83,685 B） |
+| 直接取 `reports_2021-09-01.json` | **HTTP 404**，响应体 14 B 的 `404: Not Found` |
+| 官方文档站 `.../reports-api-v2021-09-01-reference` | HTTP **200**（SPA 外壳），但 `<title>=Page Not Found`、页内 `2021-09-01` 命中 **0** 次 |
+| 对照：`.../reports-api-v2021-06-30-reference` | `<title>=Reports v2021-06-30`、页内命中 **105** 次 |
+
+**为什么一直没被发现——自证循环**：客户端、进程内桩、`acceptance_runner.py`、本 runbook
+四方写的是**同一个错版本号**，所有 E1/E2 级测试都拿错版本号当期望值，永远绿灯；
+**修复前** `docs/**` 里从未登记过该版本号（`git grep "2021-09-01" docs` 命中 0，即：文档从未写过它，也就从未被外部核对过），
+而 `ReportsFieldContractTest` 只锁**字段名**、不锁**路径**。
+真正的期望值必须来自仓库外的官方 OpenAPI 模型（即 §7 所列 E3 证据的来源）。
+
+**修复（第 49 轮）**：10 个文件的路径字面量字节级替换为已发布版本 `2021-06-30`
+（源码 4 + 测试 4 + 工具 2），全仓残留检查 0 命中；新增 `SpApiPathContractTest`
+（4 例，E3）把「`src/main/java` 里的 SP-API 路径字面量 ⊆ 官方模型声明的 `paths`」
+变成回归护栏，并冻结 6 份官方模型快照的字节数与 sha256。
+
+**验收影响（诚实边界）**：这条修复只保证**我方请求路径与官方模型一致**（**E3**），
+**不**证明平台接受我方请求——A5 仍需凭证联调（§4.5 与 §8 第 5 条）。
+
+**同类风险未归零**：路径扫描只覆盖 `src/main/java`、只认 6 个路径根
+（`/orders/ /reports/ /feeds/ /fba/ /finances/ /products/`）。将来接入
+Listings / Notifications / FBA Inbound 等新 API 家族时，必须同步扩 `PATH_ROOTS`
+与 `contracts/` 快照表，否则同类「版本号/路径写错但自证全绿」的缺陷仍可复现。
+
 ---
 
 ## 2. 判定口径（A1–A8）
@@ -370,6 +405,7 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 | `com.amz.controller.FinancialDataControllerErrorTextTest` | 3 | P0-52a/P0-53（财务域边界出口） | E1 |
 | `com.amz.controller.ControllerErrorTextContractTest` | 5 | P0-52a（固定文案端点边界出口） | E1 |
 | `com.amz.connector.ConnectorSelfDescriptionTest`（第 48 轮新增） | 6 | P0-52d（自描述键集合冻结 + 无机密 + 未跑自检时如实回报） | E2 |
+| `com.amz.client.SpApiPathContractTest`（第 49 轮新增） | 4 | A1（源码路径 ⊆ 官方模型 `paths`，P0-54） | E3 |
 
 **上限声明**：以上全部 ≤ E3。按 `ConnectorEvidencePolicy.offlineCeiling()`，无凭证阶段的整体等级上限由最弱一环决定，**A5 的离线上限是 E1**——故今天对外的正确表述是「**具备对接能力（未联调）**」。
 
@@ -393,6 +429,35 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 → 在桩上补齐 operator 证据后，**A1–A4、A6、A8 全部达标，只剩 A5 与 A7**。含义是：凭证到位当天的制约项是**可枚举**的，不是黑箱；
 但**桩不是真实部署**，A5 的真实联调、A3 的「拒绝启动」实机复现、A8 的平台限流头回填仍需在凭证到位当天完成。
 
+### 7.2 第 49 轮新增：官方路径契约与全量复跑（P0-54）
+
+命令（实测，2026-09-24）：
+
+```powershell
+$env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
+& 'C:\Users\Administrator\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd' -B -ntp -pl amz-service/amz-service-spapi -am test
+python tools/connector-acceptance/acceptance_runner.py --selftest
+pwsh -File tools/connector-acceptance/run.ps1 -Selftest
+```
+
+| 项 | 实测结果 |
+|---|---|
+| `amz-service-spapi` 单模块 | **Tests run: 181, Failures: 0, Errors: 0, Skipped: 2**，`BUILD SUCCESS`（177 → 181 = 本轮新增 `SpApiPathContractTest` **4 例**） |
+| 全仓 `mvn -B -ntp test` | 19 模块 `BUILD SUCCESS`，**Tests run: 636, Failures: 0, Errors: 0, Skipped: 2**（632 → 636） |
+| runner 自检（Python 与 `.ps1` 两条入口） | **38 条断言全绿**、退出码 0、未连接任何服务（本轮改过 runner 的 Reports 路径，故必须复跑） |
+
+`SpApiPathContractTest` 的 4 个用例：
+
+| 用例 | 断言 |
+|---|---|
+| `officialSnapshotsArePinned` | 6 份官方模型快照的**字节数 + sha256** 逐份锁定，且断言每份 > 1000 B（14 B 的 `404: Not Found` 无法冒充） |
+| `sourcePathsAreDeclaredByOfficialModels` | 正则提取 `src/main/java` 全部 `.java` 里以 6 个路径根开头的字符串字面量，要求**每一条都被官方 `paths` 覆盖**（完全相等，或以 `literal + "/"` 为前缀——客户端用 `PATH + "/" + id` 拼接）；并要求提取到 ≥ 8 条才算扫描有效 |
+| `unpublishedReportsVersionMustNotReturn` | `2021-09-01` 不得出现在 `src/main/java` 与 `src/test/java`（守卫类自身除外；另断言扫描到 ≥ 20 个文件，防止排除逻辑退化成空扫） |
+| `reportsAndFeedsPathsUseThePublishedVersion` | 直接断言 `ReportsRealClient` 的两条路径字面量为 `2021-06-30`，且官方模型确实声明这四条 Reports/Feeds 路径 |
+
+**证据边界**：本条列全部 ≤ **E3**（官方模型 + 哈希锁）。它证明了「路径对」，**没有**证明
+「平台接受请求」——后者仍只有在凭证到位、按 §3 对真实服务跑一次（A5/E4–E5）之后才能宣称。
+
 ---
 
 ## 8. 未验证与风险（诚实清单）
@@ -406,3 +471,8 @@ $env:JAVA_HOME='C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1'
 7. **成本与时间未确认**：沙箱注册（企业资质 + 视频核验）、生产授权、Amazon 安全问卷/DPP 时限均为**用户侧投入**，本文件不给出工期承诺。
 8. **`SpApiIntegrationTest` 是唯一的真实网络路径**，且默认跳过；凭证到位当天应先跑它（`RUN_INTEGRATION_TESTS=true` + `TEST_SHOP_ID`）作为**冒烟**，再跑本 runbook 的完整取证。
 9. **预签名 URL 的泄露面已收窄，但没有归零**（P0-53）→ 两个预签名构造点（读侧 `SpApiGateway.downloadBytes`、写侧 `FeedsClient.uploadDocument`）都不再拼 URL，`URI.create` 失败时**不链 cause**，五个边界出口统一脱敏。**仍未覆盖**：① 未做全仓出站扫描——新增调用方若自行把预签名地址写进日志或响应，仍可绕过（现存断言只锁这两个构造点与五个 controller 出口）；② 未引入日志侧 scrub（appender/日志框架过滤器），因此**非** `URI.create` 的传输异常若自带 URL 文本，仍可能进日志；③ 平台返回的 S3 错误体**有意不回显**（会内嵌规范请求/凭证材料），排障只能靠状态码 + 对象路径。
+
+10. **路径契约扫描有明确边界**（P0-54 已修复，但护栏不是全知）→ `SpApiPathContractTest`
+    只扫 `src/main/java` 的**字符串字面量**、只认 6 个路径根，且**不覆盖**运行时拼接出的动态段
+    （如 marketplace / 日期 / 分页参数）；将来新增 API 家族或改用配置化路径时必须同步扩表。
+    另外它断言的是「与官方模型一致」（E3），**不能**替代 A5 的真实联调。

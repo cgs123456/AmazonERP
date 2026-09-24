@@ -188,6 +188,15 @@ Expected: PASS
 
 抓取陷阱（实测）：`models/fba-inventory-api-model/` 下 `fbaInventory_2020-10-01.json` 与 `inventory_2020-10-01.json` 都只返回 **14 字节**的 `404: Not Found` 响应体；必须校验字节数与 sha256，不能只看 HTTP 状态码。
 
+> **第 49 轮补记（P0-54）**：上表 6 份快照**已全部逐字节落盘**到
+> `amz-service/amz-service-spapi/src/test/resources/contracts/`（本轮补落 `ordersV0.json` /
+> `productFeesV0.json` / `financesV0.json` / `fbaInventory.json`）。动机不是「补齐资料」，
+> 而是 **P0-54**：本仓把 Reports 路径写成官方**从未发布**的 `2021-09-01`，客户端、进程内桩、
+> `acceptance_runner.py`、runbook 四方同错，自证测试永远绿灯；只有把官方 `paths` 当**外部期望值**
+> 才暴露。新增 `SpApiPathContractTest`（4 例，E3）同时锁定这 6 份的字节数 + sha256，并断言
+> 「`src/main/java` 里的路径字面量 ⊆ 官方 `paths`」。`contracts/README.md` 已补 4 行 Provenance
+> （含 2026-09-24T22:43:24+08:00 的**上游复核**：四份重新下载后与树内副本逐字节一致）与 1 行 Consumer。
+
 - [x] **Step 2: 写失败测试**
 
 `ReportsFieldContractTest`：读取官方模型 JSON，取 `definitions.Report.properties` 与 `definitions.ReportDocument.properties`；用正则扫描**本仓源文件** `ReportsRealClient.java` 里所有 `str(<var>, "<literal>")` 的字面量，断言每个字面量都存在于官方属性集；并断言**本仓源码**中**不含** `resultDocumentId`。
@@ -626,6 +635,15 @@ Expected: PASS（既有 527 用例不回退）
 两道闸门：①C1 不满足 → 退出码 2 且**不产出记录**；②桩自描述 `stub=true` 默认拒绝，须显式 `--allow-stub` 且 A5 封顶 E2。
 **诚实边界**：以上只在**本地桩**上实测（runner 自检 38 条断言全绿、桩端到端 `RC=1`；补齐 operator attestation 后 A1–A4/A6/A8 达标，只剩 A5 与 A7）——**从未对真实 `amz-service-spapi` 跑过**。第 42 轮的历史标注（“命令不存在”）在 §3.4 保留不改。P0-52b（限流头结构化出口）仍未修复。
 
+> **进度（第 49 轮，2026-09-24）：P0-54 已修复——Reports 路径版本号 `2021-09-01` 从未由 Amazon 发布。**
+> 三源核实：① 官方模型仓库 `models/reports-api-model/` 只有 `reports_2020-09-04.md`（158 B 废弃指针）与
+> `reports_2021-06-30.json`（83,685 B）；② 取 `reports_2021-09-01.json` → HTTP 404、响应体 14 B；
+> ③ 官方文档站该版本页返回 HTTP 200 但 `<title>=Page Not Found`、页内命中 0 次（对照 `2021-06-30` 页命中 105 次）。
+> **成因是自证循环**：修复前这个错版本号只存在于本仓代码/桩/runner/runbook 四处，`docs/**` 从未登记过（本轮起文档只出现在缺陷记录中），故从未被外部核对。
+> 修复落点：10 个文件字节级替换为 `2021-06-30`（源码 4 + 测试 4 + 工具 2），残留 0 命中；
+> 新增 `SpApiPathContractTest`（**4 例**，E3）。
+> **边界**：该项只把「与官方路径一致」变成可回归断言，**不**证明平台接受请求——A5 真实联调仍需凭证。
+
 - [ ] **Step 7: 提交**
 
 `git commit -m "test(spapi): 零凭证取证基座（user-agent 必填头 + marketplace fail-closed + 端点覆盖 + LWA 契约 + 桩回放 + 证据门禁）"`
@@ -638,9 +656,11 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] 单模块：`mvn -B -ntp -pl amz-service/amz-service-spapi -am test` 全绿；受影响模块（product / finance / logistics）各自全绿。
 > 第 42 轮实测：spapi 145/0F/0E/2S、`amz-service-finance` 94/94 PASS、`amz-service-logistics` 77/77 PASS；**`amz-service-product` 无 `src/test`（`No tests to run.`）**，该模块无法用本项取证——本行因此**保持未勾选**。
 > 第 48 轮实测（追加口径）：spapi **177 例 / 0F / 0E / 2S**（171 → 177，新增 `ConnectorSelfDescriptionTest` 6 例）；同轮复跑 `amz-service-finance` 94/94、`amz-service-logistics` 77/77 未变；`amz-service-product` 仍无 `src/test`。本行保持未勾选的理由与第 42 轮相同（受影响模块全绿已满足，但同组其它 DoD 项未完成）。
+> 第 49 轮实测（追加口径）：spapi **181 例 / 0F / 0E / 2S**（177 → 181 = 本轮新增 `SpApiPathContractTest` 4 例）；同轮复跑 `amz-service-finance` 94/94、`amz-service-logistics` 77/77 未变；`amz-service-product` 仍无 `src/test`。
 - [ ] 全量：`mvn -B -ntp clean test`（19 模块）全绿；后端用例数不少于当前 527。
 > 第 42 轮实测：**19 模块 BUILD SUCCESS、600 例 / 0F / 0E / 2S**（≥ 527）。本行因同组其它项（Task 6 等）未完成而保持未勾选。
 > 第 48 轮实测（追加口径）：`mvn -B -ntp test` **19 模块 BUILD SUCCESS、632 例 / 0F / 0E / 2S**（≥ 527）。历史 600（第 42 轮）与 626（spapi=171 时点）保留原样；632 − 626 = 6 = 本轮新增例数。本行因 Task 6 等未完成而保持未勾选。
+> 第 49 轮实测（追加口径）：`mvn -B -ntp test` **19 模块 BUILD SUCCESS、636 例 / 0F / 0E / 2S**（≥ 527）。历史 600 / 626 / 632 保留原样；636 − 632 = 4 = 本轮新增例数。本行因 Task 6 等未完成而保持未勾选。
 - [ ] 契约：官方模型契约测试（Task 3）、部署清单双向契约测试（Task 8）、Redisson 配置契约测试（Task 9）、schema 引导/建库契约测试（Task 10）在 CI 中运行且不可跳过。
 - [ ] 部署 schema：`docker/init-sql/` 只有 `01-init-databases.sql` 且无表 DDL；Compose 与 k8s 都只建 14 个空库；14 个服务显式配置 `baseline-on-migrate: true`；Flyway 唯一表集合为 106 张。
 - [ ] 配置卫生：`grep -r "121.37.250.15"` 命中 0；`grep -rn "spring\.redis\.host"` 命中 0；`NACOS_SERVER_ADDR` 在部署清单中命中 0（统一 `NACOS_ADDR`）。
