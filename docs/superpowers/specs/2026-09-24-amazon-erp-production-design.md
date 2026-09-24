@@ -1,7 +1,7 @@
 # AmazonERP 生产化升级设计规格（Draft for Review）
 
 - 文档日期：2026-09-24
-- 审查基线：`master` / `e50f5d1021d0883c792510f402894a57d884ba32`（本地领先 `origin/master` 2 个纯文档提交，未 push）
+- 审查基线：`master` / `bebbd7051ae1cfc90156ee753502de0a2f08529c`（本地领先 `origin/master` 3 个纯文档提交，未 push；`origin/master` = `06769b77b291467216007bf9843211de3a0cf14e`）
 - 当前状态：**设计草案，尚未修改任何业务源码**
 - 目标：把现有“功能覆盖较广的可演示微服务原型”升级为**可审计、可恢复、可运维、可安全上线**的亚马逊 ERP；无真实数据时使用确定性模拟数据，所有模拟数据必须带 `SYNTHETIC` 标识。
 - 重要结论：模拟数据可以替代缺失的业务数据用于开发、测试和容量验证，**不能替代亚马逊开发者资质、真实店铺授权、SP-API 沙箱/生产联调、税务与会计责任、渗透测试、灾备演练和业务验收**。
@@ -21,9 +21,11 @@
 3. **财务事实源**：缺少借贷平衡凭证、真实 FIFO 成本层、多币种汇率、税务规则、结算对账和期末关账。
 4. **集成事实源**：外部调用、Webhook、MQ、缓存和数据库之间没有统一的 Outbox/Inbox、幂等和失败重放机制。
 
-同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **21 条（P0-01…P0-21）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、以及可实测的供应链漏洞基线。
+同时存在必须先修复的生产阻断项。本轮把这部分从初稿的 12 条扩展为 **22 条（P0-01…P0-22）**，新增的证据来自 328 个端点的全量守卫矩阵（附录 F）、Maven 运行时依赖树与 OSV 配对查询、以及 AI/广告/物流/客服/选品/多平台六个域的逐方法核对。新增类别是：广告域零租户隔离、Agent 记忆 IDOR、SSE 身份+角色双丢失、刷新令牌链路失效、订单身份可伪造、物流/仓库/客服写操作缺归属校验、搜索与知识库索引无租户过滤、选品 IDOR 与硬编码店铺 1、Webhook 无验签且跨租户错配、可实测的供应链漏洞基线，以及**“Real 客户端”名不副实与失败静默降级**（P0-22）。
 
 需要特别说明的一点自查：初稿曾把“AI 工具会写生产数据”当作整体结论，本轮逐行核对后收窄为**只有 `cross_marketplace_listing` 一条真实写入链路**（详见 1.3 节的诚实修正）。同样，“JWT 空密钥静默可用”的假设也被推翻——`JwtUtil.init()` 在密钥为空时直接让服务启动失败，这是正向设计。
+
+另一个需要提前纠正的印象：**类名带 `Real` 不等于真实对接**。仓库里的 `KingdeeRealClient`、`Alibaba1688RealClient`、`SheinRealClient`、`TemuRealClient`、`TikTokRealClient`、`MessagingApiRealClient`、`AdvertisingApiRealClient`、`KeepaRealClient`、`LogisticsTrackingRealClient` 都带 `@Profile("!mock")`，但它们要么返回占位值、要么自述“未校准”、要么在失败时静默返回 null/空列表。默认 profile（未显式设置 `SPRING_PROFILES_ACTIVE`）就会加载这些实现，因此“生产环境已无 mock”这句话在语义上不成立——它们只是不再叫 Mock。完整盘点见 4.1 的现状表与 P0-22。
 
 ### 0.2 不能被 README 或旧计划证明的事情
 
@@ -127,6 +129,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | P0-19 | 选品模块可读写他人记录并硬编码店铺 1 | `ProductSelectionServiceImpl` 第 74、204 行 `UserContext.getShopId() != null ? ... : 1L`；`aiSuggestion` 第 220 行 `selectById` 无归属校验，231/263/269 行 `updateById` 写回；结果由 `keyword.hashCode()+marketplace.hashCode()` 确定性生成，**未标 `SYNTHETIC`**，外观上与真实经营数据无异 | 归属校验 fail-closed；模拟结果显式标记 `SYNTHETIC` 并与真实数据隔离；写回前再次校验归属 |
 | P0-20 | 多平台 Webhook 无验签且跨租户错配 | `MultiplatformController.receiveWebhook`（132–137 行）无守卫、传 `shopId=null`；`MultiplatformServiceImpl.receiveWebhook`（395–443 行）**没有任何入站签名校验**（全仓库仅存在出站签名工具），`shopId` 为空时按 platform 反查“最新创建的账号”（408–420 行），去重只按 `event_id`，`handleWebhookEvent` 仅打日志 | 每平台独立验签实现 + 时间戳/重放窗口；事件唯一键 `(platform, shop_id, event_id)`；无法确定归属时拒绝落库；处理逻辑实现真实业务动作而非仅记录 |
 | P0-21 | 依赖供应链存在未修复的严重漏洞且无 SCA 门禁 | 本轮实测：410 个第三方运行时坐标命中 210 组 `(坐标, advisory)`、67 个坐标、190 条唯一 advisory（18 critical / 80 high / 90 moderate / 22 low，详见 5.7 与附录 F）；`fastjson 1.2.83` 为 CRITICAL RCE 且 **1.x 无修复版本**，仍随 `seata-all 2.0.0` 进入 17 个模块类路径；`tika 2.9.2` 的 XXE 可由知识库文档上传触达；网关最外层 `netty-all 4.1.115.Final` 含 CRITICAL 级 SNI 绕过与 HTTP/2 DoS 修复项；`npm audit` 7 high / 3 moderate | 依赖升级到修复版本或移除（含排除传递依赖）；CI 强制 SCA + SBOM + 镜像扫描并在高危未豁免时阻断；网关、文件解析、反序列化三类路径额外做运行时缓解 |
+| P0-22 | 外部连接器的“Real 实现”名不副实，失败时静默降级为空结果 | 逐类核对（详见 4.1 现状表）：`KingdeeRealClient` 在 48–51 行无条件返回 `KINGDEE_MOCK_` 占位号，`FinanceServiceImpl` 205–206 行据此把凭证置为 `SYNCING`，而认领条件（190–194 行）只接受 `PENDING/FAILED` → 该凭证**永远无法再次同步**、也不是“已过账”；`Alibaba1688Signer:24`、`Alibaba1688TokenManager:26`、`Alibaba1688RealClient:37-38`、`SheinRealClient:103`、`TemuRealClient:94`、`TikTokRealClient:177` 全部自述“未校准”；`MessagingApiRealClient` 127–128 行只发 `Bearer` + `x-amz-access-token`、**无 AWS SigV4**，`/messaging/v1/orders` 与真实 SP-API Messaging 资源模型不符；`AdvertisingApiRealClient` 用全局单套 `advertising.profile-id`/`spapi.lwa.access-token`（52–56 行），182 行 ClientId 在 profileId 不含 `:` 时返回空串，失败即 `emptyList()`；`KeepaRealClient`、`LogisticsTrackingRealClient` 缺凭证时返回 null/空轨迹 | 每个连接器在生产启动时校验“真实且已校准”，否则拒绝启动或显式标记不可用并向调用方返回明确错误；禁止把占位号写进业务状态机；失败必须分类重试或进入隔离队列，不允许静默返回空结果冒充“无数据”；凭证按 tenant/shop 隔离并支持轮换 |
 
 > 关于 P0-04 的**诚实修正**：8 个 `OPERATE_TOOLS` 中，**只有 `cross_marketplace_listing` 已确认会真实写外部系统**（`ProductController.copyListing` → `ListingCopyService.createCopyTask` → `@Async executeCopyTaskAsync` → `listingsClient.submitFeed` → SP-API Feeds，且 `pollFeedStatus` 以 `Thread.sleep(15s)` 轮询最长 5 分钟）。`optimize_ad_campaign`、`optimize_listing_seo`、`optimize_shipping_route`、`optimize_inventory_distribution` 是只读查询 + 规则文本；`create_purchase_plan`（返回 `DRAFT` Map，`planNo=System.currentTimeMillis()`）与 `auto_reply_message`（返回草稿）都不落库；`generate_promotion_plan` 是 `@GetMapping("/promotion/plan")` + `@ShopScoped`，返回**硬编码**的 Lightning Deal 方案，**完全不写数据**。
 >
@@ -138,13 +141,13 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 |---|---|---|
 | 订单 | 表主要是订单头；唯一键未包含 `shop_id/marketplace_id`；已有订单可能跳过更新；调度只拉有限时间窗和有限状态；事件去重可能阻止状态变化 | 订单头、订单行、地址、费用、退款、事件、状态机、增量同步、报表对账、Outbox |
 | 库存 | `amz_fba_inventory` 主要是亚马逊快照；`avg7Days/avg30Days` 未完整填充；null 被当 0 可能导致 DOS 误判；upsert 先查后写 | 外部快照层、内部库存台账层、可售补货层；预占/扣减/冲销/调拨/退货；原子条件更新 |
-| 采购 | 1688 签名/端点未做沙箱校准；token 未按店铺隔离；FBA FIFO 出库无行锁和条件更新；多批次取首条 | 供应商生命周期、收货、发票、付款、三单匹配、容差、批次和状态机 |
+| 采购 | 1688 真实客户端自述“未校准”（`Alibaba1688Signer:24`、`Alibaba1688TokenManager:26`、`Alibaba1688RealClient:37-38`）；token 未按店铺隔离（单值 `alibaba.refresh-token` + Redis 全局 key）；FBA FIFO 出库无行锁和条件更新；多批次取首条 | 供应商生命周期、收货、发票、付款、三单匹配、容差、批次和状态机 |
 | 物流 | 有仓库和库存表，但出库、拣货、打包、面单、轨迹、调拨不完整；多仓保存非原子 | WMS 作业单据、库位、两阶段调拨、承运商和轨迹、库存移动账 |
-| 客服 | 工单/RMA 表存在，但店铺归属校验和状态机不完整；PII 无生命周期 | SLA、RMA 收货/检验/退款/补发、邮箱与聊天 PII 治理、可审计操作 |
-| 财务 | 结算解析要求过宽；一次加载全店明细；成本是加权平均；VAT 硬编码；金蝶客户端仍可能返回 mock；凭证只覆盖部分订单收入 | 双分录账本、费用/退款/汇率/税务、FIFO、结算对账、期末关账、外部总账 |
-| 广告 | 真实客户端未真正完成 refresh token 交换；分页、429、Retry-After、nextToken 不完整；服务返回硬编码 campaign | OAuth/profile 隔离、统一限流与分页、日指标唯一键、归因窗口、自动化护栏、变更审计 |
-| 商品/Listing | 更新未同步 ES；MongoDB 属性与 MySQL 无一致性机制；A+ 永远 true；Feed 超时后未下载结果报告 | 版本化 Listing、Feed 结果闭环、Outbox 派生同步、ES 强制租户/店铺过滤 |
-| 多平台 | Webhook 端点无守卫、无任何入站签名校验（全仓库仅有出站签名工具）；`shopId` 为空时按 platform 反查“最新创建的账号”造成跨租户错配；去重键仅为全局 `event_id`；`handleWebhookEvent` 只写日志；**真客户端只有 TEMU/TIKTOK/SHEIN**（`MultiplatformServiceImpl.java:632-635`、`706-712` 的 `switch(platform)` 只有这三个 case，其它平台串抛“不支持的平台”；`syncAll` 614-617 也只同步这三家），README 声明的 Shopify/eBay/Walmart/Shopee/Lazada **无任何实现**；默认 profile（非 `mock`）加载 `*RealClient` | 平台适配层（补实现或撤回宣称）+ 每平台验签与时间窗；事件唯一键 `(platform, shop_id, event_id)`；归属无法确定时拒绝落库；事件处理实现真实业务动作并可重放 |
+| 客服 | 工单/RMA 表存在，但店铺归属校验和状态机不完整；PII 无生命周期；买家消息客户端 `MessagingApiRealClient` 无 SigV4 且端点与真实 SP-API Messaging 不符，缺 token 时静默返回空列表/false | SLA、RMA 收货/检验/退款/补发、邮箱与聊天 PII 治理、可审计操作 |
+| 财务 | 结算解析要求过宽；一次加载全店明细；成本是加权平均；VAT 硬编码；金蝶“真实”客户端无条件返回 `KINGDEE_MOCK_` 占位号且凭证落 `SYNCING` 后无法重试（`FinanceServiceImpl:190-206`）；结算行 `row_key` 不含 `shop_id/currency` 却全局唯一，跨店同业务行静默丢失（`V2__settlement_detail.sql:22`） | 双分录账本、费用/退款/汇率/税务、FIFO、结算对账、期末关账、外部总账 |
+| 广告 | 真实客户端为骨架：全局单套 profile/token（`AdvertisingApiRealClient:52-56`）、ClientId 可能为空串（182 行）、失败静默 `emptyList()`；未真正完成 refresh token 交换；分页、429、Retry-After、nextToken 不完整；服务返回硬编码 campaign | OAuth/profile 隔离、统一限流与分页、日指标唯一键、归因窗口、自动化护栏、变更审计 |
+| 商品/Listing | 更新未同步 ES；MongoDB 属性与 MySQL 无一致性机制；A+ 永远 true；Feed `DONE` 即置 `SUCCESS` 但从不下载 `resultDocumentId` 结果报告、超时后任务永久停留 `SUBMITTED`（`ListingCopyService:236-257`）；`DEFAULT_PRODUCT_TYPE` 为占位值 | 版本化 Listing、Feed 结果闭环、Outbox 派生同步、ES 强制租户/店铺过滤 |
+| 多平台 | Webhook 端点无守卫、无任何入站签名校验（全仓库仅有出站签名工具）；`shopId` 为空时按 platform 反查“最新创建的账号”造成跨租户错配；去重键仅为全局 `event_id`；`handleWebhookEvent` 只写日志；**真客户端只有 TEMU/TIKTOK/SHEIN**（`MultiplatformServiceImpl.java:632-635`、`706-712` 的 `switch(platform)` 只有这三个 case，其它平台串抛“不支持的平台”；`syncAll` 614-617 也只同步这三家），README 声明的 Shopify/eBay/Walmart/Shopee/Lazada **无任何实现**；默认 profile（非 `mock`）加载 `*RealClient`，且三家 RealClient 自述未校准、`fetchRecentOrders` 固定第 1 页（无翻页、无增量时间窗）、`markShipped` 内部 `cred(null)` 回退到该平台任意首个账号凭证（`PlatformCredentialService:23-24`） | 平台适配层（补实现或撤回宣称）+ 每平台验签与时间窗；事件唯一键 `(platform, shop_id, event_id)`；归属无法确定时拒绝落库；事件处理实现真实业务动作并可重放 |
 | 消息/异步 | 部分消费者有手动 ack 与 DLQ，但通知消费者只记日志；分布式锁 Redis 不可用时 fail-open；异步线程丢上下文 | Inbox/Outbox、幂等消费、重试/DLQ/重放、锁 fail-closed、上下文传播 |
 
 ### 1.5 外部对标
@@ -425,6 +428,13 @@ projected_available  = on_hand - reserved - allocated - safety_stock
 7. 付款状态、对账状态和供应商余额。
 8. 与财务账本通过 Outbox 事件连接，不在采购事务内直接生成不可审计凭证。
 
+**现状（本轮实测，2026-09-24，作为本节目标的整改输入）**：
+
+- `Alibaba1688RealClient`（`@Profile("!mock")`）在 37–38 行自述“签名 / token 端点尚未经 1688 官方沙箱校准”；`Alibaba1688Signer:24` 标注“未校准”，列出两项待沙箱确认（`sign_method=sha1` 是整体 SHA1 还是 HMAC-SHA1；参数值是否需先 URL-encode）；`Alibaba1688TokenManager:26` 同样标注“未校准”（token 端点与 grant 参数名待确认）。
+- **凭据是单套全局值**：`alibaba.refresh-token`（`Alibaba1688RealClient:59`）为单个 `@Value` 注入；`Alibaba1688TokenManager` 的 Redis key 是全局常量 `alibaba:open:access_token` / `alibaba:open:refresh_token`（34–35 行），无 tenant/shop 维度 → 多店铺同时使用会互相覆盖 token。
+- 接口 javadoc 与实现不一致：`Alibaba1688Client:15` 写“签名方式：SDK 内置 HMAC-SHA1”，实现默认 `sign_method=md5`（`Alibaba1688RealClient:188/195`）。
+- **正向保留**：凭证缺失时抛 `IllegalStateException`（诚实失败，不再返回 `1688_MOCK_` 假订单号，29–30 行）；`submitTo1688` 采用“Outbox-lite”预写 `SUBMITTING` 状态（`ProcurementServiceImpl:69-74`），能阻止崩溃后重复下单。但它依赖人工核对 1688 后台推进状态，**不是**真正的 Outbox 表，也没有投递重试与重放（见 4.4 现状）。
+
 ### 3.4 物流/WMS
 
 - 仓库、库区、库位、容器、批次和库存移动账。
@@ -468,6 +478,14 @@ projected_available  = on_hand - reserved - allocated - safety_stock
 - 结算同步调度默认开启，按店铺和批次游标运行；列表查询必须分页或限制数量。
 - 金蝶/其他总账连接器必须区分 mock 和真实实现；生产禁用 mock 标识。
 
+**现状（本轮实测，2026-09-24，作为本节目标的整改输入）**：
+
+- **金蝶是假真实**：`KingdeeRealClient`（`@Profile("!mock")`）的 `syncVoucher` 在 48–51 行无条件返回 `"KINGDEE_MOCK_" + System.currentTimeMillis()` 占位号并只打 warn；finance 的 `application.yml:6-10` 默认 profile 为空（`${SPRING_PROFILES_ACTIVE:}`），即**默认加载 Real 客户端**并走占位分支。
+- **凭证状态机死锁**：`FinanceServiceImpl.syncToKingdee` 的原子认领条件是 `.in("kingdee_sync_status", "PENDING", "FAILED")`（190–194 行），而 mock 分支把状态写成 `SYNCING`（205–206 行）。该凭证此后既不满足认领条件、也没有任何后台任务会把它推进到 `SYNCED`——代码注释声称“待真实 API 接入后自动转为 SYNCED”，实际**不存在这条路径**。同时 `V1__init.sql:19` 的列注释仍写 `PENDING/SYNCED/FAILED`，DDL 与运行态已漂移。
+- **结算行会跨店静默丢失**：`SettlementParser.rowKey`（136–153 行）的指纹是 `settlementId|orderId|sku|amountType|amount|depositDate` 的 MD5，**不含 `shop_id`、`currency`、`transaction_type`**；而 `V2__settlement_detail.sql:22` 是全局 `UNIQUE KEY uk_row_key (row_key)`。不同店铺（或同店铺不同币种）的同一业务行会被当作重复行丢弃，`SettlementServiceImpl.ingestParsedRows`（111–170 行）的批内/跨批去重不会察觉，结算合计随之少算且没有差异告警。
+- **金额精度**：解析端用 `BigDecimal` 保留原始精度，落库列是 `DECIMAL(14,2)`（`V2:16`），写入前 `setScale(2, HALF_UP)`（`SettlementServiceImpl:164`）。对 JPY/KRW 等 0 位小数币种可接受，但多币种场景会累积舍入误差，且列宽没有按币种区分。
+- **正向保留**：按表头名（而非列序）定位、行级容错（空值/非数字只记行错误而不中断整批）、批内 + 跨批去重、多币种告警——这些设计在改造时必须保留（`SettlementParser:69-115`、`SettlementServiceImpl:111-170`）。
+
 #### 3.6.2 成本与利润
 
 - 成本层按采购批次/入库批次建立，FIFO 消耗必须有唯一键和审计。
@@ -504,6 +522,8 @@ projected_available  = on_hand - reserved - allocated - safety_stock
 - **连接与超时未配置**：`amz-service-search/src/main/resources/application.yml:27-28` 只有 `spring.elasticsearch.uris: ${ES_URIS:http://localhost:9200}`，无 connect/socket 超时、无连接池上限、无认证与 TLS 配置（`application-local.yml` 同样只有裸 `uris`）；compose 里 ES 显式 `xpack.security.enabled=false`，属于**仅限本地**的配置。
 - **向量维度与模型耦合**：`ProductDoc.java:59` 硬编码 `dims = 1024`，更换 embedding 模型必须重建索引；`embedding.enabled` 默认 `false`（`application.yml:32`），默认检索路径是纯 BM25。
 - **分页与结果窗口**：查询只使用 `withMaxResults(bm25Top|knnTop|rrfFinal)`（默认 50/50/20，已外置为 `search.retrieval.*`），没有 `from/size` 深分页，也没有显式设置 `index.max_result_window`；`es-native-rrf-check.md` 里的 `rank_window_size` A/B 只有 playbook、没有执行结果。
+- **Feed 结果闭环未闭合**：`ListingCopyService.pollFeedStatus`（208–259 行）在 `DONE` 时直接置 `SUCCESS`（236–242 行），**从不下载 `resultDocumentId` 的结果报告**——全仓库该字段只出现在 `ListingsMockClient:43`（Mock 随机生成）与 `ReportsRealClient:80`（报表链路），Listing 链路没有任何处理器；`FATAL/CANCELLED` 时置 `FAILED` 但不保存失败明细（243–249 行）；5 分钟超时只 `log.warn` 后 `return`（253–256 行），任务**永久停留在 `SUBMITTED`**，没有重试、告警或人工确认入口。
+- **productType 是占位值**：`DEFAULT_PRODUCT_TYPE = "PRODUCT"`（55 行），注释自述真实场景需按源 Listing 类目填充（如 LUGGAGE/SHOES/HOME），错误值会被 Amazon 直接判 FATAL。
 
 ### 3.9 跨域事件清单
 
@@ -553,6 +573,25 @@ reconciliation.case.closed.v1
 - 统一指标：请求量、成功率、延迟、限流命中、重试次数、最后成功时间、游标滞后。
 - 生产启动时检查连接器配置；缺失密钥、mock 标记或未验证的端点直接拒绝启动。
 
+**现状（本轮实测，2026-09-24）：连接器真伪全盘点**
+
+| 连接器 | 实现与 profile | 本轮核实事实 | 生产可用性 |
+|---|---|---|---|
+| 金蝶云星空 | `KingdeeRealClient`（`!mock`）/ `KingdeeMockClient`（`mock`） | `syncVoucher` 48–51 行无条件返回 `KINGDEE_MOCK_` 占位号；finance `application.yml:6-10` 默认 profile 为空 → 默认加载 Real 实现；凭证被置 `SYNCING` 后无法再次认领（认领条件只接受 `PENDING/FAILED`） | 未对接（占位） |
+| 1688 | `Alibaba1688RealClient`（`!mock`） | 37–38 行自述签名/token 端点未校准；`Alibaba1688Signer:24`、`Alibaba1688TokenManager:26` 同类标注；凭据为单套全局值（`alibaba.refresh-token` + Redis 全局 key） | 未校准 · 单租户 |
+| SHEIN | `SheinRealClient`（`!mock`） | 56–58 行硬编码 `page_no=1`、`page_size=50`、`order_status=PAID`；103–106 行自述未校准；`markShipped` 以 `cred(null)` 解析凭证 | 未校准 · 可能用错店铺 |
+| TEMU | `TemuRealClient`（`!mock`） | 50–51 行固定 `page=1`、`page_size=50`；94–96 行自述未校准；65–66 行 `cred(null)` | 同上 |
+| TikTok Shop | `TikTokRealClient`（`!mock`） | 67–68 行 `cred(null)`；177–180 行三项待沙箱确认（待签字符串拼接顺序、body 是否参与签名、timestamp 单位） | 同上 |
+| SP-API Messaging | `MessagingApiRealClient`（`!mock`） | 单套 `spapi.lwa.access-token`（41 行）；127–128 行只带 `Authorization: Bearer` 与 `x-amz-access-token`，**没有 AWS SigV4 签名**；`/messaging/v1/orders`、`/messaging/v1/messages/{id}/read` 与真实 SP-API Messaging 资源模型不符；失败返回空列表/false（65、81、102、121 行） | 不可用（需重写） |
+| Amazon Ads | `AdvertisingApiRealClient`（`!mock`） | 全局 `advertising.profile-id` + `spapi.lwa.access-token`（52–56 行）；182 行 `Amazon-Advertising-API-ClientId` 在 profileId 不含 `:` 时返回空串；失败静默 `emptyList()`/`false`（92–96、124、148、174 行） | 骨架 |
+| Keepa | `KeepaRealClient` | apiKey 为空只打 `log.debug` 并返回 null；非 200 与异常同样返回 null | 静默空值 |
+| 17TRACK | `LogisticsTrackingRealClient` | javadoc 27 行自述“三层降级，保证没有凭证也不影响系统运行”；不可用/异常一律返回空轨迹（76–102 行，326–334 行列原因） | 静默空值 |
+
+由此得到两条对本节目标态的硬性要求：
+
+1. **验收口径必须以联调记录为准**：`@Profile("!mock")` 与类名 `*RealClient` 都不是“真实对接”的证据；每个连接器必须提供沙箱/生产联调记录 + 校准测试，否则在能力清单与前端上显示为“未接通”。
+2. **静默降级必须显式化**：返回空列表/null/false 会让上游把“拿不到数据”当成“没有数据”，必须改为带状态的错误（可重试 / 需人工 / 已降级 `DEGRADED`）并产生指标与告警。
+
 ### 4.2 SP-API 三链路
 
 | 链路 | 用途 | 触发方式 | 必须保存的状态 |
@@ -579,6 +618,8 @@ reconciliation.case.closed.v1
 | 系统错误 | 数据库、MQ、代码异常 | 回滚事务，进入重试/DLQ，按 SLO 告警 |
 
 ### 4.4 Outbox/Inbox
+
+**现状（本轮实测，2026-09-24）**：全仓库**不存在** `outbox_event` / `inbox_event` 表、relay 进程或消费去重表；在 Java/SQL/配置中检索 `outbox|inbox` 只有 2 处业务命中，且都是注释/测试名——`ProcurementServiceImpl.java:69` 的“Outbox-lite”（远程调用前预写 `SUBMITTING` 状态，防崩溃后重复下单）与 `ProcurementServiceImplTest.java:115`。也就是说，下面的表结构与规则是**目标态**：当前唯一的“准 Outbox”是一条采购单状态机约定，它不覆盖订单/库存/财务/结算事件，没有投递、重试、重放与积压监控，也不能作为集成事实源。
 
 建议表结构（示意）：
 
@@ -1360,7 +1401,14 @@ seed        = 固定整数或字符串
 - `amz-service/amz-service-order/src/main/java/com/amz/controller/OrderController.java`
 - `amz-service/amz-service-logistics/src/main/java/com/amz/controller/LogisticsController.java`、`.../service/impl/LogisticsServiceImpl.java`、`.../service/impl/WarehouseServiceImpl.java`
 - `amz-service/amz-service-customer/src/main/java/com/amz/controller/CustomerController.java`
-- `amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java`（唯一确认的真实写链路，含 PRODUCT 占位与 Thread.sleep 轮询）
+- `amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java`（唯一确认的真实写链路；`DEFAULT_PRODUCT_TYPE` 占位在 55 行、`Thread.sleep` 轮询在 208–259 行、`DONE` 后不下载结果报告在 236–242 行、超时留 `SUBMITTED` 在 253–256 行）
+- `amz-service/amz-service-finance/src/main/java/com/amz/client/KingdeeRealClient.java`（48–51 行占位号）与 `.../service/impl/FinanceServiceImpl.java`（190–206 行认领条件与状态写回）
+- `amz-service/amz-service-finance/src/main/java/com/amz/parse/SettlementParser.java`（136–153 行 rowKey）与 `.../src/main/resources/db/migration/V2__settlement_detail.sql`（16、22 行）、`.../V1__init.sql`（19 行金蝶状态列注释）
+- `amz-service/amz-service-procurement/src/main/java/com/amz/client/Alibaba1688RealClient.java`、`Alibaba1688Signer.java`、`Alibaba1688TokenManager.java`（未校准标注与全局 Redis token key）
+- `amz-service/amz-service-multiplatform/src/main/java/com/amz/client/SheinRealClient.java`、`TemuRealClient.java`、`TikTokRealClient.java`、`AbstractPlatformClient.java`（`cred(null)` 回退）与 `.../credential/PlatformCredentialService.java`（23–24 行按 platform 回退到首个账号）
+- `amz-service/amz-service-message/src/main/java/com/amz/client/impl/MessagingApiRealClient.java`（41、127–128 行：单套 token + 无 SigV4）
+- `amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java`（52–56、92–96、181–204 行：全局凭据与静默降级）
+- `amz-service/amz-service-product/src/main/java/com/amz/client/impl/KeepaRealClient.java`（47–49、62–66 行：静默返回 null）与 `amz-service/amz-service-logistics/src/main/java/com/amz/client/LogisticsTrackingRealClient.java`（27、76–102、326–334 行：三层降级、空轨迹）
 
 ### A.4 部署、迁移与 CI
 
@@ -1425,7 +1473,8 @@ seed        = 固定整数或字符串
 7. 是否已有财务/税务/总账系统接口和责任人？
 8. 期望的首期容量、SLO、RPO/RTO 和预算范围是什么？
 9. 是否允许引入 Keycloak、Vault/KMS、外部对象存储、企业短信和外部 IdP？
-10. 是否批准进入实施计划阶段；批准前不修改业务源码。
+10. 是否确认各外部连接器的真实状态（金蝶未对接、1688/SHEIN/TEMU/TikTok 未沙箱校准、Messaging/Ads 为骨架且静默降级、Keepa/17TRACK 静默空值）？是否接受“阶段 0 完成前不对外宣称任何真实平台对接能力”？
+11. 是否批准进入实施计划阶段；批准前不修改业务源码。
 
 ## 附录 E：本文自检
 
@@ -1434,7 +1483,7 @@ seed        = 固定整数或字符串
 - 一致性：本文假设与前面设计章节的工作假设保持一致；若评审推翻部署形态或数据库选择，需要重新评估租户、迁移和成本章节。
 - 范围：本文覆盖业务、性能、安全、可靠性、运维、合规、数据迁移和验收；不包含具体源码实现，符合“设计先行”的流程。
 - 歧义：PII 保留、税务、RPO/RTO、容量、预算和运行单元收敛均列为待确认决策，未伪装成已确定事实。
-- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本。
+- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。
 ---
 
 ## 附录 F：328 端点守卫矩阵与 82 条无守卫清单（本轮实测）
@@ -1517,7 +1566,22 @@ mvn -B -ntp dependency:tree -Dscope=runtime > target/dependency-tree-runtime.out
 | `docker-compose.yml:137-150` | ES 作为检索依赖 | `xpack.security.enabled=false`、单节点、512m 堆、无插件 | 仅限本地；共享/生产环境必须重建拓扑与安全配置 |
 | README 模块清单与“完成”措辞 | 各服务能力描述 | 见 1.4 业务模型缺口与 1.3 P0 清单 | 以本规格为准 |
 
-### G.3 使用规则
+### G.3 `docs/erp-improvement-plan-2026-08-17.md` 的“全部完成”与代码事实矛盾
+
+该文档第 5 行声明“**全部 8 项已完成**，里程碑 A/B/C/D 全部闭环，546 单测全绿”，但同一文档与代码事实均不支持：
+
+| 该文档位置 | 原文口径 | 实测结论 |
+|---|---|---|
+| 第 5 行 | “全部 8 项已完成 … 546 单测全绿” | 本轮实测后端 `@Test` 527 处、执行 527（0 失败 / 2 跳过），前端 133 用例；数字口径与 546 不符，且“全部完成”与 1.3 的 22 条 P0、1.4 的业务缺口直接矛盾 |
+| 第 14 行 | 第 2 项“1688 开放平台真实对接 ✅ 已完成” | **同文档第 55 行**自述该客户端是“`log.warn` + 返回 `1688_MOCK_` 占位”的骨架；代码侧 `Alibaba1688Signer:24`、`Alibaba1688TokenManager:26`、`Alibaba1688RealClient:37-38` 均自述未校准 |
+| 第 16 行 | 第 4 项“多平台签名按官方校准 ✅ 已完成” | `SheinRealClient:103-106`、`TemuRealClient:94-96`、`TikTokRealClient:177-180` 均自述“未校准”，待平台沙箱确认 |
+| 第 18 行 | 第 6 项“凭证管理（密管+多租户）✅ 已完成” | 只有 multiplatform 域实现按 `(shopId, platform)` 解析（`PlatformCredentialService`）；finance（金蝶）、procurement（1688）、message（Messaging）、ad（Ads）仍是全局 `@Value` 单套凭据 |
+| 第 19 行 | 第 7 项“Feign 端点 shopId 越权收口 ✅ 已完成” | 328 个端点中仍有 82 条无任何守卫注解（附录 F），其中包含已确认的真缺口（P0-15、P0-17、P0-19、P0-20） |
+| 第 164 行 | “1688 / 多平台签名：真实实现后补签名与沙箱测试（见 2.2/2.4）” | 这句话本身就承认沙箱校准尚未完成，与第 5 行的“全部完成”属同一文档内的自相矛盾 |
+
+对照：`docs/amazon-ai-agent-execution-plan-2026-09-16.html` 的进度看板默认显示“已完成 0 / 28”（第 139 行），且勾选状态只存在浏览器本地（第 132 行）——它不能作为完成度证据，但至少没有宣称已全部完成。
+
+### G.4 使用规则
 
 1. 本文档与仓库内既有审计文档冲突时，**以本文档标注的源码行号为准**，并重新执行 F.5 的复现命令核对。
 2. 任何“已完成 / 已支持 / 已通过”的表述，必须同时给出来源：源码路径 + 行号、测试命令 + 输出、或联调记录。三者缺一即为待验证。
