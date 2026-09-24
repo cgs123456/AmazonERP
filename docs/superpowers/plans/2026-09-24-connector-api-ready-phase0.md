@@ -894,3 +894,23 @@ Expected: PASS（既有 527 用例不回退）
 > 它们证明的是「**配置一致 + 默认不指向第三方**」，**不**证明 Nacos/Redis 可达——后者仍需 A5 联调。
 > 特别提示：`NacosAddressContractTest` 里的 `16` 与 `17` 是**硬编码期望值**，新增/删除服务时必须同步更新，
 > 否则要么假通过（扫不到文件）要么误报——这是数量断言的固有代价，已用「文件数相等」断言对冲扫空风险。
+
+### A.11 第 57 轮：P0-57 运行模式 fail-closed（默认值不得落到 mock）（2026-09-25）
+
+| 项 | 内容 |
+|---|---|
+| **实测缺陷（决定性）** | `docker-compose.yml` 的 16 个服务段与 16 份 k8s service 清单**完全没有** `SPRING_PROFILES_ACTIVE`（0 命中），而 8 个模块的 `application.yml` 默认值是 `${SPRING_PROFILES_ACTIVE:mock}`。叠加后果：按现有清单部署，14 个 `@Profile("!mock")` 真实客户端被禁用，改由 10 个模块里的 Mock 客户端返回样例数据，**且不报任何错**——假订单 / 假财务事件 / 假物流轨迹，健康检查全绿。这是「静默降级」而非「失败」，属最危险的一类缺陷 |
+| **口径纠正（推翻前稿）** | 前稿（README §现状、A.10 之前）写「**7 个**模块默认 mock」。实测 `@Profile("!mock")` 共 **15 处**（14 个真实客户端 + `ConnectorEvidencePolicy`），分布于 **9 个模块**；含 `@Profile("mock")` 的模块共 **10 个**，其中 **8 个**写了 `active:` 默认值（ad / finance / logistics / multiplatform / procurement / product / report / spapi），message 与 ops **没有** `active:` 行（默认空 profile，等价于 `!mock`，无风险）。故正确数字是 **8**，不是 7 |
+| **修复（三处，fail-closed）** | ① 8 份 `application.yml` 默认值 `mock` → `prod`，并修正 **7 处**已失效的「默认启用 mock 模式」注释（注释与行为矛盾会直接误导运维）；② compose 为 16 个 Spring 服务逐段注入 `SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}`；③ k8s 16 份清单经 `configMapKeyRef` 取值、ConfigMap 定义 `SPRING_PROFILES_ACTIVE: "prod"`、`.env.example` 补该项 |
+| **脚本先产出非法 YAML（自噬记录）** | 首版注入脚本按「插在 `NACOS_ADDR` 条目**之后**」实现，遇到多行块风格（`valueFrom:` 换行后接 `configMapKeyRef:`）会把块拆断，产出**无法解析的 YAML**（gateway / ai / product / search / spapi / user 6 份中招）。改为「插在该条目**之前** + 按各文件自身风格分支（紧凑式 / 单行 valueFrom / 多行块）」，并用 `yaml.safe_load_all` 逐份解析 + 定位到 Deployment 容器 env 复验，16/16 OK。**教训：改 YAML 必须以解析器复验收尾，不能只 diff 行数** |
+| **守卫（新增 4 例）** | `ProfileActivationContractTest`（amz-common）：① 凡带 `@Profile("mock")` 的模块（硬编码 10）其 `active:` 默认必须是 `prod` 且不含 `:mock}`（其中 8 个有该行）；② compose 注入段数 == 16 且每段缺省值 `prod`；③ k8s 16 份清单含该键且走 `configMapKeyRef`、ConfigMap 值为 `prod`；④ `.env.example` 声明 `prod` |
+| **变异验证（证明守卫不是摆设）** | 把 spapi 默认值改回 `mock`、删掉一段 compose 注入 → 测试**分别报红**且定位到「模块 spapi 默认值 mock」与「注入数 15 ≠ 16」。能通过的守卫不等于有效守卫，此处显式留证 |
+| **`prod` 不是无语义的名字（连带后果，必须知道）** | `SpApiEndpointResolver.PROD_PROFILE = "prod"`：`prod` 下 `spapi.base-url-override` / `lwa-endpoint-override` 非空即**拒绝启动**；`application-prod.yml` 置 `spapi.startup.require-credentials: true`，缺凭证**拒绝启动**。二者默认值实测均为空 / 未注入，故本次改默认**不会**造成启动失败；但它意味着：① 无凭证时 `docker-compose up` 会看到 spapi 拒绝启动（**这是期望行为**，不是回归）；② 沙箱联调**必须**用不含 `prod` 的 profile（dev/sandbox），否则端点覆盖会直接把进程顶掉 |
+| **新发现（登记，未修）** | `k8s/configmap.yaml` 的 `AWS_LWA_ENDPOINT` 是**死键**：全仓无任何代码读取它（代码只读 `SPAPI_LWA_ENDPOINT_OVERRIDE`）。它会给人「LWA 端点已配置」的错觉，实则不生效 |
+| **实测** | JDK `17.0.20.1+1` + Maven `3.9.11`：`-Dtest=ProfileActivationContractTest` → 4/4 PASS；`mvn -B -ntp test` → 19 模块 **675 例 / 0F / 0E / 2S**（671 → 675，+4）、BUILD SUCCESS；`-pl amz-service/amz-service-spapi -am test` → amz-common **60**（56 → 60）+ spapi **203**（2 skip）。日志 `.mvn-round57.log` / `.mvn-r57-spapi.log` |
+| **未做（不冒充已完成）** | 「生产 profile 下关键中间件地址未显式注入即拒绝启动」门禁**仍未实现**（承 A.10 的登记）。本次只解决「落到 mock」这一个方向；`NACOS_ADDR` / `REDIS_HOST` 未注入时服务仍会启动（只是连不上） |
+| 提交 | `fix(config,deploy): 运行模式 fail-closed，禁止生产静默跑 mock 假数据（P0-57）`，本地提交，`origin/master` **未推送** |
+
+> **证据边界**：新增 4 例全部是 **E1（自证）**——断言对象是本仓库的配置文本与部署清单，不起 Spring 上下文。
+> 它证明「默认不落到 mock + 清单显式注入」，**不**证明真实客户端可用（仍需 A5 联调），
+> 也**不**证明 k8s 清单能被集群接受（需 `kubectl apply --dry-run` 或实集群验证，本轮只做到 YAML 解析级）。

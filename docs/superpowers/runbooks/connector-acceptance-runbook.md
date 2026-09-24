@@ -554,6 +554,35 @@ $m = "$env:USERPROFILE\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd"
 未注入时服务会连 `127.0.0.1:8848` 并快速失败（**不再**连第三方主机），但**不会**因此拒绝启动——
 生产 profile 的「关键中间件地址未显式注入即拒绝启动」门禁**尚未实现**（已登记为 Task 8 增补项）。
 
+
+### 7.6 第 57 轮复跑（P0-57：运行模式 fail-closed，禁止生产静默跑 mock）
+
+命令（实测，2026-09-25，项目自有工具链）：
+
+```powershell
+$env:JAVA_HOME = "$env:USERPROFILE\.cache\codex-tools\jdk-17.0.20.1+1"
+$env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp"   # 本机沙箱必需
+$m = "$env:USERPROFILE\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd"
+& $m -B -ntp -pl amz-common test -Dtest=ProfileActivationContractTest -DfailIfNoTests=false
+& $m -B -ntp test                                   # 全仓
+& $m -B -ntp -pl amz-service/amz-service-spapi -am test
+```
+
+| 项 | 实测结果 |
+|---|---|
+| 新守卫 | `ProfileActivationContractTest`（amz-common）**4/4** PASS |
+| 变异验证 | 默认值改回 `mock` / 删一段 compose 注入 → **2 条断言分别报红**（定位到模块名与「15 ≠ 16」） |
+| 全仓回归 | 19 模块 **675 例 / 0F / 0E / 2S**（671 → 675，+4），BUILD SUCCESS |
+| spapi 单模块 | **203**（2 skip，即 `SpApiIntegrationTest`）；amz-common **60** |
+
+**部署前必须知道的连带语义（本轮新增，写进验收清单）**：
+
+1. `prod` 是有语义的 profile，不是占位符。`SpApiEndpointResolver.PROD_PROFILE = "prod"`：
+   `prod` 下两个端点覆盖键非空即**拒绝启动**；`application-prod.yml` 置 `require-credentials: true`，
+   缺凭证**拒绝启动**。因此**无凭证时 spapi 拒绝启动是期望行为**，不要当成回归去「修」。
+2. 沙箱 / 本地桩联调**不得**使用 `prod` profile（端点覆盖会顶掉进程），改用 `dev` / `sandbox`。
+3. 离线演示若要回到样例数据，必须**显式** `SPRING_PROFILES_ACTIVE=mock`——现在不再有「忘记设置就给假数据」这条退路。
+
 ## 8. 未验证与风险（诚实清单）
 
 1. **runner 已存在，但从未对真实服务跑过**（P0-52c 第 48 轮修复）→ §3 的命令现在可执行，且**只有 C1 全绿才会产出记录**；但迄今所有执行都对着**本地桩**（`stub=true` + `--allow-stub`，A5 封顶 E2），因此「一条命令出**真实联调**报告」**仍是待验证承诺**，不是现状。
@@ -579,3 +608,13 @@ $m = "$env:USERPROFILE\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd"
     只扫固定路径下的配置文件，且硬编码期望数量（16 / 17）。新增服务、改名或迁移目录时必须同步更新，
     否则断言会**假通过**（扫空）或误报；它们也**不覆盖**运行时从配置中心拉到的值——
     Nacos 上的配置内容不在本仓库扫描范围内。
+
+13. **运行模式的守卫只覆盖了「落到 mock」这一个方向**（P0-57 已修复，2026-09-25）
+    → 默认值改为 `prod`、部署清单显式注入，并有 `ProfileActivationContractTest` 守卫（4 例，已变异验证）。
+    但**仍未实现**「`prod` 下 `NACOS_ADDR` / `REDIS_HOST` 等关键地址未显式注入即拒绝启动」的门禁：
+    未注入时服务仍会启动（只是连不上）。承第 11 条，验收记录里**不要**把它写成「已有」。
+    另外 `k8s/configmap.yaml` 的 `AWS_LWA_ENDPOINT` 是**死键**（全仓无代码读取，
+    代码只读 `SPAPI_LWA_ENDPOINT_OVERRIDE`），会制造「LWA 端点已配置」的错觉，尚未清理。
+14. **默认改 prod 会改变本地开发体验，且这是有意的** → 原先「什么都不设就能跑样例数据」不再成立；
+    离线开发 / 演示必须显式 `SPRING_PROFILES_ACTIVE=mock`。若有人反馈「起来就报缺凭证」，
+    先确认是不是把演示环境当成了未配置的实例，而不是回退本修复。
