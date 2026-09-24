@@ -8,6 +8,7 @@ metadata:
 data:
   # ====== 基础设施地址（K8s 集群内服务名） ======
   NACOS_ADDR: "nacos.amz-erp.svc.cluster.local:8848"
+  SPRING_PROFILES_ACTIVE: "prod"
   REDIS_HOST: "redis.amz-erp.svc.cluster.local"
   REDIS_PORT: "6379"
   MYSQL_HOST: "mysql.amz-erp.svc.cluster.local"

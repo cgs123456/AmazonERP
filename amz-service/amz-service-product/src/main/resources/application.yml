@@ -3,9 +3,10 @@ server:
 spring:
   application:
     name: amz-service-product
-  # 默认启用 mock 模式（离线开发）。生产环境通过 SPRING_PROFILES_ACTIVE 环境变量切换为非 mock
+  # 默认 prod（fail-closed）：未显式设置时启用真实客户端，缺凭证会显式失败，
+  # 而不是静默返回样例数据（P0-57）。离线开发请显式设置 SPRING_PROFILES_ACTIVE=mock。
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:mock}
+    active: ${SPRING_PROFILES_ACTIVE:prod}
   cloud:
     nacos:
       discovery:

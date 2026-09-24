@@ -7,7 +7,7 @@ spring:
   # 凭证标记 SYNCING 并返回 KINGDEE_MOCK_ 占位号，不会伪造 SYNCED。
   # 本地离线开发请显式设置 SPRING_PROFILES_ACTIVE=mock 启用 Mock 客户端
   profiles:
-    active: ${SPRING_PROFILES_ACTIVE:}
+    active: ${SPRING_PROFILES_ACTIVE:prod}
   cloud:
     nacos:
       discovery:

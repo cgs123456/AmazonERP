@@ -2,7 +2,7 @@
 
 基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务业务闭环，内置 AI 运营 Agent（29 工具）与可观测性三栈。
 
-> ⚠️ **当前状态（2026-09-24 审计结论）**：本仓库**不能按现状视为可直接生产部署**。实测存在 **32 条 P0 级生产阻断项**，包括：7 个模块默认 `spring.profiles.active=mock` 且 16 份 k8s 清单与 Compose 均不设置 profile、SP-API 凭证表无任何自动建表路径、order/product 硬编码第三方公网 Redis 地址 `121.37.250.15:6379`（实测 45.3 秒连接超时）、16 份 k8s Deployment 与代码占位符大面积不匹配（logistics 缺 15 项、search 缺 10 项）。
+> ⚠️ **当前状态（2026-09-24 审计结论）**：本仓库**不能按现状视为可直接生产部署**。实测存在 **32 条 P0 级生产阻断项**，包括：8 个模块默认 `spring.profiles.active=mock` 且 16 份 k8s 清单与 Compose 均不设置 profile（**已修复 2026-09-25，P0-57**：默认值改为 `prod`、Compose 16 段与 k8s 16 份均显式注入，并由 `ProfileActivationContractTest` 守卫）、SP-API 凭证表无任何自动建表路径、order/product 硬编码第三方公网 Redis 地址 `121.37.250.15:6379`（实测 45.3 秒连接超时）、16 份 k8s Deployment 与代码占位符大面积不匹配（logistics 缺 15 项、search 缺 10 项）。
 > 上文「业务闭环」指**模块与代码路径已具备**，不代表外部平台已完成真实对接或沙箱联调；多个 `*RealClient` 仍返回占位值或静默降级。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
 
 ## 🏗 技术栈
@@ -280,7 +280,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-> `docker-compose.yml` 实测包含 **31 个 service**（基础设施 + 网关 + 业务服务 + 前端；2026-09-24 以文件为准，旧口径「17 服务」已过期）。注意：Compose 当前不注入 `SPRING_PROFILES_ACTIVE`、`REDIS_HOST` 全域缺失、`MYSQL_HOST` 仅 spapi 有值，直接 `up -d` 只能用于本地演示，不能作为部署基线。
+> `docker-compose.yml` 实测包含 **31 个 service**（基础设施 + 网关 + 业务服务 + 前端；2026-09-24 以文件为准，旧口径「17 服务」已过期）。注意：Compose 已为 16 个 Spring 服务逐段注入 `SPRING_PROFILES_ACTIVE`（缺省值 `prod`，离线演示可设为 `mock`）、`REDIS_HOST` 全域缺失、`MYSQL_HOST` 仅 spapi 有值，直接 `up -d` 只能用于本地演示，不能作为部署基线。
 
 ### 4. 启动业务服务
 
@@ -289,11 +289,11 @@ docker-compose up -d
 > 构建要求 JDK 17 + Maven 3.8+（`mvn -v` 确认；仓库无 wrapper，本机验证组合：Temurin 17.0.20 + Maven 3.9.9）
 
 ```bash
-# 默认 mock 模式（内置样例数据）
+# 默认 prod（真实客户端，fail-closed）；离线演示请显式指定 mock
 mvn -pl amz-service/amz-service-user spring-boot:run
 
 # real 模式（需真实 SP-API 凭证）
-mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=real
+mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=prod
 ```
 
 > **Windows 本地一键全栈**：仓库根目录提供 `.start-backend-final.bat`（14 微服务按依赖顺序拉起）与 `.start-vite.bat`（前端），配套 `.start-mysql.bat` 初始化本地 MySQL/Redis。

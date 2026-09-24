@@ -45,6 +45,11 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: amz-erp-config
+                  key: SPRING_PROFILES_ACTIVE
             - name: NACOS_ADDR
               valueFrom:
                 configMapKeyRef:
