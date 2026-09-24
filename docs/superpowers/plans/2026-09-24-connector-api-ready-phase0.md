@@ -535,6 +535,7 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/SpApiRequiredHeaderContractTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/connector/MarketplaceRegistryTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/LwaTokenExchangeContractTest.java`
+- Create: `amz-service/amz-service-spapi/src/test/java/com/amz/auth/SpApiConditionalSigningTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiEndpointOverrideSafetyTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiProtocolStubTest.java`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/connector/ConnectorEvidencePolicyTest.java`
@@ -545,7 +546,7 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 - Produces: `MarketplaceRegistry.resolveRegion(String marketplaceId)`（未知即抛）、`MarketplaceRegistry.resolveHost(String region)`；`SpApiUserAgent.build(config)`；`SpApiEndpointResolver.resolve(region, profile)`；`ConnectorEvidencePolicy.evaluate(evidence)` → `{evidenceLevel, apiReady, reachable}`；`AwsSigV4Signer.sign(..., Instant)`（可选，前向保险）。
 - Consumes: spec §1.9.1 证据等级表、spec §1.9.2（SigV4 事实 + 23 条 marketplace 全表）、4.8 契约表、Task 6 的能力清单。
 
-- [ ] **Step 1: 先写失败测试（6 必做 + 1 可选）**
+- [ ] **Step 1: 先写失败测试（7 必做 + 1 可选）**
 
 必做：
 1. `SpApiRequiredHeaderContractTest`：用 `com.sun.net.httpserver.HttpServer`（127.0.0.1:0，**不新增依赖**）挂载桩，驱动 `SpApiGateway`、`OrdersClient`、`FeedsClient`、`FbaInventoryClient`、`LwaTokenManager` 的每个出站路径，断言**每个请求**都带 `user-agent`、长度 ≤500、且含 App 名/版本/语言；同时断言 App 名含 `/`、版本含 `(` 时按官方规则转义（当前全仓无该头 → FAIL）。
@@ -554,6 +555,7 @@ kubectl -n amz-erp wait --for=condition=complete job/amz-mysql-init --timeout=5m
 4. `SpApiEndpointOverrideSafetyTest`：prod 非空 → 拒绝启动；非 allowlist → 拒绝；非 prod + `http://127.0.0.1:<port>` → 通过；发往非 allowlist 主机时**不含** `x-amz-access-token`。
 5. `SpApiProtocolStubTest`：跑 Feeds 全链路 createFeedDocument → PUT → createFeed → getFeedStatus → 下载结果报告，断言请求序列/路径/必带头/幂等键，以及 429 退避与 `x-amzn-RateLimit-Limit` 读取。
 6. `ConnectorEvidencePolicyTest`：E0–E5 × A1–A8 判定表。
+7. `SpApiConditionalSigningTest`（**P0-38**）：断言“有 AWS 密钥 → 请求含 `Authorization`”；“无 AWS 密钥（只给 LWA 凭证）→ 请求**不含** `Authorization`，但仍含 `host`/`x-amz-access-token`/`x-amz-date`/`user-agent`”；并断言两条分支都**不出现** `Credential=null` 或 `Credential=/`（当前实现必然 FAIL）。
 
 可选（前向保险）：`AwsSigV4KnownAnswerTest`（固定输入 + AWS 官方 `aws4_testsuite` 期望 `Authorization` 逐字符比对；夹具来源见 spec §1.9.2）。**注意**：既有 23 个签名相关 `@Test` 只是 E1 自证，不构成 A1 证据（spec §1.9.1 G4）。
 
@@ -564,7 +566,7 @@ Expected: FAIL（类不存在 / 断言失败）
 
 - [ ] **Step 3: 端点覆盖、必填头与市场映射（fail-closed 优先）**
 
-覆盖键默认空；仅非生产生效，prod 非空即启动失败；allowlist 默认 `127.0.0.1`、`localhost`；非 allowlist 主机不得携带 `x-amz-access-token`，其响应也不得写入业务表（避免桩数据污染）。`MarketplaceRegistry` 成为唯一事实源，四份副本删除；`getOrDefault(..., "NA")` 必须从代码中消失（DoD 用 `grep` 断言）。`user-agent` 由 `SpApiUserAgent` 统一构造并注入全部出站客户端。`LwaTokenManager` 与 4 个客户端的 `HttpClient` 改为构造注入。`AwsSigV4Signer` 的 `Clock` 注入为可选项（前向保险）。
+覆盖键默认空；仅非生产生效，prod 非空即启动失败；allowlist 默认 `127.0.0.1`、`localhost`；非 allowlist 主机不得携带 `x-amz-access-token`，其响应也不得写入业务表（避免桩数据污染）。`MarketplaceRegistry` 成为唯一事实源，四份副本删除；`getOrDefault(..., "NA")` 必须从代码中消失（DoD 用 `grep` 断言）。7 处签名调用改为**有条件签名**：`accessKey`/`secretKey` 同时非空才注入 `Authorization`，否则跳过（P0-38），**不得**依赖 `"AWS4" + null` 的当前行为。`user-agent` 由 `SpApiUserAgent` 统一构造并注入全部出站客户端。`LwaTokenManager` 与 4 个客户端的 `HttpClient` 改为构造注入。`AwsSigV4Signer` 的 `Clock` 注入为可选项（前向保险）。
 
 - [ ] **Step 4: LWA 契约夹具落地（必做）；SigV4 KAT 夹具（可选）**
 
@@ -596,7 +598,7 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] 守卫：`ConnectorControllerGuardTest` 通过，附录 F 的无守卫端点数**只减不增**。
 - [ ] 对应 A1–A8 的证据：每个连接器给出「缺凭证 → 错误码」「错凭证 → 平台错误码」「正确凭证 → 成功样例」三条记录后才能标记 API-Ready。
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
-- [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；`SpApiRequiredHeaderContractTest`（每请求都带合法 `user-agent`、≤500 字符）与 `MarketplaceRegistryTest`（23 条逐条断言 + 未知 ID 抛错）通过；`LwaTokenExchangeContractTest` 通过；`ConnectorEvidencePolicyTest` 通过；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。SigV4 KAT 为**可选项**（spec §1.9.2），若保留签名器则夹具必须含来源与 sha256。
+- [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；`SpApiRequiredHeaderContractTest`（每请求都带合法 `user-agent`、≤500 字符）与 `MarketplaceRegistryTest`（23 条逐条断言 + 未知 ID 抛错）通过；`LwaTokenExchangeContractTest` 通过；`SpApiConditionalSigningTest`（无 AWS 密钥时不含 `Authorization`，且永不出现 `Credential=null`）通过；`ConnectorEvidencePolicyTest` 通过；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。SigV4 KAT 为**可选项**（spec §1.9.2），若保留签名器则夹具必须含来源与 sha256。
 - [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘且可执行。
 
 ## 未验证与风险（诚实记录）
@@ -616,7 +618,8 @@ Expected: PASS（既有 527 用例不回退）
 13. **SigV4 已非必需（前提纠正，第 22 轮）**：官方 changelog 逐字确认 2023-10-02 起 Amazon **忽略** SigV4 签名（spec §1.9.2）。本计划因此把 SigV4 KAT 降为可选，**但不删除签名器**：保留为前向保险（Amazon 可能恢复校验、其它 AWS 系接口可复用）。若将来恢复校验，必须**同时**把 `spapi.region` 从写死的 `us-east-1` 改为按 region 派生（EU `eu-west-1` / FE `us-west-2`），否则 EU/FE 必然失败。
 14. **`user-agent` 是否被判拒无法离线证明**：官方只写"必须在每个请求中包含"，未写不合规的状态码。本计划能证明的只是"头存在、格式合法、长度合规"（E3 上限）；平台是否接受属 A5（E4/E5），不得用契约测试冒充联调。
 15. **marketplace 表会漂移**：23 条取自 2026-09-24 的官方 `store-identifiers.md` 快照。Amazon 新增站点时，`MarketplaceRegistryTest` 会因新 ID 未登记的 fail-closed 行为而报错——这是**刻意设计**（宁可显式失败，不可静默打到 NA 端点），修复方式是补表而不是放宽断言。
-16. **RDT（P0-37）不在本计划的实现范围**：本计划只登记它与业务后果（客服/RMA/面单在无 RDT 时不可交付）。RDT 实现属 Plan 4（安全与 PII）的相邻范围，须在客服域交付前完成。
+16. **P0-38 与 P0-35/P0-36 是同一条链路上的前置条件**：把 AWS 密钥降为可选（spec §1.9.2）**必须**与“有条件签名”同时实施，否则只给 LWA 凭证的用户会发出 `Credential=null` 的畸形 `Authorization` 头（第 22 轮已用真实编译产物实测）。今日 Amazon 忽略该头，所以它不表现为立即失败，而是**静默错误**——不得因为“现在能跑”就不修。
+17. **RDT（P0-37）不在本计划的实现范围**：本计划只登记它与业务后果（客服/RMA/面单在无 RDT 时不可交付）。RDT 实现属 Plan 4（安全与 PII）的相邻范围，须在客服域交付前完成。
 
 ## 后续计划（不在本计划内）
 
