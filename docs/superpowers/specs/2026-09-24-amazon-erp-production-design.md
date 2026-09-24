@@ -267,6 +267,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 - 每个连接器必须同时通过 **A1–A8**；只通过 A1 只能标为“可联调”，不能标为“可生产”。
 - 模拟数据（第 7 章）**不能**替代 A5 的联调记录：模拟数据验证的是系统内部行为，不是与平台的协议正确性。
 - 前端与服务目录中的“已对接 / 已完成”标签必须以本节 8 条为唯一判定口径（附录 G.4、G.5 的使用规则）。
+- 每个连接器的凭证字段、配置键、缺失行为、配置来源优先级与自检端点，见 4.8（逐连接器契约表）。
 
 ## 2. 目标架构、租户模型与运行单元
 
@@ -785,6 +786,44 @@ OPEN -> TRIAGED -> IN_PROGRESS -> WAITING_EXTERNAL -> RESOLVED -> CLOSED
 - 自动修复只允许幂等、可逆、规则明确的操作；其余必须人工审批。
 - 差异关闭后保留原始证据和审计记录，不能只删除告警。
 
+### 4.8 连接器凭证与配置契约（API-Ready 落地口径，第 10 轮新增）
+
+本节把 1.9 的 A1–A8 拆成四件事：**需要哪些字段、放在哪里、缺了会怎样、怎么验证**。下表“当前落点”全部是实测配置键或表列（含行号），不是目标设计。
+
+**外部业务连接器**
+
+| 连接器 | 凭证字段（当前落点，实测） | 端点/协议 | 当前缺失或降级行为 | API-Ready 必须补齐 |
+|---|---|---|---|---|
+| Amazon SP-API（Orders / Feeds / FBA Inventory / Reports / Finances / Fees） | `amz_shop_credential` 列 `client_id`、`client_secret_encrypted`、`refresh_token_encrypted`、`access_key_encrypted`、`secret_key_encrypted`、`region`、`marketplace_id`、`seller_id`（`amz-service-spapi/src/main/resources/db/schema.sql:11-24`）；全局兜底 `spapi.aws-access-key`、`spapi.aws-secret-key`（同模块 `application.yml:66-68`） | LWA `https://api.amazon.com/auth/o2/token`（`application.yml:69`）+ SigV4 | 凭证表不在任何自动建表路径（P0-23）；默认 profile `mock`（P0-24）；缺凭证时 `/sync/orders` 显式失败（正向） | 凭证表进唯一迁移入口并纳入 clean-install 流水线；生产 profile 非 mock 的启动自检；逐 operation 配额（4.6） |
+| Amazon Messaging | `spapi.lwa.access-token`（`MessagingApiRealClient:41`）——**只有 access token，没有 clientId / clientSecret / refreshToken** | `spapi.messaging.endpoint`（同文件 :38） | token 过期后整域失效，且失败静默返回空列表 | 改为按店铺经 LWA 换 token（与 SP-API 共用凭证源与刷新逻辑），禁止全局单 token |
+| Amazon Ads | `advertising.profile-id`、`advertising.api-endpoint`、`spapi.lwa.access-token`（`AdvertisingApiRealClient:49-55`） | `https://advertising-api.amazon.com` | 单套全局凭证、无 SigV4、失败静默返回空结果 | 按店铺 profile + LWA + 签名；失败必须显式 |
+| Keepa | `keepa.api-key`（`KeepaRealClient:27`） | Keepa HTTP API | 无 key 时静默返回 null | 缺 key 显式错误码；按租户配额与缓存 |
+| 17TRACK | `amz.logistics.tracking.api-key`（注释声明由 `AMZ_17TRACK_KEY` 注入）、`api-key-header`（默认 `17token`）、`base-url`、`query-path`、`enabled`（默认 `false`）（`LogisticsTrackingProperties:24-45`） | `https://api.17track.net` | `enabled=false` 或未配置凭证时**直接返回空轨迹**，调用方无法区分“未启用”与“查询失败” | 区分“未启用 / 调用失败”两种状态；失败进重试与告警 |
+| 金蝶 | `kingdee.api-gateway`、`kingdee.app-id`、`kingdee.app-secret`（`KingdeeRealClient:30-36`） | 金蝶云 API 网关 | `@Profile("!mock")` 下仍无条件返回 `KINGDEE_MOCK_*`；凭证状态写 `SYNCING` 后无法重试（P0-22） | 真实签名、账套与期间校验；同步状态机可重试 |
+| 1688 | `alibaba.app-key`、`alibaba.app-secret`、`alibaba.refresh-token`、`alibaba.gateway`（`Alibaba1688RealClient:50-59`） | `https://gw.open.1688.com/openapi` | 单套全局凭据（Redis key 无店铺维度）、固定第 1 页 | 凭证按店铺存储；签名与分页按官方校准 |
+| SHEIN / TEMU / TikTok | `amz_platform_account` 列 `shop_id`、`platform`、`api_endpoint`、`api_key`、`api_secret_encrypted`、`access_token_encrypted`、`refresh_token_encrypted`、`token_expires_at`（`PlatformAccount:16-25`）；默认端点见 `PlatformCredentialService:40-44` | 各平台开放平台 | 已按 `(shopId, platform)` 解析（**正向**，是本文唯一做对“多店多凭证”的连接器域）；但客户端自述未校准，发货回传以 `cred(null)` 解析凭证 | 官方沙箱校准 + 分页与签名修正；由 `token_expires_at` 驱动刷新 |
+
+**内部依赖（不是外部平台，但同样适用 A2 / A3）**
+
+| 依赖 | 配置键（实测） | 缺失时当前行为 | API-Ready 要求 |
+|---|---|---|---|
+| DeepSeek（AI） | `deepseek.api-key`、`deepseek.base-url`、`deepseek.model-name`、`deepseek.timeout`（`LangChain4jAgentConfig:26-38`） | 功能降级 | 缺 key 时在能力清单标记“未启用”，不得静默返回伪造结论 |
+| 嵌入模型 | `embedding.enabled`（默认 false）、`embedding.api_url`、`embedding.api_key`、`embedding.model`（`EmbeddingServiceImpl:26-35`） | 关闭 | 与 ES 索引维度（`knowledge.es.vector-dims:1536`）做一致性校验 |
+| 汇率 | `amz.exchange-rates-api-url`、`amz.exchange.strict-unknown`（默认 false）（`GlobalExchangeRateService:40/51`） | 未知币种宽松回退 | 生产环境应置 `strict-unknown=true`，否则利润口径会静默失真 |
+| 对象存储 | `oss.endpoint`、`oss.accessKeyId`、`oss.accessKeySecret`、`oss.bucketName`、`oss.access-url`（`OssConfig:14-26`） | 上传失败 | 私有 bucket + 预签名 URL，禁止公开读 |
+| 搜索/知识库 | `knowledge.es.base-url`（默认 `http://localhost:9200`）、`knowledge.es.index`（`KnowledgeEsClient:36/39`） | 检索降级 | ES 必须启用认证；索引模板与向量维度统一管理 |
+
+**配置来源与命名（目标设计）**
+
+1. 优先级：密钥管理系统（Vault / KMS / Secrets Manager）> 环境变量 > 数据库密文（按 `tenant_id + shop_id + connector`）> 缺失即该连接器“未启用”；**禁止**用空列表 / null / 占位单号冒充成功（A2）。
+2. 命名统一为 `AMZ_<CONNECTOR>_<FIELD>`（如 `AMZ_SPAPI_CLIENT_ID`、`AMZ_17TRACK_KEY`、`AMZ_KINGDEE_APP_SECRET`），并与 k8s `secret.yaml` / `configmap.yaml`、`.env.example` 三处同步——当前 71 行的 `.env.example` 既无 Nacos 变量，也无任何平台凭证变量（P0-25）。
+3. 每个连接器要有独立开关与“未启用”语义；该状态必须与“调用失败”用不同返回值与不同前端标签表达。
+
+**自检与能力清单（API-Ready 验收端点，目标设计）**
+
+- `GET /api/connectors`：逐连接器返回 `{启用状态, 凭证来源(env|db|vault|none), 最近一次调用时间与结果, 支持的 operation 白名单, 是否通过 A1–A8}`；前端“已对接 / 未接通”标签只读此接口，不读人工声明。
+- `POST /api/connectors/{code}/self-test`（`@RequireRole("ADMIN")`，带审计）：用真实凭证发起一次最小只读调用（SP-API 取 marketplace participations、Keepa 取一个 ASIN、17TRACK 查一个测试单号、金蝶取一次科目表），返回脱敏请求/响应摘要与错误码，**禁止**回显任何凭证明文。
+- 每个连接器的验收证据固定三条：**缺凭证 → 明确错误码**、**错误凭证 → 平台错误码透传（401/403/配额）**、**正确凭证 → 成功样例（脱敏）**；三条齐备才允许标记为 API-Ready（对应 A5，也是 7.9 交付物中的连接器自检用例）。
 ---
 
 ## 5. 身份、租户、数据安全与 Amazon DPP 合规设计
