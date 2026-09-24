@@ -1,0 +1,1298 @@
+# AmazonERP 生产化升级设计规格（Draft for Review）
+
+- 文档日期：2026-09-24
+- 审查基线：`master` / `06769b77b291467216007bf9843211de3a0cf14e`
+- 当前状态：**设计草案，尚未修改任何业务源码**
+- 目标：把现有“功能覆盖较广的可演示微服务原型”升级为**可审计、可恢复、可运维、可安全上线**的亚马逊 ERP；无真实数据时使用确定性模拟数据，所有模拟数据必须带 `SYNTHETIC` 标识。
+- 重要结论：模拟数据可以替代缺失的业务数据用于开发、测试和容量验证，**不能替代亚马逊开发者资质、真实店铺授权、SP-API 沙箱/生产联调、税务与会计责任、渗透测试、灾备演练和业务验收**。
+
+## 0. 结论先行
+
+### 0.1 当前判断
+
+当前项目**不能按现状视为可直接生产部署**。更准确的定位是：
+
+> 功能覆盖面较广、模块边界初步形成、以自测和演示为主要目标的 Spring Cloud 微服务原型。
+
+原因不是“缺少几个页面”，而是生产系统必须成立的四类事实源没有闭合：
+
+1. **订单事实源**：只有订单头，没有订单行、完整费用、退款、事件序列和可重放同步；同步策略无法覆盖状态变化、取消和延迟结算。
+2. **库存事实源**：以亚马逊 FBA 快照代替内部库存台账，没有预占、扣减、冲销、调拨、退货入库和可售承诺口径。
+3. **财务事实源**：缺少借贷平衡凭证、真实 FIFO 成本层、多币种汇率、税务规则、结算对账和期末关账。
+4. **集成事实源**：外部调用、Webhook、MQ、缓存和数据库之间没有统一的 Outbox/Inbox、幂等和失败重放机制。
+
+同时存在必须先修复的生产阻断项：默认 mock、租户与店铺校验 fail-open、内部接口公开、SSE/WebSocket 身份上下文丢失、敏感字段权限降级可见、密钥与数据库/基础设施端口暴露、数据库迁移漂移、CI 门禁不完整。
+
+### 0.2 不能被 README 或旧计划证明的事情
+
+- README 或旧计划中的“全部完成”“测试通过”“546 单测通过”不能证明生产成熟度；测试数量不是生产准入条件，安全、功能、恢复和数据正确性验证才是。
+- 前端 `npm run test:run` 与 `npm run build` 曾在当前工作区通过，但这只能证明前端单元测试和构建通过。
+- 本轮未在本地编译后端、未执行后端单测、未启动完整 Compose；因此本文**不宣称**后端测试或端到端启动通过。
+- 仓库文档声明的平台能力必须以真实客户端和真实联调为准。例如 README 声明的 Shopify/eBay/Walmart/Shopee/Lazada 能力，需要与 `amz-service-multiplatform` 的真实客户端实现逐项核对后才能对外宣称。
+
+### 0.3 工作假设与需要确认的决策
+
+本文先按以下工作假设设计，评审时可以推翻：
+
+| 决策 | 本文假设 | 影响 |
+|---|---|---|
+| 首批部署形态 | 优先做**单租户私有化部署**，保留 `tenant_id` 作为未来 SaaS 扩展点 | 降低首期隔离复杂度，但不能省掉租户字段与隔离测试 |
+| 技术栈 | 保留 Java 17 / Spring Boot / MyBatis-Plus / MySQL / Redis / RabbitMQ / ES | 不进行高风险重写；先修事实模型和运维基线 |
+| 运行单元 | 目标收敛为 5 个逻辑运行单元；P0 阶段仍可保留现有微服务 | 收敛是运维目标，不是安全修复的前置条件 |
+| 数据来源 | 无真实数据时使用固定 seed 的模拟数据，显式标注 `SYNTHETIC` | 可用于开发、测试、容量与演练；不可用于申报、报税或生产对账 |
+| 多租户策略 | 首期单租户；未来 SaaS 采用“租户字段 + 强制拦截 + 高风险租户库隔离” | 需要将现有无租户索引和查询全部纳入迁移 |
+| 合规责任 | Amazon DPP/SP-API 要求需由法务、财务、税务和安全负责人共同确认 | 本文给出工程控制，不代替法律和税务意见 |
+
+---
+
+## 1. 现状基线与生产准入门槛
+
+### 1.1 已核对的代码规模与结构
+
+- 主 Java 文件约 607 个，测试 Java 文件约 66 个，静态 `@Test` 断言约 527 个。
+- `@TableName` 约 98 处，`@RestController` 约 53 处，`@ShopScoped` 约 258 处，`@RequireRole` 约 34 处，`@FieldPermission` 约 17 处。
+- AI 工具声明 `@Tool(` 约 29 处。
+- 表口径存在冲突：
+  - `init_all_tables.sql` 约为 57 张唯一表；
+  - `docker/init-sql` 约为 105 张；
+  - README 写 54 张。
+  这说明建表源、升级脚本和文档之间没有单一事实源。
+
+### 1.2 生产阻断项（P0）
+
+以下是“必须修复后才能上线”的问题，而不是普通优化项。
+
+| P0 | 已核实风险 | 证据方向 | 必须达到的状态 |
+|---|---|---|---|
+| P0-01 | 生产服务可能默认 mock | 多个服务 `spring.profiles.active` 默认 `mock`，Compose 多数未显式设置生产 profile | 生产配置显式禁用 mock；启动时检测到 mock 依赖直接失败；CI 检查生产配置 |
+| P0-02 | `/internal` 被网关和业务拦截器放行，内部通知接口可被伪造 | `MessageNotifyController`、`BaseAuthInterceptor`、`MyGlobalFilter` | 内部接口只接受 mTLS + 服务 JWT；公网和普通网关请求不可达；消息服务端口不暴露到宿主机 |
+| P0-03 | 租户与店铺校验 fail-open | `UserContext.isShopAllowed()` 在 `shops` 为空时返回 `true`；部分字段权限缓存未命中/异常时返回空集 | 所有租户/店铺/字段权限默认拒绝；缺少上下文视为认证失败，不是“内部调用” |
+| P0-04 | SSE Agent 身份上下文丢失 | `AgentSseController` 从查询参数取 userId；`AgentChatStreamService` 固定线程池只传播 trace；工具依赖 `UserContext` | 身份、tenant、shop scope、trace 一起传播；禁止查询参数覆盖身份 |
+| P0-05 | 新用户注册很可能失败 | `User` 实体未映射数据库 `username/password NOT NULL` 字段；登录服务插入字段不足 | 注册、登录、迁移使用同一用户模型；DDL 与实体自动校验 |
+| P0-06 | 验证码并未真正发送短信 | `LoginServiceImpl.send()` 只写 Redis 并返回成功文案 | 接入真实短信供应商或明确返回“未配置”；生产启动时验证短信通道 |
+| P0-07 | 报表服务数据库与初始化漂移 | 报表默认 mock；`amz_report` 未在 01 初始化中创建，升级脚本却直接 `USE amz_report`；Compose 未传 `MYSQL_HOST`/profile | 单一迁移入口；全新环境和存量环境都能迁移；启动前检查 schema 版本 |
+| P0-08 | 任意用户可读取他人资料 | `GET /user/getUserById/{userId}` 无本人/ADMIN 校验 | 改为本人或明确授权角色；服务间调用使用服务身份；响应按字段最小化 |
+| P0-09 | 字段权限异常时可见全部字段 | `FieldPermissionServiceImpl` 的降级策略、`FieldPermissionAspect` 的 null 跳过、`isFieldVisible` 的 null 返回 true | 权限服务不可用时拒绝敏感字段；规则缺失只允许“无敏感字段可读”，不能“全网可见” |
+| P0-10 | WebSocket 握手未在首帧前完成鉴权 | `WebSocketHandler.channelRead0()` 先处理 ping，再处理 token | 握手或首帧鉴权失败即关闭连接；会话绑定 tenant/user/shop；支持撤销和单点清理 |
+| P0-11 | 店铺凭证非多副本一致事实源 | `ShopCredentialStore` 进程内缓存 + DB，DB 写失败只告警，无版本/失效机制 | 凭证以 KMS/Vault/数据库单一事实源为准；带版本、轮换、失效和审计 |
+| P0-12 | 基础设施与内部端口公开、默认凭据占位 | Compose 暴露 3306/6379/5672/9200/8888/8889 等；`k8s/secret.yaml` 为已提交占位值；ES 无安全；Nacos/Grafana 默认配置 | 基础设施仅集群内访问；Secret 由外部密钥系统注入；TLS、认证、网络策略和默认拒绝全部生效 |
+
+### 1.3 业务模型缺口
+
+| 域 | 当前状态 | 生产缺口 |
+|---|---|---|
+| 订单 | 表主要是订单头；唯一键未包含 `shop_id/marketplace_id`；已有订单可能跳过更新；调度只拉有限时间窗和有限状态；事件去重可能阻止状态变化 | 订单头、订单行、地址、费用、退款、事件、状态机、增量同步、报表对账、Outbox |
+| 库存 | `amz_fba_inventory` 主要是亚马逊快照；`avg7Days/avg30Days` 未完整填充；null 被当 0 可能导致 DOS 误判；upsert 先查后写 | 外部快照层、内部库存台账层、可售补货层；预占/扣减/冲销/调拨/退货；原子条件更新 |
+| 采购 | 1688 签名/端点未做沙箱校准；token 未按店铺隔离；FBA FIFO 出库无行锁和条件更新；多批次取首条 | 供应商生命周期、收货、发票、付款、三单匹配、容差、批次和状态机 |
+| 物流 | 有仓库和库存表，但出库、拣货、打包、面单、轨迹、调拨不完整；多仓保存非原子 | WMS 作业单据、库位、两阶段调拨、承运商和轨迹、库存移动账 |
+| 客服 | 工单/RMA 表存在，但店铺归属校验和状态机不完整；PII 无生命周期 | SLA、RMA 收货/检验/退款/补发、邮箱与聊天 PII 治理、可审计操作 |
+| 财务 | 结算解析要求过宽；一次加载全店明细；成本是加权平均；VAT 硬编码；金蝶客户端仍可能返回 mock；凭证只覆盖部分订单收入 | 双分录账本、费用/退款/汇率/税务、FIFO、结算对账、期末关账、外部总账 |
+| 广告 | 真实客户端未真正完成 refresh token 交换；分页、429、Retry-After、nextToken 不完整；服务返回硬编码 campaign | OAuth/profile 隔离、统一限流与分页、日指标唯一键、归因窗口、自动化护栏、变更审计 |
+| 商品/Listing | 更新未同步 ES；MongoDB 属性与 MySQL 无一致性机制；A+ 永远 true；Feed 超时后未下载结果报告 | 版本化 Listing、Feed 结果闭环、Outbox 派生同步、ES 强制租户/店铺过滤 |
+| 多平台 | Webhook 无鉴权/验签；事件唯一键不含店铺；同步去重键不含店铺；部分事件只写日志 | 平台适配层、签名验证、`(platform, shop_id, event_id)` 唯一、统一订单映射与重放 |
+| 消息/异步 | 部分消费者有手动 ack 与 DLQ，但通知消费者只记日志；分布式锁 Redis 不可用时 fail-open；异步线程丢上下文 | Inbox/Outbox、幂等消费、重试/DLQ/重放、锁 fail-closed、上下文传播 |
+
+### 1.4 外部对标
+
+已调研的代表性项目如下。它们只能作为工程参考，不能直接假定许可证或能力适配本项目的商业使用。
+
+| 项目 | 可借鉴点 | 重要限制 |
+|---|---|---|
+| KubeRiva/OMS | 每组织独立 PostgreSQL data-plane；SP-API 轮询 + fulfillment push；库存节点/调整/调拨/预占；Webhook HMAC、退避、投递历史 | Python 技术栈不同；需核查版本与许可证 |
+| openoms-org/openoms | PostgreSQL RLS 多租户；大量 REST 端点/页面/worker；Playwright、Trivy、Helm | Elastic License 2.0 属于 source-available，不是宽松 OSI 许可证；Amazon SP-API 仍标为开发中 |
+| wimoor-erp/wimoor | 亚马逊 ERP 业务域覆盖广；MIT 许可证 | Spring Boot 2.0/JDK 8 技术栈偏旧，不宜照搬 |
+| mcp-amazon-sp-api | 55+ SP-API 工具、自动分页、throttle-aware retry | 只解决集成调用层，不解决 ERP 事实模型 |
+
+### 1.5 Amazon 官方约束摘要
+
+以下为工程设计依据，具体条款以官方最新文档和法务意见为准：
+
+- SP-API 使用 token bucket 限流；遇到 429 应按退避策略重试，不能硬编码固定 timer；可读取限流响应头但不能假定其总是存在。
+- 优先使用 Notifications，而不是高频轮询；SQS 标准队列不保证顺序且可能重复，需按 `notificationId` 去重并支持乱序。
+- 官方要求有备用机制：定期用 Report API 对账，不能只依赖实时通知。
+- 库存应维护内部记录（基于订单/取消），并按官方允许的频率用 `getInventorySummaries` 核对；安全库存用于防止超卖。
+- 订单建议混合策略：报表做历史批量，Orders API 做实时补充，Order Change 通知做即时更新。
+- Data Protection Policy 的关键工程含义：订单 PII 在交付后 30 天内删除；非 PII 最长保留 18 个月；安全日志至少保留 12 个月；静态与传输中的 PII 都要加密，备份也要加密。
+- 安全事件需在 24 小时内通知 Amazon；critical 漏洞 7 天内修复，high 30 天内修复；终止员工访问需在 24 小时内撤销。
+- 参考资料：
+  - https://developer-docs.amazon.com/sp-api/docs/notifications-api
+  - https://developer-docs.amazon.com/sp-api/docs/usage-plans-and-rate-limits
+  - https://developer-docs.amazon.com/sp-api/docs/optimize-calls-to-the-selling-partner-api
+  - https://developer-docs.amazon.com/sp-api/docs/set-up-notifications-with-amazon-sqs
+  - https://developer-docs.amazon.com/sp-api/lang-US/docs/guidance-to-address-key-security-controls-in-sp-api-integration
+  - https://developer-docs.amazon.com/sp-api/docs/mcf-best-practices
+
+### 1.6 十条生产准入门槛
+
+1. 生产环境禁 mock；任何 mock/模拟依赖在 `prod` profile 启动时必须失败。
+2. 身份、租户、店铺、字段权限全部 fail-closed；内部接口必须服务身份 + mTLS。
+3. 订单、库存、财务、集成四大事实源完成闭环，并有可重放历史。
+4. 所有跨服务写操作使用 Transactional Outbox；所有外部事件使用 Inbox 幂等和 DLQ/Replay。
+5. 实时通知和报表对账双链路成立；对账差异可自动建案、分派、修复和关闭。
+6. 凭证进入 KMS/Vault，按租户/店铺隔离并可轮换；PII 加密、最小化、限权、可删除。
+7. HA、备份、PITR、RPO/RTO 有书面目标并完成恢复演练；基础设施有默认拒绝的网络和认证。
+8. CI 强制门禁：编译、单测、集成测试、契约测试、迁移测试、安全扫描、镜像扫描、SBOM、E2E、部署验证。
+9. SLO、告警、审计、不可否认、值班、演练和死信重放全部可执行；不是只写设计。
+10. 模拟数据必须固定 seed、可重复生成并显式标记 `SYNTHETIC`；不得伪装成真实经营数据。
+
+---
+
+## 2. 目标架构、租户模型与运行单元
+
+### 2.1 架构原则
+
+1. **领域边界保留，部署单元收敛**：不把现有模块重新写成一个大单体，也不为了“微服务”而保留 15 个必须同时升级的 JVM。
+2. **写路径强一致，读路径可扩展**：订单、库存、凭证、财务账本以数据库事务和 Outbox 为核心；报表、搜索、看板通过派生读模型异步构建。
+3. **外部事件不可信**：Webhook、MQ、报表文件、第三方 API 响应都必须经过验签、格式校验、幂等和权限检查。
+4. **默认拒绝**：身份、租户、店铺、字段、网络、密钥和调度锁的缺省状态都必须是拒绝。
+5. **可重放**：任何异步链路失败都必须能从持久化事件或外部原始对象重新处理，而不是依赖日志或人工猜状态。
+6. **可观测**：每个请求和事件必须具备 `trace_id`、`request_id`、`tenant_id`、`shop_id`、`actor/service_id`，并对敏感字段脱敏。
+7. **先正确后自动**：自动化广告、库存补货、Listing 变更必须先在建议/干跑模式运行，具备护栏、审批和审计，再允许生产写入。
+
+### 2.2 五个目标运行单元
+
+| 运行单元 | 负责的现有模块/能力 | 扩缩策略 | 关键要求 |
+|---|---|---|---|
+| `erp-edge` | Gateway、鉴权边缘、BFF、WebSocket/SSE 入口 | 无状态水平扩展 | TLS、WAF、限流、身份剥离与重签、长连接会话治理 |
+| `erp-core` | 用户/租户、订单、库存、商品、采购、物流、客服、运营、财务、报表聚合 | 核心事务服务，按 CPU/连接池扩展 | 事务边界、幂等命令、Outbox、审计、MySQL HA |
+| `erp-integration` | SP-API、广告、多平台连接器、凭证、Webhook 接收、报表拉取 | 按外部端点限流扩展 | 每店铺 token bucket、分页游标、429 退避、原始响应留存 |
+| `erp-intelligence` | 搜索、Embedding、AI Agent、推荐、分析计算 | 可独立扩容，允许降级 | 强制租户过滤、工具权限、提示注入防护、PII 脱敏 |
+| `erp-worker` | 调度器、MQ 消费者、对账、DLQ/Replay、批处理、报表生成 | 按队列积压和任务时限扩展 | 幂等、租约/锁、重试分类、断点续跑、无状态恢复 |
+
+说明：
+
+- 这是**逻辑运行单元**，不是要求 P0 一次性完成五合一重构。P0 可以先修现有服务，P1 再通过 Spring Boot assembly/module packaging 或独立部署组渐进收敛。
+- `erp-core` 不允许直接吞掉集成重试逻辑；外部调用必须通过 `erp-integration` 或明确的防腐层，避免长事务被第三方网络拖死。
+- `erp-worker` 不允许持有不可恢复的本地内存状态；游标、租约、重试次数和输出必须持久化。
+- 报表读模型可以放在 `erp-core` 的独立 schema/只读副本，不应阻塞订单写入。
+
+### 2.3 统一请求与事件上下文
+
+所有入口、服务调用、MQ 消息和异步任务都必须携带同一个不可变上下文：
+
+```text
+tenant_id       必需，首期固定为 1，但不得从请求 body 自由覆盖
+shop_id         可选于平台级接口，业务接口必需并在授权范围内
+user_id         人类用户身份；服务任务为空
+service_id      服务身份；没有 user_id 时必须存在
+actor_type      HUMAN | SERVICE | SCHEDULER | EXTERNAL_WEBHOOK
+request_id      通过 API 幂等键关联
+trace_id        端到端追踪
+correlation_id  业务链路关联，例如订单号、作业号
+```
+
+执行规则：
+
+- Gateway 移除所有外部传入的 `userId/tenantId/role/shops` 头，校验 JWT 后重写权威头；服务只信任来自受认证网关或服务网格的上下文。
+- 服务间的 Feign/HTTP/MQ 调用必须通过统一客户端传播上下文；禁止依赖 `ThreadLocal` 默认值。
+- 异步线程池必须使用 `TaskDecorator`/显式上下文参数传递；禁止异步任务回退到用户 1。
+- 事件信封至少包含：`event_id`、`event_type`、`tenant_id`、`shop_id`、`aggregate_type`、`aggregate_id`、`aggregate_version`、`occurred_at`、`producer`、`trace_id`、`schema_version`、`payload`、`data_origin`。
+- `data_origin` 在生产只能为 `AMAZON`、`PLATFORM`、`MANUAL`、`SYSTEM`；模拟环境必须为 `SYNTHETIC`。
+
+### 2.4 租户与店铺隔离
+
+#### 2.4.1 数据模型
+
+- 所有业务表增加 `tenant_id BIGINT NOT NULL`；所有租户数据查询默认带 `tenant_id`。
+- 所有店铺级表增加 `shop_id BIGINT NOT NULL`；关键唯一键必须包含 `tenant_id` 和 `shop_id`。
+- 外部平台标识除非官方保证全局唯一，否则唯一键必须包含店铺和平台。
+- 所有表增加 `version INT NOT NULL DEFAULT 0` 或等价乐观锁字段，用于并发写和冲突检测。
+
+必须调整的代表性唯一键：
+
+```text
+amz_order            (tenant_id, shop_id, marketplace_id, amazon_order_id)
+amz_order_item       (tenant_id, shop_id, marketplace_id, amazon_order_id, order_item_id)
+amz_webhook_event    (tenant_id, platform, shop_id, event_id)
+amz_unified_order    (tenant_id, platform, shop_id, platform_order_id)
+amz_platform_account (tenant_id, platform, shop_id, account_id)
+```
+
+#### 2.4.2 查询与写入控制
+
+- 使用 MyBatis 拦截器在 SQL 层强制追加 `tenant_id`，并拒绝没有租户上下文的数据库访问。
+- 关键写命令以 `(tenant_id, shop_id, aggregate_id, expected_version)` 为条件；更新失败返回冲突，而不是静默覆盖。
+- 禁止在 Controller 接受 `tenantId` 作为可信参数；从认证上下文获取。
+- 缓存键、分布式锁键、ES 文档和对象存储路径都必须包含 `tenant_id`；搜索查询必须在 BM25 和 kNN 两条路径都加租户过滤。
+- 对于 SaaS 高风险租户，提供“独立 database/schema”隔离档位；普通租户可采用共享表 + 强制租户谓词。
+- 数据库层尽可能用只读账号、最小权限账号和迁移账号分离；禁止业务服务使用 root。
+
+#### 2.4.3 测试要求
+
+必须存在可自动运行的跨租户/跨店铺负向测试：
+
+- 伪造 `shopId`、`userId`、`tenantId` 请求头/参数/body 字段，全部拒绝。
+- 空授权店铺列表、空角色、缺失 JWT claim、缓存不可用、权限服务超时，全部拒绝敏感操作。
+- 同一 `amazon_order_id` 在不同店铺/市场下不会冲突。
+- 一条 Webhook 重复投递、乱序投递、跨店铺重放均不会污染其他租户。
+- 内部接口在没有 mTLS 或服务 JWT 时不可达。
+
+### 2.5 身份与信任边界
+
+- 人类用户：OIDC Authorization Code + PKCE；生产建议使用 Keycloak 或等价 IdP。
+- 服务：mTLS + 短期 service JWT；JWT 只用于授权声明，不能替代传输身份。
+- 网关：边缘唯一公网入口；内部服务不暴露公网端口。
+- 管理面：Nacos、MySQL、Redis、RabbitMQ、ES、Grafana、Actuator、Swagger 只通过 VPN/零信任或集群内网访问。
+- 高风险动作：凭证读取、退款、价格/库存批量写入、广告预算变更、权限变更需要二次授权或审批。
+- 审计身份：所有人类操作记录用户、角色、店铺、来源 IP、设备和请求 ID；服务操作记录服务身份和部署版本。
+
+### 2.6 数据所有权
+
+| 数据 | 权威写入方 | 派生/读取方 | 说明 |
+|---|---|---|---|
+| 订单头/行/事件 | `erp-core` 订单域 | 财务、库存、客服、报表 | 外部同步只产生命令，不直接改多域状态 |
+| 库存台账/预占 | `erp-core` 库存域 | 订单、采购、物流、广告 | 亚马逊快照是输入，不是唯一事实 |
+| 结算/费用/凭证/成本层 | `erp-core` 财务域 | 报表、税务、外部总账 | 凭证必须借贷平衡，关账后只允许调整分录 |
+| 店铺与凭证 | `erp-core` 用户/凭证域 | `erp-integration` | 凭证加密、版本化和轮换 |
+| 外部原始响应/报表文件 | `erp-integration` | 对账、审计、重放 | 加密、最小化、按保留期清理 |
+| 搜索/推荐/AI 读模型 | `erp-intelligence` | 前端、运营 | 可重建，不参与交易事实 |
+| Listing/Feed 结果 | 商品域 + `erp-integration` | 运营、审计 | 以 Amazon Feed 结果为准做收敛 |
+| 审计日志 | 安全/审计域 | 合规、事故响应 | 只追加、脱敏、独立保留 |
+
+### 2.7 数据一致性模式
+
+- **Transactional Outbox**：业务事务内写业务表和 outbox；独立 relay 投递到 MQ/Kafka/外部系统。
+- **Inbox**：消费者在去重表内记录 `consumer_group + event_id + tenant_id`，处理成功才提交，重复消息直接忽略或返回已处理结果。
+- **Saga/Process Manager**：跨订单、库存、财务、物流的长事务使用显式状态机和补偿动作，不依赖分布式数据库事务。
+- **对账**：外部系统与内部事实源按日/按小时比对，差异生成 `reconciliation_case`，有负责人、期限和关闭证明。
+- **重放**：死信和失败事件先进入可检索的失败存储，再通过受控 Replay 工具按租户/店铺/时间范围重放。
+- **版本与冲突**：聚合根使用 `version`；外部系统覆盖内部人工修改时，必须记录冲突并提供人工解决入口。
+
+---
+
+## 3. 业务域升级设计
+
+### 3.1 订单域
+
+#### 3.1.1 目标模型
+
+订单不能只是一行订单头，必须拆为可对账的事实集合：
+
+- `order`：订单头、店铺、市场、平台状态、内部状态、币种、金额汇总、版本。
+- `order_item`：订单行、SKU/ASIN、数量、单价、折扣、税费、商品状态。
+- `order_address`：收件人/地址的加密存储与最小化视图。
+- `order_fee` / `order_adjustment`：佣金、履约费、运费、促销、退款、赔付、仓储费、广告归因费等。
+- `order_event`：平台事件、状态变化、人工操作、同步批次和原始摘要。
+- `order_refund` / `order_return`：退款、退货、换货、补发及原因。
+- `order_reconciliation`：内部金额/状态与 Amazon Report 的比对结果。
+
+#### 3.1.2 同步策略
+
+采用 Amazon 官方建议的混合链路：
+
+1. **历史批量**：使用 Reports API 拉取订单和财务报告，按店铺/市场/日期分片，保存原始对象和游标。
+2. **增量实时**：Orders API 作为通知缺失时的补充；使用 `LastUpdatedAfter` 等增量条件，不重复扫全量。
+3. **即时变化**：Order Change Notifications 推送到 SQS，按 `notificationId` 去重、允许乱序，用聚合版本合并。
+4. **定期对账**：每日或按业务风险频率，用报表与内部订单/金额比对；差异进入 `reconciliation_case`。
+
+关键规则：
+
+- 已存在订单不能无条件跳过；必须比较 `amazon_order_id + shop_id + marketplace_id + version`，允许状态、费用、地址和行项目更新。
+- 状态去重不能只看订单号和时间窗；需要看事件 ID、聚合版本和字段变化。
+- 订单状态机由内部状态驱动，平台状态只作为输入；取消、退款、部分发货、退货不能依赖单一字符串。
+- 订单进入财务和库存系统只通过 Outbox 事件；禁止同步器直接跨库写财务/库存。
+- 金额字段必须明确币种、精度和舍入规则；金额汇总必须能从行、费用和调整项重算并校验。
+- 收件地址仅在履约必需时保留；默认脱敏视图，原件进入 PII vault 并按保留期删除。
+
+#### 3.1.3 状态机（示意）
+
+```text
+RECEIVED -> VALIDATED -> ALLOCATED -> FULFILLING -> SHIPPED -> DELIVERED -> CLOSED
+     |           |            |            |          |
+     v           v            v            v          v
+ CANCELLED   ON_HOLD     BACKORDER    EXCEPTION   RETURNED
+```
+
+- 每次状态迁移必须校验前置状态、操作者、店铺权限和幂等键。
+- 非法迁移返回冲突并记录审计，不允许“直接 UPDATE 状态”。
+- 退款、退货和补发是独立子流程，不直接回滚已发生的财务凭证；通过调整分录处理。
+
+### 3.2 库存域
+
+#### 3.2.1 两层模型
+
+**外部快照层**：保存 Amazon/FBA/第三方平台返回的库存摘要、时间戳、来源和原始响应，用于对账和展示。
+
+**内部事实层**：保存库存移动账本和余额，是所有可售、预占、采购和履约决策的依据。
+
+建议的库存桶模型：
+
+| 桶 | 含义 |
+|---|---|
+| `on_hand` | 实际在库 |
+| `reserved` | 已预占但未扣减 |
+| `allocated` | 已分配给订单/作业 |
+| `inbound_in_transit` | 在途 |
+| `inbound_receiving` | 已到仓待收货 |
+| `available_to_promise` | 可承诺销售的数量 |
+| `unfulfillable` | 不可售 |
+| `damaged/lost` | 损失/损坏 |
+| `platform_available` | 平台侧快照数量，仅作参考 |
+
+口径必须固定：
+
+```text
+available_to_promise = on_hand - reserved - allocated - safety_stock + confirmed_inbound
+projected_available  = on_hand - reserved - allocated - safety_stock
+```
+
+- 平台刷新频率必须遵守 Amazon 文档和端点限流，不能用高频轮询掩盖模型缺失。
+- 所有扣减/预占使用条件更新或行锁，例如 `UPDATE ... WHERE available >= ? AND version = ?`；更新行数为 0 必须视为冲突。
+- 同一仓库、同一 SKU 的多批次不能使用 `list.get(0)`；按批次策略（FIFO/FEFO）和成本层显式选择。
+- 负库存必须被数据库约束或业务校验拒绝；若外部快照出现负数，进入异常队列，不直接覆盖内部账本。
+- 库存健康度必须区分 `UNKNOWN/NEW/HEALTHY/LOW/OVERSTOCK`；缺失数据不能当 0 参与 DOS 计算。
+- 每日/定期对账 `platform_available` 与内部台账；差异自动建案，不自动覆盖人工调整，除非有明确规则和审批。
+
+### 3.3 采购、供应商与三单匹配
+
+采购域的目标不是“能下单”，而是可追溯的采购到付款闭环：
+
+1. 供应商准入、资质、付款条款、币种、税率和有效期。
+2. 采购订单（PO）行、价格、交期、批次和收货容差。
+3. 收货单/入库单与批次、库位、质检结果。
+4. 供应商发票、付款申请、付款凭证。
+5. 三单匹配：PO、收货、发票；支持数量/价格/税率容差。
+6. 差异处理：短装、超收、价格差异、质量扣款、退货。
+7. 付款状态、对账状态和供应商余额。
+8. 与财务账本通过 Outbox 事件连接，不在采购事务内直接生成不可审计凭证。
+
+### 3.4 物流/WMS
+
+- 仓库、库区、库位、容器、批次和库存移动账。
+- 入库：预约、到仓、收货、质检、上架。
+- 出库：波次、拣货、复核、打包、称重、面单、交接、发运。
+- 调拨：创建调拨单 -> 源仓预占 -> 发出 -> 在途 -> 目的仓收货；两阶段状态，不允许单边扣减。
+- 退货入库：收货、检验、处置（良品/次品/报废/退供）。
+- 承运商、渠道、面单号、轨迹事件、异常件和理赔。
+- 打印面单和出库动作必须有幂等键，重复点击不能重复扣库存。
+
+### 3.5 客服、RMA 与 PII
+
+- 工单、消息、邮件、差评、RMA、退款、补发和换货都绑定 `tenant_id/shop_id/order_id`。
+- SLA 必须有开始时间、截止时间、暂停原因、升级路径和责任人。
+- 工单回复、接收、关闭必须校验店铺归属和操作权限。
+- RMA 状态机至少覆盖：申请 -> 审核 -> 退货在途 -> 收货 -> 检验 -> 退款/补发/拒绝 -> 关闭。
+- 客服原始邮件/聊天含 PII 时进入受限存储，前端默认掩码；下载、导出、查看原文需要理由和审计。
+- 评价与负面舆情可以分析，但不能把买家 PII 复制到宽表、搜索索引或日志。
+- 任何“按订单号查买家”的操作都必须走权限和审计，不能靠前端隐藏按钮。
+
+### 3.6 财务、结算与利润
+
+#### 3.6.1 账本模型
+
+采用双分录账本，最小实体包括：
+
+- `ledger_account`：科目及类型。
+- `journal_entry`：凭证头、日期、币种、状态、来源。
+- `journal_line`：借贷方向、金额、币种、店铺、订单/费用关联。
+- `settlement` / `settlement_detail`：平台结算批次与明细。
+- `fee` / `tax` / `exchange_rate`：费用、税务、汇率。
+- `cost_layer` / `cost_consumption`：FIFO/加权成本层和消耗记录。
+- `profit_snapshot`：可重算、带口径版本的利润快照。
+
+硬约束：
+
+- 每张凭证借贷必须平衡；不平衡拒绝提交。
+- 期末关账后，历史凭证不可直接改写，只允许红冲或调整分录。
+- 退款、索赔、广告、仓储、订阅、FBA 费和促销费都必须能追溯到凭证行。
+- 平台结算文件解析必须校验必需列、币种、日期、金额精度和重复行；不满足即隔离，不能“按三列凑合入库”。
+- 结算同步调度默认开启，按店铺和批次游标运行；列表查询必须分页或限制数量。
+- 金蝶/其他总账连接器必须区分 mock 和真实实现；生产禁用 mock 标识。
+
+#### 3.6.2 成本与利润
+
+- 成本层按采购批次/入库批次建立，FIFO 消耗必须有唯一键和审计。
+- 利润口径固定为：收入 - 商品成本 - 履约成本 - 佣金 - 广告 - 仓储 - 税费 - 退款/赔付 + 其他调整。
+- 多币种需要保存原币金额、结算币金额、汇率来源、汇率日期和折算规则。
+- VAT/销售税按国家/站点、税码、生效日期和申报周期计算；税率和阈值不得硬编码在业务代码。
+- 利润报表有“估算”“已结算”“已关账”三种口径，前端必须显示口径，不能把估算值当最终利润。
+
+### 3.7 广告域
+
+- OAuth 授权、profile、店铺和 marketplace 隔离；token 加密并支持刷新和撤销。
+- 统一客户端处理分页、429、Retry-After、限流预算、超时和错误分类。
+- 每天抓取 campaign/ad group/keyword/target/search term 指标，落在 `ad_metric_daily`，唯一键包含店铺、profile、日期、实体类型、实体 ID、归因窗口。
+- 归因窗口和时区必须显式保存；跨日数据不能被覆盖成不可追溯的汇总。
+- 自动化动作必须经过：建议 -> 干跑 -> 护栏 -> 审批/限额 -> 执行 -> 结果校验 -> 审计。
+- 护栏至少包含预算上限、竞价上下限、单日变更次数、ROAS/ACOS 阈值和异常回滚。
+- 每次写入 Amazon 广告接口都要生成 `ad_change_audit`，重复请求使用幂等键。
+
+### 3.8 商品、Listing 与搜索
+
+- Listing 采用版本化模型：草稿、校验、提交、Feed 处理中、成功、失败、回滚。
+- Amazon Feed 必须保存 feed_id、提交时间、处理状态、结果报告对象和失败明细；超时不能只打 warn。
+- 商品 MySQL 事实源变更通过 Outbox 派生到 ES/MongoDB；反向同步必须经过显式命令，禁止双写无一致机制。
+- A+ 状态必须来自真实接口结果，不能默认 true。
+- 搜索索引文档必须包含 `tenant_id/shop_id/marketplace_id/visibility`；BM25 和 kNN 都要带过滤。
+- 对消费者搜索、运营搜索和 AI 检索分别定义可见范围；AI 不得越过用户店铺权限。
+- 索引重建采用别名切换，禁止在线上直接删除索引；嵌入生成失败时可降级 BM25。
+
+### 3.9 跨域事件清单
+
+至少定义并版本化以下事件：
+
+```text
+order.received.v1
+order.updated.v1
+order.cancelled.v1
+order.item.allocated.v1
+inventory.changed.v1
+inventory.adjusted.v1
+inventory.reconciled.v1
+listing.feed.submitted.v1
+listing.feed.completed.v1
+settlement.received.v1
+fee.discovered.v1
+refund.approved.v1
+procurement.po.confirmed.v1
+procurement.received.v1
+logistics.shipment.created.v1
+logistics.tracking.updated.v1
+rma.status.changed.v1
+ad.metric.ingested.v1
+ad.change.executed.v1
+reconciliation.case.opened.v1
+reconciliation.case.closed.v1
+```
+
+每个事件必须由 schema registry 或等价机制校验；生产消费者只接受向后兼容的版本升级，破坏性变更发布新版本。
+
+---
+
+## 4. 外部集成、事件一致性与对账
+
+### 4.1 连接器统一能力
+
+所有外部连接器必须实现相同的抽象能力：
+
+- 认证与 token 生命周期管理；按租户/店铺/profile 隔离。
+- 统一请求上下文：tenant、shop、marketplace、endpoint、operation、idempotency key。
+- 统一限流：按 `tenant_id + shop_id + marketplace_id + endpoint` 维护 token bucket。
+- 统一重试：仅对可重试错误重试；区分 4xx 参数错误、401/403 授权错误、429 限流、5xx 平台错误和网络错误。
+- 统一分页：保存 `nextToken`/游标和断点，不允许半途丢失。
+- 统一超时、熔断、并发隔离和背压。
+- 统一原始响应留存：加密、脱敏、带过期时间，供对账和重放。
+- 统一指标：请求量、成功率、延迟、限流命中、重试次数、最后成功时间、游标滞后。
+- 生产启动时检查连接器配置；缺失密钥、mock 标记或未验证的端点直接拒绝启动。
+
+### 4.2 SP-API 三链路
+
+| 链路 | 用途 | 触发方式 | 必须保存的状态 |
+|---|---|---|---|
+| 实时通知 | 订单变化、授权撤销等即时事件 | SQS/通知 | notification_id、receipt_handle、处理状态、原始摘要 |
+| 增量拉取 | 通知缺失、窗口补齐、人工重试 | 调度/命令 | 店铺、市场、时间窗、nextToken、最后成功时间 |
+| 批量对账 | 历史、财务、库存、订单对账 | 定时报表 | report_id、document_id、文件哈希、解析结果、差异 |
+
+- 收到 429 时读取 `Retry-After`，否则使用带抖动的指数退避；不能只固定 sleep。
+- 不能假设响应头 `x-amzn-RateLimit-Limit` 一定存在；存在时用于调整预算，不存在时仍按本地保守预算。
+- SQS 标准队列允许重复和乱序；按 `notificationId` 持久化去重，并允许状态版本倒序到达。
+- 任何 Notification 处理失败都必须进入重试/DLQ，不得直接 ack 丢弃。
+- 对账不是可选优化，而是生产必须具备的备用机制。
+
+### 4.3 统一错误分类
+
+| 类别 | 示例 | 处理 |
+|---|---|---|
+| 输入/业务错误 | 参数非法、状态不允许 | 不重试，返回明确错误并记录审计 |
+| 认证/授权错误 | 401、403、token 撤销 | 停止该店铺链路，告警并要求人工处理 |
+| 限流/暂时错误 | 429、部分 5xx、网络超时 | 有上限的指数退避 + 抖动，保留请求证据 |
+| 平台不可用 | 连续 5xx、服务维护 | 熔断，等待恢复后从游标续跑 |
+| 数据错误 | 文件缺列、金额不平衡 | 隔离原始对象，不污染事实源 |
+| 系统错误 | 数据库、MQ、代码异常 | 回滚事务，进入重试/DLQ，按 SLO 告警 |
+
+### 4.4 Outbox/Inbox
+
+建议表结构（示意）：
+
+```text
+outbox_event(
+  id, tenant_id, aggregate_type, aggregate_id, aggregate_version,
+  event_type, event_id, payload, schema_version, status,
+  retry_count, next_retry_at, created_at, published_at
+)
+
+inbox_event(
+  consumer_group, tenant_id, event_id, event_type,
+  payload_hash, status, processed_at, error_message,
+  PRIMARY KEY (consumer_group, tenant_id, event_id)
+)
+
+integration_job(
+  id, tenant_id, shop_id, connector, operation, cursor, status,
+  attempt, next_retry_at, lease_owner, lease_until, last_error,
+  created_at, updated_at
+)
+
+webhook_event(
+  id, tenant_id, platform, shop_id, event_id, signature_status,
+  received_at, processed_at, status, payload_hash,
+  UNIQUE (tenant_id, platform, shop_id, event_id)
+)
+```
+
+规则：
+
+- Outbox relay 使用 `FOR UPDATE SKIP LOCKED` 或等价租约机制，避免多副本重复发送。
+- Inbox 的唯一键必须是消费者组级；同一个事件被不同业务消费者各自处理是允许的。
+- 消费者在业务事务成功后再标记 Inbox；失败保留错误并进入重试/DLQ。
+- 重放工具必须支持按事件 ID、时间范围、店铺、消费者组筛选，并记录操作者与影响范围。
+- 禁止用 Redis SETNX 作为唯一业务去重事实源；Redis 可以加速，但持久化唯一性必须落到数据库/Inbox。
+
+### 4.5 Webhook 安全
+
+- 每个平台独立验签实现；验签失败直接拒绝并告警。
+- 校验时间戳，拒绝超过允许时钟窗口的重放；保存事件 ID 和 payload hash。
+- 唯一键为 `(tenant_id, platform, shop_id, event_id)`，不是全局 `event_id`。
+- 原始 payload 加密保存到隔离存储，解析使用严格 schema 和大小限制。
+- Webhook 处理是异步的：先验签并持久化，再返回 2xx；业务处理失败不影响接收状态，通过重试恢复。
+- Webhook 回调地址使用专用域名/路径，不暴露内部服务地址。
+
+### 4.6 限流、背压与调度
+
+- 每个外部 endpoint 有独立预算；不能用“总 QPS”掩盖某个店铺的限流。
+- 调度器使用持久化租约和 `next_run_at`，多副本只有一个执行者；Redis 不可用时执行器必须停止或退化为单节点，不得自动多跑。
+- 定期任务带抖动，避免整点同时触发；支持暂停、取消、重跑和查看游标。
+- MQ 队列设置最大长度和死信队列；消费者根据积压和错误率背压，而不是无限拉取。
+- 批量任务分批提交，保存 checkpoint；重跑从 checkpoint 继续，避免重复扣库存或重复凭证。
+
+### 4.7 对账体系
+
+至少四类对账：
+
+1. **订单对账**：Amazon 报表 vs 内部订单头/行/状态/金额。
+2. **库存对账**：平台库存摘要 vs 内部台账/可售承诺。
+3. **财务对账**：结算批次、费用、退款、广告、仓储 vs 凭证和利润快照。
+4. **Listing/Feed 对账**：提交内容、Feed 结果、平台最终 Listing 状态。
+
+`reconciliation_case` 建议状态：
+
+```text
+OPEN -> TRIAGED -> IN_PROGRESS -> WAITING_EXTERNAL -> RESOLVED -> CLOSED
+                                      \-> ACCEPTED_DIFFERENCE
+```
+
+- 每个差异必须有类型、严重度、影响金额/数量、责任人、期限和证据链接。
+- 自动修复只允许幂等、可逆、规则明确的操作；其余必须人工审批。
+- 差异关闭后保留原始证据和审计记录，不能只删除告警。
+
+---
+
+## 5. 身份、租户、数据安全与 Amazon DPP 合规设计
+
+### 5.1 本节结论
+
+当前安全模型的核心问题不是“缺一个登录页”，而是**信任边界没有闭合**：
+
+- 内部接口被当作可信入口绕过网关；
+- 店铺和字段权限在缺少上下文时默认放行；
+- SSE 与 WebSocket 的异步链路会丢失或伪造用户身份；
+- PII 基本以明文业务字段存在，没有分类、最小化、生命周期和删除闭环；
+- 密钥没有 KMS 托管、轮换、版本和 crypto-shredding；
+- K8s Secret 使用已提交占位值，基础设施端口和监控组件默认开放；
+- 审计日志不能作为不可否认证据，且没有敏感字段脱敏的强制约束。
+
+生产设计必须把上述问题改为“缺失即拒绝、异常即拒绝、默认最小权限”。
+
+### 5.2 身份与会话
+
+#### 5.2.1 人机身份
+
+- 首选 OIDC Authorization Code + PKCE；管理端使用短期 access token 与可轮换 refresh token。
+- access token 有效期建议 10–15 分钟；refresh token 使用一次性轮换、重用检测和令牌族撤销。
+- 高权限角色强制 MFA；登录、重置密码、绑定设备、权限变更产生安全审计。
+- 支持会话列表、设备撤销、管理员强制下线、离职/停用后 24 小时内撤权。
+- 禁止以手机号验证码作为唯一管理员长期认证方式；验证码仅作为辅助因素。
+- 短信通道必须真实可用；未配置通道时接口返回明确错误，不能伪称“已发送”。
+
+#### 5.2.2 前端会话
+
+当前前端将 `token`、`refreshToken`、`token_expiry` 放在 `localStorage`，并使用 refresh TTL 标记 access token 过期时间。生产建议改为：
+
+- BFF 模式：浏览器只持有 `HttpOnly + Secure + SameSite=Lax/Strict` 会话 Cookie；令牌不进入 JavaScript、localStorage、URL 或日志。
+- 所有变更请求要求 CSRF token 或同源校验；CORS 只允许明确白名单来源。
+- 路由守卫通过 `/session` 获取真实会话状态，不依赖本地过期时间戳。
+- access token 过期由 BFF 刷新；刷新失败统一清除会话，避免前端“看似登录、实际一直 401”。
+- 登出必须调用服务端撤销接口，并清理 WebSocket/SSE 长连接。
+
+#### 5.2.3 服务身份
+
+- 服务间使用 mTLS 作为传输身份，另附短期 service JWT 表达权限。
+- 服务 JWT 的 `aud` 限定被调用服务，`exp` 建议不超过 5 分钟，带 `service_id`、`tenant_scope` 和 `scopes`。
+- 服务账号按服务/环境隔离；禁止所有服务共享同一个 JWT secret。
+- 禁止把用户 token 原样转交给下游作为服务身份；下游需要同时知道“谁发起”和“哪个服务调用”。
+- 内部 Feign 调用、MQ 消费、定时任务都必须通过统一客户端注入服务身份和租户上下文。
+
+#### 5.2.4 SSE/WebSocket
+
+- SSE/WebSocket 仅从 BFF/网关认证结果获取身份，不能从查询参数 `userId` 取身份。
+- 长连接建立时绑定 `tenant_id/user_id/shops/device_id/session_id`，并设置最大生命周期与空闲超时。
+- 异步线程池必须传播完整上下文；禁止只传播 `traceId` 而让工具回退到默认用户。
+- AI 工具执行前必须再次校验租户、店铺和字段权限，不能只在连接建立时校验一次。
+- 断线重连使用一次性 ticket 或 Cookie，不使用可长期泄露的 URL token。
+- 连接关闭、权限变更、用户停用、密码修改时，服务端主动清理相关会话。
+- 消息推送必须按 `tenant_id + user_id` 路由，禁止向广播频道泄露其他租户数据。
+- `/internal/message/notify` 必须改成受服务身份保护的内部命令，并移除网关公开路由。
+
+### 5.3 授权与信任边界
+
+- 网关的公开白名单应只包含登录、回调、健康检查、静态资源等最小集合；`/internal`、`/actuator`、Swagger 不得对公网开放。
+- Actuator 只暴露 liveness/readiness；metrics、heap、env、configprops 只允许运维网段或经认证的监控系统访问。
+- 业务服务不直接暴露公网端口；Ingress 只路由到 `erp-edge`。
+- 安全组/NetworkPolicy 默认拒绝：只有明确的服务对可以建立连接，数据库、Redis、MQ、ES、Nacos、监控均不允许从公网或普通应用 pod 任意访问。
+- 采用“边缘认证 + 服务内二次授权”：网关通过不代表业务对象访问一定合法；每个聚合根都要校验租户和店铺。
+- 角色权限使用 RBAC + 资源范围（tenant/shop/warehouse）、字段权限和数据范围；管理员也应有审计的 break-glass 流程。
+- 高风险操作支持审批、双人复核和时限授权；紧急访问自动过期并触发事后审计。
+
+### 5.4 PII 与数据分类
+
+#### 5.4.1 分类
+
+| 级别 | 定义 | 示例 | 默认控制 |
+|---|---|---|---|
+| L0 公开 | 可公开的数据 | 公开 Listing 标题 | 可缓存，仍防篡改 |
+| L1 内部 | 非敏感经营数据 | SKU 成本汇总、非 PII 报表 | 登录后可读，按角色限权 |
+| L2 机密 | 高价值商业数据 | 结算、供应商价格、广告策略、密钥元数据 | 最小权限、审计、加密 |
+| L3 受限 PII | 可识别个人的数据 | 买家姓名/邮箱/电话/地址、聊天、税号、银行信息 | 默认掩码、加密、短保留期、查看审计 |
+
+#### 5.4.2 PII 清单与处理原则
+
+项目中已核对的 PII 风险字段包括：
+
+- 订单：`buyer_name`，以及同步/地址对象中的买家信息。
+- 客服：`buyerEmail`、`buyerName`、工单消息、RMA 联系信息。
+- 多平台：`PlatformMessage.buyerName/buyerEmail`、统一订单买家昵称。
+- 用户：手机号、邮箱、地址、生日等。
+- 集成：店铺凭证、AWS key、SP-API refresh token、广告 token。
+- 日志：异常堆栈、请求体、报表文件和 URL 查询参数可能携带 PII。
+
+处理原则：
+
+1. **最小化**：只有完成履约、客服或法定义务所需字段才进入持久化；能使用平台订单 ID/匿名 ID 就不复制买家 PII。
+2. **分离**：PII 进入受限表/服务（PII vault），普通业务表只保留 token/hash 引用。
+3. **加密**：传输 TLS 1.2+；静态存储使用 KMS envelope encryption；敏感列使用 AES-256-GCM + key id；备份和对象存储同样加密。
+4. **掩码**：API 默认返回掩码值；查看明文需要权限、理由和短期访问凭证。
+5. **日志脱敏**：日志、追踪、MQ 消息和错误响应不得出现完整邮箱、电话、地址、token、密钥和支付信息。
+6. **禁止派生泄露**：搜索索引、分析宽表、AI 向量库、测试夹具不得包含未脱敏 PII。
+7. **可删除**：支持按用户/订单/店铺的数据主体请求，能够定位所有副本并执行删除或 crypto-shredding。
+8. **可证明**：每次敏感字段读取、导出、解密、删除都有审计记录。
+
+#### 5.4.3 保留与删除
+
+按 Amazon DPP 与业务/法务要求建立策略表，工程默认值如下，最终以法务确认和官方最新条款为准：
+
+| 数据类别 | 默认目标 | 删除方式 |
+|---|---|---|
+| 订单履约所需 PII | 交付后不超过 30 天 | 定时任务删除原件；保留必要匿名订单统计 |
+| 非 PII 经营数据 | 最长 18 个月 | 月分区归档，过期分区下线 |
+| 安全/审计日志 | 至少 12 个月 | 不可变存储，按合规周期归档 |
+| 原始 API 响应/报表 | 以业务必需和 DPP 上限为准 | 对象加密 + lifecycle 删除 |
+| 备份 | 按备份保留策略到期 | 过期备份不可恢复；必要时加密销毁密钥 |
+| 测试/模拟数据 | 不保存真实 PII | 只使用 `SYNTHETIC` 数据 |
+
+删除流程必须包括：识别 -> 影响评估/保留例外 -> 主库删除 -> 缓存/搜索/对象/分析/向量清理 -> 备份到期 -> 删除证明。仅删除主表行不算完成。
+
+### 5.5 密钥、凭证与轮换
+
+当前 `CryptoUtil` 已有 AES-256-GCM 的正确方向，但仍是单配置密钥，且部分外部平台凭证存在解密失败回退原文的路径。生产设计改为：
+
+- 使用云 KMS/Vault/HSM 管理根密钥；应用只获取短期数据密钥，不持有长期根密钥。
+- 数据密钥按环境、租户或高风险店铺隔离；密文保存 `key_id/version/algorithm/created_at`。
+- 支持密钥轮换、重包裹和旧版本解密窗口；轮换有审计和回滚方案。
+- 外部 token 由 Secret Manager 或加密凭证表保存；禁止日志输出、浏览器暴露和明文回退。
+- SP-API refresh token、LWA client secret、AWS key、广告 token、Webhook secret 各自按店铺隔离。
+- 创建、更新、撤销、读取凭证都记录操作者、用途和来源；普通业务代码只能获取“已解密的最小能力客户端”，不能得到完整凭证结构。
+- K8s 使用 External Secrets/Sealed Secrets/CSI Secret Store；仓库只保留模板，不提交真实值或可复用的默认密码。
+- CI 开启 secret scanning；发现密钥立即轮换，不能只删除 Git 行。
+
+### 5.6 审计与不可否认
+
+- 审计事件至少记录：时间、租户、店铺、actor、role、service、action、resource、before/after（脱敏）、请求 ID、trace ID、结果、失败原因、来源 IP/设备。
+- 审计存储与业务库分离，写入只追加；可采用只写对象存储、WORM 或带哈希链的表增强不可否认性。
+- 定期校验哈希链/签名，异常时告警；不能让应用用普通 UPDATE 删除审计行。
+- PII 查看、导出、退款、价格/库存批量修改、广告预算变更、凭证读取、权限变更属于强制审计动作。
+- 异步审计失败不能静默丢弃；进入本地持久化队列或 outbox，并在恢复后补写。
+- 审计日志保留至少 12 个月；访问审计日志本身也必须有权限和审计。
+
+### 5.7 应用与供应链安全
+
+- 按 OWASP ASVS L2/L3 建立基线，覆盖认证、会话、访问控制、输入校验、加密、日志和错误处理。
+- 输入校验使用白名单 schema；禁止把任意 URL、文件名、表达式或 SQL 片段直接执行。
+- 防止 SSRF：Webhook 目标、图片/报表 URL、模型工具网络访问必须经过域名和 IP 允许列表。
+- 文件上传需要类型/大小/病毒扫描；报表解析防 XXE、压缩炸弹、CSV 注入和路径穿越。
+- AI Agent 需要工具白名单、参数 schema、写操作审批、提示注入防护、输出脱敏和调用预算；工具不能绕过业务权限。
+- API 具有分页上限、请求体上限、超时、限流和幂等键；防止批量查询和导出打垮数据库。
+- CI 加入 SAST、依赖漏洞扫描、容器镜像扫描、IaC 扫描、secret scanning 和 SBOM；高危漏洞按 Amazon 安全要求时限处理。
+- 生产镜像使用固定 digest、最小基础镜像、非 root、只读根文件系统和签名验证；禁止 `latest`。
+
+### 5.8 Kubernetes 与部署安全基线
+
+- Ingress 强制 TLS/HSTS，关闭 `ssl-redirect=false` 的默认配置；证书自动轮换。
+- 管理入口通过 VPN/零信任；ClusterIP 不暴露基础设施端口。
+- 默认 NetworkPolicy：deny all，再按服务对开放端口。
+- Pod Security 使用 restricted；`runAsNonRoot`、只读 rootfs、drop all capabilities、seccomp/AppArmor。
+- 使用 PDB、拓扑分散、资源 requests/limits、liveness/readiness/startup probes，避免单副本和级联故障。
+- Secret 由 External Secrets/Vault/KMS 注入；ServiceAccount 使用 IRSA/Workload Identity，避免静态 AWS key。
+- 数据库、对象存储、备份和消息队列启用加密和访问审计；禁止使用默认管理员密码。
+- 生产环境关闭 Swagger UI 和详细 Actuator；错误响应不含堆栈和内部主机信息。
+
+### 5.9 安全事件响应
+
+- 建立安全事件分级、值班联系人、升级路径和证据保存流程。
+- 发现安全事件后 24 小时内按 Amazon 要求通知 `security@amazon.com`，同时启动内部响应。
+- critical 漏洞 7 天内修复，high 30 天内修复；无法按期完成必须有风险接受和补偿控制。
+- 终止员工/外包人员访问后 24 小时内撤销全部账号、token、VPN 和密钥。
+- 每年至少进行一次桌面演练、一次凭据泄露演练和一次备份恢复演练。
+- 保留取证所需日志，但不得无限期保留 PII；通过访问控制和最小化满足两者平衡。
+
+### 5.10 Amazon 安全控制映射
+
+| Amazon 控制/要求 | 本项目控制 | 验收证据 |
+|---|---|---|
+| PII 仅用于授权目的 | PII vault、最小化、字段权限 | 数据地图、访问测试、审计样例 |
+| 静态/传输加密 | TLS、KMS、列级 AES-GCM、加密备份 | 配置证据、密钥轮换记录、渗透测试 |
+| 30 天 PII 删除 | 生命周期任务、crypto-shredding、删除证明 | 自动化测试、删除报表、法务确认 |
+| 18 个月非 PII 上限 | 分区归档和过期 | 分区策略、归档报告 |
+| 12 个月安全日志 | 不可变审计存储 | 保留策略、完整性校验 |
+| 24 小时事件通知 | IR 流程和联系人 | 演练记录、通知模板 |
+| 7 天 critical/30 天 high | 漏洞 SLA 和 CI 门禁 | 漏洞台账、修复证据 |
+| 24 小时撤权 | 身份生命周期和会话撤销 | 离职流程测试、访问审查 |
+| 防止未授权访问 | mTLS、服务 JWT、RBAC、NetworkPolicy | 配置基线、越权测试报告 |
+
+### 5.11 安全验收标准
+
+1. 无认证的内网/公网请求无法调用任何 `/internal` 接口。
+2. 缺失 tenant/shop/role/权限上下文时，敏感查询和写操作全部拒绝。
+3. 通过篡改 JWT、请求头、body、URL 参数、WebSocket/SSE 参数进行的跨租户/跨店铺测试全部失败并告警。
+4. 浏览器端不持久化可被 JS 读取的长期令牌。
+5. PII 在数据库、备份、日志、ES、MongoDB、MQ 和分析表中均符合分类与脱敏策略。
+6. 任意密钥泄露漏洞都能定位影响的店铺、轮换并证明旧密钥失效。
+7. 审计日志完整性校验通过，敏感数据访问可追溯到人和服务。
+8. 生产镜像无高危未修复漏洞，基础设施端口没有公网暴露。
+9. 安全事件演练在 24 小时内完成通知和初步遏制。
+10. 所有生产部署都能通过自动化的 fail-closed、迁移、备份恢复和权限测试。
+
+---
+
+## 6. 部署、性能、可观测性与 CI/CD
+
+### 6.1 生产部署拓扑
+
+推荐拓扑：
+
+```text
+Internet
+  -> DNS/WAF/CDN
+  -> Ingress (TLS/HSTS, rate limit, body limit)
+  -> erp-edge (gateway/BFF/WebSocket edge)
+  -> service mesh / mTLS
+       -> erp-core
+       -> erp-integration
+       -> erp-intelligence
+       -> erp-worker
+
+Private data plane:
+  -> MySQL HA (primary + standby + read replicas + PITR)
+  -> Redis Sentinel/Cluster
+  -> RabbitMQ 3-node quorum queues
+  -> Elasticsearch 3-node with security/TLS
+  -> MongoDB Replica Set
+  -> S3/MinIO encrypted object storage
+  -> Keycloak / Vault / KMS
+
+Observability:
+  -> OpenTelemetry Collector
+  -> Prometheus + Alertmanager
+  -> Loki/ELK logs
+  -> Grafana dashboards
+```
+
+部署原则：
+
+- 基础设施端口不映射到宿主机；开发 Compose 与生产 K8s 使用不同的网络策略。
+- 每个有状态的运行时使用多副本或高可用托管服务；单实例只允许出现在本地开发。
+- 数据库迁移、应用部署、配置变更互相解耦；迁移采用 expand/contract，避免新旧版本同时运行时列不存在。
+- 所有环境（dev/staging/prod）使用同一套 IaC 和迁移机制，禁止生产手工改表。
+- 生产部署采用渐进式发布；高风险版本先 shadow/canary，再全量。
+
+### 6.2 容量模型（模拟假设）
+
+下列为**容量设计假设**，不是对用户的经营数据判断；所有生成数据标记 `SYNTHETIC`。
+
+| 参数 | 首期基线（SYNTHETIC） | 压力档（SYNTHETIC） |
+|---|---:|---:|
+| 租户 | 1 | 10 |
+| 店铺 | 10 | 100 |
+| marketplace | 5 | 20 |
+| 订单/月 | 100,000 | 2,000,000 |
+| 订单行/月 | 300,000 | 8,000,000 |
+| 订单/事件峰值 | 50–100 req/s | 500–1,000 req/s |
+| 日活运营用户 | 50 | 1,000 |
+| 广告实体日指标 | 100,000 行/天 | 5,000,000 行/天 |
+| 库存 SKU 数 | 50,000 | 1,000,000 |
+| 单店铺商品数 | 50,000 | 1,000,000 |
+| 保留 | PII 30 天；经营数据 18 个月 | 同左，按分区归档 |
+
+粗算存储（实际必须以真实字段和压缩率压测校准）：
+
+- 订单头：100k/月 × 2 KB ≈ 200 MB/月。
+- 订单行：300k/月 × 0.5 KB ≈ 150 MB/月。
+- 事件/审计：1M/月 × 0.5 KB ≈ 500 MB/月。
+- 广告日指标：3M/月 × 0.2 KB ≈ 600 MB/月。
+- 一年热数据通常仍在几十到几百 GB 量级，真正的瓶颈更可能是索引、JOIN、全量查询和外部 API 限流，而不是单纯磁盘容量。
+
+容量决策必须通过压测得到，不得用上表作为承诺。建议先建立以下负载模型：
+
+- 订单读取/写入比例、列表页分页深度、报表日期跨度。
+- 结算文件大小和峰值导入速度。
+- Webhook 峰值、重复率、乱序率。
+- SP-API 每店铺每端点的真实配额和 429 比例。
+- AI/搜索并发、向量维度、召回规模和最大上下文。
+
+### 6.3 SLO、RPO/RTO
+
+建议的首期目标（需业务确认）：
+
+| 能力 | 目标 | 说明 |
+|---|---|---|
+| ERP API 可用性 | 99.9%/月 | 不含外部平台自身不可用，但内部必须记录外部依赖影响 |
+| 核心 API p95 | < 300 ms | 简单查询/命令；复杂报表单列 |
+| 订单写入 p95 | < 500 ms | 不含异步外部确认 |
+| 订单事件新鲜度 | 95% < 5 分钟 | 通知或增量拉取成功时 |
+| 库存对账新鲜度 | 每日完成 | 遵守 Amazon 限流，不承诺秒级全网一致 |
+| 报表生成 | 日结在业务时区 08:00 前完成 | 允许失败重跑 |
+| 订单/财务 RPO | ≤ 5 分钟 | 通过 binlog/PITR 和 Outbox |
+| ERP RTO | ≤ 1 小时 | 核心交易优先 |
+| 单店铺集成 RTO | ≤ 4 小时 | 外部依赖恢复后自动续跑 |
+
+SLO 要区分“服务可用”与“业务正确”：返回 200 但订单金额错、库存超卖、凭证不平衡，不算成功。
+
+### 6.4 数据库设计、索引与分页
+
+- 所有列表 API 必须有分页；默认页大小有上限，禁止无界 `selectList`。
+- 深分页使用 keyset/cursor（基于时间 + ID），避免大 `OFFSET`。
+- 大型表按月或按业务周期分区：订单、事件、广告指标、审计、结算明细；分区键与查询条件一致。
+- 索引以查询模式为依据，至少覆盖：
+  - `(tenant_id, shop_id, created_at, id)` 用于订单列表；
+  - `(tenant_id, shop_id, amazon_order_id, marketplace_id)` 用于幂等查找；
+  - `(tenant_id, shop_id, status, updated_at)` 用于调度扫描；
+  - `(tenant_id, shop_id, stat_date, sku)` 用于报表；
+  - `(consumer_group, tenant_id, event_id)` 用于 Inbox；
+  - `(status, next_retry_at, lease_until)` 用于 Outbox/Job。
+- 对高频更新和热点行使用短事务；禁止在事务内做外部 HTTP、文件下载或长耗时解析。
+- 读写分离只用于可容忍延迟的查询；订单状态、库存扣减、凭证写入必须走主库。
+- 连接池按 Little's Law 压测：`并发连接 ≈ 每秒请求 × 平均持有连接时间`；所有服务连接总和不得超过数据库安全上限。
+- MySQL 慢查询日志、`performance_schema`、锁等待和复制延迟纳入监控；慢查询需要查询指纹和租户/店铺维度。
+- 大表 DDL 使用在线变更工具或分阶段迁移；删除列/索引在确认无旧版本依赖后进行。
+
+### 6.5 缓存与性能
+
+- Redis 键必须带租户前缀和版本号；权限、库存、订单状态的缓存必须有失效策略。
+- 不在缓存中保存未加密 PII；不把缓存当成交易事实源。
+- 使用 single-flight/互斥避免缓存击穿；热点键加随机 TTL 防止雪崩。
+- 本地 Caffeine 只用于低频变化的静态目录，并设置小容量和短 TTL；多副本场景不能依赖本地缓存一致性。
+- ES 写入采用 bulk + 重试，刷新策略按查询需求设置；不要在每条业务写后强制 refresh。
+- 图片、报表、原始响应使用对象存储和 CDN 能力，不把大文件存数据库。
+- 前端列表使用虚拟滚动或服务端分页，避免一次渲染数万行；路由懒加载和按页面拆包。
+- 搜索/推荐可降级：Embedding 不可用时纯 BM25；报表服务不可用时显示缓存并明确数据时间。
+
+### 6.6 异步、调度与故障恢复
+
+- MQ 使用 Quorum Queue（或等价持久化队列）+ DLX + 重试队列；设置消息 TTL、最大重试和死信告警。
+- 消费者幂等键和状态持久化到数据库；重复消息必须返回已处理结果或安全忽略。
+- 调度锁必须 fail-closed：Redis/租约系统不可用时不允许多实例同时执行；宁可延迟任务，也不能重复扣库存/重复出凭证。
+- 每个调度器暴露：最后成功时间、下次运行、游标、积压、失败数、重试数、租约持有者。
+- 支持暂停/恢复/单店铺重跑；重跑使用 dry-run 和影响范围预览。
+- 定期做 DLQ 演练：注入毒消息、验证告警、修复后重放、确认业务状态。
+
+### 6.7 可观测性
+
+- 统一 OpenTelemetry trace/span；至少覆盖 ingress、HTTP、Feign、MQ、DB、外部 API 和 AI 工具。
+- 日志结构化，包含 `trace_id/request_id/tenant_id/shop_id/service_id/actor`，敏感字段脱敏。
+- 指标至少包含：
+  - RED：rate、errors、duration；
+  - 队列：depth、age、consumer lag、retry、DLQ；
+  - 集成：请求数、限流、429/5xx、最后成功时间、游标滞后；
+  - 业务：订单同步延迟、库存差异、结算差异、未平衡凭证、Feed 失败、对账案件；
+  - 安全：认证失败、越权拒绝、敏感字段读取、密钥读取、异常导出。
+- 指标标签不得使用高基数 `user_id/order_id`；用聚合桶或 trace 查询。
+- 告警以用户影响和 SLO burn rate 为中心，避免“每个异常一行告警”。
+- 每个告警都必须有 runbook、负责人、降噪条件和关闭标准。
+
+### 6.8 CI/CD 与发布门禁
+
+当前 CI 的问题包括 Checkstyle `continue-on-error`、Docker 只构建默认模块、缺少 Compose/E2E/镜像扫描/部署验证。生产流水线建议：
+
+1. **静态与依赖**：编译、Checkstyle（阻断）、SpotBugs/ErrorProne、依赖漏洞扫描、secret scanning、IaC 扫描。
+2. **单元测试**：后端和前端测试；测试报告与覆盖率趋势，但不以单一覆盖率数字替代关键场景测试。
+3. **集成测试**：Testcontainers 或 Compose 启动 MySQL/Redis/RabbitMQ/ES/Mongo，验证迁移、Outbox、Inbox、幂等、事务回滚。
+4. **契约测试**：OpenAPI schema、消费者驱动契约、事件 schema 兼容性。
+5. **安全测试**：越权/跨租户测试、认证绕过、Webhook 验签、PII 脱敏、依赖和镜像 CVE。
+6. **构建**：为每个实际部署模块构建镜像，不使用一个默认镜像代表全部服务；生成 SBOM 和 provenance。
+7. **端到端**：Playwright 覆盖登录、订单、库存、结算、对账、权限和故障场景；每次发布前一键可重复运行。
+8. **部署验证**：K8s/IaC dry-run、迁移演练、回滚演练、健康检查和 smoke test。
+9. **发布**：镜像签名和 digest 固定；staging 通过后再 canary/blue-green；支持自动回滚。
+10. **审计**：记录构建号、commit、镜像 digest、迁移版本、审批人和部署结果。
+
+### 6.9 备份、灾备与演练
+
+- MySQL：每日全量 + binlog 持续归档 + PITR；定期在隔离环境恢复并校验业务查询。
+- Redis：AOF/RDB 与持久化策略匹配缓存重要性；缓存丢失能重建，不作为唯一事实源。
+- RabbitMQ：Quorum Queue、定义导出、节点故障演练；消息和 DLQ 有保留期限。
+- ES/MongoDB：快照到对象存储，定期恢复；索引可从 MySQL/Outbox 重建。
+- 对象存储：版本控制、生命周期、加密和跨区域/跨账户备份（按风险）。
+- 每季度至少一次恢复演练，记录 RPO/RTO 实际值；未验证的备份不算备份。
+- 故障演练包括：主库切换、Redis 不可用、MQ 节点宕机、外部 API 长时间限流、报表文件损坏、密钥轮换失败、区域级恢复。
+
+### 6.10 成本与运维变量
+
+用户需要提前确认以下成本与组织变量，否则“生产可用”无法落地：
+
+- 云/机房、区域、可用区数量和网络出口费用。
+- MySQL HA、只读副本、Redis HA、RabbitMQ 多节点、ES 多节点、对象存储和备份成本。
+- 可观测性数据量：日志/trace/指标保留时间和采样率会显著影响费用。
+- 短信、短信验证码、AI 模型调用、图片/向量存储、第三方数据服务成本。
+- 运维人员数量、值班模式、是否允许云托管、是否允许使用外部 IdP/KMS/Vault。
+- 税务、会计、法务和平台合规责任人，而不是全部由工程团队承担。
+- 真实 SP-API 开发者资质、店铺授权、沙箱/生产配额和 Amazon 对 DPP/安全问卷的时限。
+
+### 6.11 性能验收标准
+
+1. 订单写入在目标并发下无重复、无丢失、无超卖，事务回滚可验证。
+2. 10 万/100 万订单规模下列表 p95 达到目标，且无全表扫描和无界内存加载。
+3. 结算导入、库存对账、搜索索引重建在规定窗口内完成并可断点续跑。
+4. 外部 429/5xx/超时下，系统保持退避、背压和恢复，不产生重复业务动作。
+5. Redis/MQ/ES 单节点故障时，核心交易按设计降级而不是数据损坏。
+6. 备份恢复达到 RPO/RTO，恢复后订单、库存、凭证和对账结果一致。
+7. 前端在慢网和大列表下可用，会话过期、重连和权限变更行为正确。
+8. 发布和回滚在 staging 可重复执行，迁移失败不会留下半完成 schema。
+
+---
+
+## 7. 模拟数据设计（全部标记 SYNTHETIC）
+
+### 7.1 目标与禁止事项
+
+模拟数据的用途是补齐开发和验证缺口，不是伪造经营事实。
+
+允许：
+
+- 生成确定性、可重复、可审计的测试数据和压测数据。
+- 覆盖正常、边界、异常、重试、乱序和对账场景。
+- 作为 staging、灾备、性能和安全测试输入。
+
+禁止：
+
+- 把模拟数据写入真实生产对账、税务申报或平台结算。
+- 把模拟数据伪装成真实 Amazon 数据。
+- 在模拟数据中夹带真实姓名、邮箱、地址、电话、银行信息或真实凭证。
+- 使用不可重复的随机数导致测试不可复现。
+
+### 7.2 数据标识
+
+每条模拟记录、事件和文件至少带以下标识之一：
+
+```text
+data_origin = SYNTHETIC
+dataset_id  = synthetic-amazon-erp-{version}
+seed        = 固定整数或字符串
+```
+
+- 数据库表增加 `data_origin` 字段；事件信封和 API 响应透出只读标记。
+- 前端测试模式显示明显的 `SYNTHETIC` 横幅和颜色，不允许和真实环境混淆。
+- 报表、导出文件、通知和审计记录保留来源标记。
+- 生产环境的模拟数据加载器默认关闭；只有显式 `test/synthetic` profile 可启用。
+- 模拟数据不得复用真实生产数据库连接或真实对象存储 bucket。
+
+### 7.3 确定性生成器
+
+建议实现独立的 `synthetic-data-generator`（Java 或 Python 均可），规则：
+
+- 固定 seed：同一 `dataset_id + seed` 必须生成完全相同的 UUID、金额、时间和关联关系。
+- 使用稳定 UUID v5 或基于业务键的确定性 ID，避免随机主键导致测试不可重复。
+- 生成顺序遵循外键依赖：租户 -> 店铺 -> marketplace -> 供应商 -> 商品/SKU -> 成本批次 -> 库存 -> 订单 -> 订单行 -> 履约/退款 -> 结算 -> 凭证 -> 报表。
+- 所有金额使用最小货币单位或 `BigDecimal`，明确舍入规则；禁止使用浮点生成财务数据。
+- 所有时间用 UTC 保存，显示按店铺/市场时区转换；生成时明确时区和夏令时边界。
+- 生成器输出 SQL/JSONL/NDJSON，并提供 schema 校验和行数校验。
+- 生成数据可以重复执行 `--reset --seed`，也可追加新的数据集版本。
+
+### 7.4 数据规模档位
+
+| 档位 | 用途 | 建议规模 |
+|---|---|---|
+| `demo` | 本地演示/功能测试 | 1 租户、3 店铺、3 市场、1 万订单 |
+| `ci` | CI 集成/迁移/契约测试 | 1 租户、2 店铺、2 市场、1,000 订单 |
+| `staging` | 业务验收、对账、权限 | 1 租户、10 店铺、5 市场、100 万订单 |
+| `perf` | 压测和容量评估 | 1–10 租户、100 店铺、20 市场、1,000 万订单或按压测目标扩展 |
+| `chaos` | 故障/恢复演练 | 在 staging/perf 基础上注入重复、乱序、延迟、缺失和损坏 |
+
+大文件不提交到 Git；生成脚本、schema 和固定 seed 提交，产物存对象存储或本地临时目录。
+
+### 7.5 业务子图
+
+每个店铺至少生成以下可追溯子图：
+
+- 商品：SPU/ASIN/SKU、变体、市场、分类、Listing 状态、A+ 状态、Feed 提交和结果。
+- 成本：供应商、采购单、收货批次、批次成本、FIFO 消耗、头程/关税分摊。
+- 库存：FBA/FBM/海外仓/国内仓、库存桶、预占、调整、调拨、退货入库、批次。
+- 订单：订单头/行、地址脱敏、币种、促销、费用、税费、发货、取消、退款、部分退款、退货、换货。
+- 结算：结算批次、明细、费用类型、退款、广告费、仓储费、促销返点、汇率、VAT。
+- 广告：profile、campaign、ad group、keyword、target、search term、日指标、归因窗口、变更记录。
+- 客服：工单、消息、邮件任务、负面评价、RMA、SLA。
+- 审计与集成：Outbox、Inbox、Webhook、报表原始对象、重试、DLQ、对账案件。
+
+### 7.6 必须覆盖的异常场景
+
+1. 同一 `amazon_order_id` 出现在不同店铺/市场，不能互相覆盖。
+2. 同一 Webhook 事件重复投递、乱序投递、延迟投递、签名失败和跨店铺重放。
+3. 订单状态从 Unshipped -> Shipped -> Cancelled -> Refunded 的非法或非典型序列。
+4. 部分发货、部分退款、多次退款、退货后补发、取消后仍收到结算。
+5. 结算文件缺列、金额不平衡、币种不一致、重复行、负数、延迟到账和历史补结算。
+6. 库存缺失、负数、快照过期、平台与内部台账不一致、超卖、预占冲突。
+7. 同一 SKU 多批次、FIFO 顺序变化、成本缺失、批次退货、采购价格变动。
+8. Feed 提交成功但处理失败、结果报告下载失败、A+ 状态回滚、Listing 被平台侧修改。
+9. 广告 refresh token 失效、429、5xx、分页中断、归因窗口跨日、重复指标。
+10. 新用户注册、验证码发送失败、refresh token 重用、用户停用后长连接仍存活。
+11. Redis/MQ/ES 不可用、数据库主从切换、任务租约过期和 DLQ 重放。
+12. PII 删除请求、备份恢复、密钥轮换、审计日志完整性校验。
+
+### 7.7 数据质量校验
+
+生成并在入库前验证：
+
+- 外键完整性、唯一键、枚举值、时间顺序和版本单调性。
+- 订单头金额 = 行金额 + 费用 + 调整项（按币种和舍入规则）。
+- 凭证借贷平衡；结算明细与凭证可追溯。
+- 库存移动账的期末余额与余额表一致；不能出现无来源扣减。
+- 订单、退款、结算和对账金额可重算。
+- 所有 PII 标记字段在导出、日志和测试报告中默认脱敏。
+- 每批数据有行数、哈希、生成时间和 seed；变更生成规则必须提升 dataset 版本。
+
+### 7.8 测试验收
+
+- 固定 seed 生成两次，产出哈希一致。
+- 从空库执行全量迁移 + 模拟数据 + 业务 E2E 成功。
+- 从上一版本数据库执行增量迁移 + 对账成功。
+- 每个异常场景有自动化测试、预期结果和证据。
+- 压测数据可重复使用，并能生成报表/对账案例而不污染生产。
+
+---
+
+## 8. 路线图、迁移与生产验收
+
+### 8.1 路线图原则
+
+路线图按“先阻止损失，再建立事实源，再自动化”排序。以下工期是**在假设团队有 6–8 名熟悉 Java/云原生/财务领域的工程师、1 名 SRE、1 名 QA、1 名安全负责人时的粗略区间**，不是承诺；人员、真实 SP-API 联调、合规评审和第三方系统会成为关键路径。
+
+### 8.2 阶段 0：生产阻断修复（约 2–6 周）
+
+目标：让系统不再存在“明显可被利用或会产生错误经营数据”的入口。
+
+- 生产配置：禁止 mock、清理默认密码、移除已提交 Secret、关闭公网基础设施端口。
+- 身份：修复 `/internal`、用户 IDOR、SSE/WebSocket 身份、租户/店铺/字段权限 fail-closed。
+- 注册/登录：修复用户实体与 DDL 漂移、短信通道、refresh token 轮换与撤销。
+- 数据：修复报表数据库漂移；建立单一迁移入口；阻止 Compose/mock 进入生产。
+- 运维：开启 TLS、Actuator 限制、NetworkPolicy、备份和基础告警。
+- CI：Checkstyle 阻断、全模块编译、迁移测试、secret/依赖/镜像扫描。
+
+验收门槛：P0 表中每项有修复、自动化测试和证据；没有未处理的 critical/high 安全问题。
+
+### 8.3 阶段 1：事实模型与一致性（约 6–12 周）
+
+- 引入 `tenant_id/shop_id/version` 和统一迁移规范。
+- 订单头/行/事件/费用/退款模型落地；同步改为通知 + 增量 + 报表对账。
+- 库存台账、预占、扣减、冲销、调拨、退货入库落地。
+- Outbox/Inbox/Job/Webhook 表和统一事件信封落地。
+- 凭证/KMS/密钥轮换；PII vault、脱敏和保留任务第一版。
+- 搜索结果和缓存强制租户/店铺过滤。
+
+验收门槛：订单、库存、集成三大链路可重放；跨租户/跨店铺负向测试通过；故障注入不产生重复扣减。
+
+### 8.4 阶段 2：业务闭环（约 8–16 周）
+
+- 采购到付款、三单匹配、供应商生命周期。
+- WMS 入库/出库/调拨/退货/面单/轨迹。
+- RMA/客服 SLA 与 PII 生命周期。
+- 双分录账本、FIFO 成本层、多币种、税务规则、结算对账。
+- 广告 OAuth/分页/限流/归因/护栏和变更审计。
+- Listing 版本、Feed 结果闭环、ES/搜索派生同步。
+
+验收门槛：财务试算平衡；结算、库存、订单对账率达到业务阈值；所有差异可建案、分派和关闭。
+
+### 8.5 阶段 3：规模化、智能化和 SaaS 化（约 12–24 周）
+
+- 运行单元收敛、容量压测、缓存/索引优化和报表读模型。
+- 多租户 SaaS 权限、租户级限流、成本核算和租户隔离测试。
+- AI Agent 工具安全、提示注入防护、审批与审计。
+- 自动补货、广告自动化、异常检测、预测和智能客服。
+- 跨区域灾备、成本优化和持续合规审计。
+
+验收门槛：达到目标 SLO/RPO/RTO；多租户隔离通过独立渗透与数据泄漏测试；自动化动作有护栏和可回滚证据。
+
+### 8.6 数据迁移策略
+
+1. 建立旧库快照与只读校验环境；记录每个源表的行数、金额、状态分布和哈希。
+2. 设计目标 schema 和映射表；对订单号、店铺、市场、币种、状态建立明确映射。
+3. 使用 expand/contract：先加新列/新表，双写或回填，再切换读路径，最后移除旧路径。
+4. 回填按租户/店铺/时间分批，可暂停和续跑；每批记录 checkpoint、行数和错误。
+5. 对账旧新订单头/行/金额/库存/凭证；差异进入迁移差异清单，人工确认后再切换。
+6. 切换前执行冻结窗口或增量追赶；切换后保留只读回退路径一段时间。
+7. 回滚不反向覆盖新事实源；优先通过修复和新迁移解决，避免双主。
+
+### 8.7 发布与回滚
+
+- 数据库迁移向前兼容；先部署兼容新旧 schema 的版本，再切流量。
+- 生产发布采用 canary 或 blue-green；观察错误率、p95、队列、外部限流、对账差异。
+- 回滚脚本必须测试过，并且回滚不丢失已接收的 Outbox/Inbox 事件。
+- 高风险模块（库存、支付/退款、凭证、广告预算）默认关闭自动执行，先干跑或只生成建议。
+- 每次发布记录镜像 digest、迁移版本、配置版本、审批人和回滚点。
+
+### 8.8 最终生产验收清单
+
+- [ ] 生产环境无 mock、无默认凭据、无公开内部端口。
+- [ ] 身份、租户、店铺、字段权限 fail-closed，跨租户测试通过。
+- [ ] 订单头/行/事件/费用/退款可重放并与报表对账。
+- [ ] 库存台账、预占、扣减、调拨、退货可原子更新且无超卖。
+- [ ] 财务凭证借贷平衡、FIFO 成本可追溯、结算可对账。
+- [ ] Outbox/Inbox/DLQ/Replay、Webhook 验签和幂等全部通过故障注入。
+- [ ] SP-API 真实/沙箱联调完成；429、分页、SQS 重复和乱序处理通过。
+- [ ] PII 分类、加密、掩码、保留、删除、审计和备份策略落地。
+- [ ] 密钥托管、轮换、吊销和最小权限落地。
+- [ ] HA、备份、PITR、RPO/RTO 和恢复演练通过。
+- [ ] SLO、告警、值班、runbook、事故响应和安全 SLA 落地。
+- [ ] CI/CD 全门禁通过；镜像签名、SBOM、迁移和回滚验证通过。
+- [ ] 模拟数据全部标记 `SYNTHETIC`，可通过 seed 重现。
+- [ ] 业务、财务、税务、法务和安全负责人签字确认。
+
+### 8.9 需要用户补充的信息
+
+以下信息缺失会显著改变设计与工期，必须在实施前确认：
+
+1. 部署形态：单租户私有化、SaaS 多租户，还是两者都要。
+2. 云/机房、区域、是否有 Kubernetes、是否允许使用托管 MySQL/Redis/RabbitMQ/ES/KMS。
+3. 店铺数量、市场、SKU、订单量、结算量、广告量、峰值和增长预期。
+4. 真实 SP-API 开发者资质、授权方式、沙箱/生产配额、是否有 Amazon 客户经理或安全联系人。
+5. 会计制度、税务辖区、总账系统（金蝶等）、币种、关账和审计要求。
+6. 短信、邮件、广告、AI 模型、对象存储和日志平台供应商。
+7. 团队规模、值班能力、允许的运维自动化程度和预算范围。
+8. 是否已有真实生产数据需要迁移；若没有，模拟数据只用于开发和演练。
+
+---
+
+## 附录 A：关键证据路径
+
+### A.1 安全、身份与租户
+
+- `amz-common/src/main/java/com/amz/interceptor/BaseAuthInterceptor.java`
+- `amz-common/src/main/java/com/amz/context/UserContext.java`
+- `amz-common/src/main/java/com/amz/aspect/ShopIdGuardAspect.java`
+- `amz-common/src/main/java/com/amz/service/impl/FieldPermissionServiceImpl.java`
+- `amz-common/src/main/java/com/amz/aspect/FieldPermissionAspect.java`
+- `amz-common/src/main/java/com/amz/util/CryptoUtil.java`
+- `amz-common/src/main/java/com/amz/config/FeignAuthRelayConfig.java`
+- `amz-common/src/main/java/com/amz/lock/DistributedJobLock.java`
+- `amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java`
+- `amz-gateway/src/main/resources/application.yml`
+
+### A.2 用户、AI、消息
+
+- `amz-service/amz-service-user/src/main/java/com/amz/service/impl/LoginServiceImpl.java`
+- `amz-service/amz-service-user/src/main/java/com/amz/model/pojo/User.java`
+- `amz-service/amz-service-user/src/main/java/com/amz/controller/UserController.java`
+- `amz-service/amz-service-ai/src/main/java/com/amz/controller/AgentSseController.java`
+- `amz-service/amz-service-ai/src/main/java/com/amz/agent/AgentChatStreamService.java`
+- `amz-service/amz-service-ai/src/main/java/com/amz/agent/ErpToolExecutor.java`
+- `amz-service/amz-service-message/src/main/java/com/amz/controller/MessageNotifyController.java`
+- `amz-service/amz-service-message/src/main/java/com/amz/handler/WebSocketHandler.java`
+- `amz-service/amz-service-message/src/main/java/com/amz/mq/consumer/MessageNoticeConsumer.java`
+- `amz-service/amz-service-search/src/main/java/com/amz/service/impl/SearchServiceImpl.java`
+
+### A.3 业务与集成
+
+- `amz-service/amz-service-order/src/main/java/com/amz/service/impl/OrderServiceImpl.java`
+- `amz-service/amz-service-order/src/main/java/com/amz/mq/consumer/OrderConsumer.java`
+- `amz-service/amz-service-order/src/main/java/com/amz/config/MybatisPlusConfig.java`
+- `amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/OrderSyncScheduler.java`
+- `amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/InventorySyncScheduler.java`
+- `amz-service/amz-service-spapi/src/main/java/com/amz/analytics/InventoryHealthAnalyzer.java`
+- `amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialStore.java`
+- `amz-service/amz-service-spapi/src/main/java/com/amz/client/OrdersClient.java`
+- `amz-service/amz-service-spapi/src/main/java/com/amz/client/ReportsRealClient.java`
+- `amz-service/amz-service-product/src/main/java/com/amz/client/SpapiFeedsClient.java`
+- `amz-service/amz-service-finance/src/main/java/com/amz/service/impl/SettlementServiceImpl.java`
+- `amz-service/amz-service-finance/src/main/java/com/amz/parse/SettlementParser.java`
+- `amz-service/amz-service-finance/src/main/java/com/amz/service/impl/SkuProfitServiceImpl.java`
+- `amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java`
+- `amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/WarehouseServiceImpl.java`
+- `amz-service/amz-service-logistics/src/main/java/com/amz/mapper/WarehouseInventoryMapper.java`
+- `amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java`
+- `amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java`
+- `amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java`
+
+### A.4 部署、迁移与 CI
+
+- `docker-compose.yml`
+- `Dockerfile`
+- `.github/workflows/ci.yml`
+- `k8s/ingress.yaml`
+- `k8s/secret.yaml`
+- `k8s/configmap.yaml`
+- `k8s/services/`
+- `k8s/infra/`
+- `init_all_tables.sql`
+- `docker/init-sql/`
+- `docs/erp-improvement-plan-2026-08-17.md`
+- `docs/item7-shopid-audit-report.md`
+- `docs/item6b-key-externalization-plan.md`
+
+## 附录 B：表与迁移口径冲突
+
+| 来源 | 表数量/口径 | 结论 |
+|---|---|---|
+| `init_all_tables.sql` | 约 57 张唯一表 | 单文件初始化不代表生产迁移历史 |
+| `docker/init-sql/` | 约 105 张表 | 与单文件不完全一致 |
+| README | 宣称 54 张 | 与代码/脚本不一致 |
+| Flyway | 每个服务有各自迁移和 baseline 策略 | 没有统一 schema 版本和端到端迁移测试 |
+
+整改要求：
+
+1. 选择一个权威迁移机制（Flyway 或 Liquibase），所有服务共用版本规则。
+2. 移除“启动时执行另一个 SQL 文件”的隐式行为，避免多入口竞争。
+3. 提供 clean-install 和 upgrade-from-N-1 两条流水线。
+4. 每次变更生成 schema 差异报告；禁止只改实体或只改 SQL。
+5. 建立数据库字典，标注租户/店铺/版本/PII/保留期/分区和索引。
+
+## 附录 C：不建议的做法
+
+- 为了“看起来生产化”而只增加 K8s 副本数，不修复数据事实源。
+- 用高频轮询替代 Notifications 和 Reports 对账。
+- 用 Redis 去重代替持久化 Inbox。
+- 用进程内缓存作为店铺凭证或库存的权威来源。
+- 用数据库触发器、定时全表扫描或前端隐藏来替代权限模型。
+- 在审计日志、异常信息、URL、前端 localStorage 中保存 token 或 PII。
+- 把模拟数据直接导入生产用于报表和税务。
+- 未做恢复演练就宣称已有备份和 RPO/RTO。
+- 未做真实 SP-API 联调就宣称已支持 Amazon 全部能力。
+- 在没有财务、税务、法务签字的情况下自动执行退款、结算或税务动作。
+
+## 附录 D：评审清单
+
+请评审时明确回答：
+
+1. 是否接受“单租户私有化优先、保留 tenant_id”的工作假设？
+2. 是否接受 5 个逻辑运行单元的目标架构；P0 是否允许先保留现有微服务部署？
+3. 是否接受 MySQL 继续作为首期事实库，而不是迁移到 PostgreSQL？
+4. 是否接受 BFF + HttpOnly Cookie 替代 localStorage token？
+5. 是否确认 PII 30 天、非 PII 18 个月、安全日志 12 个月的默认保留策略？
+6. 是否已有真实 SP-API 沙箱/生产授权和 Amazon 安全联系人？
+7. 是否已有财务/税务/总账系统接口和责任人？
+8. 期望的首期容量、SLO、RPO/RTO 和预算范围是什么？
+9. 是否允许引入 Keycloak、Vault/KMS、外部对象存储、企业短信和外部 IdP？
+10. 是否批准进入实施计划阶段；批准前不修改业务源码。
+
+## 附录 E：本文自检
+
+- 结论与事实来源：关键问题均能在附录 A 代码路径中找到对应实现或配置；外部约束使用 Amazon 官方文档；容量数字明确标为 `SYNTHETIC`。
+- 逻辑跳跃：将“模拟数据”与“真实生产上线”明确分离；不把测试数量等同于生产能力；不把 K8s 多副本等同于高可用。
+- 一致性：本文假设与前面设计章节的工作假设保持一致；若评审推翻部署形态或数据库选择，需要重新评估租户、迁移和成本章节。
+- 范围：本文覆盖业务、性能、安全、可靠性、运维、合规、数据迁移和验收；不包含具体源码实现，符合“设计先行”的流程。
+- 歧义：PII 保留、税务、RPO/RTO、容量、预算和运行单元收敛均列为待确认决策，未伪装成已确定事实。
