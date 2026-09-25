@@ -164,7 +164,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 
 `amz_settlement_detail`（结算原表明细，`row_key` 业务指纹唯一索引）、
 `amz_payment_collection`（订单级回款台账）、`amz_fee_discrepancy`（费用差异 / 短收候选）、
-`amz_reimbursement_claim`（索赔单）。建表脚本三处镜像同步（模块 Flyway + `docker/init-sql/15` + `init_all_tables.sql`）。
+`amz_reimbursement_claim`（索赔单）。表结构只由模块 Flyway 维护；`docker/init-sql/` 与 k8s 建库 Job 仅创建空库，不再复制表 DDL。
 
 ### 关键设计取舍
 
@@ -230,7 +230,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **调度防重** | `DistributedJobLock` Redis 分布式锁，多实例部署不重复执行 |
 | **SQL 注入防护** | 全 MyBatis `#{}` |
 | **全局异常处理器** | 统一 `@ControllerAdvice` 覆盖 16 服务 |
-| **数据库迁移** | Flyway 10.20.0（14 MySQL 服务 V1__init.sql + multiplatform V2 明细列，baseline-on-migrate 兼容存量库） |
+| **数据库迁移** | Flyway 10.20.0 是 14 个 MySQL 服务的唯一建表事实源（106 张表；显式 baseline-on-migrate 兼容存量库）；Compose/k8s 只建 14 个空库 |
 | **Docker 健康探针** | 16 服务 Actuator health/liveness/readiness |
 
 ## ⚠️ 已知限制
@@ -296,7 +296,7 @@ mvn -pl amz-service/amz-service-user spring-boot:run
 mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=prod
 ```
 
-> **Windows 本地一键全栈**：仓库根目录提供 `.start-backend-final.bat`（14 微服务按依赖顺序拉起）与 `.start-vite.bat`（前端），配套 `.start-mysql.bat` 初始化本地 MySQL/Redis。
+> **Windows 本地脚本（作者机器专用，不是部署入口）**：`.start-backend-final.bat`、`.start-vite.bat`、`.start-mysql.bat` 仍含绝对路径或本机数据目录假设；生产与新机器请使用 Docker Compose / k8s，不要把这些批处理脚本当作可移植部署方案。
 
 ## 🧪 测试
 
@@ -332,7 +332,7 @@ AmazonERP/
 │   ├── amz-service-finance/      # 财务 | 8103
 │   └── amz-service-multiplatform/# 多平台 | 8104
 ├── amz-frontend/         # Vue 3 前端 + Playwright E2E
-├── docker/               # Docker 配置 + init-sql（01-33）
+├── docker/               # init-sql 仅建 14 空库；init-sql-legacy 仅存档，不参与初始化
 ├── prometheus/           # Prometheus 配置 + 告警规则
 ├── grafana/              # Grafana 预置面板
 ├── alertmanager/         # AlertManager 配置

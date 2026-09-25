@@ -1,4 +1,4 @@
-# amz-service-message —— 消息微服务（HTTP 8889，Netty WebSocket 8888，DB: amz_message）
+# amz-service-message —— 消息微服务（HTTP 8889，Netty WebSocket 8888，无独立数据库）
 apiVersion: v1
 kind: Service
 metadata:

@@ -7,6 +7,14 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_ADDR:localhost:8848}
+  # ====== Flyway 基线（P0-58）======
+  # 表结构的唯一事实源是 classpath:db/migration；Compose 与 k8s 只负责建空库。
+  # baseline-on-migrate=true 是必需的：Flyway 10 默认为 false，非空库且无 flyway_schema_history 时
+  # 会直接抛错并让应用拒绝启动（历史环境 14 个服务会同时起不来）。空库仍照常执行 V1。
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration
   # ====== 动态数据源（读写分离）配置 ======
   # 由 dynamic-datasource-spring-boot3-starter 自动装配。
   # 默认数据源：master（写）。读流量通过 @DS("slave") 注解路由到从库。

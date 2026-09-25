@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: amz-mysql-init-sql
+  namespace: amz-erp
+  labels:
+    app.kubernetes.io/part-of: amazon-erp
+data:
+  01-init-databases.sql: |
+    -- Amazon ERP MySQL schema bootstrap for Kubernetes.
+    -- Keep this set identical to docker/init-sql/01-init-databases.sql.
+    -- Tables are owned exclusively by each service Flyway migration.
+    CREATE DATABASE IF NOT EXISTS amz_user DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_product DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_order DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_search DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_spapi DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_ad DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_procurement DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_customer DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_logistics DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_ops DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_finance DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_multiplatform DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_ai DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE DATABASE IF NOT EXISTS amz_report DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: amz-mysql-init
+  namespace: amz-erp
+  labels:
+    app.kubernetes.io/part-of: amazon-erp
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: amz-mysql-init
+        tier: infra
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mysql-init
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_HOST
+              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } }
+            - name: MYSQL_PORT
+              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } }
+            - name: DB_USERNAME
+              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } }
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              export MYSQL_PWD="$DB_PASSWORD"
+              until mysqladmin ping -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$DB_USERNAME" --silent; do
+                echo "waiting for MySQL..."
+                sleep 2
+              done
+              mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$DB_USERNAME" < /sql/01-init-databases.sql
+          volumeMounts:
+            - name: init-sql
+              mountPath: /sql
+              readOnly: true
+      volumes:
+        - name: init-sql
+          configMap:
+            name: amz-mysql-init-sql

@@ -31,10 +31,10 @@ data:
   MYSQL_DB_REPORT: "amz_report"
   MYSQL_DB_PROCUREMENT: "amz_procurement"
   MYSQL_DB_AD: "amz_ad"
+  MYSQL_DB_AI: "amz_ai"
   MYSQL_DB_CUSTOMER: "amz_customer"
   MYSQL_DB_OPS: "amz_ops"
   MYSQL_DB_MULTIPLATFORM: "amz_multiplatform"
-  MYSQL_DB_MESSAGE: "amz_message"
 
   # ====== 业务非敏感配置 ======
   JWT_ISSUER: "amz-erp"

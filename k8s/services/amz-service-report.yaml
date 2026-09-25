@@ -24,6 +24,33 @@ spec:
     metadata:
       labels: { app: amz-service-report, tier: service }
     spec:
+      initContainers:
+        - name: wait-for-schema
+          image: mysql:8.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              export MYSQL_PWD="$DB_PASSWORD"
+              until mysqladmin ping -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$DB_USERNAME" --silent; do
+                echo "waiting for MySQL..."
+                sleep 2
+              done
+              until mysql -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u"$DB_USERNAME" -Nse "SELECT 1 FROM information_schema.schemata WHERE schema_name='amz_report'" | grep -qx '1'; do
+                echo "waiting for schema amz_report..."
+                sleep 2
+              done
+          env:
+            - name: MYSQL_HOST
+              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } }
+            - name: MYSQL_PORT
+              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } }
+            - name: DB_USERNAME
+              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } }
       containers:
         - name: amz-service-report
           image: amazon-erp/amz-service-report:latest
