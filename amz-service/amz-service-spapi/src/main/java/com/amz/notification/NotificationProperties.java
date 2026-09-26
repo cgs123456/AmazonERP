@@ -16,8 +16,10 @@ import org.springframework.context.annotation.Configuration;
  *   <li>SQS 消费必须使用独立于店铺凭证的 IAM 角色；
  *       {@code use-shop-static-credentials=true} 会被启动校验拒绝，禁止拿
  *       {@code amz_shop_credential.access_key_encrypted / secret_key_encrypted} 消费队列。</li>
- *   <li>{@code visibility-timeout-seconds} 必须大于 {@code lease-timeout-seconds}，
- *       否则租期到期 Worker 仍在跑，SQS 已重新投递，会造成同一事件被两个 Worker 同时处理。</li>
+ *   <li>{@code lease-timeout-seconds} 必须 <b>不早于</b> {@code visibility-timeout-seconds}。
+ *       反过来的后果：租期先到期、消息仍在 SQS 不可见窗口内，第二个 Worker 能合法领取同一条
+ *       Inbox 记录，形成并发重复处理。lease 更长时，即便 SQS 提前重投，重投也会被
+ *       {@code uk_notification_id} 去重吸收，不会重复执行业务副作用。</li>
  * </ul>
  */
 @Data
@@ -56,7 +58,7 @@ public class NotificationProperties {
     /** 单次 ReceiveMessage 最大消息数（1-10）。 */
     private int maxMessages = 10;
 
-    /** SQS 可见性超时秒数；必须大于 lease-timeout-seconds。 */
+    /** SQS 可见性超时秒数；必须不小于处理 接收消息 -> 落 Inbox -> 删消息 的耗时（下限 30 秒）。 */
     private int visibilityTimeoutSeconds = 60;
 
     /** 单轮 Worker 最多领取的事件数。 */
@@ -68,7 +70,7 @@ public class NotificationProperties {
     /** 重试基础退避秒数（指数退避）。 */
     private long baseDelaySeconds = 30;
 
-    /** Inbox 领取租期秒数；必须小于 visibility-timeout-seconds。 */
+    /** Inbox 领取租期秒数；必须 >= visibility-timeout-seconds，否则会并发重复处理同一条记录。 */
     private long leaseTimeoutSeconds = 300;
 
     /** 单条原始通知的最大字节数，超过视为 payload_too_large。 */
