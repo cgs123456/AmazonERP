@@ -136,6 +136,21 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
+        <!-- ====== SP-API 通知入站（SQS）====== -->
+        <!-- 版本由根 pom 的 software.amazon.awssdk:bom 统一管理，此处不写 version。
+             只用 sqs（同步客户端）与 auth（凭证链 / STS AssumeRole）。
+             硬规则：SQS 消费必须使用独立 IAM 角色，禁止使用店铺静态 AWS 密钥
+             （amz_shop_credential.access_key_encrypted / secret_key_encrypted），
+             启用该用法会被 NotificationStartupCheck 拒绝启动。 -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sqs</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>auth</artifactId>
+        </dependency>
+
         <!-- 娴嬭瘯渚濊禆锛圝Unit 5 + Mockito + Spring Test锛?-->
         <dependency>
             <groupId>org.springframework.boot</groupId>

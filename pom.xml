@@ -49,6 +49,10 @@
         <flyway.version>10.20.0</flyway.version>
         <micrometer.version>1.13.6</micrometer.version>
         <springdoc.version>2.6.0</springdoc.version>
+        <!-- AWS SDK v2：SP-API 通知入站（SQS）。固定版本，禁止动态版本或版本区间。
+             该 BOM 只管理 software.amazon.awssdk 组，不覆盖 Jackson/Netty 等第三方版本，
+             因此不会与 Spring Boot BOM 抢版本。 -->
+        <aws.sdk.version>2.55.6</aws.sdk.version>
     </properties>
 
     <build>
@@ -208,6 +212,15 @@
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
                 <version>${springdoc.version}</version>
+            </dependency>
+
+            <!-- AWS SDK v2 BOM：只管理 software.amazon.awssdk 组；sqs/auth 依赖不写 version。 -->
+            <dependency>
+                <groupId>software.amazon.awssdk</groupId>
+                <artifactId>bom</artifactId>
+                <version>${aws.sdk.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
