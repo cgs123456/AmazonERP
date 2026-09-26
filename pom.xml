@@ -50,9 +50,20 @@
         <micrometer.version>1.13.6</micrometer.version>
         <springdoc.version>2.6.0</springdoc.version>
         <!-- AWS SDK v2：SP-API 通知入站（SQS）。固定版本，禁止动态版本或版本区间。
-             该 BOM 只管理 software.amazon.awssdk 组，不覆盖 Jackson/Netty 等第三方版本，
-             因此不会与 Spring Boot BOM 抢版本。 -->
+             注意（实测结论，别再写回上一版注释里的「不会抢版本」）：
+             software.amazon.awssdk:bom 只管理 software.amazon.awssdk 组，
+             但 apache5-client 依赖的 org.apache.httpcomponents 并不在该 BOM 范围内，
+             于是被 spring-boot-dependencies（Spring Boot 3.3.5）接管并降级：
+                 httpclient5 5.6.4 -> 5.3.1，httpcore5 5.4.3 -> 5.2.5
+             apache5-client 2.55.6 构建同步客户端时会引用
+             org.apache.hc.client5.http.ssl.TlsSocketStrategy（httpclient5 5.4+ 才有），
+             降级结果是 NoClassDefFoundError —— 它是 Error 不是 Exception，业务 catch 兜不住，
+             且 SqsNotificationEventSource 在构造函数里建客户端，SQS 模式下服务启动即失败。
+             下面两个版本必须显式钉住，且必须不低于 AWS SDK 实际需要的取值。
+             回归保护：amz-service-spapi 的 AwsSdkHttpLinkageContractTest。 -->
         <aws.sdk.version>2.55.6</aws.sdk.version>
+        <httpclient5.version>5.6.4</httpclient5.version>
+        <httpcore5.version>5.4.3</httpcore5.version>
     </properties>
 
     <build>
@@ -221,6 +232,28 @@
                 <version>${aws.sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- Apache HttpClient 5：AWS SDK 同步客户端（apache5-client）的运行期依赖。
+                 这两个 artifact 不在 software.amazon.awssdk:bom 管理范围内，会被
+                 spring-boot-dependencies 降级到 SDK 用不了的版本（见上面 aws.sdk.version 注释）。
+                 本 pom 直接声明的 dependencyManagement 条目优先于父 pom 及被 import 的 BOM，
+                 因此这里钉住的版本一定生效。
+                 升级 Spring Boot 或 AWS SDK 后，必须重跑 AwsSdkHttpLinkageContractTest。 -->
+            <dependency>
+                <groupId>org.apache.httpcomponents.client5</groupId>
+                <artifactId>httpclient5</artifactId>
+                <version>${httpclient5.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5</artifactId>
+                <version>${httpcore5.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.httpcomponents.core5</groupId>
+                <artifactId>httpcore5-h2</artifactId>
+                <version>${httpcore5.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
