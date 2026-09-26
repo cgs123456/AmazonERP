@@ -33,6 +33,11 @@ class FlywayBaselineContractTest {
             "(?i)CREATE\\s+TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?`?([a-z0-9_]+)`?");
     private static final Pattern CREATE_DATABASE = Pattern.compile(
             "(?i)CREATE\\s+DATABASE\\s+IF\\s+NOT\\s+EXISTS\\s+([a-z0-9_]+)");
+    private static final Pattern MYSQL_UNSUPPORTED_CONDITIONAL_DDL = Pattern.compile(
+            "(?i)\\b(?:ADD|DROP)\\s+COLUMN\\s+IF\\s+(?:NOT\\s+)?EXISTS\\b"
+                    + "|\\b(?:CREATE|DROP)\\s+INDEX\\s+IF\\s+(?:NOT\\s+)?EXISTS\\b");
+    private static final Pattern UNQUOTED_RANK_COLUMN = Pattern.compile(
+            "(?im)^\\s*`?rank`?\\s+(?:INT|BIGINT|SMALLINT|TINYINT)\\b");
 
     @Test
     void allFourteenDatabaseModulesExplicitlyConfigureFlywayBaseline() throws IOException {
@@ -80,8 +85,8 @@ class FlywayBaselineContractTest {
                 tableCounts.merge(matcher.group(1).toLowerCase(), 1, Integer::sum);
             }
         }
-        assertEquals(106, tableCounts.size(), "Flyway 唯一表集合必须保持 106 张");
-        assertEquals(106, tableCounts.values().stream().mapToInt(Integer::intValue).sum(),
+        assertEquals(112, tableCounts.size(), "Flyway 唯一表集合必须保持 112 张（V6-V8 新增 3 张通知表）");
+        assertEquals(112, tableCounts.values().stream().mapToInt(Integer::intValue).sum(),
                 "Flyway 迁移不得重复建表");
 
         String composeSql = Files.readString(ROOT.resolve("docker/init-sql/01-init-databases.sql"),
@@ -102,6 +107,77 @@ class FlywayBaselineContractTest {
         assertEquals(composeDbs, k8sDbs, "Compose 与 k8s 建库集合必须完全一致");
     }
 
+    @Test
+    void migrationsUseMysql8CompatibleConditionalDdl() throws IOException {
+        for (Path migration : migrationFiles()) {
+            Matcher matcher = MYSQL_UNSUPPORTED_CONDITIONAL_DDL.matcher(stripSqlComments(read(migration)));
+            assertFalse(matcher.find(), "MySQL 8 不支持条件 DDL：" + migration);
+        }
+    }
+
+    @Test
+    void keywordRankAvoidsMysqlReservedColumnName() throws IOException {
+        Path migration = ROOT.resolve("amz-service/amz-service-ops/src/main/resources/db/migration/V1__init.sql");
+        String sql = stripSqlComments(read(migration));
+        assertFalse(UNQUOTED_RANK_COLUMN.matcher(sql).find(),
+                "rank 是 MySQL 8 保留字，物理列必须改名或稳定转义：" + migration);
+        assertTrue(sql.contains("rank_position INT"), "关键词排名物理列必须使用 rank_position");
+
+        String model = read(ROOT.resolve(
+                "amz-service/amz-service-ops/src/main/java/com/amz/model/KeywordRankRecord.java"));
+        assertTrue(model.contains("@TableField(\"rank_position\")"),
+                "实体必须显式映射 rank_position，同时保留 API 字段 rank");
+    }
+
+    @Test
+    void inventoryAlertSchemaSupportsShopLevelRules() throws IOException {
+        String sql = read(ROOT.resolve(
+                "amz-service/amz-service-logistics/src/main/resources/db/migration/V1__init.sql"));
+        assertTrue(sql.contains("sku VARCHAR(64) DEFAULT NULL COMMENT 'SKU（NULL=店铺级规则"),
+                "amz_inventory_alert.sku 必须允许 NULL，否则店铺级预警种子数据无法迁移");
+    }
+
+    @Test
+    void upgradeColumnsAreDefinedInInitialCreateStatements() throws IOException {
+        String procurement = stripSqlComments(read(ROOT.resolve(
+                "amz-service/amz-service-procurement/src/main/resources/db/migration/V1__init.sql")));
+        String purchaseOrder = procurement.substring(
+                procurement.indexOf("CREATE TABLE IF NOT EXISTS amz_purchase_order"),
+                procurement.indexOf("CREATE TABLE IF NOT EXISTS amz_quality_check"));
+        assertTrue(purchaseOrder.contains("supplier_id BIGINT DEFAULT NULL COMMENT '供应商 ID'"));
+        assertTrue(purchaseOrder.contains("plan_id BIGINT DEFAULT NULL COMMENT '关联采购计划 ID'"));
+        assertTrue(purchaseOrder.contains("total_quantity INT DEFAULT NULL COMMENT '总数量'"));
+        assertTrue(purchaseOrder.contains("currency VARCHAR(10) DEFAULT 'CNY' COMMENT '币种'"));
+        assertFalse(procurement.contains("ALTER TABLE amz_purchase_order"));
+
+        String user = stripSqlComments(read(ROOT.resolve(
+                "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql")));
+        String userTable = user.substring(
+                user.indexOf("CREATE TABLE IF NOT EXISTS amz_user"),
+                user.indexOf("CREATE TABLE IF NOT EXISTS amz_attention"));
+        assertTrue(userTable.contains("role VARCHAR(50) NOT NULL DEFAULT 'VIEWER'"),
+                "amz_user.role 必须直接进入初始建表语句");
+        assertFalse(user.contains("ALTER TABLE amz_user"));
+    }
+
+    private static String read(Path path) throws IOException {
+        return Files.readString(path, StandardCharsets.UTF_8);
+    }
+    private static List<Path> migrationFiles() throws IOException {
+        List<Path> migrationFiles = new ArrayList<>();
+        try (Stream<Path> files = Files.walk(ROOT.resolve("amz-service"))) {
+            files.filter(Files::isRegularFile)
+                    .filter(path -> path.toString().replace('\\', '/')
+                            .matches(".*/src/main/resources/db/migration/[^/]+\\.sql$"))
+                    .forEach(migrationFiles::add);
+        }
+        assertTrue(migrationFiles.size() > 0, "迁移扫描不能空通过");
+        return migrationFiles;
+    }
+
+    private static String stripSqlComments(String sql) {
+        return sql.replaceAll("(?m)--.*$", "");
+    }
     private static Set<String> createDatabases(String text) {
         Matcher matcher = CREATE_DATABASE.matcher(text);
         return matcher.results().map(result -> result.group(1).toLowerCase())

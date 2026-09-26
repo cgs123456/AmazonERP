@@ -139,11 +139,12 @@ public class NotificationInboxWorker {
             processor.process(event, cryptoUtil.decrypt(event.getPayloadEncrypted()));
             markProcessed(event);
         } catch (NotificationProcessingException e) {
-            finish(event, e.isRetryable(), e.getErrorCode(), e.getClass().getSimpleName());
+            finish(event, e.isRetryable(), e.getErrorCode(), e.getClass().getSimpleName(),
+                    e.getTerminalStatus());
         } catch (RuntimeException e) {
             // 兜底按可重试处理：绝大多数运行时异常是下游暂时不可用。
             // 只记录类名不记录 message——异常消息可能拼接了通知正文，而正文含 PII。
-            finish(event, true, ERR_UNEXPECTED, e.getClass().getSimpleName());
+            finish(event, true, ERR_UNEXPECTED, e.getClass().getSimpleName(), null);
         }
     }
 
@@ -157,7 +158,8 @@ public class NotificationInboxWorker {
                 event.getId(), event.getNotificationId(), event.getNotificationType(), event.getShopId());
     }
 
-    private void finish(NotificationInboxEntity event, boolean retryable, String errorCode, String errorSummary) {
+    private void finish(NotificationInboxEntity event, boolean retryable, String errorCode,
+                      String errorSummary, String terminalStatus) {
         int attempt = event.getAttemptCount() == null ? 1 : Math.max(1, event.getAttemptCount());
         int maxAttempts = event.getMaxAttempts() == null || event.getMaxAttempts() <= 0
                 ? properties.getMaxAttempts()
@@ -169,7 +171,8 @@ public class NotificationInboxWorker {
                 .set("last_error_message", truncate(errorSummary, 200))
                 .setSql("lease_owner = NULL, lease_until = NULL");
         if (deadLetter) {
-            update.set("status", NotificationInboxStatus.DLQ);
+            String status = terminalStatus != null ? terminalStatus : NotificationInboxStatus.DLQ;
+            update.set("status", status);
             log.error("[NotificationInboxWorker] 事件进入 DLQ：id={}, notificationId={}, type={}, "
                             + "attempt={}, maxAttempts={}, retryable={}, errorCode={}",
                     event.getId(), event.getNotificationId(), event.getNotificationType(),

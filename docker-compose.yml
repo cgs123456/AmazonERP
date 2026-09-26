@@ -107,8 +107,8 @@ services:
     image: rabbitmq:3.13-management
     container_name: amz-rabbitmq
     environment:
-      - RABBITMQ_DEFAULT_USER=${MQ_USERNAME:-admin}
-      - RABBITMQ_DEFAULT_PASS=${MQ_PASSWORD:?MQ_PASSWORD_required}
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -255,21 +255,18 @@ services:
     ports:
       - "10010:10010"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
-      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
-      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
-      - DB_USERNAME=${DB_USERNAME:-root}
-      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      # Swagger/OpenAPI 文档端点开关：本地/内网默认放行，生产置 false 收紧
-      - GATEWAY_DOCS_ENABLED=${GATEWAY_DOCS_ENABLED:-true}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       # 通过 compose 网络内服务名访问基础设施
       - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SENTINEL_DASHBOARD=${SENTINEL_DASHBOARD:-sentinel-dashboard:8858}
       # WebSocket 上游：/ws/** 路由转发到 message 服务 Netty 端口（显式声明，避免依赖 yml 默认值）
       - WS_MESSAGE_UPSTREAM=http://amz-service-message:8888
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
+      - GATEWAY_DOCS_ENABLED=${GATEWAY_DOCS_ENABLED:-false}
     depends_on:
       - nacos
       - redis
@@ -283,28 +280,70 @@ services:
     ports:
       - "8096:8096"
     environment:
-      # JWT signing key (required, auth will fail without it)
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      # 读写分离：主库写、从库读
+      - MYSQL_HOST=mysql
+      - MYSQL_SLAVE_HOST=mysql-slave
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
-      # AES-256-GCM encryption key (32-byte base64), used to encrypt SP-API credentials
-      - AMZ_CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
-      # AWS SP-API 凭证
-      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY:-}
-      - AWS_SECRET_KEY=${AWS_SECRET_KEY:-}
       - AWS_REGION=${AWS_REGION:-us-east-1}
+      - SPAPI_BASE_URL_OVERRIDE=${SPAPI_BASE_URL_OVERRIDE:-}
+      - SPAPI_LWA_ENDPOINT_OVERRIDE=${SPAPI_LWA_ENDPOINT_OVERRIDE:-}
+      - SPAPI_ALLOWLIST=${SPAPI_ALLOWLIST:-}
+      - SPAPI_APP_NAME=${SPAPI_APP_NAME:-AmazonERP}
+      - SPAPI_APP_VERSION=${SPAPI_APP_VERSION:-1.0-SNAPSHOT}
+      - SPAPI_LANGUAGE=${SPAPI_LANGUAGE:-}
+      - SPAPI_PLATFORM=${SPAPI_PLATFORM:-}
+      - SPAPI_USER_AGENT=${SPAPI_USER_AGENT:-}
+      - SPAPI_REQUIRE_CREDENTIALS=${SPAPI_REQUIRE_CREDENTIALS:-true}
+      - SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR=${SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR:-true}
+      - SPAPI_RESTRICTED_DATA_ENABLED=${SPAPI_RESTRICTED_DATA_ENABLED:-false}
+      - SPAPI_RESTRICTED_DATA_REFRESH_SKEW_SECONDS=${SPAPI_RESTRICTED_DATA_REFRESH_SKEW_SECONDS:-60}
+      - SPAPI_RESTRICTED_DATA_MAX_CACHE_ENTRIES=${SPAPI_RESTRICTED_DATA_MAX_CACHE_ENTRIES:-1000}
+      - SPAPI_ORDER_PII_SYNC_ENABLED=${SPAPI_ORDER_PII_SYNC_ENABLED:-false}
+      - SPAPI_OUTBOX_SCHEDULER_ENABLED=${SPAPI_OUTBOX_SCHEDULER_ENABLED:-true}
+      - SPAPI_OUTBOX_SCHEDULER_DELAY_MS=${SPAPI_OUTBOX_SCHEDULER_DELAY_MS:-60000}
+      - SPAPI_OUTBOX_BATCH_SIZE=${SPAPI_OUTBOX_BATCH_SIZE:-50}
+      - SPAPI_OUTBOX_MAX_ATTEMPTS=${SPAPI_OUTBOX_MAX_ATTEMPTS:-4}
+      - SPAPI_OUTBOX_BASE_DELAY_SECONDS=${SPAPI_OUTBOX_BASE_DELAY_SECONDS:-60}
+      - SPAPI_OUTBOX_REPLAY_CLAIM_TIMEOUT_SECONDS=${SPAPI_OUTBOX_REPLAY_CLAIM_TIMEOUT_SECONDS:-900}
+      # SP-API 通知入站：默认关闭且走 mock；接真实 SQS 需 source=sqs + queue-url/region
+      - SPAPI_NOTIFICATIONS_ENABLED=${SPAPI_NOTIFICATIONS_ENABLED:-false}
+      - SPAPI_NOTIFICATIONS_SOURCE=${SPAPI_NOTIFICATIONS_SOURCE:-mock}
+      - SPAPI_NOTIFICATIONS_QUEUE_URL=${SPAPI_NOTIFICATIONS_QUEUE_URL:-}
+      - SPAPI_NOTIFICATIONS_REGION=${SPAPI_NOTIFICATIONS_REGION:-}
+      - SPAPI_NOTIFICATIONS_STS_ROLE_ARN=${SPAPI_NOTIFICATIONS_STS_ROLE_ARN:-}
+      - SPAPI_NOTIFICATIONS_WAIT_TIME_SECONDS=${SPAPI_NOTIFICATIONS_WAIT_TIME_SECONDS:-20}
+      - SPAPI_NOTIFICATIONS_MAX_MESSAGES=${SPAPI_NOTIFICATIONS_MAX_MESSAGES:-10}
+      - SPAPI_NOTIFICATIONS_VISIBILITY_TIMEOUT_SECONDS=${SPAPI_NOTIFICATIONS_VISIBILITY_TIMEOUT_SECONDS:-60}
+      - SPAPI_NOTIFICATIONS_BATCH_SIZE=${SPAPI_NOTIFICATIONS_BATCH_SIZE:-10}
+      - SPAPI_NOTIFICATIONS_MAX_ATTEMPTS=${SPAPI_NOTIFICATIONS_MAX_ATTEMPTS:-5}
+      - SPAPI_NOTIFICATIONS_BASE_DELAY_SECONDS=${SPAPI_NOTIFICATIONS_BASE_DELAY_SECONDS:-30}
+      - SPAPI_NOTIFICATIONS_LEASE_TIMEOUT_SECONDS=${SPAPI_NOTIFICATIONS_LEASE_TIMEOUT_SECONDS:-300}
+      - SPAPI_NOTIFICATIONS_PAYLOAD_MAX_BYTES=${SPAPI_NOTIFICATIONS_PAYLOAD_MAX_BYTES:-262144}
+      - SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_ENABLED=${SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_ENABLED:-true}
+      - SPAPI_NOTIFICATIONS_MOCK_SCENARIO=${SPAPI_NOTIFICATIONS_MOCK_SCENARIO:-order-change}
       # 基础设施连接
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
-      # 读写分离：主库写、从库读
-      - MYSQL_HOST=mysql
-      - MYSQL_SLAVE_HOST=mysql-slave
-      - MYSQL_PORT=3306
+      # JWT signing key (required, auth will fail without it)
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      # AES-256-GCM encryption key (32-byte base64), used to encrypt SP-API credentials
+      - AMZ_CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
+      # AWS SP-API 凭证
+      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY:-}
+      - AWS_SECRET_KEY=${AWS_SECRET_KEY:-}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -320,16 +359,28 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - OSS_BUCKET_NAME=${OSS_BUCKET_NAME:-}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - AMZ_CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
+      - OSS_ACCESS_KEY_ID=${OSS_ACCESS_KEY_ID:-}
+      - OSS_ACCESS_KEY_SECRET=${OSS_ACCESS_KEY_SECRET:-}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -343,16 +394,40 @@ services:
     ports:
       - "8095:8095"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - MONGO_HOST=mongodb
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - AGENT_AI_CHAT_URL=${AGENT_AI_CHAT_URL:-http://amz-gateway:10010/ai/agent/chat}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - MONGO_USERNAME=${MONGO_USERNAME:-root}
+      - MONGO_PASSWORD=${MONGO_PASSWORD:?MONGO_PASSWORD_required}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_API_URL=${DEEPSEEK_API_URL:-https://api.deepseek.com/v1}
+      - DEEPSEEK_MODEL_NAME=${DEEPSEEK_MODEL_NAME:-deepseek-chat}
+      - DEEPSEEK_TEMPERATURE=${DEEPSEEK_TEMPERATURE:-0.7}
+      - DEEPSEEK_TIMEOUT_SECONDS=${DEEPSEEK_TIMEOUT_SECONDS:-60}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
+      - KEEPA_API_KEY=${KEEPA_API_KEY:-}
+      - LISTING_COPY_POLL_ENABLED=${LISTING_COPY_POLL_ENABLED:-true}
+      - LISTING_COPY_POLL_SCHEDULER_DELAY_MS=${LISTING_COPY_POLL_SCHEDULER_DELAY_MS:-15000}
+      - LISTING_COPY_POLL_INITIAL_DELAY_SECONDS=${LISTING_COPY_POLL_INITIAL_DELAY_SECONDS:-15}
+      - LISTING_COPY_POLL_INTERVAL_SECONDS=${LISTING_COPY_POLL_INTERVAL_SECONDS:-15}
+      - LISTING_COPY_POLL_MAX_DURATION_SECONDS=${LISTING_COPY_POLL_MAX_DURATION_SECONDS:-300}
+      - LISTING_COPY_POLL_BATCH_SIZE=${LISTING_COPY_POLL_BATCH_SIZE:-20}
     depends_on:
       - nacos
       - mysql
@@ -367,18 +442,26 @@ services:
     ports:
       - "8105:8105"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_SLAVE_HOST=mysql-slave
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # B1：凭证生成改发 MQ，同步链路强依赖 broker，容器内必须指向 rabbitmq 服务名
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      # B1：凭证生成改发 MQ，同步链路强依赖 broker，容器内必须指向 rabbitmq 服务名
-      - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -392,16 +475,25 @@ services:
     ports:
       - "8090:8090"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - ES_URIS=${ES_URIS:-http://elasticsearch:9200}
+      - EMBEDDING_ENABLED=${EMBEDDING_ENABLED:-false}
+      - EMBEDDING_API_URL=${EMBEDDING_API_URL:-https://api.openai.com/v1}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-v3}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY:-}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -416,16 +508,28 @@ services:
     ports:
       - "8091:8091"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - KNOWLEDGE_ES_BASE_URL=${KNOWLEDGE_ES_BASE_URL:-http://elasticsearch:9200}
+      - KNOWLEDGE_ES_INDEX=${KNOWLEDGE_ES_INDEX:-amz_knowledge_base}
+      - KNOWLEDGE_ES_VECTOR_DIMS=${KNOWLEDGE_ES_VECTOR_DIMS:-1536}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_API_URL=${DEEPSEEK_API_URL:-https://api.deepseek.com/v1}
+      - DEEPSEEK_MODEL_NAME=${DEEPSEEK_MODEL_NAME:-deepseek-chat}
+      - DEEPSEEK_TEMPERATURE=${DEEPSEEK_TEMPERATURE:-0.7}
+      - DEEPSEEK_TIMEOUT_SECONDS=${DEEPSEEK_TIMEOUT_SECONDS:-60}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -439,16 +543,27 @@ services:
     ports:
       - "8097:8097"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - AD_API_ENDPOINT=${AD_API_ENDPOINT:-https://advertising-api.amazon.com}
+      - AD_TOKEN_ENDPOINT=${AD_TOKEN_ENDPOINT:-https://api.amazon.com/auth/o2/token}
+      - AD_SHOP_ID=${AD_SHOP_ID:-}
+      - AD_CLIENT_ID=${AD_CLIENT_ID:-}
+      - AD_CLIENT_SECRET=${AD_CLIENT_SECRET:-}
+      - AD_REFRESH_TOKEN=${AD_REFRESH_TOKEN:-}
+      - AD_PROFILE_ID=${AD_PROFILE_ID:-}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -462,16 +577,23 @@ services:
     ports:
       - "8098:8098"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - ALIBABA_APP_KEY=${ALIBABA_APP_KEY:-}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - ALIBABA_APP_SECRET=${ALIBABA_APP_SECRET:-}
+      - ALIBABA_REFRESH_TOKEN=${ALIBABA_REFRESH_TOKEN:-}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -485,16 +607,20 @@ services:
     ports:
       - "8099:8099"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -508,16 +634,33 @@ services:
     ports:
       - "8100:8100"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - AMZ_TRACKING_ENABLED=${AMZ_TRACKING_ENABLED:-false}
+      - AMZ_17TRACK_BASE_URL=${AMZ_17TRACK_BASE_URL:-https://api.17track.net}
+      - AMZ_LOGISTICS_SYNC_INTERVAL_MS=${AMZ_LOGISTICS_SYNC_INTERVAL_MS:-1800000}
+      - AMZ_LOGISTICS_SYNC_LEASE_SECONDS=${AMZ_LOGISTICS_SYNC_LEASE_SECONDS:-1680}
+      - AMZ_LOGISTICS_SYNC_MAX_PER_ROUND=${AMZ_LOGISTICS_SYNC_MAX_PER_ROUND:-200}
+      - "AMZ_LOGISTICS_DELAY_CRON=${AMZ_LOGISTICS_DELAY_CRON:-0 0 1 * * ?}"
+      - AMZ_LOGISTICS_DELAY_LEASE_SECONDS=${AMZ_LOGISTICS_DELAY_LEASE_SECONDS:-1800}
+      - AMZ_LOGISTICS_DELAY_GRACE_DAYS=${AMZ_LOGISTICS_DELAY_GRACE_DAYS:-0}
+      - AMZ_LOGISTICS_STALE_HOURS=${AMZ_LOGISTICS_STALE_HOURS:-48}
+      - AMZ_LOGISTICS_TRANSIT_WINDOW_DAYS=${AMZ_LOGISTICS_TRANSIT_WINDOW_DAYS:-90}
+      - AMZ_LOGISTICS_TRANSFER_STALE_DAYS=${AMZ_LOGISTICS_TRANSFER_STALE_DAYS:-7}
+      - AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS=${AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS:-3}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - AMZ_17TRACK_KEY=${AMZ_17TRACK_KEY:-}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -531,16 +674,20 @@ services:
     ports:
       - "8101:8101"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -554,16 +701,17 @@ services:
     ports:
       - "8102:8102"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -577,18 +725,36 @@ services:
     ports:
       - "8103:8103"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # B1：凭证 MQ 消费者，容器内必须指向 rabbitmq 服务名
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - KINGDEE_API_GATEWAY=${KINGDEE_API_GATEWAY:-}
+      - KINGDEE_DB_ID=${KINGDEE_DB_ID:-}
+      - KINGDEE_USER_NAME=${KINGDEE_USER_NAME:-}
+      - KINGDEE_APP_ID=${KINGDEE_APP_ID:-}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      # B1：凭证 MQ 消费者，容器内必须指向 rabbitmq 服务名
-      - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - KINGDEE_APP_SECRET=${KINGDEE_APP_SECRET:-}
+      - KINGDEE_LCID=${KINGDEE_LCID:-2052}
+      - KINGDEE_ACCOUNT_BOOK_NUMBER=${KINGDEE_ACCOUNT_BOOK_NUMBER:-}
+      - KINGDEE_VOUCHER_GROUP_NUMBER=${KINGDEE_VOUCHER_GROUP_NUMBER:-}
+      - KINGDEE_CURRENCY_NUMBER=${KINGDEE_CURRENCY_NUMBER:-}
+      - KINGDEE_EXCHANGE_RATE_TYPE_NUMBER=${KINGDEE_EXCHANGE_RATE_TYPE_NUMBER:-}
+      - KINGDEE_SYNC_LEASE_SECONDS=${KINGDEE_SYNC_LEASE_SECONDS:-300}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -603,16 +769,20 @@ services:
     ports:
       - "8104:8104"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
       - DB_USERNAME=${DB_USERNAME:-root}
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
-      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql
@@ -628,16 +798,17 @@ services:
       # Netty WebSocket 端口：网关 /ws/** 路由转发到该端口（见 gateway application.yml）
       - "8888:8888"
     environment:
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - NACOS_ADDR=nacos:8848
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
-      - DB_USERNAME=${DB_USERNAME:-root}
-      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
-      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
       - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
-      - NACOS_ADDR=nacos:8848
-      - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
     depends_on:
       - nacos
       - mysql

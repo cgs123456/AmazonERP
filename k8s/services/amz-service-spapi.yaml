@@ -93,8 +93,6 @@ spec:
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_PORT } }
             - name: AWS_REGION
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AWS_REGION } }
-            - name: AWS_LWA_ENDPOINT
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AWS_LWA_ENDPOINT } }
             - name: DB_USERNAME
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } }
             - name: DB_PASSWORD
@@ -121,6 +119,41 @@ spec:
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: TZ } }
             - name: JAVA_OPTS
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS } }
+            - { name: SPAPI_ALLOWLIST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_ALLOWLIST } } }
+            - { name: SPAPI_APP_NAME, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_APP_NAME } } }
+            - { name: SPAPI_APP_VERSION, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_APP_VERSION } } }
+            - { name: SPAPI_BASE_URL_OVERRIDE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_BASE_URL_OVERRIDE } } }
+            - { name: SPAPI_LANGUAGE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_LANGUAGE } } }
+            - { name: SPAPI_LWA_ENDPOINT_OVERRIDE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_LWA_ENDPOINT_OVERRIDE } } }
+            - { name: SPAPI_PLATFORM, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_PLATFORM } } }
+            - { name: SPAPI_REQUIRE_CREDENTIALS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_REQUIRE_CREDENTIALS } } }
+            - { name: SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR } } }
+            - { name: SPAPI_RESTRICTED_DATA_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_RESTRICTED_DATA_ENABLED } } }
+            - { name: SPAPI_RESTRICTED_DATA_REFRESH_SKEW_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_RESTRICTED_DATA_REFRESH_SKEW_SECONDS } } }
+            - { name: SPAPI_RESTRICTED_DATA_MAX_CACHE_ENTRIES, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_RESTRICTED_DATA_MAX_CACHE_ENTRIES } } }
+            - { name: SPAPI_ORDER_PII_SYNC_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_ORDER_PII_SYNC_ENABLED } } }
+            - { name: SPAPI_USER_AGENT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_USER_AGENT } } }
+            - { name: SPAPI_OUTBOX_SCHEDULER_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_OUTBOX_SCHEDULER_ENABLED } } }
+            - { name: SPAPI_OUTBOX_SCHEDULER_DELAY_MS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_OUTBOX_SCHEDULER_DELAY_MS } } }
+            - { name: SPAPI_OUTBOX_BATCH_SIZE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_OUTBOX_BATCH_SIZE } } }
+            - { name: SPAPI_OUTBOX_MAX_ATTEMPTS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_OUTBOX_MAX_ATTEMPTS } } }
+            - { name: SPAPI_OUTBOX_BASE_DELAY_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_OUTBOX_BASE_DELAY_SECONDS } } }
+            - { name: SPAPI_OUTBOX_REPLAY_CLAIM_TIMEOUT_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_OUTBOX_REPLAY_CLAIM_TIMEOUT_SECONDS } } }
+            - { name: SPAPI_NOTIFICATIONS_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_ENABLED } } }
+            - { name: SPAPI_NOTIFICATIONS_SOURCE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_SOURCE } } }
+            - { name: SPAPI_NOTIFICATIONS_QUEUE_URL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_QUEUE_URL } } }
+            - { name: SPAPI_NOTIFICATIONS_REGION, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_REGION } } }
+            - { name: SPAPI_NOTIFICATIONS_STS_ROLE_ARN, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_STS_ROLE_ARN } } }
+            - { name: SPAPI_NOTIFICATIONS_WAIT_TIME_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_WAIT_TIME_SECONDS } } }
+            - { name: SPAPI_NOTIFICATIONS_MAX_MESSAGES, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_MAX_MESSAGES } } }
+            - { name: SPAPI_NOTIFICATIONS_VISIBILITY_TIMEOUT_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_VISIBILITY_TIMEOUT_SECONDS } } }
+            - { name: SPAPI_NOTIFICATIONS_BATCH_SIZE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_BATCH_SIZE } } }
+            - { name: SPAPI_NOTIFICATIONS_MAX_ATTEMPTS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_MAX_ATTEMPTS } } }
+            - { name: SPAPI_NOTIFICATIONS_BASE_DELAY_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_BASE_DELAY_SECONDS } } }
+            - { name: SPAPI_NOTIFICATIONS_LEASE_TIMEOUT_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_LEASE_TIMEOUT_SECONDS } } }
+            - { name: SPAPI_NOTIFICATIONS_PAYLOAD_MAX_BYTES, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_PAYLOAD_MAX_BYTES } } }
+            - { name: SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_ENABLED } } }
+            - { name: SPAPI_NOTIFICATIONS_MOCK_SCENARIO, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_MOCK_SCENARIO } } }
           resources:
             requests: { cpu: "500m", memory: "1Gi" }
             limits: { cpu: "2000m", memory: "2Gi" }

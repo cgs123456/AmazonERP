@@ -7,29 +7,26 @@ import com.amz.credential.ShopCredentialStore;
 import com.amz.connector.MarketplaceRegistry;
 import com.amz.connector.SpApiEndpointResolver;
 import com.amz.lock.DistributedJobLock;
-import com.google.gson.Gson;
+import com.amz.order.OrderUpsertPublisher;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.amqp.core.Message;
-import org.springframework.amqp.core.MessageBuilder;
-import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * 订单定时同步调度器。
@@ -41,6 +38,8 @@ import java.util.UUID;
  * 单店失败不影响其他店铺同步。
  */
 @Component
+@Profile("!bootstrap")
+
 public class OrderSyncScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(OrderSyncScheduler.class);
@@ -63,13 +62,28 @@ public class OrderSyncScheduler {
     private OrdersClient ordersClient;
 
     /**
+     * 订单 PII 同步开关，默认关闭。开启后 Orders 与 OrderItems 都只走 RDT；
+     * 受限令牌失败时该店铺本轮直接失败，绝不回退普通 LWA 请求。
+     */
+    @Value("${spapi.orders.pii-sync-enabled:false}")
+    private boolean orderPiiSyncEnabled;
+
+    /**
      * P0-51：端点覆盖生效时，定时同步必须跳过——桩数据不得经 MQ 进入业务表。
      */
     @Autowired
     private SpApiEndpointResolver spApiEndpointResolver;
 
+    /**
+     * 订单消息发送器。
+     * <p>
+     * 为什么不再就地 new 一份发送逻辑：旧实现把发送异常 catch 住只打一行日志，
+     * 调用方看到的是「同步成功」——MQ 宕机时整条链路静默丢单，界面上订单数不涨，
+     * 与「真的没有新订单」无法区分。这里发送失败直接抛
+     * {@link com.amz.order.OrderUpsertPublishException}，由调用方决定告警与重试。
+     */
     @Autowired
-    private RabbitTemplate rabbitTemplate;
+    private OrderUpsertPublisher orderUpsertPublisher;
 
     @Autowired
     private DistributedJobLock distributedJobLock;
@@ -77,8 +91,6 @@ public class OrderSyncScheduler {
     /** 发布去重（每订单 14 天 TTL）。 */
     @Autowired
     private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
-
-    private final Gson gson = new Gson();
 
     /**
      * 每 15 分钟执行一次（上一次执行结束后起算 fixedDelay）。
@@ -119,7 +131,10 @@ public class OrderSyncScheduler {
             // P0-36：映射统一走单一事实源；未登记 marketplaceId 会抛异常（由外层 catch 记录到该店铺）
             String region = MarketplaceRegistry.resolveRegion(marketplaceId);
             try {
-                List<JsonObject> orders = ordersClient.fetchOrders(
+                List<JsonObject> orders = orderPiiSyncEnabled
+                        ? ordersClient.fetchOrdersWithRestrictedData(
+                        shopId, marketplaceId, createdAfter, DEFAULT_ORDER_STATUSES)
+                        : ordersClient.fetchOrders(
                         shopId, marketplaceId, createdAfter, DEFAULT_ORDER_STATUSES);
                 log.info("syncOrders shopId={} fetched={} orders", shopId, orders.size());
 
@@ -130,27 +145,26 @@ public class OrderSyncScheduler {
                     }
                     // Redis 发布去重：7 天窗口 × 15 分钟轮询会让同一订单存活期被重复发布
                     // ~600 次（放大 MQ 流量并迫使消费端做大量无效幂等查询）。
-                    // SETNX+TTL 14 天保证每订单只发布一轮；失败时降级为不去重（宁可重复，
-                    // 由下游唯一索引兜底，也不丢订单）
+                    // 顺序很关键：先发消息、成功后才标记（见 markPublished）。
+                    // 旧实现先 SETNX 标记再发送，MQ 短暂故障时订单会被永久判成「已发布」，
+                    // 14 天 TTL 内不再重发 —— 静默丢单，且界面上与「没有新订单」无法区分。
                     String dedupeKey = "amz:sync:published:" + shopId + ":" + amazonOrderId;
-                    Boolean firstTime;
-                    try {
-                        firstTime = stringRedisTemplate.opsForValue()
-                                .setIfAbsent(dedupeKey, "1", java.time.Duration.ofDays(14));
-                    } catch (Exception redisEx) {
-                        log.warn("发布去重 Redis 异常，本轮降级为不去重：{}", redisEx.getMessage());
-                        firstTime = true;
-                    }
-                    if (Boolean.FALSE.equals(firstTime)) {
+                    if (isPublished(dedupeKey)) {
                         continue;
                     }
 
                     // 行级明细仅对新订单拉取一次（orderItems 端点配额紧）
-                    List<JsonObject> orderItems = ordersClient.fetchOrderItems(
+                    List<JsonObject> orderItems = orderPiiSyncEnabled
+                            ? ordersClient.fetchOrderItemsWithRestrictedData(
+                            shopId, marketplaceId, amazonOrderId)
+                            : ordersClient.fetchOrderItems(
                             shopId, marketplaceId, amazonOrderId);
 
                     publishSaveMessage(shopId, marketplaceId, region, order);
                     publishProfitMessages(shopId, region, order, orderItems);
+                    // 两条消息都发出成功才标记；任一条发送失败会抛异常，
+                    // 本轮该店铺中止并告警，未标记则下一轮自动重发
+                    markPublished(dedupeKey);
                 }
             } catch (Exception e) {
                 log.error("syncOrders failed shopId={}", shopId, e);
@@ -194,7 +208,7 @@ public class OrderSyncScheduler {
         body.put("buyerInfo", buyerMap);
         body.put("orderItems", List.of());
 
-        sendJson(MqConstant.SAVE_ORDER_EXCHANGE, "", body);
+        orderUpsertPublisher.sendJson(MqConstant.SAVE_ORDER_EXCHANGE, "", body);
     }
 
     /**
@@ -252,25 +266,38 @@ public class OrderSyncScheduler {
         body.put("weightG", null);
         body.put("region", region);
 
-        sendJson(MqConstant.PROFIT_EXCHANGE, MqConstant.PROFIT_ROUTING_KEY, body);
+        orderUpsertPublisher.sendJson(MqConstant.PROFIT_EXCHANGE, MqConstant.PROFIT_ROUTING_KEY, body);
     }
 
     /**
-     * 将 body 序列化为 JSON 并通过 RabbitMQ 发送。
-     * 设置 messageId（UUID）便于消费端在缺少业务标识时做幂等 fallback。
-     * 使用 text/plain 内容类型，消费端按 String/原始字节解析。
+     * 该订单此前是否已成功发布过。
+     * <p>
+     * Redis 不可用时按「未发布」处理：宁可重复发布（下游订单按唯一键幂等、
+     * 利润按 shopId+amazonOrderId+sku 去重），也不冒丢单的风险。
      */
-    private void sendJson(String exchange, String routingKey, Map<String, Object> body) {
+    private boolean isPublished(String dedupeKey) {
         try {
-            String json = gson.toJson(body);
-            Message message = MessageBuilder
-                    .withBody(json.getBytes(StandardCharsets.UTF_8))
-                    .setContentType(MessageProperties.CONTENT_TYPE_TEXT_PLAIN)
-                    .setMessageId(UUID.randomUUID().toString())
-                    .build();
-            rabbitTemplate.send(exchange, routingKey, message);
-        } catch (Exception e) {
-            log.error("sendJson failed exchange={} routingKey={} body={}", exchange, routingKey, body, e);
+            return Boolean.TRUE.equals(stringRedisTemplate.hasKey(dedupeKey));
+        } catch (Exception redisEx) {
+            log.warn("发布去重查询 Redis 异常，按未发布处理（可能重复发布，由下游幂等吸收）：{}",
+                    redisEx.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 标记该订单已发布（仅在消息发送成功后调用）。
+     * <p>
+     * 用 SETNX + 14 天 TTL：并发实例下谁先发谁标记，已存在则不重置 TTL；
+     * 标记失败只告警——最坏结果是下一轮重复发布，而不是丢单。
+     */
+    private void markPublished(String dedupeKey) {
+        try {
+            stringRedisTemplate.opsForValue()
+                    .setIfAbsent(dedupeKey, "1", Duration.ofDays(14));
+        } catch (Exception redisEx) {
+            log.warn("发布去重标记失败，下一轮可能重复发布（由下游幂等吸收）：{}",
+                    redisEx.getMessage());
         }
     }
 
