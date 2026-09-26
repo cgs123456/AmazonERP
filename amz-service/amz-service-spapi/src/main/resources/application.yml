@@ -162,6 +162,11 @@ spapi:
     lease-timeout-seconds: ${SPAPI_NOTIFICATIONS_LEASE_TIMEOUT_SECONDS:300}
     payload-max-bytes: ${SPAPI_NOTIFICATIONS_PAYLOAD_MAX_BYTES:262144}
     subscription-sync-enabled: ${SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_ENABLED:true}
+    # 订阅对账周期与首次延迟。这里写字面量而非 ${...} 占位符，是刻意避免再引入两个
+    # 必填环境变量：对账是旁路观测任务，用默认值即可运行，需要调整时再用
+    # SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_INTERVAL_MS 覆盖（Spring 环境变量宽松绑定）。
+    subscription-sync-interval-ms: 3600000
+    subscription-sync-initial-delay-ms: 60000
     mock-scenario: ${SPAPI_NOTIFICATIONS_MOCK_SCENARIO:order-change}
 # JWT security config
 jwt:

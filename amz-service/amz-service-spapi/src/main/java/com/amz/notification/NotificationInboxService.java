@@ -54,13 +54,16 @@ public class NotificationInboxService {
     private final NotificationInboxMapper inboxMapper;
     private final CryptoUtil cryptoUtil;
     private final NotificationProperties properties;
+    private final NotificationMetrics metrics;
 
     public NotificationInboxService(NotificationInboxMapper inboxMapper,
                                     CryptoUtil cryptoUtil,
-                                    NotificationProperties properties) {
+                                    NotificationProperties properties,
+                                    NotificationMetrics metrics) {
         this.inboxMapper = inboxMapper;
         this.cryptoUtil = cryptoUtil;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     /**
@@ -86,12 +89,18 @@ public class NotificationInboxService {
                 log.warn("[NotificationInbox] 载荷超限，已留证不存正文：notificationId={}, type={}, bytes={}, limit={}",
                         validated.notificationId(), validated.notificationType(), bytes,
                         properties.getPayloadMaxBytes());
+                metrics.payloadTooLarge();
                 return IngestResult.TOO_LARGE;
             }
             String status = binding == null
                     ? NotificationInboxStatus.UNRESOLVED_SUBSCRIPTION
                     : NotificationInboxStatus.RECEIVED;
             insert(validated, rawJson, hash, bytes, binding, synthetic, status, null, null);
+            if (binding == null) {
+                metrics.unresolvedSubscription();
+            } else {
+                metrics.received(validated.notificationType());
+            }
             return IngestResult.CREATED;
         } catch (DuplicateKeyException e) {
             return handleDuplicate(validated, hash);
@@ -153,6 +162,7 @@ public class NotificationInboxService {
             // 保守按同哈希重复处理——事件至少已在库里出现过一次，不能误判为首次投递。
             log.warn("[NotificationInbox] 唯一键冲突但回查为空，按重复处理：notificationId={}",
                     validated.notificationId());
+            metrics.duplicateSameHash();
             return IngestResult.DUPLICATE_SAME_HASH;
         }
         boolean sameHash = hash.equals(existing.getPayloadSha256());
@@ -167,6 +177,11 @@ public class NotificationInboxService {
         inboxMapper.updateById(patch);
         log.warn("[NotificationInbox] 重复投递：notificationId={}, type={}, hashMatch={}, duplicateCount={}",
                 validated.notificationId(), validated.notificationType(), sameHash, base + 1);
+        if (sameHash) {
+            metrics.duplicateSameHash();
+        } else {
+            metrics.duplicateDiffHash();
+        }
         return sameHash ? IngestResult.DUPLICATE_SAME_HASH : IngestResult.DUPLICATE_DIFF_HASH;
     }
 

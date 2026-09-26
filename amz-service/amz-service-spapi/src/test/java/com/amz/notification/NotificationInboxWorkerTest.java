@@ -41,6 +41,7 @@ class NotificationInboxWorkerTest {
     private NotificationInboxMapper mapper;
     private CryptoUtil cryptoUtil;
     private NotificationProperties properties;
+    private NotificationMetrics metrics;
     private NotificationEventProcessor processor;
     private NotificationInboxWorker worker;
 
@@ -50,11 +51,12 @@ class NotificationInboxWorkerTest {
         cryptoUtil = mock(CryptoUtil.class);
         when(cryptoUtil.decrypt(CIPHER)).thenReturn(RAW);
         properties = new NotificationProperties();
+        metrics = new NotificationMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         properties.setBaseDelaySeconds(30);
         properties.setMaxAttempts(5);
         properties.setLeaseTimeoutSeconds(300);
         processor = mock(NotificationEventProcessor.class);
-        worker = new NotificationInboxWorker(mapper, cryptoUtil, properties, processor);
+        worker = new NotificationInboxWorker(mapper, cryptoUtil, properties, processor, metrics);
     }
 
     @Test

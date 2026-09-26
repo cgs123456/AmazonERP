@@ -58,6 +58,7 @@ class NotificationInboxServiceTest {
     private NotificationInboxMapper mapper;
     private CryptoUtil cryptoUtil;
     private NotificationProperties properties;
+    private NotificationMetrics metrics;
     private NotificationInboxService service;
 
     @BeforeEach
@@ -67,9 +68,10 @@ class NotificationInboxServiceTest {
                 // 与 CryptoUtil 真实语义一致：null 进 null 出
         when(cryptoUtil.encrypt(any())).thenAnswer(i -> i.getArgument(0) == null ? null : "CIPHERTEXT");
         properties = new NotificationProperties();
+        metrics = new NotificationMetrics(new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
         properties.setPayloadMaxBytes(262144);
         properties.setMaxAttempts(5);
-        service = new NotificationInboxService(mapper, cryptoUtil, properties);
+        service = new NotificationInboxService(mapper, cryptoUtil, properties, metrics);
     }
 
     @Test
@@ -116,7 +118,7 @@ class NotificationInboxServiceTest {
         assertTrue(first.matches("[0-9a-f]{64}"), "哈希必须是小写十六进制，实际：" + first);
 
         mapper = mock(NotificationInboxMapper.class);
-        service = new NotificationInboxService(mapper, cryptoUtil, properties);
+        service = new NotificationInboxService(mapper, cryptoUtil, properties, metrics);
         service.ingest(notification(), RAW_JSON + " ", binding(7L), false);
         assertNotEquals(first, capturedInsert().getPayloadSha256());
     }

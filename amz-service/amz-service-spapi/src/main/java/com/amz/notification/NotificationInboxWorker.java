@@ -39,17 +39,20 @@ public class NotificationInboxWorker {
     private final NotificationProperties properties;
     private final NotificationRetryPolicy retryPolicy;
     private final NotificationEventProcessor processor;
+    private final NotificationMetrics metrics;
     private final String leaseOwner;
 
     public NotificationInboxWorker(NotificationInboxMapper inboxMapper,
                                    CryptoUtil cryptoUtil,
                                    NotificationProperties properties,
-                                   NotificationEventProcessor processor) {
+                                   NotificationEventProcessor processor,
+                                   NotificationMetrics metrics) {
         this.inboxMapper = inboxMapper;
         this.cryptoUtil = cryptoUtil;
         this.properties = properties;
         this.retryPolicy = new NotificationRetryPolicy(properties.getBaseDelaySeconds());
         this.processor = processor;
+        this.metrics = metrics;
         this.leaseOwner = defaultLeaseOwner();
     }
 
@@ -67,6 +70,7 @@ public class NotificationInboxWorker {
     public int runBatch(int batchSize) {
         LocalDateTime now = LocalDateTime.now();
         int handled = 0;
+        long maxLagSeconds = 0L;
         for (Long id : findDueIds(batchSize, now)) {
             if (!claim(id, now)) {
                 continue;
@@ -77,9 +81,21 @@ public class NotificationInboxWorker {
                 continue;
             }
             handled++;
+            maxLagSeconds = Math.max(maxLagSeconds, lagSeconds(event, now));
             process(event);
         }
+        if (handled > 0) {
+            metrics.recordInboxLagSeconds(maxLagSeconds);
+        }
         return handled;
+    }
+
+    /** 事件在 Inbox 中的滞留秒数：createdAt 为空时按 0 处理，避免用「现在」制造假峰值。 */
+    private static long lagSeconds(NotificationInboxEntity event, LocalDateTime now) {
+        if (event.getCreatedAt() == null) {
+            return 0L;
+        }
+        return Math.max(0L, java.time.Duration.between(event.getCreatedAt(), now).getSeconds());
     }
 
     /** 查询到期可领取的事件 ID（只取 ID，正文留给领取后回查，避免在未持租约时搬运大字段）。 */
@@ -135,8 +151,10 @@ public class NotificationInboxWorker {
     }
 
     private void process(NotificationInboxEntity event) {
+        long startedAt = System.nanoTime();
         try {
             processor.process(event, cryptoUtil.decrypt(event.getPayloadEncrypted()));
+            metrics.processed(event.getNotificationType(), System.nanoTime() - startedAt);
             markProcessed(event);
         } catch (NotificationProcessingException e) {
             finish(event, e.isRetryable(), e.getErrorCode(), e.getClass().getSimpleName(),
@@ -173,6 +191,14 @@ public class NotificationInboxWorker {
         if (deadLetter) {
             String status = terminalStatus != null ? terminalStatus : NotificationInboxStatus.DLQ;
             update.set("status", status);
+            metrics.dlq(status);
+            if (NotificationInboxStatus.UNSUPPORTED.equals(status)) {
+                metrics.unsupported(event.getNotificationType());
+            } else if (NotificationInboxStatus.UNRESOLVED_SUBSCRIPTION.equals(status)) {
+                metrics.unresolvedSubscription();
+            } else if (NotificationInboxStatus.INVALID.equals(status)) {
+                metrics.invalid(errorCode);
+            }
             log.error("[NotificationInboxWorker] 事件进入 DLQ：id={}, notificationId={}, type={}, "
                             + "attempt={}, maxAttempts={}, retryable={}, errorCode={}",
                     event.getId(), event.getNotificationId(), event.getNotificationType(),
@@ -181,6 +207,7 @@ public class NotificationInboxWorker {
             long delay = retryPolicy.nextDelaySeconds(attempt);
             update.set("status", NotificationInboxStatus.RECEIVED);
             update.set("next_attempt_at", LocalDateTime.now().plusSeconds(delay));
+            metrics.retryScheduled();
             log.warn("[NotificationInboxWorker] 处理失败待重试：id={}, notificationId={}, attempt={}/{}, "
                             + "nextDelaySeconds={}, errorCode={}",
                     event.getId(), event.getNotificationId(), attempt, maxAttempts, delay, errorCode);
