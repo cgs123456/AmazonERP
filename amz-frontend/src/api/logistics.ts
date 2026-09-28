@@ -386,6 +386,14 @@ export interface QuoteCompareResult {
   /** 仅当航线只有一种币种时给出；多币种时为 null */
   recommended: string | null
   excludedExpiredCount: number
+  /** 本次实际纳入业务计算的报价数，不含用于探测截断的第 5001 条 */
+  scannedQuoteCount: number
+  /** 单次比价允许扫描的报价硬上限 */
+  scanLimit: number
+  /** true 表示命中上限，结果只是局部数据 */
+  scanTruncated: boolean
+  /** false 时不得把最低价或推荐视为全量结论 */
+  comparisonComplete: boolean
   warnings: string[]
 }
 
@@ -458,9 +466,14 @@ export const getLogisticsAlerts = (shopId: number | string) => {
 // 货件与轨迹
 // ============================================================
 
-export const listShipments = (shopId: number | string, status?: string) => {
+export const listShipments = (
+  shopId: number | string,
+  status?: string,
+  size?: number,
+  cursor?: string
+) => {
   return request.get<void, ApiResponse<Shipment[]>>(`/logistics/shipment/list/${shopId}`, {
-    params: { status }
+    params: { status, size, cursor }
   })
 }
 
@@ -469,9 +482,10 @@ export const syncShipment = (shipmentId: number) => {
   return request.post<void, ApiResponse<Shipment>>(`/logistics/shipment/${shipmentId}/sync`)
 }
 
-export const getShipmentTracking = (shipmentId: number) => {
+export const getShipmentTracking = (shipmentId: number, size?: number, cursor?: string) => {
   return request.get<void, ApiResponse<TrackingEvent[]>>(
-    `/logistics/shipment/${shipmentId}/tracking`
+    `/logistics/shipment/${shipmentId}/tracking`,
+    { params: { size, cursor } }
   )
 }
 
@@ -527,9 +541,14 @@ export const getReceiptBoard = (shopId: number | string) => {
 // ============================================================
 
 /** 列出当前有效的报价（已过失效日期的不返回） */
-export const listQuotes = (shopId: number | string, serviceType?: string) => {
+export const listQuotes = (
+  shopId: number | string,
+  serviceType?: string,
+  size?: number,
+  cursor?: string
+) => {
   return request.get<void, ApiResponse<CarrierQuote[]>>(`/logistics/v2/quote/list/${shopId}`, {
-    params: { serviceType }
+    params: { serviceType, size, cursor }
   })
 }
 
@@ -552,9 +571,14 @@ export const expireOutdatedQuotes = (shopId: number | string) => {
 // 调拨
 // ============================================================
 
-export const listTransfers = (shopId: number | string, status?: string) => {
+export const listTransfers = (
+  shopId: number | string,
+  status?: string,
+  size?: number,
+  cursor?: string
+) => {
   return request.get<void, ApiResponse<InventoryTransfer[]>>(`/logistics/v2/transfer/list/${shopId}`, {
-    params: { status }
+    params: { status, size, cursor }
   })
 }
 
@@ -578,8 +602,10 @@ export const receiveTransfer = (id: number) => {
 // 头程成本分摊
 // ============================================================
 
-export const listAllocations = (shipmentId: number) => {
-  return request.get<void, ApiResponse<FreightCostItem[]>>(`/logistics/v2/freight/${shipmentId}`)
+export const listAllocations = (shipmentId: number, size?: number, cursor?: string) => {
+  return request.get<void, ApiResponse<FreightCostItem[]>>(`/logistics/v2/freight/${shipmentId}`, {
+    params: { size, cursor }
+  })
 }
 
 /** 按分摊方法重算头程费用；服务端保证各行之和等于费用总额 */
@@ -598,10 +624,15 @@ export const calculateFreight = (
 // 签收差异
 // ============================================================
 
-export const listDiscrepancies = (shopId: number | string, status?: string) => {
+export const listDiscrepancies = (
+  shopId: number | string,
+  status?: string,
+  size?: number,
+  cursor?: string
+) => {
   return request.get<void, ApiResponse<FbaReceiptDiscrepancy[]>>(
     `/logistics/v2/discrepancy/list/${shopId}`,
-    { params: { status } }
+    { params: { status, size, cursor } }
   )
 }
 

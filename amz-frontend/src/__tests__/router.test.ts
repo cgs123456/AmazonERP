@@ -8,6 +8,7 @@ vi.mock('../views/AdManager.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../views/ProfitReport.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../views/NotificationPage.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../views/KnowledgeBase.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('../views/ConnectorCenter.vue', () => ({ default: { template: '<div />' } }))
 vi.mock('../views/NotFound.vue', () => ({ default: { template: '<div />' } }))
 
 import router from '../router'
@@ -54,5 +55,11 @@ describe('路由守卫鉴权', () => {
     localStorage.setItem('token', 'fake-token')
     await router.push('/knowledge')
     expect(router.currentRoute.value.path).toBe('/knowledge')
+  })
+
+  it('有 token 访问 /connectors 应匹配连接器状态路由', async () => {
+    localStorage.setItem('token', 'fake-token')
+    await router.push('/connectors')
+    expect(router.currentRoute.value.name).toBe('Connectors')
   })
 })

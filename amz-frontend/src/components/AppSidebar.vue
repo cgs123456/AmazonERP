@@ -102,6 +102,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/connectors') }"
+        @click="navigateTo('/connectors')"
+        role="button"
+        aria-label="连接器状态"
+        tabindex="0"
+      >
+        <Icon icon="mdi:connection" class="nav-icon" width="24" />
+        <span class="nav-text">连接器状态</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/notifications') }"
         @click="navigateTo('/notifications')"
         role="button"

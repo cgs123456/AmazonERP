@@ -11,11 +11,17 @@ CREATE TABLE IF NOT EXISTS amz_purchase_order (
     shop_id BIGINT NOT NULL COMMENT '所属店铺 ID',
     supplier_offer_id VARCHAR(64) DEFAULT NULL COMMENT '1688 供应商 offerId',
     supplier_name VARCHAR(200) DEFAULT NULL COMMENT '供应商名称',
+    supplier_id BIGINT DEFAULT NULL COMMENT '供应商 ID',
+    plan_id BIGINT DEFAULT NULL COMMENT '关联采购计划 ID',
     sku VARCHAR(64) NOT NULL COMMENT '采购商品 SKU',
     quantity INT NOT NULL COMMENT '采购数量',
     unit_price DECIMAL(10,2) NOT NULL COMMENT '采购单价（含税 CNY）',
     total_amount DECIMAL(12,2) DEFAULT NULL COMMENT '总金额（CNY）',
+    total_quantity INT DEFAULT NULL COMMENT '总数量',
+    currency VARCHAR(10) DEFAULT 'CNY' COMMENT '币种',
     status VARCHAR(20) DEFAULT 'DRAFT' COMMENT 'DRAFT/SUBMITTED/PAID/PRODUCING/SHIPPED/QC_PENDING/QC_PASSED/QC_FAILED/RECEIVED/COMPLETED/CANCELED',
+    approver VARCHAR(50) DEFAULT NULL COMMENT '审批人',
+    approved_time DATETIME DEFAULT NULL COMMENT '审批时间',
     alibaba_order_no VARCHAR(64) DEFAULT NULL COMMENT '1688 平台订单号',
     expected_delivery_date VARCHAR(20) DEFAULT NULL COMMENT '预计交期',
     tracking_no VARCHAR(64) DEFAULT NULL COMMENT '物流单号',
@@ -136,15 +142,6 @@ CREATE TABLE IF NOT EXISTS amz_purchase_order_item (
     INDEX idx_order (purchase_order_id),
     INDEX idx_sku (sku)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='采购订单明细表';
-
--- Alter existing amz_purchase_order to add upgrade columns
-ALTER TABLE amz_purchase_order
-    ADD COLUMN IF NOT EXISTS supplier_id BIGINT DEFAULT NULL COMMENT '供应商 ID',
-    ADD COLUMN IF NOT EXISTS plan_id BIGINT DEFAULT NULL COMMENT '关联采购计划 ID',
-    ADD COLUMN IF NOT EXISTS approver VARCHAR(50) DEFAULT NULL COMMENT '审批人',
-    ADD COLUMN IF NOT EXISTS approved_time DATETIME DEFAULT NULL COMMENT '审批时间',
-    ADD COLUMN IF NOT EXISTS total_quantity INT DEFAULT NULL COMMENT '总数量',
-    ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'CNY' COMMENT '币种';
 
 CREATE TABLE IF NOT EXISTS amz_inventory_batch (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

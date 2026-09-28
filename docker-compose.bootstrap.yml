@@ -1,0 +1,53 @@
+# 首次部署专用的一次性 SP-API 凭证导入覆盖文件。
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml \
+#     --profile bootstrap run --rm amz-service-spapi-bootstrap
+#
+# 安全边界：
+#   1) 普通 `docker compose up` 不会加载本服务；
+#   2) 不暴露端口，导入完成后进程退出；
+#   3) 凭证 JSON 只读挂载，导入成功后立即删除宿主机文件和容器；
+#   4) 导入失败不自动重启，保留明确退出码供部署流水线阻断。
+services:
+  amz-service-spapi-bootstrap:
+    image: amazon-erp/amz-service-spapi:latest
+    container_name: amz-service-spapi-bootstrap
+    profiles: ["bootstrap"]
+    environment:
+      - SPRING_PROFILES_ACTIVE=bootstrap
+      - SPAPI_BOOTSTRAP_CREDENTIAL_FILE=/run/secrets/spapi-credentials.json
+      - SPAPI_BOOTSTRAP_EXIT_AFTER_LOAD=true
+      - SPAPI_REQUIRE_CREDENTIALS=false
+      - SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR=true
+      - SPAPI_CREDENTIAL_CACHE_MAX_ENTRIES=${SPAPI_CREDENTIAL_CACHE_MAX_ENTRIES:-1000}
+      - SPAPI_CREDENTIAL_CACHE_TTL_SECONDS=${SPAPI_CREDENTIAL_CACHE_TTL_SECONDS:-600}
+      - SPAPI_ACTIVE_SHOP_IDS_TTL_SECONDS=${SPAPI_ACTIVE_SHOP_IDS_TTL_SECONDS:-60}
+      - SPAPI_OUTBOX_SCHEDULER_ENABLED=false
+      - NACOS_ADDR=nacos:8848
+      - MYSQL_HOST=mysql
+      - MYSQL_SLAVE_HOST=mysql-slave
+      - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
+      - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
+      - DB_USERNAME=${DB_USERNAME:-root}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
+      - RABBITMQ_USERNAME=${RABBITMQ_USERNAME:-admin}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY_required}
+      - AMZ_CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
+      - AWS_ACCESS_KEY=${AWS_ACCESS_KEY:-}
+      - AWS_SECRET_KEY=${AWS_SECRET_KEY:-}
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=${JAVA_OPTS:-}
+    volumes:
+      - ${SPAPI_BOOTSTRAP_CREDENTIAL_FILE_HOST:?SPAPI_BOOTSTRAP_CREDENTIAL_FILE_HOST_required}:/run/secrets/spapi-credentials.json:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: "no"

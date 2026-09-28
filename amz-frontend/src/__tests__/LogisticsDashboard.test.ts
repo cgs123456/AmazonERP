@@ -35,6 +35,7 @@ import {
   getCarrierPerformance,
   getLogisticsAlerts,
   listShipments,
+  getShipmentTracking,
   importShipments,
   getQuoteBoard,
   getTransferBoard,
@@ -51,6 +52,7 @@ const mockedTrend = vi.mocked(getLogisticsTrend)
 const mockedCarriers = vi.mocked(getCarrierPerformance)
 const mockedAlerts = vi.mocked(getLogisticsAlerts)
 const mockedShipments = vi.mocked(listShipments)
+const mockedTracking = vi.mocked(getShipmentTracking)
 const mockedImportShipments = vi.mocked(importShipments)
 const mockedQuoteBoard = vi.mocked(getQuoteBoard)
 const mockedTransferBoard = vi.mocked(getTransferBoard)
@@ -68,6 +70,17 @@ const globalStubs = {
     Icon: true
   }
 }
+
+/** 统一分页元数据夹具；未指定时表示当前页已取完。 */
+const pageMeta = (rows: unknown[], overrides: Record<string, unknown> = {}) => ({
+  size: 50,
+  returned: rows.length,
+  hasMore: false,
+  truncated: false,
+  nextCursor: null,
+  total: null,
+  ...overrides
+})
 
 /** 后端概览返回的标准结构（含全部字段，避免测试因缺字段而失真） */
 const overviewFixture = (overrides: Record<string, unknown> = {}) => ({
@@ -415,12 +428,13 @@ describe('LogisticsDashboard 视图', () => {
       ]
     } as never)
     mockedAlerts.mockResolvedValue({ code: 200, message: 'ok', data: alertsFixture } as never)
-    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
+    mockedTracking.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
     mockedQuoteBoard.mockResolvedValue({ code: 200, message: 'ok', data: quoteBoardFixture() } as never)
     mockedTransferBoard.mockResolvedValue({ code: 200, message: 'ok', data: transferBoardFixture() } as never)
     mockedFreightBoard.mockResolvedValue({ code: 200, message: 'ok', data: freightBoardFixture() } as never)
     mockedReceiptBoard.mockResolvedValue({ code: 200, message: 'ok', data: receiptBoardFixture() } as never)
-    mockedTransfers.mockResolvedValue({ code: 200, message: 'ok', data: transferListFixture } as never)
+    mockedTransfers.mockResolvedValue({ code: 200, message: 'ok', data: transferListFixture, _page: pageMeta(transferListFixture) } as never)
   })
 
   it('未登录时展示登录提示，且不发起任何请求', async () => {
@@ -544,6 +558,235 @@ describe('LogisticsDashboard 视图', () => {
     expect(mockedImportShipments).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('内容必须是 JSON 数组')
   })
+
+  it('货件列表：截断必须可见，加载更多必须携带游标并追加数据', async () => {
+    const first = {
+      id: 11,
+      shipmentNo: 'SHP-PAGE-1',
+      carrier: 'COSCO',
+      masterTrackingNo: 'COSU-PAGE-1',
+      shippingMethod: 'SEA',
+      status: 'IN_TRANSIT',
+      eta: '2026-10-01',
+      lastTrackTime: '2026-09-20T08:00:00',
+      dataSource: 'API'
+    }
+    const second = {
+      ...first,
+      id: 10,
+      shipmentNo: 'SHP-PAGE-2',
+      masterTrackingNo: 'COSU-PAGE-2'
+    }
+    mockedShipments
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [first],
+        _page: pageMeta([first], { hasMore: true, truncated: true, nextCursor: 'SHIP-CUR' })
+      } as never)
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [second],
+        _page: pageMeta([second])
+      } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    expect(mockedShipments).toHaveBeenCalledWith('1', undefined, 50, undefined)
+    expect(wrapper.text()).toContain('仍有更多未加载')
+    expect(wrapper.text()).toContain('当前列表不是全量')
+
+    const loadMore = wrapper.findAll('button').find((b) => b.text().includes('加载更多'))
+    expect(loadMore).toBeTruthy()
+    await loadMore!.trigger('click')
+    await flushPromises()
+
+    expect(mockedShipments).toHaveBeenLastCalledWith('1', undefined, 50, 'SHIP-CUR')
+    expect(wrapper.text()).toContain('SHP-PAGE-1')
+    expect(wrapper.text()).toContain('SHP-PAGE-2')
+    expect(wrapper.text()).not.toContain('仍有更多未加载')
+  })
+
+  it('货件列表：_page 缺失时不得冒充全量', async () => {
+    const row = {
+      id: 21,
+      shipmentNo: 'SHP-NO-META',
+      carrier: 'DHL',
+      masterTrackingNo: null,
+      shippingMethod: 'EXPRESS',
+      status: 'CREATED',
+      eta: null,
+      lastTrackTime: null,
+      dataSource: 'IMPORT'
+    }
+    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [row] } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('完整性未知')
+    expect(wrapper.text()).toContain('列表完整性无法确认')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('加载更多'))).toBe(false)
+  })
+
+  it('轨迹时间线：截断必须可见，加载更多必须携带游标并追加数据', async () => {
+    const shipment = {
+      id: 11,
+      shipmentNo: 'SHP-TRACK-1',
+      carrier: 'COSCO',
+      masterTrackingNo: 'COSU-TRACK-1',
+      shippingMethod: 'SEA',
+      status: 'IN_TRANSIT',
+      eta: '2026-10-01',
+      lastTrackTime: '2026-09-20T08:00:00',
+      dataSource: 'API'
+    }
+    const firstEvent = {
+      id: 1,
+      shipmentId: 11,
+      eventStatus: 'IN_TRANSIT',
+      location: 'Ningbo',
+      description: '已开船',
+      eventTime: '2026-09-18T08:00:00'
+    }
+    const secondEvent = {
+      id: 2,
+      shipmentId: 11,
+      eventStatus: 'ARRIVED',
+      location: 'Los Angeles',
+      description: '已到港',
+      eventTime: '2026-09-25T08:00:00'
+    }
+    mockedShipments.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: [shipment],
+      _page: pageMeta([shipment])
+    } as never)
+    mockedTracking
+      .mockResolvedValueOnce({
+        code: 200,
+        message: '操作成功（结果已截断，请携带 nextCursor 继续翻页）',
+        data: [firstEvent],
+        _page: pageMeta([firstEvent], { size: 200, hasMore: true, truncated: true, nextCursor: 'TRK-CUR' })
+      } as never)
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [secondEvent],
+        _page: pageMeta([secondEvent], { size: 200 })
+      } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+    const trackingBtn = wrapper.findAll('button').find((b) => b.text() === '轨迹')
+    await trackingBtn!.trigger('click')
+    await flushPromises()
+
+    expect(mockedTracking).toHaveBeenCalledWith(11, 200, undefined)
+    expect(wrapper.text()).toContain('已开船')
+    expect(wrapper.text()).toContain('仍有更多未加载')
+    expect(wrapper.text()).toContain('当前轨迹不是全量')
+
+    const loadMore = wrapper.findAll('button').find((b) => b.text().includes('加载更多'))
+    expect(loadMore).toBeTruthy()
+    await loadMore!.trigger('click')
+    await flushPromises()
+
+    expect(mockedTracking).toHaveBeenLastCalledWith(11, 200, 'TRK-CUR')
+    expect(wrapper.text()).toContain('已开船')
+    expect(wrapper.text()).toContain('已到港')
+    expect(wrapper.text()).not.toContain('仍有更多未加载')
+  })
+
+  it('轨迹时间线：_page 缺失时不得冒充全量', async () => {
+    const shipment = {
+      id: 21,
+      shipmentNo: 'SHP-TRACK-NO-META',
+      carrier: 'DHL',
+      masterTrackingNo: null,
+      shippingMethod: 'EXPRESS',
+      status: 'CREATED',
+      eta: null,
+      lastTrackTime: null,
+      dataSource: 'IMPORT'
+    }
+    mockedShipments.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: [shipment],
+      _page: pageMeta([shipment])
+    } as never)
+    mockedTracking.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: [{ id: 9, shipmentId: 21, eventStatus: 'CREATED', description: '仅有一条轨迹' }]
+    } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+    const trackingBtn = wrapper.findAll('button').find((b) => b.text() === '轨迹')
+    await trackingBtn!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('完整性未知')
+    expect(wrapper.text()).toContain('轨迹完整性无法确认')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('加载更多'))).toBe(false)
+  })
+  it('货件筛选变化时重置游标，不得把旧筛选的第二页拼进新筛选', async () => {
+    const first = {
+      id: 31,
+      shipmentNo: 'SHP-ALL',
+      carrier: 'COSCO',
+      masterTrackingNo: null,
+      shippingMethod: 'SEA',
+      status: 'IN_TRANSIT',
+      eta: null,
+      lastTrackTime: null,
+      dataSource: 'IMPORT'
+    }
+    const filtered = { ...first, id: 30, shipmentNo: 'SHP-DELAYED', status: 'DELAYED' }
+    mockedShipments
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [first],
+        _page: pageMeta([first], { hasMore: true, truncated: true, nextCursor: 'OLD-CUR' })
+      } as never)
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [filtered],
+        _page: pageMeta([filtered])
+      } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    await wrapper.find('#lg-status').setValue('DELAYED')
+    await flushPromises()
+
+    expect(mockedShipments).toHaveBeenLastCalledWith('1', 'DELAYED', 50, undefined)
+    expect(wrapper.text()).toContain('SHP-DELAYED')
+    expect(wrapper.text()).not.toContain('SHP-ALL')
+  })
 })
 
 /**
@@ -563,12 +806,13 @@ describe('LogisticsDashboard 运营子域看板', () => {
     mockedTrend.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
     mockedCarriers.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
     mockedAlerts.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
-    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
+    mockedTracking.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
     mockedQuoteBoard.mockResolvedValue({ code: 200, message: 'ok', data: quoteBoardFixture() } as never)
     mockedTransferBoard.mockResolvedValue({ code: 200, message: 'ok', data: transferBoardFixture() } as never)
     mockedFreightBoard.mockResolvedValue({ code: 200, message: 'ok', data: freightBoardFixture() } as never)
     mockedReceiptBoard.mockResolvedValue({ code: 200, message: 'ok', data: receiptBoardFixture() } as never)
-    mockedTransfers.mockResolvedValue({ code: 200, message: 'ok', data: transferListFixture } as never)
+    mockedTransfers.mockResolvedValue({ code: 200, message: 'ok', data: transferListFixture, _page: pageMeta(transferListFixture) } as never)
   })
 
   const openTab = async (wrapper: ReturnType<typeof mountView>, label: string) => {
@@ -664,6 +908,10 @@ describe('LogisticsDashboard 运营子域看板', () => {
         recommendedByCurrency: { USD: 'COSCO' },
         recommended: 'COSCO',
         excludedExpiredCount: 0,
+        scannedQuoteCount: 1,
+        scanLimit: 5000,
+        scanTruncated: false,
+        comparisonComplete: true,
         warnings: []
       }
     } as never)
@@ -720,6 +968,10 @@ describe('LogisticsDashboard 运营子域看板', () => {
         recommendedByCurrency: { USD: 'COSCO', CNY: 'SF' },
         recommended: null,
         excludedExpiredCount: 0,
+        scannedQuoteCount: 2,
+        scanLimit: 5000,
+        scanTruncated: false,
+        comparisonComplete: true,
         warnings: ['本航线存在多种币种（USD / CNY），金额不可直接比较，已按币种分别排序']
       }
     } as never)
@@ -739,6 +991,61 @@ describe('LogisticsDashboard 运营子域看板', () => {
     expect(text).not.toContain('推荐承运商')
     expect(text).toContain('无法给出唯一的「最便宜」结论')
     expect(text).toContain('该币种最低')
+  })
+
+  it('比价扫描截断时明确结果不完整，并隐藏所有最低价推荐', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '比价')
+
+    mockedCompare.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: {
+        shopId: 1,
+        billingBasis: '按重量价与体积价取高',
+        quotes: [
+          {
+            quoteId: 1,
+            carrierName: 'COSCO',
+            currency: 'USD',
+            chargeableBasis: 'WEIGHT',
+            costByWeight: 350,
+            costByVolume: null,
+            minChargeApplied: false,
+            freightCost: 350,
+            fuelSurcharge: 0,
+            totalCost: 350
+          }
+        ],
+        byCurrency: { USD: [] },
+        recommendedByCurrency: {},
+        recommended: null,
+        excludedExpiredCount: 0,
+        scannedQuoteCount: 5000,
+        scanLimit: 5000,
+        scanTruncated: true,
+        comparisonComplete: false,
+        warnings: ['报价扫描达到上限（5000 条），本次结果不完整，已禁止给出最低价推荐']
+      }
+    } as never)
+
+    const inputs = wrapper.findAll('.cmp-form input')
+    await inputs[0].setValue('Shenzhen')
+    await inputs[1].setValue('Los Angeles')
+    await inputs[2].setValue('100')
+    await flushPromises()
+
+    const calcBtn = wrapper.findAll('button').find((b) => b.text().includes('计算比价'))
+    await calcBtn!.trigger('click')
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('报价扫描达到上限')
+    expect(text).toContain('本次结果不完整')
+    expect(text).toContain('已禁用最低价推荐')
+    expect(text).not.toContain('推荐承运商')
+    expect(text).not.toContain('该币种最低')
   })
 
   it('调拨看板展示卡单风险，且只在允许的状态下提供操作入口', async () => {
@@ -877,5 +1184,82 @@ describe('LogisticsDashboard 运营子域看板', () => {
 
     expect(wrapper.text()).toContain('请先登录后查看物流数据')
     expect(wrapper.text()).not.toContain('已失效未收口')
+  })
+
+  it('调拨列表：截断必须可见，加载更多必须携带游标并追加数据', async () => {
+    const first = transferListFixture[1]
+    const second = transferListFixture[2]
+    mockedTransfers
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [first],
+        _page: pageMeta([first], { hasMore: true, truncated: true, nextCursor: 'TRF-CUR' })
+      } as never)
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [second],
+        _page: pageMeta([second])
+      } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '调拨')
+
+    expect(mockedTransfers).toHaveBeenCalledWith('1', undefined, 50, undefined)
+    expect(wrapper.text()).toContain('仍有更多未加载')
+
+    const loadMore = wrapper.findAll('button').find((b) => b.text().includes('加载更多'))
+    expect(loadMore).toBeTruthy()
+    await loadMore!.trigger('click')
+    await flushPromises()
+
+    expect(mockedTransfers).toHaveBeenLastCalledWith('1', undefined, 50, 'TRF-CUR')
+    expect(wrapper.text()).toContain('TRF-3')
+    expect(wrapper.text()).toContain('TRF-6')
+    expect(wrapper.text()).not.toContain('仍有更多未加载')
+  })
+
+  it('调拨列表：_page 缺失时不得冒充全量', async () => {
+    const row = transferListFixture[0]
+    mockedTransfers.mockResolvedValue({ code: 200, message: 'ok', data: [row] } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '调拨')
+
+    expect(wrapper.text()).toContain('完整性未知')
+    expect(wrapper.text()).toContain('列表完整性无法确认')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('加载更多'))).toBe(false)
+  })
+
+  it('调拨筛选变化时重置游标，不得拼接旧筛选结果', async () => {
+    const first = transferListFixture[0]
+    const filtered = transferListFixture[1]
+    mockedTransfers
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [first],
+        _page: pageMeta([first], { hasMore: true, truncated: true, nextCursor: 'OLD-TRF-CUR' })
+      } as never)
+      .mockResolvedValueOnce({
+        code: 200,
+        message: 'ok',
+        data: [filtered],
+        _page: pageMeta([filtered])
+      } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '调拨')
+
+    await wrapper.find('#trf-status').setValue('IN_TRANSIT')
+    await flushPromises()
+
+    expect(mockedTransfers).toHaveBeenLastCalledWith('1', 'IN_TRANSIT', 50, undefined)
+    expect(wrapper.text()).toContain('TRF-3')
+    expect(wrapper.text()).not.toContain('TRF-1')
   })
 })

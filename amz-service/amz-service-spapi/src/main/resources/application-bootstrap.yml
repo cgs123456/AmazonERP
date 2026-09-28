@@ -1,0 +1,36 @@
+# 首次部署专用的一次性凭证导入 profile。
+#
+# 安全边界：
+#   1) 不启动 Web 容器，业务接口不会因 bootstrap 模式短暂暴露；
+#   2) 不得与 prod/mock 同时激活，ConnectorStartupCheck 会拒绝启动；
+#   3) 仍要求 DB 故障 fail-closed，并禁用调度任务，避免导入进程触发业务同步；
+#   4) 导入完成后进程退出，随后正常部署必须使用 prod profile。
+spring:
+  main:
+    web-application-type: none
+  autoconfigure:
+    exclude:
+      - org.redisson.spring.starter.RedissonAutoConfigurationV2
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+    sentinel:
+      enabled: false
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false
+      direct:
+        auto-startup: false
+
+spapi:
+  startup:
+    require-credentials: false
+  credential-store:
+    fail-on-db-error: true
+  outbox:
+    scheduler-enabled: false
+  bootstrap:
+    credential-file: ${SPAPI_BOOTSTRAP_CREDENTIAL_FILE:}
+    exit-after-load: ${SPAPI_BOOTSTRAP_EXIT_AFTER_LOAD:true}

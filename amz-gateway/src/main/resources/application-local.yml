@@ -8,6 +8,11 @@ spring:
         server-addr: localhost:8848
 
 # 本地开发启用 API 文档（生产默认关闭，见 application.yml）
+amz:
+  gateway:
+    docs:
+      enabled: true
+
 springdoc:
   api-docs:
     enabled: true

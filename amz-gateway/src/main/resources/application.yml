@@ -42,6 +42,29 @@ spring:
           uri: lb://amz-service-spapi
           predicates:
             - Path=/spapi/**
+        # SP-API 分层自检统一对外别名：/api/preflight/** -> /spapi/preflight/**
+        # 自检会触发出网与 token 缓存失效，因此服务端契约为 POST；这里只做路径重写。
+        - id: amz-service-spapi-preflight-api
+          uri: lb://amz-service-spapi
+          predicates:
+            - Path=/api/preflight/**
+          filters:
+            - RewritePath=/api/preflight(?<segment>.*), /spapi/preflight${segment}
+        # 连接器能力清单统一对外别名：/api/connectors/** -> /spapi/connectors/**
+        - id: amz-service-spapi-connectors-api
+          uri: lb://amz-service-spapi
+          predicates:
+            - Path=/api/connectors/**
+          filters:
+            - RewritePath=/api/connectors(?<segment>.*), /spapi/connectors${segment}
+        # SP-API 凭证管理统一对外别名：/api/credentials/** -> /spapi/credentials/**
+        # 凭证接口只接受 ADMIN 且校验店铺范围；密钥仅写入，不在状态接口回显。
+        - id: amz-service-spapi-credentials-api
+          uri: lb://amz-service-spapi
+          predicates:
+            - Path=/api/credentials/**
+          filters:
+            - RewritePath=/api/credentials(?<segment>.*), /spapi/credentials${segment}
         # 广告服务路由
         - id: amz-service-ad
           uri: lb://amz-service-ad
@@ -107,6 +130,13 @@ jwt:
   secret-key: ${JWT_SECRET_KEY:}
   issuer: ${JWT_ISSUER:amz-erp}
   audience: ${JWT_AUDIENCE:amz-erp-client}
+
+# Gateway exposure controls. API docs are closed by default; enable explicitly only
+# for local development or a controlled private environment.
+amz:
+  gateway:
+    docs:
+      enabled: ${GATEWAY_DOCS_ENABLED:false}
 
 # Logging — traceId 注入（与 Skywalking 链路追踪关联）
 logging:

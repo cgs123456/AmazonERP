@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from 'vite'
 import { configDefaults } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import { rewriteProxyPath } from './src/utils/viteProxy'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -27,6 +28,9 @@ export default defineConfig(({ mode }) => {
             ['/api/report', 'http://localhost:8102'],
             ['/api/order', 'http://localhost:8105'],
             ['/api/spapi', 'http://localhost:8096'],
+            ['/api/connectors', 'http://localhost:8096'],
+            ['/api/preflight', 'http://localhost:8096'],
+            ['/api/credentials', 'http://localhost:8096'],
             ['/api/ad', 'http://localhost:8097'],
             ['/api/finance', 'http://localhost:8103'],
             ['/api/ops', 'http://localhost:8101'],
@@ -37,7 +41,7 @@ export default defineConfig(({ mode }) => {
             ['/api/search', 'http://localhost:8090'],
             ['/api/multiplatform', 'http://localhost:8104'],
             ['/api/product', 'http://localhost:8095']
-          ].map(([prefix, target]) => [prefix, { target, changeOrigin: true, rewrite: (p: string) => p.replace(/^\/api/, '') }])
+          ].map(([prefix, target]) => [prefix, { target, changeOrigin: true, rewrite: (p: string) => rewriteProxyPath(prefix, p) }])
         )
         // 单网关模式（Nacos+Gateway 可用时启用）:
         // '/api': { target: env.VITE_API_BASE_URL, changeOrigin: true, rewrite: (path) => path.replace(/^\/api/, '') }

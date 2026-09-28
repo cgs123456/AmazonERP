@@ -320,6 +320,22 @@ RESPONSE_ALLOWED_EXTRA_KEYS = ('resultCode', 'message', 'shape', 'values')
 CRITERION_KEYS = ('A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8')
 ATTESTATION_SCHEMA_VERSION = 'connector-acceptance-attestation/1'
 
+#: Outbox 安全视图契约。null 字段也必须出现在 JSON 中；缺字段/多出敏感字段都判契约不符。
+OUTBOX_VIEW_REQUIRED_KEYS = (
+    'id', 'shopId', 'operationId', 'httpMethod', 'requestPath', 'status',
+    'attemptCount', 'maxAttempts', 'responseStatus', 'marketplaceId',
+    'responseRequestId', 'lastErrorCode', 'lastErrorMessage', 'createdAt',
+    'updatedAt', 'completedAt', 'expectedStatuses', 'rateLimitVariant',
+)
+OUTBOX_STATUSES = ('PENDING', 'SUCCEEDED', 'FAILED', 'REPLAYING', 'REPLAYED', 'DLQ')
+OUTBOX_REPLAYABLE_STATUSES = ('FAILED', 'DLQ')
+OUTBOX_SUCCESS_TERMINAL_STATUSES = ('REPLAYED', 'SUCCEEDED')
+OUTBOX_FORBIDDEN_KEYS = frozenset({
+    'requestquery', 'requestbody', 'requestbodyencrypted', 'responsebody',
+    'responsebodyencrypted', 'ciphertext', 'secret', 'credentials',
+})
+REPLAY_RESULT_REQUIRED_KEYS = ('success', 'outcome', 'status', 'message')
+
 #: operation → (被测服务触发端点, 对应平台端点)。
 #: 平台端点取自客户端常量（`OrdersClient.ORDERS_PATH` 等）；runner **观察不到出站请求**，
 #: 故只写成 `documentedPlatformEndpoint`（有据可查的映射），**不得**当成实测字段。
@@ -391,6 +407,100 @@ def observed_headers(client):
     for name in client.header_names():
         headers[name] = REDACTED if name == 'token' else 'application/json'
     return headers
+
+
+def _is_int(value):
+    """bool 是 int 的子类，但 JSON 布尔值不能冒充整数 ID/状态码。"""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _forbidden_outbox_keys(payload):
+    if not isinstance(payload, dict):
+        return []
+    return sorted(str(key) for key in payload if str(key).lower() in OUTBOX_FORBIDDEN_KEYS)
+
+
+def outbox_view_errors(item):
+    """校验单条 Outbox 安全视图；返回错误列表，空列表表示契约成立。"""
+    if not isinstance(item, dict):
+        return ['Outbox 列表项不是 JSON 对象']
+    errors = []
+    missing = [key for key in OUTBOX_VIEW_REQUIRED_KEYS if key not in item]
+    if missing:
+        errors.append('缺字段：' + ','.join(missing))
+    forbidden = _forbidden_outbox_keys(item)
+    if forbidden:
+        errors.append('含禁止外泄字段：' + ','.join(forbidden))
+    if not _is_int(item.get('id')) or item.get('id') <= 0:
+        errors.append('id 必须是正整数')
+    if not _is_int(item.get('shopId')) or item.get('shopId') <= 0:
+        errors.append('shopId 必须是正整数')
+    if not isinstance(item.get('operationId'), str) or not item.get('operationId').strip():
+        errors.append('operationId 必须是非空字符串')
+    if item.get('httpMethod') not in ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'):
+        errors.append('httpMethod 非法：' + repr(item.get('httpMethod')))
+    if not isinstance(item.get('requestPath'), str) or not item.get('requestPath').startswith('/'):
+        errors.append('requestPath 必须是 / 开头的路径（不得含查询串）')
+    elif '?' in item.get('requestPath'):
+        errors.append('requestPath 不得包含查询串')
+    if item.get('status') not in OUTBOX_STATUSES:
+        errors.append('status 非法：' + repr(item.get('status')))
+    for key in ('attemptCount', 'maxAttempts'):
+        if item.get(key) is not None and not _is_int(item.get(key)):
+            errors.append(key + ' 必须是整数或 null')
+    if item.get('maxAttempts') is not None and item.get('maxAttempts') < 1:
+        errors.append('maxAttempts 必须 >= 1')
+    if item.get('responseStatus') is not None and not _is_int(item.get('responseStatus')):
+        errors.append('responseStatus 必须是整数或 null')
+    expected = item.get('expectedStatuses')
+    if not isinstance(expected, list) or not expected or any(not _is_int(code) for code in expected):
+        errors.append('expectedStatuses 必须是非空整数数组')
+    for key in ('marketplaceId', 'responseRequestId', 'lastErrorCode', 'lastErrorMessage',
+                'createdAt', 'updatedAt', 'completedAt', 'rateLimitVariant'):
+        if item.get(key) is not None and not isinstance(item.get(key), str):
+            errors.append(key + ' 必须是字符串或 null')
+    return errors
+
+
+def outbox_replay_precondition(item):
+    """只有真实 429/5xx 且处于 FAILED/DLQ 的记录才允许作为 E4 重放目标。"""
+    errors = outbox_view_errors(item)
+    if errors:
+        return False, '目标记录安全视图契约不符：' + '; '.join(errors)
+    if item.get('status') not in OUTBOX_REPLAYABLE_STATUSES:
+        return False, '目标记录 status={0}，不是 FAILED/DLQ'.format(item.get('status'))
+    response_status = item.get('responseStatus')
+    if not (_is_int(response_status) and (response_status == 429 or 500 <= response_status <= 599)):
+        return False, '目标记录 responseStatus={0}，不是 429/5xx'.format(response_status)
+    return True, None
+
+
+def find_outbox_item(items, item_id):
+    for item in items:
+        if isinstance(item, dict) and item.get('id') == item_id:
+            return item
+    return None
+
+
+def replay_result_errors(payload):
+    """校验 POST /outbox/{id}/replay 的 Result.data 安全结构。"""
+    if not isinstance(payload, dict):
+        return ['ReplayResult 不是 JSON 对象']
+    errors = []
+    missing = [key for key in REPLAY_RESULT_REQUIRED_KEYS if key not in payload]
+    if missing:
+        errors.append('缺字段：' + ','.join(missing))
+    forbidden = _forbidden_outbox_keys(payload)
+    if forbidden:
+        errors.append('含禁止外泄字段：' + ','.join(forbidden))
+    if not isinstance(payload.get('success'), bool):
+        errors.append('success 必须是布尔值')
+    for key in ('outcome', 'status'):
+        if payload.get(key) is not None and not isinstance(payload.get(key), str):
+            errors.append(key + ' 必须是字符串或 null')
+    if payload.get('message') is not None and not isinstance(payload.get('message'), str):
+        errors.append('message 必须是字符串或 null')
+    return errors
 
 
 class Recorder:
@@ -526,6 +636,8 @@ class AcceptanceRun:
         self.checks = []
         self.notes = []
         self.connectors_probe = {}
+        self.outbox_probe = {}
+        self.outbox_replay_probe = {}
         self.stub_self_declared = self.self_description.get('stub') is True
 
     # ------------------------------------------------------------------ 调度
@@ -708,7 +820,7 @@ class AcceptanceRun:
             })
 
     def probe_connectors(self):
-        """A6：能力清单端点（Task 6）。未实现时如实记 E0 + blocker，不假装通过。"""
+        """A6：能力清单端点。不可达或缺少 spapi 条目时如实记 E0 + blocker，不假装通过。"""
         path = self.options.connectors_path
         print('  [A6] GET {0}'.format(path))
         try:
@@ -731,6 +843,137 @@ class AcceptanceRun:
             'connectorEntry': entry,
             'payloadKeys': record['response']['payloadKeys'],
             'message': parsed.get('message'),
+        }
+
+    def probe_outbox(self):
+        """A7：只读校验 Outbox 安全视图；仅显式 ID 才尝试人工重放。"""
+        path = self.options.outbox_path
+        limit = self.options.outbox_limit
+        print('  [A7] GET {0}?limit={1}'.format(path, limit))
+        try:
+            record, parsed = self.recorder.observe(
+                'outbox.list', 'GET', path, query={'limit': limit})
+        except TransportError as error:
+            self.outbox_probe = {
+                'path': path, 'httpStatus': None, 'resultCode': None,
+                'observed': '连接层失败：' + str(error),
+            }
+            return
+
+        data = parsed.get('data')
+        items = data if isinstance(data, list) else []
+        contract_errors = []
+        if record['httpStatus'] != 200:
+            contract_errors.append('HTTP {0}（期望 200）'.format(record['httpStatus']))
+        if parsed.get('resultCode') != SERVICE_SUCCESS_CODE:
+            contract_errors.append('Result.code={0}（期望 200）'.format(parsed.get('resultCode')))
+        if not isinstance(data, list):
+            contract_errors.append('data 不是数组')
+        elif not data:
+            contract_errors.append('data 为空数组，无法验证安全视图字段契约')
+        else:
+            for index, item in enumerate(data):
+                errors = outbox_view_errors(item)
+                if errors:
+                    contract_errors.append('item[{0}]：{1}'.format(index, '; '.join(errors)))
+
+        statuses = [item.get('status') for item in items if isinstance(item, dict)]
+        ids = [item.get('id') for item in items if isinstance(item, dict)]
+        self.outbox_probe = {
+            'path': path,
+            'httpStatus': record['httpStatus'],
+            'resultCode': parsed.get('resultCode'),
+            'itemCount': len(items),
+            'ids': ids[:50],
+            'statuses': statuses[:50],
+            'contractErrors': contract_errors,
+            'responsePayloadKeys': record['response']['payloadKeys'],
+            'responseShape': record['response'].get('shape'),
+        }
+
+        replay_id = self.options.outbox_replay_id
+        if replay_id is None:
+            return
+        if contract_errors:
+            self.outbox_replay_probe = {
+                'id': replay_id, 'attempted': False, 'success': False,
+                'blocker': 'Outbox 列表契约不成立，拒绝据此重放：' + '; '.join(contract_errors),
+            }
+            return
+        target = find_outbox_item(items, replay_id)
+        if target is None:
+            self.outbox_replay_probe = {
+                'id': replay_id, 'attempted': False, 'success': False,
+                'blocker': '显式重放目标 id={0} 不在本次 GET {1}?limit={2} 的结果中；'
+                           '请提高 --outbox-limit 后重试，runner 不会自动挑选记录'
+                           .format(replay_id, path, limit),
+            }
+            return
+        allowed, reason = outbox_replay_precondition(target)
+        if not allowed:
+            self.outbox_replay_probe = {
+                'id': replay_id, 'attempted': False, 'success': False,
+                'preStatus': target.get('status'),
+                'preResponseStatus': target.get('responseStatus'),
+                'blocker': reason,
+            }
+            return
+
+        replay_path = path.rstrip('/') + '/' + str(replay_id) + '/replay'
+        print('  [A7] POST {0}（显式重放 429/5xx 失败记录）'.format(replay_path))
+        try:
+            replay_record, replay_parsed = self.recorder.observe(
+                'outbox.replay', 'POST', replay_path)
+        except TransportError as error:
+            self.outbox_replay_probe = {
+                'id': replay_id, 'attempted': True, 'success': False,
+                'preStatus': target.get('status'),
+                'preResponseStatus': target.get('responseStatus'),
+                'blocker': '重放连接层失败：' + str(error),
+            }
+            return
+
+        replay_data = replay_parsed.get('data')
+        replay_errors = replay_result_errors(replay_data)
+        success = (replay_record['httpStatus'] == 200
+                   and replay_parsed.get('resultCode') == SERVICE_SUCCESS_CODE
+                   and not replay_errors
+                   and replay_data.get('success') is True
+                   and replay_data.get('outcome') == 'SUCCEEDED'
+                   and replay_data.get('status') in OUTBOX_SUCCESS_TERMINAL_STATUSES)
+        post_status = None
+        post_valid = False
+        post_error = None
+        if success:
+            try:
+                _, refreshed = self.recorder.observe(
+                    'outbox.list(after-replay)', 'GET', path, query={'limit': limit})
+                refreshed_items = refreshed.get('data') if isinstance(refreshed.get('data'), list) else []
+                post_item = find_outbox_item(refreshed_items, replay_id)
+                if post_item is None:
+                    post_error = '重放后列表未包含 id={0}（提高 --outbox-limit 或检查店铺权限）'.format(replay_id)
+                else:
+                    post_status = post_item.get('status')
+                    post_valid = post_status in OUTBOX_SUCCESS_TERMINAL_STATUSES
+                    if not post_valid:
+                        post_error = '重放后 status={0}，不是成功终态'.format(post_status)
+            except TransportError as error:
+                post_error = '重放后回读连接层失败：' + str(error)
+
+        self.outbox_replay_probe = {
+            'id': replay_id,
+            'attempted': True,
+            'success': bool(success and post_valid),
+            'httpStatus': replay_record['httpStatus'],
+            'resultCode': replay_parsed.get('resultCode'),
+            'outcome': replay_data.get('outcome') if isinstance(replay_data, dict) else None,
+            'resultStatus': replay_data.get('status') if isinstance(replay_data, dict) else None,
+            'preStatus': target.get('status'),
+            'preResponseStatus': target.get('responseStatus'),
+            'postStatus': post_status,
+            'postVerified': post_valid,
+            'contractErrors': replay_errors,
+            'blocker': post_error,
         }
 
     def run_crosscheck(self):
@@ -994,7 +1237,7 @@ class AcceptanceRun:
         if not probe:
             blockers.append('未探测能力清单端点')
         elif not isinstance(entry, dict):
-            blockers.append('GET {0} 未返回 spapi 条目（HTTP {1}，resultCode={2}）— Task 6 未实现'
+            blockers.append('GET {0} 未返回 spapi 条目（HTTP {1}，resultCode={2}）— 能力清单端点不可用或契约不符'
                             .format(probe.get('path'), probe.get('httpStatus'),
                                     probe.get('resultCode')))
         elif not entry.get('evidenceLevel'):
@@ -1007,11 +1250,40 @@ class AcceptanceRun:
         return self._criterion('A6', level, evidence=evidence, blockers=blockers)
 
     def _a7(self):
-        """失败可重放需要 Outbox/DLQ/原始响应留存 —— 未实现，且本 runner 无观测点。"""
-        return self._criterion(
-            'A7', 'E0',
-            blockers=['无 Outbox/Inbox/DLQ 与原始响应留存（未实现）；本 runner 无观测点，不得凭空判过'],
-            notes=['依据 spec §1.9.1(2) A7：失败可重放=E4，需持久化重试 + 死信 + 原始响应'])
+        """A7：只读安全视图最高 E3；只有显式重放并回读成功才可到 E4。"""
+        probe = self.outbox_probe or {}
+        replay = self.outbox_replay_probe or {}
+        evidence = []
+        blockers = []
+        level = 'E0'
+        if not probe:
+            blockers.append('未探测 Outbox 列表端点，无法核验失败记录安全视图与重放前置')
+        elif probe.get('observed'):
+            blockers.append('Outbox 列表端点不可达：' + str(probe.get('observed')))
+        elif probe.get('contractErrors'):
+            blockers.append('Outbox 安全视图契约不符：' + '; '.join(probe.get('contractErrors') or []))
+        else:
+            level = 'E3'
+            statuses = ','.join(str(item) for item in (probe.get('statuses') or []))
+            evidence.append('outbox:list(itemCount={0},statuses={1})'.format(
+                probe.get('itemCount'), statuses or 'none'))
+            if replay.get('success'):
+                level = 'E4'
+                evidence.append('outbox:replay(id={0},pre={1}/{2},post={3},outcome={4})'.format(
+                    replay.get('id'), replay.get('preStatus'), replay.get('preResponseStatus'),
+                    replay.get('postStatus'), replay.get('outcome')))
+            elif replay:
+                blockers.append('Outbox 显式重放未成功：' + str(
+                    replay.get('blocker') or replay.get('contractErrors') or '未满足重放契约'))
+            else:
+                blockers.append('缺真实 429/5xx 的显式重放证据：需提供 --outbox-replay-id，'
+                                '原记录须为 FAILED/DLQ 且 responseStatus=429/5xx，重放后须回读成功；'
+                                'A7 requiredLevel=E4')
+        if self.stub_self_declared and LEVEL_RANK[level] > LEVEL_RANK['E2']:
+            level = 'E2'
+            blockers.append('被测进程自声明 stub=true（桩夹具，不是真实部署）→ A7 封顶 E2，'
+                            '本记录不构成真实重放证据')
+        return self._criterion('A7', level, evidence=evidence, blockers=blockers)
 
     def _a8(self):
         """限流与配额真实：回填窗口只能来自 operator 证据，429 样例由 runner 观测。"""
@@ -1383,6 +1655,14 @@ def validate_options(options):
         raise PreconditionError('--burst-max 必须 ≥ 1')
     if options.timeout <= 0:
         raise PreconditionError('--timeout 必须 > 0')
+    if not isinstance(options.outbox_path, str) or not options.outbox_path.startswith('/'):
+        raise PreconditionError('--outbox-path 必须以 / 开头')
+    if '?' in options.outbox_path:
+        raise PreconditionError('--outbox-path 不得包含查询串')
+    if options.outbox_limit < 1:
+        raise PreconditionError('--outbox-limit 必须 ≥ 1')
+    if options.outbox_replay_id is not None and options.outbox_replay_id <= 0:
+        raise PreconditionError('--outbox-replay-id 若提供必须 > 0')
 
 
 def build_conclusion(criteria):
@@ -1429,6 +1709,9 @@ def generator_options(options):
         'missingReportId': options.missing_report_id,
         'missingFeedId': options.missing_feed_id,
         'connectorsPath': options.connectors_path,
+        'outboxPath': options.outbox_path,
+        'outboxLimit': options.outbox_limit,
+        'outboxReplayId': options.outbox_replay_id,
         'burstMax': options.burst_max,
         'authTokenFileProvided': bool(options.auth_token_file),
         'minIntervalMs': int(MIN_INTERVAL_S * 1000),
@@ -1450,7 +1733,9 @@ def assemble_report(options, run, criteria, conclusion):
         '不是出站流量；出站真实性由平台错误码样例与（需 operator 证据的）限流头回填间接支撑；',
         'errorCodes.* 的平台字段来自被测服务的诊断文本（P0-52a 的结构化错误契约仍未实现），'
         '属文本解析的间接证据；',
-        'A7（失败可重放）无观测点 → 本 runner 恒判不通过；A6（能力清单端点）未实现时同样不通过。',
+        'A7 只读列表契约成立时最高 E3；E4 仅限非桩服务、显式 --outbox-replay-id、'
+        '原记录 FAILED/DLQ 且 responseStatus=429/5xx、重放返回成功并回读成功；'
+        'runner 不自动扫描或自动重放；A6 在端点不可达或契约不符时同样不通过。',
     ]
     return {
         'schemaVersion': SCHEMA_VERSION,
@@ -1548,7 +1833,8 @@ def plan_text(options):
         lines.append('参数自检：(无缺项，可直接执行真实验收)')
     except PreconditionError as error:
         lines.append('参数自检：{0}'.format(error))
-    lines.append('提醒：A7（Outbox/DLQ）未实现、A6（能力清单端点）未实现 → 即使其余全绿，'
+    lines.append('提醒：A7 只读列表最高 E3，E4 需显式 --outbox-replay-id 并完成真实重放与回读；'
+                 'A6 能力清单端点已实现，需按实际可达路径探测 → 即使其余全绿，'
                  'displayText 最高只能是「{0}」。'.format(DISPLAY_REACHABLE))
     return '\n'.join(lines)
 
@@ -1591,9 +1877,10 @@ def run_acceptance(options):
     print('[3/6] 错误码覆盖（401/403/404/429）')
     run.collect_error_codes()
 
-    print('[4/6] 运行期自检（缺凭证必须显式失败）+ 能力清单端点')
+    print('[4/6] 运行期自检（缺凭证必须显式失败）+ 能力清单端点 + Outbox 安全视图')
     run.check_absent_shop()
     run.probe_connectors()
+    run.probe_outbox()
 
     print('[5/6] 判定 A1–A8')
     criteria = run.criteria()
@@ -1697,6 +1984,14 @@ def run_selftest():
     check('validate.rejects-fast-poll',
           rejects(base + ['--operations', 'reports', '--report-poll-interval', '0.05'],
                   '--report-poll-interval'))
+    check('validate.rejects-bad-outbox-path',
+          rejects(base + ['--outbox-path', 'spapi/connectors/outbox'], '--outbox-path'))
+    check('validate.rejects-outbox-path-query',
+          rejects(base + ['--outbox-path', '/spapi/connectors/outbox?limit=1'], '查询串'))
+    check('validate.rejects-zero-outbox-limit',
+          rejects(base + ['--outbox-limit', '0'], '--outbox-limit'))
+    check('validate.rejects-nonpositive-outbox-replay-id',
+          rejects(base + ['--outbox-replay-id', '0'], '--outbox-replay-id'))
 
     print('[selftest] 键集合冻结（与 runbook §3.3 对照）')
     frozen = ('schemaVersion', 'connector', 'generatedAt', 'generator', 'target', 'identity',
@@ -1735,6 +2030,70 @@ def run_selftest():
     client = ServiceClient('http://127.0.0.1:1', token='jwt-value')
     check('observed_headers.token-masked', observed_headers(client).get('token') == REDACTED,
           json.dumps(observed_headers(client), ensure_ascii=False))
+
+    print('[selftest] Outbox/A7 契约')
+    outbox_valid = {
+        'id': 7001, 'shopId': 1001, 'operationId': 'orders.getOrders',
+        'httpMethod': 'GET', 'requestPath': '/orders/v0/orders', 'status': 'FAILED',
+        'attemptCount': 1, 'maxAttempts': 4, 'responseStatus': 429,
+        'marketplaceId': 'ATVPDKIKX0DER', 'responseRequestId': 'req-1',
+        'lastErrorCode': 'HTTP_429', 'lastErrorMessage': 'throttled',
+        'createdAt': '2026-09-25T12:00:00', 'updatedAt': '2026-09-25T12:00:01',
+        'completedAt': None, 'expectedStatuses': [200], 'rateLimitVariant': None,
+    }
+    check('outbox.valid-view', not outbox_view_errors(outbox_valid),
+          str(outbox_view_errors(outbox_valid)))
+    missing = dict(outbox_valid)
+    missing.pop('completedAt')
+    check('outbox.requires-nullable-fields',
+          any('缺字段' in item for item in outbox_view_errors(missing)))
+    forbidden = dict(outbox_valid)
+    forbidden['requestBody'] = 'must-not-leak'
+    check('outbox.rejects-forbidden-body',
+          any('禁止外泄字段' in item for item in outbox_view_errors(forbidden)))
+    bad_status = dict(outbox_valid)
+    bad_status['status'] = 'DONE'
+    check('outbox.rejects-bad-status',
+          any('status 非法' in item for item in outbox_view_errors(bad_status)))
+    bad_id = dict(outbox_valid)
+    bad_id['id'] = True
+    check('outbox.rejects-boolean-id',
+          any('id 必须是正整数' in item for item in outbox_view_errors(bad_id)))
+    query_path = dict(outbox_valid)
+    query_path['requestPath'] = '/orders/v0/orders?limit=1'
+    check('outbox.rejects-query-in-request-path',
+          any('不得包含查询串' in item for item in outbox_view_errors(query_path)))
+    allowed, reason = outbox_replay_precondition(outbox_valid)
+    check('outbox.replay-precondition-429-failed', allowed and reason is None, str(reason))
+    succeeded = dict(outbox_valid)
+    succeeded['status'] = 'SUCCEEDED'
+    succeeded['responseStatus'] = 200
+    allowed, reason = outbox_replay_precondition(succeeded)
+    check('outbox.rejects-successful-record', not allowed and '不是 FAILED/DLQ' in reason, str(reason))
+    replay_ok = {'success': True, 'outcome': 'SUCCEEDED', 'status': 'REPLAYED', 'message': None}
+    check('outbox.replay-result-valid', not replay_result_errors(replay_ok),
+          str(replay_result_errors(replay_ok)))
+    replay_bad = dict(replay_ok)
+    replay_bad['success'] = 'true'
+    check('outbox.replay-result-rejects-string-bool',
+          any('success 必须是布尔值' in item for item in replay_result_errors(replay_bad)))
+
+    def a7_criterion(probe, replay=None, stub=False):
+        run = object.__new__(AcceptanceRun)
+        run.outbox_probe = probe
+        run.outbox_replay_probe = replay or {}
+        run.stub_self_declared = stub
+        return run._a7()
+
+    list_probe = {'itemCount': 1, 'statuses': ['FAILED'], 'contractErrors': []}
+    replay_probe = {'id': 7001, 'success': True, 'preStatus': 'FAILED',
+                    'preResponseStatus': 429, 'postStatus': 'REPLAYED', 'outcome': 'SUCCEEDED'}
+    item = a7_criterion(list_probe)
+    check('a7.list-contract-e3', item['evidenceLevel'] == 'E3' and not item['pass'], str(item))
+    item = a7_criterion(list_probe, replay_probe)
+    check('a7.replay-success-e4', item['evidenceLevel'] == 'E4' and item['pass'], str(item))
+    item = a7_criterion(list_probe, replay_probe, stub=True)
+    check('a7.stub-capped-e2', item['evidenceLevel'] == 'E2' and not item['pass'], str(item))
 
     print('[selftest] 判定')
     all_pass = {key: {'pass': True, 'evidenceLevel': 'E4'} for key in CRITERION_KEYS}
@@ -1805,8 +2164,14 @@ def build_parser():
     parser.add_argument('--error-shop-429', type=int, help='用于超速尝试的店铺（构造平台 429）')
     parser.add_argument('--missing-report-id', default='r-not-exists')
     parser.add_argument('--missing-feed-id', default='f-not-exists')
-    parser.add_argument('--connectors-path', default='/api/connectors',
-                        help='能力清单端点路径（Task 6 未实现时记 E0 + blocker）')
+    parser.add_argument('--connectors-path', default='/spapi/connectors',
+                        help='能力清单端点路径；直连服务用 /spapi/connectors，经网关可用 /api/connectors')
+    parser.add_argument('--outbox-path', default='/spapi/connectors/outbox',
+                        help='Outbox 安全视图端点路径；默认直连服务路径')
+    parser.add_argument('--outbox-limit', type=int, default=20,
+                        help='Outbox 列表查询条数（必须 ≥ 1）')
+    parser.add_argument('--outbox-replay-id', type=int,
+                        help='显式指定要重放的 Outbox id；未提供时只读探测，不自动挑选记录')
     parser.add_argument('--fees-id-type', default='ASIN')
     parser.add_argument('--fees-id-value', default='B000000000', help='对应端点参数 asin')
     parser.add_argument('--fees-price', default='19.99')

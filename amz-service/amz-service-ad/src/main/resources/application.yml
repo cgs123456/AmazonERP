@@ -38,10 +38,17 @@ mybatis-plus:
     db-config:
       id-type: auto
 # Amazon Advertising API 配置（独立于 SP-API，需单独申请广告 API 权限）
+# 单店铺：完整设置 AD_SHOP_ID / AD_CLIENT_ID / AD_CLIENT_SECRET /
+# AD_REFRESH_TOKEN / AD_PROFILE_ID 后，生产 profile 即可直接调用真实 API。
+# 多店铺：通过外部配置提供 advertising.credentials.<shopId>.*，禁止跨店铺复用凭证。
 advertising:
-  api-endpoint: https://advertising-api.amazon.com
+  api-endpoint: ${AD_API_ENDPOINT:https://advertising-api.amazon.com}
+  token-endpoint: ${AD_TOKEN_ENDPOINT:https://api.amazon.com/auth/o2/token}
+  shop-id: ${AD_SHOP_ID:}
+  client-id: ${AD_CLIENT_ID:}
+  client-secret: ${AD_CLIENT_SECRET:}
+  refresh-token: ${AD_REFRESH_TOKEN:}
   profile-id: ${AD_PROFILE_ID:}
-  # LWA Token 复用 SP-API 的刷新机制，通过 Feign 调用 amz-service-spapi 获取
 
 # JWT security config
 jwt:

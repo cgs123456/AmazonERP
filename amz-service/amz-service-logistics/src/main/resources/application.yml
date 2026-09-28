@@ -61,6 +61,8 @@ amz:
       api-key-header: 17token
       # 单个运单解析出的轨迹点上限，防御对端返回畸形数据
       max-events-per-shipment: 200
+      # 单货件既有轨迹指纹的安全上限。超过时拒绝写入，避免在指纹不完整时制造重复轨迹。
+      max-existing-events: ${AMZ_TRACKING_MAX_EXISTING_EVENTS:10000}
       # 承运商 → 17track 承运商代码。留空时请求不带 carrier 字段，
       # 由 17track 按单号特征自动识别（漏配不会导致查不到，只是识别可能较慢）。
       # 代码值请以 17track 官方文档为准，勿凭猜测填写。
@@ -79,6 +81,10 @@ amz:
       lease-seconds: ${AMZ_LOGISTICS_DELAY_LEASE_SECONDS:1800}
       # 宽限天数：ETA 已过该天数仍未推进才判延误
       grace-days: ${AMZ_LOGISTICS_DELAY_GRACE_DAYS:0}
+      # 按 id 游标分批扫描，避免一次性加载全部非终态货件
+      batch-size: ${AMZ_LOGISTICS_DELAY_BATCH_SIZE:500}
+      # 单轮最大扫描行数；超过时回滚并告警，禁止静默漏判
+      max-scan: ${AMZ_LOGISTICS_DELAY_MAX_SCAN:50000}
     # 看板口径参数（随接口返回，避免前端硬编码造成口径不一致）
     dashboard:
       # 在途货件超过该时长无取数记录即提示「自动同步可能未覆盖」
@@ -89,6 +95,8 @@ amz:
       transfer-stale-days: ${AMZ_LOGISTICS_TRANSFER_STALE_DAYS:7}
       # 调拨单待审批停留超过该天数，提示审批被卡住
       transfer-approval-stale-days: ${AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS:3}
+      # 单次看板聚合最大扫描行数；超过时返回结果会明确标记不完整，避免静默截断
+      aggregation-scan-limit: ${AMZ_LOGISTICS_DASHBOARD_AGGREGATION_SCAN_LIMIT:10000}
 
 # Logging — traceId 注入（与 Skywalking 链路追踪关联）
 logging:

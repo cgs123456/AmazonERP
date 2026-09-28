@@ -64,18 +64,31 @@ spec:
             - { name: MYSQL_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } } }
             - { name: REDIS_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST } } }
             - { name: REDIS_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_PORT } } }
-            - { name: RABBITMQ_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_HOST } } }
-            - { name: RABBITMQ_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_PORT } } }
             - { name: DB_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } } }
             - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } } }
             - { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: REDIS_PASSWORD } } }
-            - { name: RABBITMQ_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_USERNAME } } }
-            - { name: RABBITMQ_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_PASSWORD } } }
             - { name: JWT_SECRET_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: JWT_SECRET_KEY } } }
             - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_ISSUER } } }
             - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_AUDIENCE } } }
             - { name: TZ, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: TZ } } }
             - { name: JAVA_OPTS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS } } }
+            - { name: AMZ_17TRACK_BASE_URL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_17TRACK_BASE_URL } } }
+            - { name: AMZ_TRACKING_MAX_EXISTING_EVENTS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_TRACKING_MAX_EXISTING_EVENTS } } }
+            - { name: AMZ_17TRACK_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AMZ_17TRACK_KEY } } }
+            - { name: AMZ_LOGISTICS_DELAY_CRON, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_DELAY_CRON } } }
+            - { name: AMZ_LOGISTICS_DELAY_GRACE_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_DELAY_GRACE_DAYS } } }
+            - { name: AMZ_LOGISTICS_DELAY_BATCH_SIZE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_DELAY_BATCH_SIZE } } }
+            - { name: AMZ_LOGISTICS_DELAY_MAX_SCAN, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_DELAY_MAX_SCAN } } }
+            - { name: AMZ_LOGISTICS_DELAY_LEASE_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_DELAY_LEASE_SECONDS } } }
+            - { name: AMZ_LOGISTICS_STALE_HOURS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_STALE_HOURS } } }
+            - { name: AMZ_LOGISTICS_SYNC_INTERVAL_MS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_SYNC_INTERVAL_MS } } }
+            - { name: AMZ_LOGISTICS_SYNC_LEASE_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_SYNC_LEASE_SECONDS } } }
+            - { name: AMZ_LOGISTICS_SYNC_MAX_PER_ROUND, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_SYNC_MAX_PER_ROUND } } }
+            - { name: AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS } } }
+            - { name: AMZ_LOGISTICS_DASHBOARD_AGGREGATION_SCAN_LIMIT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_DASHBOARD_AGGREGATION_SCAN_LIMIT } } }
+            - { name: AMZ_LOGISTICS_TRANSFER_STALE_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_TRANSFER_STALE_DAYS } } }
+            - { name: AMZ_LOGISTICS_TRANSIT_WINDOW_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_TRANSIT_WINDOW_DAYS } } }
+            - { name: AMZ_TRACKING_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_TRACKING_ENABLED } } }
           resources:
             requests: { cpu: "250m", memory: "512Mi" }
             limits: { cpu: "1000m", memory: "1536Mi" }

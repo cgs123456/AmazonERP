@@ -249,31 +249,91 @@ NON_COLUMN_ADD = frozenset({'index', 'constraint', 'unique', 'primary', 'key', '
                             'check', 'column', 'fulltext', 'spatial', 'period'})
 
 
+IDENT = r"`(?:[^`]|``)+`|[A-Za-z_][A-Za-z0-9_$]*"
+
+MODIFY_COLUMN_RE = re.compile(
+    r"\bMODIFY\s+(?:COLUMN\s+)?(?P<name>%s)(?P<rest>[\s\S]*)$" % IDENT, re.IGNORECASE)
+CHANGE_COLUMN_RE = re.compile(
+    r"\bCHANGE\s+(?:COLUMN\s+)?(?P<old>%s)\s+(?P<new>%s)(?P<rest>[\s\S]*)$"
+    % (IDENT, IDENT), re.IGNORECASE)
+RENAME_COLUMN_RE = re.compile(
+    r"\bRENAME\s+COLUMN\s+(?P<old>%s)\s+TO\s+(?P<new>%s)\s*;?\s*$" % (IDENT, IDENT), re.IGNORECASE)
+RENAME_INDEX_RE = re.compile(
+    r"\bRENAME\s+(?:INDEX|KEY)\s+(?P<old>%s)\s+TO\s+(?P<new>%s)\s*;?\s*$" % (IDENT, IDENT),
+    re.IGNORECASE)
+DROP_COLUMN_RE = re.compile(r"\bDROP\s+(?:COLUMN\s+)?(?P<name>%s)\s*;?\s*$" % IDENT, re.IGNORECASE)
+
+
+def _column_definition_or_none(name: str, rest: str):
+    """Parse `<name> <type> ...` for MODIFY/CHANGE; None when the tail is not a column body."""
+    try:
+        return parse_column(name + ' ' + rest.strip())
+    except DdlParseError:
+        return None
+
+
 def parse_alter_table(stmt: str) -> dict:
-    """Classify one ALTER TABLE statement (fail-closed: unknown shapes keep their raw SQL)."""
+    """Classify one ALTER TABLE statement (fail-closed: unknown shapes keep their raw SQL).
+
+    Besides `ADD COLUMN` the schema snapshot has to understand the operations that *change an
+    already created* table - `MODIFY COLUMN`, `CHANGE COLUMN`, `RENAME COLUMN`, `RENAME INDEX`
+    and `DROP COLUMN`.  Without them the snapshot would keep reporting the pre-migration column
+    and every downstream check (synthetic data, reference types) would validate the wrong schema.
+    """
     m = ALTER_TABLE_RE.match(stmt.strip())
     if not m:
         raise DdlParseError("cannot read ALTER TABLE statement: %r" % stmt[:80])
     adds = []
+    operations = []
     for item in split_top_level(m.group('body')):
         clause = item.strip()
         am = ADD_COLUMN_RE.match(clause)
-        if not am:
-            continue
-        name = unquote_ident(am.group('name'))
-        if name.lower() in NON_COLUMN_ADD:
-            continue
-        definition = None
-        try:
-            definition = parse_column(am.group('name') + clause[am.end():])
-        except DdlParseError:
+        if am:
+            name = unquote_ident(am.group('name'))
+            if name.lower() in NON_COLUMN_ADD:
+                continue
             definition = None
-        adds.append({'column': name, 'if_not_exists': bool(am.group('ine')),
-                     'definition': definition})
+            try:
+                definition = parse_column(am.group('name') + clause[am.end():])
+            except DdlParseError:
+                definition = None
+            adds.append({'column': name, 'if_not_exists': bool(am.group('ine')),
+                         'definition': definition})
+            operations.append({'kind': 'add_column', 'column': name,
+                               'if_not_exists': bool(am.group('ine')), 'definition': definition})
+            continue
+        mm = MODIFY_COLUMN_RE.search(clause)
+        if mm:
+            name = unquote_ident(mm.group('name'))
+            operations.append({'kind': 'modify_column', 'column': name,
+                               'definition': _column_definition_or_none(mm.group('name'), mm.group('rest'))})
+            continue
+        cm = CHANGE_COLUMN_RE.search(clause)
+        if cm:
+            old = unquote_ident(cm.group('old'))
+            new_name = unquote_ident(cm.group('new'))
+            operations.append({'kind': 'change_column', 'column': old, 'new_name': new_name,
+                               'definition': _column_definition_or_none(cm.group('new'), cm.group('rest'))})
+            continue
+        rm = RENAME_COLUMN_RE.search(clause)
+        if rm:
+            operations.append({'kind': 'rename_column', 'column': unquote_ident(rm.group('old')),
+                               'new_name': unquote_ident(rm.group('new')), 'definition': None})
+            continue
+        im = RENAME_INDEX_RE.search(clause)
+        if im:
+            operations.append({'kind': 'rename_index', 'name': unquote_ident(im.group('old')),
+                               'new_name': unquote_ident(im.group('new'))})
+            continue
+        dm = DROP_COLUMN_RE.search(clause)
+        if dm:
+            operations.append({'kind': 'drop_column', 'column': unquote_ident(dm.group('name'))})
+            continue
     return {
         'table': unquote_ident(m.group(1)),
         'add_columns': adds,
         'mysql8_incompatible_add_column': any(a['if_not_exists'] for a in adds),
+        'operations': operations,
     }
 
 
@@ -449,10 +509,16 @@ def table_hash(table: dict) -> str:
     return hashlib.sha256(blob.encode('utf-8')).hexdigest()
 
 
+def _read_bytes(path: str) -> bytes:
+    with open(path, 'rb') as source:
+        return source.read()
+
+
 def parse_sql_file(path: str, group: str, db_hint=None):
     """Parse one .sql file -> (tables, alters, stats, issues)."""
     import io
-    text = io.open(path, encoding='utf-8-sig').read()
+    with io.open(path, encoding='utf-8-sig') as source:
+        text = source.read()
     masked = mask_comments(text)
     tables, alters, issues = [], [], []
     use_db = db_hint
@@ -466,6 +532,10 @@ def parse_sql_file(path: str, group: str, db_hint=None):
             use_db = unquote_ident(use.group(1))
             continue
         if re.match(r"^CREATE\s+(DATABASE|SCHEMA)\b", head, re.IGNORECASE):
+            continue
+        if re.match(r"^CREATE\s+(?:UNIQUE\s+)?INDEX\b", head, re.IGNORECASE):
+            # Flyway migrations may add an index without creating a table.
+            # It is valid DDL and does not contribute a table definition.
             continue
         if re.match(r"^CREATE\s+(?!TABLE)", head, re.IGNORECASE):
             issues.append({'file': path, 'line': line, 'kind': 'non-table-ddl',
@@ -510,7 +580,7 @@ def parse_sql_file(path: str, group: str, db_hint=None):
         'group': group,
         'bytes': len(text.encode('utf-8')),
         'lines': text.count('\n') + 1,
-        'sha256': hashlib.sha256(io.open(path, 'rb').read()).hexdigest(),
+        'sha256': hashlib.sha256(_read_bytes(path)).hexdigest(),
         'tables': len(tables),
         'insert_statements': inserts,
         'db_hint': db_hint,

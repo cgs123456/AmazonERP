@@ -80,12 +80,6 @@ spec:
             - name: NACOS_ADDR
               valueFrom:
                 configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR }
-            - name: ELASTICSEARCH_HOST
-              valueFrom:
-                configMapKeyRef: { name: amz-erp-config, key: ELASTICSEARCH_HOST }
-            - name: ELASTICSEARCH_PORT
-              valueFrom:
-                configMapKeyRef: { name: amz-erp-config, key: ELASTICSEARCH_PORT }
             - name: REDIS_HOST
               valueFrom:
                 configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST }
@@ -110,6 +104,15 @@ spec:
             - name: JAVA_OPTS
               valueFrom:
                 configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS }
+            - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } } }
+            - { name: DB_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } } }
+            - { name: EMBEDDING_API_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: EMBEDDING_API_KEY } } }
+            - { name: EMBEDDING_API_URL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: EMBEDDING_API_URL } } }
+            - { name: EMBEDDING_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: EMBEDDING_ENABLED } } }
+            - { name: EMBEDDING_MODEL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: EMBEDDING_MODEL } } }
+            - { name: ES_URIS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: ES_URIS } } }
+            - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }
+            - { name: MYSQL_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } } }
           resources:
             requests: { cpu: "250m", memory: "512Mi" }
             limits: { cpu: "1000m", memory: "1536Mi" }

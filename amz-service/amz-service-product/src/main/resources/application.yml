@@ -59,8 +59,25 @@ agent:
 
 # DeepSeek 翻译 API 配置
 deepseek:
-  api_url: https://api.deepseek.com/v1
-  api_key: ${DEEPSEEK_API_KEY:}
+  api-url: ${DEEPSEEK_API_URL:https://api.deepseek.com/v1}
+  api-key: ${DEEPSEEK_API_KEY:}
+  model-name: ${DEEPSEEK_MODEL_NAME:deepseek-chat}
+  temperature: ${DEEPSEEK_TEMPERATURE:0.7}
+  timeout: ${DEEPSEEK_TIMEOUT_SECONDS:60}
+
+# Listing Feed 状态轮询：提交后登记数据库计划，调度线程每次只查询一次，支持重启恢复。
+listing-copy:
+  poll:
+    enabled: ${LISTING_COPY_POLL_ENABLED:true}
+    scheduler-delay-ms: ${LISTING_COPY_POLL_SCHEDULER_DELAY_MS:15000}
+    initial-delay-seconds: ${LISTING_COPY_POLL_INITIAL_DELAY_SECONDS:15}
+    interval-seconds: ${LISTING_COPY_POLL_INTERVAL_SECONDS:15}
+    max-duration-seconds: ${LISTING_COPY_POLL_MAX_DURATION_SECONDS:300}
+    batch-size: ${LISTING_COPY_POLL_BATCH_SIZE:20}
+
+# Keepa 竞品数据 API
+keepa:
+  api-key: ${KEEPA_API_KEY:}
 
 
 # JWT security config

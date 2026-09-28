@@ -1,3 +1,18 @@
+-- ============================================================================
+-- [ARCHIVE ONLY] 本文件位于 docker/init-sql-legacy/，**不参与任何初始化流程**：
+-- docker-compose / k8s 只挂载 docker/init-sql/01-init-databases.sql（建 14 个空库），
+-- 业务表结构由各服务的 Flyway 迁移（**/db/migration/V*.sql**）创建。
+--
+-- [MySQL 8 兼容性警告] 本文件含 MariaDB 专有语法：
+--     ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...
+-- MySQL 8.0 **不支持** ADD COLUMN IF NOT EXISTS，执行会直接报 ERROR 1064 并中止整个脚本。
+-- 若将来要把本文件挪回初始化路径，必须先改为 MySQL 8 写法，例如（无需 DELIMITER）：
+--     SET @ddl = IF(EXISTS(
+--         SELECT 1 FROM information_schema.COLUMNS
+--         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '<表名>' AND COLUMN_NAME = '<列名>'),
+--         'SELECT 1', 'ALTER TABLE <表名> ADD COLUMN <列定义>');
+--     PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+-- ============================================================================
 -- ============================================
 -- Amazon ERP 采购供应链模块升级 SQL
 -- 数据库: amz_procurement

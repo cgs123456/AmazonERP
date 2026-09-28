@@ -52,6 +52,8 @@ FK_TARGETS = {
     'purchase_order_id': ('amz_procurement.amz_purchase_order', 'id'),
     'campaign_id': ('amz_ad.amz_ad_campaign', 'campaign_id'),
     'keyword_id': ('amz_ad.amz_ad_keyword', 'id'),
+    'coupon_id': ('amz_product.amz_coupon', 'id'),
+    'platform_account_id': ('amz_multiplatform.amz_platform_account', 'id'),
     'asin': ('amz_product.amz_product', 'asin'),
     'amazon_asin': ('amz_product.amz_product', 'asin'),
     'sku': ('amz_product.amz_product', 'sku'),
@@ -333,21 +335,57 @@ def check_snapshot():
 def parse_args(argv):
     parser = argparse.ArgumentParser(description='verify the synthetic dataset toolchain')
     parser.add_argument('--tier', default='ci', choices=sorted(generate.TIERS))
-    parser.add_argument('--orders', type=int, default=200)
-    parser.add_argument('--shops', type=int, default=1)
-    parser.add_argument('--marketplaces', type=int, default=1)
+    # 规模默认值不再固定为 200/1/1：那会让「大数据集只做 manifest hash」成为常态，
+    # 结构与引用校验事实上只在 200 单的规模上跑过一次（门禁假阴性，见运行手册 7.23.1）。
+    # 现在的规则：显式传参 > --dataset 的 manifest 规模 > tier 规模（超大 tier 采样并告警）。
+    parser.add_argument('--orders', type=int, default=None)
+    parser.add_argument('--shops', type=int, default=None)
+    parser.add_argument('--marketplaces', type=int, default=None)
+    parser.add_argument('--max-orders', type=int, default=20000,
+                        help='cap for tier-derived scale; keeps perf/staging tiers from OOM')
     parser.add_argument('--dataset', help='also verify an existing dataset directory (manifest check)')
     parser.add_argument('--skip-determinism', action='store_true')
     return parser.parse_args(argv)
 
 
+def resolve_scale(args):
+    """Pick the row-level check scale: explicit > dataset manifest > tier (capped)."""
+    if args.orders is not None or args.shops is not None or args.marketplaces is not None:
+        return (args.orders if args.orders is not None else 200,
+                args.shops if args.shops is not None else 1,
+                args.marketplaces if args.marketplaces is not None else 1,
+                'explicit')
+    if args.dataset:
+        manifest_path = os.path.join(args.dataset, 'manifest.json')
+        if os.path.isfile(manifest_path):
+            with io.open(manifest_path, encoding='utf-8') as handle:
+                manifest = json.load(handle)
+            scale = manifest.get('scale') or {}
+            if scale.get('orders') and scale.get('marketplaces'):
+                shops_per_marketplace = scale.get('shops_per_marketplace')
+                if not shops_per_marketplace:
+                    shops_per_marketplace = max(1, int(scale.get('shop_count', 1))
+                                                // max(1, int(scale['marketplaces'])))
+                return (int(scale['orders']), int(shops_per_marketplace),
+                        int(scale['marketplaces']), 'dataset manifest')
+    tier = generate.TIERS[args.tier]
+    orders = int(tier.get('orders', 200))
+    capped = False
+    if orders > args.max_orders:
+        orders = args.max_orders
+        capped = True
+    return (orders, int(tier.get('shops', 1)), int(tier.get('marketplaces', 1)),
+            'tier(capped to --max-orders=%d)' % args.max_orders if capped else 'tier')
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
+    orders, shops, marketplaces, source = resolve_scale(args)
     failures = []
-    print('[verify] tier=%s orders=%d shops=%d marketplaces=%d' % (
-        args.tier, args.orders, args.shops, args.marketplaces))
+    print('[verify] tier=%s orders=%d shops=%d marketplaces=%d (scale source: %s)' % (
+        args.tier, orders, shops, marketplaces, source))
 
-    snapshot, scale, generator = build_generator(args.tier, args.orders, args.shops, args.marketplaces)
+    snapshot, scale, generator = build_generator(args.tier, orders, shops, marketplaces)
     rows = sum(len(value) for value in generator.rows.values())
     print('[verify] generated %d tables, %d rows in memory' % (len(generator.rows), rows))
 
@@ -381,8 +419,8 @@ def main(argv=None) -> int:
 
     if not args.skip_determinism:
         with tempfile.TemporaryDirectory(prefix='amz-synth-determinism-') as workdir:
-            determinism, compared = check_determinism(args.tier, args.orders, args.shops,
-                                                      args.marketplaces, workdir)
+            determinism, compared = check_determinism(args.tier, orders, shops, marketplaces,
+                                                      workdir)
         failures.extend(determinism)
         print('[verify] determinism %s (%d files byte-identical across 2 runs)' % (
             'FAIL' if determinism else 'OK', compared))

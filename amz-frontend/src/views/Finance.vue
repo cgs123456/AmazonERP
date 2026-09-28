@@ -29,7 +29,7 @@
             <option value="PLATFORM_FEE">平台费用</option>
             <option value="REFUND">退款</option>
           </select>
-          <button class="filter-btn" @click="loadVouchers">查询</button>
+          <button class="filter-btn" @click="loadVouchers(false)">查询</button>
         </div>
 
         <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
@@ -54,13 +54,13 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="v in pagedVouchers" :key="v.id">
+              <tr v-for="v in vouchers" :key="v.id">
                 <td class="mono">{{ v.voucherNo }}</td>
                 <td><span class="status-tag" :class="sourceTypeClass(v.sourceType)">{{ sourceTypeText(v.sourceType) }}</span></td>
                 <td>{{ v.originalAmount }} {{ v.currency }}</td>
                 <td class="mono">¥{{ v.cnyAmount }}</td>
                 <td>{{ v.shopId }}</td>
-                <td><span class="status-tag" :class="syncStatusClass(v.kingdeeSyncStatus)">{{ v.kingdeeSyncStatus }}</span></td>
+                <td><span class="status-tag" :class="syncStatusClass(v.kingdeeSyncStatus)">{{ syncStatusText(v.kingdeeSyncStatus) }}</span></td>
                 <td class="mono">{{ v.bizDate }}</td>
                 <td><button class="sync-btn" :disabled="syncing === v.id" @click="handleSync(v)">{{ syncing === v.id ? '同步中...' : '同步金蝶' }}</button></td>
               </tr>
@@ -77,11 +77,19 @@
         </div>
 
         <div class="pagination">
-          <span class="page-info">第 {{ page }} 页 / 共 {{ totalPages }} 页（{{ vouchers.length }} 条）</span>
+          <span class="page-info">
+            已加载 {{ vouchers.length }} 条<template v-if="truncated">，仍有更多未加载</template>
+          </span>
           <div class="page-actions">
-            <button class="page-btn" :disabled="page <= 1" @click="prevPage">上一页</button>
-            <button class="page-btn" :disabled="page >= totalPages" @click="nextPage">下一页</button>
+            <button v-if="truncated" class="page-btn" :disabled="loadingMore" @click="loadMore">
+              {{ loadingMore ? '加载中...' : '加载更多' }}
+            </button>
           </div>
+        </div>
+
+        <div v-if="truncated" class="truncated-tip" role="status">
+          结果已被服务端截断：当前列表不是全量。对账、导出或金额汇总请继续翻页取完，
+          不要直接拿这一页当完整数据。
         </div>
         </template>
       </div>
@@ -124,7 +132,6 @@
 </template>
 
 <script setup lang="ts">
-import { usePagination } from '@/composables/usePagination'
 import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
@@ -132,6 +139,7 @@ import AppSidebar from '../components/AppSidebar.vue'
 import { listVouchers, syncToKingdee, calculateProfit } from '@/api/finance'
 import type { AccountingVoucher } from '@/api/finance'
 import { useShopGuard } from '@/composables/useShopGuard'
+import { useToast } from '@/composables/useToast'
 
 const tab = ref<'voucher' | 'profit'>('voucher')
 // B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值
@@ -142,51 +150,91 @@ const loading = ref(false)
 const vouchers = ref<AccountingVoucher[]>([])
 const filterSourceType = ref('')
 const syncing = ref<number | null>(null)
+const { showToast } = useToast()
 
-// 凭证分页复用 usePagination（与库存/订单页同一交互：total/totalPages/paged/prev/next/reset）
-const { page, totalPages, paged: pagedVouchers, prevPage, nextPage } =
-  usePagination<AccountingVoucher>(() => vouchers.value, 10)
+// 服务端游标分页状态。
+// 之前是「后端最多给 500 条 + 前端本地分页」：前端会显示「共 500 条」并让用户翻页，
+// 但那 500 条本身就是被截断的结果 —— 用户拿到的是一份看起来完整、实际漏单的列表。
+// 现在本地不再分页：只展示已加载的行，还有没有下一页由服务端 _page 说了算。
+const PAGE_SIZE = 50
+const nextCursor = ref<string | null>(null)
+const truncated = ref(false)
+const loadingMore = ref(false)
 
 const switchTab = (t: 'voucher' | 'profit') => {
   tab.value = t
 }
 
-// 注意：此处不 resetPage（翻页/同步后刷新应留在当前页；切店铺时 currentShopId 变化由调用方决定是否重置）
-const loadVouchers = async () => {
+/**
+ * 拉取凭证。
+ *
+ * @param append true 表示按当前 cursor 追加下一页；false 表示重新从首页加载。
+ */
+const loadVouchers = async (append = false) => {
   const shopId = refreshShop()
   if (!shopId) {
     vouchers.value = []
     return
   }
-  loading.value = true
+  if (append) {
+    loadingMore.value = true
+  } else {
+    loading.value = true
+  }
   try {
-    const res = await listVouchers(shopId, filterSourceType.value || undefined)
+    const cursor = append ? (nextCursor.value ?? undefined) : undefined
+    const res = await listVouchers(shopId, filterSourceType.value || undefined, PAGE_SIZE, cursor)
     if (res?.code === 200 && res.data) {
-      vouchers.value = Array.isArray(res.data) ? res.data : []
+      const rows = Array.isArray(res.data) ? res.data : []
+      vouchers.value = append ? vouchers.value.concat(rows) : rows
+      // _page 缺失时按「未知」处理：宁可让用户再点一次加载更多，
+      // 也不要默认当成「已经全了」——那正是漏单的来源。
+      const page = res._page
+      truncated.value = page ? page.truncated : false
+      nextCursor.value = page ? page.nextCursor : null
     } else {
       console.warn('[Finance] 凭证列表返回异常', res)
-      vouchers.value = []
+      if (!append) vouchers.value = []
     }
   } catch (e) {
     console.warn('[Finance] 凭证列表调用失败', e)
-    vouchers.value = []
+    if (!append) vouchers.value = []
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
+}
+
+const loadMore = () => {
+  if (!truncated.value || loadingMore.value) return
+  void loadVouchers(true)
 }
 
 const handleSync = async (v: AccountingVoucher) => {
   syncing.value = v.id
   try {
     const res = await syncToKingdee(v.id)
-    if (res?.code === 200 && res.data === true) {
-      // 同步成功后刷新列表以获取最新状态
-      await loadVouchers()
-    } else {
-      console.warn('[Finance] 金蝶同步返回异常', res)
+    const result = res?.data
+    if (!result?.status) {
+      showToast(res?.message || '金蝶同步返回异常', 'error')
+      return
     }
+
+    if (result.status === 'SYNCED') {
+      showToast(result.message || '金蝶已确认凭证入账', 'success')
+    } else if (result.status === 'MOCK') {
+      // 模拟客户端只验证调用链，绝不把结果描述为真实入账。
+      showToast(result.message || '模拟同步完成，未真实入账', 'info')
+    } else if (result.status === 'SKIPPED') {
+      showToast(result.message || '同步正在处理中或状态已变化，本次已跳过', 'info')
+    } else {
+      showToast(result.message || res?.message || '金蝶同步失败', 'error')
+    }
+
+    // 无论真实、模拟还是失败，都回读服务端状态，避免前端状态与数据库漂移。
+    await loadVouchers()
   } catch (e) {
-    console.warn('[Finance] 金蝶同步调用失败', e)
+    showToast(e instanceof Error ? e.message : '金蝶同步调用失败', 'error')
   } finally {
     syncing.value = null
   }
@@ -247,18 +295,30 @@ const sourceTypeClass = (t: string): string => {
   return map[t] || 'src-other'
 }
 
+const syncStatusText = (s: string): string => {
+  const map: Record<string, string> = {
+    PENDING: '待同步',
+    SYNCING: '同步中',
+    SYNCED: '已入账',
+    MOCK: '模拟未入账',
+    FAILED: '失败'
+  }
+  return map[s] || s || '未知'
+}
+
 const syncStatusClass = (s: string): string => {
   const map: Record<string, string> = {
     PENDING: 'sync-pending',
     SYNCED: 'sync-synced',
     SYNCING: 'sync-syncing',
+    MOCK: 'sync-mock',
     FAILED: 'sync-failed'
   }
   return map[s] || 'sync-pending'
 }
 
 onMounted(() => {
-  loadVouchers()
+  void loadVouchers(false)
 })
 </script>
 
@@ -296,6 +356,7 @@ onMounted(() => {
 .sync-pending { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .sync-synced { background: var(--color-success-light); color: var(--color-success); }
 .sync-syncing { background: var(--color-primary-light); color: var(--color-primary); }
+.sync-mock { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .sync-failed { background: var(--color-light-red); color: var(--color-error); }
 
 .sync-btn { padding: 0.25rem 0.75rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; }
@@ -312,6 +373,7 @@ onMounted(() => {
 .profit-negative { color: var(--color-error); font-weight: 600; }
 /* 零利润中性展示，避免误读为亏损 */
 .profit-flat { color: var(--color-muted); font-weight: 600; }
+.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
 .profit-note { padding: 0.75rem 1rem; background: var(--color-surface); color: var(--color-muted); border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } .summary-grid { grid-template-columns: 1fr 1fr; } }

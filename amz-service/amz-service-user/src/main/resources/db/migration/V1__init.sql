@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS amz_user (
     sex TINYINT DEFAULT 0,
     birthday VARCHAR(20) DEFAULT '',
     address VARCHAR(200) DEFAULT '',
+    role VARCHAR(50) NOT NULL DEFAULT 'VIEWER' COMMENT '角色 ADMIN/OPERATOR/VIEWER',
     create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -90,9 +91,6 @@ CREATE TABLE IF NOT EXISTS amz_field_permission (
     visible TINYINT(1) DEFAULT 0 COMMENT '是否可见',
     UNIQUE KEY uk_role_entity_field (role_code, service_name, entity_name, field_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='字段级数据权限规则表';
-
-ALTER TABLE amz_user
-    ADD COLUMN IF NOT EXISTS role VARCHAR(50) NOT NULL DEFAULT 'VIEWER' COMMENT '角色 ADMIN/OPERATOR/VIEWER';
 
 UPDATE amz_user SET role = 'ADMIN' WHERE id = 1 AND username = 'testuser';
 

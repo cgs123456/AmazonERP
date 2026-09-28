@@ -76,6 +76,17 @@ spec:
             - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_AUDIENCE } } }
             - { name: TZ, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: TZ } } }
             - { name: JAVA_OPTS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS } } }
+            - { name: KINGDEE_API_GATEWAY, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_API_GATEWAY } } }
+            - { name: KINGDEE_DB_ID, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_DB_ID } } }
+            - { name: KINGDEE_USER_NAME, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_USER_NAME } } }
+            - { name: KINGDEE_APP_ID, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_APP_ID } } }
+            - { name: KINGDEE_APP_SECRET, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: KINGDEE_APP_SECRET } } }
+            - { name: KINGDEE_LCID, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_LCID } } }
+            - { name: KINGDEE_ACCOUNT_BOOK_NUMBER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_ACCOUNT_BOOK_NUMBER } } }
+            - { name: KINGDEE_VOUCHER_GROUP_NUMBER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_VOUCHER_GROUP_NUMBER } } }
+            - { name: KINGDEE_CURRENCY_NUMBER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_CURRENCY_NUMBER } } }
+            - { name: KINGDEE_EXCHANGE_RATE_TYPE_NUMBER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_EXCHANGE_RATE_TYPE_NUMBER } } }
+            - { name: KINGDEE_SYNC_LEASE_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KINGDEE_SYNC_LEASE_SECONDS } } }
           resources:
             requests: { cpu: "300m", memory: "768Mi" }
             limits: { cpu: "1500m", memory: "2Gi" }

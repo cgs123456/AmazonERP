@@ -83,7 +83,13 @@ export const listWarehouses = (shopId: number | string, warehouseType?: string) 
 }
 
 // ===== 库存 =====
-export const listInventory = (params: { warehouseId?: number; sku?: string; shopId?: number }) => {
+export const listInventory = (params: {
+  warehouseId?: number
+  sku?: string
+  shopId?: number
+  size?: number
+  cursor?: string
+}) => {
   return request.get<void, ApiResponse<WarehouseInventory[]>>('/logistics/warehouse/inventory', {
     params
   })
@@ -94,9 +100,14 @@ export const createInboundOrder = (data: InboundOrder) => {
   return request.post<void, ApiResponse<InboundOrder>>('/logistics/inbound', data)
 }
 
-export const listInboundOrders = (shopId: number | string, status?: string) => {
+export const listInboundOrders = (
+  shopId: number | string,
+  status?: string,
+  size?: number,
+  cursor?: string
+) => {
   return request.get<void, ApiResponse<InboundOrder[]>>(`/logistics/inbound/list/${shopId}`, {
-    params: { status }
+    params: { status, size, cursor }
   })
 }
 
@@ -117,9 +128,14 @@ export const createOutboundOrder = (data: OutboundOrder) => {
   return request.post<void, ApiResponse<OutboundOrder>>('/logistics/outbound', data)
 }
 
-export const listOutboundOrders = (shopId: number | string, status?: string) => {
+export const listOutboundOrders = (
+  shopId: number | string,
+  status?: string,
+  size?: number,
+  cursor?: string
+) => {
   return request.get<void, ApiResponse<OutboundOrder[]>>(`/logistics/outbound/list/${shopId}`, {
-    params: { status }
+    params: { status, size, cursor }
   })
 }
 

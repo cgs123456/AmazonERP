@@ -88,10 +88,6 @@ spec:
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_HOST } }
             - name: RABBITMQ_PORT
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_PORT } }
-            - name: ELASTICSEARCH_HOST
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: ELASTICSEARCH_HOST } }
-            - name: ELASTICSEARCH_PORT
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: ELASTICSEARCH_PORT } }
             - name: DB_USERNAME
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } }
             - name: DB_PASSWORD
@@ -112,6 +108,22 @@ spec:
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: TZ } }
             - name: JAVA_OPTS
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS } }
+            - { name: AGENT_AI_CHAT_URL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AGENT_AI_CHAT_URL } } }
+            - { name: DEEPSEEK_API_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DEEPSEEK_API_KEY } } }
+            - { name: DEEPSEEK_API_URL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_API_URL } } }
+            - { name: DEEPSEEK_MODEL_NAME, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_MODEL_NAME } } }
+            - { name: DEEPSEEK_TEMPERATURE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_TEMPERATURE } } }
+            - { name: DEEPSEEK_TIMEOUT_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_TIMEOUT_SECONDS } } }
+            - { name: MONGO_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MONGO_HOST } } }
+            - { name: MONGO_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: MONGO_PASSWORD } } }
+            - { name: MONGO_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: MONGO_USERNAME } } }
+            - { name: KEEPA_API_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: KEEPA_API_KEY } } }
+            - { name: LISTING_COPY_POLL_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: LISTING_COPY_POLL_ENABLED } } }
+            - { name: LISTING_COPY_POLL_SCHEDULER_DELAY_MS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: LISTING_COPY_POLL_SCHEDULER_DELAY_MS } } }
+            - { name: LISTING_COPY_POLL_INITIAL_DELAY_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: LISTING_COPY_POLL_INITIAL_DELAY_SECONDS } } }
+            - { name: LISTING_COPY_POLL_INTERVAL_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: LISTING_COPY_POLL_INTERVAL_SECONDS } } }
+            - { name: LISTING_COPY_POLL_MAX_DURATION_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: LISTING_COPY_POLL_MAX_DURATION_SECONDS } } }
+            - { name: LISTING_COPY_POLL_BATCH_SIZE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: LISTING_COPY_POLL_BATCH_SIZE } } }
           resources:
             requests: { cpu: "250m", memory: "512Mi" }
             limits: { cpu: "1000m", memory: "1536Mi" }

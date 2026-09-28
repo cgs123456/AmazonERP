@@ -2,7 +2,7 @@
 
 - 文档日期：2026-09-24
 - 审查基线：`master`；本轮文档提交前的 HEAD = `e03614f`（本地领先 `origin/master` **15** 个纯文档提交，未 push；`origin/master` = `06769b77b291467216007bf9843211de3a0cf14e`）。第 22 轮结论见 1.9.2。
-- 当前状态：**设计草案，尚未修改任何业务源码**
+- 当前状态：**初始设计草案已进入实施；第 1–66 轮的工程修复已在工作区，附录 G 记录每轮证据边界。尚未完成真实 Amazon 联调、生产压测、灾备演练和上线验收，不能据此宣称可直接生产部署。**
 - 目标：把现有“功能覆盖较广的可演示微服务原型”升级为**可审计、可恢复、可运维、可安全上线**的亚马逊 ERP；无真实数据时使用确定性模拟数据，所有模拟数据必须带 `SYNTHETIC` 标识。
 - 重要结论：模拟数据可以替代缺失的业务数据用于开发、测试和容量验证，**不能替代亚马逊开发者资质、真实店铺授权、SP-API 沙箱/生产联调、税务与会计责任、渗透测试、灾备演练和业务验收**。
 
@@ -136,14 +136,14 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | P0-23 | 凭证表 `amz_shop_credential` 没有任何自动建表路径，“给凭证就能用”缺前置条件 | 全仓该表只有 2 处 `CREATE TABLE`：`amz-service/amz-service-spapi/src/main/resources/db/schema.sql:11` 与 `init_all_tables.sql:459`；Compose 初始化目录 `docker/init-sql/`（32 个文件，编号 01–33、缺 03）对 `credential` **0 命中** → Compose 起库后该表不存在；spapi 自带 Flyway 迁移 `db/migration/V1__init.sql` 只建 7 张表（`amz_fba_inventory`、`amz_product_sales_stats`、`amz_inventory_sync_log`、`amz_replenishment_suggestion`、`amz_sales_history`、`amz_seasonal_index`、`amz_promotion_calendar`），不含凭证表；全仓 `spring.sql.init.schema-locations` 0 命中，且 `db/schema.sql` 不在 classpath 根（Spring Boot 默认只匹配 `classpath*:schema.sql`）；更关键的是 Flyway 已在 spapi 的 classpath 上（`flyway-core` + `flyway-mysql`，全仓无任何 `spring.flyway.*` 覆盖 → 默认启用，locations 默认为 `classpath:db/migration`），而 `db/migration/V1__init.sql`（113 行）只建 7 张表、**不含凭证表** → 修复点应是**新增 V2 迁移**并验证 Flyway 与 `dynamic-datasource` 组合确实落在 master 库，而不是再手抄一份 `schema.sql`；`ShopCredentialStore.loadFromDb()`（55–64 行）抛异常时只 `log.warn`，以空缓存继续启动 | 凭证表纳入唯一迁移入口并进入 clean-install 与 upgrade 流水线；凭证加载失败必须 fail-closed 拒绝启动；写入有唯一键、归属校验与审计 |
 | P0-24 | SP-API 默认 profile 是 `mock`，部署形态下财务域客户端返回样例数据 | `amz-service-spapi/src/main/resources/application.yml:7` → `active: ${SPRING_PROFILES_ACTIVE:mock}`；`ReportsMockClient`/`FinancesMockClient`/`FeesMockClient` 标注 `@Profile("mock")`，这是**唯一**带 profile 分支的三对客户端（Orders/Feeds/FbaInventory 是单一实现，无 profile 切换）；`docker-compose.yml` 的 spapi 段与 `k8s/services/amz-service-spapi.yaml`（实测 24 个环境变量）**都不传** `SPRING_PROFILES_ACTIVE`（grep 命中 0）→ 部署后仍是 mock；与 finance 模块口径相反（`amz-service-finance/application.yml:10` 默认为空 → 加载 Real 实现） | 生产 profile 必须显式且默认非 mock；启动时检测到 mock 实现直接失败；CI 对生产配置做静态校验（见 1.9） |
 | P0-25 | Nacos 配置多处断裂，Compose 路径下注册与发现实际不可用 | (a) `docker-compose.yml` 16 处只注入 `NACOS_SERVER_ADDR=nacos:8848`（269、301 等行），而代码统一读 `${NACOS_ADDR:localhost:8848}`（如 `amz-gateway/application.yml:9`）→ 容器内回落到 localhost 自指；(b) 16 份 `bootstrap.yml`（含 gateway）写 `${NACOS_ADDR:123.206.101.247:8848}`，但全仓无 `spring-cloud-starter-bootstrap`、无 `nacos-config`、无 `spring.config.import` → 在 Spring Cloud 2023.0.x 下这些文件**不会生效**；(c) `amz-common/src/main/resources/seata-default.yml:12/19` 硬编码同一公网 IP，全仓引用点 0，属随仓库分发的死配置；(d) 只有 k8s 路径正常（`k8s/configmap.yaml:10-11` 两个变量都定义，`k8s/services/amz-service-spapi.yaml:49-51` 双双注入）；(e) `.env.example` 不含 `NACOS_ADDR`/`NACOS_SERVER_ADDR` | 变量名全仓统一并加启动自检（注册/配置拉取失败即拒绝启动）；删除或修复死配置文件；任何环境不得内置第三方公网 IP |
-| P0-26 | spapi 是订单/库存关键路径的单点，但只实现 6 类客户端 | 已实现：Orders、Feeds、FbaInventory、Reports、Finances、Fees（`client/` 目录 + `SpApiGateway`）；跨模块 Feign 双向核对通过（product `SpapiFeedsClient` ↔ `FeedsController`；finance `SpApiFinanceClient` ↔ `FinancialDataController`）；`SpapiFeedsClientFallbackFactory` 返回 `Result.failure` 不伪造成功（正向）；`SpapiController` 的 `/credential` 在无凭证时返回 `no credential for shopId=…`（94–96 行，正向）。缺 Notifications、RDT、Listings Items、Product Pricing、Catalog Items、Sellers、Inbound FBA（关键词命中全为 0，见 1.4.1） | 关键路径不得依赖无降级的单一模块；能力清单必须与实现一致，未实现能力对外显示“不可用”而不是留白 |
+| P0-26 | spapi 是订单/库存关键路径的单点，能力覆盖仍未完成生产联调 | 已实现：Orders、Feeds、FbaInventory、Reports、Finances、Fees、Sellers（`client/` 目录 + `SpApiGateway`）；Sellers 已接入只读 marketplace participations，`/sellers/v1/account` 暂不暴露以收敛 PII 权限；跨模块 Feign 双向核对通过（product `SpapiFeedsClient` ↔ `FeedsController`；finance `SpApiFinanceClient` ↔ `FinancialDataController`）；`SpapiFeedsClientFallbackFactory` 返回 `Result.failure` 不伪造成功（正向）；`SpapiController` 的 `/credential` 在无凭证时返回 `no credential for shopId=…`（94–96 行，正向）。当前缺 Notifications、RDT、Listings Items、Product Pricing、Catalog Items、Inbound FBA（6 类，见 1.4.1）；上述“已实现”均只证明代码路径与本地契约，未完成真实 Amazon 联调 | 关键路径不得依赖无降级的单一模块；能力清单必须与实现一致，未实现能力对外显示“不可用”而不是留白；拿到真实凭证后应直接进入授权、端点、字段与限流联调 |
 | P0-27 | 【**已修复（第 43 轮）**】`ReportsRealClient` 读错官方字段名，结算报表文档 ID 恒为 null | 原缺陷：`ReportsRealClient.java:80` 用 `str(resp, "resultDocumentId")` 取文档 ID，而官方 `reports_2021-06-30` 模型的 `Report` 属性是 **`reportDocumentId`**。**成因链（E3 取证）**：`feeds_2021-06-30.json` **第 691 行** `getFeed` 的 description 逐字含 `` `resultDocumentId` `` —— 这是 Amazon 自己的笔误，原开发者照抄文档字符串而未比对 schema 的 `properties`；同批牵出 product 模块 `ListingsMockClient.java:42,44` 的 `feedSubmissionId` / `resultDocumentId`（官方 `definitions.Feed` 实为 `feedId` / `resultFeedDocumentId`）。修复内容：`ReportsRealClient.java:85` 改 `reportDocumentId` 并改构造器注入（缺 Bean 时启动即失败）；`ListingsMockClient` 两个字段对齐官方模型；新增 `ReportsFieldContractTest`（3 例：快照字节+sha256 双锁、源码字段 ⊆ 官方 `properties`、旧字段名不再出现；变异反证为“改回旧名 → 3 例中 2 FAIL”）与 `ReportsRealClientStubTest`（3 例，进程内假传输）。连锁影响解除：finance `SettlementServiceImpl.java:88/193` 不再拿 null 去 `downloadDocument` | 响应映射必须由官方 OpenAPI 模型生成或与之做契约测试，禁止手写字段名；报表 `DONE` 必须伴随可下载文档 ID，否则进入错误状态并告警（Feeds 侧同口径见 P0-30） |
 | P0-28 | `SpiRateLimiter` 默认配额最高比官方宽松约 120 倍，且不按店铺隔离策略 | 文件位于 `amz-service/amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java`（155 行）；70–73 行默认 `orders=30/30s`、`fba-inventory=25/30s`、`listings=10/30s`、`reports=5/60s`，注释自称“SP-API 官方默认配额（保守值）”，而官方 `getOrders` 为 0.0167 req/s（本实现宽松约 60 倍）、`createFeed` 为 0.0083 req/s（兜底策略宽松约 120 倍；`createFeedDocument` 官方为 0.5 req/s，本仓库同走兜底 1 req/s，宽松约 2 倍）；实际使用的 6 个 endpointTag 为 `orders`/`fba-inventory`/`feeds`/`fees`/`finances`/`reports`，其中 `feeds`/`fees`/`finances` **无策略**（落到 `DEFAULT_MAX_REQUESTS=30`/`DEFAULT_WINDOW=30s`），而 `listings` 策略**无任何调用方**；`updateLimit()`（126–148 行）只在更严格时收紧（139–143 行），进程生命周期内不会恢复；`windows` 按 `shopId:endpoint` 分键但 `policies` 只有 endpoint 维度 → 单店触发收紧会影响所有店铺；`acquire()` 在持有 `Deque` 锁的同步块内 `Thread.sleep`（96–113 行），`@Scheduled` 单线程池下多店串行阻塞 | 按官方 usage plan 逐 operation 配置 rate 与 burst；按 `shop_id + endpoint` 隔离预算；支持依据 `x-amzn-RateLimit-Limit` 动态调整且可恢复；限流等待不得持有锁、不得阻塞调度线程 |
 | P0-29 | k8s 自带 Secret 的加密密钥长度非法，spapi 启动即崩 | `k8s/secret.yaml` 的 `AMZ_CRYPTO_KEY` base64 解码为 `change_me_32_bytes_key_please_256!`，**实际 34 字节**（注释自称 32 字节）；`amz-common/src/main/java/com/amz/util/CryptoUtil.java:62-65` 对 `keyBytes.length != 32` 直接抛 `IllegalStateException`；注入链：`k8s/services/amz-service-spapi.yaml:83-84` → `application.yml:83` 的 `crypto.key: ${AMZ_CRYPTO_KEY:}`；同文件其它占位值：`JWT_SECRET_KEY` 解码 63 字节、`AWS_ACCESS_KEY=AKIACHANGEME`、`AWS_SECRET_KEY=secretchangeme` | Secret 一律由外部密钥系统注入，并在启动时做长度/格式校验；占位密钥禁止进入任何可部署清单；密钥轮换有流程与演练 |
 | P0-30 | Feeds 结果报告永不下载，被拒行永久丢失 | `amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java`（378 行）只实现 4 步：createFeedDocument → PUT 上传 → createFeed → getFeedStatus；全类对 `resultFeedDocumentId` 与 `GET /feeds/2021-06-30/documents/{feedDocumentId}` 的命中为 **0**（`FEEDS_PATH`/`DOCUMENTS_PATH` 仅是 49–50 行的路径常量）；与 product 域 `ListingCopyService.java:236-242`（Feed `DONE` 即置 `SUCCESS`）是同一根因的两个断面：被拒的行没有任何地方能读到原因 | Feed 闭环必须包含结果报告下载、逐行错误解析与业务处置；未取到结果报告的 Feed 不得置为终态成功；失败行必须有可查询的错误清单与重提路径 |
 | P0-31 | order/product 的 Redisson 硬编码第三方公网 Redis，且配置键在 Spring Boot 3 下失效 | `amz-service-order/src/main/java/com/amz/config/RedissonConfig.java` 与 product 同名文件字节完全相同（SHA256 `49A9179BE50381688E4588470F13FF6F0C49C8E86071A0B55EE8333CA756B72A`，35 行）：L16 `${spring.redis.host:121.37.250.15}`、L19 `${spring.redis.port:6379}`、L22 `${spring.redis.password:}`；该键全仓无定义——17 处 `redis:` 块父级全为 `spring.data.redis.*`，`SPRING_REDIS_*` 在 k8s / Compose / `.env.example` 命中 0，环境变量映射无法回填该 key；运行时探针（Redisson 3.37.0）实测 **45,292 ms** 后抛 `org.redisson.client.RedisConnectionException`（根因 `io.netty.channel.ConnectTimeoutException`，目标 `121.37.250.15:6379`），裸 TCP 对照 4,025 ms 不可达；使用点 order `OrderServiceImpl.java:68`（`@Autowired RedissonClient`）、product `TranslationService.java:68/153/157/166/170`；影响面**已收窄为 order/product 两模块**——spapi 虽引 `redisson-spring-boot-starter`（`pom.xml:127-131`）但无自定义 `RedissonConfig`，不受此硬编码影响 | 删除自定义 Bean 或改用 `spring.data.redis.*`；禁止任何默认值指向公网地址（默认只允许 `localhost` 或集群内 DNS，生产必须显式注入）；启动自检对 Redis 做一次带超时的连通性探测；补 `ApplicationContextRunner` 级别配置契约测试（断言解析出的 host/port/password 与本环境注入值一致） |
 | P0-32 | 部署清单与代码占位符大面积不对齐，Compose 尤甚 | `docker-compose.yml` 实测 **31 个 service**、`env_file` **0** 次：`REDIS_HOST` 全仓 **0** 次、`RABBITMQ_HOST` 仅 order+finance、`MYSQL_HOST` 仅 spapi、`SPRING_PROFILES_ACTIVE` **0** 次；k8s 侧逐模块差集（spring 占位符 vs Deployment `env` 名）实测缺项：logistics 15 项（`AMZ_17TRACK_BASE_URL/KEY`、11 个 `AMZ_LOGISTICS_*`、`AMZ_TRACKING_ENABLED`、`NACOS_ADDR`、`SPRING_PROFILES_ACTIVE`）、search 10 项、product 7 项、user 5 项、procurement 5 项、ai 5 项、finance 4 项、ad 3 项、multiplatform 2 项、report 2 项、spapi 1 项、其余模块以 `NACOS_ADDR` 为主；`.env.example` 实测 71 行 / **36 个键**，缺 `NACOS_ADDR`、`MONGO_HOST`、`ES_URIS`、`OSS_*`、`KINGDEE_*`、`ALIBABA_*`、`AMZ_17TRACK_*`、`EMBEDDING_*` 等；**第 18 轮纠正**：`amz-service-report` 的 k8s 19 个注入项不能简单按“无 DB 模块过度注入”删除——该模块有 6 个 `BaseMapper`/6 个 `@TableName`、Flyway V1 与 MySQL 依赖，`application.yml` 却缺 datasource，`MYSQL_*`/`DB_*` 正是必须保留并补齐的缺口（P0-07）；真正的双向契约应以代码实际读取的占位符为准 | 以代码占位符为唯一事实源生成/校验清单：CI 加 `DeploymentManifestContractTest`，逐 Deployment 断言“代码读到的每个变量都有注入路径、且不存在未使用的注入项”；k8s / Compose / `.env.example` 三处同步；敏感值走外部密钥系统，仓库内只留合法长度的占位 |
-| P0-33 | **Compose 路径先建表、后启动，撞上从未配置的 Flyway 基线** | (1) `docker-compose.yml:41` 把 `./docker/init-sql` 挂到 `/docker-entrypoint-initdb.d`，MySQL 首启即建 105 张表，**不会**建 `flyway_schema_history`；(2) 14 个服务在 `<dependencies>` 里真实引入 `flyway-core` + `flyway-mysql`（如 `amz-service/amz-service-ad/pom.xml:51-59`，根 `pom.xml:189-199` 只管版本），Flyway 自动配置默认启用；(3) 全仓 `git ls-files` 全文扫描 `spring.flyway.*` / `baseline-on-migrate` / `baselineOnMigrate` / `flyway_schema_history`，**唯一命中是 `.start-backend-final.bat:9` 的命令行参数** `--spring.flyway.baseline-on-migrate=true`（该参数在 L13–L52 被传给全部 14 个服务），任何 `application*.yml`／k8s `configmap.yaml`／Compose 环境变量里都**没有**这一项 → 实际生效值是 Flyway 10.20.0 的默认 `false`；(4) Flyway 10.20.0 `org/flywaydb/core/Flyway.class` 内含错误串 *“Found non-empty schema(s) … but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.”* → 非空 schema + 无 history 表 + `baselineOnMigrate=false` 时 `migrate` 直接抛异常，服务上下文启动失败。**结论为静态推断（依赖存在 + 配置缺失 + Flyway 自身错误串三重证据），本机无 MySQL 未复跑** | 配置文件里显式声明 `spring.flyway.baseline-on-migrate: true`（存量库升级用，空库下为 no-op），Compose 侧把建表脚本从 entrypoint 摘除只留建空库，clean-install 与 upgrade-from-N-1 两条流水线进 CI |
+| P0-33 | **Compose 路径先建表、后启动，撞上从未配置的 Flyway 基线** | (1) `docker-compose.yml:41` 把 `./docker/init-sql` 挂到 `/docker-entrypoint-initdb.d`，MySQL 首启即建 105 张表，**不会**建 `flyway_schema_history`；(2) 14 个服务在 `<dependencies>` 里真实引入 `flyway-core` + `flyway-mysql`（如 `amz-service/amz-service-ad/pom.xml:51-59`，根 `pom.xml:189-199` 只管版本），Flyway 自动配置默认启用；(3) 全仓 `git ls-files` 全文扫描 `spring.flyway.*` / `baseline-on-migrate` / `baselineOnMigrate` / `flyway_schema_history`，**唯一命中是 `.start-backend-final.bat:9` 的命令行参数** `--spring.flyway.baseline-on-migrate=true`（该参数在 L13–L52 被传给全部 14 个服务），任何 `application*.yml`／k8s `configmap.yaml`／Compose 环境变量里都**没有**这一项 → 实际生效值是 Flyway 10.20.0 的默认 `false`；(4) Flyway 10.20.0 `org/flywaydb/core/Flyway.class` 内含错误串 *“Found non-empty schema(s) … but no schema history table. Use baseline() or set baselineOnMigrate to true to initialize the schema history table.”* → 非空 schema + 无 history 表 + `baselineOnMigrate=false` 时 `migrate` 直接抛异常，服务上下文启动失败。**【2026-09-28 复核：缺陷已修复，且已补上真机证据】**三层修复均已落库且可由测试复现：(1) `docker/init-sql/` 只剩 `01-init-databases.sql`（只建 14 个空库，脚本注释明写不创建任何表），compose 只挂这一个文件；(2) 14/14 服务的 `application.yml` 已显式配置 `spring.flyway.baseline-on-migrate: true` + `baseline-version: 1`（注释标 P0-58）；(3) `FlywayBaselineContractTest` / `DeploymentSchemaBootstrapContractTest` / `CredentialSchemaContractTest` 在 CI 中守卫这三件事。真机证据：全仓唯一的真机集成测试 `AdMigrationMySqlIT` 在 MySQL 8.0.39（端口 3399）上真跑 Flyway，`flyway_schema_history` 的 V1–V7 **success 全为 1**、ad 库 13 张表建成；2026-09-28 起该 IT 已接进整仓 `mvn test` 常驻执行（根 pom 的 surefire `<includes>` 收 `**/*IT.java`）。**【2026-09-28 二次复核：上句中「其余 13 个库的 42 个迁移仍只被裸 SQL 执行过」已作废】**`AllModulesFlywayMySqlIT`（`amz-service/amz-service-spapi/src/test/java/com/amz/deploy/`）在同一台 MySQL 8.0.39 上对 **14 个库 × 49 个迁移**（ad7 / ai2 / customer1 / finance7 / logistics5 / multiplatform3 / ops1 / order5 / procurement2 / product4 / report1 / search1 / spapi9 / user1）逐个跑真 Flyway，并对每个模块断言：`result.success`、`migrationsExecuted == 该模块迁移文件数`、`flyway_schema_history` 行数 == 文件数、`success=0` 行数为 0、建表数 > 0；再跨模块双向断言 `docker/init-sql` 里 `CREATE DATABASE` 的集合 == 模块库名集合、`appliedTotal >= 49`、14 份 `application.yml` 均含 `baseline-on-migrate: true`。整仓复验 `mvn -B test -fae`：**BUILD SUCCESS，surefire XML 230 份 / 1518 例 / 0F / 0E / 2S**（2 个 skipped 为需真实凭证的 `SpApiIntegrationTest`），其中该 IT 1/1、`AdMigrationMySqlIT` 1/1、`CiWorkflowContractTest` 2/2、`FlywayBaselineContractTest` 8/8。**仍未验证的部分（不得因为上面这段就宣称已验证）**：① Flyway × dynamic-datasource 的实际落库目标（是否始终落在 master 库）没有真机断言；② **已由第 30 轮真机启动收口（2026-09-28）**：`amz-service-user` 以生产同款配置（Flyway 自动配置生效、未加任何 `-Dspring.flyway.*` 覆盖）在本机 MySQL 8.0.39（127.0.0.1:3399，`amz_user` 库已有 `BASELINE` @1）上**真实启动成功**——日志 `Started AmzServiceUserApplication in 8.647 seconds`、`Tomcat started on port 8080 (http)`，Flyway 侧 `Database: jdbc:mysql://127.0.0.1:3399/amz_user (MySQL 8.0)` / `Successfully validated 2 migrations` / `Current version of schema amz_user: 1` / `Schema amz_user is up to date. No migration necessary`（applied=0、success=true，与 P0-59 的预期完全一致），完整日志留存于仓库根目录 `round30-user-service-startup.log`。**剩余未验证部分**：其余 13 个服务尚未逐个真机启动；且本机为一次性本地实例、未接任何亚马逊凭证，**不构成联调或生产可用性证据**；③ Redis / RabbitMQ **不可用**场景本轮已实测：两者端口全关时服务仍启动成功，但 `FieldPermissionService` 降级为「全部可见」、`/actuator/health` 判 DOWN（见 P0-63 / P0-64）；Redis / RabbitMQ **可用**时的正确行为仍未验。同轮还发现并修复了一个连带缺陷，见 §1.9.4 / P0-59。** | 配置文件里显式声明 `spring.flyway.baseline-on-migrate: true`（存量库升级用，空库下为 no-op），Compose 侧把建表脚本从 entrypoint 摘除只留建空库，clean-install 与 upgrade-from-N-1 两条流水线进 CI |
 | P0-34 | **k8s 路径没有任何 schema 引导，14 个业务库一个都不存在** | `k8s/infra/mysql-statefulset.yaml` 的 `volumeMounts` 只有 `mysql-data → /var/lib/mysql`（L91-93），无 `docker-entrypoint-initdb.d`、无 Job、无 initContainer；对 `k8s/` 全域搜索 `kind: Job` / `docker-entrypoint-initdb` / `CREATE DATABASE` / `init-sql` **0 命中**；`k8s/configmap.yaml:14-16` 只给 `MYSQL_HOST/MYSQL_SLAVE_HOST/MYSQL_PORT`，不含任何建库步骤；而 14 个服务的 JDBC URL 形如 `jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/amz_spapi`（`amz-service-spapi/application.yml:36`），MySQL Connector/J 在库不存在时连接即失败 → Hikari 初始化失败 → 服务起不来，Flyway 根本没有机会执行；同时两条部署路径的引导方式完全不同（Compose 挂 SQL、k8s 什么都没有），schema 结果不可能一致 | k8s 增加一次性 schema 引导（Job 或 initContainer，创建 14 个库并只建库不建表），与 Compose 使用**同一份**建库清单，并在 CI 里断言两条路径建出的表集合相同 |
 | P0-35 | **官方必填头 `user-agent` 全仓缺失** | 官方 connecting 文档 L117 逐字：“**You must include a `user-agent` header in every request to the SP-API.**”（≤500 字符，最小含 App 名/版本/语言，另有 App 名 `/`、版本 `(`、属性名 `=`、属性值 `)` 与 `;` 的转义规则）；实测 `git grep -in "user-agent" -- "*.java" "*.yml" "*.yaml" "*.xml"` 命中 **0**；spapi 模块全部 `.header(...)` 只设 `Content-Type` 与 `x-amz-access-token`；本机 JDK 17 `HttpClient` 抓包证明未显式设置时实际发出 `User-Agent: Java-http-client/17.0.20.1` | `SpApiConfig` 增 `userAgent`（按官方转义规则由 app 名+版本+语言拼装，兜底 `AmazonERP/<version> (Language=Java/…)`）；统一注入全部出站客户端；契约测试断言每个请求都带合法 UA 且长度 ≤500；官方未写“不合规返回何状态码”，因此按**合规违反**处理而非断言必被拒 |
 | P0-36 | **marketplace→region 映射缺 13 个 ID，未知值静默回落 NA（fail-open）** | 官方 `store-identifiers.md` 全表 **23** 个 marketplaceId；本仓库 **4 份完全相同**的硬编码表各仅 **10** 条（`OrdersClient.java:70-81`、`FeedsClient.java`、`FbaInventoryClient.java`、`SpApiGateway.java:51-62`），解析统一为 `MARKETPLACE_REGION.getOrDefault(marketplaceId, "NA")`（`SpApiGateway.java:250-252` 的 javadoc 自述“未知时默认 NA”）；缺失 13 个：**NA** `A2Q3Y263D00KWC`(BR，属 NA 端点)、**EU** `A28R8C7NBKEWEA`(IE)/`AMEN7PMS3EDWL`(BE)/`A1805IZSGTT6HS`(NL)/`A2NODRKZP88ZB9`(SE)/`AE08WJ6YKNBMC`(ZA)/`A1C3SOZRARQ6R3`(PL)/`ARBP9OOSHTCHU`(EG)/`A33AVAJ2PDY3EV`(TR)/`A17E79C6D8DWNP`(SA)/`A2VIGQ35RCS4UG`(AE)/`A21TJRUUN4KGV`(IN)、**FE** `A19VAU5U5O7RUS`(SG) | 建立单一事实源 `MarketplaceRegistry`（23 条：marketplaceId → region → 国家码 → 官方主机），删除四份副本；未知 ID **抛明确异常**（区分“未知 marketplace”与“区域不支持”），**禁止**回落；契约测试逐条断言 23 条 region 与 host 解析，冲突 §1.7 第 2 条 fail-closed |
@@ -162,9 +162,21 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | P0-49 | **LWA token 缓存键的摘要算法失败时静默降级为 32 位 `hashCode`** | `LwaTokenManager.sha256Hex` 旧 catch 分支返回 `Integer.toHexString(hashCode)`；缓存键 = `clientId:sha256(refreshToken)`，退化后不同 refresh_token 可碰撞同一 key → 跨店铺串用 access_token（跨租户凭证泄漏） | catch 分支改抛异常（fail-closed，绝不退化）；并复核 token 交换全路径：缺 `access_token`、非 200、传输异常均抛 |
 | P0-50 | **预签名 S3 URL 误带 LWA token / AWS 签名（等于把凭证交给第三方存储桶）** | Feeds `uploadDocument`（PUT）与报表文档下载（GET）走的是 S3 预签名地址，旧实现按 SP-API 主机口径构造请求头，会带上 `x-amz-access-token` | 新增 `SpApiRequestFactory.presigned(...)`：只带 `user-agent`（+ 调用方 `Content-Type`），不带 token / `Authorization`；契约测试覆盖两条预签名路径 |
 | P0-51 | 【**已修复（第 41 轮）**】SP-API 端点无法覆盖：没有覆盖缝时客户端只能连官方主机，A1/A7/A8 的桩回放证据连 E2 都取不到（§1.9.1 缺口 G1） | 修复落点：新增 `connector/SpApiEndpointResolver.java`（配置键 `spapi.base-url-override` / `spapi.lwa-endpoint-override` / `spapi.allowlist`）、`connector/SpApiHostPolicy.java`、`connector/SpApiEndpointNotAllowedException.java`（`code=SPAPI_ENDPOINT_NOT_ALLOWED`）。四条硬规则：①**prod profile 下任一 override 非空 → 构造 Bean 时 `IllegalStateException` 拒绝启动**（不是 warn 后继续跑）；②非生产也限主机——官方主机 + 默认回环（`127.0.0.1` / `localhost` / `::1`）+ `spapi.allowlist` 追加项，**精确匹配**（不做后缀/通配/DNS，防 `evil-127.0.0.1.example.com`）；③`SpApiRequestFactory.spApi` 在**注入 `x-amz-access-token` 之前**做白名单校验，非白名单请求根本不会被构造（token 不出网）；④覆盖生效期间 `OrderSyncScheduler` / `InventorySyncScheduler`（含手动同步入口 `syncShopInventory`）跳过且**不落库**，防桩数据污染业务表。`presigned(...)`（S3 预签名 PUT/GET）不做主机白名单校验（预签名自带鉴权），只带 `user-agent`，不带 token / `Authorization` / `x-amz-date` | 覆盖缝必须与凭证外泄防护同批交付，缺一不可；`SpApiEndpointOverrideSafetyTest` **12 例**锁定上述边界（证据等级 E2，进程内假传输、零 socket） |
-| P0-52 | **凭证到位当天仍缺前置能力（runbook §1.3 已登记；a/c/d 已修复，b 未修复）** | ①【**已修复（第 45 轮）**】**P0-52a 平台原始错误码在部分端点被吞**：修复前 `SpapiController.syncOrders`、`InventoryController.sync` 只回 `"sync failed"`，`FeedsController.submit/status` 只回 `"feed submit failed"`/`"feed status failed"`（对照 finance 的 `FinancialDataController` 透出含平台 body 的 `e.getMessage()`，但那条路径同时泄露预签名 URL，见 P0-53）；修复落点为 `connector/ErrorSummary.java`（取最深根因 + 脱敏 + 单行截断）与 9 处边界出口（财务域 5 + 订单/库存/Feeds 4），**仍只是诊断文本**，`{code, platformStatus, platformCode, requestMessage, requestId}` 结构化契约未实现；②**P0-52b `x-amzn-RateLimit-Limit` 无结构化出口**：头已被读取并回填本地窗口（`OrdersClient.java:280-285`、`FbaInventoryClient`），但唯一出口是 `SpiRateLimiter.java:139-143` 的一条 WARN，A8 的“回填后本地窗口”只能靠抄日志；③【**已修复（第 48 轮）**】**P0-52c 不存在验收 runner**（修复前实测：全仓 `rg -i acceptance` 命中 0，runbook §3.4 明确“这条命令今天不存在”，`connector-acceptance-*.json` 是待实现承诺）：落点为 `tools/connector-acceptance/`（`acceptance_runner.py` + `run.ps1` + `run.sh` + 桩 `fake-service.py`），两道闸门是「C1 前置不满足 → 退出码 2 且**不产出记录**」与「桩自描述 `stub=true` 默认拒绝，须显式 `--allow-stub` 且 A5 封顶 E2」；④【**已修复（第 48 轮）**】**P0-52d 连接器自描述缺失**（本轮新登记）：`GET /spapi/status` 原先只回固定串 `"SP-API service running"`，而 runbook 硬约束 C1（必须以 prod 启动、mock 客户端不得激活、启动自检已跑、已加载凭证 ≥1 条）在**进程外无法核验**——mock profile 下 `ReportsMockClient`/`FinancesMockClient`/`FeesMockClient` 返回离线样例，据此产出的“成功样例”是假证据，整份记录作废：落点为 `connector/ConnectorSelfDescription.java`（启动快照优先、未跑自检时回落实时 `Environment` 并如实写 `startupCheckRan=false`、只含 profile 名/布尔开关/凭证**条数**）+ `SpapiController.status()` 返回该视图，`ConnectorSelfDescriptionTest` **6 例**锁死键集合与无机密 | b/c/d 必须在凭证到位前落地（c/d 第 48 轮已在**桩级**验证：runner 自检全绿、本地桩端到端 `RC=1`、C1 拒绝与桩护栏均实测），否则 §1.9.1(5) 的“一条命令产出联调记录”无法执行。**副作用提示**：`/spapi/status` 的 `data` 由字符串变为对象，属**响应结构变更**；本仓已全仓核对无调用方依赖（仅 runner/runbook/桩引用），接入方若有外部消费者需同步改 |
+| P0-52 | **凭证到位当天仍缺前置能力（runbook §1.3 已登记；a/b/c/d 已修复）** | ①【**已修复（第 45/60/61/62 轮）**】**P0-52a 平台原始错误码在部分端点被吞**：修复前 `SpapiController.syncOrders`、`InventoryController.sync` 只回 `"sync failed"`，`FeedsController.submit/status` 只回 `"feed submit failed"`/`"feed status failed"`（对照 finance 的 `FinancialDataController` 透出含平台 body 的 `e.getMessage()`，但那条路径同时泄露预签名 URL，见 P0-53）；修复落点为 `connector/ErrorSummary.java`（取最深根因 + 脱敏 + 单行截断）与 9 处边界出口（财务域 5 + 订单/库存/Feeds 4）；第 60/61 轮新增 `ApiError` + `SpApiCallException`/`LocalApiException`，第 62 轮把 8 个 controller 的 42 个 `Result.failure` 出口全部结构化并由 `ControllerFailureContractTest` 锁定，失败响应统一提供 `Result.error={code,platformStatus,platformCode,platformMessage,requestId}`。**边界**：E1 源码守卫不证明完整认证链路中的分支可达性或 HTTP 状态码映射，真实平台字段与 401/403/404/429 语义仍待联调；②【**已修复（第 59 轮）**】**P0-52b `x-amzn-RateLimit-Limit` 原先无结构化出口**：头已被读取并回填本地窗口，修复前唯一出口是收紧时的一条 WARN。第 59 轮新增不可变 `RateLimitObservation`（保留原始 headerValue，并区分 observed/effective）、`GET /spapi/connectors/rate-limits`、`spapi.ratelimit.limit` Gauge 与 `/actuator/prometheus` 暴露；定向 **22 例 / 0F / 0E**、SP-API **264 例 / 0F / 0E / 2S**。**边界**：真实平台头的单位/精度/缺失语义与 429 仍未联调，不能据此宣称 E4/E5；③【**已修复（第 48 轮）**】**P0-52c 不存在验收 runner**（修复前实测：全仓 `rg -i acceptance` 命中 0，runbook §3.4 明确“这条命令今天不存在”，`connector-acceptance-*.json` 是待实现承诺）：落点为 `tools/connector-acceptance/`（`acceptance_runner.py` + `run.ps1` + `run.sh` + 桩 `fake-service.py`），两道闸门是「C1 前置不满足 → 退出码 2 且**不产出记录**」与「桩自描述 `stub=true` 默认拒绝，须显式 `--allow-stub` 且 A5 封顶 E2」；④【**已修复（第 48 轮）**】**P0-52d 连接器自描述缺失**（本轮新登记）：`GET /spapi/status` 原先只回固定串 `"SP-API service running"`，而 runbook 硬约束 C1（必须以 prod 启动、mock 客户端不得激活、启动自检已跑、已加载凭证 ≥1 条）在**进程外无法核验**——mock profile 下 `ReportsMockClient`/`FinancesMockClient`/`FeesMockClient` 返回离线样例，据此产出的“成功样例”是假证据，整份记录作废：落点为 `connector/ConnectorSelfDescription.java`（启动快照优先、未跑自检时回落实时 `Environment` 并如实写 `startupCheckRan=false`、只含 profile 名/布尔开关/凭证**条数**）+ `SpapiController.status()` 返回该视图，`ConnectorSelfDescriptionTest` **6 例**锁死键集合与无机密 | a/b/c/d 已在代码层落地（a 第 45/60/61/62 轮；b 第 59 轮新增结构化观测/Gauge/只读端点；c/d 第 48 轮已在**桩级**验证 runner 自检、本地桩端到端 `RC=1`、C1 拒绝与桩护栏）。因此 §1.9.1(5) 的“一条命令产出联调记录”已具备可执行路径，但真实服务仍从未跑过；真实 429/响应头、应用授权与 usage plan 对账仍待凭证联调。**副作用提示**：`/spapi/status` 的 `data` 由字符串变为对象，属**响应结构变更**；本仓已全仓核对无调用方依赖（仅 runner/runbook/桩引用），接入方若有外部消费者需同步改 |
 | P0-53 | 【**已修复（第 45 轮）**】**预签名 S3 URL 经错误文本外泄到 HTTP 响应与错误日志**（P0-50 的下游遗漏：当时只修了「请求构造不带 token」，没修「错误文本不带 URL」） | `SpApiGateway.downloadBytes` 旧实现在非 200 时抛 `"download failed status=<code> url=<完整预签名 URL>"`；`url` 含 `X-Amz-Signature` 与 `X-Amz-Credential=AKIA…`（样例 `X-Amz-Expires=300`），经 `FinancialDataController.downloadDocument` 的 `e.getMessage()` **直接进入 HTTP 响应体**，并被 `log.error(..., e)` 写进服务日志——有效期内拿到该 URL 即可下载结算原表（订单级金额与买家信息） | 源头只回显「状态码 + 对象路径」：`download failed status=403 path=/report/2026-09-24/settlement.tsv`；不回显 URL、也不回显 S3 错误体（`SignatureDoesNotMatch` 等错误体会内嵌规范请求与凭证材料）；`URI.create` 失败的入口（同样会把完整 URL 回显进 JDK 异常文本）改为只回显路径 + 已脱敏原因，**且不链 cause**——controller 的 `log.error(..., e)` 打印整条异常链，链上原异常仍带完整 URL，等于把漏洞从响应搬到日志；**写侧同一漏洞面**（`FeedsClient.uploadDocument` 的 `PUT` 上传，预签名 URL 带**写权限**）同构修复；边界层 `ErrorSummary.of(e)` 再兜一层脱敏，并新增 `ErrorSummary.objectPath` 作为唯一「只回对象路径」实现 | `SpApiGatewayDownloadErrorTest` **4 例**（E2：URL 原样出站 / 异常文本含状态码与路径但不含签名 / 传输失败不泄露 / `URI.create` 失败不链 cause）+ `FeedsClientUploadUrlLeakTest` **1 例**（E2：写侧同口径）+ `ErrorSummaryTest` **13 例** + 两个 controller 边界测试 8 例（E1）；**未做全仓出站扫描**、无日志侧 scrub，新增调用方仍需自觉走边界出口 |
 | P0-54 | 【**已修复（第 49 轮）**】**Reports 路径版本号 `2021-09-01` 从未由 Amazon 发布——所有真实 Reports 调用必然 404（有凭证也不可用）** | 修复前 `ReportsClient`/`ReportsRealClient`/`SpApiGateway`/`ReportInfo` 及全部相关桩、`acceptance_runner.py`、runbook 都写 `/reports/2021-09-01/...`。三源核实（2026-09-24 实测）：① 官方模型仓库 `models/reports-api-model/` **只有** `reports_2020-09-04.md`（158 B，废弃指针）与 `reports_2021-06-30.json`（83,685 B）；② 取 `reports_2021-09-01.json` → **HTTP 404**、响应体 14 B 的 `404: Not Found`；③ 官方文档站 `.../reports-api-v2021-09-01-reference` 返回 **HTTP 200（SPA 外壳）**，但 `<title>=Page Not Found` 且页内 `2021-09-01` 命中 **0** 次，对照 `...-v2021-06-30-reference` 的 `<title>=Reports v2021-06-30`、命中 **105** 次。**成因是自证循环**：客户端、桩、runner、runbook 四方写同一个错版本号，E1 级自证测试永远绿灯；**修复前** `docs/**` 全仓从未登记过该版本号（`git grep "2021-09-01" docs` 命中 0；本轮登记后该口径反转为「文档只出现在缺陷记录里」），而 `ReportsFieldContractTest` 只锁字段名、**不锁路径** | 10 个文件字节级替换为已发布版本 `2021-06-30`（源码 4 + 测试 4 + 工具 2），替换后全仓残留检查 **0 命中**；新增 `SpApiPathContractTest`（**4 例**，E3）：6 份官方模型快照字节数 + sha256 锁定、`src/main/java` 路径字面量 ⊆ 官方 `paths`、`2021-09-01` 不得再出现、Reports/Feeds 版本段断言 | 爆炸半径：Reports 链路（`createReport` → `getReport` → `downloadDocument`）是结算/对账的数据源，修复前是 **100% 404**（不是降级、不是空数据）；**同类风险未归零**：路径字面量扫描只覆盖 `src/main/java` 且只认 6 个路径根，将来新增 API 家族（Listings / Notifications / FBA Inbound 等）时必须同步扩 `PATH_ROOTS` 与快照表，否则同类错误仍可复现 |
+| P0-59 | 【**已修复（第 29 轮）**】**用裸 SQL 建出来的库会让服务起不来**：`tools/synthetic-data/apply_migrations.py` 绕过 Flyway 依次裸跑 `V*.sql`，建出的 14 个业务库**一张 `flyway_schema_history` 都没有**；而 14 个服务配 `baseline-on-migrate: true` + `baseline-version: 1`，启动后 Flyway 在 v1 打基线并重放 V2..Vn，撞上已存在对象 —— 实测 `amz_ad`：`Script V2__campaign_metadata_unique.sql failed`、**SQL State 42000 / Error 1061 Duplicate key name 'uk_shop_campaign'**，历史表只剩 rank1 v1(success=1)、rank2 v2(success=0) | 修复：`ensure_flyway_baseline()` 在裸 SQL 之后补一条 `type='BASELINE'` 历史行，版本打到**该模块最大版本**（ad=7 / spapi=9 …），幂等（已有历史表则不动）；守卫 IT `BareSqlBuiltSchemaFlywayStartIT`：裸 SQL 建库 → 补 baseline → **新连接断言行可见** → 服务同款 Flyway 配置 `migrate()` → 断言 `success` 且 `migrationsExecuted == 0` 且 `currentVersion == maxVersion`，另有源码级断言（脚本仍含 `ensure_flyway_baseline` 与 `<< Flyway Baseline >>`）；**负向对照**：删掉 INSERT baseline 后 IT 变红；补基线前安全核对：列级 14/14 全同（1480 列）、表级 13/14（仅 `amz_ops` 多 `amz_synthetic_dataset_registry`），补完 14/14 `applied=0 / success=true`、**225,734 行未损** | 生产路径不依赖本条：`docker/init-sql` 只建 14 个空库 + Flyway 全量应用（由 `AllModulesFlywayMySqlIT` 真机覆盖）；合成数据 / 裸 SQL 环境**必须保留** baseline 逻辑，否则又会生成起不来的库 |
+| P0-60 | **审计链断裂：`@OperLog` 全仓 0 处使用，`amz_oper_log` 是没人写的孤儿表** | 源码侧实测：`@OperLog` 在**全仓所有 `.java`** 中命中 **0** 次（59 个 Controller 无一处标注）；`oper_log` 字样在源码侧唯一命中是 `amz-common/src/main/java/com/amz/aspect/OperLogAspect.java:99` 的 `operLogger.info("OPER_LOG \| userId={} …")`，即**只写 logback `oper-log` appender 的日志文件**；MyBatis Mapper / Entity 对 `amz_oper_log` 的引用 **0**；其余命中全是 DDL（`V1__init.sql:63`）、legacy 建表脚本与合成数据。**第 30 轮真机实测**：以合法 JWT 走 HTTP `PUT /user/editInfo` 把 `amz_user.amz_user.id=1` 的 nickname 改成 `R30-APP-WRITE` 并落库成功（`SELECT` 复核确已变更），随即查 `amz_oper_log`：**行数不变、无新行**（表内 162 行全为 `SYN-module-*` / `SYN-action-*` 合成数据，最新一行 `create_time` 为 2026-01） | 在「凭证增删改与解密、店铺绑定、订单改价/改状态、财务过账、库存调整、用户角色变更」等写路径显式标注 `@OperLog`；把 `OperLogAspect` 的落点从**只写文件**升级为**落库 `amz_oper_log` + 文件双写**（`@Async`、写失败不得影响主流程）；新增 `OperLogCoverageTest`（E2/E3）：扫描 `src/main/java` 全部写端点（POST/PUT/DELETE 及带 `@Transactional` 的写方法），断言「必须审计集合 ⊆ 已标注集合」，并断言存在真实写入 `amz_oper_log` 的代码路径 | 爆炸半径：ERP 没有审计＝不可追责、不可合规（SOC2 / ISO27001 与平台侧审计都要求「谁在何时把哪条数据从什么改成什么」）。当前形态最危险的地方是**看似已有审计**——表已建、切面已写、测试也没红，只是两者从未接上 |
+| P0-61 | **全局异常处理恒返回 HTTP 200，错误只写在 body 里** | `amz-common/src/main/java/com/amz/handle/GlobalExceptionHandler.java` 的全部 `@ExceptionHandler` 方法（业务异常 / `MethodArgumentNotValidException` / `BindException` / `HttpMessageNotReadableException` / `RuntimeException` / `Exception`）都只返回 `Result.failure(...)`，无 `@ResponseStatus`、无 `ResponseEntity`。**第 30 轮实测**：`PUT /user/editInfo` 传 **300 字符** nickname（列类型为 `varchar(50)`）→ **HTTP 200**，body `{"data":null,"message":"服务器内部错误","code":400}`，数据未写入；对照鉴权失败路径（拦截器直接 `setStatus`）返回的是真 401 / 403，同一服务的错误语义**自相矛盾** | handler 改为返回 `ResponseEntity<Result>`：参数/业务冲突 → 400 / 409，未捕获异常 → 500；body `code` 保留给前端，但**以 HTTP 状态码为唯一权威**；网关重试、熔断、告警、APM 全部改按状态码；新增 `HttpStatusContractTest`（E1）逐个 handler 断言状态码 | 爆炸半径：可观测性与流量治理同时失真——ALB / Nginx / Prometheus 的 5xx 率恒为 0，重试与熔断无法按状态触发，SRE 在故障前拿不到任何信号；客户端必须解析 body 才能判断成败，而第三方集成方通常只看状态码 |
+| P0-62 | **全仓 0 处 `@Valid` / `@Validated`：59 个 Controller 没有任何请求体校验** | 实测：`Select-String` 全仓 `*Controller.java`（59 个文件）命中 `@Valid` / `@Validated` **0** 次；`UserEditDto` 仅 `@Data`，无 `@Size` / `@NotBlank` 等约束；`UserController.editInfo(@RequestBody UserEditDto dto)` 未加 `@Valid`。后果已被第 30 轮真机复现：300 字符 nickname 一路穿到 MySQL，由 DB 抛「Data too long」再被 P0-61 兜成 HTTP 200 | 所有 `@RequestBody` / `@ModelAttribute` 加 `@Valid`（`@Validated` 用于分组），DTO 补 Bean Validation 约束（长度上限、枚举、金额非负、日期格式、ID 正数）；`MethodArgumentNotValidException` handler 返回 **400** 并回显字段级信息；新增 `DtoValidationContractTest`（E3）：断言每个 Controller 的 body 参数带 `@Valid`、每个请求 DTO 至少有一个约束注解 | 爆炸半径：非法入参以「DB 报错」的形式暴露（既泄露表结构信息，又把可控错误变成 500 语义），同时为超长字段、脏数据、下游注入开了口子；与 P0-61 叠加时表现为「HTTP 200 + 服务器内部错误」这一最难排查的组合 |
+| P0-63 | **就绪探针语义错误 + 监控端点未暴露：`/actuator/health` 会因 Redis/Rabbit 抖动判 DOWN，且 `metrics`/`prometheus` 没开** | 配置侧实测：`amz-service/amz-service-user/src/main/resources/application.yml` **没有 `management:` 段** → 启动日志 `Exposing 1 endpoint beneath base path '/actuator'`（只有 health），`management.endpoint.health.probes.enabled` 为默认 `false`。**第 30 轮实测**（临时加 `--management.endpoint.health.show-details=always --management.endpoint.health.probes.enabled=true` 重启）：`/actuator/health` = **DOWN**，明细 `redis` DOWN（`RedisConnectionFailureException: Unable to connect to Redis`）、`rabbit` DOWN（`ConnectException: Connection refused`）、`db` **UP**、`diskSpace` UP；而 `/actuator/health/readiness` 与 `/actuator/health/liveness` 均为 **UP**。即默认配置下把 `/actuator/health` 当就绪探针时，中间件抖动会被判成「整个服务不可用」。另：`micrometer-registry-prometheus` 依赖确已引入（根 `pom.xml:114`、`:238` 等，全仓 pom 命中 38 处），但端点未暴露 → Prometheus 抓不到任何指标 | 统一补 `management:` 段：`endpoints.web.exposure.include=health,info,metrics,prometheus`、`endpoint.health.probes.enabled=true`、`endpoint.health.show-details=when-authorized`；k8s readiness / liveness **分别**指向 `/actuator/health/readiness` 与 `/actuator/health/liveness`（不得指向聚合 health）；强依赖（DB）纳入 readiness，弱依赖（Redis / Rabbit）不参与就绪判定或按环境用 `management.health.<name>.enabled` 关闭；新增 `ActuatorContractTest`（E3）断言 14 份 `application.yml` 均含上述 `management` 项 | 爆炸半径：生产上 Redis 抖动一次 → 全部 Pod 判 NotReady → 流量被摘 → 连锁雪崩；叠加 P0-61 的「零 5xx」与「无 metrics」，故障发生前几乎没有任何可观测信号 |
+| P0-64 | **字段级数据权限 fail-open：Redis / DB 不可用时降级为「全部字段可见」** | `amz-common/src/main/java/com/amz/service/impl/FieldPermissionServiceImpl.java` 类注释明写三种容错**均**降级为「全部可见」（JdbcTemplate/RedisTemplate 缺失、启动加载失败、运行时 Redis 查询失败）。**第 30 轮真机启动实测日志**：`WARN  c.a.s.i.FieldPermissionServiceImpl - FieldPermissionService: 加载字段权限规则失败，降级为「全部可见」。原因: Unable to connect to Redis` —— 即 Redis 不可用时，VIEWER 也能看到成本 / 利润率 / 供应商价等本应隐藏的字段 | 增加显式开关 `amz.field-permission.fail-open: ${AMZ_FIELD_PERMISSION_FAIL_OPEN:false}`：**默认 fail-closed**（规则不可得时按最小可见集返回 + 打点告警），仅 `local` / `demo` profile 允许 `true`；Redis 不可用时改走 DB 直读 + 短期内存快照，快照过期后按 fail-closed 处理；新增 `FieldPermissionFailClosedTest`（E1）：模拟 Redis 与 DB 双不可用，断言敏感字段**被隐藏**而不是全放开 | 爆炸半径：降级方向与资金安全相反——中间件抖动＝临时放开敏感字段，且现场只有一行 WARN，无告警、无审计（与 P0-60 叠加后事后也无法还原「谁看到了什么」） |
+| P0-65 | **多构造器 Bean 未标 `@Autowired`：spapi 服务进程起不来（启动期崩溃，单测全绿）** | 实测：`amz-service-spapi` 中有 3 个类同时存在「测试用构造器 + 生产构造器」双构造器，且生产构造器**没有** `@Autowired`（`com/amz/client/TokensClient.java`、`com/amz/connector/RestrictedDataTokenManager.java`、`com/amz/notification/NotificationSubscriptionRegistry.java`）。Spring 在「多构造器且无 `@Autowired`」时回落去找**无参构造器**，找不到即 `BeanInstantiationException`，上下文初始化失败、进程退出。第 31 轮正是据此定位到「spapi 单测 611 全绿，但 `java` 进程一起来就退」 | 3 处生产构造器补 `@Autowired`（第 31 轮已修）；新增 `com.amz.deploy.SpringConstructorInjectionContractTest`（E3，第 33 轮实测 1 test 绿）：扫描 `src/main/java` 下所有 `@Component` / `@Service` / `@Configuration`，断言「构造器数 > 1 ⟹ 恰好一个构造器带 `@Autowired`」 | 爆炸半径：CI 全绿但部署即崩，容器环境表现为 CrashLoopBackOff；更危险的是它**只在真实 refresh 上下文时暴露**——单测（含 `@SpringBootTest` 之外的 mock 单测）永远测不到，属于典型的「可发布但不可启动」缺陷 |
+| P0-66 | **Redis / Redisson 是启动期强依赖：Redis 不可达 ⇒ 服务根本起不来** | **第 33 轮实测**（停掉本机 Redis 进程后重启 spapi）：`BeanCreationException: Error creating bean with name 'redisson'`（`org.redisson.spring.starter.RedissonAutoConfigurationV2`）← 根因 `org.redisson.client.RedisConnectionException: Unable to connect to Redis server: 127.0.0.1/127.0.0.1:6379` ← `java.net.ConnectException: Connection refused: getsockopt`。级联链：`redisson` → `redissonConnectionFactory` → `stringRedisTemplate` → `distributedJobLock` → `inventorySyncScheduler` → `inventoryController` → 上下文初始化取消、进程退出。补充：`application-bootstrap.yml` 确实 exclude 了 `RedissonAutoConfigurationV2`，但**只对 bootstrap（一次性凭证导入）profile 生效**；正常运行 profile 仍装配（真机日志实证 `Redisson 3.37.0` + `24 connections initialized for 127.0.0.1:6379`） | 把 Redis 从启动期强依赖降级：① `RedissonClient` 改 `@Lazy` + `ObjectProvider` 注入，启动期连不上不阻断 refresh；② `distributedJobLock` 在 Redis 不可用时 **fail-closed** 降级为「本实例不抢锁 + 打点告警」（与 P0-64 同一方向）；③ 或按 `RedissonConfigTest` 已在 order / product 模块确立的「零消费者依赖不留」原则，统一 exclude Redisson starter，改由 Spring Data Redis 单一客户端提供能力。新增契约测试（E2）：模拟 Redis 不可用时断言上下文仍能 refresh 完成 | 爆炸半径：Redis 抖动 / 主备切换 / 集群扩容期间，**扩容、滚动发布、崩溃重启全部失败**——故障期最需要扩容的时刻恰好无法扩容；与 P0-63 叠加时 readiness 同时判 DOWN，形成「既起不来、又被摘流量」的双杀。**未证实项（不写入结论）**：此前提出的「空密码仍发 AUTH」子项在第 33 轮未取得证据，不作断言 |
+| P0-67 | **管理端凭证 `status` / `delete` 越权解密：密文损坏的记录既看不到、也删不掉** | `ShopCredentialAdminService.status()` / `delete()` 走 `ShopCredentialStore.getForAdmin()` → `cloneAndDecrypt()` 解密四个密钥列。密文被污染或密钥轮换不匹配时（本机合成数据为占位串 `SYNTHETIC-NOT-A-REAL-SECRET-000008`）抛 `IllegalArgumentException: Illegal base64 character 2d`（`CryptoUtil.decrypt`），被 `GlobalExceptionHandler` 兜成 `HTTP 200 + code=400 服务器内部错误`。管理员因此**既看不到该记录，也失去 delete 这条自愈入口**——而 `getForAdmin` 的 javadoc 恰恰承诺「坏记录也要能读出来以便修复」。第 32 轮真机实测：`GET /spapi/credentials/shop/900000000000001008/status` 返回 `code=400`；修复后返回 `code=200 + configured=true`（第 33 轮复验） | 新增 `ShopCredentialDescriptor`（只暴露「密文是否存在」的布尔位 + 非敏感的 clientId / region / marketplaceId / sellerId / updateTime，**不携带密文、更不解密任何 secret**）与 `ShopCredentialStore.describe(shopId)`；`status` / `delete` 改走 `describe`；`delete` 的 token 失效改用 `String clientId` 重载按前缀驱逐（无需解密）。`getForAdmin` **保持 fail-closed 不变**（契约测试显式断言坏密文仍抛异常，证明没有全局放松）。**残留局限**：`upsert` 仍需解密旧值做 merge，坏密文下 `PUT` 仍返回 400；修复路径为**先 DELETE 再 PUT**（第 33 轮真机验证可行） | 爆炸半径：密钥轮换或密文损坏时，凭证管理页整页 500，运维**无法通过 UI 自愈**，只能直连 DB 手工删行——把一次可自愈的运维事件升级为需要 DBA 权限的生产事故；与 P0-61（错误只写 body、HTTP 恒 200）叠加后监控侧 5xx 恒为 0，故障在告警上完全不可见 |
+
+> **编号注记**：本表主序列止于 P0-54；P0-55 起以正文条目形式追加（P0-55 见 §4.6 一带，P0-58 为 `baseline-on-migrate` 配置项在正文中的引用编号；P0-56 / P0-57 在本文全文中查无定义）。为避免复用可能被他处引用的空号，第 29 轮新增缺陷直接取**已出现最高编号 +1 = P0-59**，完整事实链见 §1.9.4。 第 30 轮沿用同一规则，新增 5 个缺陷取 **P0-60 … P0-64**，完整事实链见 §1.9.5。
+
 
 > 关于 P0-04 的**诚实修正**：8 个 `OPERATE_TOOLS` 中，**只有 `cross_marketplace_listing` 已确认会真实写外部系统**（`ProductController.copyListing` → `ListingCopyService.createCopyTask` → `@Async executeCopyTaskAsync` → `listingsClient.submitFeed` → SP-API Feeds，且 `pollFeedStatus` 以 `Thread.sleep(15s)` 轮询最长 5 分钟）。`optimize_ad_campaign`、`optimize_listing_seo`、`optimize_shipping_route`、`optimize_inventory_distribution` 是只读查询 + 规则文本；`create_purchase_plan`（返回 `DRAFT` Map，`planNo=System.currentTimeMillis()`）与 `auto_reply_message`（返回草稿）都不落库；`generate_promotion_plan` 是 `@GetMapping("/promotion/plan")` + `@ShopScoped`，返回**硬编码**的 Lightning Deal 方案，**完全不写数据**。
 >
@@ -185,7 +197,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | 多平台 | Webhook 端点无守卫、无任何入站签名校验（全仓库仅有出站签名工具）；`shopId` 为空时按 platform 反查“最新创建的账号”造成跨租户错配；去重键仅为全局 `event_id`；`handleWebhookEvent` 只写日志；**真客户端只有 TEMU/TIKTOK/SHEIN**（`MultiplatformServiceImpl.java:632-635`、`706-712` 的 `switch(platform)` 只有这三个 case，其它平台串抛“不支持的平台”；`syncAll` 614-617 也只同步这三家），README 声明的 Shopify/eBay/Walmart/Shopee/Lazada **无任何实现**；默认 profile（非 `mock`）加载 `*RealClient`，且三家 RealClient 自述未校准、`fetchRecentOrders` 固定第 1 页（无翻页、无增量时间窗）、`markShipped` 内部 `cred(null)` 回退到该平台任意首个账号凭证（`PlatformCredentialService:23-24`） | 平台适配层（补实现或撤回宣称）+ 每平台验签与时间窗；事件唯一键 `(platform, shop_id, event_id)`；归属无法确定时拒绝落库；事件处理实现真实业务动作并可重放 |
 | 消息/异步 | 部分消费者有手动 ack 与 DLQ，但通知消费者只记日志；分布式锁 Redis 不可用时 fail-open；异步线程丢上下文 | Inbox/Outbox、幂等消费、重试/DLQ/重放、锁 fail-closed、上下文传播 |
 
-### 1.4.1 SP-API 能力缺口（第 10 轮关键词全仓扫描）
+### 1.4.1 SP-API 能力缺口（第 10 轮基线；Sellers 已于第 77 轮补齐）
 
 扫描范围：`*.java`、`*.yml`、`*.yaml`、`*.sql`，排除 `target/`。命中为 0 即代表仓库内**没有**该能力的代码、配置或依赖。
 
@@ -196,10 +208,10 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | Listings Items API | `listings/2021-08-01` | 0 | 未实现；`ListingsRealClient`（94 行，`@Profile("!mock")`）只经 Feign 调 spapi `/spapi/feeds` 提交 `JSON_LISTINGS_FEED` |
 | Product Pricing | `productPricing` | 0 | 未实现；价格与 competitive pricing 数据只能间接来自 Feed 或报表 |
 | Catalog Items | `catalog/2022-04-01` | 0 | 未实现；类目与属性校验没有官方来源，`DEFAULT_PRODUCT_TYPE` 仍是占位值 |
-| Sellers | `sellers/v1` | 0 | 未实现；无法校验授权范围内的 marketplace 参与状态 |
+| Sellers | `sellers/v1` | 已实现（第 77 轮） | `SellersClient` 只读 `GET /sellers/v1/marketplaceParticipations`，校验官方响应结构并接入限流、Outbox、RBAC、店铺隔离；`/sellers/v1/account` 暂不暴露；本地契约 E2/E3，真实授权与 marketplace 数据仍需联调 |
 | FBA Inbound | `fba/inbound` | 0 | 未实现；补货建议无法落成真实入库计划 |
 | 限流响应头 | `x-amzn-RateLimit-Limit` | 15 | 已有读取与解析（正向），但受 P0-28 的配额与隔离缺陷拖累 |
-| LWA token 端点 | `amazon.com/auth` | 4 | 存在：`SpApiConfig.java:33`、spapi `application.yml:69`、`LwaTokenManagerTest.java:49`、`k8s/configmap.yaml:43`；其中 `k8s/configmap.yaml:43` 的 `AWS_LWA_ENDPOINT` **代码不读**（代码读 `spapi.lwa-endpoint`），是又一个死配置项 |
+| LWA token 端点 | `amazon.com/auth` | 4 | 存在：`SpApiConfig.java:33`、spapi `application.yml:69`、`LwaTokenManagerTest.java:49`、`k8s/configmap.yaml:61`；`AWS_LWA_ENDPOINT` 死键已于第 64 轮清理，部署键统一为 `SPAPI_LWA_ENDPOINT_OVERRIDE` |
 
 ### 1.5 外部对标
 
@@ -333,7 +345,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | A3 | **启动自检**：生产 profile 启动时校验每个启用连接器的凭证存在性与格式（如 `AMZ_CRYPTO_KEY` 必须为 32 字节 base64）、端点可达性、profile 非 mock；不通过即拒绝启动 | spapi 默认 `mock`（P0-24）；k8s Secret 的 `AMZ_CRYPTO_KEY` 为 34 字节，启动即崩（P0-29） |
 | A4 | **凭证归属与轮换**：按 `tenant_id + shop_id + connector` 存储、加密落库、可轮换可吊销并有审计；禁止一套全局凭证服务多店 | finance / procurement / message / ad 仍是全局 `@Value` 单套凭证；SP-API 凭证表的多副本事实源与自动建表都不成立（P0-11、P0-23） |
 | A5 | **以联调记录为准**：每个连接器必须提供沙箱或生产联调记录（请求样例、响应样例、错误码覆盖、限流验证），否则在能力清单与前端显示为“未接通” | 全仓无任何联调记录；`@Profile("!mock")` 与类名 `*RealClient` 被当作“已对接”的依据 |
-| A6 | **能力清单与实现一致**：支持哪些 operation 就写哪些，未实现的（如 Notifications / RDT / Listings Items）明确标注“未实现” | README 宣称 Shopify / eBay / Walmart / Shopee / Lazada，实际只有 TEMU / TIKTOK / SHEIN（附录 G.2）；SP-API 缺 7 类能力（1.4.1） |
+| A6 | **能力清单与实现一致**：支持哪些 operation 就写哪些，未实现的（如 Notifications / RDT / Listings Items）明确标注“未实现” | README 宣称 Shopify / eBay / Walmart / Shopee / Lazada，实际只有 TEMU / TIKTOK / SHEIN（附录 G.2）；SP-API 当前缺 6 类能力（Sellers 已在第 77 轮补齐，见 1.4.1） |
 | A7 | **失败可重放**：调用失败进入持久化重试 / DLQ，原始响应加密留存，支持按店铺与时间窗重放 | 无 Outbox / Inbox（4.4）；Redis 去重不能作为唯一事实源 |
 | A8 | **限流与配额真实**：按官方 usage plan 逐 operation 配置 rate 与 burst，按店铺隔离，可依据 `x-amzn-RateLimit-Limit` 动态调整 | `SpiRateLimiter` 默认值最高宽松约 120 倍（`feeds.createFeed`：官方 0.0083 req/s，本仓库兜底 1 req/s；`orders.getOrders` 约 60 倍），`feeds`/`fees`/`finances` 三个在用 endpointTag 无策略（P0-28） |
 
@@ -386,7 +398,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 | G2 | HTTP 客户端不可注入 | 5 处字段级自建 `HttpClient`：`OrdersClient.java:83`、`FeedsClient.java:80`、`FbaInventoryClient.java:83`、`SpApiGateway.java:64-66`、`LwaTokenManager.java:59-61` | 连接/超时/重试没有可替换缝，桩回放必须先改代码 |
 | G3 | 时钟不可注入 | `AwsSigV4Signer.java:54` 在 `sign()` 内部取 `ZonedDateTime.now(ZoneOffset.UTC)`；`AwsSigV4SignerTest.java:196-209` 的测试注释自己写明“时间敏感场景的幂等性需 mock 时钟”，并把断言降级为 `assertNotNull` | 同一输入两次调用结果不同 → 无法做 KAT |
 | G4 | **23 个签名测试中 0 条 KAT** | `AwsSigV4SignerTest`（13）+ `Alibaba1688SignerTest`（7）+ `PlatformSignerCalibrationTest`（3）= 23 个 `@Test`；全仓测试源码里 64 位十六进制字面量只有 3 处，且都是空串的 SHA-256（`AwsSigV4SignerTest.java:44/82/93`），**没有一处是期望签名**；`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写了同一拼接公式 | 属 E1 自证：签名算法写错也全绿。这是“有 API 就能用”最危险的假阳性 |
-| G5 | LWA 端点不可覆盖 | `amz-service-spapi/src/main/resources/application.yml:69` 写死 `https://api.amazon.com/auth/o2/token`；`k8s/configmap.yaml:43` 注入的 `AWS_LWA_ENDPOINT` 代码不读（死配置，见 1.3） | token 交换同样无法桩测 |
+| G5 | LWA 端点不可覆盖 | **已修复（第 41 轮）**：支持 `spapi.lwa-endpoint-override`；`k8s/configmap.yaml:61` 的 `AWS_LWA_ENDPOINT` 死键已在第 64 轮清理，部署键统一为 `SPAPI_LWA_ENDPOINT_OVERRIDE` | token 交换可走进程内契约桩测；真实 LWA 交换仍需 A5 |
 | G6 | 全仓无 HTTP 桩 | 测试源码中 `WireMock`/`MockWebServer`/`com.sun.net.httpserver` 命中 0；`okhttp3` 仅出现在 `amz-service-ai` 的 `ImPushServiceTest.java:3-8`（传递依赖，非显式 test 依赖） | A2/A7/A8 的离线取证缺少基座 |
 
 > **缺口修复进度（第 36–43 轮复核，2026-09-24）**：G1（端点不可覆盖）→ **已修复**（`SpApiEndpointResolver` + `SpApiHostPolicy`，见 P0-51）；G2（HTTP 客户端不可注入）→ **已修复**（第 36 轮引入 `HttpTransport`，5 处字段级 `HttpClient` 全部改构造器注入，含 `SpApiGateway` / `OrdersClient` / `FeedsClient` / `FbaInventoryClient` / `LwaTokenManager`）；G5（LWA 端点不可覆盖）→ **已修复**（`spapi.lwa-endpoint-override` + `LwaTokenExchangeContractTest` 11 例 + 官方夹具 `contracts/lwa-token/`）；G6（全仓无 HTTP 桩）→ **部分解除**（新增进程内 `RecordingHttpTransport`，可做零 socket 桩回放；仍无 socket 级桩，`SpApiIntegrationTest` 2 例默认跳过）；G3（时钟不可注入）与 G4（签名 0 条 KAT）→ **仍开放**（`AwsSigV4Signer.java:54` 仍在 `sign()` 内取 `ZonedDateTime.now(ZoneOffset.UTC)`；按 §1.9.2 的官方定论，SigV4 KAT 已降为**可选**，但若将来恢复签名校验必须与 Clock 注入同批实施）。
@@ -399,7 +411,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 2. **时钟注入**：`AwsSigV4Signer` 及所有参与签名的 `Instant.now()` / `System.currentTimeMillis()` 改为注入 `Clock`（生产 `Clock.systemUTC()`），使 KAT 可复现。
 3. **KAT 夹具纪律**：期望签名只能来自官方文档示例或**官方 SDK**在固定输入下的输出；夹具记录来源 URL、抓取日期、字节数、sha256（与 4.8/Task 3 的模型快照同纪律）。**禁止**用本仓库实现生成期望值，否则又回到 E1。
 4. **契约三件套**：官方模型（E3）→ 桩回放（E2）→ KAT（E3）全部进 CI 且不可 skip。
-5. **能力清单必须带证据等级**：`GET /api/connectors` 每个连接器返回 `evidenceLevel` 与 `apiReady`；`apiReady=true` 的最低条件是 A2/A3/A6 全通过且证据 ≥ E3；**“已接通”必须 ≥ E4**，“可生产”必须 E5 且 4.5/4.7/7.7 通过；前端标签只读该字段（4.8、附录 G.4/G.5）。
+5. **能力清单必须带证据等级**：`GET /spapi/connectors`（网关别名 `GET /api/connectors`）每个连接器返回 `evidenceLevel` 与 `apiReady`；`apiReady=true` 的最低条件是 A2/A3/A6 全通过且证据 ≥ E3；**“已接通”必须 ≥ E4**，“可生产”必须 E5 且 4.5/4.7/7.7 通过；前端标签只读该字段（4.8、附录 G.4/G.5）。
 
 **（5）凭证到位当天的一次性验收 runbook（A5 的唯一取证路径）**
 
@@ -531,6 +543,157 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 1. **禁止用静态解析代替真实执行**：`docker/init-sql` 的表口径必须由真实 MySQL 8 容器执行后统计——P0-43 这类“文本看着没问题、一跑就崩”的缺陷只有真实执行能发现。
 2. **合成数据不得进入生产库**：`load-all.sql` 全文带 `SYNTHETIC` 标记；默认只支持空库首次加载，重复加载必须显式开启 `--truncate-first`（P0-46）。
 3. **产物与证据分离**：大文件不入 Git（`out/` 已 gitignore），只提交生成器 + DDL 快照 + seed；每份产物在 `manifest.json` 中带 SHA-256。
+
+### 1.9.4 第 29 轮：Flyway 真机全量覆盖，以及新缺陷「裸 SQL 建出来的库会让服务起不来」（P0-59）
+
+**来源**：2026-09-28 在本机一次性 MySQL 8.0.39 实例（端口 3399）上的实测，不是静态推断。
+
+#### 事实链
+
+1. 补基线之前，14 个业务库里**一张 `flyway_schema_history` 都没有**（只有 `_fwit` / `_it` 这类 IT 库有）。
+   原因：`tools/synthetic-data/apply_migrations.py` 用 mysql 客户端依次裸跑每个 `V*.sql`，整条路径**绕过 Flyway**。
+2. 而 14 个服务都配了 `baseline-on-migrate: true` + `baseline-version: 1`。于是「非空库 + 无历史表」时，
+   Flyway 会在 **v1** 打基线，然后把 V2..Vn **全部重放**一遍，第一撞就炸。实测 `amz_ad`：
+   `Script V2__campaign_metadata_unique.sql failed`，**SQL State 42000 / Error 1061 Duplicate key name
+   'uk_shop_campaign'**；历史表只剩 rank1 v1(success=1)、rank2 v2(success=0) 两行 —— 服务启动失败。
+3. 修复：`apply_migrations.py` 新增 `ensure_flyway_baseline()`，在裸 SQL 建完库后补一条
+   `type='BASELINE'`、版本打到**该模块最大版本**（ad=7、spapi=9 …）的历史行，等于告诉 Flyway
+   「这些迁移都已经应用过了」。幂等：已有历史表则不动。
+4. 守卫测试：新增 `BareSqlBuiltSchemaFlywayStartIT`（复用 `FLYWAY_ALL_IT_*` 环境变量，故 ci.yml 无需再改）：
+   裸 SQL 建库 → 补 baseline → **立刻用新连接断言 baseline 行可见** → 以服务同款 Flyway 配置
+   `migrate()` → 断言 `success`、`migrationsExecuted == 0`、`currentVersion == maxVersion`；
+   另有源码级断言：`apply_migrations.py` 必须仍含 `ensure_flyway_baseline` 与 `<< Flyway Baseline >>`。
+5. **负向对照**（证明该 IT 不是空跑）：临时删掉 INSERT baseline 那一行 → IT 变红，报
+   `Duplicate key name 'uk_shop_campaign'` / `V2 failed` / `BUILD FAILURE`；还原后转绿。
+6. 给 14 个业务库补基线前先做了安全性核对：**列级（名/类型/nullable）14/14 全同，合计 1480 列**；
+   表级 13/14 相同（仅 `amz_ops` 多一张工具表 `amz_synthetic_dataset_registry`，不是 Flyway 对象）。
+   补完后逐库验证 Flyway：**14/14 `applied=0 / success=true`**，合成数据 **225,734 行未损**。
+
+#### 必须固化的两条教训
+
+- **教训一（产品级）**：任何「用裸 SQL 建库」的工具链都等于绕过 Flyway，**必须自己补基线**，
+  否则第一个启动的服务就会挂在重复的 DDL 上。判据不是「数据灌进去了」，而是
+  `SELECT COUNT(*) FROM flyway_schema_history WHERE type='BASELINE'`。
+- **教训二（工程方法级，本轮真实踩坑）**：本机做负向对照时用 `.bak` 还原源文件，
+  PowerShell 的 `Copy-Item` 会**保留原文件 mtime**，导致 `.java` 比 `target/**/*.class` 旧，
+  Maven 增量编译直接跳过 → 出现「源码是对的、字节码是旧的」这种**假失败**。
+  本轮曾据此误判为「测试执行顺序污染」，白排查一轮。判据：直接比对 class 文件里是否含关键 SQL 字符串
+  （本例为 `INSERT INTO flyway_schema_history`），不要只信 `mvn` 的输出。
+
+#### 口径边界（不得升级措辞）
+
+- 给业务库补基线是**本地合成数据环境的便利做法**；生产的正确路径是 `docker/init-sql` 只建 14 个**空库**、
+  再由 Flyway 全量应用 —— 这条路径已由 `AllModulesFlywayMySqlIT` 真机覆盖。
+- 以上全部是**本机一次性实例**上的证据：无主从、无真实流量、未接入任何亚马逊凭证、未跑过应用层写入。
+  对外仍然只能说「具备对接能力（API-Ready，未联调）」。
+
+
+### 1.9.5 第 30 轮：真机启动 + 应用层 HTTP 读写证据，以及由此暴露的 5 个新缺陷（P0-60 … P0-64）
+
+前 29 轮的证据基本停留在「迁移能跑、测试能绿」这一层：最强的也只是「用服务同款 Flyway 配置调用 `migrate()`」，**不等于 Spring 上下文真的起来了**。第 30 轮第一次把 `amz-service-user` 以生产同款配置真的跑起来，并用 HTTP 打穿应用层读写，由此暴露出 5 个只有真机运行才看得见的缺陷（P0-60 … P0-64）。
+
+**1）真机启动（成功）**
+
+- 环境：MySQL 8.0.39 @ `127.0.0.1:3399`，账号 `amz`；`JWT_SECRET_KEY` / `AMZ_CRYPTO_KEY` 由环境变量注入（均为本机一次性值）；**Redis 6379 与 RabbitMQ 5672 全程关闭**（用来观察弱依赖是否阻断启动）；启动参数只关了 Nacos 注册与 Rabbit 监听自启动。
+- 结果：**`Started AmzServiceUserApplication in 8.647 seconds`，Tomcat 监听 8080**；Flyway 侧逐行与 P0-59 的修复预期一致：`Database: jdbc:mysql://127.0.0.1:3399/amz_user (MySQL 8.0)` → `Successfully validated 2 migrations` → `Current version of schema amz_user: 1` → `Schema amz_user is up to date. No migration necessary`（applied = 0，没有重放、没有 Duplicate key）。完整日志：`round30-user-service-startup.log`。
+- 结论边界：这**只证明了 user 服务在「有 baseline 的存量库」上能起**，不等于其余 13 个服务也能起，更不等于生产可部署；本机是一次性本地实例，无任何亚马逊凭证。
+
+**2）应用层鉴权与租户隔离（HTTP 实测，5 条）**
+
+| # | 请求 | 实测结果 |
+|---|---|---|
+| 1 | `GET /user/getInfo` 无 `token` | **401** |
+| 2 | `GET /user/getInfo` + 合法 JWT（手工按同一 `JWT_SECRET_KEY` 签发的 HS256 token，`sub=1`、`role=ADMIN`、`shops` 含 9 个合成店铺 id） | **200**，返回 `amz_user.amz_user.id=1` 的真实行 |
+| 3 | 同上 + `shopId` 头 = 自己店铺 `900000000000001008` | **200**（`UserContext.setShopId` 生效） |
+| 4 | 同上 + `shopId` 头 = `1`（不在 `shops` claim 内） | **403**（`shopId 越权`，`BaseAuthInterceptor` 拦截） |
+| 5 | 同上 + 被篡改签名的 token | **401** |
+
+这 5 条是**应用层**证据（前 29 轮的 22.5 万行数据是批量 SQL 灌进去的，绕过应用层，不构成应用层证据）。但要注意：token 是我们自己用同一密钥签的，**登录链路本身没有走通**——见下面第 5 条。
+
+**3）应用层写路径（HTTP 实测）**
+
+`PUT /user/editInfo` + 合法 JWT + body `{"nickname":"R30-APP-WRITE","address":"addr-by-http"}` → HTTP 200 `操作成功`；随即查库确认 `amz_user.amz_user.id=1` 的 nickname / address **已真实变更**（测后已还原为 `测试卖家`）。同时查 `amz_oper_log`：**无新增行** → 这就是 P0-60 的直接证据。
+
+**4）由此暴露的 5 个缺陷**：P0-60（审计链断裂）、P0-61（异常恒返 200）、P0-62（全仓无 `@Valid`）、P0-63（探针语义错 + 无 metrics）、P0-64（字段权限 fail-open），逐条见主表。
+
+**5）同轮记录但不另立 P0 编号的次级发现**
+
+1. **Seata TC 未配置却不阻断启动**：启动日志 `ERROR i.s.c.r.n.NettyClientChannelManager - Failed to get available servers: service.vgroupMapping.default_tx_group configuration item is required`（`ConfigNotFoundException`），服务照常起来。全仓 `@GlobalTransactional` 只有 **1** 处（`amz-service/amz-service-order/src/main/java/com/amz/service/impl/OrderServiceImpl.java:191`）→ 该处的「分布式事务」实际无 TC 可用，要么补 Seata Server 与 `vgroupMapping` 配置，要么显式降级为本地事务 + 补偿/Outbox，不能留现状。
+2. **Swagger UI 在默认 profile 打开**：`application.yml` 的 `springdoc.swagger-ui.enabled: true` 无 profile 隔离 → 生产默认暴露接口文档与调试入口；应按 profile 关闭或加鉴权。
+3. **合成数据无法走真实登录链路**：`/user/send/{phone}` 校验 `^1[3-9]\d{9}$`，而合成用户手机号是 `+1-555-0100` 这类格式，bootstrap 用户 `id=1` 的 phone 为**空** → **任何合成用户都无法完成短信登录**；本轮演示是用「同密钥手工签发的 JWT」绕过去的。要让 demo 可登录，生成器需产出符合该正则的手机号，并在 `local` profile 提供验证码旁路（生产禁用）。
+4. **启动期同步外呼第三方**：`GlobalExchangeRateService` 在启动阶段访问 `exchangerate.host`（实测日志 `exchangerate.host 返回 rates 字段格式异常，保留现有汇率缓存`）→ 启动路径依赖外网第三方，应改为懒加载 / 异步预热，且启动不得因外网失败而劣化。
+5. **头像上传在默认配置下必然失败**：`oss.accessKeyId: your-access-key-id` / `bucketName: your-bucket-name` 是占位符，`updateImage` 未做「未配置则明确报错」的处理。
+
+**两条方法论教训（供后续轮次复用）**
+
+- (a) 「测试绿」与「服务能起」是两件事，且都不能替代「HTTP 打穿一次真实读写」。本轮 5 个缺陷里，**4 个（P0-60/61/62/63）在单测全绿的情况下完全不可见**——因为它们全部是「横切行为缺失 / 默认值错误」，单测只覆盖被显式调用的方法。
+- (b) 手工签 JWT 是验证鉴权链路的低成本手段：只要掌握 `JWT_SECRET_KEY` 与 `JwtUtil` 的 claim 契约（`sub` / `iss` / `aud` / `shops` / `role` / `exp`，HS256），就能在不启动 Redis（登录依赖 Redis 存验证码）的前提下验证拦截器与租户切面。
+
+**口径边界**：本轮所有结论均来自**本机一次性实例 + 合成数据 + 自签 JWT**，不接触任何亚马逊凭证与真实店铺数据；对外仍只能表述为「具备对接能力 / API-Ready（未联调）」。
+
+
+### 1.9.6 第 31 轮：spapi 服务真机启动成功，以及由此暴露的构造器注入缺陷（P0-65）
+
+第 30 轮只做到了 user 服务的真机启动与 HTTP 读写。**第 31 轮把 `amz-service-spapi`（对接亚马逊 SP-API 的那一侧）也真正跑起来了**：MySQL 8.0.39（3399）+ Redis（6379）就绪后，以 `local-smoke` profile 启动，`Started AmzServiceSpapiApplication` 与 `Tomcat started on port 8096` 均出现，`ConnectorStartupCheck` 打印 `已加载店铺凭证=9`。
+
+这次启动立刻暴露了 P0-65：三个类（`TokensClient` / `RestrictedDataTokenManager` / `NotificationSubscriptionRegistry`）同时有「测试用构造器 + 生产构造器」，生产构造器缺 `@Autowired`，Spring 回落找无参构造器失败 → 上下文初始化失败 → 进程退出。**这类缺陷的特征是：单测 611 全绿，进程一起来就死**。
+
+**口径边界**：这里的「启动成功」指**进程能起来、端口在监听、凭证缓存已加载**；它不等于「已接通亚马逊」。启动日志里 `spapi.startup.require-credentials=false`（本机 smoke 专用），生产 profile 必须置 `true`。
+
+### 1.9.7 第 32 轮：HTTP 鉴权真机矩阵 + 管理端凭证越权解密缺陷（P0-67），以及对第 31 轮两处错误预期的纠正
+
+第 32 轮用自签 JWT（`JwtUtil` 契约：`sub` / `iss=amz-erp` / `aud=amz-erp-client` / `shops`(List\<String\>) / `role` / `exp`，HS256，密钥=密钥串原始 UTF-8 字节；拦截器从请求头 **`token`** 取值）对 `ShopCredentialController` 打了 5 个用例矩阵，结果如下：
+
+- 无 token → **真实 HTTP 401**（`BaseAuthInterceptor` 直接 `setStatus`）；
+- 篡改签名 → **真实 HTTP 401**；
+- VIEWER 角色 → HTTP 200 + body `code=400`，消息「无权限执行该操作（需要角色：ADMIN）」（`RequireRoleAspect`）；
+- ADMIN + 越权 `shopId=1` → **HTTP 200 + configured=false**（不是 403）；
+- ADMIN + 已配置店铺 → 修复前为 HTTP 200 + `code=400 服务器内部错误`，即 P0-67。
+
+**必须纠正第 31 轮的两个错误预期**（写文档与对外说明时不得沿用）：
+
+1. **「ADMIN 越权访问会被拦截」是错的。** `UserContext.isShopAllowedStrict` 对 `ADMIN` **无条件返回 true**（`UserContextShopAuthorizationContractTest` 中 `adminWithoutShopsKeepsGlobalAccess` 明确锁定了这一语义）。因此 ADMIN 可以访问任意 `shopId`；只有**非 ADMIN** 才要求 `shops` claim 含该 shopId。`ShopCredentialController.canManageCredentials` 里对 ADMIN 调用 `isShopAllowedStrict` 实际是死代码（保留作防御）。
+2. **「权限不足应返回 HTTP 403」是错的。** 本项目的真实分工是：无 / 坏 token → 真 401；角色不足（`RequireRoleAspect`）与未捕获异常（`GlobalExceptionHandler`）→ **HTTP 200 + body `code=400`**；只有 Controller 内 `canManageCredentials=false` 才返回 body `code=403`（此时 HTTP 仍是 200，且该分支对非 ADMIN 实际到不了）。即**业务与权限失败一律走 body 内 code，HTTP 状态码恒为 200**——这正是 P0-61 要改的对象。
+
+另需更正的史实：`amz_spapi.amz_shop_credential` 的敏感列是 **`client_secret_encrypted` / `refresh_token_encrypted` / `access_key_encrypted` / `secret_key_encrypted`**（带 `_encrypted` 后缀）。第 31 轮按无后缀列名查询会得到 `ERROR 1054`。
+
+本轮同时给出 P0-67 的修复与「不放松 fail-closed」的双重证据：`ShopCredentialStoreDescribeContractTest` 中 `describeSurvivesCorruptCiphertext` 断言坏密文下 `describe()` 不抛且四个 `*Present` 全为 true，而 `getForAdminStillFailsClosedOnCorruptCiphertext` 断言同一份数据下 `getForAdmin()` **仍然抛** `IllegalArgumentException`。
+
+### 1.9.8 第 33 轮：spapi 启动失败的真根因澄清、P0-67 真机验证、应用层 HTTP 凭证写入证据、P0-66 实测确认
+
+#### (1) 澄清：spapi 起不来不是「本机 socket 故障」，而是启动命令漏了一个 JVM 参数
+
+第 32 轮杀掉旧进程后三次重启全部失败，先后出现 netty `failed to open a new selector` 与 `Unable to establish loopback connection`，一度被归因为「本机 socket 环境问题」。第 33 轮用最小复现实验否掉了这个结论：
+
+- 栈底是 `sun.nio.ch.UnixDomainSockets.connect0` → `java.net.SocketException: Invalid argument: connect`，发生在 `WEPollSelectorImpl` 构造 → `PipeImpl` 初始化。即 Windows 上 `Selector.open()` 依赖 **AF_UNIX 管道**，其落点目录由 `jdk.net.unixdomain.tmpdir` 决定。
+- 最小探针（`_r83_nioprobe.java`，JDK 21.0.12.1 / Windows 11）对照结果：**不带** `-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp` → `Selector.open()` **必失败**；**带上** → `Selector` / `Pipe` / `HttpClient` 全部 OK。
+- 检查 attempt3 日志头部：连 `Picked up JAVA_TOOL_OPTIONS` 这行都没有 —— 即那次 `Start-Process` 根本没有继承到该变量。
+
+带上参数后 spapi 一次启动成功（PID 20472，`Started AmzServiceSpapiApplication in 11.364 seconds`，`Tomcat started on port 8096`，`已加载店铺凭证=9`）。**结论：这是本机 Windows + JDK 21 的已知运行前置条件，不是项目缺陷，也不是机器故障。** 但它应当被写进部署手册：凡是依赖 NIO Selector 的组件（netty、JDK HttpClient、Redisson）在这台机器上都必须带这个参数，否则表现为「莫名其妙的 selector / loopback 报错」。
+
+#### (2) P0-67 真机验证 + 应用层 HTTP 凭证写入（「有 API 就能直接用」的核心证据）
+
+目标店铺 `900000000000001008`，四个 `*_encrypted` 列原值均为占位串 `SYNTHETIC-NOT-A-REAL-SECRET-000008`，`version=9`。完整流程与结果：
+
+1. `GET .../status` → `code=200`、`configured=true`（**修复前是 `code=400 服务器内部错误`**）——P0-67 修复得到真机确认；
+2. `PUT .../`（body 含 `clientId` / `clientSecret` / `refreshToken` / `region` / `marketplaceId` / `sellerId`）→ 因 `upsert` 仍需解密旧值做 merge，命中已知残留局限，返回 `code=400 Illegal base64 character 2d`；
+3. 按文档化修复路径 `DELETE .../` → `code=200`、`configured=false`，DB 行数由 1 变 0（**坏密文行也能删**，P0-67 修复点之一）；
+4. 再次 `PUT` → `code=200`，DB 复核：`client_secret_encrypted` / `refresh_token_encrypted` 变为真实 AES-GCM 密文（64 字符 base64），未提交的 `access_key_encrypted` / `secret_key_encrypted` 为 `NULL`，`update_time` 刷新；**响应体不回显任何 secret**，只回 `configured` 等布尔位与非敏感字段；
+5. `GET .../status` 复核 → `code=200`、`configured=true`、`awsKeysConfigured=false`；
+6. **还原**：把该行按原快照（含 `create_time` / `update_time` / `version=9`）整行插回，`SELECT *` 与原值逐字段一致，凭证表总数仍为 9 —— 225,734 行合成数据集未被破坏。
+
+这条链路的意义：凭证的**写入—加密—落库—状态回读**已经在应用层 HTTP 上打通，只要把合成占位值换成真实 LWA 凭证（`clientId` / `clientSecret` / `refreshToken`）与真实 `region` / `marketplaceId` / `sellerId`，同一条链路即可发起真实 SP-API 调用。它仍然**不等于**已联调。
+
+#### (3) P0-66 实测确认（Redis 启动期强依赖）
+
+停掉 Redis 进程后重启 spapi，得到完整根因链：`redisson` bean（RedissonAutoConfigurationV2）→ `RedisConnectionException: Unable to connect to Redis server: 127.0.0.1/127.0.0.1:6379` → `java.net.ConnectException: Connection refused: getsockopt`，并沿 `redissonConnectionFactory` → `stringRedisTemplate` → `distributedJobLock` → `inventorySyncScheduler` → `inventoryController` 级联，最终上下文初始化取消、进程退出。Redis 随后按原命令（`redis-server.exe --port 6379 --requirepass DevRedis!3399`）复原，端口恢复监听。
+
+#### (4) 本轮的其它硬结论
+
+- **全模块回归**：`mvn -B -ntp test -pl amz-service/amz-service-spapi` → **617 tests / 0 Failures / 0 Errors / 4 skipped / BUILD SUCCESS**（第 31 轮为 611，增量 = `ShopCredentialStoreDescribeContractTest` 4 条 + `ShopCredentialAdminServiceTest` 2 条）。`SpringConstructorInjectionContractTest` 1 条、`ShopCredentialAdminServiceTest` 16 条、`ShopCredentialStoreDescribeContractTest` 4 条均在其中。
+- **教训**：本轮再次验证 §1.9.5 的判断——「单测绿」「能起进程」「HTTP 打穿一次真实读写」是三件不同的事。P0-65 只在第二层暴露，P0-67 只在第三层暴露，P0-66 只在「依赖不可用」这一特殊场景下暴露。
+
+**口径边界**：本轮全部结论来自本机一次性 MySQL / Redis 实例 + 合成数据 + 自签 JWT，不接触任何亚马逊凭证与真实店铺数据。对外仍只能表述为「具备对接能力 / API-Ready（未联调）」。
 
 ## 2. 目标架构、租户模型与运行单元
 
@@ -896,11 +1059,11 @@ reconciliation.case.closed.v1
 - 统一指标：请求量、成功率、延迟、限流命中、重试次数、最后成功时间、游标滞后。
 - 生产启动时检查连接器配置；缺失密钥、mock 标记或未验证的端点直接拒绝启动。
 
-**现状（本轮实测，2026-09-24）：连接器真伪全盘点**
+**现状（审计基线 2026-09-24；后续修复与新增能力以附录 G 为准）：连接器真伪全盘点**
 
 | 连接器 | 实现与 profile | 本轮核实事实 | 生产可用性 |
 |---|---|---|---|
-| SP-API 核心链路（Orders / Feeds / FBA Inventory / Reports / Finances / Fees） | `OrdersClient`、`FeedsClient`、`FbaInventoryClient`、`ReportsClient`+`ReportsRealClient`/`ReportsMockClient`、`FinancesClient`+`FinancesRealClient`/`FinancesMockClient`、`FeesClient`+`FeesRealClient`/`FeesMockClient`（spapi 模块，默认 profile `mock`） | **框架真实**：LWA refresh_token 换 access_token（`https://api.amazon.com/auth/o2/token`，3600s）+ AWS SigV4 签名 + `x-amzn-RateLimit-Limit` 解析 + 429 退避已实现；跨模块 Feign 双向核对通过（product `SpapiFeedsClient` ↔ `FeedsController`；finance `SpApiFinanceClient` ↔ `FinancialDataController`）；`SpapiFeedsClientFallbackFactory` 返回 `Result.failure` 不伪造成功；`/sync/orders` 无凭证时显式失败（`SpapiController:94-96`）。**但**：凭证表无自动建表路径（P0-23）、部署形态默认加载 mock（P0-24）、`ReportsRealClient:80` 字段名错误使文档 ID 恒 null（P0-27）、限流配额最高比官方宽松约 120 倍且不按店铺隔离（P0-28）、Feeds 不下载结果报告（P0-30）、缺 Notifications/RDT 等 7 类能力（1.4.1） | LWA/SigV4/限流**框架**真实实现 ✅；凭证表缺失 ⛔、默认 mock ⛔、Reports 字段名错 ⛔、限流形同虚设 ⛔ |
+| SP-API 核心链路（Orders / Feeds / FBA Inventory / Reports / Finances / Fees / Sellers） | `OrdersClient`、`FeedsClient`、`FbaInventoryClient`、`ReportsClient`+`ReportsRealClient`/`ReportsMockClient`、`FinancesClient`+`FinancesRealClient`/`FinancesMockClient`、`FeesClient`+`FeesRealClient`/`FeesMockClient`、`SellersClient`（spapi 模块） | **代码路径已具备（最高 E2/E3）**：LWA refresh_token 换 access_token（`https://api.amazon.com/auth/o2/token`，3600s）+ AWS SigV4 签名 + `x-amzn-RateLimit-Limit` 解析 + 429 退避已实现；Sellers 的 marketplace participations 已纳入同一网关、限流、Outbox、RBAC 与店铺隔离；跨模块 Feign 双向核对通过（product `SpapiFeedsClient` ↔ `FeedsController`；finance `SpApiFinanceClient` ↔ `FinancialDataController`）；`SpapiFeedsClientFallbackFactory` 返回 `Result.failure` 不伪造成功。**边界**：本表原列出的 P0-23/P0-24/P0-27/P0-28/P0-30 等缺口已由后续轮次处理或登记，需逐项以 G 附录复核；当前仍缺 Notifications / RDT / Listings Items / Product Pricing / Catalog Items / FBA Inbound 6 类能力（1.4.1）；没有真实 Amazon 凭证与 E4/E5 联调证据 | 有真实凭证可进入授权、端点、字段与限流联调 ✅；真实 Amazon 联调与生产可用 ⛔ |
 | 金蝶云星空 | `KingdeeRealClient`（`!mock`）/ `KingdeeMockClient`（`mock`） | `syncVoucher` 48–51 行无条件返回 `KINGDEE_MOCK_` 占位号；finance `application.yml:6-10` 默认 profile 为空 → 默认加载 Real 实现；凭证被置 `SYNCING` 后无法再次认领（认领条件只接受 `PENDING/FAILED`） | 未对接（占位） |
 | 1688 | `Alibaba1688RealClient`（`!mock`） | 37–38 行自述签名/token 端点未校准；`Alibaba1688Signer:24`、`Alibaba1688TokenManager:26` 同类标注；凭据为单套全局值（`alibaba.refresh-token` + Redis 全局 key） | 未校准 · 单租户 |
 | SHEIN | `SheinRealClient`（`!mock`） | 56–58 行硬编码 `page_no=1`、`page_size=50`、`order_status=PAID`；103–106 行自述未校准；`markShipped` 以 `cred(null)` 解析凭证 | 未校准 · 可能用错店铺 |
@@ -947,6 +1110,29 @@ reconciliation.case.closed.v1
 | 平台不可用 | 连续 5xx、服务维护 | 熔断，等待恢复后从游标续跑 |
 | 数据错误 | 文件缺列、金额不平衡 | 隔离原始对象，不污染事实源 |
 | 系统错误 | 数据库、MQ、代码异常 | 回滚事务，进入重试/DLQ，按 SLO 告警 |
+
+**当前实现（第 60/61 轮）**：失败响应可选携带机器可读 `error`，成功响应通过 `@JsonInclude(NON_NULL)` 不输出该字段。载荷固定为：
+
+```json
+{
+  "code": "SPAPI_CALL_FAILED",
+  "platformStatus": 429,
+  "platformCode": "QuotaExceeded",
+  "platformMessage": "<脱敏后的平台消息>",
+  "requestId": "<x-amzn-RequestId，若平台返回>"
+}
+```
+
+| 本地 `code` | 触发条件 | 是否携带平台字段 |
+|---|---|---|
+| `SPAPI_CALL_FAILED` | 收到 SP-API/S3 非成功响应或传输失败，且有 `SpApiCallException` | 有响应时携带 `platformStatus`；`errors[0]` 与请求头存在时携带其余字段 |
+| `CREDENTIAL_MISSING` | 本地凭证缺失，请求未发出 | 否 |
+| `PRESIGNED_URL_INVALID` | 预签名 URL 缺失或无法解析，请求未发出 | 否 |
+| `INVALID_REQUEST` | 本地参数、请求体或状态前置条件非法 | 否 |
+| `SPAPI_UNKNOWN_MARKETPLACE` / `SPAPI_UNSUPPORTED_REGION` | marketplace/region 解析 fail-closed | 否 |
+| `UPSTREAM_ERROR` | 未识别的其他失败 | 否；不得猜测平台字段 |
+
+**边界（不得过度承诺）**：以上只证明“经现有 typed exception 路径的失败可结构化”；真实 Amazon 401/403/404/429 的字段名、状态映射、requestId 覆盖尚未取证。第 62 轮已把 SP-API 主代码 **42 个 `Result.failure` 出口全量迁移**，并由 `ControllerFailureContractTest` 锁定数量与结构；该证据仍为 E1 源码形状验证，不证明每个分支在完整认证链路中的可达性或真实平台字段语义。因此当前正确表述仍是 **E1/E2/E3，具备对接能力但未联调**，不是 E4/E5。
 
 ### 4.4 Outbox/Inbox
 
@@ -1746,14 +1932,14 @@ seed        = 固定整数或字符串
 | 生成器 | `generate.py` | 固定 seed、稳定 UUID v5、列定义从 DDL 自动推导；`--chaos` 注入异常场景；`--truncate-first` 生成幂等加载脚本（P0-46） |
 | 校验器 | `verify.py` + `verify.ps1` / `verify.sh` | structure / references / markers / determinism / manifest / snapshot 六类校验 |
 | 入口脚本 | `run.ps1` / `run.sh`、`verify.ps1` / `verify.sh` | 一条命令生成、一条命令校验 |
-| 产物（不入库） | `out/{ci,demo}/` | `load-all.sql`、69 个 `sql/*.sql`、69 个 `jsonl/*.jsonl`、`manifest.json`、`00-load-order.txt`；`out/` 已在 `.gitignore` 中排除 |
+| 产物（不入库） | `out/{ci,demo}/` | `load-all.sql`、69 个 `sql/*.sql`、69 个 `jsonl/*.jsonl`（第 28 轮口径；**第 70 轮已扩到 100 个 / 100 个**，见 §7.10）、`manifest.json`、`00-load-order.txt`；`out/` 已在 `.gitignore` 中排除 |
 
 固定值（与设计一致）：`dataset_id=synthetic-amazon-erp-v1`、`seed=20260924`、`data_origin=SYNTHETIC`、tenant `900000000000000001`、shop `900000000000000101/102/103`。
 
 **（2）实测证据（2026-09-24，ci 档，`--reset`）**
 
 ```text
-tables_with_rows  = 69 / 107      （其余 38 张无合适行源，不造空表）
+tables_with_rows  = 69 / 107      （第 28 轮口径；**已被 §7.10 修正为 100 / 109**，本行仅作历史记录，不得再引用）
 rows              = 21,604
 sql_bytes         = 5,200,351
 jsonl_bytes       = 8,357,559
@@ -1812,6 +1998,54 @@ python tools/synthetic-data/generate.py --tier ci --reset --truncate-first
 1. `CryptoUtil.init()` 要求 `AMZ_CRYPTO_KEY` 解码后恰为 32 字节（P0-29）、凭证表必须先进迁移（P0-23）——这两条决定合成凭证行能否被应用真实读取，与 `load-all.sql` 能否执行无关。
 2. 本工具链只证明“系统内部一致性与 schema 可执行性”，**不证明 Amazon 接受我方请求**；A5 仍以 §1.9.1(5) 的凭证到位 runbook 为唯一取证路径。
 3. **不提供任何真实凭证**：合成凭证行只含 `SYNTHETIC_*` 占位值（§7.2），不得用于任何真实调用。
+
+### 7.10 第 70 轮：模拟数据覆盖率补齐（69/109 -> 100/109）
+
+**（1）发现的问题**
+
+按 `schema-snapshot.json`（109 张表）比对 `out/demo/sql/` 实际产物，只有 **69 张表**有模拟数据，**40 张为空**。逐一扫描主代码（`src/main` 下的 Model / Mapper / Service / Controller）后确认：其中 **31 张被业务代码真实引用**，包括广告自动规则 `amz_ad_auto_rule`、竞价排程 `amz_ad_bid_schedule`、活动扩展 `amz_ad_campaign_ext`、Listing 健康与变更日志 `amz_listing_health` / `amz_listing_change_log`、关键词排名 `amz_keyword_rank` / `amz_keyword_ranking`、竞品监控 `amz_competitor_monitor`、选品机会 `amz_selection_opportunity`、利润快照 `amz_profit_snapshot`、成本分摊 `amz_cost_allocation`、库存周转 `amz_inventory_turnover`、跟卖告警 `amz_hijack_alert`、索评 `amz_review_solicitation`、Outbox `amz_spapi_call_outbox` 等。
+
+后果不是"数字不好看"，而是**演示与验收环境会出现大片空页面/空接口**；这些表恰恰是广告自动化、运营诊断与报表域的入口，属于"看起来系统坏了"的缺陷。
+
+**（2）补齐动作**
+
+在 `generate.py` 的 `LAYOUTS` 中登记这 31 张表的行维度（沿用既有依赖顺序，如 `campaign -> keyword`、`shop -> warehouse/supplier/campaign`），复用已有的按列类型推导与引用池机制，不新增硬编码列清单（列定义仍只来自 DDL 快照）。
+
+| 项 | 补齐前 | 补齐后（本轮实测） |
+|---|---|---|
+| 有数据表 / 快照总表 | 69 / 109 | **100 / 109** |
+| `ci` 档行数 | 21,604 | **23,148**（100 表） |
+| `demo` 档行数 | — | **204,993**（100 表；SQL 49.3 MB / JSONL 79.2 MB） |
+| 唯一键修复 | 0 | **0** |
+
+**（3）9 张仍为空的表（刻意不造数）**
+
+`amz_ad_placement_report`、`amz_listing_seo`、`amz_logistics_quote`、`amz_report_template`、`amz_cart`、`amz_coupon`、`amz_product_browse`、`amz_user_coupon`、`amz_attention` —— 全仓 `src/main` 扫描命中 **0**，无 Model/Mapper 引用。对它们造数只会制造"有数据但没人读"的假象，因此保持为空；一旦代码开始引用，必须同步补 `LAYOUTS` 条目。
+
+**（4）顺带修掉的一个生成器缺陷**
+
+`amz_customer.amz_review_solicitation` 初版按 `['shop','day3','day']` 造行，`amazon_order_id` 从订单池随机取值；撞唯一键后触发唯一键修复，被改写成 `S000-0000000-0000061-1` 这类带 `-1` 后缀的值，**脱离 `amz_order.amazon_order_id` 值域**，被 `verify.py` 的 references 校验判为 1 处违规。已改为**按订单派生**（layout `['order']`，`SHARE (1,5)`，即每 5 个订单发 1 条索评），引用天然落在订单域内。
+
+**（5）本轮实测校验**
+
+```text
+python tools/synthetic-data/verify.py
+[verify] generated 100 tables, 4997 rows in memory
+[verify] structure   OK (4997 rows, 0 violations)
+[verify] references  OK (201 pooled columns, 13 universes, 0 violations)
+[verify] markers     OK (107 marker columns, 0 violations)
+[verify] determinism OK (203 files byte-identical across 2 runs)
+[verify] snapshot    OK (109 tables, 14 databases)
+[verify] PASS
+```
+
+**（6）未证明的部分（不得外推）**
+
+- 本机 Docker daemon 未运行、3306 端口未监听，**这 31 张新表未做 MySQL 8 装载复验**。§7.9 的 MySQL 端到端证据早于本次扩表，不能直接外推到新表；新表装载需在具备 MySQL 8 的环境补跑 `load-all.sql`。
+- `verify.py` 的 `id types` 仍报 **7 处类型不一致 FINDING**（例：`amz_order.product_id` 为 `INT` 而 `amz_product.id` 为 `BIGINT`；`amz_finance.amz_payment_collection.order_id` 为 `VARCHAR(64)` 而 `amz_order.id` 为 `BIGINT`）。当前合成 id 落在 `INT` 范围内所以尚未暴露，但**规模上去后会溢出/截断**，属真实迁移治理项（并入附录 B），本轮没有伪装成已修复。
+- 补齐的是"行数与引用完整性"，**不是业务正确性**：金额勾稽、库存移动账平衡、借贷平衡等 §7.7 校验仍未被自动化覆盖。
+
+
 
 ---
 
@@ -2092,7 +2326,7 @@ python tools/synthetic-data/generate.py --tier ci --reset --truncate-first
 - 一致性：本文假设与前面设计章节的工作假设保持一致；若评审推翻部署形态或数据库选择，需要重新评估租户、迁移和成本章节。
 - 范围：本文覆盖业务、性能、安全、可靠性、运维、合规、数据迁移和验收；不包含具体源码实现，符合“设计先行”的流程。
 - 歧义：PII 保留、税务、RPO/RTO、容量、预算和运行单元收敛均列为待确认决策，未伪装成已确定事实。
-- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。(10) 前几轮“k8s HPA 多副本会导致调度任务双跑”的推测被**撤回**——实测 `DistributedJobLock.runWithLock` 被 10 个调度器使用，互斥成立；该类别缺陷应改记为 `DistributedJobLock` 自身在 Redis 不可用时 fail-open（§1.8 已如实记录）；(11) “`SpiRateLimiter` 已参考官方配额”被推翻——默认 `orders=30/30s` 与官方 0.0167 req/s 相差约 60 倍，`feeds`/`fees`/`finances` 三个在用 endpointTag 没有策略，`listings` 策略无调用方；(12) “SP-API 客户端已可用”被收窄——`ReportsRealClient:80` 取错官方字段名（应为 `reportDocumentId`），结算报表文档 ID 恒为 null；(13) “k8s 已具备可部署 Secret”被推翻——`AMZ_CRYPTO_KEY` 解码为 34 字节，`CryptoUtil` 硬校验 32 字节会让 spapi 启动失败；(14) “Feeds 提交流程已闭环”被推翻——`FeedsClient` 从不下载 `resultFeedDocumentId`，被拒行没有读取渠道；(15) “SP-API 默认加载真实实现”被推翻——默认 profile 为 `mock`，部署清单也不设置 profile，财务域三类客户端返回样例数据；(16) 本规格第 1～7 轮整体未审查 `amz-service-spapi`，本轮补审（附录 G.4）。 (17) “`JAVA_OPTS` 可能带 `-Dspring.profiles.active`”的假设被**推翻**——`k8s/configmap.yaml:47-48` 两处 `JAVA_OPTS`/`JAVA_OPTS_GATEWAY` 均只含堆内存与 GC 参数，16 份 Deployment 无其它 profile 来源（即“k8s 部署会跑 mock”结论**成立且覆盖全部 16 份**）。(18) Redisson 硬编码公网 IP 的影响面**收窄**为 order / product 两个模块——spapi 虽引 `redisson-spring-boot-starter` 但无自定义 `RedissonConfig`；同时该配置键在 `spring.data.*` 迁移后**必然失效**（不是“可能失效”），实测 45.3 s 连接超时。(19) `.env.example` 键数口径修正为 **71 行 / 36 个键**（此前“37 键”说法作废，以本轮正则 `^[A-Z][A-Z0-9_]*=` 计数为准）；“缺 Nacos 与平台凭证”的结论方向不变。(20) `docker-compose.yml` 服务数口径修正为 **31 个 service**（README “17 服务”与旧审计“约 30”均作废）；`env_file` 命中 0，不存在“compose 会统一加载 .env 补齐变量”的兜底路径。(21) 本规格 4.6 表的官方限流数值**自我纠错**——第 16 轮逐文件比对官方 OpenAPI 模型后确认 5 处与模型原文不符（`getReportDocument` 官方 0.0167/15 而非 2/15，使“比官方更严”的结论反向；`reports.getReport` 2/15 未单列；`createFeedDocument` 官方 0.5/15 与 `createFeed` 官方 0.0083/15 被写反；`getFeed`/`cancelFeed` 官方 2/15 而非 0.0222/10；`fees` 实际调用的是 `getMyFeesEstimates`（0.5/1）而非 `getMyFeesEstimateForASIN`（1/2）），以修订后的 4.6 与 1.5.1 为准；(22) “wimoor 技术栈偏旧（Spring Boot 2.0 / JDK 8）”被**推翻**——实测根 `pom.xml` 为 spring-boot-starter-parent **2.6.13** + `<java.version>9</java.version>`，且其每店铺持久化限流门控与文档解密/解压链是本项目可逐行参照的实现（1.5.1 第 8、9 条）；(23) “`x-amzn-RateLimit-Limit` 全仓只读取不闭环”被**收窄**——`FeedsClient.sendWithRetry:308-315` 已在 429 分支读取响应头并回写限流器，缺陷是覆盖面（单端点、仅 429、不恢复、不持久化、不跨进程）。(24) 附录 F.3 增补**本轮复核实例**与**已排除项**——`FeedsController` 的 2 个端点与 `SpapiController#saveCredential` 属“无方法级注解但方法内 `isShopAllowed`”的 C 类（不是 A 类缺口），`GET /spapi/status` 属 B 类探针；`InventoryController`/`ReplenishmentController`/`FinancialDataController`/`FinanceController`/`ReportController`/`OrderAuditController` 经 328 行矩阵复核**无守卫端点均为 0**，后续审计不必重复排查。 (25) 第 17 轮新增两条部署期 schema 引导阻断并修正附录 B 口径——(a) **P0-33**：`baseline-on-migrate` 全仓唯一出现处是 `.start-backend-final.bat:9` 的命令行参数，配置文件 **0 处**，而 `docker-compose.yml:41` 会先把 105 张表建好，Flyway 10.20.0 在“非空 schema + 无 history 表 + baseline=false”下抛 `Found non-empty schema(s) …`，故 Compose 路径 14 个服务首启必失败（**静态推断**：依赖存在 + 配置缺失 + Flyway 自身错误串；本机无 MySQL 未复跑，需一次真实启动确认）。(b) **P0-34**：`k8s/infra/mysql-statefulset.yaml` 只挂 `mysql-data`，`k8s/` 全域无 init SQL / Job / initContainer，14 个业务库一个都不存在。(c) 附录 B 由“约 57 / 约 105”改为实测 **58 / 105 / 106（并集 107）**，并确认 `init_all_tables.sql` 缺 49 张、`amz_report` 全仓无 `CREATE DATABASE`。 (26) 第 18 轮纠正 `amz-service-report` 的“无 datasource/靠 Feign 聚合”结论：源码实测 6 个 `extends BaseMapper`、6 个 `@TableName`、`mysql-connector-j`/`flyway-core` 依赖与 `db/migration/V1__init.sql`，但 `application.yml` 没有 datasource；因此 P0-07 的修复方向是把 `amz_report` 纳入建库并补 datasource，P0-32/附录 F 中“report 反向过度注入”的旧口径作废。 (27) 第 19 轮新增 §1.9.1「零凭证条件下的 API-Ready 取证规范」，并**下调两处既有结论的证据等级**：(a) 全仓 3 个签名测试文件共 **23 个 `@Test` 中 0 条已知答案测试（KAT）**——`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写同一拼接公式，属 E1 自证，不得再作为 A1 的证据；(b) 实测“取证能力”本身有 6 条缺口（`sellingpartnerapi-{na,eu,fe}` 硬编码 18 处且无覆盖键、`HttpClient` 字段自建 5 处、`AwsSigV4Signer.java:54` 内部取 `ZonedDateTime.now()`、`application.yml:69` LWA 端点写死、全仓无 HTTP 桩）。据此把“有 API 就能直接用”重新定义为 E1–E5 分级取证 + 凭证到位当天的一次性 runbook，并明确 **A5 联调记录不可伪造**（无凭证阶段上限 E1）。 (28) 第 22 轮据官方文档**推翻“SP-API 必须 SigV4”这一早期前提**（2023-10-02 起 Amazon 忽略该签名，见 1.9.2），同时新增 P0-35（必填头 `user-agent` 全仓缺失，实测命中 0 且 JDK 默认 UA 不含 App 名/版本）、P0-36（marketplace→region 四份副本各仅 10 条、缺 13 个、未知值静默回落 NA）、P0-37（无 RDT，订单 PII 无合规路径）；并把“沙箱可自助注册但需企业证件 + 视频核验”“沙箱限流 5 rps / burst 15”“`Retry-After` 官方命中 0 次”“`x-amzn-RateLimit-Limit` 仅见于 20x/400/404”“GitHub 无成熟开源亚马逊 ERP 可直接替换”等结论一并固化，避免后续轮次重复排查。**同轮修正**：第 22 轮的文档编辑脚本在追加本项时，把 §1.9.1 整节（69 行）与本文自检第 (27) 条各重复写入一次；已在同一轮删除重复副本（提交净 −70 行，250,863 → 241,765 字节），内容无净增减。 (29) 第 28 轮把模拟数据工具链从设计落地为可执行产物并完成 MySQL 8 端到端实测（69 张有行表 / 21,604 行 / `rc=0` / 0 errors / 2.3 s，§7.9），同时新增 9 个 P0 编号（P0-39…P0-47）并**再次自我纠错两处过强结论**：(a) “Compose 路径建出 105 张表”不成立——用未打补丁的原始 `docker/init-sql/` 跑真实 entrypoint，在 `14-init-tables-ops.sql` 的 `rank` 保留字处中止，MySQL 容器 `Exited (1)`，只建出 **37 张表 / 10 库**，15–33 号脚本从未执行；105 张是打补丁（`rank` + 7 处 `ADD COLUMN IF NOT EXISTS` + `amz_report` 建库 + `amz_inventory_alert.sku` 可空）后的结果。(b) “`amz_report_template` 落在 `amz_ai`”不成立——28–33 号脚本**均无 `USE`**，直接执行报 `ERROR 1046 No database selected`，库归属实为“未定义”，上一轮的库映射是我方手工推测。**去重口径**：P0-42 的凭证表部分与 P0-23 重叠、P0-44 与 P0-07 完全重叠（只作实证强化）、P0-46 为工具项不计入，净新增 7 条独立缺陷，**P0 总数由 38 条修正为 45 条**。证据脚本：`%TEMP%\amz-e2e4.py`（打补丁后 e2e 主证据）+ 原始 entrypoint 实测（37 张 / `Exited (1)`）+ 28 号脚本 `ERROR 1046` 复现。 (30) 第 28 轮**补测**把 §7.9「12 处行数不符」的归因从推断升级为实测，并纠正两处错误表述：(a) 原写“全部来自 `INSERT IGNORE`”不准确——`docker/init-sql/` 的 16 条种子实为 10 条 `INSERT IGNORE` + 4 条 `INSERT … ON DUPLICATE KEY UPDATE` + 2 条裸 `INSERT`，空表实测落库 **90 行**，其中 **79 行**落在 69 张生成表上、跨 **12 张表**，与基线差额 `21,683 − 21,604 = 79` 逐行吻合；(b) 本轮中途我自己给出的“4 行被 `IGNORE` 静默丢弃 / 种子内部有唯一键碰撞”推断**不成立并已撤回**，真因是统计脚本把 upsert 子句里的 `VALUES(col)` 函数调用误计为值元组（虚增 94，真实 90），元组数与落库行数本来就相等。同轮还用 `--truncate-first` 在同一容器**连灌两次**（两次 `rc=0`、逐表行数向量零差异），证明 TRUNCATE 模式幂等，且使实测行数与 manifest **69/69 精确相等**。教训固化：**对 `INSERT` 做静态行数统计必须先剥离 `ON DUPLICATE KEY UPDATE` 子句**；任何“静默丢弃/碰撞”结论都必须在空表上实测行数后才能成立。
+- **本轮推翻/收窄的假设（凡与以下条目冲突的旧表述，以本节为准）**：(1) “JWT 空密钥静默可用”被推翻——`JwtUtil.init()` 在密钥为空时直接抛异常拒绝启动，属正向设计；(2) “AI 工具会写生产数据”被收窄——8 个 `OPERATE_TOOLS` 中只有 `cross_marketplace_listing` 确认真实写入（SP-API Feeds）；(3) “`generate_promotion_plan` 会写库”被推翻——它是 `@GetMapping` 且返回硬编码方案，完全只读；(4) “OSV 命中 210 个漏洞”表述错误——正确口径是 210 组 `(坐标, advisory)` 配对、190 条唯一 advisory、67 个受影响坐标，且必须去重后取 `GET /v1/vulns/{id}` 才能谈严重度与修复版本；(5) “金蝶客户端仍可能返回 mock”被收窄为必然——`KingdeeRealClient` 无条件返回 `KINGDEE_MOCK_`，凭证写成 `SYNCING` 后**无法重试**，也不是“已过账”；(6) “多平台真实客户端已按官方校准”被推翻——SHEIN/TEMU/TikTok 三家均自述未校准，且发货回传以 `cred(null)` 解析凭证；(7) “1688 已完成真实对接”被推翻——真实客户端自述未校准，凭据为单套全局值（Redis key 无店铺维度）；(8) “Messaging/Ads 已有真实客户端”被收窄为骨架——无 SigV4、无按店铺 profile、失败静默返回空结果；(9) “仓库已有 Outbox”不成立——只有采购单的 Outbox-lite 状态机约定，没有 `outbox_event`/`inbox_event` 表与 relay（见 4.4 现状）。(10) 前几轮“k8s HPA 多副本会导致调度任务双跑”的推测被**撤回**——实测 `DistributedJobLock.runWithLock` 被 10 个调度器使用，互斥成立；该类别缺陷应改记为 `DistributedJobLock` 自身在 Redis 不可用时 fail-open（§1.8 已如实记录）；(11) “`SpiRateLimiter` 已参考官方配额”被推翻——默认 `orders=30/30s` 与官方 0.0167 req/s 相差约 60 倍，`feeds`/`fees`/`finances` 三个在用 endpointTag 没有策略，`listings` 策略无调用方；(12) “SP-API 客户端已可用”被收窄——`ReportsRealClient:80` 取错官方字段名（应为 `reportDocumentId`），结算报表文档 ID 恒为 null；(13) “k8s 已具备可部署 Secret”被推翻——`AMZ_CRYPTO_KEY` 解码为 34 字节，`CryptoUtil` 硬校验 32 字节会让 spapi 启动失败；(14) “Feeds 提交流程已闭环”被推翻——`FeedsClient` 从不下载 `resultFeedDocumentId`，被拒行没有读取渠道；(15) “SP-API 默认加载真实实现”被推翻——默认 profile 为 `mock`，部署清单也不设置 profile，财务域三类客户端返回样例数据；(16) 本规格第 1～7 轮整体未审查 `amz-service-spapi`，本轮补审（附录 G.4）。 (17) “`JAVA_OPTS` 可能带 `-Dspring.profiles.active`”的假设被**推翻**——`k8s/configmap.yaml:47-48` 两处 `JAVA_OPTS`/`JAVA_OPTS_GATEWAY` 均只含堆内存与 GC 参数，16 份 Deployment 无其它 profile 来源（即“k8s 部署会跑 mock”结论**成立且覆盖全部 16 份**）。(18) Redisson 硬编码公网 IP 的影响面**收窄**为 order / product 两个模块——spapi 虽引 `redisson-spring-boot-starter` 但无自定义 `RedissonConfig`；同时该配置键在 `spring.data.*` 迁移后**必然失效**（不是“可能失效”），实测 45.3 s 连接超时。(19) `.env.example` 键数口径修正为 **71 行 / 36 个键**（此前“37 键”说法作废，以本轮正则 `^[A-Z][A-Z0-9_]*=` 计数为准）；“缺 Nacos 与平台凭证”的结论方向不变。(20) `docker-compose.yml` 服务数口径修正为 **31 个 service**（README “17 服务”与旧审计“约 30”均作废）；`env_file` 命中 0，不存在“compose 会统一加载 .env 补齐变量”的兜底路径。(21) 本规格 4.6 表的官方限流数值**自我纠错**——第 16 轮逐文件比对官方 OpenAPI 模型后确认 5 处与模型原文不符（`getReportDocument` 官方 0.0167/15 而非 2/15，使“比官方更严”的结论反向；`reports.getReport` 2/15 未单列；`createFeedDocument` 官方 0.5/15 与 `createFeed` 官方 0.0083/15 被写反；`getFeed`/`cancelFeed` 官方 2/15 而非 0.0222/10；`fees` 实际调用的是 `getMyFeesEstimates`（0.5/1）而非 `getMyFeesEstimateForASIN`（1/2）），以修订后的 4.6 与 1.5.1 为准；(22) “wimoor 技术栈偏旧（Spring Boot 2.0 / JDK 8）”被**推翻**——实测根 `pom.xml` 为 spring-boot-starter-parent **2.6.13** + `<java.version>9</java.version>`，且其每店铺持久化限流门控与文档解密/解压链是本项目可逐行参照的实现（1.5.1 第 8、9 条）；(23) “`x-amzn-RateLimit-Limit` 全仓只读取不闭环”被**收窄**——`FeedsClient.sendWithRetry:308-315` 已在 429 分支读取响应头并回写限流器，缺陷是覆盖面（单端点、仅 429、不恢复、不持久化、不跨进程）。(24) 附录 F.3 增补**本轮复核实例**与**已排除项**——`FeedsController` 的 2 个端点与 `SpapiController#saveCredential` 属“无方法级注解但方法内 `isShopAllowed`”的 C 类（不是 A 类缺口），`GET /spapi/status` 属 B 类探针；`InventoryController`/`ReplenishmentController`/`FinancialDataController`/`FinanceController`/`ReportController`/`OrderAuditController` 经 328 行矩阵复核**无守卫端点均为 0**，后续审计不必重复排查。 (25) 第 17 轮新增两条部署期 schema 引导阻断并修正附录 B 口径——(a) **P0-33**：`baseline-on-migrate` 全仓唯一出现处是 `.start-backend-final.bat:9` 的命令行参数，配置文件 **0 处**，而 `docker-compose.yml:41` 会先把 105 张表建好，Flyway 10.20.0 在“非空 schema + 无 history 表 + baseline=false”下抛 `Found non-empty schema(s) …`，故 Compose 路径 14 个服务首启必失败（**静态推断**：依赖存在 + 配置缺失 + Flyway 自身错误串；【2026-09-28 更新】本机已有一台一次性 MySQL 8.0.39（端口 3399），但建库走 `tools/synthetic-data/apply_migrations.py` 裸 SQL、**未经过 Flyway**，故本条仍未复跑，仍需一次真实服务启动确认；原文“本机无 MySQL”已过时）。(b) **P0-34**：`k8s/infra/mysql-statefulset.yaml` 只挂 `mysql-data`，`k8s/` 全域无 init SQL / Job / initContainer，14 个业务库一个都不存在。(c) 附录 B 由“约 57 / 约 105”改为实测 **58 / 105 / 106（并集 107）**，并确认 `init_all_tables.sql` 缺 49 张、`amz_report` 全仓无 `CREATE DATABASE`。 (26) 第 18 轮纠正 `amz-service-report` 的“无 datasource/靠 Feign 聚合”结论：源码实测 6 个 `extends BaseMapper`、6 个 `@TableName`、`mysql-connector-j`/`flyway-core` 依赖与 `db/migration/V1__init.sql`，但 `application.yml` 没有 datasource；因此 P0-07 的修复方向是把 `amz_report` 纳入建库并补 datasource，P0-32/附录 F 中“report 反向过度注入”的旧口径作废。 (27) 第 19 轮新增 §1.9.1「零凭证条件下的 API-Ready 取证规范」，并**下调两处既有结论的证据等级**：(a) 全仓 3 个签名测试文件共 **23 个 `@Test` 中 0 条已知答案测试（KAT）**——`PlatformSignerCalibrationTest.java:69-74/99-104/129-130` 与 `Alibaba1688SignerTest.java:105/123` 都在测试内重写同一拼接公式，属 E1 自证，不得再作为 A1 的证据；(b) 实测“取证能力”本身有 6 条缺口（`sellingpartnerapi-{na,eu,fe}` 硬编码 18 处且无覆盖键、`HttpClient` 字段自建 5 处、`AwsSigV4Signer.java:54` 内部取 `ZonedDateTime.now()`、`application.yml:69` LWA 端点写死、全仓无 HTTP 桩）。据此把“有 API 就能直接用”重新定义为 E1–E5 分级取证 + 凭证到位当天的一次性 runbook，并明确 **A5 联调记录不可伪造**（无凭证阶段上限 E1）。 (28) 第 22 轮据官方文档**推翻“SP-API 必须 SigV4”这一早期前提**（2023-10-02 起 Amazon 忽略该签名，见 1.9.2），同时新增 P0-35（必填头 `user-agent` 全仓缺失，实测命中 0 且 JDK 默认 UA 不含 App 名/版本）、P0-36（marketplace→region 四份副本各仅 10 条、缺 13 个、未知值静默回落 NA）、P0-37（无 RDT，订单 PII 无合规路径）；并把“沙箱可自助注册但需企业证件 + 视频核验”“沙箱限流 5 rps / burst 15”“`Retry-After` 官方命中 0 次”“`x-amzn-RateLimit-Limit` 仅见于 20x/400/404”“GitHub 无成熟开源亚马逊 ERP 可直接替换”等结论一并固化，避免后续轮次重复排查。**同轮修正**：第 22 轮的文档编辑脚本在追加本项时，把 §1.9.1 整节（69 行）与本文自检第 (27) 条各重复写入一次；已在同一轮删除重复副本（提交净 −70 行，250,863 → 241,765 字节），内容无净增减。 (29) 第 28 轮把模拟数据工具链从设计落地为可执行产物并完成 MySQL 8 端到端实测（69 张有行表 / 21,604 行 / `rc=0` / 0 errors / 2.3 s，§7.9），同时新增 9 个 P0 编号（P0-39…P0-47）并**再次自我纠错两处过强结论**：(a) “Compose 路径建出 105 张表”不成立——用未打补丁的原始 `docker/init-sql/` 跑真实 entrypoint，在 `14-init-tables-ops.sql` 的 `rank` 保留字处中止，MySQL 容器 `Exited (1)`，只建出 **37 张表 / 10 库**，15–33 号脚本从未执行；105 张是打补丁（`rank` + 7 处 `ADD COLUMN IF NOT EXISTS` + `amz_report` 建库 + `amz_inventory_alert.sku` 可空）后的结果。(b) “`amz_report_template` 落在 `amz_ai`”不成立——28–33 号脚本**均无 `USE`**，直接执行报 `ERROR 1046 No database selected`，库归属实为“未定义”，上一轮的库映射是我方手工推测。**去重口径**：P0-42 的凭证表部分与 P0-23 重叠、P0-44 与 P0-07 完全重叠（只作实证强化）、P0-46 为工具项不计入，净新增 7 条独立缺陷，**P0 总数由 38 条修正为 45 条**。证据脚本：`%TEMP%\amz-e2e4.py`（打补丁后 e2e 主证据）+ 原始 entrypoint 实测（37 张 / `Exited (1)`）+ 28 号脚本 `ERROR 1046` 复现。 (30) 第 28 轮**补测**把 §7.9「12 处行数不符」的归因从推断升级为实测，并纠正两处错误表述：(a) 原写“全部来自 `INSERT IGNORE`”不准确——`docker/init-sql/` 的 16 条种子实为 10 条 `INSERT IGNORE` + 4 条 `INSERT … ON DUPLICATE KEY UPDATE` + 2 条裸 `INSERT`，空表实测落库 **90 行**，其中 **79 行**落在 69 张生成表上、跨 **12 张表**，与基线差额 `21,683 − 21,604 = 79` 逐行吻合；(b) 本轮中途我自己给出的“4 行被 `IGNORE` 静默丢弃 / 种子内部有唯一键碰撞”推断**不成立并已撤回**，真因是统计脚本把 upsert 子句里的 `VALUES(col)` 函数调用误计为值元组（虚增 94，真实 90），元组数与落库行数本来就相等。同轮还用 `--truncate-first` 在同一容器**连灌两次**（两次 `rc=0`、逐表行数向量零差异），证明 TRUNCATE 模式幂等，且使实测行数与 manifest **69/69 精确相等**。教训固化：**对 `INSERT` 做静态行数统计必须先剥离 `ON DUPLICATE KEY UPDATE` 子句**；任何“静默丢弃/碰撞”结论都必须在空表上实测行数后才能成立。 (33) **P0-33 曾被两次错误地维持「未修复 / 静态推断」**：第一次是照抄旧文档与交接摘要、没有回到代码核实（实测 `docker/init-sql/` 已只建空库、14 个服务已配 baseline-on-migrate）；第二次是本机有 MySQL 之后，把 `apply_migrations.py` 的裸 SQL 执行当成「未经过 Flyway」，于是把证据等级继续钉在静态推断。2026-09-28 用 `AdMigrationMySqlIT` 在 MySQL 8.0.39 上真跑 Flyway（V1–V7 success=1）才把它升级为实测。两个教训：① 判断「已修复 / 未修复」必须回到代码与真机，不得以文档或上一轮交接的措辞为准；② **工具绕过 Flyway 的执行不构成 Flyway 的证据**，但反过来也不能因为「数据被灌过」就认定 Flyway 路径没被验证过——两者是独立命题，必须分别取证。
 
 (31) **端点覆盖与出站白名单必须同批交付：前者是取证能力，后者是凭证保护**——第 41 轮把 §1.9.1 缺口 G1/G5 修复为 `SpApiEndpointResolver` + `SpApiHostPolicy`：覆盖只在非 prod 生效、prod 任一 override 非空即**拒绝启动**、非白名单主机在**注入 token 之前**被拒（`SpApiEndpointNotAllowedException`）、覆盖生效期间定时任务与手动同步**不调平台不落库**（`SpApiEndpointOverrideSafetyTest` 12 例）。若只加覆盖不加白名单，等于把 LWA access token 交给任意主机；若只加白名单不加覆盖，A1/A7/A8 的证据上限永远停在 E1——**两者是同一笔变更的两个必要面**，拆开交付会各自退化。
 (32) **“照抄官方文档字符串”也会错：schema 才是权威**——P0-27 的成因不是随手笔误，而是 `feeds_2021-06-30.json` **第 691 行** `getFeed` 的 description 逐字写着 `` `resultDocumentId` ``（Amazon 自己的笔误），而 `definitions.Feed` 的 schema 属性是 `resultFeedDocumentId`、`definitions.Report` 是 `reportDocumentId`。教训：字段名只能对**解析出的 OpenAPI `properties` 键**判定，**禁止**对官方模型 JSON 做裸文本子串扫描（后者会命中 description 里的错误字符串）；契约测试必须用**字节数 + sha256 双锁**的模型快照，并以**变异反证**证明断言有效（改回旧字段名应 FAIL，实测 3 例中 2 FAIL）。同轮还纠正两处统计口径：`amz-service-product` **无 `src/test`**（实测 0 个测试文件，`No tests to run.` 不构成回归证据；历史“product 51/51 PASS”实为 `amz-common` 的 51 例）；全仓 600 例的汇总统计必须包含 `[WARNING]` 前缀行——`amz-service-spapi` 因含 skip 用例，汇总行前缀不是 `[INFO]`，按 `^\[INFO\] Tests run:` 过滤会漏掉 145 例、把全仓误算成 455。
@@ -2216,3 +2450,213 @@ mvn -B -ntp dependency:tree -Dscope=runtime > target/dependency-tree-runtime.out
 3. 对外材料（README、官网、销售材料、投标文件）在阶段 0 结束前**不得**引用未经核对的模块能力与安全结论。
 
 ---
+
+### G.6 第 60/61 轮：结构化错误契约与本地/上游分类（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 让失败响应可机器分类，同时保持 fail-closed。当前证据为 E1/E2；无真实 Amazon 凭证，**不构成 E4/E5**。 |
+| 机器可读载荷 | `Result.error` 仅失败时输出，字段为 `code`、`platformStatus`、`platformCode`、`platformMessage`、`requestId`；成功响应不输出 `error`。 |
+| 上游异常 | `SpApiCallException` 保留 operation/path/status、首个 `errors[0]` 与响应头 requestId；平台消息和 requestId 脱敏、限长，不保存完整响应体/请求头。 |
+| 本地异常 | `LocalApiException` 稳定分类 `INVALID_REQUEST`、`PRESIGNED_URL_INVALID`、`CREDENTIAL_MISSING`；缺凭证与预签名 URL 构造失败不再伪装成上游失败。 |
+| 分类映射 | `SPAPI_CALL_FAILED`、上述本地码、`SPAPI_UNKNOWN_MARKETPLACE`、`SPAPI_UNSUPPORTED_REGION`、未知 `UPSTREAM_ERROR`；`IllegalArgumentException` 归入 `INVALID_REQUEST`。 |
+| 定向证据 | `amz-common` 2 例 + SP-API 28 例，合计 30 例 / 0F / 0E / 0S，BUILD SUCCESS。 |
+| 覆盖边界（历史） | 第 61 轮结束时，SP-API 主代码仍有 42 个 `Result.failure` 出口未全量迁移；该缺口已在第 62 轮由 G.7 收口。未联调真实 401/403/404/429，且 `requestId` 仅从响应头提取。 |
+| 提交状态 | 本轮相关改动仍在工作区，未提交、未推送。 |
+
+### G.7 第 62 轮：controller 失败出口全量结构化（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 消除 G.6 的 42 个未迁移失败出口。证据为 E1 源码形状验证；无真实 Amazon 凭证，**不构成 E4/E5**。 |
+| 迁移范围 | 8 个 controller 的 42 个 `Result.failure(...)` 出口全部携带 `ErrorSummary.localError(...)` 或 `ErrorSummary.toApiError(...)`。 |
+| 本地错误码 | `LocalApiException` 扩展为 `INVALID_REQUEST`、`PRESIGNED_URL_INVALID`、`CREDENTIAL_MISSING`、`MARKETPLACE_MISSING`、`FORBIDDEN`、`CONNECTOR_NOT_FOUND`、`FILE_TOO_LARGE`。 |
+| 守卫测试 | `ControllerFailureContractTest` 扫描 controller 源码，锁定 42 个失败出口并要求每个出口结构化；字符串字面量中的分号不会误截断语句。 |
+| 定向证据 | `amz-common` 2 例 + SP-API 29 例，合计 31 例 / 0F / 0E / 0S，BUILD SUCCESS。 |
+| 未证明 | 未联调真实 401/403/404/429；未证明每个本地分支在完整认证链路中的可达性、HTTP 状态码映射与 requestId 覆盖。 |
+| 提交状态 | 本轮相关改动仍在工作区，未提交、未推送。 |
+
+### G.8 第 63 轮：LWA 失败分类与凭证库 fail-closed（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 让认证前置失败可诊断、生产凭证库故障不伪装为“凭证不存在”。LWA 进程内契约 E2；凭证库与部署配置守卫 E1；**不是 E4/E5**。 |
+| LWA 分类 | `LWA_AUTH_FAILED`（4xx，含 `invalid_grant`）、`LWA_RATE_LIMITED`（429）、`LWA_UPSTREAM_ERROR`（5xx）、`LWA_INVALID_RESPONSE`（2xx 契约破损）、`LWA_TRANSPORT_ERROR`（无 HTTP 响应/中断）。 |
+| 安全约束 | 不保留原始响应体/cause；OAuth 平台码与消息脱敏限长；refresh token/client secret 不得进入异常文本；中断标记必须恢复。 |
+| 凭证库 | `spapi.credential-store.fail-on-db-error=true` 时：启动加载失败拒绝启动、读取故障不返回 null、写入先 DB 后缓存、删除先 DB 后缓存；`false` 仅保留给非生产/离线测试。 |
+| 部署契约 | 新键 `SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR` 已覆盖 `.env.example`、`.env.demo.example`、Compose、K8s ConfigMap 与 SP-API Deployment；生产默认 `true`，mock 演示为 `false`。 |
+| 定向证据 | LWA 12/12 + 凭证库 5/5 = **17 例 / 0F / 0E / 0S**；部署契约 8/8。 |
+| 回归证据 | SP-API **278 例 / 0F / 0E / 2S**；全仓 19 模块 **765 例 / 0F / 0E / 2S**，`BUILD SUCCESS`。 |
+| 未证明 | 无真实 LWA/SP-API 凭证与网络请求；未验证生产 DB 故障注入的进程启动、探针和告警；未做 K8s 实集群 dry-run/apply。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送。 |
+
+### G.9 第 64 轮：A6 验收路径误判纠正与网关别名落地（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 消除能力清单验收的路径误判，并让 `/api/connectors` 在网关层可达。配置/源码契约断言为 **E1**，桩端到端回放为 **E2**；没有真实 Nacos、Gateway、SP-API 联调，**不是 E4/E5**。 |
+| 缺陷 | runner 默认 `/api/connectors`，服务直连映射 `/spapi/connectors`；A6 因此稳定得到 404，并错误显示为“能力清单未实现”。这不是业务端点缺失，而是验收工具与运行时契约不一致。 |
+| 修复 | 网关新增 `/api/connectors/** -> /spapi/connectors/**` 重写别名；runner 默认改为直连 `/spapi/connectors`，仍可用参数覆盖为网关路径；桩同时支持两条路径且默认 404、仅 `--connectors-ok` 返回条目。 |
+| 守卫 | `DeploymentManifestContractTest` 8/8，其中新增 2 例锁定网关路由和 runner/桩路径契约；`ConnectorControllerGuardTest` 5/5，常量语义更新为“网关别名，直连路径仍是 `/spapi/connectors`”。 |
+| 回归证据 | SP-API **280 例 / 0F / 0E / 2S**；全仓 19 模块 **767 例 / 0F / 0E / 2S**，`BUILD SUCCESS`。runner 自检 **38/38**。 |
+| A6 桩证据 | 桩回放得到 **A6=E3 / pass=true**，证明 runner 能按新默认路径读取能力清单；该证据只能说明机械契约与桩行为一致。 |
+| 未证明（第 64 轮历史边界） | 未对真实服务进程跑 runner；未验证真实 Nacos 服务发现、Gateway 路由、鉴权透传与故障行为；未完成前端接线。A7 已在第 65 轮实现，见 G.10；真实 429/5xx 重放联调仍未完成。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送。 |
+
+
+### G.10 第 65 轮：SP-API Outbox / DLQ / 显式重放与 A7 契约（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 把失败请求从“只能看日志”升级为可持久化、可分类、可显式重放的工程闭环。离线源码/迁移/契约测试为 **E1**，进程内桩端到端为 **E2**；没有真实 Amazon 凭证，**不构成 E4/E5**。 |
+| 持久化模型 | 新增 `V2__spapi_call_outbox.sql` 与 `V3__spapi_outbox_replay_metadata.sql`；`SpApiGateway` 在发起网络请求前创建 Outbox 记录，保存 connector、operation、请求方法/路径、状态、尝试次数、平台状态码、重放元数据等。 |
+| 数据保护 | 请求体与响应体使用 AES-256-GCM 加密落库；错误文本经过脱敏，禁止把 access token、refresh token、AWS Secret、presigned URL 等敏感值写入 Outbox 查询结果。 |
+| 状态机 | `PENDING / SUCCEEDED / FAILED / REPLAYING / REPLAYED / DLQ`；429、5xx 与传输失败进入可重试路径；401/403 及其他不可重试 4xx 进入 DLQ。 |
+| 并发与重放 | 原子领取 `FAILED/DLQ -> REPLAYING`，多实例不会重复重放；自动调度只允许 `GET/HEAD`，避免无幂等保证的写操作被自动重放；DLQ 只能人工触发。 |
+| 人工重放端点 | `POST /spapi/connectors/outbox/{id}/replay`，要求 `OPERATOR/ADMIN` 并校验店铺归属；重放结果回读 Outbox，失败时显式保留状态与错误码。 |
+| A7 桩证据 | runner 对桩执行得到 **A6 = E3 / pass=true**、**A7 = E2 / pass=false**；A7 未通过的原因是桩进程自声明 `stub=true`，证据等级按契约封顶 E2，不是 Outbox 未实现。报告：`target/connector-acceptance-a7/connector-acceptance-spapi-20260925133301.json`，SHA-256 `595ae504901ffbb2d701a159b03936afdf61ce9706019dee605a0d8dbdb60ba1`。 |
+| 回归证据 | 当轮 SP-API **303 例 / 0F / 0E / 2S**，`amz-common` **65 例 / 0F / 0E / 0S**；2 个 skip 仍为需真实网络/凭证的 `SpApiIntegrationTest`。 |
+| 未证明 | 没有真实 429/5xx/传输中断后自动重试并回读成功的 E4 证据；没有真实 DLQ 人工重放、生产数据库并发竞争、长时间运行与告警演练；A5 仍未执行。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送。 |
+
+### G.11 第 66 轮：外部信任边界 fail-closed 与写操作 RBAC 运行期验证（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 修复“已认证但无店铺 claim”被旧兼容逻辑误放行的问题，并证明 RBAC/店铺隔离不只存在于直接 new Controller 的单元测试。源码/契约与 MockMvc 集成均为 **E1/E2**；没有真实 Amazon 请求，**不是 E4/E5**。 |
+| 严格店铺判定 | `UserContext.isShopAllowedStrict(Long)`：`shopId == null` 拒绝；`ADMIN` 放行；非 ADMIN 必须有非空 `shops` 且命中目标店铺。旧 `isShopAllowed` 继续保留内部任务兼容语义，不能全局机械替换。 |
+| 下游防御 | `ShopIdGuardAspect` 对已认证的非 ADMIN、空/缺失 shops 请求 fail-closed；无用户上下文的内部调用保持兼容放行；ADMIN 保留全局管理语义。 |
+| 写操作收口 | `SpapiController.saveCredential`、`FeedsController.submit` 使用 strict 店铺校验并增加 `@RequireRole({"OPERATOR","ADMIN"})`；`FeedsController.status` 使用 strict 校验；`ConnectorController` 本地店铺访问统一委托 strict。 |
+| 集成验证 | 新增 `GlobalAuthWebMvcIntegrationTest` 5 例，通过真实 `BaseAuthInterceptor -> ShopIdGuardAspect/RequireRoleAspect -> Controller` 链路验证：缺 token 401、VIEWER 写操作被 RBAC 拒绝、OPERATOR 同店可达、空 shops 的 @ShopScoped 请求被拒绝、跨店请求被拒绝。 |
+| 变异验证 | 临时移除测试上下文 `@EnableAspectJAutoProxy` 后，5 例中 3 例按预期失败（VIEWER 写操作、空 shops、跨店均为 `code=200`），证明测试确实覆盖 AOP 接线而非恒绿；恢复后全绿。 |
+| 回归夹具修复 | `ControllerErrorTextContractTest` 在直接 new Controller 的测试中显式设置/清理 OPERATOR + shop 1001 上下文，避免严格校验把测试夹具误判为越权；生产逻辑未回退。 |
+| 新鲜回归 | 2026-09-25 13:51–13:52 +08:00：全仓 `mvn -B -ntp test`，19 模块 `BUILD SUCCESS`，Surefire 汇总 **797 例 / 0F / 0E / 2S**；`amz-common` **70 例 / 0F / 0E / 0S**，SP-API **303 例 / 0F / 0E / 2S**。2 个 skip 仍为真实网络/凭证集成测试。 |
+| runner | 两个 Python 脚本 `py_compile` 通过；`acceptance_runner.py --selftest` **55 项 PASS**，退出码 0。 |
+| 未证明 | 没有真实 Amazon API 凭据、SP-API 沙箱/生产联调、真实 429/5xx 重放、真实 Nacos/Gateway/DB/Redis 故障注入；全仓仍有大量直接调用旧 `isShopAllowed` 的信任域，需逐个补测试后再迁移。当前最高证据仍受 E2/E3 边界限制。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送。 |
+
+### G.12 第 67 轮：首次部署凭证引导与 API-Ready 收口（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 在没有真实凭据的前提下，把“以后有 API 就能接入”落实为可部署路径：独立 bootstrap、整批校验、加密落库、prod fail-closed。源码/契约/部署清单证据最高为 **E2/E3**；没有真实 Amazon 请求，**不是 E4/E5**。 |
+| 引导设计 | `SpapiCredentialBootstrapRunner` 在 `bootstrap` profile 下读取只读 JSON，`SpapiCredentialBootstrapImporter` 先校验全批，再通过 `ShopCredentialStore.putAll(...)` 事务写入并刷新缓存；不启动 Web/调度，成功后可退出。 |
+| profile 隔离 | `bootstrap` 与 `prod`/`mock` 互斥；调度器和 Web 运行条件排除 bootstrap。普通 `prod` 启动仍执行 `ConnectorStartupCheck`，无完整凭证或凭证库异常时拒绝启动。 |
+| 凭证与密钥安全 | 示例 JSON 只含占位符；真实明文只存在于受控 Secret/临时文件并建议 `0400`，导入后删除；日志不得输出 secret/token/AWS key 值。`AMZ_CRYPTO_KEY` 轮换必须重加密，不能直接替换。 |
+| 部署入口 | `docker-compose.bootstrap.yml`、`k8s/jobs/amz-service-spapi-credential-bootstrap.yaml`、`application-bootstrap.yml`、`docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md`、`docs/examples/spapi-credentials.example.json`。 |
+| 结构化错误收口 | 8 个 controller 的 49 个失败出口全部携带 `ErrorSummary.localError(...)` 或 `toApiError(...)`；审计测试按实际审查结果从 48 更新到 49，没有移除失败分支。 |
+| 新鲜回归 | 2026-09-25：定向契约 **13 / 0F / 0E / 0S**；SP-API **327 / 0F / 0E / 2S**；全仓 19 模块 `BUILD SUCCESS`，16 个有测试模块 / 122 个测试类，Surefire **829 / 0F / 0E / 2S**。2 个 skip 仍为 `SpApiIntegrationTest`。runner `--selftest` **55 PASS**。 |
+| 尚未证明 | 真实 LWA 授权、SP-API 角色/订阅、marketplace/region 与 seller 归属、官方端点版本和字段契约、usage plan/限流、真实 429/5xx 重放、真实 Nacos/Gateway/DB/Redis 故障、沙箱与生产灰度均未验证。 |
+| 结论 | 代码已具备 API-ready 的接入与部署基座；拿到凭据后可直接开始联调，但仍须按 A5/本规格 8.8 清单逐项取证，不能把“有凭据”直接等同于“生产可用”。 |
+
+### G.13 第 68 轮：Agent 身份边界 fail-closed 与 SSE 上下文传播（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 关闭 Agent 接口可通过查询参数冒充用户、异步 worker 丢失身份、`role=null` 放行操作工具三类缺口。源码/单测/MockMvc 证据最高为 **E2/E3**；没有真实 Amazon 请求，不是 E4/E5。 |
+| P0-04 SSE 身份 | `AgentSseController` 删除 `userId` 参数与默认值 `1`，身份只取 JWT 上下文，缺身份 401。`AgentChatStreamService` 在请求线程捕获不可变 userId/role/shops/shopId 快照，worker 绑定后调用 Agent，结束后清理 ThreadLocal；调用线程上下文不受 worker 清理影响。 |
+| P0-04 工具权限 | `ErpToolExecutor#hasOperatePermission` 改为 `userId > 0` 且角色为 OPERATOR/ADMIN 才放行；无身份或 role=null 一律拒绝，避免异步上下文缺失被解释为提权。 |
+| P0-14 记忆接口 | chat/language 使用当前认证用户；偏好和历史只允许本人或 ADMIN；更新偏好强制覆盖请求体 `id/userId`；reminder 扫描要求 ADMIN。 |
+| P0-14 前端残留 | `AgentChat.vue` 不再把 localStorage 的 `user_id` 拼入 SSE URL。回归测试先注入 `user_id=999` 并实测失败，删除拼参后 10/10 通过。 |
+| 新鲜回归 | Agent 定向 **16 / 0F / 0E / 0S**；AI 模块 **98 / 0F / 0E / 0S**；前端 AgentChat **10 / 10**；全仓 19 模块 `BUILD SUCCESS`，Surefire XML 汇总 **124 个测试类 / 838 / 0F / 0E / 2S**。 |
+| 状态口径 | P0-04/P0-14 可标记为“代码已修复并完成模块/全仓回归，待独立安全复核”；不得标记为“真实 Amazon 联调通过”或“生产可用”。 |
+| 残余风险 | `UserContext.isShopAllowed` 兼容版仍在 ops/procurement/fba/multiplatform/logistics/finance/product/order/customer 等域有调用，必须区分认证请求与可信内部任务；`ListingCopyService` 异步写外部系统、productType 占位值与 Feed 轮询阻塞仍是下一优先级。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。 |
+
+### G.14 第 69 轮：字段契约与跨连接器失败关闭收口（2026-09-25）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 修复“有凭证后真实响应会被静默误判”的本地契约缺口。官方 OpenAPI 快照、单元测试和本地桩最高为 **E2/E3**；没有真实 Amazon/1688/金蝶请求，**不是 E4/E5**。 |
+| Finances 金额 | 官方 `financesV0.json` 的 `Currency` 使用 `CurrencyAmount`；解析器、夹具与响应语义测试统一修正。新增旧 `Amount` 拒绝用例，避免 Shipment/Refund/Adjustment 金额被跳过；Product Fees 的 `MoneyType.Amount` 保持不变。 |
+| Reports 必填字段 | `getReport` 的 `processingStatus`、`reportId`、`reportType`、`createdTime` 改为必填失败关闭，并补齐 `ReportInfo.createdTime` 映射。逐字段缺失均有反证测试。 |
+| Finances 不完整总账 | 官方 `FinancialEvents` 共 34 个 `*EventList`，当前业务实现 3 个；其余 31 个非空时抛 `Unsupported non-empty FinancialEvents types`，不再静默返回部分总账。 |
+| 1688 取消语义 | `closeOrder` 只有 `result.success=false` 才是平台明确业务拒绝并返回 `false`；`success=true` 返回 `true`；缺失/非布尔、JSON/HTTP/网络/token 异常均抛出。`ProcurementServiceImpl` 对业务拒绝中止本地取消，对远程故障抛出而非伪装业务失败。 |
+| 新鲜回归 | 1688 语义 + 采购服务 **21 / 0F / 0E / 0S**；SP-API **338 / 0F / 0E / 2S**；全仓 19/19 模块 `BUILD SUCCESS`，Surefire XML **142 份报告 / 935 / 0F / 0E / 2S**（口径已被 G.15 修正：混入陈旧 IT 报告 1 例，且本轮全仓无留存日志；以 G.15 的 **141 / 934 / 0F / 7E / 2S** 为准）；前端 **17 文件 / 138 / 0F** 且生产构建成功。 |
+| Schema 证据 | `snapshot_schema.py --check` 通过：109 表 / 14 数据库。仍保留 `column_conflicts=5`、`duplicates=1`、`drifted=1`，作为后续 DDL 治理项。 |
+| 尚未证明 | Amazon LWA/OAuth、卖家授权、region/marketplace、真实 401/403/404/429、预签名上传下载；金蝶 `GL_VOUCHER/FBillNo` 权限与并发查重、真实字段契约；1688 签名/沙箱；Shein/Temu/TikTok 真实签名/沙箱；生产压测、灾备、渗透与业务验收。 |
+| 结论 | 连接器已进一步达到“凭证到位即可开始联调”的 API-ready 语义，但仍不能宣称已真实联调或可直接生产部署。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。 |
+
+### G.15 第 70 轮复跑：全量回归口径修正与环境阻塞识别（2026-09-26）
+
+| 项 | 本轮实测 |
+|---|---|
+| 触发原因 | 复核第 69 轮“全仓 19/19 `BUILD SUCCESS`、142 份 / 935 / 0F / 0E / 2S”口径时发现：该口径混入一份陈旧 IT 报告，且未记录环境阻塞失败。 |
+| Keepa 根因与修复 | 首次重跑 `mvn test` 在 `amz-service-product` 失败：`KeepaRealClientTest` 3 例 `ExceptionInInitializerError` / `NoClassDefFoundError`。根因是 `KeepaRealClient` 类初始化期就执行 `HttpClient.newBuilder().build()`（JDK 会打开 selector/loopback），即使测试注入 mock `HttpClient` 也无法绕过。修复为默认 `HttpClient` 延迟到默认构造器调用时创建（`defaultHttpClient()`），注入构造器不再触碰真实网络栈；定向复跑 **3 / 0F / 0E / 0S**。 |
+| 全仓复跑 | `mvn test -fae`（JDK 17，`JAVA_HOME=C:\Users\Administrator\.cache\codex-tools\jdk-17.0.20.1+1`）：18/19 模块 `SUCCESS`，`amz-service-ad` `FAILURE`。Surefire 新鲜 XML **141 份 / 934 / 0F / 7E / 2S**；非 loopback 失败/错误 **0**；2 个 skip 仍为 `SpApiIntegrationTest`。本机日志 `.mvn-round70-rerun.log` 命中 `.gitignore` 的 `*.log` 规则、**不入库**，不能作为可交付证据。 |
+| 陈旧报告修正 | `amz-service-ad/target/surefire-reports/TEST-com.amz.migration.AdMigrationMySqlIT.xml` 时间戳为 2026-09-25 16:28，不在本轮重写范围；该类带 `@EnabledIfEnvironmentVariable(AD_MYSQL_IT_URL)` 且以 `IT` 结尾，`mvn test` 默认不运行。此前 “142 份 / 935” 正是把这份陈旧的 1 例计入了；`README.md` 与本节已改为只统计新鲜 XML。 |
+| 环境阻塞证明 | 与仓库无关的最小复现：JDK 17 下 `Pipe.open()` 与 `Selector.open()` 均抛 `IOException: Unable to establish loopback connection`；JDK 21 下 `Pipe.open()` 成功但 `Selector.open()` 仍失败。`AdvertisingApiRealClientContractTest` 需要真实 `HttpServer` + `HttpClient`，因此 7 例在当前执行环境无法执行，不是断言失败。 |
+| 结论边界 | 本轮**没有证明** `AdvertisingApiRealClientContractTest` 在当前环境通过；它必须在允许 loopback 的 CI/开发机重跑。证据等级仍为 **E2/E3**，不是 E4/E5，不能宣称生产可用。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。 |
+
+### G.16 第 77 轮：Sellers marketplace participations API-ready 闭环（2026-09-26）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 补齐 Sellers 只读能力，使其与 Orders/Feeds 等共用 LWA、SigV4、官方限流、Outbox、RBAC 与店铺隔离；最高证据仍为 **E2/E3**，不是 E4/E5。 |
+| 官方契约 | 固定 `sellers.json` 快照，路径 `GET /sellers/v1/marketplaceParticipations` 与 `GET /sellers/v1/account`，usage plan 均为 `0.016 req/s`、burst `15`；快照 29,604 bytes，SHA-256 `497862ea32de8040453649986e2cd7c6fcc15b55e8022becc783e4a6d6ffcffd`。 |
+| 实现 | 新增 `SellersClient` 与 `SellersController`；只暴露无 PII 的 marketplace participations，`/sellers/v1/account` 暂不接入；空 `payload` 数组合法，结构异常抛 `INVALID_RESPONSE`。 |
+| 能力台账 | `ConnectorRegistry` 为 **13 条已实现 / 6 条未实现 / 19 条总数**；Sellers 的限流、路径与响应契约均有护栏。 |
+| 新鲜回归 | 组合定向 **38 / 0F / 0E / 0S**；SP-API 模块 **360 / 0F / 0E / 2S**；全仓 19/19 模块 `BUILD SUCCESS`，Surefire XML **161 份 / 1053 / 0F / 0E / 2S**；前端 **19 文件 / 144 / 0F**，Vite 生产构建成功（156 modules transformed）。 |
+| 未证明 | 真实 LWA 凭证、SP-API 应用审批与 role 授权、卖家 marketplace 授权、区域/端点选择、真实 401/403/429、字段语义和沙箱/生产联调。 |
+| 结论 | Sellers 已具备对接能力（未联调）：有真实凭证后可直接开始授权、marketplace、限流与字段联调；不能写成已接通或生产可用。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。 |
+
+### G.17 第 78 轮：连接器能力台账双向收敛（2026-09-26）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 让能力台账与 `com/amz/client` 的真实 operationId 调用点双向一致；最高证据仍为 **E2/E3**，不提升 A5，不是 E4/E5。 |
+| 漂移 | 修复前台账为 **13 条已实现 / 6 条未实现 / 19 条总数**；实际 client 调用点为 **25 条**，漏登记 Messaging 11 条与 Uploads 1 条。 |
+| 实现 | `ConnectorRegistry` 补齐 12 条 operation，当前为 **25 条已实现 / 6 条未实现 / 31 条总数**；新增 `registryMatchesClientCallSitesBidirectionally` 做集合完全相等断言；Messaging 发送动作补齐 `messaging.` operationId 命名空间，`sendInvoice` 无官方 usage plan 时继续走保守兜底。 |
+| 契约与边界 | Messaging/Uploads 路径均通过官方 OpenAPI 快照契约；`ConnectorRegistry` 仍明确输出“具备对接能力（未联调）”，不能因代码存在而声称已接通。 |
+| 新鲜回归 | 组合定向 **26 / 0F / 0E / 0S**；SP-API 模块 **362 / 0F / 0E / 2S**；全仓 **19/19 模块 BUILD SUCCESS**，Surefire 新鲜 XML **161 份 / 1055 / 0F / 0E / 2S**。2 个 skip 仍为需要真实凭证的 `SpApiIntegrationTest`。 |
+| 未证明 | Amazon 应用审批、卖家授权与角色权限、marketplace/region、RDT/PII、官方限流实测、沙箱请求 ID/响应证据、生产运行与对账。 |
+| 结论 | 能力台账漂移已在代码级收敛；真实接入仍需合规凭证与联调验收，不能写成“有凭证即可直接生产使用”。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。 |
+
+### G.18 第 79 轮：FBA FIFO 原子扣减修复（2026-09-26）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 消除 FBA FIFO 出库在并发场景下的丢失更新和超卖，任一批次扣减失败时整体事务失败。最高证据为代码级 **E1**（SQL 源码契约 + 进程内并发回放）；真实 MySQL 集成回放未执行，不是 **E4/E5**。 |
+| Mapper 原子条件 | `InventoryBatchMapper.decreaseAvailableQuantityAtomic(Long id, Long shopId, String sku, Integer qty)` 使用单条条件更新，同时校验 `id`、`shop_id`、`sku`、`status = 'ACTIVE'`、`available_quantity >= #{qty}`，返回受影响行数；库存采用 `available_quantity = available_quantity - #{qty}` 相对扣减，禁止读后覆盖写。 |
+| SQL 赋值顺序 | `status = CASE WHEN available_quantity = #{qty} THEN 'DEPLETED' ELSE status END` 必须位于相对扣减赋值之前。MySQL 单表 `UPDATE` 按从左到右求值；若先扣减再判断，`CASE` 会读取已扣减后的值并造成二次扣减。该顺序由 `InventoryBatchMapperContractTest` 锁定。 |
+| 服务失败关闭 | `FbaShipmentServiceImpl#fifoOutbound` 已删除 `updateById(batch)` 路径；每次原子扣减仅在受影响行数为 1 时继续，否则抛 `CodeErrorException`。现有 `@Transactional(rollbackFor = Exception.class)` 回滚此前批次扣减，不返回部分成功。 |
+| 红灯/绿灯 | 临时还原旧 `updateById` 后，同一并发测试出现 **2/2 成功**，失败信息为 `expected: <1> but was: <2>`；恢复原子实现后每轮恰好 **1/2 成功**、另 1 次库存不足，最终可用量为 2。该红灯证明测试能捕获原缺陷，不是只验证新实现。 |
+| 并发回放 | `FbaShipmentFifoAtomicDeductionTest` 执行 **100 轮双线程内存原子扣减回放**：初始可用量 5，两次请求各出库 3；每轮断言恰好 1 次成功、1 次库存不足、最终可用量 2、0 负库存。 |
+| 新鲜回归 | 命令 `mvn -pl amz-service/amz-service-procurement -am test`：`amz-common` **110 / 0F / 0E / 0S**，procurement **68 / 0F / 0E / 0S**，合计 **178 / 0F / 0E / 0S**，`BUILD SUCCESS`。定向测试 **14 / 0F / 0E / 0S**。 |
+| 未证明与残余风险 | 尚未在真实 MySQL InnoDB、多连接、多事务条件下执行并发集成回放；未实测行锁等待、死锁/重试、事务回滚后库存守恒、连接池饱和与高竞争行为。内存模拟器只验证服务算法和受影响行数处理，不等价于数据库隔离级别与锁语义验证。当前并发冲突采用整体失败策略，不自动重读后续批次。 |
+| 结论 | FIFO 超卖已在**代码级修复**，但只能标记“待真实 MySQL 集成回放”，不能标记生产并发验证通过。只有真实数据库回放满足库存守恒和事务回滚断言后，才能提升数据库并发证据等级。 |
+| 工作区隔离 | 本轮改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。`git diff --check` 退出码 0，输出中的 CRLF 提示不是空白错误。 |
+
+### G.19 第 80 轮：调度锁 fail-open 修复（2026-09-26）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 消除 Redis 故障或锁状态不确定时多实例重复执行调度任务的风险。代码、单测和全仓回归证据为 **E1/E2**；没有真实 Redis 双实例、故障注入和长时间运行证据，不是 **E4/E5**。 |
+| 默认语义 | `DistributedJobLock` 默认 **fail-closed**：`StringRedisTemplate` 缺失、Redis 访问异常或无法确认抢锁结果时不执行 action，返回 fallback。 |
+| 显式降级 | 新增 `runIdempotentWithLock(...)`，仅供已证明幂等或只读的任务使用；没有全局 fail-open 开关，也没有批量替换现有调用点。当前 11 个 scheduler 类共 14 个生产调用点全部保留默认 fail-closed。 |
+| 参数与释放边界 | `leaseSeconds <= 0` 在访问 Redis 前拒绝；释放锁继续使用 token 匹配 Lua 脚本；释放异常不覆盖业务结果，并记录 `amz.scheduler.lock.release.failed` 指标。 |
+| 可观测性 | `amz.scheduler.lock.acquire.failed`、`amz.scheduler.lock.degraded`、`amz.scheduler.lock.skipped`、`amz.scheduler.lock.release.failed`，reason 区分 `redis_template_missing`、`redis_error`、`lock_held`。 |
+| 红灯/绿灯 | 先新增 release 失败指标断言，定向测试出现 `expected: <1.0> but was: <0.0>`；加入最小指标实现后，`DistributedJobLockTest` 为 **9 / 0F / 0E / 0S**。 |
+| 新鲜回归 | 全仓 `mvn -B -ntp test`：19/19 模块 `BUILD SUCCESS`；Surefire 新鲜 XML **164 份 / 1068 / 0F / 0E / 2S**；2 个 skipped 仍为需要真实凭证的 `SpApiIntegrationTest`。 |
+| 未证明与残余风险 | 未使用真实 Redis 验证双实例同窗互斥、断连、主从切换、锁租期过期、进程崩溃接管、释放失败恢复和长任务跨租期；当前也没有锁续租/watchdog。任务运行超过租期时，其他实例可能重新获得同名锁。 |
+| 生产影响 | Redis 不可用时，现有全部调度任务都会跳过，这是预期的 fail-closed 行为，但必须有指标告警和运维 runbook；无 Redis 的离线演示需要显式 mock/单实例方案，不能默认放开。 |
+| 结论 | 调度锁已从“Redis 故障时可能重复执行”修复为“代码级默认拒绝执行”；只能标记“待真实 Redis 双实例回放”，不能标记生产互斥已验证。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。 |
+
+### G.20 第 79 轮补充：RDT API-Ready 底座（2026-09-26）
+
+| 项 | 本轮实测 |
+|---|---|
+| 目标与证据等级 | 为订单 PII 等受限数据补齐官方 RDT 请求、缓存、失效、重放和显式 token source 路径。官方快照、单测和桩回放最高为 **E2/E3**；没有真实 RDT 或订单 PII 请求，不是 **E4/E5**。 |
+| 官方契约 | Tokens 快照 15,751 bytes，sha256 `3cd09ae7f218c83f32536a894cb8c42f2191c94b9c27f6bcf0a164442089b061`；`POST /tokens/2021-03-01/restrictedDataToken`，usage plan 1 req/s、burst 10。 |
+| 离线实现 | `TokensClient`、`RestrictedDataTokenManager`、`RestrictedResource`、显式 `LWA/RDT` token source、Orders 受限调用方法、Outbox token source 恢复和 V5 迁移均已落地。 |
+| 默认安全边界 | RDT 默认关闭；订单 PII 同步默认关闭。受限调用失败不得回退普通 LWA；RDT 不落库、不打印、不作为指标标签。 |
+| 能力台账 | `ConnectorRegistry` 当前为 **26 条已实现 / 5 条未实现 / 31 条总数**；RDT 已从“未实现”移入“离线已实现”，但不会因此提升 A5。 |
+| 新鲜回归 | 定向部署契约 **8 / 0F / 0E / 0S**；SP-API 全模块 **390 / 0F / 0E / 2S**；全仓 19/19 模块 `BUILD SUCCESS`，Surefire **168 份 / 1096 / 0F / 0E / 2S**；RDT/订单 PII 组合定向 **42 / 0F / 0E / 0S**。 |
+| 未证明与残余风险 | 尚无真实 Amazon 应用审批、卖家授权、RDT/SPDS/角色权限、沙箱 Tokens/Orders PII 请求、401/403/429、字段契约、PII 生命周期和生产观测证据。 |
+| 结论 | 已具备“拿到合规凭证后开始联调”的 API-Ready 路径；仍不能宣称已接通或可直接生产部署。 |
+| 提交状态 | 相关改动仍在工作区，未提交、未推送；6 个既有 staged 删除项保持不变。 |

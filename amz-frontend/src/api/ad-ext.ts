@@ -66,12 +66,12 @@ export interface AdSummary {
 }
 
 // ===== 广告活动 =====
-export const createCampaign = (data: AdCampaignExt) => {
-  return request.post<void, ApiResponse<AdCampaignExt>>('/ad/campaigns', data)
+export const createCampaign = (shopId: number | string, data: AdCampaignExt) => {
+  return request.post<void, ApiResponse<AdCampaignExt>>('/ad/campaigns', data, { params: { shopId } })
 }
 
-export const updateCampaign = (data: AdCampaignExt) => {
-  return request.put<void, ApiResponse<AdCampaignExt>>('/ad/campaigns', data)
+export const updateCampaign = (shopId: number | string, data: AdCampaignExt) => {
+  return request.put<void, ApiResponse<AdCampaignExt>>('/ad/campaigns', data, { params: { shopId } })
 }
 
 export const listCampaigns = (shopId: number | string, adType?: AdType) => {
@@ -80,13 +80,13 @@ export const listCampaigns = (shopId: number | string, adType?: AdType) => {
   })
 }
 
-export const batchCreateCampaigns = (data: AdCampaignExt[]) => {
-  return request.post<void, ApiResponse<AdCampaignExt[]>>('/ad/campaigns/batch', data)
+export const batchCreateCampaigns = (shopId: number | string, data: AdCampaignExt[]) => {
+  return request.post<void, ApiResponse<AdCampaignExt[]>>('/ad/campaigns/batch', data, { params: { shopId } })
 }
 
-export const batchUpdateStatus = (ids: number[], status: string) => {
+export const batchUpdateStatus = (shopId: number | string, ids: number[], status: string) => {
   return request.put<void, ApiResponse<AdCampaignExt[]>>('/ad/campaigns/batch/status', null, {
-    params: { ids: ids.join(','), status }
+    params: { shopId, ids: ids.join(','), status }
   })
 }
 
@@ -96,39 +96,43 @@ export const getSummaryByType = (shopId: number | string) => {
 }
 
 // ===== SB 广告素材 =====
-export const createCreative = (data: AdCreative) => {
-  return request.post<void, ApiResponse<AdCreative>>('/ad/creatives', data)
+export const createCreative = (shopId: number | string, data: AdCreative) => {
+  return request.post<void, ApiResponse<AdCreative>>('/ad/creatives', data, { params: { shopId } })
 }
 
-export const updateCreative = (data: AdCreative) => {
-  return request.put<void, ApiResponse<AdCreative>>('/ad/creatives', data)
+export const updateCreative = (shopId: number | string, data: AdCreative) => {
+  return request.put<void, ApiResponse<AdCreative>>('/ad/creatives', data, { params: { shopId } })
 }
 
-export const listCreatives = (campaignId: string) => {
-  return request.get<void, ApiResponse<AdCreative[]>>(`/ad/creatives/list/${campaignId}`)
+export const listCreatives = (shopId: number | string, campaignId: string) => {
+  return request.get<void, ApiResponse<AdCreative[]>>(`/ad/creatives/list/${campaignId}`, {
+    params: { shopId }
+  })
 }
 
-export const reviewCreative = (id: number, status: 'APPROVED' | 'REJECTED') => {
+export const reviewCreative = (shopId: number | string, id: number, status: 'APPROVED' | 'REJECTED') => {
   return request.put<void, ApiResponse<AdCreative>>(`/ad/creatives/${id}/review`, null, {
-    params: { status }
+    params: { shopId, status }
   })
 }
 
 // ===== SD 受众定向 =====
-export const createTargeting = (data: AdTargeting) => {
-  return request.post<void, ApiResponse<AdTargeting>>('/ad/targeting', data)
+export const createTargeting = (shopId: number | string, data: AdTargeting) => {
+  return request.post<void, ApiResponse<AdTargeting>>('/ad/targeting', data, { params: { shopId } })
 }
 
-export const updateTargeting = (data: AdTargeting) => {
-  return request.put<void, ApiResponse<AdTargeting>>('/ad/targeting', data)
+export const updateTargeting = (shopId: number | string, data: AdTargeting) => {
+  return request.put<void, ApiResponse<AdTargeting>>('/ad/targeting', data, { params: { shopId } })
 }
 
-export const listTargeting = (campaignId: string, targetingType?: string) => {
+export const listTargeting = (shopId: number | string, campaignId: string, targetingType?: string) => {
   return request.get<void, ApiResponse<AdTargeting[]>>(`/ad/targeting/list/${campaignId}`, {
-    params: { targetingType }
+    params: { shopId, targetingType }
   })
 }
 
-export const deleteTargeting = (id: number) => {
-  return request.delete<void, ApiResponse<void>>(`/ad/targeting/${id}`)
+export const deleteTargeting = (shopId: number | string, id: number) => {
+  return request.delete<void, ApiResponse<void>>(`/ad/targeting/${id}`, {
+    params: { shopId }
+  })
 }

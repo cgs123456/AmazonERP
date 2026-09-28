@@ -40,9 +40,17 @@
         请先在右上角选择店铺后再查看广告数据。
       </div>
 
+      <!-- 演示数据必须显式标识；生产模式无数据时展示未同步空态 -->
+      <div v-if="adDemoMode" v-show="activeAdTab !== 'DSP'" class="demo-banner">
+        演示模式：当前展示示例数据，不代表真实广告 API 返回结果。
+      </div>
+      <div v-else-if="currentShopId && !overviewIsLive" v-show="activeAdTab !== 'DSP'" class="sync-empty">
+        暂无已同步的广告报表，请先配置 API 并执行日报同步。
+      </div>
+
       <!-- ACoS 概览（全类型共用）（加载时仅显示骨架） -->
       <template v-if="!loading">
-      <div v-show="activeAdTab !== 'DSP'" class="acos-overview">
+      <div v-show="activeAdTab !== 'DSP' && (adDemoMode || overviewIsLive)" class="acos-overview">
         <div class="acos-card">
           <div class="acos-label">整体 ACoS</div>
           <div class="acos-value" :class="acosLevel">{{ acosData.totalAcos }}%</div>
@@ -67,15 +75,18 @@
 
       <!-- ACoS 趋势 -->
       <div v-show="activeAdTab !== 'DSP'" class="chart-card">
-        <h3>近 14 天 ACoS 趋势 <span v-if="!trendIsLive" class="mock-badge">示例数据</span></h3>
+        <h3>近 14 天 ACoS 趋势 <span v-if="!trendIsLive && acosTrend.length > 0" class="mock-badge">示例数据</span></h3>
         <div class="line-chart">
-          <svg viewBox="0 0 600 200" class="chart-svg">
-            <polyline :points="acosTrendPoints" class="trend-line" fill="none" stroke-width="2" />
-            <circle v-for="(pt, i) in acosTrendDots" :key="i" :cx="pt.x" :cy="pt.y" r="3" class="trend-dot" />
-          </svg>
-          <div class="chart-labels">
-            <span v-for="(d, i) in acosTrend" :key="i">{{ d.day }}</span>
-          </div>
+          <div v-if="acosTrend.length === 0" class="chart-empty">暂无趋势数据</div>
+          <template v-else>
+            <svg viewBox="0 0 600 200" class="chart-svg">
+              <polyline :points="acosTrendPoints" class="trend-line" fill="none" stroke-width="2" />
+              <circle v-for="(pt, i) in acosTrendDots" :key="i" :cx="pt.x" :cy="pt.y" r="3" class="trend-dot" />
+            </svg>
+            <div class="chart-labels">
+              <span v-for="(d, i) in acosTrend" :key="i">{{ d.day }}</span>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -276,6 +287,7 @@ import type { AdCreative, AdTargeting, AdSummary, AdType } from '@/api/ad-ext'
 import { useShopGuard } from '@/composables/useShopGuard'
 
 const loading = ref(false)
+const adDemoMode = import.meta.env.VITE_AD_DEMO_MODE === 'true'
 
 // 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
 const { currentShopId, refreshShop } = useShopGuard()
@@ -293,8 +305,9 @@ const switchAdTab = (tab: AdType) => {
   if (tab === 'DSP') loadSummaryByType()
 }
 
-// 趋势是否为真实数据（false 时图表为降级 mock，标题旁展示“示例数据”标识）
+// 趋势是否为真实数据；只有显式 demo 模式才允许用 mock 填充空数据
 const trendIsLive = ref(false)
+const overviewIsLive = ref(false)
 
 // 加载指定广告类型的趋势（非空才替换 mock）
 // 请求序号守卫：快速切换 Tab 时丢弃过期响应，避免旧类型数据覆盖新 Tab 图表
@@ -310,12 +323,14 @@ const loadTrend = async (shopId: number | string, adType: AdType) => {
       trendIsLive.value = true
     } else {
       trendIsLive.value = false
-      if (!tres || tres.code !== 200) console.warn('[AdManager] 趋势返回异常，使用降级数据', tres)
+      acosTrend.value = adDemoMode ? [...mockTrend] : []
+      if (!tres || tres.code !== 200) console.warn('[AdManager] 趋势返回异常', tres)
     }
   } catch (e) {
     if (seq !== trendSeq) return
     trendIsLive.value = false
-    console.warn('[AdManager] 趋势调用失败，使用降级数据', e)
+    acosTrend.value = adDemoMode ? [...mockTrend] : []
+    console.warn('[AdManager] 趋势调用失败', e)
   }
 }
 
@@ -340,9 +355,10 @@ const mockCampaigns: AdCampaign[] = [
   { id: 4, name: '商品推广-新品', active: true, budget: 40, spend: 15.70, sales: 89.20, acos: 17.6 }
 ]
 
-const acosData = ref<AdOverview>({ ...mockOverview })
-const acosTrend = ref<AcosTrendItem[]>([...mockTrend])
-const campaigns = ref<AdCampaign[]>([...mockCampaigns])
+const emptyOverview: AdOverview = { totalAcos: 0, totalSpend: '0.00', totalSales: '0.00', roas: '0.00' }
+const acosData = ref<AdOverview>(adDemoMode ? { ...mockOverview } : { ...emptyOverview })
+const acosTrend = ref<AcosTrendItem[]>(adDemoMode ? [...mockTrend] : [])
+const campaigns = ref<AdCampaign[]>(adDemoMode ? [...mockCampaigns] : [])
 
 const acosLevel = computed(() => {
   const a = acosData.value.totalAcos
@@ -412,6 +428,7 @@ onMounted(async () => {
     // 后端 GET /ad/reports 返回 AdReport 行数组（无总览包装），前端聚合总览
     const res = await getAdReports(shopId)
     if (res?.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
+      overviewIsLive.value = true
       const rows = res.data
       const totalSpend = rows.reduce((s, r) => s + toNum(r.cost), 0)
       const totalSales = rows.reduce((s, r) => s + toNum(r.sales), 0)
@@ -421,12 +438,17 @@ onMounted(async () => {
         totalSales: fmtMoney(totalSales),
         roas: totalSpend > 0 ? (totalSales / totalSpend).toFixed(2) : '0.00'
       }
-      // 趋势无后端数据源，保留降级 mock
-    } else if (!res || res.code !== 200) {
-      console.warn('[AdManager] 返回数据异常，使用降级数据', res)
+    } else {
+      overviewIsLive.value = false
+      acosData.value = adDemoMode ? { ...mockOverview } : { ...emptyOverview }
+      if (!res || res.code !== 200) {
+        console.warn('[AdManager] 返回数据异常', res)
+      }
     }
   } catch (e) {
-    console.warn('[AdManager] API 调用失败，使用降级数据', e)
+    overviewIsLive.value = false
+    acosData.value = adDemoMode ? { ...mockOverview } : { ...emptyOverview }
+    console.warn('[AdManager] API 调用失败', e)
   }
   try {
     // 活动列表改用 /ad/campaigns/list（含名称/状态/预算，AdReport 行无这些字段）
@@ -441,11 +463,15 @@ onMounted(async () => {
         sales: toNum(c.sales),
         acos: toNum(c.acos)
       }))
-    } else if (!cres || cres.code !== 200) {
-      console.warn('[AdManager] 活动列表返回异常，使用降级数据', cres)
+    } else {
+      campaigns.value = adDemoMode ? [...mockCampaigns] : []
+      if (!cres || cres.code !== 200) {
+        console.warn('[AdManager] 活动列表返回异常', cres)
+      }
     }
   } catch (e) {
-    console.warn('[AdManager] 活动列表调用失败，使用降级数据', e)
+    campaigns.value = adDemoMode ? [...mockCampaigns] : []
+    console.warn('[AdManager] 活动列表调用失败', e)
   }
   await loadTrend(shopId, activeAdTab.value)
   loading.value = false
@@ -463,22 +489,27 @@ const openCreativeDialog = () => {
   creativeDialog.visible = true
 }
 const loadCreatives = async () => {
-  if (!creativeQuery.campaignId) return
+  const shopId = refreshShop()
+  if (!shopId || !creativeQuery.campaignId) return
   try {
-    const res = await AdExt.listCreatives(creativeQuery.campaignId)
+    const res = await AdExt.listCreatives(shopId, creativeQuery.campaignId)
     if (res?.code === 200) creatives.value = res.data || []
   } catch (e) { console.warn('[AdManager] 加载素材失败', e) }
 }
 const submitCreative = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
   try {
-    await AdExt.createCreative(creativeDialog.form)
+    await AdExt.createCreative(shopId, creativeDialog.form)
     creativeDialog.visible = false
     if (creativeQuery.campaignId) await loadCreatives()
   } catch (e) { console.warn('[AdManager] 创建素材失败', e) }
 }
 const reviewCreative = async (id: number, status: 'APPROVED' | 'REJECTED') => {
+  const shopId = refreshShop()
+  if (!shopId) return
   try {
-    await AdExt.reviewCreative(id, status)
+    await AdExt.reviewCreative(shopId, id, status)
     await loadCreatives()
   } catch (e) { console.warn('[AdManager] 审核素材失败', e) }
 }
@@ -500,22 +531,27 @@ const openTargetingDialog = () => {
   targetingDialog.visible = true
 }
 const loadTargetings = async () => {
-  if (!targetingQuery.campaignId) return
+  const shopId = refreshShop()
+  if (!shopId || !targetingQuery.campaignId) return
   try {
-    const res = await AdExt.listTargeting(targetingQuery.campaignId)
+    const res = await AdExt.listTargeting(shopId, targetingQuery.campaignId)
     if (res?.code === 200) targetings.value = res.data || []
   } catch (e) { console.warn('[AdManager] 加载定向失败', e) }
 }
 const submitTargeting = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
   try {
-    await AdExt.createTargeting(targetingDialog.form)
+    await AdExt.createTargeting(shopId, targetingDialog.form)
     targetingDialog.visible = false
     if (targetingQuery.campaignId) await loadTargetings()
   } catch (e) { console.warn('[AdManager] 创建定向失败', e) }
 }
 const removeTargeting = async (id: number) => {
+  const shopId = refreshShop()
+  if (!shopId) return
   try {
-    await AdExt.deleteTargeting(id)
+    await AdExt.deleteTargeting(shopId, id)
     await loadTargetings()
   } catch (e) { console.warn('[AdManager] 删除定向失败', e) }
 }
@@ -564,6 +600,10 @@ const acosClass = (acos?: number) => {
 
 .chart-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow-sm); }
 .chart-card h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--color-on-surface); }
+.demo-banner, .sync-empty { padding: 0.75rem 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.875rem; }
+.demo-banner { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.sync-empty { background: var(--color-muted-light); color: var(--color-muted); }
+.chart-empty { min-height: 10rem; display: flex; align-items: center; justify-content: center; color: var(--color-muted); font-size: 0.875rem; }
 
 /* 折线颜色走 token，双主题自动适配 */
 .trend-line { stroke: var(--color-primary); }

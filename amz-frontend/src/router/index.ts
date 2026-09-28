@@ -49,6 +49,11 @@ const router = createRouter({
             component: () => import('../views/LogisticsDashboard.vue')
         },
         {
+            path: '/connectors',
+            name: 'Connectors',
+            component: () => import('../views/ConnectorCenter.vue')
+        },
+        {
             path: '/notifications',
             name: 'Notifications',
             component: () => import('../views/NotificationPage.vue')

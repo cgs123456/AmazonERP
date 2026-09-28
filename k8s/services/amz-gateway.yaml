@@ -57,16 +57,6 @@ spec:
                 configMapKeyRef:
                   name: amz-erp-config
                   key: NACOS_ADDR
-            - name: REDIS_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: amz-erp-config
-                  key: REDIS_HOST
-            - name: REDIS_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: amz-erp-config
-                  key: REDIS_PORT
             - name: JWT_SECRET_KEY
               valueFrom:
                 secretKeyRef:
@@ -82,11 +72,6 @@ spec:
                 configMapKeyRef:
                   name: amz-erp-config
                   key: JWT_AUDIENCE
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: amz-erp-secret
-                  key: REDIS_PASSWORD
             - name: TZ
               valueFrom:
                 configMapKeyRef:
@@ -95,11 +80,9 @@ spec:
             # WebSocket 上游：/ws/** 路由 → message 服务 Netty 端口（Service 已暴露 ws:8888）
             - name: WS_MESSAGE_UPSTREAM
               value: http://amz-service-message:8888
-            - name: JAVA_OPTS
-              valueFrom:
-                configMapKeyRef:
-                  name: amz-erp-config
-                  key: JAVA_OPTS_GATEWAY
+            - { name: JAVA_OPTS_GATEWAY, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS_GATEWAY } } }
+            - { name: SENTINEL_DASHBOARD, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SENTINEL_DASHBOARD } } }
+            - { name: GATEWAY_DOCS_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: GATEWAY_DOCS_ENABLED } } }
           resources:
             requests:
               cpu: "200m"

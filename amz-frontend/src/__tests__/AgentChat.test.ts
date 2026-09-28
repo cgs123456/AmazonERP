@@ -148,6 +148,8 @@ describe('AgentChat 组件', () => {
       'event: final\ndata: {"content":"FINAL-ANSWER"}\n\nevent: done\ndata: {}\n\n'
     ])
     vi.stubGlobal('fetch', fetchMock)
+    // 身份必须只来自鉴权上下文；即使旧版 localStorage 仍残留 user_id，也不得拼进 URL
+    localStorage.setItem('user_id', '999')
 
     const wrapper = mount(AgentChat, {
       props: { visible: true },
@@ -163,6 +165,7 @@ describe('AgentChat 组件', () => {
     ]
     expect(url).toContain('/ai/chat-stream')
     expect(url).toContain(encodeURIComponent('查库存'))
+    expect(url).not.toContain('userId=')
     // 鉴权头必须透传（EventSource 时代缺失导致网关 401）
     expect(init.headers.token).toBe('test-token')
     // SSE 路径不应调用 POST

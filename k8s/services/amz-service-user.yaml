@@ -162,6 +162,10 @@ spec:
                 configMapKeyRef:
                   name: amz-erp-config
                   key: JAVA_OPTS
+            - { name: AMZ_CRYPTO_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AMZ_CRYPTO_KEY } } }
+            - { name: OSS_ACCESS_KEY_ID, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: OSS_ACCESS_KEY_ID } } }
+            - { name: OSS_ACCESS_KEY_SECRET, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: OSS_ACCESS_KEY_SECRET } } }
+            - { name: OSS_BUCKET_NAME, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: OSS_BUCKET_NAME } } }
           resources:
             requests:
               cpu: "250m"

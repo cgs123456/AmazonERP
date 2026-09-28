@@ -64,18 +64,21 @@ spec:
             - { name: MYSQL_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } } }
             - { name: REDIS_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST } } }
             - { name: REDIS_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_PORT } } }
-            - { name: RABBITMQ_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_HOST } } }
-            - { name: RABBITMQ_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_PORT } } }
             - { name: DB_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } } }
             - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } } }
             - { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: REDIS_PASSWORD } } }
-            - { name: RABBITMQ_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_USERNAME } } }
-            - { name: RABBITMQ_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_PASSWORD } } }
             - { name: JWT_SECRET_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: JWT_SECRET_KEY } } }
             - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_ISSUER } } }
             - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_AUDIENCE } } }
             - { name: TZ, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: TZ } } }
             - { name: JAVA_OPTS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS } } }
+            - { name: AD_API_ENDPOINT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AD_API_ENDPOINT } } }
+            - { name: AD_TOKEN_ENDPOINT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AD_TOKEN_ENDPOINT } } }
+            - { name: AD_SHOP_ID, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AD_SHOP_ID } } }
+            - { name: AD_PROFILE_ID, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AD_PROFILE_ID } } }
+            - { name: AD_CLIENT_ID, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AD_CLIENT_ID } } }
+            - { name: AD_CLIENT_SECRET, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AD_CLIENT_SECRET } } }
+            - { name: AD_REFRESH_TOKEN, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AD_REFRESH_TOKEN } } }
           resources:
             requests: { cpu: "250m", memory: "512Mi" }
             limits: { cpu: "1000m", memory: "1536Mi" }

@@ -43,6 +43,7 @@ describe('AdManager 视图', () => {
   beforeEach(() => {
     localStorage.clear()
     localStorage.setItem('current_shop_id', '1')
+    vi.stubEnv('VITE_AD_DEMO_MODE', 'false')
     mockedGetAdReports.mockReset()
     mockedGetAdTrend.mockReset()
     mockedListCampaigns.mockReset()
@@ -53,6 +54,7 @@ describe('AdManager 视图', () => {
 
   afterEach(() => {
     localStorage.clear()
+    vi.unstubAllEnvs()
     vi.restoreAllMocks()
   })
 
@@ -78,11 +80,24 @@ describe('AdManager 视图', () => {
     expect(wrapper.find('.mock-badge').exists()).toBe(false)
   })
 
-  it('趋势接口返回空数组时应保留降级 mock 并展示示例标识', async () => {
+  it('生产模式接口返回空数组时不得把 mock 当作真实数据展示', async () => {
+    const wrapper = mount(AdManager, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('7/1')
+    expect(wrapper.text()).not.toContain('关键词-蓝牙耳机-US')
+    expect(wrapper.text()).toContain('暂无趋势数据')
+    expect(wrapper.find('.mock-badge').exists()).toBe(false)
+  })
+
+  it('显式 demo 模式才允许空数据降级为示例数据', async () => {
+    vi.stubEnv('VITE_AD_DEMO_MODE', 'true')
+
     const wrapper = mount(AdManager, { shallow: true, global: globalStubs })
     await flushPromises()
 
     expect(wrapper.text()).toContain('7/1')
+    expect(wrapper.text()).toContain('关键词-蓝牙耳机-US')
     expect(wrapper.find('.mock-badge').exists()).toBe(true)
     expect(wrapper.find('.mock-badge').text()).toBe('示例数据')
   })

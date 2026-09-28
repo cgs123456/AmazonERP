@@ -1,0 +1,30 @@
+{
+  "header": {
+    "sellerId": "A1SYNTHETIC000",
+    "version": "2.0",
+    "feedId": "feed-1"
+  },
+  "issues": [
+    {
+      "messageId": 2,
+      "sku": "SKU-B",
+      "code": "90220",
+      "severity": "ERROR",
+      "message": "SYNTHETIC: invalid attribute for SKU-B"
+    },
+    {
+      "messageId": 4,
+      "sku": "SKU-D",
+      "code": "8541",
+      "severity": "WARNING",
+      "message": "SYNTHETIC: non-blocking warning for SKU-D"
+    }
+  ],
+  "summary": {
+    "errors": 1,
+    "warnings": 1,
+    "messagesProcessed": 4,
+    "messagesAccepted": 2,
+    "messagesInvalid": 2
+  }
+}

@@ -213,8 +213,6 @@ const postSend = async (text: string, placeholder: ChatMessage, controller: Abor
  */
 const sseSend = async (text: string, placeholder: ChatMessage) => {
   const params = new URLSearchParams({ message: text })
-  const savedUserId = localStorage.getItem('user_id')
-  if (savedUserId) params.set('userId', savedUserId)
   // request 在单测中可能被 mock 为裸对象，defaults 缺失时回退同源 /api（与旧 EventSource 硬编码一致）
   const url = `${request.defaults?.baseURL || '/api'}/ai/chat-stream?${params.toString()}`
   const token = localStorage.getItem('token') || ''

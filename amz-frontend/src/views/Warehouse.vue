@@ -85,7 +85,7 @@
               <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.warehouseName }}</option>
             </select>
             <input v-model="invFilter.sku" placeholder="按 SKU 筛选" />
-            <button class="primary-btn" @click="() => { invPage.resetPage(); loadInventory() }">查询</button>
+            <button class="primary-btn" @click="loadInventory()">查询</button>
           </div>
         </div>
         <div class="table-card">
@@ -97,7 +97,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="inv in pagedInventoryList" :key="inv.id ?? `${inv.sku}|${inv.warehouseId}|${inv.batchNo || ''}`">
+              <tr v-for="inv in inventoryList" :key="inv.id ?? `${inv.sku}|${inv.warehouseId}|${inv.batchNo || ''}`">
                 <td>{{ inv.sku }}</td>
                 <td>{{ inv.asin || '-' }}</td>
                 <td>{{ inv.warehouseId }}</td>
@@ -111,16 +111,24 @@
               <tr v-if="!loading && inventoryList.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:package-variant-closed" width="32" class="empty-icon" /><span>暂无库存数据</span></div></td></tr>
             </tbody>
           </table>
-          <div v-if="invPage.total.value > invPage.size.value" class="table-pager">
-            <span class="page-info">第 {{ invPage.page.value }} 页 / 共 {{ invPage.totalPages.value }} 页（{{ invPage.total.value }} 条）</span>
+          <div class="pagination">
+            <span class="page-info">
+              已加载 {{ inventoryList.length }} 条<template v-if="inventoryTruncated">，仍有更多未加载</template><template v-else-if="inventoryPageMetaMissing">，完整性未知</template>
+            </span>
             <div class="page-actions">
-              <button class="page-btn" :disabled="invPage.page.value <= 1" @click="() => invPage.prevPage()">上一页</button>
-              <button class="page-btn" :disabled="invPage.page.value >= invPage.totalPages.value" @click="() => invPage.nextPage()">下一页</button>
+              <button v-if="inventoryTruncated" class="page-btn" :disabled="inventoryLoadingMore || !inventoryNextCursor" @click="loadMoreInventory">
+                {{ inventoryLoadingMore ? '加载中...' : '加载更多' }}
+              </button>
             </div>
+          </div>
+          <div v-if="inventoryTruncated" class="truncated-tip" role="status">
+            结果已被服务端截断：当前列表不是全量。请继续加载后再用于盘点、导出或库存汇总。
+          </div>
+          <div v-else-if="inventoryPageMetaMissing" class="truncated-tip" role="status">
+            服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
           </div>
         </div>
       </div>
-
       <!-- 入库单 -->
       <div v-show="activeTab === 'inbound'" class="panel">
         <div class="panel-header">
@@ -154,6 +162,22 @@
               <tr v-if="!loading && inboundOrders.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-in" width="32" class="empty-icon" /><span>暂无入库单</span></div></td></tr>
             </tbody>
           </table>
+          <div class="pagination">
+            <span class="page-info">
+              已加载 {{ inboundOrders.length }} 条<template v-if="inboundTruncated">，仍有更多未加载</template><template v-else-if="inboundPageMetaMissing">，完整性未知</template>
+            </span>
+            <div class="page-actions">
+              <button v-if="inboundTruncated" class="page-btn" :disabled="inboundLoadingMore || !inboundNextCursor" @click="loadMoreInbound">
+                {{ inboundLoadingMore ? '加载中...' : '加载更多' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="inboundTruncated" class="truncated-tip" role="status">
+            结果已被服务端截断：当前列表不是全量。请继续加载后再用于收货对账或导出。
+          </div>
+          <div v-else-if="inboundPageMetaMissing" class="truncated-tip" role="status">
+            服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
+          </div>
         </div>
       </div>
 
@@ -191,6 +215,22 @@
               <tr v-if="!loading && outboundOrders.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-out" width="32" class="empty-icon" /><span>暂无出库单</span></div></td></tr>
             </tbody>
           </table>
+          <div class="pagination">
+            <span class="page-info">
+              已加载 {{ outboundOrders.length }} 条<template v-if="outboundTruncated">，仍有更多未加载</template><template v-else-if="outboundPageMetaMissing">，完整性未知</template>
+            </span>
+            <div class="page-actions">
+              <button v-if="outboundTruncated" class="page-btn" :disabled="outboundLoadingMore || !outboundNextCursor" @click="loadMoreOutbound">
+                {{ outboundLoadingMore ? '加载中...' : '加载更多' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="outboundTruncated" class="truncated-tip" role="status">
+            结果已被服务端截断：当前列表不是全量。请继续加载后再用于发货对账或导出。
+          </div>
+          <div v-else-if="outboundPageMetaMissing" class="truncated-tip" role="status">
+            服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
+          </div>
         </div>
       </div>
       </template>
@@ -331,7 +371,6 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import * as WH from '@/api/warehouse'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder } from '@/api/warehouse'
-import { usePagination } from '@/composables/usePagination'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { useToast } from '@/composables/useToast'
 
@@ -348,14 +387,23 @@ const tabs = [
   { key: 'outbound', label: '出库单', icon: 'mdi:truck-out' }
 ] as const
 
+const PAGE_SIZE = 50
 const warehouses = ref<Warehouse[]>([])
 const inventoryList = ref<WarehouseInventory[]>([])
-
-// 仓库库存客户端分页（每页 20 条）
-const invPage = usePagination<WarehouseInventory>(() => inventoryList.value, 20)
-const pagedInventoryList = invPage.paged
+const inventoryNextCursor = ref<string | null>(null)
+const inventoryTruncated = ref(false)
+const inventoryPageMetaMissing = ref(false)
+const inventoryLoadingMore = ref(false)
 const inboundOrders = ref<InboundOrder[]>([])
+const inboundNextCursor = ref<string | null>(null)
+const inboundTruncated = ref(false)
+const inboundPageMetaMissing = ref(false)
+const inboundLoadingMore = ref(false)
 const outboundOrders = ref<OutboundOrder[]>([])
+const outboundNextCursor = ref<string | null>(null)
+const outboundTruncated = ref(false)
+const outboundPageMetaMissing = ref(false)
+const outboundLoadingMore = ref(false)
 const invFilter = reactive<{ warehouseId?: number; sku?: string }>({})
 
 const warehouseName = (id?: number) => {
@@ -371,32 +419,144 @@ const loadWarehouses = async () => {
   } catch (e) { console.warn('[Warehouse] 加载仓库失败', e) }
 }
 
-// manageLoading：onMounted 外层已统一控制骨架屏时传 false，避免内层提前复位导致闪烁
-const loadInventory = async (manageLoading = true) => {
-  if (!refreshShop()) return
-  if (manageLoading) loading.value = true
+// 库存/出库都使用服务端游标分页：前端只负责保留已加载行，不能再假装当前页就是全量。
+const loadInventory = async (append = false, manageLoading = true) => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    if (!append) {
+      inventoryList.value = []
+      inventoryNextCursor.value = null
+      inventoryTruncated.value = false
+      inventoryPageMetaMissing.value = false
+    }
+    return
+  }
+  if (!append) {
+    inventoryNextCursor.value = null
+    inventoryTruncated.value = false
+    inventoryPageMetaMissing.value = false
+  }
+  if (append) inventoryLoadingMore.value = true
+  else if (manageLoading) loading.value = true
   try {
-    const res = await WH.listInventory({ shopId: shopIdNum(), ...invFilter })
-    if (res?.code === 200) inventoryList.value = res.data || []
-  } catch (e) { console.warn('[Warehouse] 加载库存失败', e) } finally {
-    if (manageLoading) loading.value = false
+    const cursor = append ? (inventoryNextCursor.value ?? undefined) : undefined
+    const res = await WH.listInventory({
+      shopId: shopIdNum(),
+      ...invFilter,
+      size: PAGE_SIZE,
+      cursor
+    })
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      const rows = res.data
+      inventoryList.value = append ? inventoryList.value.concat(rows) : rows
+      const page = res._page
+      inventoryPageMetaMissing.value = !page
+      inventoryTruncated.value = page ? page.truncated : false
+      inventoryNextCursor.value = page?.nextCursor ?? null
+    } else {
+      console.warn('[Warehouse] 库存列表返回异常', res)
+      if (!append) inventoryList.value = []
+    }
+  } catch (e) {
+    console.warn('[Warehouse] 加载库存失败', e)
+    if (!append) inventoryList.value = []
+  } finally {
+    if (append) inventoryLoadingMore.value = false
+    if (manageLoading && !append) loading.value = false
   }
 }
 
-const loadInbound = async () => {
-  if (!refreshShop()) return
-  try {
-    const res = await WH.listInboundOrders(currentShopId.value)
-    if (res?.code === 200) inboundOrders.value = res.data || []
-  } catch (e) { console.warn('[Warehouse] 加载入库单失败', e) }
+const loadMoreInventory = () => {
+  if (!inventoryTruncated.value || !inventoryNextCursor.value || inventoryLoadingMore.value) return
+  void loadInventory(true)
 }
 
-const loadOutbound = async () => {
-  if (!refreshShop()) return
+const loadInbound = async (append = false) => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    if (!append) {
+      inboundOrders.value = []
+      inboundNextCursor.value = null
+      inboundTruncated.value = false
+      inboundPageMetaMissing.value = false
+    }
+    return
+  }
+  if (!append) {
+    inboundNextCursor.value = null
+    inboundTruncated.value = false
+    inboundPageMetaMissing.value = false
+  }
+  if (append) inboundLoadingMore.value = true
   try {
-    const res = await WH.listOutboundOrders(currentShopId.value)
-    if (res?.code === 200) outboundOrders.value = res.data || []
-  } catch (e) { console.warn('[Warehouse] 加载出库单失败', e) }
+    const cursor = append ? (inboundNextCursor.value ?? undefined) : undefined
+    const res = await WH.listInboundOrders(shopIdNum(), undefined, PAGE_SIZE, cursor)
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      const rows = res.data
+      inboundOrders.value = append ? inboundOrders.value.concat(rows) : rows
+      const page = res._page
+      inboundPageMetaMissing.value = !page
+      inboundTruncated.value = page ? page.truncated : false
+      inboundNextCursor.value = page?.nextCursor ?? null
+    } else {
+      console.warn('[Warehouse] 入库单列表返回异常', res)
+      if (!append) inboundOrders.value = []
+    }
+  } catch (e) {
+    console.warn('[Warehouse] 加载入库单失败', e)
+    if (!append) inboundOrders.value = []
+  } finally {
+    if (append) inboundLoadingMore.value = false
+  }
+}
+
+const loadMoreInbound = () => {
+  if (!inboundTruncated.value || !inboundNextCursor.value || inboundLoadingMore.value) return
+  void loadInbound(true)
+}
+
+const loadOutbound = async (append = false) => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    if (!append) {
+      outboundOrders.value = []
+      outboundNextCursor.value = null
+      outboundTruncated.value = false
+      outboundPageMetaMissing.value = false
+    }
+    return
+  }
+  if (!append) {
+    outboundNextCursor.value = null
+    outboundTruncated.value = false
+    outboundPageMetaMissing.value = false
+  }
+  if (append) outboundLoadingMore.value = true
+  try {
+    const cursor = append ? (outboundNextCursor.value ?? undefined) : undefined
+    const res = await WH.listOutboundOrders(shopIdNum(), undefined, PAGE_SIZE, cursor)
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      const rows = res.data
+      outboundOrders.value = append ? outboundOrders.value.concat(rows) : rows
+      const page = res._page
+      outboundPageMetaMissing.value = !page
+      outboundTruncated.value = page ? page.truncated : false
+      outboundNextCursor.value = page?.nextCursor ?? null
+    } else {
+      console.warn('[Warehouse] 出库单列表返回异常', res)
+      if (!append) outboundOrders.value = []
+    }
+  } catch (e) {
+    console.warn('[Warehouse] 加载出库单失败', e)
+    if (!append) outboundOrders.value = []
+  } finally {
+    if (append) outboundLoadingMore.value = false
+  }
+}
+
+const loadMoreOutbound = () => {
+  if (!outboundTruncated.value || !outboundNextCursor.value || outboundLoadingMore.value) return
+  void loadOutbound(true)
 }
 
 // ===== 仓库表单 =====
@@ -572,7 +732,7 @@ onMounted(async () => {
   loading.value = true
   try {
     await loadWarehouses()
-    await Promise.all([loadInventory(false), loadInbound(), loadOutbound()])
+    await Promise.all([loadInventory(false, false), loadInbound(), loadOutbound()])
   } finally { loading.value = false }
 })
 </script>
@@ -580,6 +740,7 @@ onMounted(async () => {
 <style scoped>
 /* 页面基础 */
 .warehouse-page { background: var(--color-background); }
+.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
 
 /* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */
 

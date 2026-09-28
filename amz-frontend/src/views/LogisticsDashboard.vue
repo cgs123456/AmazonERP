@@ -261,13 +261,15 @@
           <section v-else-if="tab === 'shipments'">
             <div class="filter-bar">
               <label for="lg-status">状态</label>
-              <select id="lg-status" v-model="shipmentStatus" @change="loadShipments">
+              <select id="lg-status" v-model="shipmentStatus" @change="loadShipments()">
                 <option value="">全部</option>
                 <option v-for="s in statusOptions" :key="s" :value="s">
                   {{ statusLabel(s) }}
                 </option>
               </select>
-              <span class="filter-count">共 {{ shipments.length }} 条</span>
+              <span class="filter-count">
+              已加载 {{ shipments.length }} 条<template v-if="shipmentsTruncated">，仍有更多未加载</template><template v-else-if="shipmentsPageMetaMissing">，完整性未知</template>
+            </span>
             </div>
             <div class="table-card">
               <table class="data-table">
@@ -309,6 +311,22 @@
                   </tr>
                 </tbody>
               </table>
+              <div class="pagination">
+                <span class="page-info">
+                  已加载 {{ shipments.length }} 条<template v-if="shipmentsTruncated">，仍有更多未加载</template><template v-else-if="shipmentsPageMetaMissing">，完整性未知</template>
+                </span>
+                <div class="page-actions">
+                  <button v-if="shipmentsTruncated" class="page-btn" :disabled="shipmentsLoadingMore || !shipmentsNextCursor" @click="loadMoreShipments">
+                    {{ shipmentsLoadingMore ? '加载中...' : '加载更多' }}
+                  </button>
+                </div>
+              </div>
+              <div v-if="shipmentsTruncated" class="truncated-tip" role="status">
+                结果已被服务端截断：当前列表不是全量。请继续加载后再用于对账、导出或汇总。
+              </div>
+              <div v-else-if="shipmentsPageMetaMissing" class="truncated-tip" role="status">
+                服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
+              </div>
             </div>
           </section>
 
@@ -607,7 +625,11 @@
                     <li v-for="(w, i) in cmpResult.warnings" :key="i">{{ w }}</li>
                   </ul>
                 </div>
-                <div v-if="cmpResult.recommended" class="cmp-best">
+                <div v-if="cmpResult.scanTruncated" class="cmp-best multi">
+                  报价扫描达到上限：仅使用前 {{ cmpResult.scanLimit }} 条报价，本次结果不完整，
+                  已禁用最低价推荐。请缩小航线范围后重试。
+                </div>
+                <div v-else-if="cmpResult.recommended" class="cmp-best">
                   推荐承运商：<b>{{ cmpResult.recommended }}</b>
                 </div>
                 <div v-else class="cmp-best multi">
@@ -783,7 +805,7 @@
                 <h3>调拨单</h3>
                 <div class="filter-inline">
                   <label for="trf-status">状态</label>
-                  <select id="trf-status" v-model="transferStatusFilter" @change="loadTransfers">
+                  <select id="trf-status" v-model="transferStatusFilter" @change="loadTransfers()">
                     <option value="">全部</option>
                     <option v-for="(label, key) in TRANSFER_STATUS_LABELS" :key="key" :value="key">
                       {{ label }}
@@ -867,6 +889,22 @@
                   </tr>
                 </tbody>
               </table>
+              <div class="pagination">
+                <span class="page-info">
+                  已加载 {{ transfers.length }} 条<template v-if="transfersTruncated">，仍有更多未加载</template><template v-else-if="transfersPageMetaMissing">，完整性未知</template>
+                </span>
+                <div class="page-actions">
+                  <button v-if="transfersTruncated" class="page-btn" :disabled="transfersLoadingMore || !transfersNextCursor" @click="loadMoreTransfers">
+                    {{ transfersLoadingMore ? '加载中...' : '加载更多' }}
+                  </button>
+                </div>
+              </div>
+              <div v-if="transfersTruncated" class="truncated-tip" role="status">
+                结果已被服务端截断：当前列表不是全量。请继续加载后再用于对账、导出或汇总。
+              </div>
+              <div v-else-if="transfersPageMetaMissing" class="truncated-tip" role="status">
+                服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
+              </div>
             </div>
           </section>
 
@@ -1225,6 +1263,22 @@
             </div>
           </li>
         </ul>
+        <div v-if="timeline.length || trackingTruncated || trackingPageMetaMissing" class="pagination">
+          <span class="page-info">
+            已加载 {{ timeline.length }} 条<template v-if="trackingTruncated">，仍有更多未加载</template><template v-else-if="trackingPageMetaMissing">，完整性未知</template>
+          </span>
+          <div class="page-actions">
+            <button v-if="trackingTruncated" class="page-btn" :disabled="trackingLoadingMore || !trackingNextCursor" @click="loadMoreTracking">
+              {{ trackingLoadingMore ? '加载中...' : '加载更多' }}
+            </button>
+          </div>
+        </div>
+        <div v-if="trackingTruncated" class="truncated-tip" role="status">
+          结果已被服务端截断：当前轨迹不是全量。请继续加载后再据此判断最新状态。
+        </div>
+        <div v-else-if="trackingPageMetaMissing" class="truncated-tip" role="status">
+          轨迹完整性无法确认：服务端未返回分页元数据，当前轨迹不能视为全量。
+        </div>
       </div>
     </div>
 
@@ -1293,7 +1347,12 @@ const overview = ref<DashboardOverview | null>(null)
 const trend = ref<TrendPoint[]>([])
 const carriers = ref<CarrierPerformance[]>([])
 const alerts = ref<ShipmentAlert[]>([])
+const PAGE_SIZE = 50
 const shipments = ref<Shipment[]>([])
+const shipmentsNextCursor = ref<string | null>(null)
+const shipmentsTruncated = ref(false)
+const shipmentsPageMetaMissing = ref(false)
+const shipmentsLoadingMore = ref(false)
 
 // 运营子域看板
 const quoteBoard = ref<QuoteBoard | null>(null)
@@ -1301,6 +1360,10 @@ const transferBoard = ref<TransferBoard | null>(null)
 const freightBoard = ref<FreightCostBoard | null>(null)
 const receiptBoard = ref<ReceiptBoard | null>(null)
 const transfers = ref<InventoryTransfer[]>([])
+const transfersNextCursor = ref<string | null>(null)
+const transfersTruncated = ref(false)
+const transfersPageMetaMissing = ref(false)
+const transfersLoadingMore = ref(false)
 const transferStatusFilter = ref('')
 
 /** 比价入参。重量与体积至少填一个，两者都填时服务端按计费价取高 */
@@ -1318,8 +1381,14 @@ const trendDays = 30
 const shipmentStatus = ref('')
 
 // 轨迹浮层
+const TRACKING_PAGE_SIZE = 200
 const trackingOpen = ref(false)
 const trackingLoading = ref(false)
+const trackingShipmentId = ref<number | null>(null)
+const trackingNextCursor = ref<string | null>(null)
+const trackingTruncated = ref(false)
+const trackingPageMetaMissing = ref(false)
+const trackingLoadingMore = ref(false)
 const timeline = ref<TrackingEvent[]>([])
 
 // 导入
@@ -1724,13 +1793,50 @@ const loadAlerts = async (shopId: string) => {
   }
 }
 
-const loadShipments = async () => {
+const loadShipments = async (append = false) => {
   const shopId = refreshShop()
-  if (!shopId) return
-  const res = await listShipments(shopId, shipmentStatus.value || undefined)
-  if (res?.code === 200) {
-    shipments.value = res.data || []
+  if (!shopId) {
+    if (!append) {
+      shipments.value = []
+      shipmentsNextCursor.value = null
+      shipmentsTruncated.value = false
+      shipmentsPageMetaMissing.value = false
+    }
+    return
   }
+  if (!append) {
+    shipmentsNextCursor.value = null
+    shipmentsTruncated.value = false
+    shipmentsPageMetaMissing.value = false
+  }
+  if (append) shipmentsLoadingMore.value = true
+  try {
+    const cursor = append ? (shipmentsNextCursor.value ?? undefined) : undefined
+    const res = await listShipments(shopId, shipmentStatus.value || undefined, PAGE_SIZE, cursor)
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      const rows = res.data
+      shipments.value = append ? shipments.value.concat(rows) : rows
+      const page = res._page
+      const hasMore = page ? (page.truncated || page.hasMore) : false
+      const metaMissing = !page || (hasMore && !page.nextCursor)
+      shipmentsPageMetaMissing.value = metaMissing
+      shipmentsTruncated.value = !metaMissing && hasMore
+      shipmentsNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
+    } else {
+      console.warn('[Logistics] 货件列表返回异常', res)
+      if (!append) shipments.value = []
+    }
+  } catch (e) {
+    console.warn('[Logistics] 加载货件列表失败', e)
+    if (!append) shipments.value = []
+  } finally {
+    if (append) shipmentsLoadingMore.value = false
+  }
+}
+
+const loadMoreShipments = () => {
+  if (!shipmentsTruncated.value || !shipmentsNextCursor.value || shipmentsLoadingMore.value) return
+  void loadShipments(true)
 }
 
 // ---- 运营子域看板 ----
@@ -1763,13 +1869,50 @@ const loadReceiptBoard = async (shopId: string) => {
   }
 }
 
-const loadTransfers = async () => {
+const loadTransfers = async (append = false) => {
   const shopId = refreshShop()
-  if (!shopId) return
-  const res = await listTransfers(shopId, transferStatusFilter.value || undefined)
-  if (res?.code === 200) {
-    transfers.value = res.data || []
+  if (!shopId) {
+    if (!append) {
+      transfers.value = []
+      transfersNextCursor.value = null
+      transfersTruncated.value = false
+      transfersPageMetaMissing.value = false
+    }
+    return
   }
+  if (!append) {
+    transfersNextCursor.value = null
+    transfersTruncated.value = false
+    transfersPageMetaMissing.value = false
+  }
+  if (append) transfersLoadingMore.value = true
+  try {
+    const cursor = append ? (transfersNextCursor.value ?? undefined) : undefined
+    const res = await listTransfers(shopId, transferStatusFilter.value || undefined, PAGE_SIZE, cursor)
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      const rows = res.data
+      transfers.value = append ? transfers.value.concat(rows) : rows
+      const page = res._page
+      const hasMore = page ? (page.truncated || page.hasMore) : false
+      const metaMissing = !page || (hasMore && !page.nextCursor)
+      transfersPageMetaMissing.value = metaMissing
+      transfersTruncated.value = !metaMissing && hasMore
+      transfersNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
+    } else {
+      console.warn('[Logistics] 调拨列表返回异常', res)
+      if (!append) transfers.value = []
+    }
+  } catch (e) {
+    console.warn('[Logistics] 加载调拨列表失败', e)
+    if (!append) transfers.value = []
+  } finally {
+    if (append) transfersLoadingMore.value = false
+  }
+}
+
+const loadMoreTransfers = () => {
+  if (!transfersTruncated.value || !transfersNextCursor.value || transfersLoadingMore.value) return
+  void loadTransfers(true)
 }
 
 /** 加载首屏四组核心数据（概览 / 趋势 / 承运商 / 告警） */
@@ -1882,20 +2025,56 @@ const doClose = async (shipmentId: number) => {
   }
 }
 
-const openTracking = async (shipmentId: number) => {
-  trackingOpen.value = true
-  trackingLoading.value = true
-  timeline.value = []
+const loadTracking = async (shipmentId: number, append = false) => {
+  if (!append) {
+    timeline.value = []
+    trackingNextCursor.value = null
+    trackingTruncated.value = false
+    trackingPageMetaMissing.value = false
+  }
+  if (append) trackingLoadingMore.value = true
+  else trackingLoading.value = true
   try {
-    const res = await getShipmentTracking(shipmentId)
-    if (res?.code === 200) {
-      timeline.value = res.data || []
+    const cursor = append ? (trackingNextCursor.value ?? undefined) : undefined
+    const res = await getShipmentTracking(shipmentId, TRACKING_PAGE_SIZE, cursor)
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      const rows = res.data
+      timeline.value = append ? timeline.value.concat(rows) : rows
+      const page = res._page
+      const hasMore = page ? (page.truncated || page.hasMore) : false
+      const metaMissing = !page || (hasMore && !page.nextCursor)
+      trackingPageMetaMissing.value = metaMissing
+      trackingTruncated.value = !metaMissing && hasMore
+      trackingNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
+    } else {
+      console.warn('[Logistics] 轨迹返回异常', res)
+      if (!append) timeline.value = []
+      trackingPageMetaMissing.value = true
+      trackingTruncated.value = false
+      trackingNextCursor.value = null
     }
   } catch (e) {
     console.warn('[Logistics] 轨迹加载失败', e)
+    if (!append) timeline.value = []
+    trackingPageMetaMissing.value = true
+    trackingTruncated.value = false
+    trackingNextCursor.value = null
   } finally {
-    trackingLoading.value = false
+    if (append) trackingLoadingMore.value = false
+    else trackingLoading.value = false
   }
+}
+
+const openTracking = async (shipmentId: number) => {
+  trackingOpen.value = true
+  trackingShipmentId.value = shipmentId
+  await loadTracking(shipmentId)
+}
+
+const loadMoreTracking = () => {
+  const shipmentId = trackingShipmentId.value
+  if (!shipmentId || !trackingTruncated.value || !trackingNextCursor.value || trackingLoadingMore.value) return
+  void loadTracking(shipmentId, true)
 }
 
 // ---- 比价 ----
@@ -2590,6 +2769,7 @@ onUnmounted(() => {
   font-size: var(--font-size-2);
 }
 .filter-count { margin-left: auto; }
+.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
 
 /* 数据导入 */
 .import-grid {

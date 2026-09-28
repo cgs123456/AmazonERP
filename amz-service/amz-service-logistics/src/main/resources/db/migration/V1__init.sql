@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS amz_warehouse_stock (
 CREATE TABLE IF NOT EXISTS amz_inventory_alert (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     shop_id BIGINT NOT NULL COMMENT '店铺ID',
-    sku VARCHAR(64) NOT NULL COMMENT 'SKU',
+    sku VARCHAR(64) DEFAULT NULL COMMENT 'SKU（NULL=店铺级规则，非空=SKU级规则）',
     warehouse_id BIGINT COMMENT '仓库ID',
     alert_type VARCHAR(32) NOT NULL COMMENT '预警类型',
     threshold_value DECIMAL(12,2) NOT NULL COMMENT '阈值',

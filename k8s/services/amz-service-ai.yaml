@@ -84,28 +84,12 @@ spec:
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST } }
             - name: REDIS_PORT
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_PORT } }
-            - name: MONGODB_HOST
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MONGODB_HOST } }
-            - name: MONGODB_PORT
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MONGODB_PORT } }
-            - name: RABBITMQ_HOST
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_HOST } }
-            - name: RABBITMQ_PORT
-              valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_PORT } }
             - name: DB_USERNAME
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } }
             - name: DB_PASSWORD
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } }
             - name: REDIS_PASSWORD
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: REDIS_PASSWORD } }
-            - name: MONGO_USERNAME
-              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: MONGO_USERNAME } }
-            - name: MONGO_PASSWORD
-              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: MONGO_PASSWORD } }
-            - name: RABBITMQ_USERNAME
-              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_USERNAME } }
-            - name: RABBITMQ_PASSWORD
-              valueFrom: { secretKeyRef: { name: amz-erp-secret, key: RABBITMQ_PASSWORD } }
             - name: JWT_SECRET_KEY
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: JWT_SECRET_KEY } }
             - name: JWT_ISSUER
@@ -116,6 +100,14 @@ spec:
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: TZ } }
             - name: JAVA_OPTS
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JAVA_OPTS } }
+            - { name: DEEPSEEK_API_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DEEPSEEK_API_KEY } } }
+            - { name: DEEPSEEK_API_URL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_API_URL } } }
+            - { name: DEEPSEEK_MODEL_NAME, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_MODEL_NAME } } }
+            - { name: DEEPSEEK_TEMPERATURE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_TEMPERATURE } } }
+            - { name: DEEPSEEK_TIMEOUT_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: DEEPSEEK_TIMEOUT_SECONDS } } }
+            - { name: KNOWLEDGE_ES_BASE_URL, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KNOWLEDGE_ES_BASE_URL } } }
+            - { name: KNOWLEDGE_ES_INDEX, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KNOWLEDGE_ES_INDEX } } }
+            - { name: KNOWLEDGE_ES_VECTOR_DIMS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: KNOWLEDGE_ES_VECTOR_DIMS } } }
           resources:
             requests: { cpu: "500m", memory: "1Gi" }
             limits: { cpu: "2000m", memory: "2Gi" }

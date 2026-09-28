@@ -128,6 +128,9 @@ spec:
             - { name: SPAPI_PLATFORM, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_PLATFORM } } }
             - { name: SPAPI_REQUIRE_CREDENTIALS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_REQUIRE_CREDENTIALS } } }
             - { name: SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR } } }
+            - { name: SPAPI_CREDENTIAL_CACHE_MAX_ENTRIES, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_CREDENTIAL_CACHE_MAX_ENTRIES } } }
+            - { name: SPAPI_CREDENTIAL_CACHE_TTL_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_CREDENTIAL_CACHE_TTL_SECONDS } } }
+            - { name: SPAPI_ACTIVE_SHOP_IDS_TTL_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_ACTIVE_SHOP_IDS_TTL_SECONDS } } }
             - { name: SPAPI_RESTRICTED_DATA_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_RESTRICTED_DATA_ENABLED } } }
             - { name: SPAPI_RESTRICTED_DATA_REFRESH_SKEW_SECONDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_RESTRICTED_DATA_REFRESH_SKEW_SECONDS } } }
             - { name: SPAPI_RESTRICTED_DATA_MAX_CACHE_ENTRIES, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_RESTRICTED_DATA_MAX_CACHE_ENTRIES } } }

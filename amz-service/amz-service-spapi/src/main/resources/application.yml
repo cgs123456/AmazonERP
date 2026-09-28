@@ -122,6 +122,12 @@ spapi:
   # 凭证存储的 DB 故障策略。生产 profile 置为 true；非生产保留离线降级能力。
   credential-store:
     fail-on-db-error: ${SPAPI_CREDENTIAL_STORE_FAIL_ON_DB_ERROR:false}
+    # 凭证只按店铺懒加载，并限制进程内密文缓存容量与有效期；
+    # 不得改回启动时 selectList(null) 全表预热。
+    cache-max-entries: ${SPAPI_CREDENTIAL_CACHE_MAX_ENTRIES:1000}
+    cache-ttl-seconds: ${SPAPI_CREDENTIAL_CACHE_TTL_SECONDS:600}
+    # 活跃店铺集合只查询 shop_id，并用短 TTL 快照减少调度器重复扫描。
+    active-shop-ids-ttl-seconds: ${SPAPI_ACTIVE_SHOP_IDS_TTL_SECONDS:60}
   # ====== SP-API Outbox 重放（P0-52c）======
   # 自动重放只处理到期 FAILED 记录；执行器再次拒绝非 GET/HEAD，DLQ 只能人工重放。
   # 多副本通过数据库原子领取竞争，不依赖单机锁；生产参数必须显式注入并纳入变更审计。
@@ -167,6 +173,16 @@ spapi:
     # SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_INTERVAL_MS 覆盖（Spring 环境变量宽松绑定）。
     subscription-sync-interval-ms: 3600000
     subscription-sync-initial-delay-ms: 60000
+    # 入站轮询与 Worker 消费的节奏。同样写字面量而非 ${...} 占位符：
+    # 这两个值调的是进程内部循环节奏，不需要按环境差异化注入，
+    # 但 Spring 环境变量宽松绑定仍允许用
+    # SPAPI_NOTIFICATIONS_POLL_INTERVAL_MS / SPAPI_NOTIFICATIONS_WORKER_INTERVAL_MS 覆盖。
+    # 入站间隔取 1s 是与 wait-time-seconds=20 配套的：SQS 长轮询本身会阻塞最长 20s，
+    # 空队列时不会形成忙循环；仅在真的拿到消息后才需要尽快回到下一轮。
+    poll-interval-ms: 1000
+    # Worker 间隔独立于入站：下游（amz-service-order）慢时不该反过来堵住入站，
+    # 否则消息会在可见性超时内没被删掉而重投。
+    worker-interval-ms: 2000
     mock-scenario: ${SPAPI_NOTIFICATIONS_MOCK_SCENARIO:order-change}
 # JWT security config
 jwt:

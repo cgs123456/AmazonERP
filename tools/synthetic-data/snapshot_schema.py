@@ -23,7 +23,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ddl_parser as P  # noqa: E402
 
-TOOL_VERSION = '1.1.0'
+TOOL_VERSION = '1.2.0'
 SNAPSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema')
 SNAPSHOT_PATH = os.path.join(SNAPSHOT_DIR, 'schema-snapshot.json')
 SOURCES_PATH = os.path.join(SNAPSHOT_DIR, 'DDL_SOURCES.json')
@@ -92,6 +92,138 @@ def rel(root: str, path: str) -> str:
     return os.path.relpath(path, root).replace('\\', '/')
 
 
+MIGRATION_VERSION_RE = re.compile(r"(?:^|/)V(\d+(?:[._]\d+)*)__")
+
+
+def migration_rank(path: str):
+    """Flyway ordering key: V1 < V2 < V10 (never lexicographic)."""
+    m = MIGRATION_VERSION_RE.search(path.replace('\\', '/'))
+    if not m:
+        return (1, (), path)
+    version = tuple(int(part) for part in re.split(r"[._]", m.group(1)) if part != '')
+    return (0, version, path)
+
+
+def _rename_in_key_columns(table: dict, old: str, new: str):
+    if table.get('primary_key'):
+        table['primary_key'] = [new if c == old else c for c in table['primary_key']]
+    for bucket in ('unique_keys', 'indexes'):
+        for entry in table.get(bucket) or []:
+            entry['columns'] = [new if c == old else c for c in (entry.get('columns') or [])]
+    for fk in table.get('foreign_keys') or []:
+        fk['columns'] = [new if c == old else c for c in (fk.get('columns') or [])]
+
+
+def apply_operation(table: dict, op: dict, alter: dict):
+    """Apply one ALTER operation to an already created table definition.
+
+    Returns a record for the report.  `applied=False` means the operation could not change
+    anything (column missing, definition unparsable) and is surfaced in the report instead of
+    being silently dropped - a snapshot that ignores migrations would validate the wrong schema.
+    """
+    record = {'path': alter['path'], 'line': alter.get('line'), 'table': alter['table'],
+              'kind': op['kind'], 'column': op.get('column') or op.get('name'),
+              'new_name': op.get('new_name'), 'applied': False, 'note': None}
+    kind = op['kind']
+    columns = table['columns']
+    if kind == 'add_column':
+        if any(c['name'] == op['column'] for c in columns):
+            record['note'] = 'column already present in the CREATE TABLE body'
+            return record
+        if op['definition'] is None:
+            record['note'] = 'column definition could not be parsed'
+            return record
+        column = dict(op['definition'])
+        columns.append(column)
+        if column.get('inline_primary_key') and not table.get('primary_key'):
+            table['primary_key'] = [column['name']]
+        if column.get('inline_unique'):
+            table['unique_keys'].append({'name': None, 'columns': [column['name']]})
+        record['applied'] = True
+        return record
+    if kind == 'modify_column':
+        for column in columns:
+            if column['name'] == op['column']:
+                if op['definition'] is None:
+                    record['note'] = 'column definition could not be parsed'
+                    return record
+                for field in ('type', 'args', 'unsigned', 'nullable', 'default', 'auto_increment',
+                              'generated', 'on_update', 'comment'):
+                    column[field] = op['definition'].get(field)
+                if 'enum_values' in op['definition']:
+                    column['enum_values'] = op['definition']['enum_values']
+                record['applied'] = True
+                return record
+        record['note'] = 'no such column in the snapshot'
+        return record
+    if kind == 'change_column':
+        for column in columns:
+            if column['name'] == op['column']:
+                if op['definition'] is None:
+                    record['note'] = 'column definition could not be parsed'
+                    return record
+                for field in ('type', 'args', 'unsigned', 'nullable', 'default', 'auto_increment',
+                              'generated', 'on_update', 'comment'):
+                    column[field] = op['definition'].get(field)
+                if 'enum_values' in op['definition']:
+                    column['enum_values'] = op['definition']['enum_values']
+                column['name'] = op['new_name']
+                _rename_in_key_columns(table, op['column'], op['new_name'])
+                record['applied'] = True
+                return record
+        record['note'] = 'no such column in the snapshot'
+        return record
+    if kind == 'rename_column':
+        for column in columns:
+            if column['name'] == op['column']:
+                column['name'] = op['new_name']
+                _rename_in_key_columns(table, op['column'], op['new_name'])
+                record['applied'] = True
+                return record
+        record['note'] = 'no such column in the snapshot'
+        return record
+    if kind == 'rename_index':
+        renamed = False
+        for bucket in ('indexes', 'unique_keys'):
+            for entry in table.get(bucket) or []:
+                if entry.get('name') == op['name']:
+                    entry['name'] = op['new_name']
+                    renamed = True
+        record['applied'] = renamed
+        if not renamed:
+            record['note'] = 'no such index in the snapshot'
+        return record
+    if kind == 'drop_column':
+        before = len(columns)
+        table['columns'] = [c for c in columns if c['name'] != op['column']]
+        record['applied'] = len(table['columns']) != before
+        if not record['applied']:
+            record['note'] = 'no such column in the snapshot'
+        return record
+    record['note'] = 'unsupported operation'
+    return record
+
+
+def apply_alters(tables_by_key: dict, alters: list):
+    """Replay ALTER TABLE operations on the CREATE TABLE bodies, in Flyway order."""
+    applied = []
+    for alter in sorted(alters, key=lambda a: (migration_rank(a['path']), a.get('line') or 0)):
+        operations = alter.get('operations') or []
+        if not operations:
+            continue
+        for key, occurrences in tables_by_key.items():
+            database, _, name = key.partition('.')
+            if name != alter['table']:
+                continue
+            if alter.get('database') and database != alter['database']:
+                continue
+            for occurrence in occurrences:
+                for op in operations:
+                    applied.append(apply_operation(occurrence, op, alter))
+                occurrence['table_hash'] = P.table_hash(occurrence)
+    return applied
+
+
 def build(root: str) -> dict:
     tables_by_key = {}
     source_stats = []
@@ -126,8 +258,10 @@ def build(root: str) -> dict:
             table['path'] = rel(root, path)
             key = '%s.%s' % (table['database'] or '?', table['name'])
             tables_by_key.setdefault(key, []).append(table)
+    applied_alters = apply_alters(tables_by_key, alters)
     return {'tables_by_key': tables_by_key, 'sources': source_stats,
-            'issues': issues, 'dynamic_ddl': dynamic_ddl, 'other_ddl': other_ddl, 'alters': alters}
+            'issues': issues, 'dynamic_ddl': dynamic_ddl, 'other_ddl': other_ddl, 'alters': alters,
+            'applied_alters': applied_alters}
 
 
 def column_diff(a: dict, b: dict):
@@ -280,6 +414,11 @@ def snapshot_payload(root: str, data: dict, summary: dict) -> dict:
             'conditional_columns_total': sum(len(v) for v in summary['conditional'].values()),
             'alter_table_statements': len(data['alters']),
             'add_column_statements': sum(len(a['add_columns']) for a in data['alters']),
+            'applied_alter_operations': sum(1 for a in data['applied_alters'] if a['applied']),
+            'unapplied_alter_operations': sum(1 for a in data['applied_alters'] if not a['applied']),
+            'renamed_columns': sorted({(a['table'], a['column'], a['new_name'])
+                                       for a in data['applied_alters']
+                                       if a['applied'] and a['kind'] in ('change_column', 'rename_column')}),
             'mysql8_incompatible_add_column': incompatible,
             'column_conflicts_total': sum(len(t['conflicting_columns']) for t in tables),
         },
@@ -375,6 +514,23 @@ def render_report(payload: dict, summary: dict) -> str:
         for item in incompatible:
             add('| `%s` | %d | `%s` | `%s` |' % (item['path'], item['line'], item['table'],
                                                    item['sql'].replace('|', '\|')[:120]))
+    unapplied = [a for a in payload.get('applied_alters', []) if not a['applied']]
+    add('- 快照重放的 ALTER 操作：**%d** 条生效 / **%d** 条未生效（列重命名 %d 处）'
+        % (payload['stats']['applied_alter_operations'], payload['stats']['unapplied_alter_operations'],
+           len(payload['stats']['renamed_columns'])))
+    if payload['stats']['renamed_columns']:
+        add('')
+        add('| 表 | 列重命名 |')
+        add('|---|---|')
+        for table, old, new in payload['stats']['renamed_columns']:
+            add('| `%s` | `%s` → `%s` |' % (table, old, new))
+    if unapplied:
+        add('')
+        add('| 文件 | 行 | 表 | 未生效的 ALTER | 原因 |')
+        add('|---|---|---|---|---|')
+        for item in unapplied[:20]:
+            add('| `%s` | %s | `%s` | `%s` | %s |' % (item['path'], item['line'], item['table'],
+                                                       item['kind'], item['note']))
     if payload['parse_issues']:
         add('')
         add('| 文件 | 行 | 类型 | 详情 |')

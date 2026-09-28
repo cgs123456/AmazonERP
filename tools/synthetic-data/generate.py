@@ -120,6 +120,7 @@ LAYOUTS = {
     'amz_product.amz_product': ['shop', 'marketplace', 'product'],
     'amz_order.amz_product_cost': ['shop', 'marketplace', 'product'],
     'amz_order.amz_order': ['shop', 'marketplace', 'product', 'order'],
+    'amz_order.amz_order_item': ['shop', 'marketplace', 'product', 'order'],
     'amz_order.amz_order_attribute': ['order'],
     'amz_order.amz_order_split_log': ['order'],
     'amz_order.amz_profit_report': ['order'],
@@ -181,12 +182,67 @@ LAYOUTS = {
     'amz_report.amz_sales_daily': ['shop', 'day14'],
     'amz_report.amz_profit_detail': ['order'],
     'amz_report.amz_business_overview': ['shop', 'day'],
+    # --- 第 70 轮补齐：此前 40 张表无任何模拟数据，其中 31 张被主代码引用 --- #
+    # 广告域
+    'amz_ad.amz_ad_auto_rule': ['shop', 'campaign'],
+    'amz_ad.amz_ad_bid_schedule': ['shop', 'campaign', 'day3'],
+    'amz_ad.amz_ad_campaign_ext': ['shop', 'campaign'],
+    'amz_ad.amz_ad_converting_terms': ['shop', 'campaign', 'term'],
+    'amz_ad.amz_ad_creative': ['shop', 'campaign'],
+    # AI 域
+    'amz_ai.amz_agent_eval_log': ['shop', 'day3', 'day'],
+    'amz_ai.amz_conversation_memory': ['user', 'day3'],
+    'amz_ai.amz_user_preference': ['user'],
+    # 商品 / Listing 域
+    'amz_product.amz_buy_box': ['shop', 'marketplace', 'product'],
+    'amz_product.amz_competitor_monitor': ['shop', 'product5'],
+    'amz_product.amz_keyword_ranking': ['shop', 'product5', 'day3'],
+    'amz_product.amz_listing_change_log': ['shop', 'product5', 'day3'],
+    'amz_product.amz_listing_copy_task': ['shop', 'product5'],
+    'amz_product.amz_listing_health': ['shop', 'marketplace', 'product'],
+    'amz_product.amz_translation_cache': ['shop', 'product5'],
+    # 运营域
+    'amz_ops.amz_hijack_alert': ['shop', 'product5', 'day3'],
+    'amz_ops.amz_keyword_rank': ['shop', 'campaign', 'keyword', 'day3'],
+    'amz_ops.amz_keyword_research': ['shop', 'term'],
+    'amz_ops.amz_negative_review_alert': ['shop', 'product5', 'day3'],
+    'amz_ops.amz_selection_opportunity': ['shop', 'category'],
+    # 报表域
+    'amz_report.amz_cost_allocation': ['shop', 'month'],
+    'amz_report.amz_inventory_turnover': ['shop', 'skus5', 'month'],
+    'amz_report.amz_profit_snapshot': ['shop', 'day14'],
+    # SP-API 域
+    'amz_spapi.amz_feed_result_error': ['shop', 'day3', 'day'],
+    'amz_spapi.amz_spapi_call_outbox': ['shop', 'day3', 'day'],
+    # 多平台域
+    'amz_multiplatform.amz_oauth_app': ['shop', 'platform'],
+    'amz_multiplatform.amz_oauth_token': ['shop', 'platform'],
+    'amz_multiplatform.amz_platform_message': ['shop', 'platform', 'day3'],
+    # 其它被引用的表
+    'amz_customer.amz_review_solicitation': ['order'],
+    'amz_order.amz_shipment_routing': ['shop', 'warehouse', 'day3'],
+    'amz_search.amz_history': ['user', 'day3'],
+    # --- 补齐无模拟数据的表（QA-01 表覆盖率：112/112；V5 新增 amz_order_item 后为 113/113）--- #
+    'amz_ad.amz_ad_placement_report': ['shop', 'campaign', 'day'],
+    'amz_ai.amz_listing_seo': ['shop', 'product5'],
+    'amz_ai.amz_logistics_quote': ['shop', 'day3'],
+    'amz_ai.amz_report_template': ['shop', 'entity'],
+    'amz_product.amz_cart': ['user', 'product5'],
+    'amz_product.amz_coupon': ['category'],
+    'amz_product.amz_product_browse': ['user', 'product5'],
+    'amz_product.amz_user_coupon': ['user', 'day3'],
+    'amz_spapi.amz_spapi_notification_destination': ['shop', 'marketplace'],
+    'amz_spapi.amz_spapi_notification_inbox': ['shop', 'day3', 'day'],
+    'amz_spapi.amz_spapi_notification_subscription': ['shop', 'marketplace', 'day3'],
+    'amz_user.amz_attention': ['user', 'day3'],
 }
 
 # tables whose row count must not be the full cartesian product
 SHARE = {
     # order-derived tables: row count = orders * numerator / denominator
     'amz_order.amz_order': (1, 1),
+    # 明细行：每订单 2 行（V5 之前 amz_order 结构上只能存 1 件商品，见 V5 迁移头）
+    'amz_order.amz_order_item': (2, 1),
     'amz_order.amz_order_attribute': (1, 1),
     'amz_order.amz_order_split_log': (10, 1),
     'amz_order.amz_profit_report': (1, 1),
@@ -198,6 +254,9 @@ SHARE = {
     'amz_multiplatform.amz_unified_order': (1, 5),
     'amz_multiplatform.amz_webhook_event': (1, 10),
     'amz_report.amz_profit_detail': (1, 2),
+    # 索评按订单派生（1/5 订单发一条）：避免从订单池随机取值后撞唯一键，
+    # 被唯一键修复改成 '...-1' 而脱离 amz_order.amazon_order_id 域。
+    'amz_customer.amz_review_solicitation': (1, 5),
 }
 
 STATUS_VOCAB = {
@@ -299,6 +358,7 @@ REF_COLUMNS = {
     'seller_sku': 'sku',
     'amazon_sku': 'sku',
     'fn_sku': 'sku',
+    'coupon_id': 'coupon_id',
 }
 
 # table -> {column: pool} : the values other tables may reference
@@ -313,6 +373,7 @@ HARVEST = {
     'amz_ad.amz_ad_keyword': {'id': 'keyword_id'},
     'amz_order.amz_order': {'id': 'order_id', 'amazon_order_id': 'amazon_order_id'},
     'amz_multiplatform.amz_platform_account': {'id': 'platform_account_id'},
+    'amz_product.amz_coupon': {'id': 'coupon_id'},
 }
 
 # dimension that already determines the pool (so no harvested pool is needed)
@@ -332,6 +393,7 @@ DIM_FOR_POOL = {
     'campaign_id': 'campaign',
     'keyword_id': 'keyword',
     'platform_account_id': None,
+    'coupon_id': None,
 }
 
 PRODUCED_POOLS = set()
@@ -717,10 +779,26 @@ class Generator(object):
             return None
         if typ in ('TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT', 'BIGINT'):
             number = int(value)
-            if typ in ('TINYINT', 'SMALLINT') and abs(number) > 127:
-                number = abs(number) % 120 + 1
-            if typ in ('TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT') and abs(number) > 2000000000:
-                number = abs(number) % 2000000000 + 1
+            # 引用列（REF_COLUMNS）绝不允许静默降级：父键是 BIGINT 而本列是窄整型时，
+            # `% 2000000000 + 1` 会把 900000000877000000 变成 877000010 这种"看起来
+            # 合理"的错误值，门禁在 FK_TARGETS 未覆盖该列时完全看不出来。宁可让生成
+            # 直接失败，也不要产出一份"通过校验但引用是假的"数据集。
+            if col['name'] in REF_COLUMNS:
+                if typ in ('TINYINT', 'SMALLINT') and abs(number) > 127:
+                    raise ValueError(
+                        'reference column %s is %s but the parent key %r does not fit; '
+                        'widen the column in a Flyway migration instead of wrapping it'
+                        % (col['name'], typ, number))
+                if typ in ('MEDIUMINT', 'INT') and abs(number) > 2000000000:
+                    raise ValueError(
+                        'reference column %s is %s but the parent key %r does not fit; '
+                        'widen the column in a Flyway migration instead of wrapping it'
+                        % (col['name'], typ, number))
+            else:
+                if typ in ('TINYINT', 'SMALLINT') and abs(number) > 127:
+                    number = abs(number) % 120 + 1
+                if typ in ('TINYINT', 'SMALLINT', 'MEDIUMINT', 'INT') and abs(number) > 2000000000:
+                    number = abs(number) % 2000000000 + 1
             if col['unsigned'] and number < 0:
                 number = abs(number)
             return number
@@ -1145,18 +1223,12 @@ def reset_directory(path: str) -> None:
 # --------------------------------------------------------------------------- #
 # dataset
 # --------------------------------------------------------------------------- #
+# P0-40（amz_order.uk_amazon_order 单列唯一键与 spec 7.6 冲突）已于 2026-09-27 由
+# amz-service-order V4__order_shop_scoped_identity.sql 解决：唯一键改为
+# uk_shop_market_order (shop_id, marketplace_id, amazon_order_id)。此处不再登记。
+# 由此带来的后续项：生成器现在可以（但尚未）产出跨店/跨站点同号订单来验证该约束，
+# 见 docs/superpowers/runbooks/reference-key-convergence-rollback.md 未闭环项。
 KNOWN_SCHEMA_CONFLICTS = [
-    {
-        'id': 'P0-40',
-        'table': 'amz_order.amz_order',
-        'constraint': 'uk_amazon_order (amazon_order_id)',
-        'conflict': ('spec section 7.6 requires that the same amazon_order_id can exist in '
-                     'different shops/marketplaces without overwriting each other, but the '
-                     'declared unique key is on amazon_order_id alone'),
-        'impact': ('the generator therefore emits globally unique amazon_order_id values; the '
-                   'cross-shop duplicate scenario from the spec cannot be represented in this '
-                   'schema and must be fixed before it can be tested'),
-    },
     {
         'id': 'P0-39',
         'table': 'amz_user.amz_user, amz_purchase_order',

@@ -33,7 +33,12 @@
     GET  /spapi/finance/document/{documentId}      成功：data=TSV 文本
     GET  /spapi/finance/events?shopId=             成功：data=四类事件数组
     POST /spapi/finance/fees/estimate              成功：data=佣金/配送费/合计
-    GET  /api/connectors                           默认 404（Task 6 未实现）；--connectors-ok 才返回条目
+    GET  /spapi/connectors                         默认 404；--connectors-ok 才返回条目
+    GET  /api/connectors                           网关别名口径；与 /spapi/connectors 行为一致
+    GET  /spapi/connectors/outbox                  默认 404；--outbox-ok 才返回安全视图
+    GET  /api/connectors/outbox                    网关别名口径；与直连 Outbox 行为一致
+    POST /spapi/connectors/outbox/{id}/replay      默认 404；需 --outbox-ok --outbox-replay-ok
+    POST /api/connectors/outbox/{id}/replay        网关别名口径；与直连重放行为一致
     GET  /__stub/requests / __stub/health          自检内省（不需要 token 头）
 """
 
@@ -77,6 +82,30 @@ FINANCIAL_EVENTS = [
     {'type': 'FEE', 'amount': '-18.25', 'currency': 'USD', 'postedDate': '2026-09-21T07:08:09Z'},
     {'type': 'ADJUSTMENT', 'amount': '4.75', 'currency': 'USD', 'postedDate': '2026-09-22T10:11:12Z'},
 ]
+
+
+def failed_outbox_view():
+    """A7 夹具：完整 18 字段安全视图，故意不包含请求/响应正文与查询串。"""
+    return {
+        'id': 7001,
+        'shopId': 1001,
+        'operationId': 'orders.getOrders',
+        'httpMethod': 'GET',
+        'requestPath': '/orders/v0/orders',
+        'status': 'FAILED',
+        'attemptCount': 1,
+        'maxAttempts': 4,
+        'responseStatus': 429,
+        'marketplaceId': 'ATVPDKIKX0DER',
+        'responseRequestId': 'req-1',
+        'lastErrorCode': 'HTTP_429',
+        'lastErrorMessage': 'throttled',
+        'createdAt': '2026-09-25T12:00:00',
+        'updatedAt': '2026-09-25T12:00:01',
+        'completedAt': None,
+        'expectedStatuses': [200],
+        'rateLimitVariant': None,
+    }
 
 
 def platform_diagnostic(operation, shop_id, status, detail=None):
@@ -186,12 +215,41 @@ class StubHandler(BaseHTTPRequestHandler):
                 'fulfillmentFee': 3.14,
                 'totalFees': 3.44,
             })
-        if method == 'GET' and path == '/api/connectors':
+        if method == 'GET' and path in ('/spapi/connectors', '/api/connectors'):
             if self.server.connectors_ok:
                 return 200, self._ok({'connectors': [
                     {'connector': 'spapi', 'enabled': True, 'evidenceLevel': 'E4'},
                 ]})
             return 404, {'code': 404, 'message': 'Not Found', 'data': None}
+        if method == 'GET' and path in ('/spapi/connectors/outbox', '/api/connectors/outbox'):
+            if not self.server.outbox_ok:
+                return 404, {'code': 404, 'message': 'Not Found', 'data': None}
+            try:
+                limit = int(query.get('limit') or 50)
+            except (TypeError, ValueError):
+                return 200, self._fail('invalid outbox limit')
+            if limit < 1:
+                return 200, self._fail('invalid outbox limit')
+            return 200, self._ok([dict(item) for item in self.server.outbox_items[:limit]])
+        match = re.match(r'^(/spapi/connectors/outbox|/api/connectors/outbox)/([0-9]+)/replay$', path)
+        if method == 'POST' and match:
+            if not (self.server.outbox_ok and self.server.outbox_replay_ok):
+                return 404, {'code': 404, 'message': 'Not Found', 'data': None}
+            replay_id = int(match.group(2))
+            target = next((item for item in self.server.outbox_items if item.get('id') == replay_id), None)
+            if target is None:
+                return 404, {'code': 404, 'message': 'Outbox record not found', 'data': None}
+            if target.get('status') not in ('FAILED', 'DLQ') or not (
+                    target.get('responseStatus') == 429
+                    or 500 <= (target.get('responseStatus') or 0) <= 599):
+                return 200, self._fail('Outbox replay precondition failed')
+            target['status'] = 'REPLAYED'
+            target['updatedAt'] = '2026-09-25T12:00:02'
+            target['completedAt'] = '2026-09-25T12:00:02'
+            return 200, self._ok({
+                'success': True, 'outcome': 'SUCCEEDED',
+                'status': 'REPLAYED', 'message': None,
+            })
         return 404, {'code': 404, 'message': 'Not Found', 'data': None}
 
     def _stub_route(self, method, path):
@@ -254,6 +312,9 @@ def build_server(args):
     server.absent_shop_id = args.absent_shop_id
     server.missing_report_id = args.missing_report_id
     server.connectors_ok = args.connectors_ok
+    server.outbox_ok = args.outbox_ok or args.outbox_replay_ok
+    server.outbox_replay_ok = args.outbox_replay_ok
+    server.outbox_items = [failed_outbox_view()]
     server.report_pending_polls = args.report_pending_polls
     server.report_status_calls = 0
     server.requests_log = []
@@ -290,7 +351,11 @@ def build_parser():
     parser.add_argument('--report-pending-polls', type=int, default=0,
                         help='前 N 次报表状态返回 IN_PROGRESS（验证轮询循环）')
     parser.add_argument('--connectors-ok', action='store_true',
-                        help='让 GET /api/connectors 返回 spapi 条目（默认 404=Task 6 未实现）')
+                        help='让 GET /spapi/connectors（或网关别名 /api/connectors）返回 spapi 条目')
+    parser.add_argument('--outbox-ok', action='store_true',
+                        help='让 GET /spapi/connectors/outbox 返回完整安全视图夹具')
+    parser.add_argument('--outbox-replay-ok', action='store_true',
+                        help='允许显式重放夹具；同时开启 Outbox 列表端点')
     parser.add_argument('--verbose', action='store_true')
     return parser
 

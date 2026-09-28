@@ -3,8 +3,7 @@ server:
 spring:
   application:
     name: amz-service-finance
-  # 默认非 mock（生产安全默认值）：KingdeeRealClient 未对接真实 API 时优雅降级，
-  # 凭证标记 SYNCING 并返回 KINGDEE_MOCK_ 占位号，不会伪造 SYNCED。
+  # 默认 prod：金蝶配置缺失时同步操作显式失败，绝不降级为 Mock 或伪造成功。
   # 本地离线开发请显式设置 SPRING_PROFILES_ACTIVE=mock 启用 Mock 客户端
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:prod}
@@ -51,17 +50,30 @@ mybatis-plus:
   global-config:
     db-config:
       id-type: auto
-# 金蝶云星空 API 配置
+# 金蝶云星空 Web API 配置。
+# api-gateway 必须指向客户 K3Cloud 站点根地址（通常以 /K3Cloud/ 结尾），不是公有云固定域名。
+# 配置不完整时连接器不会启动降级，调用同步接口会明确失败并保留 PENDING/FAILED 状态。
 kingdee:
-  api-gateway: https://api.kingdee.com
+  api-gateway: ${KINGDEE_API_GATEWAY:}
+  db-id: ${KINGDEE_DB_ID:}
+  user-name: ${KINGDEE_USER_NAME:}
   app-id: ${KINGDEE_APP_ID:}
   app-secret: ${KINGDEE_APP_SECRET:}
+  lcid: ${KINGDEE_LCID:2052}
+  account-book-number: ${KINGDEE_ACCOUNT_BOOK_NUMBER:}
+  voucher-group-number: ${KINGDEE_VOUCHER_GROUP_NUMBER:}
+  currency-number: ${KINGDEE_CURRENCY_NUMBER:}
+  exchange-rate-type-number: ${KINGDEE_EXCHANGE_RATE_TYPE_NUMBER:}
 
 # 共享汇率服务（amz-common GlobalExchangeRateService）离线兜底汇率。
 # 运行时每小时从 exchangerate.host 拉取实时汇率覆盖此表；拉取失败沿用此处配置。
 # 说明：原 kingdee.exchange-rates 已迁移至此 —— finance/product/multiplatform
 # 三套重复汇率实现合并为单一真相源，配置键随之统一为 amz.exchange-rates。
 amz:
+  finance:
+    kingdee:
+      # SYNCING 认领租约；超时后允许重新认领，避免进程崩溃导致永久卡死
+      sync-lease-seconds: ${KINGDEE_SYNC_LEASE_SECONDS:300}
   exchange-rates:
     USD: 7.25
     EUR: 7.85
