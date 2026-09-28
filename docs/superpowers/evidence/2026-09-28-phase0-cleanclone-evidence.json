@@ -1,0 +1,49 @@
+﻿{
+    "timestamp":  "2026-09-28T13:27:40.1318947+08:00",
+    "ref":  "HEAD",
+    "repo":  "C:\\Users\\Administrator\\Desktop\\AmazonERP",
+    "checks":  [
+                   {
+                       "detail":  "clone done",
+                       "exitCode":  0,
+                       "name":  "git-clone",
+                       "status":  "VERIFIED"
+                   },
+                   {
+                       "detail":  "ref=HEAD",
+                       "exitCode":  0,
+                       "name":  "git-checkout",
+                       "status":  "VERIFIED"
+                   },
+                   {
+                       "detail":  "porcelain=0",
+                       "exitCode":  0,
+                       "name":  "clean-tree",
+                       "status":  "VERIFIED"
+                   },
+                   {
+                       "detail":  "unittest",
+                       "exitCode":  0,
+                       "name":  "python-release-tests",
+                       "status":  "VERIFIED"
+                   },
+                   {
+                       "detail":  "mvn test -fae",
+                       "exitCode":  0,
+                       "name":  "maven-test",
+                       "status":  "VERIFIED"
+                   },
+                   {
+                       "detail":  "npm ci",
+                       "exitCode":  0,
+                       "name":  "npm-ci",
+                       "status":  "VERIFIED"
+                   },
+                   {
+                       "detail":  "npm run build",
+                       "exitCode":  0,
+                       "name":  "frontend-build",
+                       "status":  "VERIFIED"
+                   }
+               ]
+}

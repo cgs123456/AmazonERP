@@ -27,10 +27,11 @@ Pop-Location
 $evidencePath = Join-Path $WorkRoot 'evidence.json'
 $evidence | ConvertTo-Json -Depth 5 | Set-Content $evidencePath -Encoding UTF8
 Write-Host "Evidence: $evidencePath"
-Write-Host "Clone dir preserved: $cloneDir"
+Write-Host "Clone dir: $cloneDir (cleaned on success, preserved on failure)"
 $failed = $evidence.checks | Where-Object { $_.exitCode -ne 0 }
 if ($failed) { exit 1 }
+# Success: keep evidence.json, clean only clone work dirs (failures preserve everything for debugging).
 $resolvedWork = (Resolve-Path $WorkRoot).Path
-if ($resolvedWork.StartsWith($env:TEMP)) { Remove-Item -Recurse -Force $resolvedWork }
+if ($resolvedWork.StartsWith($env:TEMP)) { Get-ChildItem $resolvedWork -Directory -Filter 'clone-*' | Remove-Item -Recurse -Force }
 
 
