@@ -124,3 +124,48 @@ tools/release/verify_clean_clone.ps1
 | release.yml 未在远端跑过 | workflow 可能在真实 runner 上暴露平台差异（PowerShell/Buildx/Cosign 版本） | P0 第 2 步推送后观察首次 run |
 | 无真实 Amazon 凭证 | SP-API 层全部是 mock/契约测试 | Phase 1 需用户主动提供凭证，先 sandbox |
 | Java/Tomcat 依赖版本 | 可能存在未披露 CVE | Phase 2 引入 Grype 扫描门禁后闭环 |
+
+## 7. 2026-09-29 状态更新（后补，覆盖本文档的过期状态）
+
+本文档 §1 的状态表（`codex/api-ready-connectors` / HEAD `5ca0fdd`）已被后续工作取代，
+**不要按它判断当前仓库位置**：
+
+| 项 | 2026-09-29 实际值 |
+|----|-------------------|
+| 默认分支 master | `8d6100f`（PR #1 已合并：Boot 3.5.16 CVE 修复） |
+| 当前工作分支 | `codex/cve-waiver-gate`，HEAD `cfa6149`，本地 4 个提交**尚未 push** |
+
+### P0 三项的进展（本文档写作时的缺口）
+
+1. **装 Node/npm + clean clone 复验 — 已完成**：Node.js v22.22.2 / npm 10.9.7；
+   `npm run test:run`（vitest）22 files / 175 tests PASSED；`npm run build` PASS；
+   clean clone 复验 7/7 VERIFIED。证据见 `2026-09-28-phase0-verification.md` 的
+   Frontend Verification Addendum。
+2. **推送远端跑通 GitHub Actions — 已完成**：run `36385434376`（commit `1f8d772`）
+   9/9 jobs SUCCESS。首次远端 run `36384609340` 暴露 2 个本地无法发现的真实缺陷
+   （hygiene allowlist 因 CRLF 归一化失败；`schema-snapshot.json` 内嵌 50 个绝对路径，
+   违反 Phase 0 确定性原则），均在 `1f8d772` 修复。**这条经验要带进后续 Phase：
+   本地 GREEN 不等于远端 GREEN，Windows 开发 + Linux runner 的行尾与路径差异是真实风险。**
+3. **actionlint — 已完成**：actionlint **1.7.12**，`ci.yml` + `release.yml` 均 0 问题。
+   限制：Windows 下无法调用 shellcheck，`run:` 脚本的 shell 语法未被深度校验，
+   静态通过仍不等于远端执行成功。
+
+### P2-3 镜像漏洞门禁 — 已落地（不是未来项）
+
+`tools/release/cve_gate.py` + `cve-waivers.json`：cutoff 仍为 high，未豁免的 HIGH/CRITICAL
+一律阻断；豁免必须具名、有 owner、有到期日，过期本身即失败；release.yml 对 17 个镜像逐一过门禁。
+详见 `2026-09-28-container-cve-remediation.md` §13。
+
+### ⚠ 引用数字时的口径警告
+
+`2026-09-28-container-cve-remediation.md` §5 / §12 初版写的「15 个业务服务 447 -> 0」
+与「全仓残留 19」**是错的**（那个 0 只扫了抽出的应用依赖集，不含 SkyWalking agent 与基础镜像
+OS 包）。真实全镜像口径：**16 个 Java 镜像 x 15 = 240 + frontend 1 = 241**（frontend
+瘦身前为 244）。该文档已加更正与 §13；**接手者不要引用旧的 19 / 447 -> 0。**
+
+### 仍 NOT VERIFIED / 未做
+
+- `release.yml` 远端真实执行（GHCR push + SBOM + 17 次 grype + 门禁 + Cosign 签名）
+  — 至今没有 push 过 tag，本地与静态校验均不能替代。
+- 删除 GHCR 上未签名的 `0.1.0` 镜像/package — 当前 token **无 `packages:delete`** 权限，只能手动。
+- Nacos 配置中心接入（32 个 `bootstrap.yml`）— 架构级变更，未排期。
