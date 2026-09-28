@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (build but do not push/sign)"
+        required: false
+        default: "false"
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Hygiene
+        run: python tools/release/repository_hygiene.py --root .
+      - name: Critical Checkstyle
+        run: mvn -B -ntp checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml
+      - name: Full Maven Test
+        run: mvn -B -ntp test -fae
+      - name: Frontend Build
+        run: cd amz-frontend && npm ci && npm run build
+      - name: Extract version
+        id: meta
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake push images
+        uses: docker/bake-action@v5
+        with:
+          files: docker-bake.hcl
+          push: true
+          set: |
+            *.args.VERSION=${{ needs.quality-gate.outputs.version }}
+            *.output=type=registry
+          provenance: false
+      - name: Extract bake metadata digests
+        id: bake-metadata
+        run: |
+          BAKE_OUTPUT=$(docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway:${{ github.ref_name }}" --format '{{json .Manifest.Digest}}')
+          echo "digest=${BAKE_OUTPUT}" >> "$GITHUB_OUTPUT"
+      - uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway:${{ github.ref_name }}
+          format: spdx-json
+          artifact-name: sbom-gateway.spdx.json
+      - uses: anchore/scan-action@v4
+        id: scan
+        with:
+          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway:${{ github.ref_name }}
+          fail-build: true
+          severity-cutoff: high
+          output-format: sarif
+      - uses: sigstore/cosign-installer@v3
+      - name: Cosign sign image digest
+        run: cosign sign --yes "${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway@${{ steps.bake-metadata.outputs.digest }}"
+      - name: Generate release manifest
+        run: |
+          python tools/release/release_manifest.py \
+            --version "${{ needs.quality-gate.outputs.version }}" \
+            --image "${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway" \
+            --digest "${{ steps.bake-metadata.outputs.digest }}" \
+            --output ./release-manifest.json
+      - name: Checksums
+        run: |
+          sha256sum release-manifest.json sbom-gateway.spdx.json > checksums.sha256
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            release-manifest.json
+            sbom-gateway.spdx.json
+            checksums.sha256
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-manifest.json
+            sbom-gateway.spdx.json
+            checksums.sha256
+
