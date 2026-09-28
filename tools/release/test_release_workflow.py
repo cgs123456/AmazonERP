@@ -1,5 +1,6 @@
 """Static contract tests for .github/workflows/release.yml (TDD RED first)."""
 import os
+import re
 import unittest
 
 RELEASE_YML = os.path.join(
@@ -84,6 +85,21 @@ class TestReleaseWorkflow(unittest.TestCase):
     def test_workflow_dispatch_builds_without_pushing(self):
         # The advertised dry_run dispatch must not push to the registry.
         self.assertRegex(self.raw, r"push:\s*\$\{\{\s*github\.event_name == 'push'")
+
+    def test_scans_every_release_image(self):
+        # Scanning only the gateway produced a false sense of safety: it is the
+        # one WebFlux image without Tomcat, while the 15 servlet services each
+        # carried 28-35 HIGH/CRITICAL findings before remediation.
+        self.assertIn("Scan remaining images", self.raw)
+        match = re.search(r"for name in ([^;]+);", self.raw)
+        self.assertIsNotNone(match, "release.yml must loop over the remaining images")
+        scanned = set(match.group(1).split())
+        expected = {
+            "ad", "ai", "customer", "finance", "logistics", "message",
+            "multiplatform", "ops", "order", "procurement", "product",
+            "report", "search", "spapi", "user", "frontend",
+        }
+        self.assertEqual(expected, scanned, "every non-gateway image must be scanned")
 
     def test_bake_registry_includes_owner(self):
         # The workflow-level env REGISTRY=ghcr.io overrides the identically named
