@@ -70,6 +70,27 @@
         <plugins>
             <!-- JDK 21 下 Lombok 注解处理器需显式声明到 annotationProcessorPaths，
                  否则 maven-compiler-plugin 不会触发 Lombok 代码生成。 -->
+            <!-- 仓库约定（2026-09-28）：*IT.java 也在 test 阶段执行，本仓不引入 failsafe。
+                 前提：IT 必须自带环境守卫（@EnabledIfEnvironmentVariable 等），
+                 否则在没有 MySQL/Redis 的开发机上会红。
+                 背景：AdMigrationMySqlIT 是全仓唯一的真机 MySQL 8 集成测试，
+                 在此之前 surefire 默认不收 *IT.java，它从未在 CI 中执行过，
+                 于是里面的缺陷（列/值错位、唯一键断言写错）一直没人发现。
+                 注意：CI 不得改用 -Dtest=AdMigrationMySqlIT 来触发，
+                 CiWorkflowContractTest 把 -Dtest= 视为「收窄范围」并直接判红。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <includes>
+                        <include>**/Test*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

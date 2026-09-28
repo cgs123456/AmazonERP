@@ -2,8 +2,19 @@
 
 基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务业务闭环，内置 AI 运营 Agent（29 工具）与可观测性三栈。
 
-> ⚠️ **当前状态（2026-09-24 审计结论）**：本仓库**不能按现状视为可直接生产部署**。实测存在 **32 条 P0 级生产阻断项**，包括：8 个模块默认 `spring.profiles.active=mock` 且 16 份 k8s 清单与 Compose 均不设置 profile（**已修复 2026-09-25，P0-57**：默认值改为 `prod`、Compose 16 段与 k8s 16 份均显式注入，并由 `ProfileActivationContractTest` 守卫）、SP-API 凭证表无任何自动建表路径、order/product 硬编码第三方公网 Redis 地址 `121.37.250.15:6379`（实测 45.3 秒连接超时）、16 份 k8s Deployment 与代码占位符大面积不匹配（logistics 缺 15 项、search 缺 10 项）。
-> 上文「业务闭环」指**模块与代码路径已具备**，不代表外部平台已完成真实对接或沙箱联调；多个 `*RealClient` 仍返回占位值或静默降级。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
+> ⚠️ **当前状态（2026-09-26 复核）**：本仓库**仍不能按现状视为可直接生产部署**。审计基线最初列出 **32 条 P0**，后续轮次继续追加到 **P0-58**；其中部分已修复、部分仅登记，**未重新逐项复核前不把编号总数当作剩余开放数**。P0-57 的默认 mock/部署 profile 问题已修复；第 74 轮新增 `ProductionProfileGuard`：默认 `prod`、离线演示必须显式 `mock`，`prod,mock` 混用会拒绝启动；第 75 轮新增 `DataSourceValidator`：`prod` 下已配置为空的密码，以及 `CHANGE_ME_*`、`your_*` 等占位密码，都会拒绝启动。但 SP-API 凭证、权限、端点和字段契约仍需真实沙箱/生产联调。
+> **“有 API 凭据”不等于“即插即用”**：当前主链路的工程证据最高仍是 **E2/E3**（进程内桩 + 官方 OpenAPI 快照），不是 **E4 沙箱联调**或 **E5 生产联调**。真实接通还需要 LWA client id/secret + refresh token、SP-API 应用授权/订阅/角色权限、marketplaceId/region、官方端点版本与 usage plan 对账、字段契约验证，以及沙箱/生产联调。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
+> 上文「业务闭环」指**模块与代码路径已具备**，不代表外部平台已完成真实对接或沙箱联调；当前复核仍未发现主代码 `*RealClient` 返回硬编码 `MOCK_*` 假成功，但 1688 签名/token、金蝶多币种字段、SP-API 权限与字段契约、多平台签名等仍未取得 E4/E5 联调证据，`ConnectorRegistry` 当前为 90 条已实现 / 0 条未实现：26 条来自既有类型化客户端，64 条来自统一 `SpApiOperationCatalog` + `SpApiOperationClient`，官方快照 15 份、Usage Plan 106 条；已实现清单与调用点双向一致。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
+
+> **第 76 轮（2026-09-26）新增连接器状态中心**：前端 `/connectors` 已消费 `GET /api/connectors`、`POST /api/connectors/{code}/self-test` 与分层自检接口，集中展示 profile、真实/模拟客户端、凭证来源与数量、已实现/未实现操作、A1–A8 证据等级及最近自检结果。页面不会因“有凭证”或模拟自检成功显示“已接通”；只有后端 `reachable=true` 且证据达标才允许展示已接通。当前仍没有 E4/E5 真实联调证据，因此这是 API 对接能力的可视化运维入口，不是“拿到凭证即可跳过授权、权限、字段契约和联调验证直接生产”。
+> **第 77 轮（2026-09-26）补齐 Sellers 只读能力**：新增 `SellersClient` 与 `GET /spapi/sellers/marketplace-participations`，接入统一 LWA/SigV4、官方限流、Outbox、RBAC 与店铺隔离；官方快照锁定 `GET /sellers/v1/marketplaceParticipations`，空 `payload` 合法，响应字段异常显式失败。该轮登记时 `ConnectorRegistry` 为 **13 条已实现 / 6 条未实现 / 19 条总数**，随后第 78 轮校准为 **25 / 6 / 31**。该能力已具备对接能力（未联调）：拿到真实凭证后可直接开始授权、marketplace、限流与字段联调，但在 E4/E5 证据完成前不能写“已接通”或“生产可用”。
+> **第 78 轮（2026-09-26）校准连接器能力台账**：补齐 Messaging 11 条与 Uploads 1 条漏登记 operation，并新增 `ConnectorRegistryTest.registryMatchesClientCallSitesBidirectionally()` 双向校验；Messaging 发送动作补齐 `messaging.` 命名空间以命中官方限流表。组合定向测试 **26 / 0F / 0E / 0S**；SP-API 全模块 **362 / 0F / 0E / 2S**；全仓 19/19 模块 `BUILD SUCCESS`，Surefire **161 份 / 1055 / 0F / 0E / 2S**（2 skipped 为需要真实凭证的 `SpApiIntegrationTest`）。该轮结束时台账为 **25 条已实现 / 6 条未实现 / 31 条总数**。这仍是代码级收敛，不提升 A5 或 E4/E5 证据。
+
+> **第 79 轮（2026-09-26）补齐 RDT API-Ready 底座**：新增 Tokens API 官方快照与限流契约，`SpApiGateway` 支持显式 LWA/RDT token source，RDT 内存缓存按店铺、marketplace、资源集合隔离，Outbox 重放恢复 token source 且不持久化 RDT；`ConnectorRegistry` 在第 79 轮当时为 **26 条已实现 / 5 条未实现 / 31 条总数**。RDT 默认关闭，订单 PII 端到端接线、真实授权、沙箱与生产联调仍未完成；对外仍只能写“具备对接能力（未联调）”。
+> **第 79 轮（2026-09-26）修复 FIFO 并发超卖（代码级，待真实 MySQL 回放）**：`InventoryBatchMapper` 新增带 `shop_id`、`sku`、`status = 'ACTIVE'`、`available_quantity >= qty` 守卫的条件扣减；`fifoOutbound` 不再使用 `updateById`，受影响行数为 0 时整体抛错并由事务回滚。SQL 先将扣至 0 的批次置为 `DEPLETED` 再相对扣减，避免 MySQL 从左到右赋值造成重复扣减。新增 SQL 契约测试和 100 轮双线程内存原子回放：旧实现实测 2/2 成功，新实现每轮恰好 1/2 成功；amz-common 110 + procurement 68，**0F / 0E / 0S**。真实 MySQL 多连接并发、锁等待和事务回滚尚未执行，因此只能标记代码级修复，不能标记生产验证。
+> **第 80 轮（2026-09-26）修复调度锁 fail-open（代码级，待真实 Redis 双实例回放）**：`DistributedJobLock` 默认改为 fail-closed，RedisTemplate 缺失、Redis 异常或抢锁不确定时不再执行非幂等写任务；新增显式 `runIdempotentWithLock(...)`，只允许已证明幂等/只读任务在锁基础设施不可用时降级。现有 14 个生产调用点全部保持默认 fail-closed，并新增 `amz.scheduler.lock.acquire.failed`、`degraded`、`skipped`、`release.failed` 指标。锁单测 **9 / 0F / 0E / 0S**；全仓 19/19 模块 `BUILD SUCCESS`，Surefire 新鲜 XML **164 份 / 1068 / 0F / 0E / 2S**。真实 Redis、双实例同窗触发、断连、租约过期、崩溃接管和长任务跨租期仍未回放，因此只能标记代码级修复。
+> **第 81 轮（2026-09-26）完成 SP-API 剩余能力离线 API-Ready 收口**：新增 Notifications 10、Listings Items 5、Product Pricing 2、Catalog Items 2、FBA Inbound 45，共 64 条官方 operation，进入统一 `GET /spapi/operations` 与 `POST /spapi/operations/{operationId}`；结合既有 26 条类型化能力，`ConnectorRegistry` 达到 **90 条已实现 / 0 条未实现**。官方快照 **15 份**、Usage Plan **106 条**；SP-API 模块 **428 / 0F / 0E / 2S**；全仓 19/19 模块 `BUILD SUCCESS`，新鲜 Surefire **175 份 / 1134 / 0F / 0E / 2S**；前端 19 文件 / 144 tests / 0F，生产构建成功。`mock` profile 可执行统一目录，真实凭证下无需改业务层即可切换真实执行器；但仍需 Amazon 应用审批、卖家授权、角色/RDT/SPDS 权限、SQS/SNS 消费链路、沙箱联调和生产验收，当前仍只能声明“具备对接能力（未联调）”。
+> **第 87 轮（2026-09-27）连接器分层自检改为 POST 并补齐统一入口**：`POST /spapi/preflight/shop/{shopId}?forceTokenRefresh=...` 与 `POST /spapi/preflight?forceTokenRefresh=...&limit=...` 已锁定仅 OPERATOR/ADMIN、逐店铺严格授权、批量上限 50；网关新增 `/api/preflight/** -> /spapi/preflight/**` 别名，前端连接器中心展示 CREDENTIAL → LWA_TOKEN → READ_API 三段结果，SKIP 不会被当作 PASS。后端 SP-API 全量 **574 / 0F / 0E / 2S**，前端全量 **20 文件 / 163 / 0F**，生产构建成功。当前仍无真实凭证，`apiReady=false`、`reachable=false`，模拟自检或非官方端点全绿都不能提升到 E4/E5。
 
 ## 🏗 技术栈
 
@@ -34,7 +45,7 @@ amz-service-order           — 订单 + SP-API 同步 + 智能审单
 amz-service-search          — ES 混合检索
 amz-service-message         — WebSocket + Amazon Messaging
 amz-service-ai              — AI 运营 Agent（29 工具）
-amz-service-spapi           — SP-API 对接层（LWA + SigV4）
+amz-service-spapi           — SP-API 对接层（LWA + 条件签名；SigV4 非必需）
 # 扩展业务（8 个）
 amz-service-ad              — 广告管理（ACoS + 搜索词 + 自动规则 + 日报 02:00 同步/趋势聚合）
 amz-service-procurement     — 采购供应链（供应商 + 1688 + FBA 货件）
@@ -63,7 +74,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 
 > **店铺知识库 RAG**：SOP/政策文档上传解析（Tika）→ 分块 → 向量化 → ES（BM25 + dense_vector 混合检索 + RRF + 重排），`query_knowledge_base` 工具 + SOP 优先提示词 + 引用来源约束；配套 `/ai/knowledge/*` 接口与前端知识库管理页。
 >
-> **流式问答**：`GET /ai/chat-stream` SSE（fetch + ReadableStream，可透传 token/shopId 头）+ POST 兜底 + 工具调用时间线。
+> **流式问答**：`GET /ai/chat-stream` SSE（fetch + ReadableStream，可透传 token/shopId 头）+ POST 兜底 + 工具调用时间线；身份只从 JWT 认证上下文读取，不接受 `userId` 查询参数覆盖。
 
 
 ## 📦 4 大 P0 核心模块
@@ -227,7 +238,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **分布式事务** | Seata AT 2.0.0（条件启用 `SEATA_ENABLED=true`） |
 | **TLS 可选** | SSL 配置块（默认关闭，需证书） |
 | **MQ 死信队列** | save.order + login.notice + order.profit + finance.voucher → DLX/DLQ；消费幂等（Redis SETNX + 处理上限熔断）；订单同步后凭证改发 MQ（Seata 不再跨服务持锁） |
-| **调度防重** | `DistributedJobLock` Redis 分布式锁，多实例部署不重复执行 |
+| **调度防重** | `DistributedJobLock` Redis 分布式锁默认 fail-closed；仅显式幂等/只读任务可选择降级，并记录抢锁、跳过、降级和释放失败指标 |
 | **SQL 注入防护** | 全 MyBatis `#{}` |
 | **全局异常处理器** | 统一 `@ControllerAdvice` 覆盖 16 服务 |
 | **数据库迁移** | Flyway 10.20.0 是 14 个 MySQL 服务的唯一建表事实源（106 张表；显式 baseline-on-migrate 兼容存量库）；Compose/k8s 只建 14 个空库 |
@@ -280,7 +291,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-> `docker-compose.yml` 实测包含 **31 个 service**（基础设施 + 网关 + 业务服务 + 前端；2026-09-24 以文件为准，旧口径「17 服务」已过期）。注意：Compose 已为 16 个 Spring 服务逐段注入 `SPRING_PROFILES_ACTIVE`（缺省值 `prod`，离线演示可设为 `mock`）、`REDIS_HOST` 全域缺失、`MYSQL_HOST` 仅 spapi 有值，直接 `up -d` 只能用于本地演示，不能作为部署基线。
+> `docker-compose.yml` 实测包含 **31 个 service**（基础设施 + 网关 + 业务服务 + 前端；2026-09-24 以文件为准，旧口径「17 服务」已过期）。注意：Compose 已为 16 个 Spring 服务逐段注入 `SPRING_PROFILES_ACTIVE`（缺省值 `prod`，离线演示可设为 `mock`；`prod,mock` 混用会被公共启动守卫拒绝）、`REDIS_HOST` 全域缺失、`MYSQL_HOST` 仅 spapi 有值，直接 `up -d` 只能用于本地演示，不能作为部署基线。
 
 ### 4. 启动业务服务
 
@@ -289,7 +300,7 @@ docker-compose up -d
 > 构建要求 JDK 17 + Maven 3.8+（`mvn -v` 确认；仓库无 wrapper，本机验证组合：Temurin 17.0.20 + Maven 3.9.9）
 
 ```bash
-# 默认 prod（真实客户端，fail-closed）；离线演示请显式指定 mock
+# 默认 prod（真实客户端，fail-closed）；离线演示请显式指定 mock；不要混用 prod,mock
 mvn -pl amz-service/amz-service-user spring-boot:run
 
 # real 模式（需真实 SP-API 凭证）
@@ -298,16 +309,66 @@ mvn -pl amz-service/amz-service-spapi spring-boot:run -Dspring.profiles.active=p
 
 > **Windows 本地脚本（作者机器专用，不是部署入口）**：`.start-backend-final.bat`、`.start-vite.bat`、`.start-mysql.bat` 仍含绝对路径或本机数据目录假设；生产与新机器请使用 Docker Compose / k8s，不要把这些批处理脚本当作可移植部署方案。
 
+### 5. 首次部署导入 SP-API 凭证（一次性）
+
+`prod` 实例要求 `amz_shop_credential` 中至少有一条结构完整的店铺凭证，缺凭证会拒绝启动。空库首次部署使用独立的 `bootstrap` profile，不要用 `mock` 或空配置绕过自检。
+
+凭证示例：[`docs/examples/spapi-credentials.example.json`](docs/examples/spapi-credentials.example.json)。完整步骤、权限、失败分类与清理要求见 [`docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md`](docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md)。
+
+Compose 一次性导入的核心命令：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.bootstrap.yml \
+  --profile bootstrap run --rm amz-service-spapi-bootstrap
+```
+
+Kubernetes 使用 [`k8s/jobs/amz-service-spapi-credential-bootstrap.yaml`](k8s/jobs/amz-service-spapi-credential-bootstrap.yaml) 创建一次性 Job，凭证通过只读 Secret 挂载。导入完成后立即删除 Secret 和本地临时文件，再以 `prod` profile 启动 `amz-service-spapi`。
+
+> 这条路径只保证“凭证可到达进程并加密落库、缺失时 fail-closed”。它不代表 LWA 授权、SP-API 角色权限、端点字段契约或真实沙箱/生产联调已经完成；当前无真实凭据时证据仍封顶 E2/E3。
+
+### 6. 接入 Amazon Ads API（有凭证后无需改代码）
+
+Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能复用 SP-API 的 refresh token。完整申请、LWA 授权、profile 获取、区域端点、配置、排障与验收模板见 [`docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md`](docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md)。
+
+单店铺通过 `AD_API_ENDPOINT`、`AD_TOKEN_ENDPOINT`、`AD_SHOP_ID`、`AD_CLIENT_ID`、`AD_CLIENT_SECRET`、`AD_REFRESH_TOKEN`、`AD_PROFILE_ID` 配置；多店铺通过外部配置 `advertising.credentials.<shopId>.*` 配置，`.env`/Compose 的变量只覆盖单店铺。Kubernetes 清单中的 Secret 键是空占位，真实密钥必须由 Secret/Vault/External Secrets/KMS 注入。
+
+凭证到位后，广告模块使用真实客户端并可通过 `POST /ad/reports/sync` 触发报表同步。响应中的 `metadataWarnings` 表示报表已成功落库、但部分活动元数据未完整同步，不等于整店同步失败。真实凭证尚未在本仓库完成沙箱/生产联调，因此当前结论仍只能是 API-ready，不能宣称真实 Amazon API 已验证生产可用。
+
 ## 🧪 测试
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（15 有单测模块，gateway/product 暂无） | 527（0 失败，spapi 2 个集成跳过） | 100% |
-| 前端 Vitest（16 文件） | 133（含接口映射、静默刷新、SSE 解析、知识库、店铺守卫、物流看板及四子域用例） | 100% |
-| 前端 Playwright 全交互 E2E（连接真实后端栈：8 页导航 + KPI + Agent 对话 + 分页 + Tab 切换 + 弹窗 + 过滤 + 登录守卫 + 404） | 39 | 100% |
-| **总计** | **699** | **100%** ✅ |
+| 后端 JUnit 5（第 81 轮 fresh；`mvn test`） | 1134（0 失败 / 0 错误 / 2 跳过） | 19/19 模块 `BUILD SUCCESS` |
+| 前端 Vitest（第 81 轮 fresh；`npm run test:run`） | 144（0 失败） | 19/19 文件通过 |
+| 前端 Playwright 全交互 E2E（历史证据；本轮未复跑） | 39 | 历史记录 |
 
-> E2E 通过 `.start-backend-final.bat` + `.start-vite.bat` 拉起本地全栈后运行 `npx playwright test`。
+> 第 81 轮后端按新鲜重写的 Surefire XML 统计为 **175 份 / 1134 例 / 0F / 0E / 2S**，19/19 Reactor 模块 `BUILD SUCCESS`。2 个跳过项仍是缺少真实网络/凭证的 `SpApiIntegrationTest`。前端本轮复跑为 **19 文件 / 144 例 / 0F**，`vue-tsc && vite build` 成功（156 modules transformed）。E2E 仍需通过 `.start-backend-final.bat` + `.start-vite.bat` 拉起本地全栈后运行 `npx playwright test` 复验。
+
+
+## 🗂 模拟数据工具链（没有真实数据时的演示 / 压测基线）
+
+`tools/synthetic-data/` 提供确定性模拟数据集：**可生成、可加载、可清理、可识别**，全程不需要任何亚马逊凭证和网络。
+
+| 命令 | 作用 | 当前实测 |
+|---|---|---|
+| `python apply_migrations.py --host 127.0.0.1 --port 3399 --user amz --reset` | 在 MySQL 8 上建 14 个库并应用 49 个 Flyway 迁移（真机导入的前置步骤；`--dry-run` 只看计划） | 14 库 / 49 迁移，failed=0 |
+| `python generate.py --tier demo --reset` | 生成 113 张表 / 14 个库的数据集 | demo 档 225,734 行；ci 档 25,484 行 |
+| `python verify.py --tier demo` | 结构 / 引用 / 标记 / 确定性 / DDL 快照校验 | PASS（229 文件两次生成字节一致） |
+| `python purge.py --tier demo --emit --registry` | 生成 `cleanup.sql`（113 条 DELETE）与库级登记表 | exit 0，0 表遗漏 |
+| `python verify_cleanup.py --tier demo` | 在 SQLite 内实跑 `cleanup.sql` 证明能删干净 | 225,734 行删除、剩余 0 |
+| `python verify_schema_load.py --tier demo --cleanup` | 用真实 DDL 快照重建 14 库 / 113 表再灌数，验证类型/长度/精度/NOT NULL/日期/JSON/唯一键，并可跑 `cleanup.sql` 闭环 | demo 档 225,734/225,734 行灌入，0 错误；cleanup 后 113 DELETE / 0 剩余 |
+| `./load.ps1 -Tier demo -Container amz-mysql`（或 `./load.sh` / `-Server 127.0.0.1 -Port 3399 -User amz`） | 按库灌入 MySQL（支持远端 / 容器 / `-DryRun`） | 本机一次性 MySQL 8.0.39（端口 3399）：ci 档约 80s、demo 档约 7min，均 exit 0 |
+| `python verify_import.py --tier demo --host 127.0.0.1 --port 3399 --user amz --baseline out/ci/baseline.json` | 连真实 MySQL 8 核对 `基线 + manifest` 行数与 `amz_ops` 登记表，并可跑 `cleanup.sql` 闭环 | ci 25,574/25,574、demo 225,824/225,824；cleanup 删除 25,484 / 225,734 行，剩余回到基线 |
+
+标记方式：保留 ID 段 + `SYNTHETIC` 文本标记 + `amz_ops.amz_synthetic_dataset_registry(is_demo=1)`；schema 没有 `is_demo` 列，因此没有为演示去改 113 张表。完整步骤与安全规则见
+[`docs/superpowers/runbooks/mock-data-seed-and-cleanup-runbook.md`](docs/superpowers/runbooks/mock-data-seed-and-cleanup-runbook.md)。
+
+> 边界：模拟数据**不是** SP-API 联调证据，连接器中心不得因此显示"已接通"。证据分两层：
+>
+> - **离线三层**：数据自洽与确定性 `verify.py`、清理可删净 `verify_cleanup.py`、数据符合真实 DDL 列定义与约束 `verify_schema_load.py`。
+> - **真机导入**：已在本机**一次性 MySQL 8.0.39 实例**（仓库外 `C:\tools\mysql8`，端口 3399；仅用于验证，不属于任何部署拓扑）完成 ci / demo 两档灌入、行数核对与 `cleanup.sql` 删除闭环（`verify_import.py`）。这是本机一次性实例的导入验证，**不是生产环境验证**，也没有接入任何亚马逊凭证或做过联调。
+>
+> 另外：批量 SQL 灌数**绕过**应用层校验、审计与租户钩子，小批量冒烟请走 API；`amz_ops.amz_synthetic_dataset_registry` 的登记行按设计**不会**被 `cleanup.sql` 删除（它是"此库装过模拟数据"的审计痕迹），需要彻底清空时额外执行 `DELETE FROM amz_ops.amz_synthetic_dataset_registry WHERE dataset_id='synthetic-amazon-erp-v1';`。
 
 ## 📐 项目结构
 
@@ -344,7 +405,7 @@ AmazonERP/
 ├── loadtest/             # Gatling + JMeter 压测
 ├── docker-compose.yml    # 31 service 全栈编排（实测）
 ├── Dockerfile            # 多阶段构建
-├── .env.example          # 环境变量模板（实测 71 行 / 36 个键）
+├── .env.example          # 环境变量模板（实测 152 行 / 110 个赋值键）
 └── .github/workflows/    # CI（checkstyle + 全模块测试 + Docker build）
 ```
 
@@ -358,7 +419,10 @@ AmazonERP/
 | `JWT_SECRET_KEY` | JWT 签名密钥 | ✅ |
 | `AMZ_CRYPTO_KEY` | AES-256-GCM 密钥（base64） | ✅ |
 | `DEEPSEEK_API_KEY` | DeepSeek API（AI Agent） | 推荐 |
-| `AWS_ACCESS_KEY` / `AWS_SECRET_KEY` | SP-API 凭证 | real 模式 |
+| SP-API LWA 店铺凭证 | 通过 bootstrap JSON 导入 `amz_shop_credential`（clientId/clientSecret/refreshToken） | prod ✅ |
+| `AD_API_ENDPOINT` / `AD_TOKEN_ENDPOINT` | Amazon Ads 区域端点与 LWA token 端点 | Ads prod ✅ |
+| `AD_SHOP_ID` / `AD_CLIENT_ID` / `AD_CLIENT_SECRET` / `AD_REFRESH_TOKEN` / `AD_PROFILE_ID` | Amazon Ads 单店铺凭证；多店铺用 `advertising.credentials.<shopId>.*` 外部配置 | Ads prod ✅ |
+| `AWS_ACCESS_KEY` / `AWS_SECRET_KEY` | 可选；仅历史集成/条件签名需要，SP-API 主链路使用 LWA | 可选 |
 | `KEEPA_API_KEY` | Keepa 竞品数据 | 可选 |
 | `SEATA_ENABLED` | 启用 Seata 分布式事务 | 可选 |
 | `SSL_ENABLED` | 启用 TLS | 可选 |
