@@ -1,0 +1,15 @@
+{
+  "frontendFiles": {
+    "amz-frontend/index.html": "<!doctype html>\n",
+    "amz-frontend/package.json": "{\"name\":\"release-fixture\"}\n",
+    "amz-frontend/src/main.ts": "console.log(\"fixture\");\n",
+    "amz-frontend/src/types.d.ts": "declare const fixture: string;\n",
+    "amz-frontend/dist/ignored.js": "throw new Error(\"ignored\");\n",
+    "amz-frontend/node_modules/ignored/index.js": "module.exports = {};\n"
+  },
+  "migrationFiles": {
+    "amz-service/amz-service-alpha/src/main/resources/db/migration/V1__init.sql": "CREATE TABLE alpha (id BIGINT PRIMARY KEY);\n",
+    "amz-service/amz-service-beta/src/main/resources/db/migration/V2__more.sql": "ALTER TABLE beta ADD COLUMN enabled BOOLEAN NOT NULL DEFAULT TRUE;\n",
+    "amz-service/amz-service-beta/target/classes/db/migration/V9__ignored.sql": "SELECT 9;\n"
+  }
+}
