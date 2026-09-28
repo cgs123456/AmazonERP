@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "branch": "codex/api-ready-connectors",
+  "head": "17099b86faaef2db34bc6aada79f74bc09a8a741",
+  "statusEntryCount": 631,
+  "statusSha256": "17a449171c5aff132e7c2f38f79c1f71cbb053d838d9375d73886549d74cd4f3",
+  "recoverySnapshot": "C:\\Users\\Administrator\\Desktop\\AmazonERP-recovery-20260928-092159",
+  "recoveryManifest": "changed-files-sha256.csv",
+  "recoveryManifestBytes": 135349,
+  "recoveryManifestSha256": "bbb2e3a7eb2cfb178c3b4cda7b041c1e0efe0051e665e12d076998d9ae36713f",
+  "recoveryHead": "3c8f21ed21c2cc77cbf08d1f12ddd4256265ac25",
+  "recoverySnapshotFiles": {
+    "changed-files-sha256.csv": {
+      "bytes": 135349,
+      "sha256": "bbb2e3a7eb2cfb178c3b4cda7b041c1e0efe0051e665e12d076998d9ae36713f"
+    },
+    "git-diff-index-vs-head.patch": {
+      "bytes": 500139,
+      "sha256": "374102029616500c4419e61eb43823d723c340c315d9e7a143962247183467a2"
+    },
+    "git-diff-numstat.txt": {
+      "bytes": 27071,
+      "sha256": "a9710ca957f86b2e4c624a7072daad7ca45aa8fd760ffd13534271b0b7dbd179"
+    },
+    "git-diff-stat.txt": {
+      "bytes": 20800,
+      "sha256": "16ecd63675464529125e9e759c0a29406302f115d7b0e08ff715e1426482486d"
+    },
+    "git-diff-worktree-vs-head.patch": {
+      "bytes": 3548788,
+      "sha256": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae"
+    },
+    "git-diff-worktree-vs-index.patch": {
+      "bytes": 3064602,
+      "sha256": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334"
+    },
+    "git-status-porcelain-v1.txt": {
+      "bytes": 51178,
+      "sha256": "22cf39f0e12490a62011d57f10df866eba2a820ba7f5d2de376efd02e770f41f"
+    },
+    "git-status-porcelain-v2.txt": {
+      "bytes": 86601,
+      "sha256": "3b829fec6aefd249bdf56faf69ac9ebae57ffb906519e77696b24d87410b7145"
+    },
+    "HEAD.txt": {
+      "bytes": 42,
+      "sha256": "4656216d11e97962bdf645c5cc7297a754a4a80a9323866fb8842f2b9283c347"
+    },
+    "snapshot-metadata.json": {
+      "bytes": 471,
+      "sha256": "a0a1d86b5d90609c453220015b6e24c8c387ab6c0578347df48920615b700645"
+    }
+  }
+}
