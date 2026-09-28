@@ -54,7 +54,7 @@ RUN mvn -B -q clean package -DskipTests -pl ${MODULE} -am
 # ---------- Stage 1.5: Skywalking Java Agent 下载 ----------
 # 注：dlcdn 镜像不含旧版 Java Agent，改用 Apache Archive 官方存档
 FROM busybox:1.36 AS skywalking-downloader
-ADD https://archive.apache.org/dist/skywalking/java-agent/9.3.0/apache-skywalking-java-agent-9.3.0.tgz /tmp/skywalking-agent.tgz
+ADD https://archive.apache.org/dist/skywalking/java-agent/9.7.0/apache-skywalking-java-agent-9.7.0.tgz /tmp/skywalking-agent.tgz
 RUN tar -xzf /tmp/skywalking-agent.tgz -C / && rm /tmp/skywalking-agent.tgz
 
 # ---------- Stage 2: JRE 运行 ----------
@@ -80,6 +80,13 @@ WORKDIR /app
 
 # 拷贝 Skywalking Java Agent
 COPY --from=skywalking-downloader /skywalking-agent /skywalking-agent
+
+# 默认 reporter 是 gRPC（见 config/agent.config 的 collector.backend_service），
+# optional-reporter-plugins 下的 Kafka reporter 及其捆绑依赖默认不加载，
+# 其中 lz4-java 1.6.0 带 High CVE 且 1.x 无修复版本（Grype 会扫到文件系统里的它）。
+# 移除未启用的可选 reporter 插件以缩小镜像攻击面；若将来要启用 Kafka reporter，
+# 必须同时引入修复版依赖，不能直接把它拷回 plugins/。
+RUN rm -rf /skywalking-agent/optional-reporter-plugins
 
 # 创建非 root 运行用户，避免容器内以 root 身份运行 JVM（安全加固）
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
