@@ -1,9 +1,11 @@
 # Phase 0 交接文档（2026-09-28）
 
 > 目标读者：接手 AmazonERP 生产化升级的下一任工程师 / Agent。
-> 结论先行：**Phase 0（可发布基线）已完成并全部本地验证通过，仓库已清理干净；下一步是补齐前端构建验证、推送远端跑通 CI，然后进入 Phase 1。**
+> 结论先行：**Task 0–7（可发布基线）已完成并验证；Task 8（API-Ready 工作区 subsystem 拆分）未做，因此 Phase 0 尚未整体完成。连接器状态仍为 API-Ready（未联调）。当前仓库状态以 §7 为准。**
 
-## 1. 项目当前状态
+## 1. 项目当前状态（2026-09-28 历史快照）
+
+> 本节保留 2026-09-28 交接时快照；分支、HEAD 与风险项已被后续工作取代，当前状态见 §7。
 
 | 项 | 值 |
 |----|----|
@@ -16,7 +18,7 @@
 
 ## 2. 工作成果
 
-### 2.1 Phase 0：生产化可发布基线（8 个 Task 全部完成）
+### 2.1 Phase 0：生产化可发布基线（Task 0–7 完成；Task 8 未做）
 
 Phase 0 的目标不是修业务，而是让"提交、构建、镜像、迁移、回滚"可追溯、可复现。产出如下：
 
@@ -31,7 +33,9 @@ Phase 0 的目标不是修业务，而是让"提交、构建、镜像、迁移�
 | 6 安全回滚演练 | `a8f6b55` | `tools/release/rollback_drill.py`：dry-run 默认，验证回滚步骤可执行 |
 | 7 Clean Clone 复验 | `d2b7619`/`7d933f2`/`f01738c` | 把散落文件补齐进 Git，`tools/release/verify_clean_clone.ps1` 可从干净 clone 一键复验 |
 
-### 2.2 验证证据（全部通过）
+**Task 8 未做**：计划要求的 `docs/superpowers/evidence/2026-09-28-baseline-split-map.json` 不存在，也没有按子系统拆分的 `feat(api-ready):` / `docs(api-ready):` 提交；现有 dirty 文件由整包提交吸收。因此 Phase 0 退出条件第 9 条未满足，不能宣称 Phase 0 整体完成。依据见计划文档的 Status Addendum。
+
+### 2.2 验证证据（截至 2026-09-29）
 
 详见 `docs/superpowers/evidence/2026-09-28-phase0-verification.md`：
 
@@ -39,10 +43,11 @@ Phase 0 的目标不是修业务，而是让"提交、构建、镜像、迁移�
 |--------|------|------|
 | Maven 全仓测试 | 19/19 SUCCESS | VERIFIED |
 | Critical Checkstyle | 0 violations | VERIFIED |
-| Python release 工具套件（hygiene/manifest/services） | 全部 PASS | VERIFIED |
+| Python release 工具套件（7 modules） | 68 tests PASS | VERIFIED（2026-09-29 复跑） |
 | 发布 workflow 契约测试 | 8/8 GREEN | VERIFIED（仅契约，非远端执行） |
 | 回滚演练测试 | 7/7 GREEN | VERIFIED（dry-run） |
-| Clean Clone 复验 | git clone/checkout/clean-tree/python/maven 通过；npm 未装 | 5/7 VERIFIED，npm 2 项 NOT VERIFIED |
+| 前端测试 + 构建 | 22 files / 175 tests PASS；`npm run build` PASS | VERIFIED（Node v22.22.2 / npm 10.9.7） |
+| Clean Clone 复验 | git clone/checkout/clean-tree/python/maven/npm-ci/frontend-build 通过 | 7/7 VERIFIED |
 
 ### 2.3 仓库清理记录
 
@@ -89,12 +94,12 @@ tools/release/verify_clean_clone.ps1
 
 ## 4. 后续步骤（按优先级）
 
-### P0 — 收尾 Phase 0 验证缺口
+### P0 — Phase 0 未完成项与发布动作
 
-1. **安装 Node.js（含 npm）** → 重跑 `tools/release/verify_clean_clone.ps1` → 让 `npm-ci` / `frontend-build` 两项从 NOT VERIFIED 变为 VERIFIED。
-2. **推送远端并跑通 GitHub Actions**（release.yml + governance gates）→ 首次远端成功后，才能把 runbook 中对应 NOT VERIFIED 改为 VERIFIED。
-3. （可选）安装 `actionlint` 对 release.yml 做本地静态校验，或在证据文档中明确声明 NOT VERIFIED。
-4. 核对 Phase 0 计划文档中的 checkbox 是否需要与实际完成状态同步。
+1. **Task 8（subsystem 拆分）— 需用户决策**：若确认要做，按计划文档 Task 8 生成 `baseline-split-map.json` 并按子系统补提交；若不做，Phase 0 退出条件第 9 条继续保持未满足，不能宣称 Phase 0 整体完成。
+2. **`release.yml` 远端真实执行 — 需用户批准**：推 tag 会触发 GHCR push、17 次 Grype、`cve_gate` 和 Cosign；未执行前该 workflow 仍为 NOT VERIFIED。`ci.yml` 的 9/9 绿不能替代。
+3. **删除 GHCR 上未签名的 `0.1.0` package — blocked-on-user**：当前 token 无 `packages:delete` 权限，只能在 GitHub UI 手动删除。
+4. **Nacos 配置中心接入 — 架构级，另行排期**：需要引入 Nacos config starter 并调整 32 个 `bootstrap.yml`。
 
 ### P1 — Phase 1 主题（真实对接能力）
 
@@ -120,20 +125,27 @@ tools/release/verify_clean_clone.ps1
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
-| 本机无 npm | 前端构建从未在本机复验过 | P0 第 1 步装 Node 后立即复验 |
-| release.yml 未在远端跑过 | workflow 可能在真实 runner 上暴露平台差异（PowerShell/Buildx/Cosign 版本） | P0 第 2 步推送后观察首次 run |
+| Task 8 未做 | Phase 0 退出条件第 9 条未满足，不能宣称整体完成 | 用户决定是否补 subsystem 拆分；未做则如实保留未完成状态 |
+| `release.yml` 未在远端跑过 | 平台差异可能在真实 runner 暴露；供应链产物未验证 | 经用户批准后推 tag 真实执行 |
+| 前端瘦身只有本地证据 | 本地 build/scan 不能替代 release runner 的 bake + Grype | 后续 `release.yml` 远端执行时覆盖 17 镜像 |
+| 两条 CVE 豁免 owner 仍是占位 | 2026-12-31 到期前若无人接手会阻断续期 | 指定具名 owner，到期前复核 |
 | 无真实 Amazon 凭证 | SP-API 层全部是 mock/契约测试 | Phase 1 需用户主动提供凭证，先 sandbox |
-| Java/Tomcat 依赖版本 | 可能存在未披露 CVE | Phase 2 引入 Grype 扫描门禁后闭环 |
+| 前端 `default.conf` 构建期未校验 | 配置错误要到容器启动才暴露 | 后续在写入后加 `nginx -t`（需可解析 upstream） |
+| Nacos 未接入 | 配置中心能力缺失 | 架构级另行排期 |
 
 ## 7. 2026-09-29 状态更新（后补，覆盖本文档的过期状态）
 
 本文档 §1 的状态表（`codex/api-ready-connectors` / HEAD `5ca0fdd`）已被后续工作取代，
 **不要按它判断当前仓库位置**：
 
-| 项 | 2026-09-29 实际值 |
-|----|-------------------|
-| 默认分支 master | `8d6100f`（PR #1 已合并：Boot 3.5.16 CVE 修复） |
-| 当前工作分支 | `codex/cve-waiver-gate`，HEAD `cfa6149`，本地 4 个提交**尚未 push** |
+| 项 | 2026-09-29 核验快照 |
+|----|---------------------|
+| 默认分支 `origin/master` | `034e4da`（PR #5 merge commit） |
+| 已合并 PR | #1 `8d6100f`、#2 `c055060`、#3 `af1ef0c`、#4 `dae84b4`、#5 `034e4da`，全部已合并 |
+| 工作区 | 干净；截至核验时无未 push 提交 |
+| 本更新分支 | `codex/phase0-handoff-sync`（从 `034e4da` 新建；仅修改本交接文档） |
+
+远端 CI 核验：master `034e4da` run `36499305682` = 9/9 SUCCESS（含 `docker`）；PR #5 分支 run `36498964740` = 8/8 SUCCESS，`docker` skipped；master `dae84b4` run `36498842360` = 9/9 SUCCESS。以上是 `ci.yml`，不是 `release.yml`。
 
 ### P0 三项的进展（本文档写作时的缺口）
 
@@ -167,6 +179,8 @@ OS 包）。真实全镜像口径：**16 个 Java 镜像 x 15 = 240 + frontend 1
 
 - `release.yml` 远端真实执行（GHCR push + SBOM + 17 次 grype + 门禁 + Cosign 签名）
   — 至今没有 push 过 tag，本地与静态校验均不能替代。
+- `cfa6149` 前端瘦身的远端构建/Grype — §13.9 已补本地证据，但 `release.yml` 仍未真实执行。
+- Task 8：API-Ready 工作区 subsystem 拆分 — 未做，Phase 0 退出条件第 9 条未满足。
 - 删除 GHCR 上未签名的 `0.1.0` 镜像/package — 当前 token **无 `packages:delete`** 权限，只能手动。
 - Nacos 配置中心接入（32 个 `bootstrap.yml`）— 架构级变更，未排期。
 ### master `docker` job 结果（2026-09-29 补记）
@@ -179,3 +193,13 @@ id `109026928707` 于 2026-09-28T16:40:30Z 成功（10m38s）。
 （日志无 `apk del` / `nginx -t`）。因此 `cfa6149` 的前端瘦身**仍无远端构建验证**，
 且 ci 的 docker job 不跑 grype，它绿不代表 CVE 门禁已验证。详见
 `2026-09-28-container-cve-remediation.md` §13.7 / §13.8。
+
+### 前端瘦身本地证据与 §13.9 更正（2026-09-29 补记）
+
+PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md` §13.9：
+
+- `amazonerp-frontend:base`：10 total / 4 HIGH；`slim-af1ef0c`：5 total / 1 HIGH（仅 zlib `CVE-2026-85091`，Grype 无 fix）。消失 3 条，无新增。
+- 同一 `cve_gate --cutoff high --image amazonerp-frontend`：slim = 1 waived / 0 violations（exit 0）；base = 1 waived / 3 violations（exit 1）。
+- `docker build -f amz-frontend/Dockerfile` exit 0；`apk del nginx-module-image-filter libgd tiff && nginx -t` 级联 purge 28 包，`nginx -t` 成功；slim 镜像已无 image_filter/tiff/libgd/libexpat/fontconfig，zlib 保留。
+- §13.9 ⑥ 的更正：`load_module` 是 main context only；写进 `conf.d` 会被 nginx 拒绝。构建期 `nginx -t` 校验的 `nginx.conf` 正是唯一可写 `load_module` 的位置，因此 Dockerfile 注释的保护成立。真正较小缺口是 `default.conf` 在构建期未校验。
+- 边界：以上全部是本机构建/扫描，不能替代远端 `release.yml`。
