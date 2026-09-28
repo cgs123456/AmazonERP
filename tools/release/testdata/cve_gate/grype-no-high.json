@@ -1,0 +1,22 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "GHSA-test-medium",
+        "severity": "Medium",
+        "fix": {
+          "versions": []
+        }
+      },
+      "artifact": {
+        "name": "commons-lang",
+        "version": "2.6",
+        "locations": [
+          {
+            "path": "/commons-lang-2.6.jar"
+          }
+        ]
+      }
+    }
+  ]
+}

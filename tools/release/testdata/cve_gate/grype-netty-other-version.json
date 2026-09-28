@@ -1,0 +1,22 @@
+{
+  "matches": [
+    {
+      "vulnerability": {
+        "id": "GHSA-test-netty-handler",
+        "severity": "High",
+        "fix": {
+          "versions": []
+        }
+      },
+      "artifact": {
+        "name": "netty-handler",
+        "version": "4.1.999.Final",
+        "locations": [
+          {
+            "path": "/skywalking-agent/skywalking-agent.jar"
+          }
+        ]
+      }
+    }
+  ]
+}

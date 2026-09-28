@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,6 +26,7 @@ class ReleaseGovernanceContractTest {
     private static final Path ROOT = findRepoRoot();
     private static final Path CI_WORKFLOW = ROOT.resolve(".github/workflows/ci.yml");
     private static final Path CHECKSTYLE_CONFIG = ROOT.resolve("checkstyle-critical.xml");
+    private static final Path RELEASE_TOOLS_DIR = ROOT.resolve("tools/release");
 
     private static final Set<String> REQUIRED_JOBS = Set.of(
             "checkstyle", "hygiene", "release-manifest", "test", "frontend", "synthetic-data",
@@ -42,11 +45,16 @@ class ReleaseGovernanceContractTest {
                 "CI must run the repository hygiene scanner with the repository root");
 
         List<String> releaseToolRuns = runsForStep(jobs, "hygiene", "Release tool tests");
-        String expectedTests = "python -m unittest tools.release.test_repository_hygiene "
-                + "tools.release.test_release_manifest tools.release.test_services_manifest "
-                + "tools.release.test_release_workflow tools.release.test_rollback_drill -v";
-        assertTrue(releaseToolRuns.contains(expectedTests),
-                "CI must run all five Phase 0 release tool test suites");
+        assertFalse(releaseToolRuns.isEmpty(), "CI must run the release tool test suites");
+        String releaseToolCommand = String.join("\n", releaseToolRuns);
+        assertTrue(releaseToolCommand.contains("python -m unittest"),
+                "CI must run the release tool suites with python -m unittest");
+        List<String> requiredSuites = releaseToolTestSuites();
+        assertFalse(requiredSuites.isEmpty(), "no tools/release/test_*.py suites found");
+        for (String suite : requiredSuites) {
+            assertTrue(releaseToolCommand.contains(suite),
+                    "CI must run release tool test suite: " + suite);
+        }
 
         List<String> manifestRuns = runsForStep(jobs, "release-manifest", "Build deterministic manifest");
         assertFalse(manifestRuns.isEmpty(), "CI must build a deterministic release manifest");
@@ -136,6 +144,22 @@ class ReleaseGovernanceContractTest {
     private static void assertRequiredJobs(Map<String, Object> jobs) {
         for (String required : REQUIRED_JOBS) {
             assertTrue(jobs.containsKey(required), "CI must define required job: " + required);
+        }
+    }
+
+    /**
+     * Every unittest module under tools/release, derived from the directory rather than a
+     * hand-maintained list. A suite added to the toolchain but not to the CI command would
+     * otherwise stay invisible until it was the only thing that could have caught a defect.
+     */
+    private static List<String> releaseToolTestSuites() throws IOException {
+        try (Stream<Path> files = Files.list(RELEASE_TOOLS_DIR)) {
+            return files.filter(Files::isRegularFile)
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith("test_") && name.endsWith(".py"))
+                    .map(name -> "tools.release." + name.substring(0, name.length() - 3))
+                    .sorted()
+                    .collect(Collectors.toList());
         }
     }
 
