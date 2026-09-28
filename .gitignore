@@ -75,3 +75,7 @@ acceptance-out/
 
 # Bootstrap credential files
 secrets/
+
+# Python bytecode caches (all toolchains)
+__pycache__/
+*.pyc
