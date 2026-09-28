@@ -45,7 +45,9 @@ class TestReleaseWorkflow(unittest.TestCase):
             "docker/login-action",
             "docker/bake-action",
             "anchore/sbom-action",
-            "anchore/scan-action",
+            # gateway 的扫描从 anchore/scan-action 换成了 grype 镜像 + cve_gate：
+            # scan-action 只能对 HIGH/CRITICAL 一律失败，没有豁免机制（见 test_scan_fails_build）。
+            "anchore/grype:latest",
             "sigstore/cosign-installer",
         ]:
             self.assertIn(action, self.raw, f"missing action {action}")
@@ -55,9 +57,27 @@ class TestReleaseWorkflow(unittest.TestCase):
         self.assertNotMatch = self.assertRegex; [self.assertNotRegex(self.raw, r"tags:\s*\n\s*-\s*latest")]
 
     def test_scan_fails_build(self):
-        self.assertIn("fail-build: true", self.raw)
+        # fail-build: true 曾经是唯一的门禁，现在由 cve_gate.py 承担：同样的
+        # severity cutoff（high 及以上），未豁免的 HIGH/CRITICAL 仍然让步骤失败，
+        # 而有 owner、有到期日的豁免才能放行。下面的断言钉住的是"不能绕过"，
+        # 而不是某个具体 action 的名字。
+        self.assertIn("cve_gate.py check", self.raw)
+        self.assertIn("--cutoff high", self.raw)
         self.assertIn("HIGH", self.raw.upper())
         self.assertIn("CRITICAL", self.raw.upper())
+        # 放宽 cutoff 是唯一能让整批 15 条 netty 告警静默消失的旋钮，直接禁掉。
+        self.assertIsNone(
+            re.search(r"--cutoff\s+(?!high\b)", self.raw),
+            "the CVE gate cutoff must stay at high",
+        )
+        # 门禁步骤必须真的能失败：既不能 continue-on-error，也不能 || true 兜住。
+        self.assertNotIn("continue-on-error", self.raw)
+        self.assertNotIn("|| true", self.raw)
+
+    def test_gate_runs_before_signing(self):
+        # 只在签名之前拦住才有意义：一旦镜像被 cosign 签名，它就是"已发布"的。
+        self.assertLess(self.raw.index("Scan + gate every release image"),
+                        self.raw.index("Cosign sign image digest"))
 
     def test_uses_bake_digest(self):
         self.assertIn("bake-metadata", self.raw.lower())
@@ -102,16 +122,22 @@ class TestReleaseWorkflow(unittest.TestCase):
         # Scanning only the gateway produced a false sense of safety: it is the
         # one WebFlux image without Tomcat, while the 15 servlet services each
         # carried 28-35 HIGH/CRITICAL findings before remediation.
-        self.assertIn("Scan remaining images", self.raw)
+        self.assertIn("Scan + gate every release image", self.raw)
         match = re.search(r"for name in ([^;]+);", self.raw)
-        self.assertIsNotNone(match, "release.yml must loop over the remaining images")
+        self.assertIsNotNone(match, "release.yml must loop over every release image")
         scanned = set(match.group(1).split())
         expected = {
-            "ad", "ai", "customer", "finance", "logistics", "message",
+            "gateway", "ad", "ai", "customer", "finance", "logistics", "message",
             "multiplatform", "ops", "order", "procurement", "product",
             "report", "search", "spapi", "user", "frontend",
         }
-        self.assertEqual(expected, scanned, "every non-gateway image must be scanned")
+        self.assertEqual(expected, scanned, "every release image must be scanned")
+        # 扫了但豁免串了镜像同样等于没扫：--image 必须由循环变量拼出，不能有手写常量。
+        self.assertIn('--image "amazonerp-${name}"', self.raw)
+        self.assertIsNone(
+            re.search(r'--image\s+"?amazonerp-(?!\$\{name\})', self.raw),
+            "cve_gate --image must be derived from the loop variable",
+        )
 
     def test_bake_registry_includes_owner(self):
         # The workflow-level env REGISTRY=ghcr.io overrides the identically named

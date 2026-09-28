@@ -108,33 +108,54 @@ jobs:
           image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ needs.quality-gate.outputs.version }}
           format: spdx-json
           artifact-name: sbom-gateway.spdx.json
-      - uses: anchore/scan-action@v4
-        id: scan
-        if: github.event_name == 'push'
-        with:
-          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ needs.quality-gate.outputs.version }}
-          fail-build: true
-          severity-cutoff: high
-          output-format: sarif
-      # gateway 之外的 16 个镜像同样必须过 HIGH/CRITICAL 门禁。
-      # 只扫 gateway 会给出错误结论：gateway 是 WebFlux（无 Tomcat），恰好是 17 个镜像里
-      # 最干净的一个；实测其他服务在修复前各有 28~35 个 HIGH/CRITICAL。
-      - name: Scan remaining images
+      # 17 个镜像全部逐一扫描，并且每一个都要过 cve_gate.py 门禁（HIGH 与 CRITICAL）。
+      #
+      # 为什么不再用 anchore/scan-action 的 fail-build: true / grype --fail-on high：这两者
+      # 对任何 HIGH/CRITICAL 一律失败。SkyWalking Java Agent 内置 netty 4.1.124.Final，在
+      # 16 个 Java 镜像里各产生 15 条 HIGH/CRITICAL，而 apache/skywalking-java 的最新版本
+      # 就是 9.7.0、上游无修复可用，于是那两种写法只剩两个结局：门禁永远红，或者有人悄悄把
+      # 它关掉。cve_gate 沿用同样的 severity cutoff，但只在 finding 命中一条具名、有 owner、
+      # 有 expires 的豁免时才放行，豁免到期即让 finding 重新变回失败。未豁免的 HIGH/CRITICAL
+      # 依旧阻断发布，且没有任何一步把失败吞掉（禁止任何 or-true 式兜底）。
+      #
+      # 只扫 gateway 会给出错误结论：gateway 是 WebFlux（无 Tomcat），恰好是 17 个镜像里最
+      # 干净的一个；实测其他服务在修复前各有 28~35 个 HIGH/CRITICAL。
+      - name: Scan + gate every release image
         if: github.event_name == 'push'
         env:
           OWNER: ${{ github.repository_owner }}
           VERSION: ${{ needs.quality-gate.outputs.version }}
         run: |
           set -euo pipefail
-          for name in ad ai customer finance logistics message multiplatform ops order procurement product report search spapi user frontend; do
-            echo "::group::grype ${name}"
+          mkdir -p scans /tmp/grype-cache
+          # 17 次扫描共用一份漏洞库：GRYPE_DB_CACHE_DIR 挂到宿主机目录，否则每个镜像都会
+          # 重新下载一遍 DB。
+          for name in gateway ad ai customer finance logistics message multiplatform ops order procurement product report search spapi user frontend; do
+            echo "::group::grype amazonerp-${name}"
             docker run --rm \
+              -e GRYPE_DB_CACHE_DIR=/cache \
+              -v "/tmp/grype-cache:/cache" \
               -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
               anchore/grype:latest \
               "registry:${REGISTRY}/${OWNER}/amazonerp-${name}:${VERSION}" \
-              --fail-on high
+              -o json > "scans/${name}.json"
+            echo "::endgroup::"
+            echo "::group::cve_gate amazonerp-${name}"
+            # --fail-on-stale 故意不加：豁免变多余只说明该删，不该阻断一次发布；到期仍然是
+            # 致命的，因为过期豁免会让它覆盖的 finding 直接变成 violation。
+            python tools/release/cve_gate.py check \
+              --scan "scans/${name}.json" \
+              --image "amazonerp-${name}" \
+              --cutoff high \
+              --report "scans/${name}.gate.json"
             echo "::endgroup::"
           done
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: cve-gate-reports
+          path: scans/*.gate.json
+          if-no-files-found: error
       - uses: sigstore/cosign-installer@v3
         if: github.event_name == 'push'
       - name: Cosign sign image digest
