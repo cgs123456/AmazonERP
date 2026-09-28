@@ -169,3 +169,13 @@ OS 包）。真实全镜像口径：**16 个 Java 镜像 x 15 = 240 + frontend 1
   — 至今没有 push 过 tag，本地与静态校验均不能替代。
 - 删除 GHCR 上未签名的 `0.1.0` 镜像/package — 当前 token **无 `packages:delete`** 权限，只能手动。
 - Nacos 配置中心接入（32 个 `bootstrap.yml`）— 架构级变更，未排期。
+### master `docker` job 结果（2026-09-29 补记）
+
+run `36450964636`（PR #2 合并后的 master push，`c055060`）**9/9 jobs 全绿**，`docker` job
+id `109026928707` 于 2026-09-28T16:40:30Z 成功（10m38s）。
+
+**别把它当成前端瘦身的验证**：ci.yml 的 docker job 只有 `docker build -t amazon-erp:latest .`，
+构建根目录的 Java Dockerfile，不跑 bake 的 17 个 target，也不构建 `amz-frontend/Dockerfile`
+（日志无 `apk del` / `nginx -t`）。因此 `cfa6149` 的前端瘦身**仍无远端构建验证**，
+且 ci 的 docker job 不跑 grype，它绿不代表 CVE 门禁已验证。详见
+`2026-09-28-container-cve-remediation.md` §13.7 / §13.8。

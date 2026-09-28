@@ -7,6 +7,7 @@
 | 1 | Full Maven Test (19/19) | `mvn -B -ntp test -fae` | 0 | VERIFIED | 2026-09-28 |
 | 2 | Critical Checkstyle | `mvn -B -ntp checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml` | 0 | VERIFIED | 2026-09-28 |
 | 3 | Python Release Tests | `python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest -v` | 0 | VERIFIED | 2026-09-28 |
+| 3b | Python Release Tests (7 modules, 2026-09-29 re-run) | `python -m unittest ... test_release_workflow test_rollback_drill test_cve_gate test_verify_clean_clone` | 0 (68 tests) | VERIFIED | 2026-09-29 |
 | 4 | Release Workflow Tests | `python -m unittest tools.release.test_release_workflow -v` | 0 | VERIFIED | 2026-09-28 |
 | 5 | Rollback Drill Tests | `python -m unittest tools.release.test_rollback_drill -v` | 0 | VERIFIED | 2026-09-28 |
 | 6 | Clean Clone Verify | `tools/release/verify_clean_clone.ps1` | 0 (7/7) | VERIFIED | 2026-09-28 |
@@ -83,4 +84,18 @@ All jobs ran with `continue-on-error` absent except the informational `checkstyl
 
 - `release.yml` (GHCR push + Syft SBOM + Grype scan + Cosign signing): tag-triggered; no tag has
   been pushed. Requires a deliberate release action.
-- `actionlint` static check of `release.yml`: tool not installed.
+- `actionlint` static check of `release.yml`: **已完成 2026-09-29** — actionlint 1.7.12，
+  `ci.yml` / `release.yml` 0 问题。（不能替代远端执行。）
+
+## Remote CI Evidence (2026-09-29)
+
+| Run | Trigger | Result |
+|-----|---------|--------|
+| 36448966688 | PR #2 first push (`3e1293a`) | FAILURE (`test` job): the Java governance test pinned a hard-coded 5-module unittest command; the two YAMLs had already gained a 6th module |
+| 36450370673 | PR #2 after `d2069d9` | SUCCESS (8/8; `docker` skipped off-master) -> merged 2026-09-28T16:25:47Z |
+| 36450964636 | master push (`c055060`) | SUCCESS (9/9 incl. `docker`, job `109026928707`, 10m38s) |
+
+Scope caveat: ci.yml's `docker` job runs only `docker build -t amazon-erp:latest .`
+(root Java Dockerfile). It does not run `docker-bake.hcl` and does not build
+`amz-frontend/Dockerfile`, so it is **not** a remote verification of the frontend image
+slim (`cfa6149`), and it runs no grype scan.
