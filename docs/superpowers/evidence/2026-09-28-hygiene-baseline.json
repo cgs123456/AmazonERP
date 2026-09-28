@@ -1,0 +1,749 @@
+{
+  "findings": [
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_710.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_79.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_aws_httpclient5.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_doc70.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_doc70b.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_doc70c.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_k8s_schema.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_layouts.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_p058.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_p058_meta.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_plan_task11.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_profile.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_profile2.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_rs.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "forbidden temporary artefact",
+      "path": ".patch_sqs_test.py",
+      "rule": "temporary-script"
+    },
+    {
+      "detail": "line 11",
+      "path": ".start-backend-final.bat",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 16",
+      "path": ".start-backend-final.bat",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 22",
+      "path": ".start-backend-final.bat",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 49",
+      "path": ".start-backend-final.bat",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_cp_spapi.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_cp_spapi2.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_contract.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_green.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_green2.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_probe.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_red.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_red2.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_red3.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r81_spapi_module.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_compile.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_cred1.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_describe.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_spapi_err.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_spapi_err_attempt1.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_spapi_err_attempt2.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_spapi_module.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_spapi_out.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_spapi_out_attempt1.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r82_spapi_out_attempt2.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_r83_spapi_final_err.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "164646789 bytes exceeds 10485760",
+      "path": "_r83_spapi_final_out.log",
+      "rule": "large-file"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp2_err.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp2_out.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp3_err.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp3_out.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp4_err.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp4_out.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp5_err.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp5_out.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp_err.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "_sp_out.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "line 81",
+      "path": "amz-common/src/main/java/com/amz/config/FeignAuthRelayConfig.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 93",
+      "path": "amz-common/src/main/java/com/amz/interceptor/BaseAuthInterceptor.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 149",
+      "path": "amz-common/src/main/java/com/amz/lock/DistributedJobLock.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 111",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 125",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 138",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 151",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 164",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 176",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 190",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 97",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 44",
+      "path": "amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 65",
+      "path": "amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 345",
+      "path": "amz-frontend/src/__tests__/ConnectorCenter.test.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 80",
+      "path": "amz-frontend/src/__tests__/auth.test.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 50",
+      "path": "amz-frontend/src/__tests__/connectorsApi.test.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 114",
+      "path": "amz-frontend/src/api/auth.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 31",
+      "path": "amz-frontend/src/api/auth.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 68",
+      "path": "amz-frontend/src/api/auth.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 129",
+      "path": "amz-frontend/src/components/AgentChat.vue",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 218",
+      "path": "amz-frontend/src/components/AgentChat.vue",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 114",
+      "path": "amz-frontend/src/components/AppHeader.vue",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 226",
+      "path": "amz-frontend/src/components/LoginModal.vue",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 41",
+      "path": "amz-frontend/src/main.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 81",
+      "path": "amz-frontend/src/router/index.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 44",
+      "path": "amz-frontend/src/utils/websocket.ts",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 538",
+      "path": "amz-frontend/src/views/ConnectorCenter.vue",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 99",
+      "path": "amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 335",
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 460",
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 50",
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdMigrationMySqlIT.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 57",
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/ai/knowledge/RerankService.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 81",
+      "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/credential/PlatformCredentialService.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 82",
+      "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/credential/PlatformCredentialService.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 68",
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/client/Alibaba1688TokenManagerTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 82",
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/TokensClient.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 125",
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/RestrictedDataTokenManager.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 156",
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/SpApiConnectivityPreflight.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 141",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/AwsSigV4SignerTest.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 158",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/AwsSigV4SignerTest.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 178",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/AwsSigV4SignerTest.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 184",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/AwsSigV4SignerTest.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 175",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/LwaTokenManagerTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 98",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/LwaTokenManagerTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 36",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/SpApiConditionalSigningTest.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 36",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/AmazonUploadsRealClientContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 46",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/FeedsResultDocumentTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 51",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/ReportsRealClientStubTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 50",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiEndpointOverrideSafetyTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 51",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiProtocolStubTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 161",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiRequiredHeaderContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 51",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiRequiredHeaderContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 70",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/TokensClientContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 337",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/ConnectorRegistryTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 122",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/ErrorSummaryTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 87",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialValidatorTest.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 56",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesFlywayMySqlIT.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 56",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 88",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BootstrapDeploymentContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 228",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 64",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/integration/SpApiIntegrationTest.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 14",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/testsupport/TestCredentials.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 9",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/testsupport/TestCredentials.java",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 79",
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/uploads_2020-11-01.json",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 135",
+      "path": "amz-service/amz-service-user/src/main/java/com/amz/service/impl/LoginServiceImpl.java",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 63",
+      "path": "docs/item6b-key-externalization-plan.md",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 422",
+      "path": "docs/superpowers/plans/2026-09-28-production-hardening-phase0.md",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 52",
+      "path": "docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 55",
+      "path": "docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 144",
+      "path": "docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "full3.log",
+      "rule": "root-runtime-artifact"
+    },
+    {
+      "detail": "line 100",
+      "path": "k8s/jobs/amz-service-spapi-credential-bootstrap.yaml",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 18",
+      "path": "loadtest/gatling/ErpStressTest.scala",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 35",
+      "path": "loadtest/jmeter/README.md",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 44",
+      "path": "loadtest/jmeter/README.md",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "mvn-full-test.log",
+      "rule": "root-maven-log"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "mvn-test-p1.log",
+      "rule": "root-maven-log"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round30-user-service-startup.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-cred-delete-ok.json",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-cred-put-after-delete-ok.json",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-cred-put-blocked-by-corrupt-ciphertext.json",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-cred-status-after-fix.json",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-cred-status-after-put.json",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-gate-backend.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-gate-frontend-build.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-gate-frontend-tsc.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-gate-frontend-vitest.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-spapi-module-regression-617.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-spapi-startup-failed-redis-down-p0-66.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "forbidden root runtime artefact",
+      "path": "round33-spapi-startup-ok.log",
+      "rule": "root-round-artifact"
+    },
+    {
+      "detail": "line 1953",
+      "path": "tools/connector-acceptance/acceptance_runner.py",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 1561",
+      "path": "tools/connector-acceptance/acceptance_runner.py",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 1843",
+      "path": "tools/connector-acceptance/acceptance_runner.py",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 2030",
+      "path": "tools/connector-acceptance/acceptance_runner.py",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 70",
+      "path": "tools/connector-acceptance/fake-service.py",
+      "rule": "aws-access-key"
+    },
+    {
+      "detail": "line 71",
+      "path": "tools/connector-acceptance/fake-service.py",
+      "rule": "secret-like-assignment"
+    },
+    {
+      "detail": "line 200",
+      "path": "tools/synthetic-data/ddl_parser.py",
+      "rule": "secret-like-assignment"
+    }
+  ],
+  "rulesVersion": 1,
+  "schemaVersion": 1,
+  "summary": {
+    "findings": 148
+  }
+}

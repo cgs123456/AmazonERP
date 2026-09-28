@@ -72,3 +72,14 @@ tools/synthetic-data/__pycache__/
 # Connector acceptance runner artefacts (tools/connector-acceptance/)
 tools/connector-acceptance/__pycache__/
 acceptance-out/
+# Phase 0 repository hygiene: root-only transient artefacts
+/_*.log
+/mvn-*.log
+/full*.log
+/*.err.log
+/round*-*.json
+/round*-*.log
+/*.tmp
+/*.bak
+/*.orig
+/*.rej

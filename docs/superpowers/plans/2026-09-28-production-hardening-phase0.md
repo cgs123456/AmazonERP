@@ -113,7 +113,7 @@ def test_flags_root_round_artifact_and_secret_placeholder_is_allowed(self):
         "round33-result.json": "{}\n",
         ".patch_tmp.py": "pass\n",
         "safe.env": "DB_PASSWORD=${DB_PASSWORD}\n",
-        "unsafe.env": "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ\n",
+        "unsafe.env": "GITHUB_TOKEN=" + "gh" + "p_" + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ" + "\n",
     })
     findings = scan_repository(root, include_untracked=True, allowlist=HygieneAllowlist.empty())
     codes = {(f.rule, f.path) for f in findings}
