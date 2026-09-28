@@ -54,7 +54,7 @@ public class SearchServiceImpl implements SearchService {
     private int knnTop;
 
     @Value("${search.retrieval.knn-candidates:100}")
-    private long knnCandidates;
+    private int knnCandidates;
 
     @Value("${search.retrieval.final-top:20}")
     private int rrfFinal;
