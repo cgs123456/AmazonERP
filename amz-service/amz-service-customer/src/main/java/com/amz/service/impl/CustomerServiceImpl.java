@@ -5,6 +5,8 @@ import com.amz.mapper.CustomerTicketMapper;
 import com.amz.mapper.ReviewSolicitationMapper;
 import com.amz.model.CustomerTicket;
 import com.amz.model.ReviewSolicitation;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.CustomerService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -59,7 +61,8 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    public List<CustomerTicket> listTickets(Long shopId, String status, String category) {
+    public PageResult<CustomerTicket> listTickets(Long shopId, String status, String category, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<CustomerTicket> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(CustomerTicket::getShopId, shopId);
         if (status != null && !status.isBlank()) {
@@ -68,8 +71,19 @@ public class CustomerServiceImpl implements CustomerService {
         if (category != null && !category.isBlank()) {
             wrapper.eq(CustomerTicket::getCategory, category);
         }
-        wrapper.orderByDesc(CustomerTicket::getId);
-        return ticketMapper.selectList(wrapper);
+        if (req.hasCursor()) {
+            wrapper.lt(CustomerTicket::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(CustomerTicket::getId)
+               .last("LIMIT " + req.probeSize());
+        List<CustomerTicket> rows = ticketMapper.selectList(wrapper);
+        PageResult<CustomerTicket> result = PageResult.of(rows, req.size(),
+                t -> PageRequest.encodeCursor(t.getId()));
+        if (result.truncated()) {
+            log.warn("工单列表被分页截断：shopId={} status={} category={} size={}",
+                    shopId, status, category, req.size());
+        }
+        return result;
     }
 
     @Override
@@ -118,9 +132,21 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
-    public List<ReviewSolicitation> listSolicitations(Long shopId) {
+    public PageResult<ReviewSolicitation> listSolicitations(Long shopId, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<ReviewSolicitation> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ReviewSolicitation::getShopId, shopId).orderByDesc(ReviewSolicitation::getId);
-        return solicitationMapper.selectList(wrapper);
+        wrapper.eq(ReviewSolicitation::getShopId, shopId);
+        if (req.hasCursor()) {
+            wrapper.lt(ReviewSolicitation::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(ReviewSolicitation::getId)
+               .last("LIMIT " + req.probeSize());
+        List<ReviewSolicitation> rows = solicitationMapper.selectList(wrapper);
+        PageResult<ReviewSolicitation> result = PageResult.of(rows, req.size(),
+                t -> PageRequest.encodeCursor(t.getId()));
+        if (result.truncated()) {
+            log.warn("索评列表被分页截断：shopId={} size={}", shopId, req.size());
+        }
+        return result;
     }
 }

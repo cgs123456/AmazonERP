@@ -1,18 +1,24 @@
 package com.amz.service.impl;
 
 import com.amz.client.KingdeeClient;
+import com.amz.dto.KingdeeSyncResult;
+import com.amz.exception.ConnectorException;
 import com.amz.finance.CurrencyConverter;
 import com.amz.mapper.AccountingVoucherMapper;
 import com.amz.model.AccountingVoucher;
 import com.amz.service.FinanceService;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +67,13 @@ public class FinanceServiceImpl implements FinanceService {
 
     @Autowired
     private KingdeeClient kingdeeClient;
+
+    /**
+     * SYNCING 认领租约。超过该时长仍处于 SYNCING，视为进程崩溃或调用方失联，
+     * 允许后续请求重新认领，避免永久卡死。
+     */
+    @Value("${amz.finance.kingdee.sync-lease-seconds:300}")
+    private long syncLeaseSeconds = 300;
 
     @Autowired
     private com.amz.service.VatService vatService;
@@ -172,51 +185,96 @@ public class FinanceServiceImpl implements FinanceService {
     }
 
     @Override
-    public boolean syncToKingdee(Long voucherId) {
+    public KingdeeSyncResult syncToKingdee(Long voucherId) {
         AccountingVoucher v = voucherMapper.selectById(voucherId);
         if (v == null) {
-            return false;
+            return KingdeeSyncResult.notFound(voucherId);
         }
         // 多租户越权防护：sync 端点仅携带 voucherId，无 shopId 参数可被 ShopScoped 切面拦截，
         // 此处在服务层显式校验当前用户是否被授权操作该凭证所属店铺
         if (!com.amz.context.UserContext.isShopAllowed(v.getShopId())) {
             log.warn("syncToKingdee 越权拦截：voucherId={} shopId={} userId={}",
                     voucherId, v.getShopId(), com.amz.context.UserContext.getUserId());
-            return false;
+            return KingdeeSyncResult.forbidden(voucherId);
         }
-        // 原子认领：PENDING/FAILED 才允许发起同步，防并发双写金蝶。
+        // 原子认领：PENDING/FAILED，或租约已过期的 SYNCING 才允许发起同步，
+        // 既防并发双写金蝶，也避免进程崩溃后永久卡在 SYNCING。
         // 使用字符串列名 UpdateWrapper（Lambda 版在无 MyBatis-Plus 元数据缓存的
-        // 纯单测环境下无法解析实体列）
+        // 纯单测环境下无法解析实体列）。
+        LocalDateTime staleBefore = LocalDateTime.now().minusSeconds(Math.max(1L, syncLeaseSeconds));
+        boolean mockClient = kingdeeClient.isMock();
         boolean claimed = voucherMapper.update(null,
                 new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<AccountingVoucher>()
                         .eq("id", voucherId)
-                        .in("kingdee_sync_status", "PENDING", "FAILED")
+                        .and(w -> {
+                            w.in("kingdee_sync_status", "PENDING", "FAILED");
+                            // 演示期产生的 MOCK 不是真实入账，不能永久锁死。
+                            // 切到真实客户端后允许原子认领并补同步；仍为 Mock 时保持幂等。
+                            if (!mockClient) {
+                                w.or().eq("kingdee_sync_status", "MOCK");
+                            }
+                            w.or(n -> n.eq("kingdee_sync_status", "SYNCING")
+                                    .and(s -> s.isNull("update_time")
+                                            .or()
+                                            .lt("update_time", staleBefore)));
+                        })
                         .set("kingdee_sync_status", "SYNCING")) > 0;
         if (!claimed) {
-            log.info("凭证已被其他请求认领或已同步，跳过：voucherId={} status={}",
+            if ("SYNCED".equals(v.getKingdeeSyncStatus())) {
+                log.info("凭证已同步金蝶，幂等返回：voucherId={}", voucherId);
+                return KingdeeSyncResult.synced(voucherId, null);
+            }
+            if ("MOCK".equals(v.getKingdeeSyncStatus())) {
+                log.info("凭证处于模拟同步状态，未真实入账：voucherId={}", voucherId);
+                return KingdeeSyncResult.mock(voucherId, null);
+            }
+            log.info("凭证已被其他请求认领或状态已变化，跳过：voucherId={} status={}",
                     voucherId, v.getKingdeeSyncStatus());
-            return true;
+            return KingdeeSyncResult.skipped(voucherId,
+                    "同步正在处理中或状态已变化，本次未重复调用金蝶");
         }
         try {
             String kingdeeNo = kingdeeClient.syncVoucher(v);
-            // 真实金蝶 API 未对接时 KingdeeRealClient 降级返回 KINGDEE_MOCK_ 前缀占位编号，
-            // 此时仅标记为 SYNCING（同步中），区别于真实已过账的 SYNCED，
-            // 避免 FAILED 误报，待真实 API 接入后自动转为 SYNCED。
-            boolean isMock = kingdeeNo != null && kingdeeNo.startsWith("KINGDEE_MOCK_");
-            v.setKingdeeSyncStatus(isMock ? "SYNCING" : "SYNCED");
+            if (mockClient) {
+                if (kingdeeNo == null || kingdeeNo.isBlank()) {
+                    throw new IllegalStateException("金蝶模拟客户端未返回模拟凭证号");
+                }
+                v.setKingdeeSyncStatus("MOCK");
+                voucherMapper.updateById(v);
+                log.info("凭证同步金蝶模拟完成：voucherId={} mockNo={} status=MOCK（未真实入账）",
+                        voucherId, kingdeeNo);
+                return KingdeeSyncResult.mock(voucherId, kingdeeNo);
+            }
+            // 真实实现只有拿到金蝶返回的有效凭证号才能确认成功。空值或占位号
+            // 一律进入 FAILED，禁止把“尚未调用”伪装成成功。
+            if (kingdeeNo == null || kingdeeNo.isBlank()
+                    || kingdeeNo.startsWith("KINGDEE_MOCK_")) {
+                throw new IllegalStateException("金蝶未返回有效凭证号：" + kingdeeNo);
+            }
+            v.setKingdeeSyncStatus("SYNCED");
             voucherMapper.updateById(v);
-            log.info("凭证同步金蝶完成：voucherId={} kingdeeNo={} status={}", voucherId, kingdeeNo, v.getKingdeeSyncStatus());
-            return true;
+            log.info("凭证同步金蝶完成：voucherId={} kingdeeNo={} status={}",
+                    voucherId, kingdeeNo, v.getKingdeeSyncStatus());
+            return KingdeeSyncResult.synced(voucherId, kingdeeNo);
+        } catch (ConnectorException e) {
+            markFailed(v, voucherId, e);
+            if (e.getReason() == ConnectorException.Reason.NOT_CONFIGURED) {
+                return KingdeeSyncResult.notConfigured(voucherId, e.getMessage());
+            }
+            return KingdeeSyncResult.failed(voucherId, e.getMessage());
         } catch (Exception e) {
-            v.setKingdeeSyncStatus("FAILED");
-            voucherMapper.updateById(v);
-            log.error("凭证同步金蝶失败：voucherId={}", voucherId, e);
-            return false;
+            markFailed(v, voucherId, e);
+            return KingdeeSyncResult.failed(voucherId, e.getMessage());
         }
     }
 
-    /** 列表查询安全上限：调度器持续写入，无界 selectList 会随时间线性膨胀。 */
-    private static final String LIST_LIMIT = "LIMIT 500";
+    private void markFailed(AccountingVoucher voucher, Long voucherId, Exception error) {
+        voucher.setKingdeeSyncStatus("FAILED");
+        voucherMapper.updateById(voucher);
+        log.error("凭证同步金蝶失败：voucherId={}", voucherId, error);
+    }
+
+
 
     /**
      * 聚合值为 null 安全转 BigDecimal（SUM 全 NULL 时 JDBC 返回 null；数字类型直接转换）。
@@ -235,16 +293,39 @@ public class FinanceServiceImpl implements FinanceService {
         }
     }
 
+    /**
+     * 凭证列表：keyset 分页 + 显式截断。
+     * <p>
+     * 三处刻意取舍：
+     * <ol>
+     *   <li>排序键固定为 {@code id DESC}，游标即上一页最后一行的 id。
+     *       凭证由调度器持续写入，若用 OFFSET，新凭证会把后续页整体右移，
+     *       翻页必然重复或漏行；keyset 与写入无关，顺序稳定。</li>
+     *   <li>按 {@code size + 1} 行探测而不是额外 COUNT(*)：大表上 COUNT 常比取一页更贵，
+     *       而本接口只需要知道「还有没有下一页」。</li>
+     *   <li>截断时打 WARN。对账漏单在响应里只是个布尔位，很容易被忽略；
+     *       日志是运维真正会看的地方。</li>
+     * </ol>
+     */
     @Override
-    public List<AccountingVoucher> listVouchers(Long shopId, String sourceType) {
+    public PageResult<AccountingVoucher> listVouchers(Long shopId, String sourceType, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<AccountingVoucher> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AccountingVoucher::getShopId, shopId);
         if (sourceType != null && !sourceType.isBlank()) {
             wrapper.eq(AccountingVoucher::getSourceType, sourceType);
         }
+        if (req.hasCursor()) {
+            wrapper.lt(AccountingVoucher::getId, req.cursorId());
+        }
         wrapper.orderByDesc(AccountingVoucher::getId)
-                .last(LIST_LIMIT);
-        return voucherMapper.selectList(wrapper);
+                .last("LIMIT " + req.probeSize());
+        List<AccountingVoucher> rows = voucherMapper.selectList(wrapper);
+        if (rows.size() > req.size()) {
+            log.warn("凭证列表被截断：shopId={} sourceType={} size={} 实际命中>{}，调用方需携带 nextCursor 继续翻页",
+                    shopId, sourceType, req.size(), req.size());
+        }
+        return PageResult.of(rows, req.size(), v -> PageRequest.encodeCursor(v.getId()));
     }
 
     @Override

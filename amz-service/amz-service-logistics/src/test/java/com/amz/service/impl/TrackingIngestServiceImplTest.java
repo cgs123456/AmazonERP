@@ -7,6 +7,10 @@ import com.amz.model.Shipment;
 import com.amz.model.TrackingEvent;
 import com.amz.service.TrackingIngestService;
 import com.amz.service.TrackingStatusMapper;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +18,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -24,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -63,6 +69,13 @@ class TrackingIngestServiceImplTest {
 
     @InjectMocks
     private TrackingIngestServiceImpl ingestService;
+
+    @BeforeAll
+    static void initMybatisTableInfo() {
+        MybatisConfiguration configuration = new MybatisConfiguration();
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), Shipment.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(configuration, ""), TrackingEvent.class);
+    }
 
     // ================================================================ 匹配
 
@@ -244,6 +257,40 @@ class TrackingIngestServiceImplTest {
         verify(shipmentMapper).updateById(shipment);
     }
 
+    @Test
+    @DisplayName("主运单号命中多条货件 → 返回歧义，不静默写入第一条")
+    void testAmbiguousTrackingNumberDoesNotWrite() {
+        Shipment first = shipment(10L, "SHP-1", "IN_TRANSIT");
+        Shipment second = shipment(11L, "SHP-2", "IN_TRANSIT");
+        when(shipmentMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        IngestOutcome outcome = ingestService.ingest(null, "TRK-DUP",
+                List.of(event("运输中", "2026-08-05 09:00:00")),
+                TrackingIngestService.SOURCE_API, 1L);
+
+        assertFalse(outcome.isMatched());
+        assertTrue(outcome.isAmbiguous(), "主运单号不唯一时必须把冲突回吐，不能猜测第一条");
+        assertEquals("trackingNo", outcome.getConflictField());
+        verify(trackingEventMapper, never()).insert(any(TrackingEvent.class));
+        verify(shipmentMapper, never()).updateById(any(Shipment.class));
+    }
+
+    @Test
+    @DisplayName("既有轨迹超过指纹安全上限 → fail-closed，不把不完整指纹当成可写")
+    void testFingerprintLoadFailsClosedAtLimit() {
+        ReflectionTestUtils.setField(ingestService, "maxExistingEvents", 1);
+        Shipment shipment = shipment(10L, "SHP-1", "IN_TRANSIT");
+        when(shipmentMapper.selectList(any())).thenReturn(List.of(shipment));
+        when(trackingEventMapper.selectList(any())).thenReturn(List.of(
+                existing("IN_TRANSIT", "2026-08-05 01:00:00"),
+                existing("IN_TRANSIT", "2026-08-05 02:00:00")));
+
+        assertThrows(IllegalStateException.class, () -> ingestService.ingest("SHP-1", "TRK-1",
+                List.of(event("运输中", "2026-08-05 09:00:00")),
+                TrackingIngestService.SOURCE_API, 1L));
+
+        verify(trackingEventMapper, never()).insert(any(TrackingEvent.class));
+    }
     // ================================================================ 延误判定
 
     @Test
@@ -285,6 +332,38 @@ class TrackingIngestServiceImplTest {
         verify(shipmentMapper, never()).updateById(any(Shipment.class));
     }
 
+    @Test
+    @DisplayName("延误判定按 id 游标分批扫描，不一次加载全部候选")
+    void testMarkDelayedScansInBoundedBatches() {
+        ReflectionTestUtils.setField(ingestService, "delayScanBatchSize", 1);
+        ReflectionTestUtils.setField(ingestService, "delayScanMaxRows", 10);
+        Shipment first = shipment(10L, "SHP-1", "IN_TRANSIT");
+        first.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        Shipment second = shipment(11L, "SHP-2", "IN_TRANSIT");
+        second.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        when(shipmentMapper.selectList(any()))
+                .thenReturn(List.of(first, second), List.of(second));
+
+        int marked = ingestService.markDelayedShipments(0);
+
+        assertEquals(2, marked);
+        verify(shipmentMapper, times(2)).selectList(any());
+        verify(shipmentMapper, times(2)).updateById(any(Shipment.class));
+    }
+
+    @Test
+    @DisplayName("延误候选超过扫描上限 → 抛错回滚，不静默漏判")
+    void testMarkDelayedFailsClosedWhenScanLimitExceeded() {
+        ReflectionTestUtils.setField(ingestService, "delayScanBatchSize", 1);
+        ReflectionTestUtils.setField(ingestService, "delayScanMaxRows", 1);
+        Shipment first = shipment(10L, "SHP-1", "IN_TRANSIT");
+        first.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        Shipment second = shipment(11L, "SHP-2", "IN_TRANSIT");
+        second.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        when(shipmentMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        assertThrows(IllegalStateException.class, () -> ingestService.markDelayedShipments(0));
+    }
     // ================================================================ 测试夹具
 
     private static Shipment shipment(Long id, String shipmentNo, String status) {

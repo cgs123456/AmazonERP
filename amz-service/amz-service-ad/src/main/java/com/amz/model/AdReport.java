@@ -3,6 +3,7 @@ package com.amz.model;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 /**
  * 广告报表数据（某周期内聚合指标）
@@ -22,6 +23,12 @@ public class AdReport {
     /** 广告活动 ID */
     private String campaignId;
 
+    /** 广告组 ID（按广告组拉取日报时填） */
+    private String adGroupId;
+
+    /** 报表日期（DAILY 报表按行返回） */
+    private LocalDate reportDate;
+
     /** 关键词（关键词级报表时填，活动级报表为 null） */
     private String keyword;
 
@@ -37,8 +44,11 @@ public class AdReport {
     /** 广告销售额（美元） */
     private BigDecimal sales;
 
-    /** 订单数 */
+    /** 订单数（7 天归因 purchases7d） */
     private Integer orders;
+
+    /** 售出件数（7 天归因 unitsSoldClicks7d） */
+    private Integer units;
 
     /** ACoS（百分比，自动计算） */
     private BigDecimal acos;

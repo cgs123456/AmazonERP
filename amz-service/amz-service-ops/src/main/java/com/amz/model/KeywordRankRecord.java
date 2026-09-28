@@ -1,6 +1,7 @@
 package com.amz.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -30,6 +31,7 @@ public class KeywordRankRecord implements Serializable {
     private String asin;
 
     /** 自然排名位置（1=首页第1名，>48=非首页） */
+    @TableField("rank_position")
     private Integer rank;
 
     /** 搜索站点：US/UK/DE/JP 等 */

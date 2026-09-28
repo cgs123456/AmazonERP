@@ -1,11 +1,26 @@
 package com.amz.controller;
 
 import com.amz.annotation.ShopScoped;
-import com.amz.model.*;
+import com.amz.model.OauthApp;
+import com.amz.model.OauthToken;
+import com.amz.model.PlatformAccount;
+import com.amz.model.PlatformInventory;
+import com.amz.model.PlatformMessage;
+import com.amz.model.PlatformProduct;
+import com.amz.model.UnifiedOrder;
+import com.amz.model.WebhookEvent;
 import com.amz.result.Result;
 import com.amz.service.impl.MultiplatformServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;

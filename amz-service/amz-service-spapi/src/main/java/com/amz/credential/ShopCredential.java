@@ -2,6 +2,8 @@ package com.amz.credential;
 
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 店铺 SP-API 凭证 POJO。
  * 在内存中（ShopCredentialStore）缓存使用，敏感字段（refresh_token / secret_key）需在持久化时加密。
@@ -53,4 +55,14 @@ public class ShopCredential {
      * Amazon Seller ID。
      */
     private String sellerId;
+
+    /**
+     * 乐观锁版本号；只参与 CAS 写入，不返回给管理接口。
+     */
+    private Long version;
+
+    /**
+     * 最近一次凭证更新时间；仅用于脱敏状态展示。
+     */
+    private LocalDateTime updateTime;
 }

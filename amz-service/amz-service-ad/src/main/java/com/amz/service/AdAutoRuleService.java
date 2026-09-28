@@ -2,6 +2,8 @@ package com.amz.service;
 
 import com.amz.model.AdAutoRule;
 import com.amz.optimizer.KeywordOptimizer;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 import java.util.Map;
@@ -18,7 +20,7 @@ public interface AdAutoRuleService {
     AdAutoRule updateRule(AdAutoRule rule);
 
     /** 查询规则列表 */
-    List<AdAutoRule> listRules(Long shopId, String ruleType);
+    PageResult<AdAutoRule> listRules(Long shopId, String ruleType, PageRequest page);
 
     /** 启用/禁用规则 */
     boolean toggleRule(Long ruleId, boolean enabled);

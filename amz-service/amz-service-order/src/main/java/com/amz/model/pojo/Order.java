@@ -39,7 +39,7 @@ public class Order {
      * 优惠券id
      */
     @TableField("coupon_id")
-    private Integer couponId;
+    private Long couponId;
 
     /**
      * 最终价格

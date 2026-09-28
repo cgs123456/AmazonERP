@@ -2,6 +2,7 @@ package com.amz.auth;
 
 import com.amz.config.SpApiConfig;
 import com.amz.connector.HttpTransport;
+import com.amz.connector.LwaTokenException;
 import com.amz.connector.SpApiEndpointResolver;
 import com.amz.credential.ShopCredential;
 import com.google.gson.JsonElement;
@@ -17,6 +18,8 @@ import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -69,6 +72,15 @@ public class LwaTokenManager {
      * （一个慢 LWA 请求不再阻塞其他店铺的调用）。
      */
     private final ConcurrentHashMap<String, Object> keyLocks = new ConcurrentHashMap<>();
+
+    /**
+     * key = clientId:sha256(clientSecret):sha256(scope)，value = grantless token 缓存条目。
+     * grantless token 与应用/scope 绑定，不能与卖家 refresh_token 换取的 token 混用。
+     */
+    private final Map<String, TokenEntry> grantlessCache = new ConcurrentHashMap<>();
+
+    /** grantless token 刷新锁，按应用凭证与 scope 隔离。 */
+    private final ConcurrentHashMap<String, Object> grantlessKeyLocks = new ConcurrentHashMap<>();
 
     /**
      * 显式注入的出站传输（生产由 Spring 注入；亦由契约测试注入进程内桩）。
@@ -129,6 +141,15 @@ public class LwaTokenManager {
     }
 
     /**
+     * grantless token 缓存键必须同时包含 clientId、clientSecret 与 scope：
+     * 仅按 clientId 会让不同应用/scope 的 token 相互串用；明文 secret/scope
+     * 不进入缓存键，避免堆转储或日志泄露。
+     */
+    static String grantlessCacheKeyOf(String clientId, String clientSecret, String scope) {
+        return clientId + ":" + sha256Hex(clientSecret) + ":" + sha256Hex(scope);
+    }
+
+    /**
      * 获取指定店铺凭证对应的 LWA access_token。
      * 命中缓存且未临近过期则直接返回，否则按键加锁刷新（同键互斥、跨键并行）。
      */
@@ -155,6 +176,52 @@ public class LwaTokenManager {
     }
 
     /**
+     * 获取 grantless access_token（client_credentials）。
+     * <p>
+     * 仅用于官方明确标注为 grantless 的操作，例如 Notifications 的 destination 管理接口。
+     * 该方法绝不读取卖家 refresh_token，也不允许业务层在失败时回落到普通 LWA token。
+     */
+    public String getGrantlessToken(String clientId, String clientSecret, String scope) {
+        requireGrantlessInput(clientId, "clientId");
+        requireGrantlessInput(clientSecret, "clientSecret");
+        requireGrantlessInput(scope, "scope");
+        String key = grantlessCacheKeyOf(clientId, clientSecret, scope);
+        TokenEntry entry = grantlessCache.get(key);
+        if (entry != null && entry.expiresAt.isAfter(Instant.now().plus(REFRESH_AHEAD))) {
+            return entry.accessToken;
+        }
+        Object lock = grantlessKeyLocks.computeIfAbsent(key, k -> new Object());
+        synchronized (lock) {
+            entry = grantlessCache.get(key);
+            if (entry != null && entry.expiresAt.isAfter(Instant.now().plus(REFRESH_AHEAD))) {
+                return entry.accessToken;
+            }
+            entry = refreshGrantlessToken(clientId, clientSecret, scope);
+            grantlessCache.put(key, entry);
+            return entry.accessToken;
+        }
+    }
+
+    /**
+     * 精确驱逐单个应用凭证与 scope 的 grantless token。
+     */
+    public void invalidateGrantless(String clientId, String clientSecret, String scope) {
+        if (clientId == null || clientId.isBlank()
+                || clientSecret == null || clientSecret.isBlank()
+                || scope == null || scope.isBlank()) {
+            return;
+        }
+        grantlessCache.remove(grantlessCacheKeyOf(clientId, clientSecret, scope));
+        log.info("LWA grantless token cache invalidated for clientId={}", clientId);
+    }
+
+    private static void requireGrantlessInput(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("grantless " + name + " must not be blank");
+        }
+    }
+
+    /**
      * 按 clientId 批量驱逐该应用下所有店铺的 token 缓存。
      * 在 SP-API 返回 401/403 且无法定位具体店铺时使用。
      */
@@ -164,6 +231,7 @@ public class LwaTokenManager {
         }
         String prefix = clientId + ":";
         cache.keySet().removeIf(k -> k != null && k.startsWith(prefix));
+        grantlessCache.keySet().removeIf(k -> k != null && k.startsWith(prefix));
         log.info("LWA token cache invalidated for clientId={}", clientId);
     }
 
@@ -181,18 +249,32 @@ public class LwaTokenManager {
     }
 
     /**
-     * 调用 LWA 端点刷新 access_token。
-     * <p>
-     * 官方契约（一手）：{@code POST https://api.amazon.com/auth/o2/token}，
-     * {@code Content-Type: application/x-www-form-urlencoded}，表单含
-     * {@code grant_type=refresh_token} / {@code refresh_token} / {@code client_id} / {@code client_secret}。
+     * 调用 LWA 端点用卖家 refresh_token 刷新 access_token。
      */
     private TokenEntry refreshToken(ShopCredential credential) {
         String form = "grant_type=refresh_token"
                 + "&refresh_token=" + encode(credential.getRefreshToken())
                 + "&client_id=" + encode(credential.getClientId())
                 + "&client_secret=" + encode(credential.getClientSecret());
+        return exchangeToken(form, credential.getClientId(), "refresh");
+    }
 
+    /**
+     * 调用 LWA 端点获取 grantless access_token。
+     * <p>
+     * 官方 grantless 流程使用 {@code client_credentials}，表单必须包含
+     * {@code client_id}、{@code client_secret} 与 {@code scope}，绝不能包含卖家
+     * {@code refresh_token}。
+     */
+    private TokenEntry refreshGrantlessToken(String clientId, String clientSecret, String scope) {
+        String form = "grant_type=client_credentials"
+                + "&client_id=" + encode(clientId)
+                + "&client_secret=" + encode(clientSecret)
+                + "&scope=" + encode(scope);
+        return exchangeToken(form, clientId, "grantless");
+    }
+
+    private TokenEntry exchangeToken(String form, String clientId, String tokenKind) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(lwaEndpoint()))
                 .header("Content-Type", "application/x-www-form-urlencoded")
@@ -200,28 +282,45 @@ public class LwaTokenManager {
                 .POST(HttpRequest.BodyPublishers.ofString(form, StandardCharsets.UTF_8))
                 .build();
 
+        HttpResponse<String> response;
         try {
-            HttpResponse<String> response = transport().send(request,
+            response = transport().send(request,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("LWA token refresh failed status=" + response.statusCode()
-                        + " body=" + response.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw LwaTokenException.transportFailure(clientId, "request interrupted");
+        } catch (IOException | UncheckedIOException e) {
+            throw LwaTokenException.transportFailure(clientId, e.getMessage());
+        }
+
+        if (response.statusCode() != 200) {
+            throw LwaTokenException.fromResponse(response.statusCode(), response.body(), clientId);
+        }
+
+        try {
+            String body = response.body() == null ? "" : response.body();
+            JsonElement root = JsonParser.parseString(body);
+            if (!root.isJsonObject()) {
+                throw LwaTokenException.invalidResponse("LWA token " + tokenKind
+                        + " response is not a JSON object clientId=" + clientId);
             }
-            JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
-            String accessToken = requiredString(json, "access_token", credential.getClientId());
-            String tokenType = requiredString(json, "token_type", credential.getClientId());
+            JsonObject json = root.getAsJsonObject();
+            String accessToken = requiredString(json, "access_token", clientId);
+            String tokenType = requiredString(json, "token_type", clientId);
             if (!"bearer".equalsIgnoreCase(tokenType)) {
-                throw new RuntimeException("LWA token refresh returned invalid token_type="
-                        + tokenType + " clientId=" + credential.getClientId());
+                throw LwaTokenException.invalidResponse("LWA token " + tokenKind
+                        + " returned invalid token_type=" + tokenType + " clientId=" + clientId);
             }
-            int expiresIn = requiredPositiveInt(json, "expires_in", credential.getClientId());
+            int expiresIn = requiredPositiveInt(json, "expires_in", clientId);
             Instant expiresAt = Instant.now().plusSeconds(expiresIn);
-            log.info("LWA token refreshed for clientId={} expires_in={}s", credential.getClientId(), expiresIn);
+            log.info("LWA {} token refreshed for clientId={} expires_in={}s",
+                    tokenKind, clientId, expiresIn);
             return new TokenEntry(accessToken, expiresAt);
-        } catch (RuntimeException e) {
+        } catch (LwaTokenException e) {
             throw e;
-        } catch (Exception e) {
-            throw new RuntimeException("LWA token refresh error for clientId=" + credential.getClientId(), e);
+        } catch (RuntimeException e) {
+            throw LwaTokenException.invalidResponse("LWA token " + tokenKind
+                    + " response parse failure clientId=" + clientId + " reason=" + e.getMessage());
         }
     }
 
@@ -232,12 +331,12 @@ public class LwaTokenManager {
         JsonElement element = json.get(field);
         if (element == null || element.isJsonNull() || !element.isJsonPrimitive()
                 || !element.getAsJsonPrimitive().isString()) {
-            throw new RuntimeException("LWA token refresh response missing or invalid " + field
+            throw LwaTokenException.invalidResponse("LWA token refresh response missing or invalid " + field
                     + " clientId=" + clientId);
         }
         String value = element.getAsString();
         if (value.isBlank()) {
-            throw new RuntimeException("LWA token refresh response returned blank " + field
+            throw LwaTokenException.invalidResponse("LWA token refresh response returned blank " + field
                     + " clientId=" + clientId);
         }
         return value;
@@ -250,18 +349,18 @@ public class LwaTokenManager {
         JsonElement element = json.get(field);
         if (element == null || element.isJsonNull() || !element.isJsonPrimitive()
                 || !element.getAsJsonPrimitive().isNumber()) {
-            throw new RuntimeException("LWA token refresh response missing or invalid " + field
+            throw LwaTokenException.invalidResponse("LWA token refresh response missing or invalid " + field
                     + " clientId=" + clientId);
         }
         final int value;
         try {
             value = element.getAsInt();
         } catch (RuntimeException e) {
-            throw new RuntimeException("LWA token refresh response invalid " + field
-                    + " clientId=" + clientId, e);
+            throw LwaTokenException.invalidResponse("LWA token refresh response invalid " + field
+                    + " clientId=" + clientId + " reason=" + e.getMessage());
         }
         if (value <= 0) {
-            throw new RuntimeException("LWA token refresh response returned non-positive " + field
+            throw LwaTokenException.invalidResponse("LWA token refresh response returned non-positive " + field
                     + "=" + value + " clientId=" + clientId);
         }
         return value;

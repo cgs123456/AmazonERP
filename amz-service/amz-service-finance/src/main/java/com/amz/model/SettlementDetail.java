@@ -40,7 +40,7 @@ public class SettlementDetail implements Serializable {
     private String settlementId;
 
     /** 订单号；平台调整行可能为空。 */
-    private String orderId;
+    private String amazonOrderId;
 
     /** 卖家 SKU。 */
     private String sku;

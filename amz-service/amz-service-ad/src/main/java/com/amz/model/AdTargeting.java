@@ -22,6 +22,8 @@ public class AdTargeting implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    private Long shopId;
+
     private String campaignId;
 
     /** 定向类型：CONTEXTUAL / REMARKETING / AUDIENCE / LOOKALIKE */

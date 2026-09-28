@@ -23,6 +23,8 @@ public class ReportInfo {
     private String reportType;
     /** IN_QUEUE / IN_PROGRESS / DONE / FATAL / CANCELLED。 */
     private String processingStatus;
+    /** 报表创建时间（官方必填字段）。 */
+    private String createdTime;
     /** 处理完成后的结果文档 ID（未完成时为 null）。 */
     private String documentId;
 

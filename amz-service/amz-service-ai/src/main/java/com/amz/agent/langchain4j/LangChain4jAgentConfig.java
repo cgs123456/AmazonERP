@@ -7,7 +7,7 @@ import dev.langchain4j.service.AiServices;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -16,7 +16,7 @@ import java.time.Duration;
 /**
  * LangChain4j Agent 配置。
  * <p>
- * 当 deepseek.api_key 未配置时，chatLanguageModel 和 erpAgent Bean 不会被创建，
+ * 当 deepseek.api-key 未配置时，chatLanguageModel 和 erpAgent Bean 不会被创建，
  * 调用方需处理 Bean 不存在的情况（@Autowired(required = false)）。
  */
 @Slf4j
@@ -26,7 +26,7 @@ public class LangChain4jAgentConfig {
     @Value("${deepseek.api-key:}")
     private String apiKey;
 
-    @Value("${deepseek.base-url:https://api.deepseek.com/v1}")
+    @Value("${deepseek.api-url:https://api.deepseek.com/v1}")
     private String baseUrl;
 
     @Value("${deepseek.model-name:deepseek-chat}")
@@ -43,10 +43,10 @@ public class LangChain4jAgentConfig {
 
     /**
      * DeepSeek 兼容 OpenAI 接口的 ChatLanguageModel。
-     * 仅当 deepseek.api_key 非空时才创建 Bean。
+     * 仅当 deepseek.api-key 非空时才创建 Bean。
      */
     @Bean
-    @ConditionalOnProperty(prefix = "deepseek", name = "api-key")
+    @ConditionalOnExpression("'${deepseek.api-key:}'.trim().length() > 0")
     public ChatLanguageModel chatLanguageModel() {
         log.info("初始化 LangChain4j OpenAiChatModel: baseUrl={}, model={}", baseUrl, modelName);
         return OpenAiChatModel.builder()
@@ -64,16 +64,18 @@ public class LangChain4jAgentConfig {
      * 仅当 chatLanguageModel Bean 存在时才创建。
      */
     @Bean
-    @ConditionalOnProperty(prefix = "deepseek", name = "api-key")
+    @ConditionalOnExpression("'${deepseek.api-key:}'.trim().length() > 0")
     public ErpAgentInterface erpAgent(ChatLanguageModel chatLanguageModel) {
         log.info("初始化 LangChain4j ErpAgent (AiServices 代理)");
-        return AiServices.builder(ErpAgentInterface.class)
+        var builder = AiServices.builder(ErpAgentInterface.class)
                 .chatLanguageModel(chatLanguageModel)
-                .tools(erpTools)
                 .chatMemoryProvider(sessionId -> MessageWindowChatMemory.builder()
                         .id(sessionId)
                         .maxMessages(20)
-                        .build())
-                .build();
+                        .build());
+        if (erpTools != null) {
+            builder.tools(erpTools);
+        }
+        return builder.build();
     }
 }

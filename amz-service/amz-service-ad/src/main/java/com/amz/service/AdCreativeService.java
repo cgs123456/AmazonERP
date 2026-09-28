@@ -1,8 +1,8 @@
 package com.amz.service;
 
 import com.amz.model.AdCreative;
-
-import java.util.List;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 /**
  * SB 广告素材管理服务接口。
@@ -11,22 +11,22 @@ import java.util.List;
 public interface AdCreativeService {
 
     /**
-     * 创建广告素材。
+     * 在指定店铺的活动下创建广告素材。
      */
-    AdCreative createCreative(AdCreative creative);
+    AdCreative createCreative(Long shopId, AdCreative creative);
 
     /**
-     * 更新广告素材。
+     * 更新指定店铺的广告素材。
      */
-    AdCreative updateCreative(AdCreative creative);
+    AdCreative updateCreative(Long shopId, AdCreative creative);
 
     /**
-     * 查询活动的素材列表。
+     * 查询指定店铺、指定活动的素材列表。
      */
-    List<AdCreative> listByCampaign(String campaignId);
+    PageResult<AdCreative> listByCampaign(Long shopId, String campaignId, PageRequest page);
 
     /**
-     * 审核素材：PENDING → APPROVED / REJECTED。
+     * 审核指定店铺的素材：PENDING → APPROVED / REJECTED。
      */
-    AdCreative review(Long id, String status);
+    AdCreative review(Long shopId, Long id, String status);
 }

@@ -27,13 +27,13 @@ import java.util.List;
  * 名为 {@code shopId} 且带 {@link RequestParam} 或 {@link PathVariable} 的参数，校验其值是否在当前用户
  * 授权的 {@link UserContext#getShops()} 店铺列表内。
  * <ul>
- *   <li>UserContext 无 shops（白名单 / 内部调用 / 未走 BaseAuthInterceptor）→ 跳过，放行；</li>
+ *   <li>已认证非 ADMIN 用户无 shops → fail-closed；无 userId 的白名单 / 内部调用 → 兼容放行；</li>
  *   <li>shopId 在授权列表内 → 放行；</li>
  *   <li>shopId 不在授权列表内 → 返回 {@link Result#failure(String)} 拦截；</li>
- *   <li>未找到 shopId 参数 → 跳过，放行。</li>
+ *   <li>未找到 shopId 参数 → 兼容放行；新写接口必须显式传 shopId，不能依赖本切面兜底。</li>
  * </ul>
  * <p>
- * 安全降级：切面任何异常均被吞掉并放行（仅记 warn 日志），避免阻断业务。
+ * 安全降级：切面自身异常按 fail-closed 拒绝，不静默放行，避免权限组件故障扩大为越权窗口。
  * 这是网关 {@code MyGlobalFilter} 之后的下游二次防御。
  */
 @Slf4j
@@ -49,8 +49,15 @@ public class ShopIdGuardAspect {
     public Object guard(ProceedingJoinPoint pjp) throws Throwable {
         try {
             List<Long> shops = UserContext.getShops();
-            // UserContext 无 shops（白名单 / 内部调用 / 未走鉴权拦截器），跳过校验，兼容放行
+            // 无用户上下文的内部调用继续兼容放行；但已经过 BaseAuthInterceptor 的
+            // 外部请求如果没有任何 shops 授权，绝不能因为“列表为空”被解释为“无限制”。
+            // ADMIN 保留全局管理语义，非 ADMIN 必须 fail-closed。
             if (shops == null || shops.isEmpty()) {
+                if (UserContext.getUserId() != null && !isAdmin()) {
+                    log.warn("ShopIdGuardAspect: 已认证用户无任何店铺授权，拒绝访问，userId={}, role={}",
+                            UserContext.getUserId(), UserContext.getRole());
+                    return Result.failure("当前用户没有任何店铺授权");
+                }
                 return pjp.proceed();
             }
             Long shopIdValue = resolveShopId(pjp);
@@ -73,6 +80,10 @@ public class ShopIdGuardAspect {
             return Result.failure("店铺权限校验异常，请稍后重试");
         }
         return pjp.proceed();
+    }
+
+    private static boolean isAdmin() {
+        return "ADMIN".equalsIgnoreCase(UserContext.getRole());
     }
 
     /**
@@ -107,10 +118,23 @@ public class ShopIdGuardAspect {
             if (type != Long.class && type != Long.TYPE) {
                 continue;
             }
-            String name = (paramNames != null && i < paramNames.length) ? paramNames[i] : params[i].getName();
+            String name = annotationName(params[i].getAnnotation(annType));
+            if (name == null || name.isBlank()) {
+                name = (paramNames != null && i < paramNames.length) ? paramNames[i] : params[i].getName();
+            }
             if (SHOP_ID_PARAM.equals(name) && i < args.length && args[i] instanceof Long) {
                 return (Long) args[i];
             }
+        }
+        return null;
+    }
+
+    private static String annotationName(Annotation annotation) {
+        if (annotation instanceof PathVariable pathVariable) {
+            return pathVariable.value();
+        }
+        if (annotation instanceof RequestParam requestParam) {
+            return requestParam.name().isBlank() ? requestParam.value() : requestParam.name();
         }
         return null;
     }

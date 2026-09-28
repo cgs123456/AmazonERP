@@ -12,10 +12,10 @@ import java.lang.annotation.Target;
  * 校验方法中 {@code @RequestParam Long shopId} 参数值是否在当前用户授权的
  * {@link com.amz.context.UserContext#getShops()} 店铺列表内；不在则拒绝。
  * <p>
- * 这是网关 {@code MyGlobalFilter} 之后的下游二次防御。当 UserContext 无 shops
- * （白名单 / 内部调用 / 未走 BaseAuthInterceptor）时跳过校验，兼容放行。
+ * 这是网关 {@code MyGlobalFilter} 之后的下游二次防御。已认证非 ADMIN 用户缺少 shops claim 时
+ * 必须拒绝；无 userId 的白名单 / 内部调用保持兼容放行。
  * <p>
- * 切面异常一律吞掉并放行（仅记 warn 日志），避免阻断业务。
+ * 切面自身异常按 fail-closed 拒绝，不静默放行；避免权限组件故障扩大为越权窗口。
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

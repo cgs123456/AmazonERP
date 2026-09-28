@@ -2,13 +2,23 @@ package com.amz.controller;
 
 import com.amz.agent.MemoryAwareAgentService;
 import com.amz.agent.ProactiveReminderService;
+import com.amz.annotation.RequireRole;
+import com.amz.context.UserContext;
 import com.amz.model.ConversationMemory;
 import com.amz.model.LanguageEnum;
 import com.amz.model.UserPreference;
 import com.amz.result.Result;
 import com.amz.service.MemoryService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -36,16 +46,15 @@ public class AgentMemoryController {
 
     /**
      * 带记忆 + 多语言的 Agent 对话。
-     * POST /agent/memory/chat?userId=1
+     * POST /agent/memory/chat
      * Body: {"message":"最近7天订单如何？店铺1"}
      */
     @PostMapping("/chat")
-    public Result<String> chat(@RequestParam Long userId,
-                               @RequestBody ChatRequest request) {
+    public Result<String> chat(@RequestBody ChatRequest request) {
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             return Result.failure("message 不能为空");
         }
-        return memoryAwareAgentService.chat(userId, request.getMessage());
+        return memoryAwareAgentService.chat(currentUserId(), request.getMessage());
     }
 
     /**
@@ -54,6 +63,7 @@ public class AgentMemoryController {
      */
     @GetMapping("/preference/{userId}")
     public Result<UserPreference> getPreference(@PathVariable Long userId) {
+        requireSelfOrAdmin(userId);
         return Result.success(memoryService.getOrCreatePreference(userId));
     }
 
@@ -63,19 +73,25 @@ public class AgentMemoryController {
      */
     @PostMapping("/preference")
     public Result<UserPreference> updatePreference(@RequestBody UserPreference preference) {
+        if (preference == null) {
+            return Result.failure("preference 不能为空");
+        }
+        // id 来自客户端时可能指向他人主键；userId 也必须强制绑定认证身份。
+        preference.setId(null);
+        preference.setUserId(currentUserId());
         return Result.success(memoryService.updatePreference(preference));
     }
 
     /**
      * 切换用户回复语言（便捷端点）。
-     * POST /agent/memory/language?userId=1&language=EN
+     * POST /agent/memory/language?language=EN
      * language 取值：ZH / EN / JA / DE
      */
     @PostMapping("/language")
-    public Result<UserPreference> switchLanguage(@RequestParam Long userId,
-                                                 @RequestParam String language) {
+    public Result<UserPreference> switchLanguage(@RequestParam String language) {
         // 校验语言代码合法
         LanguageEnum lang = LanguageEnum.fromCode(language);
+        long userId = currentUserId();
         UserPreference pref = memoryService.getOrCreatePreference(userId);
         pref.setLanguage(lang.name());
         return Result.success(memoryService.updatePreference(pref));
@@ -88,6 +104,7 @@ public class AgentMemoryController {
     @GetMapping("/history/{userId}")
     public Result<List<ConversationMemory>> history(@PathVariable Long userId,
                                                     @RequestParam(defaultValue = "10") int limit) {
+        requireSelfOrAdmin(userId);
         return Result.success(memoryService.listRecentMemories(
                 "sess-" + userId, limit));
     }
@@ -97,8 +114,28 @@ public class AgentMemoryController {
      * POST /agent/memory/reminder/scan
      */
     @PostMapping("/reminder/scan")
+    @RequireRole({"ADMIN"})
     public Result<List<String>> scanReminders() {
         return Result.success(proactiveReminderService.scanAndRemind());
+    }
+
+    private long currentUserId() {
+        Integer userId = UserContext.getUserId();
+        if (userId == null || userId <= 0) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录");
+        }
+        return userId.longValue();
+    }
+
+    private void requireSelfOrAdmin(Long targetUserId) {
+        long currentUserId = currentUserId();
+        if (targetUserId == null || targetUserId <= 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId 非法");
+        }
+        if (targetUserId == currentUserId || "ADMIN".equalsIgnoreCase(UserContext.getRole())) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "无权访问其他用户数据");
     }
 
     public static class ChatRequest {

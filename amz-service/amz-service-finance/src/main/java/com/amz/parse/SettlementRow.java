@@ -17,7 +17,7 @@ public class SettlementRow {
     private String settlementId;
 
     /** 订单号；Adjustment（平台调整）行可能为空。 */
-    private String orderId;
+    private String amazonOrderId;
 
     /** 卖家 SKU。 */
     private String sku;
@@ -39,7 +39,7 @@ public class SettlementRow {
 
     /**
      * 幂等指纹（MD5）——同一行重复导入生成相同值，落库层据此去重。
-     * 组成：settlementId|orderId|sku|amountType|amount|depositDate。
+     * 组成：settlementId|amazonOrderId|sku|amountType|amount|depositDate。
      */
     private String rowKey;
 }

@@ -4,10 +4,12 @@ import com.amz.dto.ReimbursementClaimSummary;
 import com.amz.dto.ReimbursementReconcileReport;
 import com.amz.mapper.ReimbursementClaimMapper;
 import com.amz.mapper.SettlementDetailMapper;
+import com.amz.dto.KingdeeSyncResult;
 import com.amz.model.AccountingVoucher;
 import com.amz.model.FeeDiscrepancy;
 import com.amz.model.ReimbursementClaim;
 import com.amz.model.SettlementDetail;
+import com.amz.result.PageRequest;
 import com.amz.service.FeeDiscrepancyService;
 import com.amz.service.FinanceService;
 import org.junit.jupiter.api.DisplayName;
@@ -198,7 +200,7 @@ class ReimbursementClaimServiceImplTest {
         voucher.setId(88L);
         when(financeService.generateReimbursementVoucher(eq(SHOP_ID), any(), any(), eq("USD")))
                 .thenReturn(voucher);
-        when(financeService.syncToKingdee(88L)).thenReturn(true);
+        when(financeService.syncToKingdee(88L)).thenReturn(KingdeeSyncResult.synced(88L, "KD-88"));
         when(reimbursementClaimMapper.updateById(any(ReimbursementClaim.class))).thenReturn(1);
 
         ReimbursementClaim done = service.reimburse(SHOP_ID, 7L, new BigDecimal("12.00"));
@@ -379,8 +381,8 @@ class ReimbursementClaimServiceImplTest {
     @DisplayName("列表过滤与参数校验")
     void listAndValidation() {
         when(reimbursementClaimMapper.selectList(any())).thenReturn(new ArrayList<>());
-        assertTrue(service.list(SHOP_ID, "reimbursed").isEmpty());
-        assertThrows(IllegalArgumentException.class, () -> service.list(null, null));
+        assertTrue(service.list(SHOP_ID, "reimbursed", PageRequest.first(50)).items().isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> service.list(null, null, PageRequest.first(50)));
         assertThrows(IllegalArgumentException.class, () -> service.get(null, 1L));
     }
 

@@ -5,10 +5,18 @@ import com.amz.model.EmailTemplate;
 import com.amz.model.EmailTask;
 import com.amz.model.NegativeReview;
 import com.amz.model.Rma;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.CustomerEmailService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -46,8 +54,11 @@ public class CustomerEmailController {
     @ShopScoped
     @GetMapping("/template/list/{shopId}")
     public Result<List<EmailTemplate>> listTemplates(@PathVariable Long shopId,
-                                                      @RequestParam(required = false) String templateType) {
-        return Result.success(customerEmailService.listTemplates(shopId, templateType));
+                                                      @RequestParam(required = false) String templateType,
+                                                      @RequestParam(required = false) Integer size,
+                                                      @RequestParam(required = false) String cursor) {
+        return Result.paged(customerEmailService.listTemplates(
+                shopId, templateType, PageRequest.of(size, cursor)));
     }
 
     /** 启用/禁用模板 */
@@ -83,8 +94,10 @@ public class CustomerEmailController {
     @ShopScoped
     @GetMapping("/task/list/{shopId}")
     public Result<List<EmailTask>> listEmailTasks(@PathVariable Long shopId,
-                                                   @RequestParam(required = false) String status) {
-        return Result.success(customerEmailService.listEmailTasks(shopId, status));
+                                                   @RequestParam(required = false) String status,
+                                                   @RequestParam(required = false) Integer size,
+                                                   @RequestParam(required = false) String cursor) {
+        return Result.paged(customerEmailService.listEmailTasks(shopId, status, PageRequest.of(size, cursor)));
     }
 
     /** 手动创建邮件任务 */
@@ -108,8 +121,11 @@ public class CustomerEmailController {
     @GetMapping("/negative-review/list/{shopId}")
     public Result<List<NegativeReview>> listNegativeReviews(@PathVariable Long shopId,
                                                              @RequestParam(required = false) String status,
-                                                             @RequestParam(required = false) Integer minRating) {
-        return Result.success(customerEmailService.listNegativeReviews(shopId, status, minRating));
+                                                             @RequestParam(required = false) Integer minRating,
+                                                             @RequestParam(required = false) Integer size,
+                                                             @RequestParam(required = false) String cursor) {
+        return Result.paged(customerEmailService.listNegativeReviews(
+                shopId, status, minRating, PageRequest.of(size, cursor)));
     }
 
     /** 差评-订单匹配 */
@@ -139,8 +155,11 @@ public class CustomerEmailController {
     @ShopScoped
     @GetMapping("/rma/list/{shopId}")
     public Result<List<Rma>> listRmas(@PathVariable Long shopId,
-                                      @RequestParam(required = false) String status) {
-        return Result.success(customerEmailService.listRmas(shopId, status));
+                                      @RequestParam(required = false) String status,
+                                      @RequestParam(required = false) Integer size,
+                                      @RequestParam(required = false) String cursor) {
+        return Result.paged(customerEmailService.listRmas(
+                shopId, status, PageRequest.of(size, cursor)));
     }
 
     /** 更新 RMA 状态 */

@@ -25,6 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -60,7 +62,7 @@ class ConnectorRegistryTest {
     /** 主代码根目录（surefire 工作目录为模块根目录）。 */
     private static final Path MAIN_JAVA = Paths.get("src/main/java");
 
-    /** spec §1.4.1 的关键词（未实现能力的判定依据）。 */
+    /** spec §1.4.1 初始关键词（当前未实现能力的判定依据）。 */
     private static final Map<String, String> NOT_IMPLEMENTED_KEYWORDS = notImplementedKeywords();
 
     private static ConnectorRegistry registryWith(int credentialCount) {
@@ -78,15 +80,7 @@ class ConnectorRegistryTest {
     }
 
     private static Map<String, String> notImplementedKeywords() {
-        Map<String, String> keywords = new LinkedHashMap<>();
-        keywords.put("notifications", "/notifications/v1");
-        keywords.put("restrictedDataToken", "restrictedDataToken");
-        keywords.put("listingsItems", "listings/2021-08-01");
-        keywords.put("productPricing", "productPricing");
-        keywords.put("catalogItems", "catalog/2022-04-01");
-        keywords.put("sellers.marketplaceParticipations", "sellers/v1");
-        keywords.put("fbaInbound", "fba/inbound");
-        return keywords;
+        return Map.of();
     }
 
     /**
@@ -98,6 +92,9 @@ class ConnectorRegistryTest {
      * 防止有人靠扩大排除清单让断言假通过。
      */
     private static final Set<String> SCAN_EXCLUSIONS = Set.of("ConnectorRegistry.java");
+
+    private static final Pattern CLIENT_OPERATION_ID = Pattern.compile(
+            "\"((?:orders|fbaInventory|feeds|reports|fees|finances|sellers|messaging|uploads|tokens|notifications|listingsItems|productPricing|catalogItems|fbaInbound)\\.[A-Za-z0-9_]+)\"");
 
     private static String mainSources() {
         try (Stream<Path> files = Files.walk(MAIN_JAVA)) {
@@ -117,13 +114,37 @@ class ConnectorRegistryTest {
         }
     }
 
+    private static Set<String> clientOperationIds() {
+        Path clientRoot = MAIN_JAVA.resolve("com/amz/client");
+        try (Stream<Path> files = Files.walk(clientRoot)) {
+            String sources = files.filter(Files::isRegularFile)
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .map(path -> {
+                        try {
+                            return Files.readString(path, StandardCharsets.UTF_8);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    })
+                    .collect(Collectors.joining("\n"));
+            Matcher matcher = CLIENT_OPERATION_ID.matcher(sources);
+            Set<String> ids = new java.util.LinkedHashSet<>();
+            while (matcher.find()) {
+                ids.add(matcher.group(1));
+            }
+            return ids;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     @Test
     @DisplayName("已实现 operation 在 src/main/java 中确有调用点（operationId 字面量可命中）")
     void implementedOperationsHaveRealCallSites() {
         String sources = mainSources();
         List<Operation> implemented = ConnectorRegistry.spapiOperations().stream()
                 .filter(Operation::implemented).toList();
-        assertEquals(11, implemented.size(), "已实现 operation 数量必须与 Task 5 的限流 operationId 一致");
+        assertEquals(90, implemented.size(), "已实现 operation 数量必须与 client 包真实调用点一致");
         for (Operation operation : implemented) {
             assertTrue(sources.contains("\"" + operation.id() + "\""),
                     "已实现 operation " + operation.id() + " 必须在 src/main/java 中找到同名 operationId 字面量；"
@@ -132,23 +153,33 @@ class ConnectorRegistryTest {
     }
 
     @Test
-    @DisplayName("未实现的官方能力：spec §1.4.1 关键词在 src/main/java 命中 0（不得假声明）")
+    @DisplayName("已实现清单与 client 包中的 operationId 双向一致")
+    void registryMatchesClientCallSitesBidirectionally() {
+        Set<String> registryIds = ConnectorRegistry.spapiOperations().stream()
+                .filter(Operation::implemented)
+                .map(Operation::id)
+                .collect(Collectors.toSet());
+        Set<String> clientIds = clientOperationIds();
+        String clientOnly = String.join(",",
+                clientIds.stream().filter(id -> !registryIds.contains(id)).sorted().toList());
+        String registryOnly = String.join(",",
+                registryIds.stream().filter(id -> !clientIds.contains(id)).sorted().toList());
+        assertEquals(clientIds, registryIds,
+                "client 包中的 operationId 与能力台账必须双向一致；client-only="
+                        + clientOnly + " registry-only=" + registryOnly);
+        assertEquals(90, registryIds.size(), "当前源码实际出站 operationId 共 90 条");
+    }
+
+    @Test
+    @DisplayName("五类剩余能力已全部实现：未实现清单必须为 0")
     void notImplementedOperationsHaveNoCallSite() {
-        String sources = mainSources();
         List<Operation> missing = ConnectorRegistry.spapiOperations().stream()
                 .filter(operation -> operation.status() == Status.NOT_IMPLEMENTED).toList();
-        assertEquals(7, missing.size(), "spec §1.4.1 实测 7 类未实现能力，必须全部在列");
-        for (Operation operation : missing) {
-            String keyword = NOT_IMPLEMENTED_KEYWORDS.get(operation.id());
-            assertNotNull(keyword, "未实现项 " + operation.id() + " 缺少 spec §1.4.1 关键词映射；"
-                    + "新增未实现能力时必须同步补关键词，否则本断言会静默失效");
-            assertFalse(sources.contains(keyword),
-                    "operation " + operation.id() + " 标注未实现，但 src/main/java 命中关键词 " + keyword
-                            + "：要么改状态为已实现，要么移除调用点");
-        }
+        assertTrue(missing.isEmpty(),
+                "Notifications、Listings Items、Product Pricing、Catalog Items、FBA Inbound 已全部实现，未实现清单必须为 0");
         assertEquals(NOT_IMPLEMENTED_KEYWORDS.keySet(),
                 missing.stream().map(Operation::id).collect(Collectors.toSet()),
-                "关键词表与未实现清单必须一一对应（防止新增未实现能力后无人维护关键词）");
+                "关键词表与未实现清单必须一一对应");
         assertEquals(Set.of("ConnectorRegistry.java"), SCAN_EXCLUSIONS,
                 "扫描排除项只允许是能力表本身；扩大排除清单等于让本断言失效");
     }
@@ -188,6 +219,16 @@ class ConnectorRegistryTest {
     }
 
     @Test
+    @DisplayName("A7 离线/桩证据最高 E3，真实 429/5xx 重放仍需 E4")
+    void a7OfflineEvidenceIsE3() {
+        Evidence a7 = ConnectorRegistry.spapiEvidence().stream()
+                .filter(item -> item.criterion() == Criterion.A7)
+                .findFirst().orElseThrow();
+        assertEquals(Level.E3, a7.level(), "Outbox/DLQ/重放离线测试只能声明 E3");
+        assertEquals(Level.E4, Criterion.A7.requiredLevel(), "真实重放与回读仍是 API-Ready 门槛");
+    }
+
+    @Test
     @DisplayName("判定结果：apiReady=false、reachable=false、displayText 只能是「具备对接能力（未联调）」")
     void assessmentStaysHonest() {
         Assessment assessment = ConnectorEvidencePolicy.evaluate(ConnectorRegistry.spapiEvidence());
@@ -200,14 +241,14 @@ class ConnectorRegistryTest {
     }
 
     @Test
-    @DisplayName("能力视图：11 已实现 / 7 未实现 / 未知 code 返回 null / 凭证来源只可能是 db 或 none")
+    @DisplayName("能力视图：90 已实现 / 0 未实现 / 未知 code 返回 null / 凭证来源只可能是 db 或 none")
     void capabilityViewIsConsistent() {
         Capability capability = registryWith(0).describe(ConnectorRegistry.SPAPI);
         assertNotNull(capability);
         assertEquals(ConnectorRegistry.SPAPI, capability.code());
-        assertEquals(11, capability.implementedCount());
-        assertEquals(7, capability.notImplementedCount());
-        assertEquals(18, capability.operations().size());
+        assertEquals(90, capability.implementedCount());
+        assertEquals(0, capability.notImplementedCount());
+        assertEquals(90, capability.operations().size());
         assertTrue(capability.enabled(), "本进程内 SP-API 连接器已装配");
         assertEquals(ConnectorRegistry.SOURCE_NONE, capability.credentialSource());
         assertEquals(0, capability.credentialCount());

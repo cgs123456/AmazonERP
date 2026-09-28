@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.client.OrderServiceFeignClient;
 import com.amz.context.UserContext;
 import com.amz.model.dto.ProductDto;
@@ -13,7 +14,14 @@ import com.amz.service.TranslationService;
 import com.amz.util.MapArgUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -72,32 +80,43 @@ public class ProductController {
     /**
      * 跨站点 Listing 复制（供 Agent 工具调用）。
      * POST /product/listing/copy
+     * sku 与 asin 必须二选一；ASIN 会先解析为真实卖家 SKU。
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/listing/copy")
     public Result<Map<String, Object>> copyListing(@RequestBody Map<String, Object> req) {
         Long shopId = toLong(req.get("shopId"));
         String sku = toStr(req.get("sku"));
+        String asin = toStr(req.get("asin"));
         String sourceMarketplaceId = toStr(req.get("sourceMarketplaceId"));
         String targetMarketplaceId = toStr(req.get("targetMarketplaceId"));
         String targetLanguage = toStr(req.get("targetLanguage"));
         BigDecimal priceMarkup = toBigDecimal(req.get("priceMarkup"), new BigDecimal("0.20"));
 
-        if (shopId == null || sku == null || sourceMarketplaceId == null || targetMarketplaceId == null) {
-            return Result.failure("shopId/sku/sourceMarketplaceId/targetMarketplaceId 不能为空");
+        boolean hasSku = sku != null && !sku.isBlank();
+        boolean hasAsin = asin != null && !asin.isBlank();
+        if (hasSku == hasAsin) {
+            return Result.failure("sku 与 asin 必须二选一");
         }
-        // 越权防护：shopId 来自 @RequestBody，@ShopScoped 切面（仅覆盖 @RequestParam/@PathVariable）
-        // 无法校验，故显式校验其属于当前登录用户授权店铺，防止伪造请求体越权在他人店铺创建复制任务。
-        if (!UserContext.isShopAllowed(shopId)) {
+        if (shopId == null || sourceMarketplaceId == null || targetMarketplaceId == null) {
+            return Result.failure("shopId/sourceMarketplaceId/targetMarketplaceId 不能为空");
+        }
+        // shopId 来自请求体，必须使用外部边界严格校验，不能走兼容内部调用的宽松语义。
+        if (!UserContext.isShopAllowedStrict(shopId)) {
             log.warn("Listing 复制越权拦截：shopId={}, userId={}", shopId, UserContext.getUserId());
             return Result.failure("无权操作该店铺");
         }
         try {
-            ListingCopyTask task = listingCopyService.createCopyTask(
-                    shopId, sku, sourceMarketplaceId, targetMarketplaceId, targetLanguage, priceMarkup);
+            ListingCopyTask task = hasSku
+                    ? listingCopyService.createCopyTask(shopId, sku, sourceMarketplaceId,
+                            targetMarketplaceId, targetLanguage, priceMarkup)
+                    : listingCopyService.createCopyTaskByAsin(shopId, asin, sourceMarketplaceId,
+                            targetMarketplaceId, targetLanguage, priceMarkup);
             Map<String, Object> data = new HashMap<>();
             data.put("taskId", task.getId());
             data.put("shopId", task.getShopId());
             data.put("sku", task.getSku());
+            data.put("productType", task.getProductType());
             data.put("sourceMarketplaceId", task.getSourceMarketplaceId());
             data.put("targetMarketplaceId", task.getTargetMarketplaceId());
             data.put("targetLanguage", task.getTargetLanguage());
@@ -108,6 +127,8 @@ public class ProductController {
             return Result.success(data);
         } catch (IllegalArgumentException e) {
             return Result.failure(e.getMessage());
+        } catch (SecurityException e) {
+            return Result.failure("无权操作该店铺");
         }
     }
 

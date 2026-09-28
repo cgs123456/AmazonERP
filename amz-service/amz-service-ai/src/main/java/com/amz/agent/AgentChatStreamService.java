@@ -1,15 +1,19 @@
 package com.amz.agent;
 
 import com.amz.agent.langchain4j.LangChain4jAgentService;
+import com.amz.context.UserContext;
 import com.amz.result.Result;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,7 +57,8 @@ public class AgentChatStreamService {
      * 启动一次流式对话。调用方（Controller）负责创建 emitter 并返回，
      * 本方法只负责接线与任务提交，立即返回。
      */
-    public void streamChat(Long userId, String message, SseEmitter emitter) {
+    public void streamChat(String message, SseEmitter emitter) {
+        UserContextSnapshot user = UserContextSnapshot.capture();
         String traceId = "tr-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         // unregister 天然幂等，多处清理点可重复调用
         Runnable cleanup = () -> AgentToolEventBus.unregister(traceId);
@@ -63,8 +68,9 @@ public class AgentChatStreamService {
 
         Future<?> future = workers.submit(() -> {
             AgentTraceContext.set(traceId);
+            user.bind();
             try {
-                Result<String> result = agentService.chat(userId, message);
+                Result<String> result = agentService.chat(user.userId().longValue(), message);
                 if (result != null && result.getCode() == 200 && result.getData() != null) {
                     sendEvent(emitter, AgentToolEvent.finalAnswer(result.getData()), cleanup);
                 } else {
@@ -76,6 +82,7 @@ public class AgentChatStreamService {
                 sendEvent(emitter, AgentToolEvent.error("Agent 调用失败，请稍后重试"), cleanup);
             } finally {
                 AgentTraceContext.clear();
+                UserContext.clear();
                 sendEvent(emitter, AgentToolEvent.done(), cleanup);
                 try {
                     emitter.complete();
@@ -96,6 +103,33 @@ public class AgentChatStreamService {
             future.cancel(true);
             cleanup.run();
         });
+    }
+
+    /**
+     * 在请求线程捕获不可变身份快照，并在固定线程池 worker 中恢复。
+     * userId 是操作权限的必要条件；role/shops 缺失时由工具层继续 fail-closed。
+     */
+    private record UserContextSnapshot(Integer userId, String role, List<Long> shops, Long shopId) {
+
+        static UserContextSnapshot capture() {
+            Integer userId = UserContext.getUserId();
+            if (userId == null || userId <= 0) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录");
+            }
+            List<Long> shops = UserContext.getShops();
+            return new UserContextSnapshot(
+                    userId,
+                    UserContext.getRole(),
+                    shops == null ? null : List.copyOf(shops),
+                    UserContext.getShopId());
+        }
+
+        void bind() {
+            UserContext.setUserId(userId);
+            UserContext.setRole(role);
+            UserContext.setShops(shops);
+            UserContext.setShopId(shopId);
+        }
     }
 
     private void sendEvent(SseEmitter emitter, AgentToolEvent event, Runnable cleanup) {

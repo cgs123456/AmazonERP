@@ -5,10 +5,15 @@ import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.connector.ErrorSummary;
 import com.amz.connector.HttpTransport;
+import com.amz.connector.LocalApiException;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiCallException;
 import com.amz.connector.SpApiEndpointResolver;
 import com.amz.connector.SpApiRequestFactory;
+import com.amz.model.FeedIssue;
+import com.amz.model.FeedResult;
 import com.amz.ratelimit.SpiRateLimiter;
+import com.amz.service.FeedResultErrorStore;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -16,8 +21,14 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.zip.GZIPInputStream;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -65,6 +76,7 @@ public class FeedsClient {
     private static final String OP_CREATE_FEED = "feeds.createFeed";
     private static final String OP_CREATE_FEED_DOCUMENT = "feeds.createFeedDocument";
     private static final String OP_GET_FEED = "feeds.getFeed";
+    private static final String OP_GET_FEED_DOCUMENT = "feeds.getFeedDocument";
 
     private static final int MAX_RETRIES = 3;
 
@@ -88,6 +100,8 @@ public class FeedsClient {
      * SP-API Feeds 官方配额较紧（createFeed 约 0.0083 req/s），此处保守前置限流。
      */
     private final SpiRateLimiter spiRateLimiter;
+    private final SpApiGateway gateway;
+    private final FeedResultErrorStore feedResultErrorStore;
 
     public FeedsClient(HttpTransport httpTransport,
                        LwaTokenManager lwaTokenManager,
@@ -95,12 +109,29 @@ public class FeedsClient {
                        SpiRateLimiter spiRateLimiter,
                        SpApiRequestFactory requestFactory,
                        ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this(httpTransport, lwaTokenManager, shopCredentialStore, spiRateLimiter,
+                requestFactory, meterRegistryProvider,
+                new SpApiGateway(httpTransport, lwaTokenManager, shopCredentialStore,
+                        spiRateLimiter, requestFactory, meterRegistryProvider), null);
+    }
+
+    @Autowired
+    public FeedsClient(HttpTransport httpTransport,
+                       LwaTokenManager lwaTokenManager,
+                       ShopCredentialStore shopCredentialStore,
+                       SpiRateLimiter spiRateLimiter,
+                       SpApiRequestFactory requestFactory,
+                       ObjectProvider<MeterRegistry> meterRegistryProvider,
+                       SpApiGateway gateway,
+                       FeedResultErrorStore feedResultErrorStore) {
         this.httpTransport = httpTransport;
         this.lwaTokenManager = lwaTokenManager;
         this.shopCredentialStore = shopCredentialStore;
         this.spiRateLimiter = spiRateLimiter;
         this.requestFactory = requestFactory;
         this.meterRegistryProvider = meterRegistryProvider;
+        this.gateway = gateway;
+        this.feedResultErrorStore = feedResultErrorStore;
     }
 
     /**
@@ -112,8 +143,7 @@ public class FeedsClient {
      * @return SP-API feedId
      */
     public String submitFeed(Long shopId, String marketplaceId, String content) {
-        ResolvedShop shop = resolveShop(shopId, marketplaceId);
-        String accessToken = lwaTokenManager.getToken(shop.credential);
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
 
         // 限流按各自官方 operationId 逐步取令牌，不再在入口按粗粒度 "feeds" 取一次：
         //   ① createFeedDocument → feeds.createFeedDocument（0.5 req/s、burst 15）
@@ -121,7 +151,7 @@ public class FeedsClient {
         // 中间的 S3 预签名 PUT 不是 SP-API 调用，不消耗任何令牌。
 
         // 1. 创建 Feed 文档
-        JsonObject doc = createFeedDocument(shop, accessToken, CONTENT_TYPE);
+        JsonObject doc = createFeedDocument(shop, CONTENT_TYPE);
         String feedDocumentId = doc.get("feedDocumentId").getAsString();
         String uploadUrl = doc.get("url").getAsString();
         log.info("FeedsClient.createFeedDocument shopId={} feedDocumentId={}", shopId, feedDocumentId);
@@ -130,7 +160,7 @@ public class FeedsClient {
         uploadDocument(uploadUrl, CONTENT_TYPE, content);
 
         // 3. 创建 Feed，获取 feedId
-        JsonObject feed = createFeed(shop, accessToken, FEED_TYPE, marketplaceId, feedDocumentId);
+        JsonObject feed = createFeed(shop, FEED_TYPE, marketplaceId, feedDocumentId);
         String feedId = feed.get("feedId").getAsString();
         log.info("FeedsClient.submitFeed done shopId={} marketplaceId={} feedId={}", shopId, marketplaceId, feedId);
         return feedId;
@@ -144,81 +174,185 @@ public class FeedsClient {
      * @return SP-API 返回的 Feed 状态 JSON
      */
     public JsonObject getFeedStatus(Long shopId, String feedId) {
-        ResolvedShop shop = resolveShop(shopId, null);
-        String accessToken = lwaTokenManager.getToken(shop.credential);
-
-        // 旧实现漏了这一步：getFeedStatus 完全不限流（官方 feeds.getFeed 为 2 req/s、
-        // burst 15）。轮询 processingStatus 是全仓最密集的调用点，缺限流必然撞 429。
-        spiRateLimiter.acquire(shopId, OP_GET_FEED);
-
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, null);
         String path = FEEDS_PATH + "/" + feedId;
-        HttpRequest request = requestFactory.spApi(
-                "GET", shop.endpoint, shop.host, shop.awsRegion, path, null, null,
-                accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
-
-        HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_FEED, null);
-        if (response == null || response.statusCode() != 200) {
-            int status = response == null ? -1 : response.statusCode();
-            // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
-            if (status == 401 || status == 403) {
-                lwaTokenManager.invalidate(shop.credential);
-                log.warn("getFeedStatus got {} — LWA token cache invalidated shopId={}", status, shopId);
-            }
-            throw new RuntimeException("getFeedStatus failed feedId=" + feedId
-                    + " status=" + status
-                    + " body=" + (response == null ? "" : response.body()));
-        }
-        JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
+        JsonObject body = gateway.callJsonWithStatuses(
+                "GET", shop, OP_GET_FEED, path, null, null, 200);
         log.debug("FeedsClient.getFeedStatus feedId={} processingStatus={}",
                 feedId, body.has("processingStatus") ? body.get("processingStatus").getAsString() : "?");
         return body;
     }
 
     /**
-     * 解析店铺凭证与 SP-API 端点/区域信息（P0-36 fail-closed）。
-     * 优先用显式 marketplaceId 映射区域；缺失时回退到凭证登记的 marketplaceId，再回退到凭证区域；
-     * 三者都缺失或非法时**抛异常**，不再回落默认区域。
+     * 下载并解析 Feed processing report。
+     * <p>
+     * 调用顺序遵循官方 Feeds 用例指南：getFeed → resultFeedDocumentId →
+     * getFeedDocument → 预签名 URL 下载 → 可选 GZIP 解压 → JSON processing report 解析。
+     * 任何一步缺失或格式不合法都显式失败，绝不返回空结果冒充成功。
+     *
+     * @param shopId 店铺 ID
+     * @param feedId SP-API feedId
+     * @return 结构化处理结果
      */
-    private ResolvedShop resolveShop(Long shopId, String marketplaceId) {
-        ShopCredential credential = shopCredentialStore.get(shopId);
-        if (credential == null) {
-            throw new IllegalArgumentException("No credential found for shopId=" + shopId);
+    public FeedResult fetchFeedResult(Long shopId, String feedId) {
+        if (shopId == null || feedId == null || feedId.isBlank()) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    "shopId and feedId are required");
         }
-        // fail-closed（P0-36）：显式 marketplaceId → 凭证 marketplaceId → 凭证 region → 抛异常。
-        // 旧实现在三者全空时静默回落 NA 端点，会把请求发到未经确认的区域。
-        String region = MarketplaceRegistry.resolveRegion(
-                marketplaceId, credential.getMarketplaceId(), credential.getRegion(), "shopId=" + shopId);
-        // P0-51：端点解析统一走 requestFactory（官方主机或非生产覆盖，与出站主机校验同源）
-        SpApiEndpointResolver.Endpoint ep = requestFactory.resolveEndpoint(region);
-        String endpoint = ep.baseUrl();
-        String host = ep.host();
-        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
-        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
-        return new ResolvedShop(credential, region, endpoint, host, awsRegion);
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, null);
+        JsonObject feed = getFeedStatus(shopId, feedId);
+        String processingStatus = optionalString(feed, "processingStatus");
+        if (!"DONE".equals(processingStatus)) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    "Feed result is unavailable until processingStatus=DONE, current="
+                            + (processingStatus == null ? "UNKNOWN" : processingStatus));
+        }
+
+        String resultDocumentId = requireString(feed, "resultFeedDocumentId", "Feed");
+        String metadataPath = DOCUMENTS_PATH + "/" + resultDocumentId;
+        JsonObject document = gateway.callJsonWithStatus(
+                "GET", shop, OP_GET_FEED_DOCUMENT, metadataPath, null, null, 200);
+        String downloadUrl = requireString(document, "url", "FeedDocument");
+        String compression = optionalString(document, "compressionAlgorithm");
+
+        byte[] downloaded = gateway.downloadBytes(downloadUrl);
+        byte[] reportBytes = decompress(downloaded, compression);
+        String report = new String(reportBytes, StandardCharsets.UTF_8);
+        FeedResult result = parseProcessingReport(feedId, resultDocumentId, report);
+        if (feedResultErrorStore != null) {
+            feedResultErrorStore.replace(shopId, result);
+        }
+        log.info("FeedsClient.fetchFeedResult feedId={} processed={} accepted={} invalid={} errors={}",
+                feedId, result.getMessagesProcessed(), result.getMessagesAccepted(),
+                result.getMessagesInvalid(), result.getErrors());
+        return result;
     }
 
+    private FeedResult parseProcessingReport(String feedId, String resultDocumentId, String report) {
+        JsonObject root;
+        try {
+            root = JsonParser.parseString(report).getAsJsonObject();
+        } catch (RuntimeException e) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    "Feed processing report is not a JSON object");
+        }
+
+        if (root.has("header") && root.get("header").isJsonObject()) {
+            String reportFeedId = optionalString(root.getAsJsonObject("header"), "feedId");
+            if (reportFeedId != null && !reportFeedId.isBlank() && !feedId.equals(reportFeedId)) {
+                throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                        "Feed processing report feedId mismatch");
+            }
+        }
+
+        List<FeedIssue> issues = new ArrayList<>();
+        if (root.has("issues") && root.get("issues").isJsonArray()) {
+            JsonArray items = root.getAsJsonArray("issues");
+            for (int i = 0; i < items.size(); i++) {
+                if (!items.get(i).isJsonObject()) {
+                    continue;
+                }
+                JsonObject item = items.get(i).getAsJsonObject();
+                int rowIndex = item.has("messageId") && item.get("messageId").isJsonPrimitive()
+                        ? item.get("messageId").getAsInt() : i + 1;
+                String severity = optionalString(item, "severity");
+                issues.add(new FeedIssue(
+                        rowIndex,
+                        optionalString(item, "sku"),
+                        optionalString(item, "code"),
+                        severity,
+                        truncate(optionalString(item, "message"), 1000)));
+            }
+        }
+
+        int processed = -1;
+        int accepted = -1;
+        int invalid = -1;
+        int errors = issues.stream().mapToInt(issue -> issue.isError() ? 1 : 0).sum();
+        int warnings = issues.stream().mapToInt(issue -> issue.isWarning() ? 1 : 0).sum();
+        if (root.has("summary") && root.get("summary").isJsonObject()) {
+            JsonObject summary = root.getAsJsonObject("summary");
+            processed = intOrDefault(summary, "messagesProcessed", -1);
+            accepted = intOrDefault(summary, "messagesAccepted", -1);
+            invalid = intOrDefault(summary, "messagesInvalid", -1);
+            errors = intOrDefault(summary, "errors", errors);
+            warnings = intOrDefault(summary, "warnings", warnings);
+        }
+
+        if (processed < 0 && accepted < 0 && invalid < 0 && issues.isEmpty()) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    "Feed processing report has neither summary nor issues");
+        }
+        return new FeedResult(feedId, resultDocumentId, processed, accepted, invalid,
+                errors, warnings, issues);
+    }
+
+    private byte[] decompress(byte[] bytes, String compressionAlgorithm) {
+        if (bytes == null) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    "Feed processing report download returned no bytes");
+        }
+        if (compressionAlgorithm == null || compressionAlgorithm.isBlank()) {
+            return bytes;
+        }
+        if (!"GZIP".equalsIgnoreCase(compressionAlgorithm.trim())) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    "Unsupported FeedDocument compressionAlgorithm=" + compressionAlgorithm);
+        }
+        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(bytes))) {
+            return gzip.readAllBytes();
+        } catch (IOException e) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    "Feed processing report is not valid GZIP data");
+        }
+    }
+
+    private String requireString(JsonObject object, String field, String owner) {
+        String value = optionalString(object, field);
+        if (value == null || value.isBlank()) {
+            throw LocalApiException.of(LocalApiException.CODE_INVALID_REQUEST,
+                    owner + "." + field + " is required");
+        }
+        return value;
+    }
+
+    private String optionalString(JsonObject object, String field) {
+        if (object == null || !object.has(field) || object.get(field).isJsonNull()) {
+            return null;
+        }
+        try {
+            return object.get(field).getAsString();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private int intOrDefault(JsonObject object, String field, int fallback) {
+        if (object == null || !object.has(field) || object.get(field).isJsonNull()) {
+            return fallback;
+        }
+        try {
+            return object.get(field).getAsInt();
+        } catch (RuntimeException e) {
+            return fallback;
+        }
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
+    }
     /**
      * 创建 Feed 文档（POST /feeds/2021-06-30/documents），返回 feedDocumentId 与 S3 预签名上传地址。
      */
-    private JsonObject createFeedDocument(ResolvedShop shop, String accessToken, String contentType) {
-        spiRateLimiter.acquire(shop.credential.getShopId(), OP_CREATE_FEED_DOCUMENT);
-
+    private JsonObject createFeedDocument(SpApiGateway.ResolvedShop shop, String contentType) {
         JsonObject req = new JsonObject();
         req.addProperty("contentType", contentType);
         String body = req.toString();
-
-        HttpRequest request = requestFactory.spApi(
-                "POST", shop.endpoint, shop.host, shop.awsRegion, DOCUMENTS_PATH, null, body,
-                accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
-
-        HttpResponse<String> response = sendWithRetry(request, shop.credential.getShopId(),
-                OP_CREATE_FEED_DOCUMENT, null);
-        if (response == null || (response.statusCode() != 200 && response.statusCode() != 201)) {
-            throw new RuntimeException("createFeedDocument failed status="
-                    + (response == null ? -1 : response.statusCode())
-                    + " body=" + (response == null ? "" : response.body()));
-        }
-        return JsonParser.parseString(response.body()).getAsJsonObject();
+        return gateway.callJsonWithStatuses(
+                "POST", shop, OP_CREATE_FEED_DOCUMENT, DOCUMENTS_PATH, null, body, 200, 201);
     }
 
     /**
@@ -238,34 +372,38 @@ public class FeedsClient {
             String path = ErrorSummary.objectPath(uploadUrl);
             String reason = ErrorSummary.redact(e.getMessage());
             log.warn("presigned upload rejected path={} reason={}", path, reason);
-            throw new RuntimeException("upload request rejected path=" + path + " reason=" + reason);
+            throw LocalApiException.of(LocalApiException.CODE_PRESIGNED_URL_INVALID,
+                    "upload request rejected path=" + path + " reason=" + reason);
         }
+        HttpResponse<String> response;
         try {
-            HttpResponse<String> response = httpTransport.send(request,
+            response = httpTransport.send(request,
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("uploadDocument failed status=" + response.statusCode()
-                        + " body=" + response.body());
-            }
-            log.debug("uploadDocument success");
-        } catch (RuntimeException e) {
-            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw SpApiCallException.transportFailure(
+                    "s3.uploadFeedDocument", ErrorSummary.objectPath(uploadUrl), "interrupted");
         } catch (Exception e) {
             // 传输层异常文本同样过脱敏：HttpClient 的传输异常一般不嵌 URL，但不做假设（P0-53）
-            throw new RuntimeException("uploadDocument error: " + ErrorSummary.redact(e.getMessage()), e);
+            throw SpApiCallException.transportFailure(
+                    "s3.uploadFeedDocument", ErrorSummary.objectPath(uploadUrl),
+                    ErrorSummary.redact(e.getMessage()));
         }
+        if (response.statusCode() != 200) {
+            throw SpApiCallException.statusFailure(
+                    "s3.uploadFeedDocument", ErrorSummary.objectPath(uploadUrl), response.statusCode());
+        }
+        log.debug("uploadDocument success");
     }
 
     /**
      * 创建 Feed（POST /feeds/2021-06-30/feeds），引用 inputFeedDocumentId，返回 feedId。
      */
-    private JsonObject createFeed(ResolvedShop shop, String accessToken, String feedType,
+    private JsonObject createFeed(SpApiGateway.ResolvedShop shop, String feedType,
                                  String marketplaceId, String feedDocumentId) {
         // 分档维度：官方说明 JSON_LISTINGS_FEED 的限流与 createFeed operation 不同，
         // 数值在未纳入模型快照的 Guide 里 → 先用 feedType 隔离窗口、不填猜测值，
         // 取得官方数值或观测头后再收敛（见 SpiRateLimiter.OFFICIAL_PLANS 注释）。
-        spiRateLimiter.acquire(shop.credential.getShopId(), OP_CREATE_FEED, feedType);
-
         JsonObject req = new JsonObject();
         req.addProperty("feedType", feedType);
         JsonArray mks = new JsonArray();
@@ -274,18 +412,8 @@ public class FeedsClient {
         req.addProperty("inputFeedDocumentId", feedDocumentId);
         String body = req.toString();
 
-        HttpRequest request = requestFactory.spApi(
-                "POST", shop.endpoint, shop.host, shop.awsRegion, FEEDS_PATH, null, body,
-                accessToken, shop.credential.getAccessKey(), shop.credential.getSecretKey());
-
-        HttpResponse<String> response = sendWithRetry(request, shop.credential.getShopId(),
-                OP_CREATE_FEED, feedType);
-        if (response == null || (response.statusCode() != 200 && response.statusCode() != 202)) {
-            throw new RuntimeException("createFeed failed status="
-                    + (response == null ? -1 : response.statusCode())
-                    + " body=" + (response == null ? "" : response.body()));
-        }
-        return JsonParser.parseString(response.body()).getAsJsonObject();
+        return gateway.callJsonWithVariantAndStatuses(
+                "POST", shop, OP_CREATE_FEED, FEEDS_PATH, null, body, feedType, 200, 202);
     }
 
     /**
@@ -362,25 +490,4 @@ public class FeedsClient {
         }
     }
 
-    /**
-     * 店铺解析结果：凭证 + 分组区域码 + 端点 + 主机名 + AWS region。
-     * <p>
-     * {@code region} 是分组码（NA/EU/FE，决定端点主机），{@code awsRegion} 参与 SigV4 作用域。
-     */
-    private static final class ResolvedShop {
-        final ShopCredential credential;
-        final String region;
-        final String endpoint;
-        final String host;
-        final String awsRegion;
-
-        ResolvedShop(ShopCredential credential, String region, String endpoint, String host,
-                     String awsRegion) {
-            this.credential = credential;
-            this.region = region;
-            this.endpoint = endpoint;
-            this.host = host;
-            this.awsRegion = awsRegion;
-        }
-    }
 }

@@ -1,6 +1,12 @@
 package com.amz.service;
 
-import com.amz.model.*;
+import com.amz.model.OauthApp;
+import com.amz.model.OauthToken;
+import com.amz.model.PlatformAccount;
+import com.amz.model.PlatformInventory;
+import com.amz.model.PlatformMessage;
+import com.amz.model.PlatformProduct;
+import com.amz.model.WebhookEvent;
 
 import java.util.List;
 import java.util.Map;

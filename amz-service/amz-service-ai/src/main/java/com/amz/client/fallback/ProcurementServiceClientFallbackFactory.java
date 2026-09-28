@@ -30,7 +30,8 @@ public class ProcurementServiceClientFallbackFactory implements FallbackFactory<
             }
 
             @Override
-            public Result<List<Map<String, Object>>> getSuppliers(Long shopId, String status) {
+            public Result<List<Map<String, Object>>> getSuppliers(
+                    Long shopId, String status, String keyword, Integer size, String cursor) {
                 return Result.failure(failMsg());
             }
 

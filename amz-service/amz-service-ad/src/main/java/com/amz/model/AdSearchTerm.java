@@ -23,7 +23,7 @@ public class AdSearchTerm implements Serializable {
 
     private Long shopId;
     private String campaignId;
-    private String keywordId;
+    private Long keywordId;
     private String searchTerm;
     private String matchType;
     private Long impressions;

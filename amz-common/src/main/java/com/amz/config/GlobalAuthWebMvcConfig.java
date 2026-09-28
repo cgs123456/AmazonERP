@@ -1,8 +1,10 @@
 package com.amz.config;
 
 import com.amz.interceptor.BaseAuthInterceptor;
+import com.amz.security.InternalServiceTokenService;
 import com.amz.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Configuration;
@@ -23,9 +25,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * 本类将注册逻辑上收到 amz-common，由组件扫描自动装配到每个业务服务，消除漏配与重复维护。
  * <p>
  * <b>放行策略</b>：拦截路径为 {@code /**}，免鉴权名单统一由
- * {@link BaseAuthInterceptor} 内部的 {@code WHITE_LIST} 维护
- * （{@code /user/send}、{@code /user/verify}、{@code /internal}、{@code /actuator}），
- * 此处不再重复声明 {@code excludePathPatterns}，避免两处白名单漂移。
+ * {@link BaseAuthInterceptor} 内部的 {@code WHITE_LIST} 维护。
+ * {@code /internal/**} 不属于白名单，必须通过内部服务令牌校验。
  * <p>
  * <b>生效条件</b>：仅在 Servlet Web 应用且类路径存在 Spring MVC 时装配。
  * 网关为 WebFlux 应用且已排除 {@code spring-boot-starter-web}，会被条件自动跳过
@@ -38,16 +39,24 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class GlobalAuthWebMvcConfig implements WebMvcConfigurer {
 
     private final JwtUtil jwtUtil;
+    private final ObjectProvider<InternalServiceTokenService> internalServiceTokenProvider;
 
-    public GlobalAuthWebMvcConfig(JwtUtil jwtUtil) {
+    public GlobalAuthWebMvcConfig(
+            JwtUtil jwtUtil,
+            ObjectProvider<InternalServiceTokenService> internalServiceTokenProvider) {
         this.jwtUtil = jwtUtil;
+        this.internalServiceTokenProvider = internalServiceTokenProvider;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new BaseAuthInterceptor(jwtUtil))
+        InternalServiceTokenService internalServiceTokenService = internalServiceTokenProvider.getIfAvailable();
+        registry.addInterceptor(new BaseAuthInterceptor(jwtUtil, internalServiceTokenService))
                 .addPathPatterns("/**")
                 .order(0);
+        if (internalServiceTokenService == null) {
+            log.warn("内部服务令牌组件未装配，/internal/** 将 fail-closed 返回 401");
+        }
         log.info("已注册全局鉴权拦截器 BaseAuthInterceptor，拦截 /**，白名单由 BaseAuthInterceptor.WHITE_LIST 统一维护");
     }
 }

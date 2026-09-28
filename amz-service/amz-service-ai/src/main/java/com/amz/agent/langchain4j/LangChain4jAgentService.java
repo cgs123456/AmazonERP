@@ -36,7 +36,7 @@ public class LangChain4jAgentService {
     @SentinelResource(value = "chat", fallback = "chatFallback")
     public Result<String> chat(Long userId, String userMessage) {
         if (erpAgent == null) {
-            return Result.failure("LangChain4j Agent 未启用：deepseek.api_key 未配置");
+            return Result.failure("LangChain4j Agent 未启用：deepseek.api-key 未配置");
         }
         try {
             String sessionId = "sess-" + userId;

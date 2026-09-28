@@ -1,7 +1,9 @@
 package com.amz.controller;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 
 import com.amz.connector.ErrorSummary;
+import com.amz.connector.LocalApiException;
 import com.amz.mapper.FbaInventoryMapper;
 import com.amz.model.FbaInventory;
 import com.amz.result.Result;
@@ -51,7 +53,8 @@ public class InventoryController {
     @GetMapping("/health/{shopId}")
     public Result<List<FbaInventory>> health(@PathVariable Long shopId) {
         if (shopId == null) {
-            return Result.failure("shopId must not be null");
+            return Result.failure("shopId must not be null",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         }
         List<FbaInventory> list = fbaInventoryMapper.selectList(
                 new LambdaQueryWrapper<FbaInventory>()
@@ -70,7 +73,8 @@ public class InventoryController {
     @PostMapping("/sync/{shopId}")
     public Result<Integer> sync(@PathVariable Long shopId) {
         if (shopId == null) {
-            return Result.failure("shopId must not be null");
+            return Result.failure("shopId must not be null",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         }
         try {
             int synced = inventorySyncScheduler.syncShopInventory(shopId);
@@ -78,7 +82,7 @@ public class InventoryController {
             return Result.success(synced);
         } catch (Exception e) {
             log.error("manual sync inventory failed shopId={}", shopId, e);
-            return Result.failure("sync failed: " + ErrorSummary.of(e));
+            return Result.failure("sync failed: " + ErrorSummary.of(e), ErrorSummary.toApiError(e));
         }
     }
 }

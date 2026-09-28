@@ -15,7 +15,7 @@ public class DiffDayUtil {
             date1 = date2;
             date2 = temp;
         }
-        
+
         Calendar cal1 = Calendar.getInstance();
         cal1.setTime(date1);
 

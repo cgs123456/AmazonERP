@@ -1,10 +1,11 @@
 package com.amz.service.impl;
 
 import com.amz.client.ProcurementCostClient;
-import com.amz.client.dto.RemoteInventoryBatch;
+import com.amz.client.dto.RemoteBatchCostSummary;
 import com.amz.dto.SkuProfitReport;
 import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.SettlementDetail;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.SkuProfitService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -58,8 +59,7 @@ public class SkuProfitServiceImpl implements SkuProfitService {
         report.setDepositAfter(depositAfter);
         report.setDepositBefore(depositBefore);
 
-        List<SettlementDetail> rows = settlementDetailMapper.selectList(
-                new LambdaQueryWrapper<SettlementDetail>().eq(SettlementDetail::getShopId, shopId));
+        List<SettlementDetail> rows = loadAllSettlementDetails(shopId);
         if (rows == null || rows.isEmpty()) {
             report.addWarning("暂无结算明细，无法计算真实利润（请先同步结算原表）");
             report.setCostDataComplete(false);
@@ -142,6 +142,37 @@ public class SkuProfitServiceImpl implements SkuProfitService {
     }
 
     /**
+     * 利润报表必须覆盖窗口内全部结算明细；数据库查询按固定批次分页，
+     * 避免单次 selectList 随历史结算数据无限增长。
+     */
+    private List<SettlementDetail> loadAllSettlementDetails(Long shopId) {
+        List<SettlementDetail> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
+        while (true) {
+            LambdaQueryWrapper<SettlementDetail> qw = new LambdaQueryWrapper<SettlementDetail>()
+                    .eq(SettlementDetail::getShopId, shopId);
+            Long cursorId = page.cursorId();
+            if (cursorId != null) {
+                qw.lt(SettlementDetail::getId, cursorId);
+            }
+            qw.orderByDesc(SettlementDetail::getId)
+                    .last("LIMIT " + page.probeSize());
+            List<SettlementDetail> rows = settlementDetailMapper.selectList(qw);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            int visible = Math.min(rows.size(), page.size());
+            all.addAll(rows.subList(0, visible));
+            if (rows.size() <= page.size()) {
+                break;
+            }
+            page = PageRequest.of(page.size(),
+                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
+        }
+        return all;
+    }
+
+    /**
      * 聚合单个 SKU 的收入与费用侧（不含成本）。
      */
     private SkuProfitReport.SkuProfit aggregate(String sku, List<SettlementDetail> rows) {
@@ -206,45 +237,34 @@ public class SkuProfitServiceImpl implements SkuProfitService {
      * 明确标注为「未含成本」的中间值 —— 直接不给数字反而让人无法判断量级。
      */
     private void applyCost(Long shopId, String sku, SkuProfitReport.SkuProfit profit) {
-        List<RemoteInventoryBatch> batches;
+        RemoteBatchCostSummary summary;
         try {
-            Result<List<RemoteInventoryBatch>> result = procurementCostClient.listBatches(shopId, sku);
+            Result<RemoteBatchCostSummary> result = procurementCostClient.getCostSummary(shopId, sku);
             if (result == null || result.getCode() != 200) {
                 markCostMissing(profit, "采购成本服务不可用"
                         + (result == null ? "" : "：" + result.getMessage()));
                 return;
             }
-            batches = result.getData();
+            summary = result.getData();
         } catch (Exception e) {
-            markCostMissing(profit, "查询采购批次异常：" + e.getMessage());
+            markCostMissing(profit, "查询采购批次成本异常：" + e.getMessage());
             return;
         }
-        if (batches == null || batches.isEmpty()) {
+        if (summary == null || summary.getBatchCount() <= 0) {
             markCostMissing(profit, "该 SKU 无采购批次成本记录");
             return;
         }
-
-        BigDecimal totalBatchCost = BigDecimal.ZERO;
-        int totalQuantity = 0;
-        for (RemoteInventoryBatch batch : batches) {
-            BigDecimal qty = batch.getQuantity() == null ? BigDecimal.ZERO
-                    : BigDecimal.valueOf(batch.getQuantity());
-            if (qty.signum() <= 0) {
-                continue;
-            }
-            BigDecimal batchTotal = batch.getTotalCost() != null ? batch.getTotalCost()
-                    : nz(batch.getUnitCost()).multiply(qty)
-                            .add(nz(batch.getFreightCost())).add(nz(batch.getCustomsCost()))
-                            .add(nz(batch.getOtherCost()));
-            totalBatchCost = totalBatchCost.add(batchTotal);
-            totalQuantity += batch.getQuantity();
-        }
-        if (totalQuantity <= 0) {
+        if (summary.getTotalQuantity() <= 0) {
             markCostMissing(profit, "采购批次数量合计为 0，无法计算单位成本");
             return;
         }
-        BigDecimal avgUnitCost = totalBatchCost
-                .divide(BigDecimal.valueOf(totalQuantity), 4, RoundingMode.HALF_UP);
+        if (summary.getTotalBatchCost() == null) {
+            markCostMissing(profit, "采购批次总成本为空，拒绝按 0 成本计算");
+            return;
+        }
+
+        BigDecimal avgUnitCost = summary.getTotalBatchCost()
+                .divide(BigDecimal.valueOf(summary.getTotalQuantity()), 4, RoundingMode.HALF_UP);
         BigDecimal cogs = avgUnitCost.multiply(BigDecimal.valueOf(profit.getUnitsSold()))
                 .setScale(2, RoundingMode.HALF_UP);
 

@@ -5,6 +5,7 @@ import com.amz.annotation.ShopScoped;
 import com.amz.dto.ReimbursementClaimSummary;
 import com.amz.dto.ReimbursementReconcileReport;
 import com.amz.model.ReimbursementClaim;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.ReimbursementClaimService;
 import lombok.extern.slf4j.Slf4j;
@@ -102,9 +103,12 @@ public class ReimbursementClaimController {
     @ShopScoped
     @GetMapping("/list/{shopId}")
     public Result<List<ReimbursementClaim>> list(@PathVariable Long shopId,
-                                                 @RequestParam(required = false) String status) {
+                                                 @RequestParam(required = false) String status,
+                                                 @RequestParam(value = "size", required = false) Integer size,
+                                                 @RequestParam(value = "cursor", required = false) String cursor) {
         try {
-            return Result.success(reimbursementClaimService.list(shopId, status));
+            return Result.paged(reimbursementClaimService.list(
+                    shopId, status, PageRequest.of(size, cursor)));
         } catch (IllegalArgumentException e) {
             return Result.failure(e.getMessage());
         }

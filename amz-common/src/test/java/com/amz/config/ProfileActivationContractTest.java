@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <b>实测发现的缺陷（2026-09-25）</b>：部署清单（{@code docker-compose.yml} 与 16 份 k8s service 清单）
  * <b>完全没有</b> {@code SPRING_PROFILES_ACTIVE}（0 命中），而 8 个模块的 {@code application.yml}
  * 把默认值写成 {@code ${SPRING_PROFILES_ACTIVE:mock}}。两条叠加的真实后果：按现有清单部署，
- * <b>14 个 {@code @Profile("!mock")} 真实客户端被禁用</b>，改由 10 个模块里的 Mock 客户端返回
+ * <b>14 个 {@code @Profile("!mock")} 真实客户端被禁用</b>，改由 9 个模块里的 Mock 客户端返回
  * 样例数据，<b>且不报任何错</b>——这是本项目最危险的失败模式：ERP 会安静地给出假订单、
  * 假财务事件、假物流轨迹，而所有健康检查都是绿的。
  * <p>
@@ -44,7 +44,7 @@ class ProfileActivationContractTest {
     private static final int SERVICE_COUNT = 16;
 
     /** modules containing @Profile("mock"). */
-    private static final int MOCK_CAPABLE_MODULES = 10;
+    private static final int MOCK_CAPABLE_MODULES = 9;
 
     /** of those, modules declaring a spring.profiles.active default. */
     private static final int MODULES_WITH_ACTIVE_DEFAULT = 8;
@@ -117,8 +117,9 @@ class ProfileActivationContractTest {
                     "k8s manifest hardcodes " + VAR + " to mock: " + file.getFileName());
         }
         String configMap = read(repoRoot().resolve("k8s").resolve("configmap.yaml"));
-        assertTrue(configMap.contains(VAR + ": \"prod\""),
-                "ConfigMap must define " + VAR + " as \"prod\"");
+        assertTrue(configMap.lines().anyMatch(line ->
+                        line.trim().matches(VAR + ":\\s*(\"prod\"|prod)")),
+                "ConfigMap must define " + VAR + " as prod (quoted or plain YAML scalar)");
     }
 
     @Test
@@ -131,8 +132,60 @@ class ProfileActivationContractTest {
                 ".env.example lacks " + VAR + "=prod");
     }
 
+    @Test
+    @DisplayName("every module with mock clients must depend on amz-common and scan the common base package")
+    void mockCapableModulesCannotBypassCommonProfileGuard() {
+        Set<String> modules = mockCapableModules();
+        assertEquals(MOCK_CAPABLE_MODULES, modules.size(),
+                "module count with @Profile(\"mock\") changed: review this assertion");
+
+        for (String module : modules) {
+            Path moduleDir = repoRoot().resolve("amz-service").resolve(module);
+            Path pom = moduleDir.resolve("pom.xml");
+            assertTrue(Files.exists(pom), "module missing pom.xml: " + module);
+            assertTrue(read(pom).contains("<artifactId>amz-common</artifactId>"),
+                    "mock-capable module must depend on amz-common guard: " + module);
+            assertTrue(hasBasePackageSpringBootApplication(moduleDir),
+                    "module application class must stay under com.amz so ProductionProfileGuard is component-scanned: "
+                            + module);
+        }
+    }
+
+    @Test
+    @DisplayName("amz-common must publish the component-scanned prod/mock startup guard")
+    void commonModulePublishesProductionProfileGuard() {
+        Path guard = repoRoot().resolve("amz-common")
+                .resolve("src/main/java/com/amz/config/ProductionProfileGuard.java");
+        assertTrue(Files.exists(guard), "missing common ProductionProfileGuard: " + guard);
+        String source = read(guard);
+        assertTrue(source.contains("package com.amz.config;"),
+                "guard must remain under the component-scanned com.amz package");
+        assertTrue(source.contains("@Component"),
+                "guard must be a Spring component so production startup invokes it");
+        assertTrue(source.contains("@PostConstruct"),
+                "guard must run during startup before the service accepts traffic");
+        assertTrue(source.contains("PROD_PROFILE = \"prod\""),
+                "guard must explicitly identify the prod profile");
+        assertTrue(source.contains("MOCK_PROFILE = \"mock\""),
+                "guard must explicitly identify the mock profile");
+    }
     // ------------------------------------------------------------------ helpers
 
+    private static boolean hasBasePackageSpringBootApplication(Path moduleDir) {
+        Path sourceRoot = moduleDir.resolve("src/main/java");
+        assertTrue(Files.isDirectory(sourceRoot), "module missing src/main/java: " + moduleDir.getFileName());
+        try (Stream<Path> walk = Files.walk(sourceRoot)) {
+            return walk.filter(Files::isRegularFile)
+                    .filter(p -> p.getFileName().toString().endsWith(".java"))
+                    .anyMatch(p -> {
+                        String source = read(p);
+                        return source.contains("@SpringBootApplication")
+                                && source.contains("package com.amz;");
+                    });
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
     private static Set<String> mockCapableModules() {
         Set<String> modules = new LinkedHashSet<>();
         Path services = repoRoot().resolve("amz-service");

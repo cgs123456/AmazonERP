@@ -1,6 +1,8 @@
 package com.amz.service;
 
-import com.amz.model.*;
+import com.amz.model.OrderAuditRule;
+import com.amz.model.OrderSplitLog;
+import com.amz.model.ShipmentRouting;
 import com.amz.model.pojo.Order;
 
 import java.util.List;
@@ -23,7 +25,7 @@ public interface OrderAuditService {
     List<Map<String, Object>> batchAudit(Long shopId, List<Order> orders);
 
     // ==================== 发货路由 ====================
-    ShipmentRouting routeOrder(Long shopId, String orderId, String sku, String asin, Integer quantity, String country);
+    ShipmentRouting routeOrder(Long shopId, String amazonOrderId, String sku, String asin, Integer quantity, String country);
 
     // ==================== 拆分日志 ====================
     List<OrderSplitLog> listSplitLogs(Long shopId, String originalOrderId);

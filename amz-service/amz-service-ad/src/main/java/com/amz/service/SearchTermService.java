@@ -3,6 +3,8 @@ package com.amz.service;
 import com.amz.model.AdSearchTerm;
 import com.amz.model.ConvertingTerm;
 import com.amz.model.AdAsinKeyword;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 import java.util.Map;
@@ -16,7 +18,7 @@ public interface SearchTermService {
     AdSearchTerm saveSearchTerm(AdSearchTerm searchTerm);
 
     /** 查询店铺搜索词列表 */
-    List<AdSearchTerm> listSearchTerms(Long shopId, String campaignId, String searchTerm);
+    PageResult<AdSearchTerm> listSearchTerms(Long shopId, String campaignId, String searchTerm, PageRequest page);
 
     /** 搜索词分析：高ACoS/低CR/出单词/浪费词 */
     Map<String, Object> analyzeSearchTerms(Long shopId, String campaignId, Integer days);
@@ -25,13 +27,13 @@ public interface SearchTermService {
     List<ConvertingTerm> extractConvertingTerms(Long shopId, Integer days);
 
     /** 查询出单词库 */
-    List<ConvertingTerm> listConvertingTerms(Long shopId, String asin);
+    PageResult<ConvertingTerm> listConvertingTerms(Long shopId, String asin, PageRequest page);
 
     /** 搜索词聚类分析（按词根分组） */
     Map<String, Object> clusterSearchTerms(Long shopId, String campaignId, Integer days);
 
     /** ASIN 关键词反查 */
-    List<AdAsinKeyword> reverseLookupAsin(Long shopId, String asin);
+    PageResult<AdAsinKeyword> reverseLookupAsin(Long shopId, String asin, PageRequest page);
 
     /** 保存 ASIN 关键词反查数据 */
     List<AdAsinKeyword> saveAsinKeywords(List<AdAsinKeyword> keywords);

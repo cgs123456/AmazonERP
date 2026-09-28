@@ -3,10 +3,17 @@ import com.amz.annotation.ShopScoped;
 
 import com.amz.model.CustomerTicket;
 import com.amz.model.ReviewSolicitation;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.CustomerService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -47,8 +54,11 @@ public class CustomerController {
     public Result<List<CustomerTicket>> listTickets(
             @PathVariable Long shopId,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String category) {
-        return Result.success(customerService.listTickets(shopId, status, category));
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor) {
+        return Result.paged(customerService.listTickets(
+                shopId, status, category, PageRequest.of(size, cursor)));
     }
 
     /**
@@ -67,7 +77,10 @@ public class CustomerController {
      */
     @ShopScoped
     @GetMapping("/review/list/{shopId}")
-    public Result<List<ReviewSolicitation>> listSolicitations(@PathVariable Long shopId) {
-        return Result.success(customerService.listSolicitations(shopId));
+    public Result<List<ReviewSolicitation>> listSolicitations(
+            @PathVariable Long shopId,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor) {
+        return Result.paged(customerService.listSolicitations(shopId, PageRequest.of(size, cursor)));
     }
 }

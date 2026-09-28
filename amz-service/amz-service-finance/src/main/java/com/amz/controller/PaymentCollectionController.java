@@ -4,6 +4,7 @@ import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.dto.PaymentCollectionSummary;
 import com.amz.model.PaymentCollection;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.PaymentCollectionService;
 import lombok.extern.slf4j.Slf4j;
@@ -34,9 +35,12 @@ public class PaymentCollectionController {
     @ShopScoped
     @GetMapping("/list/{shopId}")
     public Result<List<PaymentCollection>> list(@PathVariable Long shopId,
-                                                @RequestParam(required = false) String status) {
+                                                @RequestParam(required = false) String status,
+                                                @RequestParam(value = "size", required = false) Integer size,
+                                                @RequestParam(value = "cursor", required = false) String cursor) {
         try {
-            return Result.success(paymentCollectionService.list(shopId, status));
+            return Result.paged(paymentCollectionService.list(
+                    shopId, status, PageRequest.of(size, cursor)));
         } catch (IllegalArgumentException e) {
             return Result.failure(e.getMessage());
         }

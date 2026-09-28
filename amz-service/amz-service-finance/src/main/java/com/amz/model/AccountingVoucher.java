@@ -9,6 +9,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 会计凭证实体（业财一体化核心）。
@@ -70,6 +71,14 @@ public class AccountingVoucher implements Serializable {
     /** 关联业务单号 */
     private String sourceNo;
 
-    /** 同步金蝶状态：PENDING / SYNCED / FAILED */
+    /** 同步金蝶状态：PENDING / SYNCING / SYNCED / FAILED / MOCK */
     private String kingdeeSyncStatus;
+
+    /**
+     * 最近一次状态变更时间（数据库 ON UPDATE CURRENT_TIMESTAMP 维护）。
+     * <p>
+     * SYNCING 是带租约的中间态：进程崩溃后，超过租约时间的记录可被重新认领，
+     * 避免永久卡在 SYNCING。
+     */
+    private LocalDateTime updateTime;
 }

@@ -25,6 +25,11 @@ public class SpapiFeedsClientFallbackFactory implements FallbackFactory<SpapiFee
             public Result<Map<String, Object>> getFeedStatus(Long shopId, String feedId) {
                 return Result.failure("spapi feeds service degraded: " + cause.getMessage());
             }
+
+            @Override
+            public Result<Map<String, Object>> getFeedResult(Long shopId, String feedId) {
+                return Result.failure("spapi feeds result service degraded: " + cause.getMessage());
+            }
         };
     }
 }

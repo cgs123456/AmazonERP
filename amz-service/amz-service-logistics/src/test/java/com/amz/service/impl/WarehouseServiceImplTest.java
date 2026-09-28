@@ -1,5 +1,6 @@
 package com.amz.service.impl;
 
+import com.amz.exception.CodeErrorException;
 import com.amz.mapper.WarehouseInventoryMapper;
 import com.amz.mapper.WarehouseMapper;
 import com.amz.model.Warehouse;
@@ -186,8 +187,9 @@ class WarehouseServiceImplTest {
     void testUpdateLocationCodeNotFound() {
         when(inventoryMapper.selectById(99L)).thenReturn(null);
 
-        assertThrows(IllegalArgumentException.class,
+        CodeErrorException error = assertThrows(CodeErrorException.class,
                 () -> warehouseService.updateLocationCode(99L, "LOC-X"));
+        assertEquals("库存记录不存在或无权访问", error.getMessage());
     }
 
     @Test

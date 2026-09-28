@@ -2,6 +2,8 @@ package com.amz.service;
 
 import com.amz.model.InboundOrder;
 import com.amz.model.WarehouseInventory;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 
@@ -20,7 +22,7 @@ public interface InboundService {
     /**
      * 查询店铺入库单列表。
      */
-    List<InboundOrder> listInboundOrders(Long shopId, String status);
+    PageResult<InboundOrder> listInboundOrders(Long shopId, String status, PageRequest page);
 
     /**
      * 入库单状态流转：PENDING → IN_TRANSIT。

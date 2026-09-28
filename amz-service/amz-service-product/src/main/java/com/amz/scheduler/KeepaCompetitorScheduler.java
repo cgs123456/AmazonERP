@@ -32,7 +32,7 @@ import java.util.Set;
  *   <li>逐个调用 Keepa product 接口（stats=90 携带当前价/评分/BSR）；</li>
  *   <li>为每个 (shopId, asin) 监控关系写入当日快照，并计算与上一快照的价差。</li>
  * </ol>
- * Keepa API key 未配置时 KeepaRealClient 返回 null，本轮静默跳过（不烧积分）。
+ * Keepa API key 未配置时整轮显式跳过；未知 marketplace 拒绝回落 US；单个 ASIN 调用失败不阻断其余监控。
  */
 @Slf4j
 @Component
@@ -69,6 +69,11 @@ public class KeepaCompetitorScheduler {
     }
 
     private void doPollCompetitorPrices() {
+        if (!keepaClient.isAvailable()) {
+            log.info("Keepa 轮询已跳过：keepa.api-key 未配置。不会发起外部请求，也不会伪造竞品数据");
+            return;
+        }
+
         List<CompetitorMonitor> monitors = competitorMonitorMapper.selectList(
                 new LambdaQueryWrapper<CompetitorMonitor>()
                         .select(CompetitorMonitor::getShopId, CompetitorMonitor::getCompetitorAsin,
@@ -80,26 +85,49 @@ public class KeepaCompetitorScheduler {
             return;
         }
 
-        // 同一 ASIN 只调一次 Keepa（多店铺监控同一 ASIN 时共享结果）
-        Set<String> fetchedAsins = new HashSet<>();
-        Map<String, JsonObject> statsByAsin = new HashMap<>();
+        // 缓存键必须包含 Keepa domain：同一 ASIN 在不同站点的价格、排名和 BuyBox 不同。
+        Map<String, JsonObject> statsByMarketplaceAsin = new HashMap<>();
+        Set<String> attemptedKeys = new HashSet<>();
         int updated = 0;
         int failed = 0;
+        int skippedUnsupportedMarketplace = 0;
 
         for (CompetitorMonitor m : monitors) {
             String asin = m.getCompetitorAsin();
-            String marketplaceId = m.getMarketplaceId() == null ? "ATVPDKIKX0DER" : m.getMarketplaceId();
             if (asin == null || asin.isBlank()) {
                 continue;
             }
-            JsonObject stats = statsByAsin.computeIfAbsent(asin, a -> {
-                if (!fetchedAsins.add(a)) {
-                    return null; // 同批次内已请求过且失败，避免重复打 API
+
+            String marketplaceId = m.getMarketplaceId() == null ? null : m.getMarketplaceId().trim();
+            Integer domain = marketplaceId == null ? null : MARKETPLACE_DOMAIN.get(marketplaceId);
+            if (domain == null) {
+                skippedUnsupportedMarketplace++;
+                log.warn("Keepa 轮询跳过未支持的 marketplace，禁止静默回落到 US：shopId={} asin={} marketplaceId={}",
+                        m.getShopId(), asin, marketplaceId);
+                continue;
+            }
+
+            String cacheKey = domain + ":" + asin;
+            JsonObject stats = statsByMarketplaceAsin.get(cacheKey);
+            if (!attemptedKeys.contains(cacheKey)) {
+                attemptedKeys.add(cacheKey);
+                try {
+                    String resp = keepaClient.getCompetitorAnalysis(asin, domain);
+                    stats = parseKeepaStats(resp);
+                    if (stats != null) {
+                        statsByMarketplaceAsin.put(cacheKey, stats);
+                    } else {
+                        failed++;
+                        log.warn("Keepa 响应中没有可用 stats，本轮不落库：asin={} domain={}", asin, domain);
+                        continue;
+                    }
+                } catch (Exception e) {
+                    failed++;
+                    log.error("Keepa 取数失败，已跳过该 ASIN 并继续其余监控：asin={} domain={} err={}",
+                            asin, domain, e.getMessage());
+                    continue;
                 }
-                int domain = MARKETPLACE_DOMAIN.getOrDefault(marketplaceId, 1);
-                String resp = keepaClient.getCompetitorAnalysis(a, domain);
-                return parseKeepaStats(resp);
-            });
+            }
             if (stats == null) {
                 failed++;
                 continue;
@@ -113,7 +141,8 @@ public class KeepaCompetitorScheduler {
                 failed++;
             }
         }
-        log.info("Keepa 轮询完成：监控关系 {} 条，快照更新 {}，失败 {}", monitors.size(), updated, failed);
+        log.info("Keepa 轮询完成：监控关系 {} 条，快照更新 {}，失败 {}，未知站点跳过 {}",
+                monitors.size(), updated, failed, skippedUnsupportedMarketplace);
     }
 
     /**

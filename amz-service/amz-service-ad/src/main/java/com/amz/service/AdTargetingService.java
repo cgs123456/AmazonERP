@@ -1,8 +1,8 @@
 package com.amz.service;
 
 import com.amz.model.AdTargeting;
-
-import java.util.List;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 /**
  * SD 受众定向管理服务接口。
@@ -11,22 +11,23 @@ import java.util.List;
 public interface AdTargetingService {
 
     /**
-     * 创建定向规则。
+     * 在指定店铺的活动下创建定向规则。
      */
-    AdTargeting createTargeting(AdTargeting targeting);
+    AdTargeting createTargeting(Long shopId, AdTargeting targeting);
 
     /**
-     * 更新定向规则。
+     * 更新指定店铺的定向规则。
      */
-    AdTargeting updateTargeting(AdTargeting targeting);
+    AdTargeting updateTargeting(Long shopId, AdTargeting targeting);
 
     /**
-     * 查询活动的定向规则列表。
+     * 查询指定店铺、指定活动的定向规则列表。
      */
-    List<AdTargeting> listByCampaign(String campaignId, String targetingType);
+    PageResult<AdTargeting> listByCampaign(Long shopId, String campaignId,
+                                           String targetingType, PageRequest page);
 
     /**
-     * 删除定向规则。
+     * 删除指定店铺的定向规则。
      */
-    void delete(Long id);
+    void delete(Long shopId, Long id);
 }

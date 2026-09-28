@@ -1,7 +1,12 @@
 package com.amz.service.impl;
 
-import com.amz.mapper.*;
-import com.amz.model.*;
+import com.amz.mapper.OrderAuditRuleMapper;
+import com.amz.mapper.OrderMapper;
+import com.amz.mapper.OrderSplitLogMapper;
+import com.amz.mapper.ShipmentRoutingMapper;
+import com.amz.model.OrderAuditRule;
+import com.amz.model.OrderSplitLog;
+import com.amz.model.ShipmentRouting;
 import com.amz.model.pojo.Order;
 import com.amz.service.OrderAuditService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -12,7 +17,10 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
@@ -243,12 +251,12 @@ public class OrderAuditServiceImpl implements OrderAuditService {
     // ==================== 发货路由 ====================
 
     @Override
-    public ShipmentRouting routeOrder(Long shopId, String orderId, String sku, String asin,
+    public ShipmentRouting routeOrder(Long shopId, String amazonOrderId, String sku, String asin,
                                        Integer quantity, String country) {
         // 简化的默认路由：FBA优先 → 海外仓 → 本地仓
         ShipmentRouting routing = new ShipmentRouting();
         routing.setShopId(shopId);
-        routing.setOrderId(orderId);
+        routing.setAmazonOrderId(amazonOrderId);
         routing.setSku(sku);
         routing.setAsin(asin);
         routing.setQuantity(quantity);

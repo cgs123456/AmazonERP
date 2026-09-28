@@ -85,7 +85,7 @@ class DeploymentSchemaBootstrapContractTest {
         assertTrue(compose.contains("MYSQL_ROOT_PASSWORD=${DB_PASSWORD:?DB_PASSWORD_required}"),
                 "MySQL root 密码必须缺失即失败，不能默认空密码启动");
         for (String variable : List.of("DB_PASSWORD", "REDIS_PASSWORD", "RABBITMQ_PASSWORD",
-                "JWT_SECRET_KEY", "AMZ_CRYPTO_KEY", "MONGO_PASSWORD", "MQ_PASSWORD", "GRAFANA_PASSWORD")) {
+                "JWT_SECRET_KEY", "AMZ_CRYPTO_KEY", "MONGO_PASSWORD", "GRAFANA_PASSWORD")) {
             assertFalse(compose.contains("${" + variable + ":-"),
                     variable + " 不得使用空默认值绕过生产凭据门禁");
             assertTrue(compose.contains("${" + variable + ":?"),

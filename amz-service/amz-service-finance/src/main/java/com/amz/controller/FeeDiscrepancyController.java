@@ -5,6 +5,7 @@ import com.amz.annotation.ShopScoped;
 import com.amz.dto.FeeDiscrepancyScanReport;
 import com.amz.dto.InboundShortageRequest;
 import com.amz.model.FeeDiscrepancy;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.FeeDiscrepancyService;
 import lombok.extern.slf4j.Slf4j;
@@ -80,9 +81,12 @@ public class FeeDiscrepancyController {
     @GetMapping("/list/{shopId}")
     public Result<List<FeeDiscrepancy>> list(@PathVariable Long shopId,
                                              @RequestParam(required = false) String status,
-                                             @RequestParam(required = false) String type) {
+                                             @RequestParam(required = false) String type,
+                                             @RequestParam(value = "size", required = false) Integer size,
+                                             @RequestParam(value = "cursor", required = false) String cursor) {
         try {
-            return Result.success(feeDiscrepancyService.list(shopId, status, type));
+            return Result.paged(feeDiscrepancyService.list(
+                    shopId, status, type, PageRequest.of(size, cursor)));
         } catch (IllegalArgumentException e) {
             return Result.failure(e.getMessage());
         }

@@ -121,9 +121,7 @@ public class SheinRealClient extends AbstractPlatformClient implements SheinClie
         List<UnifiedOrder> list = new ArrayList<>();
         JsonNode root = objectMapper.readTree(resp);
         if (root.path("code").asInt() != 0 && !root.path("success").asBoolean(false)) {
-            log.warn("Shein order list 非成功响应 code={} msg={}",
-                    root.path("code").asText(), root.path("message").asText());
-            return list;
+            throw new IllegalStateException("Shein order list failed: code=" + root.path("code").asText() + ", message=" + root.path("message").asText());
         }
         JsonNode data = root.path("data");
         JsonNode orders = data.isArray() ? data : data.path("orders");

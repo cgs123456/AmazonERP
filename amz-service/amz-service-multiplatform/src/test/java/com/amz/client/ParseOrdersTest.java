@@ -9,6 +9,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * 三平台订单解析测试（B3）。
@@ -83,5 +84,47 @@ class ParseOrdersTest {
         assertEquals(4, o.getItems().get(1).getQuantity());
         assertEquals("K-S1", o.getSku());
         assertEquals(new BigDecimal("50"), o.getOriginalAmount());
+    }
+
+    @Test
+    @DisplayName("Shein：业务错误码必须失败关闭，不能伪装为空订单")
+    void sheinBusinessErrorFailsClosed() {
+        String resp = "{\"code\":40101,\"message\":\"invalid signature\",\"data\":{}}";
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> new SheinRealClient().parseOrders(resp, 1L));
+
+        String message = ex.getMessage();
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("Shein"), message);
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("40101"), message);
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("invalid signature"), message);
+    }
+
+    @Test
+    @DisplayName("Temu：业务错误码必须失败关闭，不能伪装为空订单")
+    void temuBusinessErrorFailsClosed() {
+        String resp = "{\"code\":40003,\"message\":\"access denied\",\"data\":{}}";
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> new TemuRealClient().parseOrders(resp, 1L));
+
+        String message = ex.getMessage();
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("Temu"), message);
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("40003"), message);
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("access denied"), message);
+    }
+
+    @Test
+    @DisplayName("TikTok：业务错误码必须失败关闭，不能伪装为空订单")
+    void tiktokBusinessErrorFailsClosed() {
+        String resp = "{\"code\":10501,\"message\":\"invalid access token\",\"data\":{}}";
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> new TikTokRealClient().parseOrders(resp, 1L));
+
+        String message = ex.getMessage();
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("TikTok"), message);
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("10501"), message);
+        org.junit.jupiter.api.Assertions.assertTrue(message.contains("invalid access token"), message);
     }
 }

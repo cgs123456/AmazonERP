@@ -54,7 +54,7 @@ public class PaymentCollection implements Serializable {
     private Long shopId;
 
     /** 订单号。 */
-    private String orderId;
+    private String amazonOrderId;
 
     private String currency;
 

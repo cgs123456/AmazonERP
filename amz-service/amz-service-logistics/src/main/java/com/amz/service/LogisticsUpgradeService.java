@@ -4,6 +4,8 @@ import com.amz.model.CarrierQuote;
 import com.amz.model.FbaReceiptDiscrepancy;
 import com.amz.model.FreightAllocation;
 import com.amz.model.InventoryTransfer;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -35,7 +37,7 @@ public interface LogisticsUpgradeService {
      *
      * @param serviceType 运输方式过滤，可空
      */
-    List<CarrierQuote> listQuotes(Long shopId, String serviceType);
+    PageResult<CarrierQuote> listQuotes(Long shopId, String serviceType, PageRequest page);
 
     /**
      * 运费比价（按路线查询所有承运商报价）。
@@ -77,7 +79,7 @@ public interface LogisticsUpgradeService {
     InventoryTransfer receiveTransfer(Long transferId);
 
     /** 查询调拨单列表 */
-    List<InventoryTransfer> listTransfers(Long shopId, String status);
+    PageResult<InventoryTransfer> listTransfers(Long shopId, String status, PageRequest page);
 
     // ===== 头程费用分摊 =====
 
@@ -85,7 +87,7 @@ public interface LogisticsUpgradeService {
     List<FreightAllocation> saveAllocations(List<FreightAllocation> allocations);
 
     /** 查询货件的头程费用分摊明细（会先校验货件归属） */
-    List<FreightAllocation> listAllocations(Long shipmentId);
+    PageResult<FreightAllocation> listAllocations(Long shipmentId, PageRequest page);
 
     /**
      * 按分摊方法计算头程费用。
@@ -108,7 +110,7 @@ public interface LogisticsUpgradeService {
     FbaReceiptDiscrepancy saveDiscrepancy(FbaReceiptDiscrepancy discrepancy);
 
     /** 查询签收差异列表 */
-    List<FbaReceiptDiscrepancy> listDiscrepancies(Long shopId, String status);
+    PageResult<FbaReceiptDiscrepancy> listDiscrepancies(Long shopId, String status, PageRequest page);
 
     /** 将差异标记为核查中（PENDING → INVESTIGATING） */
     FbaReceiptDiscrepancy startInvestigating(Long discrepancyId);

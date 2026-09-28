@@ -4,7 +4,12 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.*;
+import okhttp3.MediaType;
+import okhttp3.OkHttp;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -22,11 +27,17 @@ import java.util.stream.Collectors;
 @Service
 public class ReviewAnalysisServiceImpl implements ReviewAnalysisService {
 
-    @Value("${deepseek.api_url}")
+    @Value("${deepseek.api-url}")
     private String apiUrl;
 
-    @Value("${deepseek.api_key}")
+    @Value("${deepseek.api-key}")
     private String apiKey;
+
+    @Value("${deepseek.model-name:deepseek-chat}")
+    private String modelName;
+
+    @Value("${deepseek.temperature:0.7}")
+    private double temperature;
 
     /** 共享 OkHttp 客户端（见 AiHttpClientConfig）。 */
     @Autowired
@@ -81,8 +92,12 @@ public class ReviewAnalysisServiceImpl implements ReviewAnalysisService {
      * 调用 DeepSeek Chat Completions API。
      */
     private String callDeepSeek(String prompt) {
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("DeepSeek 未配置，跳过评论分析：请设置 DEEPSEEK_API_KEY");
+            return null;
+        }
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", "deepseek-chat");
+        requestBody.addProperty("model", modelName);
 
         JsonArray messages = new JsonArray();
         JsonObject userMessage = new JsonObject();
@@ -91,7 +106,7 @@ public class ReviewAnalysisServiceImpl implements ReviewAnalysisService {
         messages.add(userMessage);
         requestBody.add("messages", messages);
         // 降低随机性，使 JSON 输出更稳定
-        requestBody.addProperty("temperature", 0.3);
+        requestBody.addProperty("temperature", temperature);
 
         RequestBody body = RequestBody.create(
                 requestBody.toString(),

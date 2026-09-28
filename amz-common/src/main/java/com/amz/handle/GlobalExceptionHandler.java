@@ -2,6 +2,8 @@ package com.amz.handle;
 
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
+import com.amz.exception.ConnectorException;
+import com.amz.exception.InvalidParamException;
 import com.amz.exception.UserNoExistException;
 import com.amz.result.Result;
 import lombok.extern.slf4j.Slf4j;
@@ -33,7 +35,8 @@ public class GlobalExceptionHandler {
      * <p>
      * 返回码仍是 {@code Result.failure} 的 400，与其余业务异常一致，前端无需适配。
      */
-    @ExceptionHandler({UserNoExistException.class, CodeErrorException.class, AttrIsNullException.class})
+    @ExceptionHandler({UserNoExistException.class, CodeErrorException.class, ConnectorException.class,
+            AttrIsNullException.class, InvalidParamException.class})
     public Result<String> businessException(RuntimeException e) {
         log.error("业务异常: {}", e.getMessage());
         return Result.failure(e.getMessage());

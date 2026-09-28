@@ -45,7 +45,8 @@ public interface LogisticsTrackingClient {
      *
      * @param trackingNo 运单号
      * @param carrier    承运商
-     * @return 轨迹点列表（按时间倒序）；无数据或无凭证时返回空列表而非抛异常
+     * @return 轨迹点列表（按时间倒序）；仅当调用成功且暂无事件时返回空列表
+     * @throws com.amz.exception.ConnectorException 未开启、缺少凭证或对端调用失败时抛出，禁止伪装成无轨迹
      */
     List<TrackingEvent> queryTracking(String trackingNo, String carrier);
 }

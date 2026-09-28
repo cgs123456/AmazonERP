@@ -4,10 +4,13 @@ import com.amz.util.BizNoGenerator;
 
 import com.amz.client.Alibaba1688Client;
 import com.amz.exception.AttrIsNullException;
+import com.amz.exception.CodeErrorException;
 import com.amz.mapper.PurchaseOrderMapper;
 import com.amz.mapper.QualityCheckMapper;
 import com.amz.model.PurchaseOrder;
 import com.amz.model.QualityCheck;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.ProcurementService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -49,7 +52,7 @@ public class ProcurementServiceImpl implements ProcurementService {
         }
         // 创建即校验店铺授权：防止以任意 shopId 建单绕过后续按 ID 的越权校验
         if (!com.amz.context.UserContext.isShopAllowed(order.getShopId())) {
-            throw new IllegalStateException("无权为该店铺创建采购单：shopId=" + order.getShopId());
+            throw new CodeErrorException("无权为该店铺创建采购单：shopId=" + order.getShopId());
         }
         // 生成业务单号 + 计算总金额
         order.setOrderNo(BizNoGenerator.next("PO"));
@@ -64,7 +67,7 @@ public class ProcurementServiceImpl implements ProcurementService {
     public PurchaseOrder submitTo1688(Long orderId) {
         PurchaseOrder order = mustGetAuthorized(orderId);
         if (!"DRAFT".equals(order.getStatus())) {
-            throw new IllegalStateException("仅草稿状态可提交，当前状态：" + order.getStatus());
+            throw new CodeErrorException("仅草稿状态可提交，当前状态：" + order.getStatus());
         }
         // Outbox-lite 防重复下单：远程调用前先持久化 SUBMITTING 状态。
         // 若进程在"1688 下单成功后、本地落库前"崩溃：
@@ -94,7 +97,7 @@ public class ProcurementServiceImpl implements ProcurementService {
     public PurchaseOrder syncOrderStatus(Long orderId) {
         PurchaseOrder order = mustGetAuthorized(orderId);
         if (order.getAlibabaOrderNo() == null) {
-            throw new IllegalStateException("尚未提交 1688，无法同步状态");
+            throw new CodeErrorException("尚未提交 1688，无法同步状态");
         }
         String status = alibaba1688Client.queryOrderStatus(order.getAlibabaOrderNo());
         switch (status) {
@@ -122,7 +125,7 @@ public class ProcurementServiceImpl implements ProcurementService {
         String status = order.getStatus();
         if ("CANCELED".equals(status) || "QC_PASSED".equals(status)
                 || "QC_FAILED".equals(status) || "RECEIVED".equals(status)) {
-            throw new IllegalStateException("当前状态不可取消：" + status);
+            throw new CodeErrorException("当前状态不可取消：" + status);
         }
         if (order.getAlibabaOrderNo() != null) {
             // 远程关闭失败时中止本地状态迁移：ERP 显示已取消而 1688 订单仍存续，
@@ -139,14 +142,27 @@ public class ProcurementServiceImpl implements ProcurementService {
         return true;
     }
 
+    /**
+     * 采购单列表：keyset 分页 + 显式截断。
+     * <p>
+     * 原实现固定 {@code LIMIT 500}：调用方拿到 200 和一个数组，无从判断
+     * 是「刚好 500 条」还是「被砍到 500 条」。采购审批漏单不会报错，只会少审。
+     */
     @Override
-    public List<PurchaseOrder> listPurchaseOrders(Long shopId) {
+    public PageResult<PurchaseOrder> listPurchaseOrders(Long shopId, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<PurchaseOrder> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(PurchaseOrder::getShopId, shopId)
-                .orderByDesc(PurchaseOrder::getId)
-                // 安全上限：防止历史数据累积后全量拉取
-                .last("LIMIT 500");
-        return purchaseOrderMapper.selectList(wrapper);
+        wrapper.eq(PurchaseOrder::getShopId, shopId);
+        if (req.hasCursor()) {
+            wrapper.lt(PurchaseOrder::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(PurchaseOrder::getId)
+                .last("LIMIT " + req.probeSize());
+        List<PurchaseOrder> rows = purchaseOrderMapper.selectList(wrapper);
+        if (rows.size() > req.size()) {
+            log.warn("采购单列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页", shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(), o -> PageRequest.encodeCursor(o.getId()));
     }
 
     @Override
@@ -155,12 +171,12 @@ public class ProcurementServiceImpl implements ProcurementService {
                                            Integer failedCount, String defectDescription, String inspector) {
         PurchaseOrder order = mustGetAuthorized(purchaseOrderId);
         if (!"QC_PENDING".equals(order.getStatus())) {
-            throw new IllegalStateException("仅待质检状态可提交质检，当前状态：" + order.getStatus());
+            throw new CodeErrorException("仅待质检状态可提交质检，当前状态：" + order.getStatus());
         }
         // 输入校验：旧实现 sampleCount=null 直接 NPE、=0 触发除零、failed>sample 得负合格数
         if (sampleCount == null || failedCount == null
                 || sampleCount < 1 || failedCount < 0 || failedCount > sampleCount) {
-            throw new IllegalArgumentException(
+            throw new CodeErrorException(
                     "质检数量非法：需满足 1 ≤ failedCount ≤ sampleCount，实际 sample="
                             + sampleCount + " failed=" + failedCount);
         }
@@ -212,7 +228,7 @@ public class ProcurementServiceImpl implements ProcurementService {
     private PurchaseOrder mustGetAuthorized(Long orderId) {
         PurchaseOrder order = mustGet(orderId);
         if (!com.amz.context.UserContext.isShopAllowed(order.getShopId())) {
-            throw new IllegalStateException(
+            throw new CodeErrorException(
                     "无权操作该店铺的采购单：orderId=" + orderId + " shopId=" + order.getShopId());
         }
         return order;

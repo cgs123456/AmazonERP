@@ -1,6 +1,8 @@
 package com.amz.client;
 
 import com.amz.auth.LwaTokenManager;
+import com.amz.connector.LocalApiException;
+import com.amz.connector.SpApiCallException;
 import com.amz.connector.SpApiRequestFactory;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.ratelimit.SpiRateLimiter;
@@ -120,6 +122,31 @@ class SpApiGatewayDownloadErrorTest {
         String text = error.getMessage();
         assertFalse(text.contains("deadbeef"), text);
         assertFalse(text.contains("X-Amz-Signature"), text);
+        assertNull(error.getCause(),
+                "不得链 cause：日志打印异常链时仍会泄露传输驱动消息中的完整 URL");
+    }
+
+    @Test
+    @DisplayName("传输层 RuntimeException 携带完整 URL 时也必须脱敏且不链 cause")
+    void runtimeTransportFailureDoesNotLeakQuery() {
+        RecordingHttpTransport transport = RecordingHttpTransport.of(request -> {
+            throw new IllegalStateException("GET " + PRESIGNED_URL + " failed");
+        });
+        SpApiGateway gateway = gatewayWith(transport, passthroughRequestFactory());
+
+        SpApiCallException error = assertThrows(SpApiCallException.class,
+                () -> gateway.downloadBytes(PRESIGNED_URL));
+
+        String text = error.getMessage();
+        assertEquals("s3.downloadDocument", error.getOperationId());
+        assertEquals("/report/2026-09-24/settlement.tsv", error.getPath());
+        assertEquals(-1, error.getPlatformStatus());
+        assertTrue(text.contains("path=/report/2026-09-24/settlement.tsv"), text);
+        assertFalse(text.contains("deadbeef"), text);
+        assertFalse(text.contains("AKIAEXAMPLEKEY"), text);
+        assertTrue(text.contains("X-Amz-Signature=***"), text);
+        assertNull(error.getCause(),
+                "不得链 cause：日志打印异常链时仍会泄露传输驱动消息中的完整 URL");
     }
 
     @Test
@@ -133,9 +160,10 @@ class SpApiGatewayDownloadErrorTest {
                 new IllegalArgumentException("Illegal character in path at index 45: " + rawUrl));
         SpApiGateway gateway = gatewayWith(RecordingHttpTransport.json("{}"), factory);
 
-        RuntimeException error = assertThrows(RuntimeException.class,
+        LocalApiException error = assertThrows(LocalApiException.class,
                 () -> gateway.downloadBytes(rawUrl));
 
+        assertEquals("PRESIGNED_URL_INVALID", error.getCode());
         String text = error.getMessage();
         assertTrue(text.startsWith("download request rejected path="), text);
         assertTrue(text.contains("(unparseable url)"), text);

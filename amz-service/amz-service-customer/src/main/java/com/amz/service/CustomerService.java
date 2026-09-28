@@ -2,8 +2,8 @@ package com.amz.service;
 
 import com.amz.model.CustomerTicket;
 import com.amz.model.ReviewSolicitation;
-
-import java.util.List;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 /**
  * 客服工单服务接口。
@@ -23,7 +23,7 @@ public interface CustomerService {
     /**
      * 查询店铺工单列表（可按状态/分类筛选）。
      */
-    List<CustomerTicket> listTickets(Long shopId, String status, String category);
+    PageResult<CustomerTicket> listTickets(Long shopId, String status, String category, PageRequest page);
 
     /**
      * 批量发送索评请求（仅合规订单：已签收 + 未留评 + 30 天内 + 未发过）。
@@ -35,5 +35,5 @@ public interface CustomerService {
     /**
      * 查询店铺索评记录。
      */
-    List<ReviewSolicitation> listSolicitations(Long shopId);
+    PageResult<ReviewSolicitation> listSolicitations(Long shopId, PageRequest page);
 }

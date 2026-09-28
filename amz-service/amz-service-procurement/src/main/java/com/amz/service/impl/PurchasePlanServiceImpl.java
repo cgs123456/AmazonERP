@@ -1,16 +1,22 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.PurchasePlanMapper;
 import com.amz.mapper.PurchaseOrderItemMapper;
 import com.amz.mapper.PurchaseOrderMapper;
+import com.amz.mapper.SupplierMapper;
 import com.amz.mapper.SupplierProductMapper;
 import com.amz.model.PurchasePlan;
+import com.amz.model.Supplier;
 import com.amz.model.PurchaseOrder;
 import com.amz.model.PurchaseOrderItem;
 import com.amz.model.SupplierProduct;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.PurchasePlanService;
 import com.amz.service.ProcurementService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -21,7 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * 采购计划服务实现。
@@ -45,13 +54,18 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
     private SupplierProductMapper supplierProductMapper;
 
     @Autowired
+    private SupplierMapper supplierMapper;
+
+    @Autowired
     private ProcurementService procurementService;
 
     @Override
     public PurchasePlan createPlan(PurchasePlan plan) {
-        if (plan.getShopId() == null || plan.getSku() == null || plan.getPlannedQty() == null) {
+        if (plan == null || plan.getShopId() == null || plan.getSku() == null || plan.getPlannedQty() == null) {
             throw new AttrIsNullException("店铺ID、SKU和计划数量不能为空");
         }
+        requireShopAccess(plan.getShopId());
+        validateSupplierReference(plan.getSupplierId(), plan.getShopId());
         plan.setPlanNo(BizNoGenerator.next("PL"));
         if (plan.getStatus() == null) {
             plan.setStatus("DRAFT");
@@ -88,7 +102,7 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
     public PurchasePlan submitForApproval(Long planId) {
         PurchasePlan plan = getPlan(planId);
         if (!"DRAFT".equals(plan.getStatus())) {
-            throw new IllegalStateException("仅草稿状态可提交审批，当前状态：" + plan.getStatus());
+            throw new CodeErrorException("仅草稿状态可提交审批，当前状态：" + plan.getStatus());
         }
         plan.setStatus("PENDING_APPROVAL");
         purchasePlanMapper.updateById(plan);
@@ -100,7 +114,7 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
     public PurchasePlan approve(Long planId, String operator, boolean approved, String comment) {
         PurchasePlan plan = getPlan(planId);
         if (!"PENDING_APPROVAL".equals(plan.getStatus())) {
-            throw new IllegalStateException("仅待审批状态可审批，当前状态：" + plan.getStatus());
+            throw new CodeErrorException("仅待审批状态可审批，当前状态：" + plan.getStatus());
         }
         if (approved) {
             plan.setStatus("APPROVED");
@@ -121,7 +135,7 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
     public Map<String, Object> convertToOrder(Long planId) {
         PurchasePlan plan = getPlan(planId);
         if (!"APPROVED".equals(plan.getStatus())) {
-            throw new IllegalStateException("仅已审批通过的计划可转为采购订单，当前状态：" + plan.getStatus());
+            throw new CodeErrorException("仅已审批通过的计划可转为采购订单，当前状态：" + plan.getStatus());
         }
 
         // 创建采购订单
@@ -163,14 +177,27 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
     }
 
     @Override
-    public List<PurchasePlan> listPlans(Long shopId, String status) {
+    public PageResult<PurchasePlan> listPlans(Long shopId, String status, PageRequest page) {
+        requireShopAccess(shopId);
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<PurchasePlan> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PurchasePlan::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(PurchasePlan::getStatus, status);
         }
-        wrapper.orderByDesc(PurchasePlan::getId);
-        return purchasePlanMapper.selectList(wrapper);
+        Long cursorId = req.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(PurchasePlan::getId, cursorId);
+        }
+        wrapper.orderByDesc(PurchasePlan::getId)
+                .last("LIMIT " + req.probeSize());
+        List<PurchasePlan> rows = purchasePlanMapper.selectList(wrapper);
+        if (rows.size() > req.size()) {
+            log.warn("采购计划列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页",
+                    shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(),
+                plan -> PageRequest.encodeCursor(plan.getId()));
     }
 
     @Override
@@ -179,6 +206,7 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
         if (plan == null) {
             throw new AttrIsNullException("采购计划不存在：id=" + id);
         }
+        requireShopAccess(plan.getShopId());
         return plan;
     }
 
@@ -186,10 +214,29 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
     public boolean cancelPlan(Long planId) {
         PurchasePlan plan = getPlan(planId);
         if ("CONVERTED".equals(plan.getStatus()) || "CANCELED".equals(plan.getStatus())) {
-            throw new IllegalStateException("已转换或已取消的计划不可取消");
+            throw new CodeErrorException("已转换或已取消的计划不可取消");
         }
         plan.setStatus("CANCELED");
         purchasePlanMapper.updateById(plan);
         return true;
+    }
+    private void requireShopAccess(Long shopId) {
+        if (shopId == null) {
+            throw new AttrIsNullException("店铺ID不能为空");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            log.warn("采购计划店铺越权访问拦截：userId={}, shopId={}", UserContext.getUserId(), shopId);
+            throw new CodeErrorException("店铺不存在或无权访问");
+        }
+    }
+
+    private void validateSupplierReference(Long supplierId, Long shopId) {
+        if (supplierId == null) {
+            return;
+        }
+        Supplier supplier = supplierMapper.selectById(supplierId);
+        if (supplier == null || !Objects.equals(supplier.getShopId(), shopId)) {
+            throw new CodeErrorException("供应商不存在或与店铺不匹配");
+        }
     }
 }

@@ -17,14 +17,14 @@ public class WebSocketHandler extends SimpleChannelInboundHandler<TextWebSocketF
     @Override
     public void channelRead0(ChannelHandlerContext ctx, TextWebSocketFrame msg) {
         String message = msg.text();
-        
+
         // 处理心跳消息
         if ("ping".equals(message)) {
             ctx.channel().writeAndFlush(new TextWebSocketFrame("pong"));
             log.debug("收到心跳ping，返回pong");
             return;
         }
-        
+
         // 处理token认证
         if (!StringUtils.isBlank(message)) {
             try {
@@ -51,7 +51,7 @@ public class WebSocketHandler extends SimpleChannelInboundHandler<TextWebSocketF
             log.info("用户断开连接，用户ID：{}", userId);
         }
     }
-    
+
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
         log.error("WebSocket异常：{}", cause.getMessage());

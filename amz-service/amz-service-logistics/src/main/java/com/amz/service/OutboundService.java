@@ -2,6 +2,8 @@ package com.amz.service;
 
 import com.amz.model.OutboundOrder;
 import com.amz.model.WarehouseInventory;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 
@@ -20,7 +22,7 @@ public interface OutboundService {
     /**
      * 查询店铺出库单列表。
      */
-    List<OutboundOrder> listOutboundOrders(Long shopId, String status);
+    PageResult<OutboundOrder> listOutboundOrders(Long shopId, String status, PageRequest page);
 
     /**
      * 开始拣货（PENDING → PICKING）。

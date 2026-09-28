@@ -1,13 +1,13 @@
 package com.amz.client.fallback;
 
 import com.amz.client.ProcurementCostClient;
-import com.amz.client.dto.RemoteInventoryBatch;
+import com.amz.client.dto.RemoteBatchCostSummary;
 import com.amz.result.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
+
 
 /**
  * 采购批次成本降级工厂。

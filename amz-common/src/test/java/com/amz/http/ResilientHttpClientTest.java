@@ -148,6 +148,20 @@ class ResilientHttpClientTest {
     }
 
     @Test
+    @DisplayName("executeOnce：非幂等写操作遇网络异常不自动重试")
+    void executeOnceDoesNotRetry() {
+        AtomicInteger calls = new AtomicInteger();
+        ResilientHttpClient c = client(fastProps(3, 5));
+
+        assertThrows(ResourceAccessException.class, () -> c.executeOnce("t", () -> {
+            calls.incrementAndGet();
+            throw new ResourceAccessException("response lost");
+        }));
+
+        assertEquals(1, calls.get(), "非幂等写操作必须最多发送一次");
+    }
+
+    @Test
     @DisplayName("熔断联动：连续失败达阈值后快速失败，业务动作不再被调用")
     void circuitOpensAndShortCircuits() {
         AtomicInteger calls = new AtomicInteger();

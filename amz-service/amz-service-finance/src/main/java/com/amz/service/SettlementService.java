@@ -3,6 +3,8 @@ package com.amz.service;
 import com.amz.dto.SettlementIngestReport;
 import com.amz.model.SettlementDetail;
 import com.amz.parse.SettlementRow;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 
@@ -38,5 +40,5 @@ public interface SettlementService {
     /**
      * 查询结算明细（可按订单号过滤）。
      */
-    List<SettlementDetail> list(Long shopId, String orderId);
+    PageResult<SettlementDetail> list(Long shopId, String amazonOrderId, PageRequest page);
 }

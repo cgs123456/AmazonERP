@@ -116,7 +116,7 @@ public final class SettlementParser {
 
             SettlementRow row = new SettlementRow();
             row.setSettlementId(value(fields, columnIndex, COL_SETTLEMENT_ID));
-            row.setOrderId(trimToNull(value(fields, columnIndex, COL_ORDER_ID)));
+            row.setAmazonOrderId(trimToNull(value(fields, columnIndex, COL_ORDER_ID)));
             row.setSku(trimToNull(value(fields, columnIndex, COL_SKU)));
             row.setTransactionType(transactionType.trim());
             row.setAmountType(amountType == null ? null : amountType.trim());
@@ -134,7 +134,7 @@ public final class SettlementParser {
      * （否则同一行文件内位移就会被当成新行）。
      */
     public static String rowKey(SettlementRow row) {
-        String raw = nz(row.getSettlementId()) + "|" + nz(row.getOrderId()) + "|" + nz(row.getSku())
+        String raw = nz(row.getSettlementId()) + "|" + nz(row.getAmazonOrderId()) + "|" + nz(row.getSku())
                 + "|" + nz(row.getAmountType()) + "|"
                 + (row.getAmount() == null ? "" : row.getAmount().stripTrailingZeros().toPlainString())
                 + "|" + nz(row.getDepositDate());

@@ -1,14 +1,15 @@
 package com.amz.client;
 
-import com.amz.client.dto.RemoteInventoryBatch;
+import com.amz.client.dto.RemoteBatchCostSummary;
 import com.amz.client.fallback.ProcurementCostClientFallbackFactory;
 import com.amz.result.Result;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
-import java.util.List;
+
 
 /**
  * amz-service-procurement 批次成本接口 Feign 客户端（finance 侧）。
@@ -18,12 +19,16 @@ import java.util.List;
  */
 @FeignClient(name = "amz-service-procurement", contextId = "procurementCostClient",
         fallbackFactory = ProcurementCostClientFallbackFactory.class)
+@RequestMapping("/procurement")
 public interface ProcurementCostClient {
 
     /**
-     * 查询 SKU 的库存批次（FIFO 顺序）。
+     * 查询 SKU 的 ACTIVE 批次成本聚合值。
+     *
+     * <p>不返回批次明细：财务计算只需要总数量和总成本，
+     * 无界拉取明细既浪费网络和内存，也会在公开列表分页后产生静默漏算。</p>
      */
-    @GetMapping("/batch/list/{shopId}")
-    Result<List<RemoteInventoryBatch>> listBatches(@PathVariable("shopId") Long shopId,
-                                                   @RequestParam("sku") String sku);
+    @GetMapping("/batch/cost-summary/{shopId}")
+    Result<RemoteBatchCostSummary> getCostSummary(@PathVariable("shopId") Long shopId,
+                                                  @RequestParam("sku") String sku);
 }

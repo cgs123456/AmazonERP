@@ -1,6 +1,7 @@
 package com.amz.client;
 
 import com.amz.result.Result;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
@@ -58,8 +59,23 @@ public class ListingsRealClient implements ListingsClient {
                     + " feedSubmissionId=" + feedSubmissionId + " : "
                     + (result == null ? "no response" : result.getMessage()));
         }
+        return toJsonObject(result.getData());
+    }
+
+    @Override
+    public JsonObject getFeedResult(Long shopId, String feedSubmissionId) {
+        Result<Map<String, Object>> result = spapiFeedsClient.getFeedResult(shopId, feedSubmissionId);
+        if (result == null || result.getCode() != 200 || result.getData() == null) {
+            throw new RuntimeException("SP-API Feed processing report 查询失败 shopId=" + shopId
+                    + " feedSubmissionId=" + feedSubmissionId + " : "
+                    + (result == null ? "no response" : result.getMessage()));
+        }
+        return toJsonObject(result.getData());
+    }
+
+    private JsonObject toJsonObject(Map<String, Object> data) {
         JsonObject obj = new JsonObject();
-        for (Map.Entry<String, Object> e : result.getData().entrySet()) {
+        for (Map.Entry<String, Object> e : data.entrySet()) {
             putValue(obj, e.getKey(), e.getValue());
         }
         return obj;
@@ -87,6 +103,18 @@ public class ListingsRealClient implements ListingsClient {
                 putValue(child, e.getKey(), e.getValue());
             }
             obj.add(key, child);
+        } else if (value instanceof Iterable<?> iterable) {
+            JsonArray array = new JsonArray();
+            for (Object item : iterable) {
+                if (item instanceof Map) {
+                    array.add(toJsonObject((Map<String, Object>) item));
+                } else if (item == null) {
+                    array.add(JsonNull.INSTANCE);
+                } else {
+                    array.add(item.toString());
+                }
+            }
+            obj.add(key, array);
         } else {
             obj.addProperty(key, value.toString());
         }

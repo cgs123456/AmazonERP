@@ -7,6 +7,7 @@ import com.amz.dto.InboundShortageRequest;
 import com.amz.mapper.FeeDiscrepancyMapper;
 import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.FeeDiscrepancy;
+import com.amz.result.PageRequest;
 import com.amz.model.SettlementDetail;
 import com.amz.result.Result;
 import org.junit.jupiter.api.BeforeEach;
@@ -258,6 +259,29 @@ class FeeDiscrepancyServiceImplTest {
     }
 
     @Test
+    @DisplayName("扫描必须遍历全部结算明细分页，不能只处理前 500 行")
+    void scanTraversesAllSettlementPages() {
+        List<SettlementDetail> firstPage = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {
+            SettlementDetail row = detail(null, "Adjustment", "Platform Adjustment", "1.00");
+            row.setId(1000L - i);
+            firstPage.add(row);
+        }
+        SettlementDetail secondPageRow = detail(null, "Adjustment", "Platform Adjustment", "1.00");
+        secondPageRow.setId(499L);
+
+        when(settlementDetailMapper.selectList(any()))
+                .thenReturn(firstPage, new ArrayList<>(List.of(secondPageRow)));
+
+        FeeDiscrepancyScanReport report = service.scan(SHOP_ID, null);
+
+        assertEquals(501, report.getScannedSettlementRows(),
+                "第一页 500 行 + 第二页 1 行；探测行不能丢失第二页数据");
+        assertEquals(501, report.getUnattributedRows());
+        verify(settlementDetailMapper, times(2)).selectList(any());
+    }
+
+    @Test
     @DisplayName("入库短收登记：差额为负（应给未给），金额 = 数量 × 单位成本")
     void intakeInboundShortage() {
         when(feeDiscrepancyMapper.countInboundShortage(SHOP_ID, "SHP-1", "SKU-R")).thenReturn(0);
@@ -375,8 +399,8 @@ class FeeDiscrepancyServiceImplTest {
     @DisplayName("列表查询：状态与类型过滤透传；shopId 必填")
     void listFilters() {
         when(feeDiscrepancyMapper.selectList(any())).thenReturn(new ArrayList<>());
-        assertTrue(service.list(SHOP_ID, "candidate", "size_tier_jump").isEmpty());
-        assertThrows(IllegalArgumentException.class, () -> service.list(null, null, null));
+        assertTrue(service.list(SHOP_ID, "candidate", "size_tier_jump", PageRequest.first(50)).items().isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> service.list(null, null, null, PageRequest.first(50)));
         verify(feeDiscrepancyMapper, times(1)).selectList(any());
     }
 }

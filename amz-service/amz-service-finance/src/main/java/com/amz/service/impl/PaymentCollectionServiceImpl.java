@@ -1,4 +1,6 @@
 package com.amz.service.impl;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import com.amz.dto.PaymentCollectionSummary;
 import com.amz.mapper.PaymentCollectionMapper;
@@ -47,8 +49,7 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
         if (shopId == null) {
             throw new IllegalArgumentException("shopId must not be null");
         }
-        List<SettlementDetail> details = settlementDetailMapper.selectList(
-                new LambdaQueryWrapper<SettlementDetail>().eq(SettlementDetail::getShopId, shopId));
+        List<SettlementDetail> details = loadAllSettlementDetails(shopId);
         if (details == null || details.isEmpty()) {
             log.info("rebuild payment collection: no settlement rows shopId={}", shopId);
             return 0;
@@ -57,18 +58,17 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
         Map<String, List<SettlementDetail>> byOrder = new LinkedHashMap<>();
         int unattributed = 0;
         for (SettlementDetail d : details) {
-            if (d.getOrderId() == null || d.getOrderId().isBlank()) {
+            if (d.getAmazonOrderId() == null || d.getAmazonOrderId().isBlank()) {
                 // 平台调整行（Adjustment）常无订单号，无法归属到订单级台账
                 unattributed++;
                 continue;
             }
-            byOrder.computeIfAbsent(d.getOrderId(), k -> new ArrayList<>()).add(d);
+            byOrder.computeIfAbsent(d.getAmazonOrderId(), k -> new ArrayList<>()).add(d);
         }
 
         Map<String, PaymentCollection> existing = new LinkedHashMap<>();
-        for (PaymentCollection pc : paymentCollectionMapper.selectList(
-                new LambdaQueryWrapper<PaymentCollection>().eq(PaymentCollection::getShopId, shopId))) {
-            existing.put(pc.getOrderId(), pc);
+        for (PaymentCollection pc : loadAllPaymentCollections(shopId, null)) {
+            existing.put(pc.getAmazonOrderId(), pc);
         }
 
         int count = 0;
@@ -92,22 +92,33 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
     }
 
     @Override
-    public List<PaymentCollection> list(Long shopId, String status) {
+    public PageResult<PaymentCollection> list(Long shopId, String status, PageRequest page) {
         if (shopId == null) {
             throw new IllegalArgumentException("shopId must not be null");
         }
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<PaymentCollection> qw = new LambdaQueryWrapper<PaymentCollection>()
-                .eq(PaymentCollection::getShopId, shopId)
-                .orderByDesc(PaymentCollection::getId);
+                .eq(PaymentCollection::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             qw.eq(PaymentCollection::getStatus, status.toUpperCase());
         }
-        return paymentCollectionMapper.selectList(qw);
+        Long cursorId = req.cursorId();
+        if (cursorId != null) {
+            qw.lt(PaymentCollection::getId, cursorId);
+        }
+        qw.orderByDesc(PaymentCollection::getId)
+                .last("LIMIT " + req.probeSize());
+        List<PaymentCollection> rows = paymentCollectionMapper.selectList(qw);
+        if (rows.size() > req.size()) {
+            log.warn("回款台账列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页",
+                    shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(), row -> PageRequest.encodeCursor(row.getId()));
     }
 
     @Override
     public PaymentCollectionSummary summary(Long shopId) {
-        List<PaymentCollection> rows = list(shopId, null);
+        List<PaymentCollection> rows = loadAllPaymentCollections(shopId, null);
         PaymentCollectionSummary summary = new PaymentCollectionSummary();
         summary.setShopId(shopId);
         summary.setTotalOrders(rows.size());
@@ -165,18 +176,78 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
         return summary;
     }
 
+    /**
+     * 内部汇总必须遍历全部页，不能把第一页误当成全量财务事实。
+     * 仍以固定批次读取，避免单次 selectList 随历史数据无限增长。
+     */
+    private List<PaymentCollection> loadAllPaymentCollections(Long shopId, String status) {
+        List<PaymentCollection> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
+        while (true) {
+            LambdaQueryWrapper<PaymentCollection> qw = new LambdaQueryWrapper<PaymentCollection>()
+                    .eq(PaymentCollection::getShopId, shopId);
+            if (status != null && !status.isBlank()) {
+                qw.eq(PaymentCollection::getStatus, status.toUpperCase());
+            }
+            Long cursorId = page.cursorId();
+            if (cursorId != null) {
+                qw.lt(PaymentCollection::getId, cursorId);
+            }
+            qw.orderByDesc(PaymentCollection::getId)
+                    .last("LIMIT " + page.probeSize());
+            List<PaymentCollection> rows = paymentCollectionMapper.selectList(qw);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            int visible = Math.min(rows.size(), page.size());
+            all.addAll(rows.subList(0, visible));
+            if (rows.size() <= page.size()) {
+                break;
+            }
+            page = PageRequest.of(page.size(),
+                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
+        }
+        return all;
+    }
+
+    private List<SettlementDetail> loadAllSettlementDetails(Long shopId) {
+        List<SettlementDetail> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
+        while (true) {
+            LambdaQueryWrapper<SettlementDetail> qw = new LambdaQueryWrapper<SettlementDetail>()
+                    .eq(SettlementDetail::getShopId, shopId);
+            Long cursorId = page.cursorId();
+            if (cursorId != null) {
+                qw.lt(SettlementDetail::getId, cursorId);
+            }
+            qw.orderByDesc(SettlementDetail::getId)
+                    .last("LIMIT " + page.probeSize());
+            List<SettlementDetail> rows = settlementDetailMapper.selectList(qw);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            int visible = Math.min(rows.size(), page.size());
+            all.addAll(rows.subList(0, visible));
+            if (rows.size() <= page.size()) {
+                break;
+            }
+            page = PageRequest.of(page.size(),
+                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
+        }
+        return all;
+    }
     @Override
-    public boolean applyShortfall(Long shopId, String orderId, BigDecimal shortfall) {
-        if (shopId == null || orderId == null || orderId.isBlank()) {
-            throw new IllegalArgumentException("shopId and orderId must not be null");
+    public boolean applyShortfall(Long shopId, String amazonOrderId, BigDecimal shortfall) {
+        if (shopId == null || amazonOrderId == null || amazonOrderId.isBlank()) {
+            throw new IllegalArgumentException("shopId and amazonOrderId must not be null");
         }
         PaymentCollection row = paymentCollectionMapper.selectOne(
                 new LambdaQueryWrapper<PaymentCollection>()
                         .eq(PaymentCollection::getShopId, shopId)
-                        .eq(PaymentCollection::getOrderId, orderId)
+                        .eq(PaymentCollection::getAmazonOrderId, amazonOrderId)
                         .last("LIMIT 1"));
         if (row == null) {
-            log.info("applyShortfall: no payment collection row shopId={} orderId={}", shopId, orderId);
+            log.info("applyShortfall: no payment collection row shopId={} amazonOrderId={}", shopId, amazonOrderId);
             return false;
         }
         row.setShortfall(shortfall);
@@ -192,7 +263,7 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
      * 实收直接取有符号金额总和（而非各分项相减）—— 保证与平台「净影响」严格一致，
      * 分项相减一旦漏掉某个交易类型就会凭空产生差额。
      */
-    private PaymentCollection aggregate(String orderId, List<SettlementDetail> rows) {
+    private PaymentCollection aggregate(String amazonOrderId, List<SettlementDetail> rows) {
         BigDecimal receivable = BigDecimal.ZERO;
         BigDecimal feeDeducted = BigDecimal.ZERO;
         BigDecimal refunded = BigDecimal.ZERO;
@@ -231,7 +302,7 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
 
         PaymentCollection pc = new PaymentCollection();
         pc.setShopId(rows.get(0).getShopId());
-        pc.setOrderId(orderId);
+        pc.setAmazonOrderId(amazonOrderId);
         pc.setCurrency(currency);
         pc.setReceivable(scale(receivable));
         pc.setFeeDeducted(scale(feeDeducted));

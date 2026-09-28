@@ -165,14 +165,17 @@ public class Alibaba1688RealClient implements Alibaba1688Client {
             JsonNode root = objectMapper.readTree(resp);
             throwIfFailed(root);
             JsonNode success = root.path("result").path("success");
-            boolean ok = !success.isMissingNode() ? success.asBoolean() : true;
+            if (!success.isBoolean()) {
+                throw new IllegalStateException(
+                        "1688 关闭订单响应缺少布尔型 result.success，无法确认业务结果");
+            }
+            boolean ok = success.booleanValue();
             log.info("1688 关闭订单 alibabaOrderNo={} ok={}", alibabaOrderNo, ok);
             return ok;
         } catch (IllegalStateException e) {
             throw e;
         } catch (Exception e) {
-            log.error("1688 关闭订单失败 alibabaOrderNo={}", alibabaOrderNo, e);
-            return false;
+            throw new RuntimeException("1688 关闭订单失败: " + e.getMessage(), e);
         }
     }
 

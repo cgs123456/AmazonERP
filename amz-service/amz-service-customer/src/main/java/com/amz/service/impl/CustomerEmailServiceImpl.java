@@ -6,7 +6,12 @@ import com.amz.mapper.EmailTemplateMapper;
 import com.amz.mapper.EmailTaskMapper;
 import com.amz.mapper.NegativeReviewMapper;
 import com.amz.mapper.RmaMapper;
-import com.amz.model.*;
+import com.amz.model.EmailTask;
+import com.amz.model.EmailTemplate;
+import com.amz.model.NegativeReview;
+import com.amz.model.Rma;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.CustomerEmailService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -16,7 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 客服管理升级服务实现。
@@ -29,6 +37,9 @@ import java.util.*;
 @Slf4j
 @Service
 public class CustomerEmailServiceImpl implements CustomerEmailService {
+
+    /** 单次处理上限：极端积压时分批消化，避免一次全量载入 OOM。 */
+    private static final int PENDING_BATCH_LIMIT = 1000;
 
     @Autowired
     private EmailTemplateMapper emailTemplateMapper;
@@ -91,14 +102,25 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     }
 
     @Override
-    public List<EmailTemplate> listTemplates(Long shopId, String templateType) {
+    public PageResult<EmailTemplate> listTemplates(Long shopId, String templateType, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<EmailTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(EmailTemplate::getShopId, shopId);
         if (templateType != null && !templateType.isBlank()) {
             wrapper.eq(EmailTemplate::getTemplateType, templateType);
         }
-        wrapper.orderByDesc(EmailTemplate::getId);
-        return emailTemplateMapper.selectList(wrapper);
+        if (req.hasCursor()) {
+            wrapper.lt(EmailTemplate::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(EmailTemplate::getId)
+               .last("LIMIT " + req.probeSize());
+        List<EmailTemplate> rows = emailTemplateMapper.selectList(wrapper);
+        PageResult<EmailTemplate> result = PageResult.of(rows, req.size(),
+                t -> PageRequest.encodeCursor(t.getId()));
+        if (result.truncated()) {
+            log.warn("邮件模板列表被分页截断：shopId={} type={} size={}", shopId, templateType, req.size());
+        }
+        return result;
     }
 
     @Override
@@ -119,7 +141,9 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         LambdaQueryWrapper<EmailTemplate> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(EmailTemplate::getShopId, shopId)
                .eq(EmailTemplate::getTriggerEvent, eventType)
-               .eq(EmailTemplate::getEnabled, 1);
+               .eq(EmailTemplate::getEnabled, 1)
+               .orderByAsc(EmailTemplate::getId)
+               .last("LIMIT 1");
         List<EmailTemplate> templates = emailTemplateMapper.selectList(wrapper);
 
         if (templates.isEmpty()) {
@@ -160,10 +184,17 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         wrapper.eq(EmailTask::getShopId, shopId)
                .eq(EmailTask::getStatus, "PENDING")
                .le(EmailTask::getScheduledTime, LocalDateTime.now())
-               // 单次上限：极端积压时分批消化，避免一次全量载入 OOM；剩余下次调度继续
+               // 单次上限：极端积压时分批消化，避免一次全量载入 OOM；剩余下次调度继续。
+               // 多取 1 条只为判断「是否还有积压」：命中上限却不说，
+               // 调用方会把「本批做完」当成「积压已清空」（P1-01）。
                .orderByAsc(EmailTask::getId)
-               .last("LIMIT 1000");
+               .last("LIMIT " + (PENDING_BATCH_LIMIT + 1));
         List<EmailTask> pendingTasks = emailTaskMapper.selectList(wrapper);
+        boolean hasMorePending = pendingTasks.size() > PENDING_BATCH_LIMIT;
+        if (hasMorePending) {
+            pendingTasks = new ArrayList<>(pendingTasks.subList(0, PENDING_BATCH_LIMIT));
+            log.warn("待发邮件仍有积压：shopId={} 本批只处理 {} 条，需再次调度", shopId, PENDING_BATCH_LIMIT);
+        }
 
         int sent = 0;
         int failed = 0;
@@ -209,7 +240,12 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
+        // totalPending 沿用旧键名，但语义收紧为「本批次处理条数」：
+        // 旧值同样只是批次大小，却容易被读成「全店待发总量」。
         result.put("totalPending", pendingTasks.size());
+        result.put("batchSize", pendingTasks.size());
+        result.put("batchLimit", PENDING_BATCH_LIMIT);
+        result.put("hasMorePending", hasMorePending);
         result.put("sent", sent);
         result.put("failed", failed);
         result.put("failures", failures);
@@ -217,14 +253,26 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     }
 
     @Override
-    public List<EmailTask> listEmailTasks(Long shopId, String status) {
+    public PageResult<EmailTask> listEmailTasks(Long shopId, String status, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<EmailTask> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(EmailTask::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(EmailTask::getStatus, status);
         }
-        wrapper.orderByDesc(EmailTask::getId);
-        return emailTaskMapper.selectList(wrapper);
+        if (req.hasCursor()) {
+            wrapper.lt(EmailTask::getId, req.cursorId());
+        }
+        // 此端点此前完全没有上限（P1-02 无界列表），一并纳入统一分页
+        wrapper.orderByDesc(EmailTask::getId)
+               .last("LIMIT " + req.probeSize());
+        List<EmailTask> rows = emailTaskMapper.selectList(wrapper);
+        PageResult<EmailTask> result = PageResult.of(rows, req.size(),
+                t -> PageRequest.encodeCursor(t.getId()));
+        if (result.truncated()) {
+            log.warn("邮件任务列表被分页截断：shopId={} status={} size={}", shopId, status, req.size());
+        }
+        return result;
     }
 
     @Override
@@ -261,7 +309,9 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     }
 
     @Override
-    public List<NegativeReview> listNegativeReviews(Long shopId, String status, Integer minRating) {
+    public PageResult<NegativeReview> listNegativeReviews(Long shopId, String status, Integer minRating,
+                                                           PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<NegativeReview> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NegativeReview::getShopId, shopId);
         if (status != null && !status.isBlank()) {
@@ -270,8 +320,19 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         if (minRating != null) {
             wrapper.le(NegativeReview::getReviewRating, minRating);
         }
-        wrapper.orderByDesc(NegativeReview::getId);
-        return negativeReviewMapper.selectList(wrapper);
+        if (req.hasCursor()) {
+            wrapper.lt(NegativeReview::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(NegativeReview::getId)
+               .last("LIMIT " + req.probeSize());
+        List<NegativeReview> rows = negativeReviewMapper.selectList(wrapper);
+        PageResult<NegativeReview> result = PageResult.of(rows, req.size(),
+                t -> PageRequest.encodeCursor(t.getId()));
+        if (result.truncated()) {
+            log.warn("差评列表被分页截断：shopId={} status={} minRating={} size={}",
+                    shopId, status, minRating, req.size());
+        }
+        return result;
     }
 
     @Override
@@ -370,14 +431,25 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     }
 
     @Override
-    public List<Rma> listRmas(Long shopId, String status) {
+    public PageResult<Rma> listRmas(Long shopId, String status, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<Rma> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Rma::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(Rma::getStatus, status);
         }
-        wrapper.orderByDesc(Rma::getId);
-        return rmaMapper.selectList(wrapper);
+        if (req.hasCursor()) {
+            wrapper.lt(Rma::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(Rma::getId)
+               .last("LIMIT " + req.probeSize());
+        List<Rma> rows = rmaMapper.selectList(wrapper);
+        PageResult<Rma> result = PageResult.of(rows, req.size(),
+                t -> PageRequest.encodeCursor(t.getId()));
+        if (result.truncated()) {
+            log.warn("RMA 列表被分页截断：shopId={} status={} size={}", shopId, status, req.size());
+        }
+        return result;
     }
 
     @Override

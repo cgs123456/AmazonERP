@@ -4,6 +4,8 @@ import com.amz.model.EmailTemplate;
 import com.amz.model.EmailTask;
 import com.amz.model.NegativeReview;
 import com.amz.model.Rma;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 import java.util.Map;
@@ -24,7 +26,7 @@ public interface CustomerEmailService {
     EmailTemplate updateTemplate(EmailTemplate template);
 
     /** 查询模板列表 */
-    List<EmailTemplate> listTemplates(Long shopId, String templateType);
+    PageResult<EmailTemplate> listTemplates(Long shopId, String templateType, PageRequest page);
 
     /** 启用/禁用模板 */
     boolean toggleTemplate(Long templateId, boolean enabled);
@@ -38,8 +40,8 @@ public interface CustomerEmailService {
     /** 执行待发送的邮件任务（定时任务调用） */
     Map<String, Object> processPendingEmails(Long shopId);
 
-    /** 查询邮件任务列表 */
-    List<EmailTask> listEmailTasks(Long shopId, String status);
+    /** 查询邮件任务列表（keyset 分页，截断通过 {@code _page} 暴露） */
+    PageResult<EmailTask> listEmailTasks(Long shopId, String status, PageRequest page);
 
     /** 手动创建邮件任务 */
     EmailTask createEmailTaskManually(EmailTask task);
@@ -50,7 +52,7 @@ public interface CustomerEmailService {
     NegativeReview saveNegativeReview(NegativeReview review);
 
     /** 查询差评列表 */
-    List<NegativeReview> listNegativeReviews(Long shopId, String status, Integer minRating);
+    PageResult<NegativeReview> listNegativeReviews(Long shopId, String status, Integer minRating, PageRequest page);
 
     /** 差评-订单匹配：尝试通过 ASIN + 留评时间匹配买家订单 */
     Map<String, Object> matchNegativeReviewToOrder(Long reviewId);
@@ -64,7 +66,7 @@ public interface CustomerEmailService {
     Rma createRma(Rma rma);
 
     /** 查询 RMA 列表 */
-    List<Rma> listRmas(Long shopId, String status);
+    PageResult<Rma> listRmas(Long shopId, String status, PageRequest page);
 
     /** 更新 RMA 状态 */
     Rma updateRmaStatus(Long rmaId, String status);

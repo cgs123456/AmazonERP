@@ -23,6 +23,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -160,7 +161,7 @@ public class OrderSyncScheduler {
                             : ordersClient.fetchOrderItems(
                             shopId, marketplaceId, amazonOrderId);
 
-                    publishSaveMessage(shopId, marketplaceId, region, order);
+                    publishSaveMessage(shopId, marketplaceId, region, order, orderItems);
                     publishProfitMessages(shopId, region, order, orderItems);
                     // 两条消息都发出成功才标记；任一条发送失败会抛异常，
                     // 本轮该店铺中止并告警，未标记则下一轮自动重发
@@ -179,10 +180,13 @@ public class OrderSyncScheduler {
      * 消息体包含：amazonOrderId, shopId, marketplaceId, buyerInfo, orderItems,
      * orderTotal, currency, purchaseDate, fulfillmentChannel, shipServiceLevel。
      * <p>
-     * 注：SP-API Orders 列表接口不返回行级 orderItems，需另调 orderItems 接口拉取，
-     * 此处 orderItems 暂为空数组，由 order 服务后续补全。
+     * 注：SP-API Orders 列表接口不返回行级 orderItems，需另调 orderItems 接口拉取；
+     * 本方法接收已拉取的 orderItems 并随保存消息一起下发，由 order 服务落库到
+     * amz_order_item（V5）。拉取失败时上游会抛异常、不会走到这里，因此这里的
+     * 空列表只表示“该订单确实没有行”（异常场景不会伪装成空）。
      */
-    private void publishSaveMessage(Long shopId, String marketplaceId, String region, JsonObject order) {
+    private void publishSaveMessage(Long shopId, String marketplaceId, String region, JsonObject order,
+                                     List<JsonObject> orderItems) {
         Map<String, Object> body = new HashMap<>();
         body.put("amazonOrderId", optString(order, "AmazonOrderId"));
         body.put("shopId", shopId);
@@ -206,9 +210,55 @@ public class OrderSyncScheduler {
             buyerMap.put("buyerCounty", optString(buyerInfo, "BuyerCounty"));
         }
         body.put("buyerInfo", buyerMap);
-        body.put("orderItems", List.of());
+        body.put("orderItems", toItemMaps(orderItems, optString(order, "FulfillmentChannel")));
 
         orderUpsertPublisher.sendJson(MqConstant.SAVE_ORDER_EXCHANGE, "", body);
+    }
+
+    /**
+     * 把 SP-API OrderItem 列表压成可序列化的 Map 列表，字段名对齐
+     * order 服务 OrderConsumer 的解析键（camelCase）。
+     * <p>
+     * 只搬确定存在的官方字段：ASIN / SellerSKU / OrderItemId / Title / QuantityOrdered /
+     * ItemPrice / ItemTax / PromotionDiscount。不认识的字段不猜测、不补默认值。
+     */
+    private List<Map<String, Object>> toItemMaps(List<JsonObject> orderItems, String orderChannel) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        if (orderItems == null || orderItems.isEmpty()) {
+            return items;
+        }
+        for (JsonObject item : orderItems) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("amazonOrderItemId", optString(item, "OrderItemId"));
+            m.put("asin", optString(item, "ASIN"));
+            m.put("sellerSku", optString(item, "SellerSKU"));
+            m.put("title", optString(item, "Title"));
+            m.put("quantity", optInt(item, "QuantityOrdered"));
+            JsonObject itemPrice = optObject(item, "ItemPrice");
+            m.put("itemPrice", itemPrice != null ? optString(itemPrice, "Amount") : null);
+            m.put("currency", itemPrice != null ? optString(itemPrice, "CurrencyCode") : null);
+            JsonObject itemTax = optObject(item, "ItemTax");
+            m.put("itemTax", itemTax != null ? optString(itemTax, "Amount") : null);
+            JsonObject promotion = optObject(item, "PromotionDiscount");
+            m.put("promotionDiscount", promotion != null ? optString(promotion, "Amount") : null);
+            // 配送渠道是订单级属性，明细行没有该字段时回退订单级取值
+            m.put("fulfillmentChannel",
+                    optString(item, "FulfillmentChannel") != null
+                            ? optString(item, "FulfillmentChannel") : orderChannel);
+            items.add(m);
+        }
+        return items;
+    }
+
+    private int optInt(JsonObject obj, String key) {
+        if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) {
+            return 0;
+        }
+        try {
+            return obj.get(key).getAsInt();
+        } catch (NumberFormatException | UnsupportedOperationException e) {
+            return 0;
+        }
     }
 
     /**

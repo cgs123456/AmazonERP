@@ -1,11 +1,14 @@
 package com.amz.service.impl;
 
 import com.amz.client.Alibaba1688Client;
+import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
+import com.amz.exception.CodeErrorException;
 import com.amz.mapper.PurchaseOrderMapper;
 import com.amz.mapper.QualityCheckMapper;
 import com.amz.model.PurchaseOrder;
 import com.amz.model.QualityCheck;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -14,6 +17,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -46,6 +50,39 @@ class ProcurementServiceImplTest {
     @InjectMocks
     private ProcurementServiceImpl procurementService;
 
+    @AfterEach
+    void cleanup() {
+        UserContext.clear();
+    }
+
+    @Test
+    @DisplayName("创建采购单 - 非授权店铺 → 业务失败且不写库")
+    void testCreatePurchaseOrderDeniedForOtherShop() {
+        UserContext.setShops(List.of(1L));
+        PurchaseOrder order = new PurchaseOrder();
+        order.setShopId(99L);
+        order.setQuantity(100);
+        order.setUnitPrice(new BigDecimal("12.50"));
+
+        assertThrows(CodeErrorException.class,
+                () -> procurementService.createPurchaseOrder(order));
+        verify(purchaseOrderMapper, never()).insert(any(PurchaseOrder.class));
+    }
+
+    @Test
+    @DisplayName("提交 1688 - 非授权店铺订单 → 业务失败且不写库")
+    void testSubmitTo1688DeniedForOtherShop() {
+        UserContext.setShops(List.of(1L));
+        PurchaseOrder order = new PurchaseOrder();
+        order.setId(9L);
+        order.setShopId(99L);
+        order.setStatus("DRAFT");
+        when(purchaseOrderMapper.selectById(9L)).thenReturn(order);
+
+        assertThrows(CodeErrorException.class,
+                () -> procurementService.submitTo1688(9L));
+        verify(purchaseOrderMapper, never()).updateById(any(PurchaseOrder.class));
+    }
     @Test
     @DisplayName("创建采购单 - 正常 → 计算总金额并设置 DRAFT 状态")
     void testCreatePurchaseOrderNormal() {
@@ -91,7 +128,7 @@ class ProcurementServiceImplTest {
         order.setStatus("SUBMITTED");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(CodeErrorException.class,
                 () -> procurementService.submitTo1688(1L));
     }
 
@@ -216,7 +253,7 @@ class ProcurementServiceImplTest {
         order.setStatus("DRAFT");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
 
-        assertThrows(IllegalStateException.class,
+        assertThrows(CodeErrorException.class,
                 () -> procurementService.submitQualityCheck(1L, 100, 5, "描述", "质检员"));
     }
 

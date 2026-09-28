@@ -1,9 +1,11 @@
 package com.amz.result;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Objects;
 
 @Data
 public class Result<T> {
@@ -30,10 +32,31 @@ public class Result<T> {
     @JsonProperty("_hiddenFields")
     private List<String> hiddenFields;
 
+    /**
+     * 机器可读错误详情。成功响应为 null，且不输出该字段。
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private ApiError error;
+
+    /**
+     * 分页元数据，序列化为 {@code _page}。非分页响应为 null，且不输出该字段。
+     * <p>
+     * 与 {@code _hiddenFields} 同一套约定：下划线前缀表示「响应元信息」，
+     * 不占用业务字段命名空间。
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonProperty("_page")
+    private PageMeta page;
+
     public Result(String message, int code, T data) {
         this.message = message;
         this.code = code;
         this.data = data;
+    }
+
+    public Result(String message, int code, T data, ApiError error) {
+        this(message, code, data);
+        this.error = error;
     }
 
     public static <T> Result<T> success(T data) {
@@ -42,5 +65,34 @@ public class Result<T> {
 
     public static <T> Result<T> failure(String message) {
         return new Result<>(message, 400, null);
+    }
+
+    public static <T> Result<T> failure(String message, ApiError error) {
+        return new Result<>(message, 400, null, error);
+    }
+    /**
+     * 分页响应被截断时的 message。
+     * <p>
+     * 刻意不复用「操作成功」：截断不是完整成功，日志、前端和自动化脚本
+     * 都要能一眼看出这一页不完整。
+     */
+    public static final String MSG_TRUNCATED = "操作成功（结果已截断，请携带 nextCursor 继续翻页）";
+
+    /**
+     * 分页成功响应。
+     * <p>
+     * {@code data} 仍然直接是行数组，老客户端零改造继续工作；
+     * 分页与截断事实放在 {@code _page}，新客户端据此翻页、据此告警。
+     *
+     * @param pageResult 服务层返回的分页结果
+     */
+    public static <T> Result<List<T>> paged(PageResult<T> pageResult) {
+        Objects.requireNonNull(pageResult, "pageResult");
+        Result<List<T>> result = new Result<>(
+                pageResult.truncated() ? MSG_TRUNCATED : "操作成功",
+                200,
+                pageResult.items());
+        result.setPage(pageResult.meta());
+        return result;
     }
 }

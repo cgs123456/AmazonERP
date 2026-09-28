@@ -1,10 +1,16 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.result.Result;
 import com.amz.service.VatService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 
@@ -35,6 +41,7 @@ public class VatController {
         return Result.success(exceeded ? "EXCEEDED" : "WITHIN_THRESHOLD");
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/monthly-close/{shopId}/{year}/{month}")
     @ShopScoped
     public Result<Object> monthlyClosing(@PathVariable Long shopId, @PathVariable int year, @PathVariable int month) {

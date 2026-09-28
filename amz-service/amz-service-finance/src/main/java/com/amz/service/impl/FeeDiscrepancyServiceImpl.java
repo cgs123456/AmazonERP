@@ -1,4 +1,6 @@
 package com.amz.service.impl;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import com.amz.client.SpApiFinanceClient;
 import com.amz.client.dto.RemoteFeeEstimate;
@@ -78,8 +80,7 @@ public class FeeDiscrepancyServiceImpl implements FeeDiscrepancyService {
         report.setShopId(shopId);
         report.setToleranceAmount(toleranceAmount);
 
-        List<SettlementDetail> rows = settlementDetailMapper.selectList(
-                new LambdaQueryWrapper<SettlementDetail>().eq(SettlementDetail::getShopId, shopId));
+        List<SettlementDetail> rows = loadAllSettlementDetails(shopId);
         if (rows == null || rows.isEmpty()) {
             report.addWarning("该店铺暂无结算明细，无法比对费用差异（请先同步结算原表）");
             return report;
@@ -330,21 +331,63 @@ public class FeeDiscrepancyServiceImpl implements FeeDiscrepancyService {
         return d.getId();
     }
 
+    /**
+     * 扫描需要遍历全部结算明细；单次查询按固定批次分页，避免历史数据增长后
+     * 一条无界 selectList 把数据库连接和 JVM 堆同时打满。
+     */
+    private List<SettlementDetail> loadAllSettlementDetails(Long shopId) {
+        List<SettlementDetail> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
+        while (true) {
+            LambdaQueryWrapper<SettlementDetail> qw = new LambdaQueryWrapper<SettlementDetail>()
+                    .eq(SettlementDetail::getShopId, shopId);
+            Long cursorId = page.cursorId();
+            if (cursorId != null) {
+                qw.lt(SettlementDetail::getId, cursorId);
+            }
+            qw.orderByDesc(SettlementDetail::getId)
+                    .last("LIMIT " + page.probeSize());
+            List<SettlementDetail> rows = settlementDetailMapper.selectList(qw);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            int visible = Math.min(rows.size(), page.size());
+            all.addAll(rows.subList(0, visible));
+            if (rows.size() <= page.size()) {
+                break;
+            }
+            page = PageRequest.of(page.size(),
+                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
+        }
+        return all;
+    }
+
     @Override
-    public List<FeeDiscrepancy> list(Long shopId, String status, String type) {
+    public PageResult<FeeDiscrepancy> list(Long shopId, String status, String type, PageRequest page) {
         if (shopId == null) {
             throw new IllegalArgumentException("shopId must not be null");
         }
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<FeeDiscrepancy> qw = new LambdaQueryWrapper<FeeDiscrepancy>()
-                .eq(FeeDiscrepancy::getShopId, shopId)
-                .orderByDesc(FeeDiscrepancy::getId);
+                .eq(FeeDiscrepancy::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             qw.eq(FeeDiscrepancy::getStatus, status.toUpperCase());
         }
         if (type != null && !type.isBlank()) {
             qw.eq(FeeDiscrepancy::getDiscrepancyType, type.toUpperCase());
         }
-        return feeDiscrepancyMapper.selectList(qw);
+        Long cursorId = req.cursorId();
+        if (cursorId != null) {
+            qw.lt(FeeDiscrepancy::getId, cursorId);
+        }
+        qw.orderByDesc(FeeDiscrepancy::getId)
+                .last("LIMIT " + req.probeSize());
+        List<FeeDiscrepancy> rows = feeDiscrepancyMapper.selectList(qw);
+        if (rows.size() > req.size()) {
+            log.warn("费用差异列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页",
+                    shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(), row -> PageRequest.encodeCursor(row.getId()));
     }
 
     @Override

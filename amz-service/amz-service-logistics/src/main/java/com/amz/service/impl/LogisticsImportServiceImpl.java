@@ -262,7 +262,13 @@ public class LogisticsImportServiceImpl implements LogisticsImportService {
 
         if (!outcome.isMatched()) {
             report.countFailure();
-            report.addUnmatched(shipmentNo != null ? shipmentNo : trackingNo);
+            if (outcome.isAmbiguous()) {
+                String identifier = shipmentNo != null ? shipmentNo : trackingNo;
+                report.addError(rowNo, "货件标识存在歧义：" + outcome.getConflictField()
+                        + " 命中多条货件，identifier=" + identifier + "，请先治理重复主数据");
+            } else {
+                report.addUnmatched(shipmentNo != null ? shipmentNo : trackingNo);
+            }
             return;
         }
 

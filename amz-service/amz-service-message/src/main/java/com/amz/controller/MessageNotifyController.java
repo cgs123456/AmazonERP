@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.InternalServiceAccess;
 import com.amz.result.Result;
 import com.amz.session.Session;
 import io.netty.channel.Channel;
@@ -20,9 +21,9 @@ import java.util.Map;
  * 暴露 HTTP 端点供其他微服务（如 amz-service-ai 的 DailyReportScheduler）
  * 通过 Feign 调用，将业务消息推送到用户消息中心。
  * <p>
- * 路径前缀固定为 {@code /internal}：该前缀已在 {@code BaseAuthInterceptor} 白名单中放行，
- * 且网关未配置对应路由、不对外暴露。这样调用方即便运行在无请求上下文的定时任务线程
- * （无用户 JWT 可透传）也能正常调用，不会被鉴权拦截器 401 拒绝。
+ * 路径前缀固定为 {@code /internal}：调用方必须携带内部服务令牌，且本方法通过
+ * {@link InternalServiceAccess} 仅允许 {@code amz-service-ai} 调用。网关未配置对应路由、
+ * 不对外暴露；调用方运行在无用户 JWT 的定时任务线程时，Feign 会自动改用服务令牌。
  * <p>
  * 内部使用 {@link Session} 绑定的 Netty Channel 通过 WebSocket 推送文本消息。
  * 用户未在线时记录 warn 日志并返回 success（不阻断调用方流程）。
@@ -41,6 +42,7 @@ public class MessageNotifyController {
      * 服务端将 content 文本通过 WebSocket 推送给目标用户；
      * 用户不在线时返回 success（不阻断调度），仅记录 warn 日志。
      */
+    @InternalServiceAccess("amz-service-ai")
     @PostMapping("/notify")
     public Result<NotifyResponse> notify(@RequestBody NotifyRequest req) {
         if (req == null || req.getUserId() == null) {

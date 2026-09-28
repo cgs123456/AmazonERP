@@ -1,8 +1,12 @@
 package com.amz.service;
 
+import com.amz.dto.BatchCostSummary;
+
 import com.amz.model.FbaShipment;
 import com.amz.model.FbaShipmentItem;
 import com.amz.model.InventoryBatch;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -26,11 +30,11 @@ public interface FbaShipmentService {
     /** 添加货件明细 */
     FbaShipmentItem addShipmentItem(FbaShipmentItem item);
 
-    /** 查询货件明细列表 */
-    List<FbaShipmentItem> listShipmentItems(Long shipmentId);
+    /** 查询货件明细列表（id DESC keyset 游标分页） */
+    PageResult<FbaShipmentItem> listShipmentItems(Long shipmentId, PageRequest page);
 
-    /** 查询店铺货件列表 */
-    List<FbaShipment> listShipments(Long shopId, String status);
+    /** 查询店铺货件列表（id DESC keyset 游标分页） */
+    PageResult<FbaShipment> listShipments(Long shopId, String status, PageRequest page);
 
     /** 获取货件详情 */
     FbaShipment getShipment(Long id);
@@ -59,9 +63,11 @@ public interface FbaShipmentService {
      */
     InventoryBatch receiveBatch(Long shipmentId, Long shipmentItemId, Integer receivedQty);
 
-    /** 查询 SKU 的库存批次列表（按入库日期升序，FIFO） */
-    List<InventoryBatch> listBatchesBySku(Long shopId, String sku);
+    /** 查询 SKU 的库存批次列表（按 inbound_date、id 升序，FIFO 游标分页） */
+    PageResult<InventoryBatch> listBatchesBySku(Long shopId, String sku, PageRequest page);
 
+    /** 查询 SKU 的 ACTIVE 批次成本聚合值（供财务跨服务消费） */
+    BatchCostSummary getBatchCostSummary(Long shopId, String sku);
     /**
      * FIFO 出库：按先进先出原则扣减批次可用数量，返回出库成本。
      * @return 出库明细（批次号/数量/单位成本/小计）

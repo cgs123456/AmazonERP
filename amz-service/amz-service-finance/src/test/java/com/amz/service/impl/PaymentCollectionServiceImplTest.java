@@ -5,6 +5,7 @@ import com.amz.mapper.PaymentCollectionMapper;
 import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.PaymentCollection;
 import com.amz.model.SettlementDetail;
+import com.amz.result.PageRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,18 +59,18 @@ class PaymentCollectionServiceImplTest {
     @InjectMocks
     private PaymentCollectionServiceImpl paymentCollectionService;
 
-    private static SettlementDetail detail(String orderId, String txType, String amountType,
+    private static SettlementDetail detail(String amazonOrderId, String txType, String amountType,
                                            String amount, String depositDate) {
         SettlementDetail d = new SettlementDetail();
         d.setShopId(SHOP_ID);
-        d.setOrderId(orderId);
-        d.setSku("SKU-" + (orderId == null ? "NA" : orderId));
+        d.setAmazonOrderId(amazonOrderId);
+        d.setSku("SKU-" + (amazonOrderId == null ? "NA" : amazonOrderId));
         d.setTransactionType(txType);
         d.setAmountType(amountType);
         d.setAmount(new BigDecimal(amount));
         d.setCurrency("USD");
         d.setDepositDate(depositDate);
-        d.setRowKey("key-" + orderId + "-" + amountType + "-" + amount);
+        d.setRowKey("key-" + amazonOrderId + "-" + amountType + "-" + amount);
         return d;
     }
 
@@ -131,7 +133,7 @@ class PaymentCollectionServiceImplTest {
             BigDecimal byItems = pc.getReceivable().subtract(pc.getFeeDeducted())
                     .subtract(pc.getRefunded()).add(pc.getReimbursed());
             assertEquals(0, byItems.compareTo(pc.getNetReceived()),
-                    "恒等式被破坏：" + pc.getOrderId() + " " + byItems + " != " + pc.getNetReceived());
+                    "恒等式被破坏：" + pc.getAmazonOrderId() + " " + byItems + " != " + pc.getNetReceived());
         }
     }
 
@@ -142,7 +144,7 @@ class PaymentCollectionServiceImplTest {
         PaymentCollection existing = new PaymentCollection();
         existing.setId(99L);
         existing.setShopId(SHOP_ID);
-        existing.setOrderId("ORD-4");
+        existing.setAmazonOrderId("ORD-4");
         existing.setShortfall(new BigDecimal("1.10"));
         existing.setStatus(PaymentCollection.STATUS_SHORTFALL);
         when(paymentCollectionMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(existing)));
@@ -156,6 +158,47 @@ class PaymentCollectionServiceImplTest {
         assertEquals(99L, updated.getId(), "更新必须复用既有主键");
         assertEquals(new BigDecimal("1.10"), updated.getShortfall());
         assertEquals(PaymentCollection.STATUS_SHORTFALL, updated.getStatus());
+    }
+
+    @Test
+    @DisplayName("重算必须遍历结算明细和既有台账的全部页，不能只处理前 500 行")
+    void rebuildTraversesAllSettlementAndExistingPages() {
+        List<SettlementDetail> firstDetailPage = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {
+            SettlementDetail row = detail("ORD-1", "Order", "Principal", "10.00", DEPOSIT_PAST);
+            row.setId(1000L - i);
+            firstDetailPage.add(row);
+        }
+        SettlementDetail secondPageDetail = detail("ORD-2", "Order", "Principal", "20.00", DEPOSIT_PAST);
+        secondPageDetail.setId(499L);
+
+        List<PaymentCollection> firstExistingPage = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {
+            PaymentCollection row = pc("ORD-1", PaymentCollection.STATUS_SETTLED, "10.00", "10.00", null);
+            row.setId(2000L - i);
+            firstExistingPage.add(row);
+        }
+        PaymentCollection secondPageExisting = pc("ORD-2", PaymentCollection.STATUS_SETTLED,
+                "20.00", "20.00", null);
+        secondPageExisting.setId(1499L);
+
+        when(settlementDetailMapper.selectList(any()))
+                .thenReturn(firstDetailPage, new ArrayList<>(List.of(secondPageDetail)));
+        when(paymentCollectionMapper.selectList(any()))
+                .thenReturn(firstExistingPage, new ArrayList<>(List.of(secondPageExisting)));
+        when(paymentCollectionMapper.updateById(any(PaymentCollection.class))).thenReturn(1);
+
+        int orders = paymentCollectionService.rebuild(SHOP_ID);
+
+        assertEquals(2, orders);
+        ArgumentCaptor<PaymentCollection> captor = ArgumentCaptor.forClass(PaymentCollection.class);
+        verify(paymentCollectionMapper, times(2)).updateById(captor.capture());
+        verify(paymentCollectionMapper, never()).insert(any(PaymentCollection.class));
+        PaymentCollection secondPageUpdated = find(captor.getAllValues(), "ORD-2");
+        assertEquals(1499L, secondPageUpdated.getId(),
+                "第二页既有台账必须被加载并复用主键，而不是当成新订单插入");
+        verify(settlementDetailMapper, times(2)).selectList(any());
+        verify(paymentCollectionMapper, times(2)).selectList(any());
     }
 
     @Test
@@ -194,7 +237,7 @@ class PaymentCollectionServiceImplTest {
         PaymentCollection row = new PaymentCollection();
         row.setId(7L);
         row.setShopId(SHOP_ID);
-        row.setOrderId("ORD-1");
+        row.setAmazonOrderId("ORD-1");
         row.setReceivable(new BigDecimal("29.99"));
         row.setRefunded(BigDecimal.ZERO);
         row.setNetReceived(new BigDecimal("20.46"));
@@ -221,7 +264,7 @@ class PaymentCollectionServiceImplTest {
         PaymentCollection row = new PaymentCollection();
         row.setId(8L);
         row.setShopId(SHOP_ID);
-        row.setOrderId("ORD-1");
+        row.setAmazonOrderId("ORD-1");
         row.setReceivable(new BigDecimal("29.99"));
         row.setRefunded(BigDecimal.ZERO);
         row.setNetReceived(new BigDecimal("20.46"));
@@ -301,15 +344,15 @@ class PaymentCollectionServiceImplTest {
     @DisplayName("list：状态过滤大写化，shopId 为空抛错")
     void listFiltersStatus() {
         when(paymentCollectionMapper.selectList(any())).thenReturn(new ArrayList<>());
-        assertTrue(paymentCollectionService.list(SHOP_ID, "settled").isEmpty());
-        assertThrows(IllegalArgumentException.class, () -> paymentCollectionService.list(null, null));
+        assertTrue(paymentCollectionService.list(SHOP_ID, "settled", PageRequest.first(50)).items().isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> paymentCollectionService.list(null, null, PageRequest.first(50)));
     }
 
-    private static PaymentCollection pc(String orderId, String status, String receivable,
+    private static PaymentCollection pc(String amazonOrderId, String status, String receivable,
                                         String netReceived, String shortfall) {
         PaymentCollection pc = new PaymentCollection();
         pc.setShopId(SHOP_ID);
-        pc.setOrderId(orderId);
+        pc.setAmazonOrderId(amazonOrderId);
         pc.setCurrency("USD");
         pc.setReceivable(new BigDecimal(receivable));
         pc.setFeeDeducted(BigDecimal.ZERO);
@@ -323,8 +366,8 @@ class PaymentCollectionServiceImplTest {
         return pc;
     }
 
-    private static PaymentCollection find(List<PaymentCollection> rows, String orderId) {
-        return rows.stream().filter(r -> orderId.equals(r.getOrderId())).findFirst()
-                .orElseThrow(() -> new AssertionError("order not aggregated: " + orderId));
+    private static PaymentCollection find(List<PaymentCollection> rows, String amazonOrderId) {
+        return rows.stream().filter(r -> amazonOrderId.equals(r.getAmazonOrderId())).findFirst()
+                .orElseThrow(() -> new AssertionError("order not aggregated: " + amazonOrderId));
     }
 }

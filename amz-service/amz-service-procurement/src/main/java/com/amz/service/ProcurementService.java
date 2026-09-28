@@ -2,8 +2,8 @@ package com.amz.service;
 
 import com.amz.model.PurchaseOrder;
 import com.amz.model.QualityCheck;
-
-import java.util.List;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 /**
  * 采购供应链服务接口。
@@ -32,8 +32,14 @@ public interface ProcurementService {
 
     /**
      * 查询店铺的采购单列表。
+     * <p>
+     * keyset 游标分页：采购单持续新增，OFFSET 分页在翻页期间会因新行插入而重复或漏行。
+     * 结果通过 {@code truncated} / {@code nextCursor} 暴露截断事实，
+     * 审批类操作必须翻完全部页，不能只看第一页。
+     *
+     * @param page 分页参数；null 表示首页 + 默认页大小
      */
-    List<PurchaseOrder> listPurchaseOrders(Long shopId);
+    PageResult<PurchaseOrder> listPurchaseOrders(Long shopId, PageRequest page);
 
     /**
      * 提交质检结果，自动判定 PASS/FAIL/CONDITIONAL 并更新采购单状态。

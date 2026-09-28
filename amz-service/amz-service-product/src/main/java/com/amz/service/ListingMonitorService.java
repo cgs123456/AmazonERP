@@ -1,6 +1,10 @@
 package com.amz.service;
 
-import com.amz.model.*;
+import com.amz.model.BuyBox;
+import com.amz.model.CompetitorMonitor;
+import com.amz.model.KeywordRanking;
+import com.amz.model.ListingChangeLog;
+import com.amz.model.ListingHealth;
 
 import java.math.BigDecimal;
 import java.util.List;

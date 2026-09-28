@@ -1,11 +1,17 @@
 package com.amz.service.impl;
 
 import com.amz.client.AdvertisingApiClient;
+import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
+import com.amz.exception.CodeErrorException;
+import com.amz.exception.InvalidParamException;
 import com.amz.mapper.AdAutoRuleMapper;
 import com.amz.mapper.AdKeywordMapper;
 import com.amz.mapper.AdSearchTermMapper;
-import com.amz.model.*;
+import com.amz.model.AdAutoRule;
+import com.amz.model.AdSearchTerm;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.AdAutoRuleService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +23,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -43,9 +53,10 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
 
     @Override
     public AdAutoRule createRule(AdAutoRule rule) {
-        if (rule.getShopId() == null || rule.getRuleName() == null || rule.getRuleType() == null) {
+        if (rule == null || rule.getShopId() == null || rule.getRuleName() == null || rule.getRuleType() == null) {
             throw new AttrIsNullException("店铺ID、规则名称和规则类型不能为空");
         }
+        requireShopAccess(rule.getShopId());
         if (rule.getEnabled() == null) rule.setEnabled(1);
         if (rule.getPriority() == null) rule.setPriority(0);
         if (rule.getTimeWindow() == null) rule.setTimeWindow(7);
@@ -56,30 +67,43 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
 
     @Override
     public AdAutoRule updateRule(AdAutoRule rule) {
-        if (rule.getId() == null) {
+        if (rule == null || rule.getId() == null) {
             throw new AttrIsNullException("规则ID不能为空");
         }
+        AdAutoRule existing = requireRuleAccess(rule.getId());
+        if (rule.getShopId() != null && !Objects.equals(rule.getShopId(), existing.getShopId())) {
+            throw new CodeErrorException("规则所属店铺不可修改");
+        }
+        rule.setShopId(existing.getShopId());
         adAutoRuleMapper.updateById(rule);
         return rule;
     }
 
     @Override
-    public List<AdAutoRule> listRules(Long shopId, String ruleType) {
+    public PageResult<AdAutoRule> listRules(Long shopId, String ruleType, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<AdAutoRule> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AdAutoRule::getShopId, shopId);
         if (ruleType != null && !ruleType.isBlank()) {
             wrapper.eq(AdAutoRule::getRuleType, ruleType);
         }
-        wrapper.orderByDesc(AdAutoRule::getPriority);
-        return adAutoRuleMapper.selectList(wrapper);
+        CompositeCursor cursor = parseCompositeCursor(req, "priority");
+        if (cursor != null) {
+            wrapper.and(w -> w.lt(AdAutoRule::getPriority, cursor.key())
+                    .or(inner -> inner.eq(AdAutoRule::getPriority, cursor.key())
+                            .lt(AdAutoRule::getId, cursor.id())));
+        }
+        wrapper.orderByDesc(AdAutoRule::getPriority)
+               .orderByDesc(AdAutoRule::getId)
+               .last("LIMIT " + req.probeSize());
+        List<AdAutoRule> rows = adAutoRuleMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(),
+                rule -> PageRequest.encodeCursor(rule.getPriority() + "|" + rule.getId()));
     }
 
     @Override
     public boolean toggleRule(Long ruleId, boolean enabled) {
-        AdAutoRule rule = adAutoRuleMapper.selectById(ruleId);
-        if (rule == null) {
-            throw new AttrIsNullException("规则不存在：id=" + ruleId);
-        }
+        AdAutoRule rule = requireRuleAccess(ruleId);
         rule.setEnabled(enabled ? 1 : 0);
         adAutoRuleMapper.updateById(rule);
         return true;
@@ -87,12 +111,14 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
 
     @Override
     public boolean deleteRule(Long ruleId) {
+        requireRuleAccess(ruleId);
         adAutoRuleMapper.deleteById(ruleId);
         return true;
     }
 
     @Override
     public Map<String, Object> executeRules(Long shopId) {
+        requireShopAccess(shopId);
         LambdaQueryWrapper<AdAutoRule> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AdAutoRule::getShopId, shopId)
                .eq(AdAutoRule::getEnabled, 1)
@@ -129,10 +155,7 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
 
     @Override
     public Map<String, Object> executeRule(Long ruleId) {
-        AdAutoRule rule = adAutoRuleMapper.selectById(ruleId);
-        if (rule == null) {
-            throw new AttrIsNullException("规则不存在：id=" + ruleId);
-        }
+        AdAutoRule rule = requireRuleAccess(ruleId);
         if (rule.getEnabled() == null || rule.getEnabled() != 1) {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("ruleId", ruleId);
@@ -233,6 +256,50 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
         return result;
     }
 
+    private void requireShopAccess(Long shopId) {
+        if (shopId == null) {
+            throw new AttrIsNullException("店铺ID不能为空");
+        }
+        if (!UserContext.isShopAllowedStrict(shopId)) {
+            log.warn("广告规则店铺越权访问拦截：userId={}, shopId={}", UserContext.getUserId(), shopId);
+            throw new CodeErrorException("店铺不存在或无权访问");
+        }
+    }
+
+    private static CompositeCursor parseCompositeCursor(PageRequest page, String field) {
+        if (page == null || !page.hasCursor()) {
+            return null;
+        }
+        String[] parts = page.payload().split("\\|", -1);
+        if (parts.length != 2) {
+            throw new InvalidParamException("分页游标非法：" + field + " 游标格式应为 值|id");
+        }
+        try {
+            int key = Integer.parseInt(parts[0]);
+            long id = Long.parseLong(parts[1]);
+            if (id <= 0) {
+                throw new InvalidParamException("分页游标非法：id 必须 > 0，实际 " + id);
+            }
+            return new CompositeCursor(key, id);
+        } catch (NumberFormatException e) {
+            throw new InvalidParamException("分页游标非法：" + field + " 或 id 不是整数");
+        }
+    }
+
+    private record CompositeCursor(int key, long id) {
+    }
+
+    private AdAutoRule requireRuleAccess(Long ruleId) {
+        if (ruleId == null) {
+            throw new AttrIsNullException("规则ID不能为空");
+        }
+        AdAutoRule rule = adAutoRuleMapper.selectById(ruleId);
+        if (rule == null || !UserContext.isShopAllowedStrict(rule.getShopId())) {
+            log.warn("广告规则越权访问拦截：userId={}, ruleId={}", UserContext.getUserId(), ruleId);
+            throw new CodeErrorException("规则不存在或无权访问");
+        }
+        return rule;
+    }
     private BigDecimal getConditionValue(String field, BigDecimal acos, BigDecimal cr, BigDecimal ctr,
                                           BigDecimal cpc, BigDecimal spend, BigDecimal sales, long impressions) {
         switch (field) {

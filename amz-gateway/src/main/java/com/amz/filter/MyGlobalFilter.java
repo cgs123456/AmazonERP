@@ -31,8 +31,6 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
             "/user/send",
             "/user/verify",
             "/user/refresh",
-            // /internal/** 仅供服务间内部 Feign 调用（不带用户 JWT），网关未配置该路径前缀路由，不对外暴露
-            "/internal",
             // /actuator/** 为 k8s 存活/就绪探针端点（kubelet 请求不携带 JWT），必须放行，
             // 否则网关自身探针恒返回 401 导致 Pod 永远 NotReady。
             // 网关未配置 /actuator/** 的 lb 路由，故不会转发到下游业务服务。
@@ -40,9 +38,8 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
     );
 
     /**
-     * 文档端点白名单（Swagger UI / OpenAPI）。默认放行便于本地与内网联调；
-     * 生产环境应设置环境变量 GATEWAY_DOCS_ENABLED=false 收紧
-     * （对应配置项 amz.gateway.docs.enabled）。
+     * 文档端点白名单（Swagger UI / OpenAPI）。默认关闭，避免生产环境暴露 API 结构；
+     * 本地开发通过 application-local.yml 或 GATEWAY_DOCS_ENABLED=true 显式开启。
      */
     private static final List<String> DOCS_WHITELIST = List.of(
             "/swagger-ui",
@@ -52,9 +49,13 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
     @Autowired
     private JwtUtil jwtUtil;
 
-    /** 是否放行文档端点，默认 true；生产环境建议关闭。 */
-    @Value("${amz.gateway.docs.enabled:true}")
+    /** 是否放行文档端点，生产默认 false。 */
+    @Value("${amz.gateway.docs.enabled:false}")
     private boolean docsEnabled;
+
+    private static boolean isInternalPath(String path) {
+        return "/internal".equals(path) || path.startsWith("/internal/");
+    }
 
     /** 判断路径是否命中白名单：path 等于白名单项，或以 白名单项 + "/" 开头 */
     private boolean isWhiteListed(String path) {
@@ -83,6 +84,12 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
         String path = request.getURI().getPath();
         if (log.isDebugEnabled()) {
             log.debug("请求接口为：{}", path);
+        }
+        // 内部服务端点只能由服务间令牌直达，禁止经公网网关访问。
+        if (isInternalPath(path)) {
+            log.warn("拒绝经网关访问内部端点: {}", path);
+            response.setStatusCode(HttpStatus.NOT_FOUND);
+            return response.setComplete();
         }
         if (isWhiteListed(path)) {
             return chain.filter(exchange);

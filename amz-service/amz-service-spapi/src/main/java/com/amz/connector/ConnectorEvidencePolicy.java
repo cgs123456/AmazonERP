@@ -29,7 +29,8 @@ import java.util.Map;
  * <b>对外口径（硬约束）：</b>{@link Assessment#displayText()} 只有三种输出——
  * 未达 E4 时只能说「具备对接能力（未联调）」，**不得**说「已接通」或「有 API 即可直接使用」；
  * 仅有联调但未补齐全部标准时是「已接通（联调中）」；全部达标才是「API-Ready（已联调）」。
- * Task 6 的能力清单端点 {@code GET /api/connectors} 用本类的 {@code evidenceLevel} 字段对外输出。
+ * 能力清单端点（直连 {@code GET /spapi/connectors}，网关别名 {@code GET /api/connectors}）
+ * 用本类的 {@code evidenceLevel} 字段对外输出。
  */
 public final class ConnectorEvidencePolicy {
 

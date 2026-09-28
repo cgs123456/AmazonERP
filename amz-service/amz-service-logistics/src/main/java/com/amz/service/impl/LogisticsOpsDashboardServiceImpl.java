@@ -16,6 +16,7 @@ import com.amz.model.InventoryTransfer;
 import com.amz.model.Shipment;
 import com.amz.service.LogisticsOpsDashboardService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,6 +32,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -90,6 +92,10 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
     /** 调拨风险清单返回上限 */
     private static final int TRANSFER_RISK_LIMIT = 100;
 
+    /** 单次看板聚合的最大扫描行数；超过时显式标记结果不完整，禁止静默把部分数据当全量。 */
+    @Value("${amz.logistics.dashboard.aggregation-scan-limit:10000}")
+    private int aggregationScanLimit = 10000;
+
     @Autowired
     private CarrierQuoteMapper carrierQuoteMapper;
 
@@ -129,8 +135,11 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
         LocalDate today = LocalDate.now();
         LocalDate expiryWarnDate = today.plusDays(30);
 
-        List<CarrierQuote> quotes = carrierQuoteMapper.selectList(
-                new LambdaQueryWrapper<CarrierQuote>().eq(CarrierQuote::getShopId, shopId));
+        List<CarrierQuote> quotes = boundedRows(carrierQuoteMapper.selectList(
+                new LambdaQueryWrapper<CarrierQuote>()
+                        .eq(CarrierQuote::getShopId, shopId)
+                        .last("LIMIT " + (scanLimit() + 1))),
+                "报价", warnings);
         board.setTotalQuotes(quotes.size());
 
         int valid = 0;
@@ -307,10 +316,13 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
         }
         board.setByStatus(byStatus);
 
-        List<InventoryTransfer> transfers = inventoryTransferMapper.selectList(
-                new LambdaQueryWrapper<InventoryTransfer>().eq(InventoryTransfer::getShopId, shopId));
-        board.setTotal(transfers.size());
         List<String> warnings = new ArrayList<>();
+        List<InventoryTransfer> transfers = boundedRows(inventoryTransferMapper.selectList(
+                new LambdaQueryWrapper<InventoryTransfer>()
+                        .eq(InventoryTransfer::getShopId, shopId)
+                        .last("LIMIT " + (scanLimit() + 1))),
+                "调拨单", warnings);
+        board.setTotal(transfers.size());
         if (transfers.isEmpty()) {
             board.setTotalShippingCost(BigDecimal.ZERO);
             board.setRisks(List.of());
@@ -428,10 +440,17 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
         FreightCostBoard board = new FreightCostBoard();
         board.setShopId(shopId);
 
-        List<Shipment> shipments = shipmentMapper.selectList(
-                new LambdaQueryWrapper<Shipment>().eq(Shipment::getShopId, shopId));
-        List<FreightAllocation> allocations = freightAllocationMapper.selectList(
-                new LambdaQueryWrapper<FreightAllocation>().eq(FreightAllocation::getShopId, shopId));
+        List<String> warnings = new ArrayList<>();
+        List<Shipment> shipments = boundedRows(shipmentMapper.selectList(
+                new LambdaQueryWrapper<Shipment>()
+                        .eq(Shipment::getShopId, shopId)
+                        .last("LIMIT " + (scanLimit() + 1))),
+                "货件", warnings);
+        List<FreightAllocation> allocations = boundedRows(freightAllocationMapper.selectList(
+                new LambdaQueryWrapper<FreightAllocation>()
+                        .eq(FreightAllocation::getShopId, shopId)
+                        .last("LIMIT " + (scanLimit() + 1))),
+                "头程分摊明细", warnings);
 
         board.setTotalAllocationRows(allocations.size());
 
@@ -501,7 +520,6 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
                 : BigDecimal.valueOf(coveredShipmentIds.size())
                         .divide(BigDecimal.valueOf(shipments.size()), 4, RoundingMode.HALF_UP));
 
-        List<String> warnings = new ArrayList<>();
         board.setUncoveredList(truncate(uncovered, UNCOVERED_LIMIT, warnings, "未核算货件"));
 
         List<FreightCostBoard.CostItem> topCost = new ArrayList<>();
@@ -560,24 +578,18 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
         ReceiptBoard board = new ReceiptBoard();
         board.setShopId(shopId);
 
-        List<FbaReceiptDiscrepancy> rows = fbaReceiptDiscrepancyMapper.selectList(
-                new LambdaQueryWrapper<FbaReceiptDiscrepancy>().eq(FbaReceiptDiscrepancy::getShopId, shopId));
-        board.setTotal(rows.size());
         List<String> warnings = new ArrayList<>();
+        List<FbaReceiptDiscrepancy> rows = boundedRows(fbaReceiptDiscrepancyMapper.selectList(
+                new LambdaQueryWrapper<FbaReceiptDiscrepancy>()
+                        .eq(FbaReceiptDiscrepancy::getShopId, shopId)
+                        .last("LIMIT " + (scanLimit() + 1))),
+                "签收差异记录", warnings);
+        board.setTotal(rows.size());
         if (rows.isEmpty()) {
             board.setTopShortageAsins(List.of());
             board.setPendingItems(List.of());
             board.setWarnings(warnings);
             return board;
-        }
-
-        // 货件号只在待处理清单里展示，按需建立索引即可（单店千级）
-        Map<Long, String> shipmentNoIndex = new HashMap<>();
-        for (Shipment s : shipmentMapper.selectList(
-                new LambdaQueryWrapper<Shipment>().eq(Shipment::getShopId, shopId))) {
-            if (s.getId() != null) {
-                shipmentNoIndex.put(s.getId(), s.getShipmentNo());
-            }
         }
 
         int pending = 0;
@@ -646,7 +658,6 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
                 ReceiptBoard.DiscrepancyItem item = new ReceiptBoard.DiscrepancyItem();
                 item.setId(d.getId());
                 item.setShipmentId(d.getShipmentId());
-                item.setShipmentNo(shipmentNoIndex.get(d.getShipmentId()));
                 item.setAsin(d.getAsin());
                 item.setSku(d.getSku());
                 item.setExpectedQuantity(d.getExpectedQuantity());
@@ -684,7 +695,10 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
 
         pendingItems.sort(Comparator.comparingInt(
                 (ReceiptBoard.DiscrepancyItem i) -> i.getDifference() == null ? 0 : Math.abs(i.getDifference())).reversed());
-        board.setPendingItems(truncate(pendingItems, PENDING_DISCREPANCY_LIMIT, warnings, "待处理差异"));
+        List<ReceiptBoard.DiscrepancyItem> displayedPendingItems =
+                truncate(pendingItems, PENDING_DISCREPANCY_LIMIT, warnings, "待处理差异");
+        fillShipmentNos(shopId, displayedPendingItems, warnings);
+        board.setPendingItems(displayedPendingItems);
 
         if (openShortageUnits > 0) {
             warnings.add("尚有 " + openShortageUnits + " 件少收未结案，可直接发起索赔或安排补发");
@@ -784,6 +798,60 @@ public class LogisticsOpsDashboardServiceImpl implements LogisticsOpsDashboardSe
         }
         warnings.add(what + "较多，仅展示前 " + limit + " 条（共 " + list.size() + " 条）");
         return new ArrayList<>(list.subList(0, limit));
+    }
+
+    /**
+     * 看板聚合的有界读取。
+     * <p>
+     * 查询必须带 {@code LIMIT scanLimit + 1} 作为探测行。超过上限时只保留上限行，并在响应中
+     * 明确声明结果不完整；绝不能把截断后的数字当作全店全量数字静默返回。
+     */
+    private <T> List<T> boundedRows(List<T> rows, String what, List<String> warnings) {
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        int limit = scanLimit();
+        if (rows.size() <= limit) {
+            return rows;
+        }
+        warnings.add(what + "扫描达到上限 " + limit
+                + " 条，本次统计结果不完整（已扫描 " + limit
+                + " 条）；请按时间窗口或店铺范围收窄后重试");
+        log.warn("dashboard aggregation truncated: what={} scanLimit={}", what, limit);
+        return new ArrayList<>(rows.subList(0, limit));
+    }
+
+    private int scanLimit() {
+        return aggregationScanLimit > 0 ? aggregationScanLimit : 10000;
+    }
+
+    /** 只为当前展示的待处理差异批量反查货件号，避免为了最多 100 条明细加载整店货件。 */
+    private void fillShipmentNos(Long shopId, List<ReceiptBoard.DiscrepancyItem> items, List<String> warnings) {
+        Set<Long> shipmentIds = new LinkedHashSet<>();
+        for (ReceiptBoard.DiscrepancyItem item : items) {
+            if (item.getShipmentId() != null) {
+                shipmentIds.add(item.getShipmentId());
+            }
+        }
+        if (shipmentIds.isEmpty()) {
+            return;
+        }
+        List<Shipment> shipments = boundedRows(shipmentMapper.selectList(
+                new QueryWrapper<Shipment>()
+                        .eq("shop_id", shopId)
+                        .in("id", shipmentIds)
+                        .select("id", "shipment_no")
+                        .last("LIMIT " + (shipmentIds.size() + 1))),
+                "待处理差异货件", warnings);
+        Map<Long, String> shipmentNoIndex = new HashMap<>();
+        for (Shipment shipment : shipments) {
+            if (shipment.getId() != null) {
+                shipmentNoIndex.put(shipment.getId(), shipment.getShipmentNo());
+            }
+        }
+        for (ReceiptBoard.DiscrepancyItem item : items) {
+            item.setShipmentNo(shipmentNoIndex.get(item.getShipmentId()));
+        }
     }
 
     private String routeKey(String originPort, String destinationPort) {

@@ -1,7 +1,14 @@
 package com.amz.service.impl;
 
-import com.amz.mapper.*;
-import com.amz.model.*;
+import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
+import com.amz.exception.InvalidParamException;
+import com.amz.mapper.InventoryAlertMapper;
+import com.amz.mapper.WarehouseStockMapper;
+import com.amz.model.InventoryAlert;
+import com.amz.model.WarehouseStock;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.MultiWarehouseService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -10,10 +17,16 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -25,6 +38,9 @@ import java.util.stream.Collectors;
 @Service
 public class MultiWarehouseServiceImpl implements MultiWarehouseService {
 
+    /** 聚合/预警扫描的硬上限；触顶时必须显式返回截断证据，禁止静默少算。 */
+    public static final int AGGREGATION_SCAN_LIMIT = 500;
+
     @Autowired
     private WarehouseStockMapper warehouseStockMapper;
     @Autowired
@@ -34,8 +50,12 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
 
     @Override
     public WarehouseStock saveStock(WarehouseStock stock) {
-        if (stock.getShopId() == null || stock.getWarehouseId() == null || stock.getSku() == null) {
-            throw new IllegalArgumentException("店铺ID、仓库ID、SKU不能为空");
+        if (stock == null) {
+            throw new CodeErrorException("库存快照不能为空");
+        }
+        requireShopAllowed(stock.getShopId(), "库存快照");
+        if (stock.getWarehouseId() == null || stock.getSku() == null) {
+            throw new IllegalArgumentException("仓库ID、SKU不能为空");
         }
         if (stock.getSnapshotTime() == null) stock.setSnapshotTime(LocalDateTime.now());
         if (stock.getAvailableQty() == null) stock.setAvailableQty(0);
@@ -74,18 +94,39 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
     }
 
     @Override
-    public List<WarehouseStock> listStock(Long shopId, String sku, Long warehouseId) {
+    public PageResult<WarehouseStock> listStock(Long shopId, String sku, Long warehouseId,
+                                                PageRequest page) {
+        requireShopAllowed(shopId, "库存");
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
         LambdaQueryWrapper<WarehouseStock> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(WarehouseStock::getShopId, shopId);
         if (sku != null && !sku.isBlank()) wrapper.eq(WarehouseStock::getSku, sku);
         if (warehouseId != null) wrapper.eq(WarehouseStock::getWarehouseId, warehouseId);
-        wrapper.orderByAsc(WarehouseStock::getWarehouseId).orderByAsc(WarehouseStock::getSku);
-        return warehouseStockMapper.selectList(wrapper);
+
+        StockCursor cursor = decodeStockCursor(page);
+        if (cursor != null) {
+            wrapper.and(w -> w
+                    .gt(WarehouseStock::getWarehouseId, cursor.warehouseId())
+                    .or(a -> a.eq(WarehouseStock::getWarehouseId, cursor.warehouseId())
+                            .gt(WarehouseStock::getSku, cursor.sku()))
+                    .or(a -> a.eq(WarehouseStock::getWarehouseId, cursor.warehouseId())
+                            .eq(WarehouseStock::getSku, cursor.sku())
+                            .gt(WarehouseStock::getId, cursor.id())));
+        }
+        wrapper.orderByAsc(WarehouseStock::getWarehouseId)
+                .orderByAsc(WarehouseStock::getSku)
+                .orderByAsc(WarehouseStock::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(warehouseStockMapper.selectList(wrapper), page.size(),
+                this::encodeStockCursor);
     }
 
     @Override
     public Map<String, Object> globalInventoryView(Long shopId, String sku) {
-        List<WarehouseStock> stocks = listStock(shopId, sku, null);
+        StockScan stockScan = scanStocks(shopId, sku);
+        List<WarehouseStock> stocks = stockScan.rows();
 
         // 按仓库类型聚合
         Map<String, BigDecimal> byType = new LinkedHashMap<>();
@@ -117,12 +158,15 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
         result.put("totalValue", totalValue);
         result.put("byWarehouse", byType);
         result.put("details", stocks);
+        result.put("stocksTruncated", stockScan.truncated());
+        result.put("scannedStockCount", stocks.size());
         return result;
     }
 
     @Override
     public Map<String, Object> agingAnalysis(Long shopId) {
-        List<WarehouseStock> all = listStock(shopId, null, null);
+        StockScan stockScan = scanStocks(shopId, null);
+        List<WarehouseStock> all = stockScan.rows();
 
         // 库龄分段
         // ⚠ WarehouseStock.daysInStock 来自 `days_in_stock` 字段，若快照同步滞后可能偏高，
@@ -162,6 +206,9 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
                                 ? deadValue.divide(grandTotal, 4, RoundingMode.HALF_UP) : BigDecimal.ZERO)
         ));
 
+        result.put("stocksTruncated", stockScan.truncated());
+        result.put("scannedStockCount", all.size());
+
         // Top 10 最老库存
         result.put("oldestTop10", all.stream()
                 .filter(s -> s.getAvailableQty() > 0)
@@ -179,6 +226,10 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
 
     @Override
     public InventoryAlert createAlert(InventoryAlert alert) {
+        if (alert == null) {
+            throw new CodeErrorException("预警规则不能为空");
+        }
+        requireShopAllowed(alert.getShopId(), "预警规则");
         if (alert.getEnabled() == null) alert.setEnabled(true);
         if (alert.getAlertLevel() == null) alert.setAlertLevel("WARNING");
         inventoryAlertMapper.insert(alert);
@@ -187,6 +238,7 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
 
     @Override
     public List<InventoryAlert> listAlerts(Long shopId, Boolean enabled) {
+        requireShopAllowed(shopId, "预警规则");
         LambdaQueryWrapper<InventoryAlert> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(InventoryAlert::getShopId, shopId);
         if (enabled != null) wrapper.eq(InventoryAlert::getEnabled, enabled);
@@ -195,17 +247,22 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
 
     @Override
     public void toggleAlert(Long id, boolean enabled) {
-        InventoryAlert alert = inventoryAlertMapper.selectById(id);
-        if (alert != null) {
-            alert.setEnabled(enabled);
-            inventoryAlertMapper.updateById(alert);
+        if (id == null) {
+            throw new CodeErrorException("预警规则 ID 不能为空");
         }
+        InventoryAlert alert = inventoryAlertMapper.selectById(id);
+        if (alert == null || !UserContext.isShopAllowed(alert.getShopId())) {
+            throw new CodeErrorException("预警规则不存在或无权访问");
+        }
+        alert.setEnabled(enabled);
+        inventoryAlertMapper.updateById(alert);
     }
 
     @Override
     public Map<String, Object> checkAlerts(Long shopId) {
         List<InventoryAlert> alerts = listAlerts(shopId, true);
-        List<WarehouseStock> allStocks = listStock(shopId, null, null);
+        StockScan stockScan = scanStocks(shopId, null);
+        List<WarehouseStock> allStocks = stockScan.rows();
 
         List<Map<String, Object>> triggered = new ArrayList<>();
         int criticalCount = 0, warningCount = 0, infoCount = 0;
@@ -249,9 +306,68 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
         result.put("warning", warningCount);
         result.put("info", infoCount);
         result.put("alerts", triggered);
+        result.put("stocksTruncated", stockScan.truncated());
+        result.put("scannedStockCount", allStocks.size());
         return result;
     }
 
+
+    private StockScan scanStocks(Long shopId, String sku) {
+        requireShopAllowed(shopId, "库存");
+        LambdaQueryWrapper<WarehouseStock> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(WarehouseStock::getShopId, shopId);
+        if (sku != null && !sku.isBlank()) wrapper.eq(WarehouseStock::getSku, sku);
+        wrapper.orderByAsc(WarehouseStock::getWarehouseId)
+                .orderByAsc(WarehouseStock::getSku)
+                .orderByAsc(WarehouseStock::getId)
+                .last("LIMIT " + (AGGREGATION_SCAN_LIMIT + 1));
+
+        List<WarehouseStock> rows = warehouseStockMapper.selectList(wrapper);
+        boolean truncated = rows.size() > AGGREGATION_SCAN_LIMIT;
+        List<WarehouseStock> visible = truncated
+                ? new ArrayList<>(rows.subList(0, AGGREGATION_SCAN_LIMIT))
+                : rows;
+        if (truncated) {
+            log.warn("库存聚合扫描触顶，shopId={} sku={} limit={}，结果已标记截断",
+                    shopId, sku, AGGREGATION_SCAN_LIMIT);
+        }
+        return new StockScan(visible, truncated);
+    }
+
+    private StockCursor decodeStockCursor(PageRequest page) {
+        if (page == null || !page.hasCursor()) return null;
+        String[] parts = page.payload().split("\u001F", -1);
+        if (parts.length != 3) {
+            throw new InvalidParamException("库存分页游标格式非法");
+        }
+        try {
+            long warehouseId = Long.parseLong(parts[0]);
+            String sku = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+            long id = Long.parseLong(parts[2]);
+            if (warehouseId <= 0 || id <= 0 || sku.isBlank()) {
+                throw new InvalidParamException("库存分页游标值非法");
+            }
+            return new StockCursor(warehouseId, sku, id);
+        } catch (RuntimeException e) {
+            if (e instanceof InvalidParamException) throw e;
+            throw new InvalidParamException("库存分页游标无法解析");
+        }
+    }
+
+    private String encodeStockCursor(WarehouseStock stock) {
+        if (stock.getWarehouseId() == null || stock.getSku() == null || stock.getId() == null) {
+            throw new InvalidParamException("库存分页游标字段缺失");
+        }
+        String sku = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(stock.getSku().getBytes(StandardCharsets.UTF_8));
+        return PageRequest.encodeCursor(stock.getWarehouseId() + "\u001F" + sku + "\u001F" + stock.getId());
+    }
+
+    private record StockCursor(long warehouseId, String sku, long id) {
+    }
+
+    private record StockScan(List<WarehouseStock> rows, boolean truncated) {
+    }
     /**
      * 评估库存预警规则。
      */
@@ -282,6 +398,15 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
                         && stock.getDaysInStock() > alert.getThresholdValue().intValue();
             default:
                 return false;
+        }
+    }
+
+    private void requireShopAllowed(Long shopId, String what) {
+        if (shopId == null) {
+            throw new CodeErrorException(what + "缺少店铺 ID");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
         }
     }
 }

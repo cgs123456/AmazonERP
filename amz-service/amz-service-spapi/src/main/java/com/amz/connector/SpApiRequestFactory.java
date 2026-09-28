@@ -139,20 +139,93 @@ public class SpApiRequestFactory {
      * @param timeout     超时（下载与上传口径不同，由调用方决定）
      */
     public HttpRequest presigned(String method, String url, String contentType, String body, Duration timeout) {
+        return presigned(method, url, contentType,
+                body == null ? null : body.getBytes(StandardCharsets.UTF_8), timeout, Map.of());
+    }
+
+    /**
+     * 构造一次预签名 URL 请求，并支持原始字节体与 S3 返回的额外请求头。
+     * <p>
+     * Uploads API 返回的 {@code headers} 中通常包含 {@code Content-MD5} 与
+     * {@code x-amz-server-side-encryption}；预签名 URL 的 {@code X-Amz-SignedHeaders}
+     * 可能已包含 {@code content-md5}，漏带会导致 {@code SignatureDoesNotMatch}。
+     * 这里按调用方给出的响应头原样透传，但拒绝可覆盖鉴权或由 HTTP 客户端接管的头，
+     * 避免把 LWA token、AWS 签名或 host 注入预签名请求。
+     *
+     * @param method      HTTP 方法（GET/PUT）
+     * @param url         预签名 URL（原样使用，禁止改写查询串）
+     * @param contentType 请求体内容类型；无请求体传 null
+     * @param body        请求体原始字节；无请求体传 null
+     * @param timeout     超时
+     * @param headers     S3 要求附加的请求头；可为空
+     */
+    public HttpRequest presigned(String method, String url, String contentType, byte[] body,
+                                 Duration timeout, Map<String, String> headers) {
         String httpMethod = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(timeout == null ? SP_API_TIMEOUT : timeout)
                 .header("user-agent", userAgent.value());
+
+        boolean contentTypeInHeaders = false;
+        if (headers != null) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                String name = requireHeaderName(entry.getKey());
+                String value = requireHeaderValue(name, entry.getValue());
+                if ("content-type".equalsIgnoreCase(name)) {
+                    contentTypeInHeaders = true;
+                }
+            }
+        }
         if (contentType != null && !contentType.isBlank()) {
-            builder.header("Content-Type", contentType);
+            if (contentTypeInHeaders) {
+                throw new IllegalArgumentException(
+                        "contentType 与预签名响应 headers 中的 Content-Type 重复，拒绝产生二义性请求");
+            }
+            builder.header("Content-Type", requireHeaderValue("Content-Type", contentType));
+        }
+        if (headers != null) {
+            headers.forEach(builder::header);
         }
         if (body == null) {
             builder.method(httpMethod, HttpRequest.BodyPublishers.noBody());
         } else {
-            builder.method(httpMethod, HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+            builder.method(httpMethod, HttpRequest.BodyPublishers.ofByteArray(body));
         }
         return builder.build();
+    }
+
+    private static String requireHeaderName(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("预签名请求头名称不得为空");
+        }
+        String normalized = name.trim().toLowerCase(Locale.ROOT);
+        if (normalized.indexOf('\r') >= 0 || normalized.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("预签名请求头名称含非法换行");
+        }
+        if (normalized.equals("user-agent")
+                || normalized.equals("host")
+                || normalized.equals("content-length")
+                || normalized.equals("connection")
+                || normalized.equals("expect")
+                || normalized.equals("upgrade")
+                || normalized.equals("authorization")
+                || normalized.equals("x-amz-access-token")
+                || normalized.equals("x-amz-date")
+                || normalized.equals("x-amz-security-token")) {
+            throw new IllegalArgumentException("预签名请求头不得覆盖受保护头：" + name);
+        }
+        return name;
+    }
+
+    private static String requireHeaderValue(String name, String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("预签名请求头 " + name + " 的值不得为空");
+        }
+        if (value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("预签名请求头 " + name + " 的值含非法换行");
+        }
+        return value;
     }
 
     private static String requireAccessToken(String accessToken) {

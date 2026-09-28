@@ -1,5 +1,7 @@
 package com.amz.connector;
 
+import com.amz.result.ApiError;
+
 import java.net.URI;
 import java.util.regex.Pattern;
 
@@ -24,10 +26,9 @@ import java.util.regex.Pattern;
  *   <li>压成单行并截断到 {@link #MAX_LENGTH}，避免超长 body 撑爆响应与日志。</li>
  * </ul>
  * <p>
- * <b>边界（不得过度承诺）</b>：本文本用于<b>诊断</b>，不是结构化错误契约
- * （runbook §P0-52a 要求的 {@code {code, platformStatus, platformCode, requestId}} 响应体尚未实现），
- * 也不构成 A1–A8 的任何证据；逐字取证仍以服务日志中的原始 body 为准
- * （本类会压掉换行与缩进，且掩掉机密值）。
+ * <b>边界（不得过度承诺）</b>：{@link #of(Throwable)} 仍只提供诊断文本；
+ * {@link #toApiError(Throwable)} 提供 P0-52a 所需的机器可读字段。两者都不构成 A1–A8 证据；
+ * 真实平台错误码与 requestId 仍必须在凭证联调时取证。
  */
 public final class ErrorSummary {
 
@@ -106,6 +107,61 @@ public final class ErrorSummary {
     }
 
     /**
+     * 对任意文本执行与异常摘要相同的脱敏、单行化和长度限制。
+     * 供类型化异常解析平台 {@code errors[].code/message} 时复用，避免各入口出现不同脱敏口径。
+     *
+     * @param raw 原始文本，可为 {@code null}
+     * @return 永不为 {@code null} 或空串；无法提取时返回 {@code "unknown error"}
+     */
+    public static String sanitize(String raw) {
+        return normalize(raw == null ? "" : raw);
+    }
+
+    /**
+     * 把异常转换为统一的结构化错误载荷（P0-52a）。
+     * <p>
+     * 优先沿异常链查找 {@link SpApiCallException}，因此即使被 Sentinel/熔断包装，平台字段也不会丢；
+     * {@link LocalApiException}、{@link UnknownMarketplaceException} 与
+     * {@link IllegalArgumentException} 明确归类为本地错误，避免把请求参数或 URI 问题误报为 Amazon 故障。
+     * 其余未知异常保留 {@code UPSTREAM_ERROR}，但平台字段为 {@code null}，不得猜测。
+     */
+    public static ApiError toApiError(Throwable error) {
+        SpApiCallException spApiError = findSpApiError(error);
+        if (spApiError != null) {
+            Integer status = spApiError.getPlatformStatus() > 0
+                    ? spApiError.getPlatformStatus() : null;
+            return new ApiError("SPAPI_CALL_FAILED", status,
+                    spApiError.getPlatformCode(), spApiError.getPlatformMessage(),
+                    spApiError.getRequestId());
+        }
+        LwaTokenException lwaError = findCause(error, LwaTokenException.class);
+        if (lwaError != null) {
+            return new ApiError(lwaError.getCode(), lwaError.getPlatformStatus(),
+                    lwaError.getPlatformCode(), lwaError.getPlatformMessage(), null);
+        }
+        LocalApiException localError = findCause(error, LocalApiException.class);
+        if (localError != null) {
+            return localError(localError.getCode());
+        }
+        UnknownMarketplaceException marketplaceError = findCause(error, UnknownMarketplaceException.class);
+        if (marketplaceError != null) {
+            return localError(marketplaceError.code());
+        }
+        if (findCause(error, IllegalArgumentException.class) != null) {
+            return localError(LocalApiException.CODE_INVALID_REQUEST);
+        }
+        return new ApiError("UPSTREAM_ERROR", null, null, null, null);
+    }
+
+    /**
+     * 构造不来自上游的稳定本地错误分类，例如缺凭证、缺 marketplaceId。
+     * 不得用它把参数校验失败伪装成平台错误。
+     */
+    public static ApiError localError(String code) {
+        return new ApiError(code, null, null, null, null);
+    }
+
+    /**
      * 预签名 URL 的<b>安全诊断视图</b>：只取路径部分，丢弃查询串。
      * <p>
      * 预签名 URL 的凭证全在查询串（{@code X-Amz-Signature} / {@code X-Amz-Credential}），
@@ -148,6 +204,25 @@ public final class ErrorSummary {
             current = cause;
         }
         return current;
+    }
+
+    private static SpApiCallException findSpApiError(Throwable error) {
+        return findCause(error, SpApiCallException.class);
+    }
+
+    private static <T extends Throwable> T findCause(Throwable error, Class<T> type) {
+        Throwable current = error;
+        for (int depth = 0; current != null && depth < MAX_CAUSE_DEPTH; depth++) {
+            if (type.isInstance(current)) {
+                return type.cast(current);
+            }
+            Throwable cause = current.getCause();
+            if (cause == null || cause == current) {
+                return null;
+            }
+            current = cause;
+        }
+        return null;
     }
 
     private static String firstNonBlank(String... candidates) {

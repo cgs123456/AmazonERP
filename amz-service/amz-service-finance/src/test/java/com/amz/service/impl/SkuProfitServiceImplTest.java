@@ -1,7 +1,7 @@
 package com.amz.service.impl;
 
 import com.amz.client.ProcurementCostClient;
-import com.amz.client.dto.RemoteInventoryBatch;
+import com.amz.client.dto.RemoteBatchCostSummary;
 import com.amz.dto.SkuProfitReport;
 import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.SettlementDetail;
@@ -69,12 +69,12 @@ class SkuProfitServiceImplTest {
         return d;
     }
 
-    private static RemoteInventoryBatch batch(int quantity, String totalCost) {
-        RemoteInventoryBatch b = new RemoteInventoryBatch();
-        b.setBatchNo("B-1");
-        b.setQuantity(quantity);
-        b.setTotalCost(new BigDecimal(totalCost));
-        return b;
+    private static RemoteBatchCostSummary costSummary(long quantity, String totalCost) {
+        RemoteBatchCostSummary s = new RemoteBatchCostSummary();
+        s.setBatchCount(1);
+        s.setTotalQuantity(quantity);
+        s.setTotalBatchCost(new BigDecimal(totalCost));
+        return s;
     }
 
     @Test
@@ -87,8 +87,8 @@ class SkuProfitServiceImplTest {
                 row("SKU-A", "Order", "MonthlyStorageFee", "-0.50", null),
                 row("SKU-A", "Refund", "Principal", "-29.99", null),
                 row("SKU-A", "Adjustment", "FBA Inventory Reimbursement", "12.50", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-A"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(100, "500.00")))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
+                .thenReturn(Result.success(costSummary(100, "500.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
 
@@ -118,7 +118,7 @@ class SkuProfitServiceImplTest {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-A", "Order", "Principal", "100.00", null),
                 row("SKU-A", "Order", "Commission", "-15.00", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-A"))
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
                 .thenReturn(Result.failure("procurement service degraded: timeout"));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
@@ -141,8 +141,12 @@ class SkuProfitServiceImplTest {
     void emptyBatchesTreatedAsMissing() {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-NEW", "Order", "Principal", "50.00", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-NEW"))
-                .thenReturn(Result.success(new ArrayList<>()));
+        RemoteBatchCostSummary empty = new RemoteBatchCostSummary();
+        empty.setBatchCount(0);
+        empty.setTotalQuantity(0);
+        empty.setTotalBatchCost(BigDecimal.ZERO);
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-NEW"))
+                .thenReturn(Result.success(empty));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
 
@@ -157,7 +161,7 @@ class SkuProfitServiceImplTest {
     void costExceptionDegradesGracefully() {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-A", "Order", "Principal", "10.00", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-A"))
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
                 .thenThrow(new RuntimeException("connection reset"));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
@@ -172,10 +176,10 @@ class SkuProfitServiceImplTest {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-A", "Order", "Principal", "30.00", null),
                 row("SKU-B", "Order", "Principal", "20.00", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-A"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(10, "50.00")))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-B"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(10, "100.00")))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
+                .thenReturn(Result.success(costSummary(10, "50.00")));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-B"))
+                .thenReturn(Result.success(costSummary(10, "100.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
 
@@ -189,13 +193,41 @@ class SkuProfitServiceImplTest {
     }
 
     @Test
+    @DisplayName("利润计算必须遍历全部结算明细分页，不能只处理前 500 行")
+    void computeTraversesAllSettlementPages() {
+        List<SettlementDetail> firstPage = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {
+            SettlementDetail row = row("SKU-A", "Order", "Principal", "10.00", null);
+            row.setId(1000L - i);
+            firstPage.add(row);
+        }
+        SettlementDetail secondPageRow = row("SKU-B", "Order", "Principal", "20.00", null);
+        secondPageRow.setId(499L);
+
+        when(settlementDetailMapper.selectList(any()))
+                .thenReturn(firstPage, new ArrayList<>(List.of(secondPageRow)));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
+                .thenReturn(Result.success(costSummary(500, "500.00")));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-B"))
+                .thenReturn(Result.success(costSummary(1, "5.00")));
+
+        SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
+
+        assertEquals(2, report.getSkuCount());
+        assertEquals(501, report.getTotals().getUnitsSold(),
+                "第一页 500 件 + 第二页 1 件；不能漏掉第二页");
+        assertTrue(report.getEntries().stream().anyMatch(p -> "SKU-B".equals(p.getSku())));
+        verify(settlementDetailMapper, times(2)).selectList(any());
+    }
+
+    @Test
     @DisplayName("窗口过滤：窗口外结算行不计入")
     void appliesWindow() {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-A", "Order", "Principal", "10.00", "2026-09-08T00:00:00Z"),
                 row("SKU-A", "Order", "Principal", "99.00", "2026-10-08T00:00:00Z"))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-A"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(10, "10.00")))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
+                .thenReturn(Result.success(costSummary(10, "10.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID,
                 "2026-09-01T00:00:00Z", "2026-09-30T00:00:00Z", null);
@@ -211,15 +243,15 @@ class SkuProfitServiceImplTest {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-A", "Order", "Principal", "10.00", null),
                 row("SKU-B", "Order", "Principal", "20.00", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-B"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(1, "5.00")))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-B"))
+                .thenReturn(Result.success(costSummary(1, "5.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, "SKU-B");
 
         assertEquals(1, report.getSkuCount());
         assertEquals("SKU-B", report.getEntries().get(0).getSku());
-        verify(procurementCostClient, times(1)).listBatches(any(), anyString());
-        verify(procurementCostClient, never()).listBatches(SHOP_ID, "SKU-A");
+        verify(procurementCostClient, times(1)).getCostSummary(any(), anyString());
+        verify(procurementCostClient, never()).getCostSummary(SHOP_ID, "SKU-A");
     }
 
     @Test
@@ -229,13 +261,13 @@ class SkuProfitServiceImplTest {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-A", "Order", "Principal", "10.00", null),
                 row("SKU-B", "Order", "Principal", "20.00", null))));
-        when(procurementCostClient.listBatches(eq(SHOP_ID), anyString()))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(1, "1.00")))));
+        when(procurementCostClient.getCostSummary(eq(SHOP_ID), anyString()))
+                .thenReturn(Result.success(costSummary(1, "1.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
 
         assertEquals(2, report.getSkuCount());
-        verify(procurementCostClient, times(1)).listBatches(eq(SHOP_ID), anyString());
+        verify(procurementCostClient, times(1)).getCostSummary(eq(SHOP_ID), anyString());
         assertFalse(report.isCostDataComplete());
         assertTrue(report.getWarnings().stream().anyMatch(w -> w.contains("超过 1")),
                 report.getWarnings().toString());
@@ -246,8 +278,8 @@ class SkuProfitServiceImplTest {
     void nullMarginWhenNoRevenue() {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-R", "Adjustment", "FBA Inventory Reimbursement", "12.50", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-R"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(10, "10.00")))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-R"))
+                .thenReturn(Result.success(costSummary(10, "10.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
 
@@ -270,7 +302,7 @@ class SkuProfitServiceImplTest {
         assertFalse(report.isCostDataComplete());
         assertTrue(report.getWarnings().stream().anyMatch(w -> w.contains("请先同步结算原表")),
                 report.getWarnings().toString());
-        verify(procurementCostClient, never()).listBatches(any(), anyString());
+        verify(procurementCostClient, never()).getCostSummary(any(), anyString());
     }
 
     @Test
@@ -279,8 +311,8 @@ class SkuProfitServiceImplTest {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row(null, "Adjustment", "FBA Inventory Reimbursement", "12.50", null),
                 row("SKU-A", "Order", "Principal", "10.00", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-A"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(1, "1.00")))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
+                .thenReturn(Result.success(costSummary(1, "1.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
 
@@ -294,8 +326,8 @@ class SkuProfitServiceImplTest {
     void alwaysExplainsCostConvention() {
         when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
                 row("SKU-A", "Order", "Principal", "10.00", null))));
-        when(procurementCostClient.listBatches(SHOP_ID, "SKU-A"))
-                .thenReturn(Result.success(new ArrayList<>(List.of(batch(1, "1.00")))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-A"))
+                .thenReturn(Result.success(costSummary(1, "1.00")));
 
         SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
 
@@ -306,6 +338,44 @@ class SkuProfitServiceImplTest {
         assertNotNull(report.getEntries().get(0).getAvgUnitCost());
     }
 
+    @Test
+    @DisplayName("聚合数量为 0：按成本缺失处理，不进行除零或按 0 成本计算")
+    void zeroAggregateQuantityTreatedAsMissing() {
+        when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
+                row("SKU-ZERO", "Order", "Principal", "50.00", null))));
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-ZERO"))
+                .thenReturn(Result.success(costSummary(0, "0.00")));
+
+        SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
+
+        SkuProfitReport.SkuProfit p = report.getEntries().get(0);
+        assertTrue(p.isCostMissing());
+        assertFalse(p.isProfitIsComplete());
+        assertEquals(0, BigDecimal.ZERO.compareTo(p.getCogs()));
+        assertTrue(p.getDataNotes().stream().anyMatch(n -> n.contains("数量合计为 0")),
+                p.getDataNotes().toString());
+    }
+
+    @Test
+    @DisplayName("聚合总成本为空：按成本缺失处理，绝不能当作 0")
+    void nullAggregateCostTreatedAsMissing() {
+        when(settlementDetailMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(
+                row("SKU-NULL", "Order", "Principal", "50.00", null))));
+        RemoteBatchCostSummary summary = new RemoteBatchCostSummary();
+        summary.setBatchCount(1);
+        summary.setTotalQuantity(10);
+        summary.setTotalBatchCost(null);
+        when(procurementCostClient.getCostSummary(SHOP_ID, "SKU-NULL"))
+                .thenReturn(Result.success(summary));
+
+        SkuProfitReport report = service.compute(SHOP_ID, null, null, null);
+
+        SkuProfitReport.SkuProfit p = report.getEntries().get(0);
+        assertTrue(p.isCostMissing());
+        assertFalse(p.isProfitIsComplete());
+        assertTrue(p.getDataNotes().stream().anyMatch(n -> n.contains("总成本为空")),
+                p.getDataNotes().toString());
+    }
     @Test
     @DisplayName("shopId 为空：抛 IllegalArgumentException")
     void shopIdRequired() {

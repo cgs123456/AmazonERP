@@ -51,6 +51,9 @@ public class AmzProduct implements Serializable {
     @TableField("category")
     private String category;
 
+    @TableField("product_type")
+    private String productType;
+
     @TableField("size_tier")
     private String sizeTier;
 

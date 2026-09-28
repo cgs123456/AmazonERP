@@ -1,6 +1,7 @@
 package com.amz.service.impl;
 
 import com.amz.context.UserContext;
+import com.amz.dto.KingdeeSyncResult;
 import com.amz.dto.ReimbursementClaimSummary;
 import com.amz.dto.ReimbursementReconcileReport;
 import com.amz.mapper.ReimbursementClaimMapper;
@@ -9,6 +10,8 @@ import com.amz.model.AccountingVoucher;
 import com.amz.model.FeeDiscrepancy;
 import com.amz.model.ReimbursementClaim;
 import com.amz.model.SettlementDetail;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.FeeDiscrepancyService;
 import com.amz.service.FinanceService;
 import com.amz.service.ReimbursementClaimService;
@@ -22,8 +25,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -212,17 +217,28 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
     }
 
     @Override
-    public List<ReimbursementClaim> list(Long shopId, String status) {
+    public PageResult<ReimbursementClaim> list(Long shopId, String status, PageRequest page) {
         if (shopId == null) {
             throw new IllegalArgumentException("shopId must not be null");
         }
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<ReimbursementClaim> qw = new LambdaQueryWrapper<ReimbursementClaim>()
-                .eq(ReimbursementClaim::getShopId, shopId)
-                .orderByDesc(ReimbursementClaim::getId);
+                .eq(ReimbursementClaim::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             qw.eq(ReimbursementClaim::getStatus, status.toUpperCase());
         }
-        return reimbursementClaimMapper.selectList(qw);
+        Long cursorId = req.cursorId();
+        if (cursorId != null) {
+            qw.lt(ReimbursementClaim::getId, cursorId);
+        }
+        qw.orderByDesc(ReimbursementClaim::getId)
+                .last("LIMIT " + req.probeSize());
+        List<ReimbursementClaim> rows = reimbursementClaimMapper.selectList(qw);
+        if (rows.size() > req.size()) {
+            log.warn("索赔单列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页",
+                    shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(), row -> PageRequest.encodeCursor(row.getId()));
     }
 
     @Override
@@ -239,7 +255,7 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
 
     @Override
     public ReimbursementClaimSummary summary(Long shopId) {
-        List<ReimbursementClaim> claims = list(shopId, null);
+        List<ReimbursementClaim> claims = loadAllReimbursementClaims(shopId, null);
         ReimbursementClaimSummary summary = new ReimbursementClaimSummary();
         summary.setShopId(shopId);
         summary.setTotal(claims.size());
@@ -325,8 +341,7 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
         report.setShopId(shopId);
 
         // 平台侧：结算原表中的正向 Adjustment（FBA 库存赔付等，钱实际到账）
-        List<SettlementDetail> details = settlementDetailMapper.selectList(
-                new LambdaQueryWrapper<SettlementDetail>().eq(SettlementDetail::getShopId, shopId));
+        List<SettlementDetail> details = loadAllSettlementDetails(shopId);
         List<ReimbursementReconcileReport.Item> platformItems = new ArrayList<>();
         for (SettlementDetail d : details) {
             if (!"Adjustment".equalsIgnoreCase(d.getTransactionType())) {
@@ -349,7 +364,7 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
 
         // 系统侧：已赔付的索赔单
         List<ReimbursementReconcileReport.Item> systemItems = new ArrayList<>();
-        for (ReimbursementClaim c : list(shopId, ReimbursementClaim.STATUS_REIMBURSED)) {
+        for (ReimbursementClaim c : loadAllReimbursementClaims(shopId, ReimbursementClaim.STATUS_REIMBURSED)) {
             if (!inWindow(c.getSettledAt() == null ? null : c.getSettledAt().toString(),
                     depositAfter, depositBefore)) {
                 continue;
@@ -362,24 +377,21 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
             report.setSystemTotal(report.getSystemTotal().add(nz(item.getAmount())));
         }
 
-        // 匹配：SKU + 金额（绝对值）相等即视为同一笔，双向各消耗一次
-        Set<Integer> consumedSystem = new HashSet<>();
+        // 匹配：SKU + 金额（绝对值）相等即视为同一笔，双向各消耗一次。
+        // 用索引把 O(platform × system) 降为 O(platform + system)，同时保持“先到先匹配”的稳定语义。
+        Map<MatchKey, Deque<ReimbursementReconcileReport.Item>> systemByKey = new java.util.LinkedHashMap<>();
+        for (ReimbursementReconcileReport.Item item : systemItems) {
+            systemByKey.computeIfAbsent(MatchKey.of(item), k -> new ArrayDeque<>()).addLast(item);
+        }
+        Set<ReimbursementReconcileReport.Item> consumedSystem =
+                java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         int matched = 0;
         List<ReimbursementReconcileReport.Item> platformOnly = new ArrayList<>();
         for (ReimbursementReconcileReport.Item p : platformItems) {
-            int hit = -1;
-            for (int i = 0; i < systemItems.size(); i++) {
-                if (consumedSystem.contains(i)) {
-                    continue;
-                }
-                ReimbursementReconcileReport.Item s = systemItems.get(i);
-                if (nz(s.getAmount()).compareTo(nz(p.getAmount()).abs()) == 0
-                        && (p.getSku() == null ? s.getSku() == null : p.getSku().equals(s.getSku()))) {
-                    hit = i;
-                    break;
-                }
-            }
-            if (hit >= 0) {
+            Deque<ReimbursementReconcileReport.Item> candidates =
+                    systemByKey.get(MatchKey.ofSkuAndAmount(p.getSku(), nz(p.getAmount()).abs()));
+            ReimbursementReconcileReport.Item hit = candidates == null ? null : candidates.pollFirst();
+            if (hit != null) {
                 consumedSystem.add(hit);
                 matched++;
             } else {
@@ -387,9 +399,9 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
             }
         }
         List<ReimbursementReconcileReport.Item> systemOnly = new ArrayList<>();
-        for (int i = 0; i < systemItems.size(); i++) {
-            if (!consumedSystem.contains(i)) {
-                systemOnly.add(systemItems.get(i));
+        for (ReimbursementReconcileReport.Item item : systemItems) {
+            if (!consumedSystem.contains(item)) {
+                systemOnly.add(item);
             }
         }
 
@@ -415,6 +427,73 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
         return report;
     }
 
+    private List<ReimbursementClaim> loadAllReimbursementClaims(Long shopId, String status) {
+        List<ReimbursementClaim> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
+        while (true) {
+            LambdaQueryWrapper<ReimbursementClaim> qw = new LambdaQueryWrapper<ReimbursementClaim>()
+                    .eq(ReimbursementClaim::getShopId, shopId);
+            if (status != null && !status.isBlank()) {
+                qw.eq(ReimbursementClaim::getStatus, status.toUpperCase());
+            }
+            Long cursorId = page.cursorId();
+            if (cursorId != null) {
+                qw.lt(ReimbursementClaim::getId, cursorId);
+            }
+            qw.orderByDesc(ReimbursementClaim::getId)
+                    .last("LIMIT " + page.probeSize());
+            List<ReimbursementClaim> rows = reimbursementClaimMapper.selectList(qw);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            int visible = Math.min(rows.size(), page.size());
+            all.addAll(rows.subList(0, visible));
+            if (rows.size() <= page.size()) {
+                break;
+            }
+            page = PageRequest.of(page.size(),
+                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
+        }
+        return all;
+    }
+
+    private List<SettlementDetail> loadAllSettlementDetails(Long shopId) {
+        List<SettlementDetail> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
+        while (true) {
+            LambdaQueryWrapper<SettlementDetail> qw = new LambdaQueryWrapper<SettlementDetail>()
+                    .eq(SettlementDetail::getShopId, shopId);
+            Long cursorId = page.cursorId();
+            if (cursorId != null) {
+                qw.lt(SettlementDetail::getId, cursorId);
+            }
+            qw.orderByDesc(SettlementDetail::getId)
+                    .last("LIMIT " + page.probeSize());
+            List<SettlementDetail> rows = settlementDetailMapper.selectList(qw);
+            if (rows == null || rows.isEmpty()) {
+                break;
+            }
+            int visible = Math.min(rows.size(), page.size());
+            all.addAll(rows.subList(0, visible));
+            if (rows.size() <= page.size()) {
+                break;
+            }
+            page = PageRequest.of(page.size(),
+                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
+        }
+        return all;
+    }
+
+    private record MatchKey(String sku, BigDecimal amount) {
+        private static MatchKey of(ReimbursementReconcileReport.Item item) {
+            return ofSkuAndAmount(item.getSku(), nz(item.getAmount()));
+        }
+
+        private static MatchKey ofSkuAndAmount(String sku, BigDecimal amount) {
+            BigDecimal normalized = nz(amount).stripTrailingZeros();
+            return new MatchKey(sku, normalized);
+        }
+    }
     /**
      * 存款日窗口过滤。窗口参数为 null 时不限制。
      */
@@ -434,9 +513,16 @@ public class ReimbursementClaimServiceImpl implements ReimbursementClaimService 
      */
     private void syncVoucherBestEffort(Long voucherId) {
         try {
-            boolean synced = financeService.syncToKingdee(voucherId);
-            if (!synced) {
-                log.warn("追回凭证推送金蝶未成功，保留 PENDING 待重推 voucherId={}", voucherId);
+            KingdeeSyncResult result = financeService.syncToKingdee(voucherId);
+            switch (result.status()) {
+                case SYNCED -> log.info("追回凭证已真实入账金蝶 voucherId={} kingdeeNo={}",
+                        voucherId, result.kingdeeNo());
+                case MOCK -> log.info("追回凭证处于模拟同步状态，未真实入账金蝶 voucherId={} mockNo={}",
+                        voucherId, result.kingdeeNo());
+                case SKIPPED -> log.info("追回凭证推送金蝶已跳过，未重复调用 voucherId={} reason={}",
+                        voucherId, result.message());
+                default -> log.warn("追回凭证推送金蝶未成功 voucherId={} status={} reason={}",
+                        voucherId, result.status(), result.message());
             }
         } catch (Exception e) {
             log.warn("追回凭证推送金蝶异常 voucherId={} reason={}", voucherId, e.getMessage());

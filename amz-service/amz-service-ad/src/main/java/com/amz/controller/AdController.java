@@ -1,14 +1,23 @@
 package com.amz.controller;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
+import com.amz.context.UserContext;
 
 import com.amz.model.AdReport;
 import com.amz.model.BidSchedule;
 import com.amz.optimizer.KeywordOptimizer;
 import com.amz.scheduler.AdReportSyncScheduler;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.AdService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.HashMap;
 import java.util.List;
@@ -33,8 +42,10 @@ public class AdController {
      */
     @ShopScoped
     @GetMapping("/report/{shopId}")
-    public Result<List<AdReport>> getReports(@PathVariable Long shopId) {
-        return Result.success(adService.getShopReports(shopId));
+    public Result<List<AdReport>> getReports(@PathVariable Long shopId,
+                                              @RequestParam(required = false) Integer size,
+                                              @RequestParam(required = false) String cursor) {
+        return Result.paged(adService.getShopReports(shopId, PageRequest.of(size, cursor)));
     }
 
     /**
@@ -63,8 +74,17 @@ public class AdController {
      * 创建分时调价规则。
      * POST /ad/bidSchedule
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/bidSchedule")
     public Result<BidSchedule> createBidSchedule(@RequestBody BidSchedule schedule) {
+        if (schedule == null || schedule.getShopId() == null) {
+            return Result.failure("shopId 不能为空");
+        }
+        // shopId 位于请求体中，@ShopScoped 无法从方法参数解析；必须在调用服务前显式校验。
+        // Service 内仍保留严格校验，形成纵深防御。
+        if (!UserContext.isShopAllowedStrict(schedule.getShopId())) {
+            return Result.failure("无权访问该店铺");
+        }
         return Result.success(adService.createBidSchedule(schedule));
     }
 
@@ -74,8 +94,10 @@ public class AdController {
      */
     @ShopScoped
     @GetMapping("/bidSchedule/{shopId}")
-    public Result<List<BidSchedule>> listBidSchedules(@PathVariable Long shopId) {
-        return Result.success(adService.listBidSchedules(shopId));
+    public Result<List<BidSchedule>> listBidSchedules(@PathVariable Long shopId,
+                                                       @RequestParam(required = false) Integer size,
+                                                       @RequestParam(required = false) String cursor) {
+        return Result.paged(adService.listBidSchedules(shopId, PageRequest.of(size, cursor)));
     }
 
     /**
@@ -84,18 +106,20 @@ public class AdController {
      */
     @ShopScoped
     @GetMapping("/reports")
-    public Result<List<AdReport>> getReportsByShop(@RequestParam Long shopId) {
+    public Result<List<AdReport>> getReportsByShop(@RequestParam Long shopId,
+                                                    @RequestParam(required = false) Integer size,
+                                                    @RequestParam(required = false) String cursor) {
         if (shopId == null) {
             return Result.failure("shopId must not be null");
         }
-        return Result.success(adService.getShopReports(shopId));
+        return Result.paged(adService.getShopReports(shopId, PageRequest.of(size, cursor)));
     }
 
     /**
      * 查询店铺近 N 天每日 ACoS 趋势（供前端折线图）。
      * GET /ad/trend?shopId=1&days=14
      * <p>
-     * 数据源为 amz_ad_daily_report；表空或未初始化时返回 []，前端保留降级 mock。
+     * 数据源为 amz_ad_daily_report；表空或未初始化时返回 []，前端生产模式展示空态。
      */
     @ShopScoped
     @GetMapping("/trend")
@@ -107,30 +131,52 @@ public class AdController {
     }
 
     /**
-     * 手动触发广告日报同步落库（运维/回补入口，定时任务共用同一逻辑）。
-     * POST /ad/reports/sync?shopId=&days=7
+     * 手动触发单店铺广告日报同步（操作入口）。
+     * POST /ad/reports/sync?shopId=101&days=7
      * <p>
-     * shopId 为空时同步全部有广告活动配置的店铺；days 缺省 7 天、上限 30 天。
-     * shopId 为 null 时切面跳过校验（见 ShopIdGuardAspect），非 null 时按授权校验。
+     * 仅 OPERATOR/ADMIN 可调用；shopId 必须显式提供并通过 {@code @ShopScoped} 授权校验。
+     * 缺少 shopId 的请求不会进入本方法，避免单店入口退化为全店铺同步。
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
-    @PostMapping("/reports/sync")
+    @PostMapping(value = "/reports/sync", params = "shopId")
     public Result<Map<String, Object>> syncReports(
-            @RequestParam(required = false) Long shopId,
+            @RequestParam Long shopId,
             @RequestParam(required = false, defaultValue = "7") Integer days) {
-        int rows;
-        if (shopId != null) {
-            rows = adReportSyncScheduler.syncShopReports(shopId, days == null ? 7 : days);
-        } else {
-            rows = adReportSyncScheduler.syncAllShops(days == null ? 7 : days);
+        if (shopId == null) {
+            return Result.failure("shopId must not be null");
         }
+        int effectiveDays = days == null ? 7 : days;
+        return syncResponse(shopId, effectiveDays,
+                adReportSyncScheduler.syncShopReportsWithSummary(shopId, effectiveDays));
+    }
+
+    /**
+     * 手动触发全店铺广告日报同步（管理员运维/回补入口）。
+     * POST /ad/reports/sync?days=7
+     */
+    @RequireRole({"ADMIN"})
+    @PostMapping(value = "/reports/sync", params = "!shopId")
+    public Result<Map<String, Object>> syncAllReports(
+            @RequestParam(required = false, defaultValue = "7") Integer days) {
+        int effectiveDays = days == null ? 7 : days;
+        return syncResponse(null, effectiveDays,
+                adReportSyncScheduler.syncAllShopsWithSummary(effectiveDays));
+    }
+
+    private Result<Map<String, Object>> syncResponse(Long shopId, int days,
+                                                      AdReportSyncScheduler.SyncSummary summary) {
         Map<String, Object> data = new HashMap<>();
         data.put("shopId", shopId);
         data.put("days", days);
-        data.put("upserted", rows);
+        data.put("attempted", summary.attempted());
+        data.put("succeeded", summary.succeeded());
+        data.put("failed", summary.failed());
+        data.put("skipped", summary.skipped());
+        data.put("upserted", summary.upserted());
+        data.put("metadataWarnings", summary.metadataWarnings());
         return Result.success(data);
     }
-
     /**
      * 竞品价格监控（供 Agent 工具调用）。
      * 注：需接入 SP-API Pricing API 获取真实竞品价格，当前返回占位结构。

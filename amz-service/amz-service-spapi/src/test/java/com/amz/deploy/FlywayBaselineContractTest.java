@@ -85,8 +85,14 @@ class FlywayBaselineContractTest {
                 tableCounts.merge(matcher.group(1).toLowerCase(), 1, Integer::sum);
             }
         }
-        assertEquals(112, tableCounts.size(), "Flyway 唯一表集合必须保持 112 张（V6-V8 新增 3 张通知表）");
-        assertEquals(112, tableCounts.values().stream().mapToInt(Integer::intValue).sum(),
+        // 113 = 112（V6-V8 新增 3 张通知表后的基线）+ 1（V5__order_item_table.sql 新增
+        // amz_order_item）。改动这个数字前先确认新增表确实只由 Flyway 建立：
+        // amz_order 只有 product_id/quantity/final_price 一组单商品列，存不下多商品订单，
+        // 而同库 amz_profit_report 的唯一键已经是 (shop_id, amazon_order_id, sku)，
+        // 即利润层按「订单 + SKU」建模，订单侧却没有明细行。改数而不补表是掩盖缺口。
+        assertEquals(113, tableCounts.size(),
+                "Flyway 唯一表集合必须保持 113 张（112 基线 + V5 新增 amz_order_item）");
+        assertEquals(113, tableCounts.values().stream().mapToInt(Integer::intValue).sum(),
                 "Flyway 迁移不得重复建表");
 
         String composeSql = Files.readString(ROOT.resolve("docker/init-sql/01-init-databases.sql"),

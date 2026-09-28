@@ -40,9 +40,9 @@ public class AdvertisingApiMockClient implements AdvertisingApiClient {
     }
 
     @Override
-    public boolean updateKeywordBid(Long keywordId, BigDecimal newBid) {
+    public boolean updateKeywordBid(Long shopId, Long keywordId, BigDecimal newBid) {
         // 模拟：实际应调用 PUT /sp/keywords
-        log.info("AdvertisingApiMockClient.updateKeywordBid 模拟：keywordId={} newBid={}", keywordId, newBid);
+        log.info("AdvertisingApiMockClient.updateKeywordBid 模拟：shopId={} keywordId={} newBid={}", shopId, keywordId, newBid);
         return true;
     }
 

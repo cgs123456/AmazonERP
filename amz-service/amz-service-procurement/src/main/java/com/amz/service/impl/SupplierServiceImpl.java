@@ -1,5 +1,8 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
+import com.amz.exception.InvalidParamException;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.exception.AttrIsNullException;
@@ -10,6 +13,8 @@ import com.amz.mapper.SupplierProductMapper;
 import com.amz.model.Supplier;
 import com.amz.model.SupplierProduct;
 import com.amz.model.PurchaseOrder;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.SupplierService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -46,6 +54,7 @@ public class SupplierServiceImpl implements SupplierService {
         if (supplier.getShopId() == null || supplier.getSupplierName() == null) {
             throw new AttrIsNullException("店铺ID和供应商名称不能为空");
         }
+        requireShopAccess(supplier.getShopId());
         if (supplier.getSupplierCode() == null || supplier.getSupplierCode().isBlank()) {
             supplier.setSupplierCode(BizNoGenerator.next("SUP-"));
         }
@@ -73,31 +82,59 @@ public class SupplierServiceImpl implements SupplierService {
 
     @Override
     public Supplier updateSupplier(Supplier supplier) {
-        if (supplier.getId() == null) {
+        if (supplier == null || supplier.getId() == null) {
             throw new AttrIsNullException("供应商ID不能为空");
         }
+        Supplier existing = requireSupplierAccess(supplier.getId());
+        if (supplier.getShopId() != null && !Objects.equals(supplier.getShopId(), existing.getShopId())) {
+            throw new CodeErrorException("供应商所属店铺不可修改");
+        }
+        supplier.setShopId(existing.getShopId());
         supplierMapper.updateById(supplier);
         return supplier;
     }
 
     @Override
-    public List<Supplier> listSuppliers(Long shopId, String status) {
+    public PageResult<Supplier> listSuppliers(Long shopId, String status, String keyword, PageRequest page) {
+        requireShopAccess(shopId);
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<Supplier> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Supplier::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(Supplier::getStatus, status);
         }
-        wrapper.orderByDesc(Supplier::getRating);
-        return supplierMapper.selectList(wrapper);
+        if (keyword != null && !keyword.isBlank()) {
+            String term = keyword.trim();
+            wrapper.and(w -> w.like(Supplier::getSupplierName, term)
+                    .or().like(Supplier::getSupplierCode, term)
+                    .or().like(Supplier::getContactName, term));
+        }
+        SupplierCursor cursor = parseSupplierCursor(req);
+        if (cursor != null) {
+            if (cursor.rating() == null) {
+                wrapper.isNull(Supplier::getRating)
+                        .lt(Supplier::getId, cursor.id());
+            } else {
+                wrapper.and(w -> w.lt(Supplier::getRating, cursor.rating())
+                        .or(n -> n.eq(Supplier::getRating, cursor.rating())
+                                .lt(Supplier::getId, cursor.id()))
+                        .or().isNull(Supplier::getRating));
+            }
+        }
+        wrapper.orderByDesc(Supplier::getRating)
+                .orderByDesc(Supplier::getId)
+                .last("LIMIT " + req.probeSize());
+        List<Supplier> rows = supplierMapper.selectList(wrapper);
+        if (rows.size() > req.size()) {
+            log.warn("供应商列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页",
+                    shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(), this::supplierCursor);
     }
 
     @Override
     public Supplier getSupplier(Long id) {
-        Supplier supplier = supplierMapper.selectById(id);
-        if (supplier == null) {
-            throw new AttrIsNullException("供应商不存在：id=" + id);
-        }
-        return supplier;
+        return requireSupplierAccess(id);
     }
 
     @Override
@@ -112,6 +149,11 @@ public class SupplierServiceImpl implements SupplierService {
     public SupplierProduct addSupplierProduct(SupplierProduct sp) {
         if (sp.getSupplierId() == null || sp.getShopId() == null || sp.getSku() == null) {
             throw new AttrIsNullException("供应商ID、店铺ID和SKU不能为空");
+        }
+        requireShopAccess(sp.getShopId());
+        Supplier supplier = requireSupplierAccess(sp.getSupplierId());
+        if (!Objects.equals(supplier.getShopId(), sp.getShopId())) {
+            throw new CodeErrorException("供应商与店铺不匹配");
         }
         if (sp.getMoq() == null) sp.setMoq(1);
         if (sp.getLeadTimeDays() == null) sp.setLeadTimeDays(7);
@@ -136,6 +178,7 @@ public class SupplierServiceImpl implements SupplierService {
 
     @Override
     public List<SupplierProduct> findSuppliersBySku(Long shopId, String sku) {
+        requireShopAccess(shopId);
         LambdaQueryWrapper<SupplierProduct> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SupplierProduct::getShopId, shopId)
                .eq(SupplierProduct::getSku, sku)
@@ -241,5 +284,56 @@ public class SupplierServiceImpl implements SupplierService {
         supplier.setRating(rating.setScale(1, RoundingMode.HALF_UP));
 
         supplierMapper.updateById(supplier);
+    }
+    private SupplierCursor parseSupplierCursor(PageRequest page) {
+        if (!page.hasCursor()) {
+            return null;
+        }
+        String[] parts = page.payload().split("\\|", -1);
+        if (parts.length != 2) {
+            throw new InvalidParamException("供应商游标非法：" + page.payload());
+        }
+        try {
+            Long id = Long.parseLong(parts[1]);
+            if (id <= 0) {
+                throw new InvalidParamException("供应商游标 id 必须 > 0：" + page.payload());
+            }
+            BigDecimal rating = "NULL".equals(parts[0]) ? null : new BigDecimal(parts[0]);
+            return new SupplierCursor(rating, id);
+        } catch (NumberFormatException e) {
+            throw new InvalidParamException("供应商游标无法解析：" + page.payload());
+        }
+    }
+
+    private String supplierCursor(Supplier supplier) {
+        String rating = supplier.getRating() == null
+                ? "NULL"
+                : supplier.getRating().stripTrailingZeros().toPlainString();
+        return PageRequest.encodeCursor(rating + "|" + supplier.getId());
+    }
+
+    private record SupplierCursor(BigDecimal rating, Long id) {
+    }
+
+    private void requireShopAccess(Long shopId) {
+        if (shopId == null) {
+            throw new AttrIsNullException("店铺ID不能为空");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            log.warn("供应商店铺越权访问拦截：userId={}, shopId={}", UserContext.getUserId(), shopId);
+            throw new CodeErrorException("店铺不存在或无权访问");
+        }
+    }
+
+    private Supplier requireSupplierAccess(Long supplierId) {
+        if (supplierId == null) {
+            throw new AttrIsNullException("供应商ID不能为空");
+        }
+        Supplier supplier = supplierMapper.selectById(supplierId);
+        if (supplier == null || !UserContext.isShopAllowed(supplier.getShopId())) {
+            log.warn("供应商越权访问拦截：userId={}, supplierId={}", UserContext.getUserId(), supplierId);
+            throw new CodeErrorException("供应商不存在或无权访问");
+        }
+        return supplier;
     }
 }

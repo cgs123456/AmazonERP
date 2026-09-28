@@ -35,7 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>
  * <b>另含第 22 轮 code review 遗留的回归断言：</b>
  * {@code FeedsController#submit} 属附录 F 的 C 类——没有方法级 {@code @ShopScoped}，
- * 归属校验只靠方法体内 {@code UserContext.isShopAllowed(request.getShopId())}。
+ * 归属校验只靠方法体内
+ * {@code UserContext.isShopAllowedByUserOrTrustedService(request.getShopId())}。
  * 一旦后续重构删掉这行，该端点就变成完全无归属校验的写端点，因此必须锁住。
  * <p>
  * 证据类型 E1（自证：断言对象为本仓库源码本身）。
@@ -73,7 +74,7 @@ class ConnectorControllerGuardTest {
         List<Method> methods = endpoints(ConnectorController.class);
         assertFalse(methods.isEmpty(),
                 "反射必须至少扫到 1 个端点；扫到 0 个说明注解判定失效，本断言会假通过");
-        assertEquals(3, methods.size(), "当前为 list / one / self-test 三个端点；"
+        assertEquals(6, methods.size(), "当前为 list / rate-limits / outbox / replayOutbox / one / self-test 六个端点；"
                 + "新增端点必须同步加守卫，否则本断言失败");
         for (Method method : methods) {
             boolean guarded = method.isAnnotationPresent(RequireRole.class)
@@ -97,19 +98,19 @@ class ConnectorControllerGuardTest {
     }
 
     @Test
-    @DisplayName("对外统一路径常量保持 /api/connectors（网关接线属 Plan 2，勿静默改口径）")
+    @DisplayName("网关对外别名保持 /api/connectors，服务直连路径仍为 /spapi/connectors")
     void plannedPublicPathIsRegistered() {
         assertEquals("/api/connectors", ConnectorController.PLANNED_PUBLIC_PATH);
     }
 
     @Test
-    @DisplayName("FeedsController.submit 仍保留 UserContext.isShopAllowed（C 类端点唯一归属校验）")
+    @DisplayName("FeedsController.submit 保留双信任店铺校验（C 类端点唯一归属校验）")
     void feedsSubmitKeepsShopOwnershipCheck() throws IOException {
         String source = Files.readString(
                 Paths.get("src/main/java/com/amz/controller/FeedsController.java"),
                 StandardCharsets.UTF_8);
         String submit = methodSource(source, "public Result<String> submit(");
-        assertTrue(submit.contains("UserContext.isShopAllowed"),
+        assertTrue(submit.contains("UserContext.isShopAllowedByUserOrTrustedService"),
                 "FeedsController.submit 的店铺归属校验只存在于方法体内；"
                         + "删除这行会使该写端点变成无归属校验端点（附录 F C 类）");
     }

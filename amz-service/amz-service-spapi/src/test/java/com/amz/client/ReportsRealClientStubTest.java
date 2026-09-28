@@ -71,6 +71,7 @@ class ReportsRealClientStubTest {
             + "\"reportId\":\"" + REPORT_ID + "\","
             + "\"reportType\":\"GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE\","
             + "\"processingStatus\":\"DONE\","
+            + "\"createdTime\":\"2026-01-01T00:00:00Z\","
             + "\"reportDocumentId\":\"" + DOCUMENT_ID + "\"}";
 
     /** P0-27 的旧（错误）字段名，仅用于反证夹具的区分能力。 */
@@ -78,6 +79,7 @@ class ReportsRealClientStubTest {
             + "\"reportId\":\"" + REPORT_ID + "\","
             + "\"reportType\":\"GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE\","
             + "\"processingStatus\":\"DONE\","
+            + "\"createdTime\":\"2026-01-01T00:00:00Z\","
             + "\"resultDocumentId\":\"" + DOCUMENT_ID + "\"}";
 
     private static final String DOCUMENT_META_JSON = "{"
@@ -109,6 +111,7 @@ class ReportsRealClientStubTest {
         assertEquals(REPORT_ID, info.getReportId());
         assertEquals("GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE", info.getReportType());
         assertEquals(ReportInfo.STATUS_DONE, info.getProcessingStatus());
+        assertEquals("2026-01-01T00:00:00Z", info.getCreatedTime());
         assertTrue(info.isDone());
         assertTrue(info.isTerminal());
         assertEquals(DOCUMENT_ID, info.getDocumentId(),
@@ -133,6 +136,7 @@ class ReportsRealClientStubTest {
         ReportInfo info = client(transport).getReport(SHOP_ID, REPORT_ID);
 
         assertEquals(ReportInfo.STATUS_DONE, info.getProcessingStatus());
+        assertEquals("2026-01-01T00:00:00Z", info.getCreatedTime());
         assertNull(info.getDocumentId(),
                 "夹具必须能区分 reportDocumentId 与 resultDocumentId，否则上一个测试等于橡皮图章");
     }

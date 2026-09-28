@@ -13,6 +13,7 @@ import com.amz.credential.ShopCredentialStore;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.DisplayName;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -26,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -167,6 +169,32 @@ class OrderSyncSchedulerContractTest {
                 eq("1"), any(Duration.class));
     }
 
+    @Test
+    @DisplayName("保存消息必须携带真实订单明细（不再固定下发空数组）")
+    void saveMessageCarriesRealOrderItems() {
+        OrderUpsertPublisher publisher = mock(OrderUpsertPublisher.class);
+        OrdersClient ordersClient = mock(OrdersClient.class);
+        when(ordersClient.fetchOrders(eq(SHOP_ID), eq(MARKETPLACE_ID), any(Instant.class), anyList()))
+                .thenReturn(List.of(order()));
+        when(ordersClient.fetchOrderItems(SHOP_ID, MARKETPLACE_ID, ORDER_ID))
+                .thenReturn(List.of(orderItem()));
+
+        invokeSync(scheduler(ordersClient, false, publisher));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(publisher).sendJson(eq(MqConstant.SAVE_ORDER_EXCHANGE), eq(""), captor.capture());
+        Object items = captor.getValue().get("orderItems");
+        assertTrue(items instanceof List, "orderItems 必须是列表，实际为：" + items);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> itemList = (List<Map<String, Object>>) items;
+        assertEquals(1, itemList.size(), "明细行不得丢失：" + itemList);
+        assertEquals("SKU-REAL-1", itemList.get(0).get("sellerSku"));
+        assertEquals("ORDER-ITEM-1", itemList.get(0).get("amazonOrderItemId"));
+        assertEquals("19.99", itemList.get(0).get("itemPrice"));
+        assertEquals(2, itemList.get(0).get("quantity"));
+    }
+
     private static OrderSyncScheduler scheduler(OrdersClient ordersClient, boolean piiSyncEnabled) {
         return scheduler(ordersClient, piiSyncEnabled, mock(OrderUpsertPublisher.class));
     }
@@ -200,6 +228,21 @@ class OrderSyncSchedulerContractTest {
 
     private static void invokeSync(OrderSyncScheduler scheduler) {
         ReflectionTestUtils.invokeMethod(scheduler, "doSyncOrders");
+    }
+
+    private static JsonObject orderItem() {
+        return JsonParser.parseString("""
+                {
+                  "OrderItemId": "ORDER-ITEM-1",
+                  "ASIN": "B0TEST00001",
+                  "SellerSKU": "SKU-REAL-1",
+                  "Title": "Real Product",
+                  "QuantityOrdered": 2,
+                  "ItemPrice": {"Amount": "19.99", "CurrencyCode": "USD"},
+                  "ItemTax": {"Amount": "1.60", "CurrencyCode": "USD"},
+                  "PromotionDiscount": {"Amount": "2.00", "CurrencyCode": "USD"}
+                }
+                """).getAsJsonObject();
     }
 
     private static JsonObject order() {

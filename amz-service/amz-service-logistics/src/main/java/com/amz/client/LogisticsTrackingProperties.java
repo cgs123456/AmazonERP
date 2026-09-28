@@ -13,7 +13,7 @@ import java.util.Map;
  * <b>默认全关：</b>{@link #enabled} 默认为 false，且未配置凭证时客户端不发起任何请求。
  * 这样做的原因很实际——跨境电商的物流聚合服务都是付费配额制，
  * 若默认开启，任何一次误部署都会持续消耗配额并可能触发对端风控；
- * 而「未配置就直接返回空轨迹」不会让业务崩掉，只是没有自动更新，
+ * 未配置时自动调度会跳过，手工调用则显式报错，不会把失败伪装成「无轨迹」。
  * 使用者仍可通过入口 A（外部导入）维护数据。
  * <p>
  * <b>凭证来源：</b>{@link #apiKey} 一律从环境变量注入（如 {@code AMZ_17TRACK_KEY}），
@@ -24,7 +24,7 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "amz.logistics.tracking")
 public class LogisticsTrackingProperties {
 
-    /** 总开关。关闭时客户端不发起外部请求，直接返回空轨迹 */
+    /** 总开关。关闭时客户端不发起外部请求，调用会以 DISABLED 明确失败 */
     private boolean enabled = false;
 
     /** API 基址 */

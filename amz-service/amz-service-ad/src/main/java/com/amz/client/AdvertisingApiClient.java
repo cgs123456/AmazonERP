@@ -10,52 +10,16 @@ import java.util.List;
 /**
  * Amazon Advertising API 客户端接口。
  * <p>
- * 生产环境对接路径：
- * <ol>
- *   <li>GET /v2/profiles 获取 profileId</li>
- *   <li>GET /v2/sp/campaigns 拉取广告活动</li>
- *   <li>GET /sp/keywords 拉取关键词</li>
- *   <li>PUT /sp/keywords/bid 下发竞价修改</li>
- * </ol>
- * LWA Token 通过 Feign 调用 amz-service-spapi 复用刷新机制。
- * <p>
- * 通过 Spring Profile 切换实现：
- * <ul>
- *   <li>{@code mock}：{@link AdvertisingApiMockClient} 离线模拟</li>
- *   <li>{@code !mock}：{@link AdvertisingApiRealClient} 真实 API 对接骨架</li>
- * </ul>
+ * 接口以店铺为最小隔离边界。实现可使用离线 mock，或通过 LWA refresh token
+ * 与 Advertising API profile 调用真实 v3 API。
  */
 public interface AdvertisingApiClient {
 
-    /**
-     * 拉取店铺下某活动的关键词列表。
-     *
-     * @param shopId     店铺 ID
-     * @param campaignId 活动 ID（null 表示该店铺全部活动）
-     */
     List<AdKeyword> listKeywords(Long shopId, String campaignId);
 
-    /**
-     * 修改关键词竞价。
-     *
-     * @param keywordId 关键词 ID
-     * @param newBid    新竞价
-     */
-    boolean updateKeywordBid(Long keywordId, BigDecimal newBid);
+    boolean updateKeywordBid(Long shopId, Long keywordId, BigDecimal newBid);
 
-    /**
-     * 拉取店铺下全部广告活动。
-     *
-     * @param shopId 店铺 ID
-     */
     List<AdCampaign> listCampaigns(Long shopId);
 
-    /**
-     * 拉取店铺某时间段的广告报表。
-     *
-     * @param shopId    店铺 ID
-     * @param startDate 开始日期（ISO 格式）
-     * @param endDate   结束日期（ISO 格式）
-     */
     List<AdReport> getReports(Long shopId, String startDate, String endDate);
 }

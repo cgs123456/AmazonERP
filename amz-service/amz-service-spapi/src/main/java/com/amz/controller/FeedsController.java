@@ -1,8 +1,12 @@
 package com.amz.controller;
 
+import com.amz.annotation.InternalServiceAccess;
+import com.amz.annotation.RequireRole;
 import com.amz.client.FeedsClient;
 import com.amz.connector.ErrorSummary;
+import com.amz.connector.LocalApiException;
 import com.amz.context.UserContext;
+import com.amz.model.FeedResult;
 import com.amz.result.Result;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -39,16 +43,20 @@ public class FeedsController {
     /**
      * 提交 Listing Feed 到 SP-API，返回 feedId。
      */
+    @InternalServiceAccess("amz-service-product")
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/submit")
     public Result<String> submit(@RequestBody FeedSubmitRequest request) {
         if (request == null || request.getShopId() == null
                 || request.getMarketplaceId() == null || request.getContent() == null) {
-            return Result.failure("shopId / marketplaceId / content 均不能为空");
+            return Result.failure("shopId / marketplaceId / content 均不能为空",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         }
-        // 附录 F C 类端点：本方法无 @ShopScoped，下面这行 isShopAllowed 是唯一的店铺归属校验。
+        // 附录 F C 类端点：本方法无 @ShopScoped，下面这行双信任店铺校验是唯一的店铺归属校验。
         // 删除它 submit 就变成无归属校验的写端点；ConnectorControllerGuardTest 会锁住这行。
-        if (!UserContext.isShopAllowed(request.getShopId())) {
-            return Result.failure("无权限操作该店铺 shopId=" + request.getShopId());
+        if (!UserContext.isShopAllowedByUserOrTrustedService(request.getShopId())) {
+            return Result.failure("无权限操作该店铺 shopId=" + request.getShopId(),
+                    ErrorSummary.localError(LocalApiException.CODE_FORBIDDEN));
         }
         try {
             String feedId = feedsClient.submitFeed(
@@ -56,7 +64,8 @@ public class FeedsController {
             return Result.success(feedId);
         } catch (Exception e) {
             log.error("FeedsController.submit failed shopId={}", request.getShopId(), e);
-            return Result.failure("feed submit failed: " + ErrorSummary.of(e));
+            return Result.failure("feed submit failed: " + ErrorSummary.of(e),
+                    ErrorSummary.toApiError(e));
         }
     }
 
@@ -64,14 +73,17 @@ public class FeedsController {
      * 查询 Feed 处理状态（SP-API processingStatus 等字段）。
      * 以 Map 返回，避免跨服务序列化 Gson JsonObject 时 Jackson 无默认构造器的问题。
      */
+    @InternalServiceAccess("amz-service-product")
     @GetMapping("/status/{shopId}/{feedId}")
     public Result<Map<String, Object>> status(@PathVariable Long shopId,
                                               @PathVariable String feedId) {
         if (shopId == null || feedId == null) {
-            return Result.failure("shopId / feedId 均不能为空");
+            return Result.failure("shopId / feedId 均不能为空",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         }
-        if (!UserContext.isShopAllowed(shopId)) {
-            return Result.failure("无权限操作该店铺 shopId=" + shopId);
+        if (!UserContext.isShopAllowedByUserOrTrustedService(shopId)) {
+            return Result.failure("无权限操作该店铺 shopId=" + shopId,
+                    ErrorSummary.localError(LocalApiException.CODE_FORBIDDEN));
         }
         try {
             JsonObject json = feedsClient.getFeedStatus(shopId, feedId);
@@ -82,7 +94,40 @@ public class FeedsController {
             return Result.success(map);
         } catch (Exception e) {
             log.error("FeedsController.status failed shopId={} feedId={}", shopId, feedId, e);
-            return Result.failure("feed status failed: " + ErrorSummary.of(e));
+            return Result.failure("feed status failed: " + ErrorSummary.of(e),
+                    ErrorSummary.toApiError(e));
+        }
+    }
+
+    /**
+     * 将 Gson JsonElement 递归转换为 Jackson 友好的普通 Java 对象。
+     */
+    /**
+     * 查询 Feed 的结构化 processing report。
+     * <p>
+     * 只有此接口返回的 successful=true 才代表所有 Feed 消息均被接受；Feeds 的
+     * processingStatus=DONE 仅表示处理结束，不能代表业务成功。响应不会包含预签名
+     * S3 URL 或报告原文。
+     */
+    @InternalServiceAccess("amz-service-product")
+    @GetMapping("/result/{shopId}/{feedId}")
+    public Result<Map<String, Object>> result(@PathVariable Long shopId,
+                                               @PathVariable String feedId) {
+        if (shopId == null || feedId == null || feedId.isBlank()) {
+            return Result.failure("shopId / feedId 均不能为空",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
+        }
+        if (!UserContext.isShopAllowedByUserOrTrustedService(shopId)) {
+            return Result.failure("无权限操作该店铺 shopId=" + shopId,
+                    ErrorSummary.localError(LocalApiException.CODE_FORBIDDEN));
+        }
+        try {
+            FeedResult feedResult = feedsClient.fetchFeedResult(shopId, feedId);
+            return Result.success(feedResult.toMap());
+        } catch (Exception e) {
+            log.error("FeedsController.result failed shopId={} feedId={}", shopId, feedId, e);
+            return Result.failure("feed result failed: " + ErrorSummary.of(e),
+                    ErrorSummary.toApiError(e));
         }
     }
 

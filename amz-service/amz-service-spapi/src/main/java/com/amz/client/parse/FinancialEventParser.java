@@ -8,6 +8,7 @@ import com.google.gson.JsonObject;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * SP-API Finances v0 原始事件 → 业务口径 {@link FinancialEvent} 的解析器。
@@ -28,6 +29,12 @@ import java.util.List;
  */
 public final class FinancialEventParser {
 
+    /** 当前有明确业务口径并已实现解析的事件类型；其余非空类型必须失败关闭。 */
+    private static final Set<String> HANDLED_EVENT_LISTS = Set.of(
+            "ShipmentEventList",
+            "RefundEventList",
+            "AdjustmentEventList");
+
     private FinancialEventParser() {
     }
 
@@ -40,10 +47,33 @@ public final class FinancialEventParser {
         if (financialEvents == null) {
             return out;
         }
+        rejectUnsupportedNonEmptyEvents(financialEvents);
         parseShipmentEvents(array(financialEvents, "ShipmentEventList"), out, false);
         parseShipmentEvents(array(financialEvents, "RefundEventList"), out, true);
         parseAdjustmentEvents(array(financialEvents, "AdjustmentEventList"), out);
         return out;
+    }
+
+    /**
+     * 财务总账不能静默漏记。当前未实现业务口径的事件类型只要非空，就明确失败，
+     * 由调用方缩小窗口或升级解析器；空数组不阻塞正常同步。
+     */
+    private static void rejectUnsupportedNonEmptyEvents(JsonObject financialEvents) {
+        List<String> unsupported = new ArrayList<>();
+        for (String key : financialEvents.keySet()) {
+            if (!key.endsWith("EventList") || HANDLED_EVENT_LISTS.contains(key)) {
+                continue;
+            }
+            JsonArray events = array(financialEvents, key);
+            if (events != null && events.size() > 0) {
+                unsupported.add(key + "=" + events.size());
+            }
+        }
+        if (!unsupported.isEmpty()) {
+            throw new IllegalStateException(
+                    "Unsupported non-empty FinancialEvents types: " + unsupported
+                            + "; refusing to return a partial financial ledger");
+        }
     }
 
     /**
@@ -179,8 +209,8 @@ public final class FinancialEventParser {
     }
 
     /**
-     * 解析 ChargeAmount / AdjustmentAmount 结构 {CurrencyCode, Amount}。
-     * Amount 缺失或非法时返回 null（跳过该条，不让单条脏数据中断整批）。
+     * 解析 ChargeAmount / AdjustmentAmount 结构 {CurrencyCode, CurrencyAmount}。
+     * CurrencyAmount 缺失或非法时返回 null（跳过该条，不让单条脏数据中断整批）。
      */
     private static Money money(JsonObject holder) {
         if (holder == null) {
@@ -196,7 +226,7 @@ public final class FinancialEventParser {
             return null;
         }
         String currency = str(amountObj, "CurrencyCode");
-        String amountStr = str(amountObj, "Amount");
+        String amountStr = str(amountObj, "CurrencyAmount");
         if (amountStr == null) {
             return null;
         }

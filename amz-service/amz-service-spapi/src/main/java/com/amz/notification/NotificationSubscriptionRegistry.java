@@ -4,6 +4,7 @@ import com.amz.mapper.NotificationSubscriptionMapper;
 import com.amz.model.NotificationSubscriptionEntity;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -52,6 +53,13 @@ public class NotificationSubscriptionRegistry {
     private final LongSupplier clockMillis;
     private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
+    /**
+     * Production constructor selected by the container (P0-65): with two
+     * constructors and no {@code @Autowired}, Spring looks for a no-arg
+     * constructor that does not exist and the context fails at startup.
+     * The TTL/clock overload stays package-private for deterministic tests.
+     */
+    @Autowired
     public NotificationSubscriptionRegistry(NotificationSubscriptionMapper subscriptionMapper,
                                             NotificationMetrics metrics) {
         this(subscriptionMapper, metrics, DEFAULT_CACHE_TTL_MILLIS, System::currentTimeMillis);

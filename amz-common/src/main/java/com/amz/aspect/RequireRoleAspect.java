@@ -21,6 +21,8 @@ import java.util.Set;
  * <ul>
  *   <li>命中 → 放行执行原方法；</li>
  *   <li>未命中 / role 缺失 → 返回 {@link Result#failure(String)}，方法不执行；</li>
+ *   <li>已由 {@code BaseAuthInterceptor} 校验并注入的白名单服务身份 → 放行，
+ *       由端点 {@code @InternalServiceAccess} 承担服务级授权；</li>
  *   <li>切面内部异常按拒绝处理（fail-closed：权限组件故障不应放行写操作）。</li>
  * </ul>
  */
@@ -32,6 +34,18 @@ public class RequireRoleAspect {
     @Around("@annotation(requireRole)")
     public Object check(ProceedingJoinPoint pjp, RequireRole requireRole) throws Throwable {
         Set<String> allowed = new HashSet<>(Arrays.asList(requireRole.value()));
+        String serviceName = null;
+        try {
+            serviceName = UserContext.getInternalService();
+        } catch (Exception e) {
+            log.warn("RequireRole 读取服务身份失败，继续按用户角色拒绝：{}", e.getMessage());
+        }
+        if (serviceName != null) {
+            log.info("RequireRole 放行受信服务调用：method={}, service={}",
+                    pjp.getSignature().toShortString(), serviceName);
+            return pjp.proceed();
+        }
+
         String role = null;
         try {
             role = UserContext.getRole();

@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -39,12 +40,12 @@ class FinancialEventParserTest {
                       "ASIN": "B0ALPHA",
                       "OrderItemId": "ITEM-1",
                       "ItemChargeList": [
-                        {"ChargeType": "Principal", "ChargeAmount": {"CurrencyCode": "USD", "Amount": "29.99"}},
-                        {"ChargeType": "Shipping", "ChargeAmount": {"CurrencyCode": "USD", "Amount": "3.99"}}
+                        {"ChargeType": "Principal", "ChargeAmount": {"CurrencyCode": "USD", "CurrencyAmount": "29.99"}},
+                        {"ChargeType": "Shipping", "ChargeAmount": {"CurrencyCode": "USD", "CurrencyAmount": "3.99"}}
                       ],
                       "ItemFeeList": [
-                        {"ChargeType": "Commission", "ChargeAmount": {"CurrencyCode": "USD", "Amount": "-4.50"}},
-                        {"ChargeType": "FBAFulfillmentFee", "ChargeAmount": {"CurrencyCode": "USD", "Amount": "-5.03"}}
+                        {"ChargeType": "Commission", "ChargeAmount": {"CurrencyCode": "USD", "CurrencyAmount": "-4.50"}},
+                        {"ChargeType": "FBAFulfillmentFee", "ChargeAmount": {"CurrencyCode": "USD", "CurrencyAmount": "-5.03"}}
                       ]
                     }]
                   }]
@@ -80,7 +81,7 @@ class FinancialEventParserTest {
                     "ShipmentItemList": [{
                       "SellerSKU": "SKU-BETA",
                       "ItemChargeList": [
-                        {"ChargeType": "Principal", "ChargeAmount": {"CurrencyCode": "USD", "Amount": "49.99"}}
+                        {"ChargeType": "Principal", "ChargeAmount": {"CurrencyCode": "USD", "CurrencyAmount": "49.99"}}
                       ]
                     }]
                   }]
@@ -102,7 +103,7 @@ class FinancialEventParserTest {
                   "AdjustmentEventList": [{
                     "PostedDate": "2026-09-06T12:00:00Z",
                     "AdjustmentType": "FBA Inventory Reimbursement - Customer Return",
-                    "AdjustmentAmount": {"CurrencyCode": "USD", "Amount": "12.50"}
+                    "AdjustmentAmount": {"CurrencyCode": "USD", "CurrencyAmount": "12.50"}
                   }]
                 }
                 """).getAsJsonObject();
@@ -125,8 +126,8 @@ class FinancialEventParserTest {
                     "AmazonOrderId": "111-X",
                     "PostedDate": "2026-09-02T12:00:00Z",
                     "ShipmentItemList": [{
-                      "ItemChargeList": [{"ChargeType": "Principal", "ChargeAmount": {"CurrencyCode": "USD", "Amount": "29.99"}}],
-                      "ItemFeeList": [{"ChargeType": "Commission", "ChargeAmount": {"CurrencyCode": "USD", "Amount": "-4.50"}}]
+                      "ItemChargeList": [{"ChargeType": "Principal", "ChargeAmount": {"CurrencyCode": "USD", "CurrencyAmount": "29.99"}}],
+                      "ItemFeeList": [{"ChargeType": "Commission", "ChargeAmount": {"CurrencyCode": "USD", "CurrencyAmount": "-4.50"}}]
                     }]
                   }]
                 }
@@ -158,10 +159,10 @@ class FinancialEventParserTest {
                   "AdjustmentEventList": [
                     {"PostedDate": "2026-09-06T12:00:00Z",
                      "AdjustmentType": "OK",
-                     "AdjustmentAmount": {"CurrencyCode": "USD", "Amount": "not-a-number"}},
+                     "AdjustmentAmount": {"CurrencyCode": "USD", "CurrencyAmount": "not-a-number"}},
                     {"PostedDate": "2026-09-07T12:00:00Z",
                      "AdjustmentType": "FINE",
-                     "AdjustmentAmount": {"CurrencyCode": "USD", "Amount": "1.00"}}
+                     "AdjustmentAmount": {"CurrencyCode": "USD", "CurrencyAmount": "1.00"}}
                   ]
                 }
                 """).getAsJsonObject();
@@ -170,4 +171,42 @@ class FinancialEventParserTest {
         assertEquals(1, out.size());
         assertEquals("FINE", out.get(0).getFeeType());
     }
-}
+    @Test
+    @DisplayName("旧错误字段 Amount 不再被接受，避免测试夹具与官方契约同时漂移")
+    void legacyAmountFieldIsRejected() {
+        JsonObject events = JsonParser.parseString("""
+                {
+                  "AdjustmentEventList": [{
+                    "PostedDate": "2026-09-06T12:00:00Z",
+                    "AdjustmentType": "LEGACY",
+                    "AdjustmentAmount": {"CurrencyCode": "USD", "Amount": "12.50"}
+                  }]
+                }
+                """).getAsJsonObject();
+
+        assertTrue(FinancialEventParser.parse(events).isEmpty(),
+                "Finances v0 Currency 官方字段是 CurrencyAmount，不能继续兼容旧错误字段 Amount");
+    }
+
+    @Test
+    @DisplayName("未覆盖的非空财务事件必须失败关闭，不能静默少记总账")
+    void unsupportedNonEmptyEventsFailClosed() {
+        JsonObject events = JsonParser.parseString("""
+                {
+                  "AdjustmentEventList": [{
+                    "PostedDate": "2026-09-06T12:00:00Z",
+                    "AdjustmentType": "SUPPORTED",
+                    "AdjustmentAmount": {"CurrencyCode": "USD", "CurrencyAmount": "1.00"}
+                  }],
+                  "ProductAdsPaymentEventList": [{
+                    "PostedDate": "2026-09-06T12:00:00Z",
+                    "transactionValue": {"CurrencyCode": "USD", "CurrencyAmount": "-2.00"}
+                  }]
+                }
+                """).getAsJsonObject();
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> FinancialEventParser.parse(events));
+
+        assertTrue(ex.getMessage().contains("ProductAdsPaymentEventList"), ex.getMessage());
+    }}

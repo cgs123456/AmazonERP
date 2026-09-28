@@ -3,10 +3,13 @@ package com.amz.service.impl;
 import com.amz.context.UserContext;
 import com.amz.client.LogisticsTrackingClient;
 import com.amz.exception.CodeErrorException;
+import com.amz.exception.InvalidParamException;
 import com.amz.mapper.ShipmentMapper;
 import com.amz.mapper.TrackingEventMapper;
 import com.amz.model.Shipment;
 import com.amz.model.TrackingEvent;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.LogisticsService;
 import com.amz.service.TrackingIngestService;
 import com.amz.util.BizNoGenerator;
@@ -16,7 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -46,23 +48,34 @@ public class LogisticsServiceImpl implements LogisticsService {
 
     @Override
     public Shipment createShipment(Shipment shipment) {
-        shipment.setShipmentNo(BizNoGenerator.next("SHP"));
-        if (shipment.getStatus() == null) {
-            shipment.setStatus("CREATED");
+        if (shipment == null) {
+            throw new CodeErrorException("货件内容不能为空");
         }
+        requireShopAllowed(shipment.getShopId(), "货件");
+        shipment.setShipmentNo(BizNoGenerator.next("SHP"));
+        // 创建入口只能产生初始态，客户端不能伪造 DELIVERED / CLOSED 等终态
+        shipment.setStatus("CREATED");
         shipmentMapper.insert(shipment);
         return shipment;
     }
 
     @Override
-    public List<Shipment> listShipments(Long shopId, String status) {
+    public PageResult<Shipment> listShipments(Long shopId, String status, PageRequest page) {
+        requireShopAllowed(shopId, "货件");
+        requirePage(page);
         LambdaQueryWrapper<Shipment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Shipment::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(Shipment::getStatus, status);
         }
-        wrapper.orderByDesc(Shipment::getId);
-        return shipmentMapper.selectList(wrapper);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(Shipment::getId, cursorId);
+        }
+        wrapper.orderByDesc(Shipment::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(shipmentMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     @Override
@@ -80,17 +93,34 @@ public class LogisticsServiceImpl implements LogisticsService {
     }
 
     @Override
-    public List<TrackingEvent> getTrackingTimeline(Long shipmentId) {
+    public PageResult<TrackingEvent> getTrackingTimeline(Long shipmentId, PageRequest page) {
         // 先校验归属再取轨迹：轨迹没带店铺字段，一旦取出来就已经越过租户边界了
         requireAccessible(shipmentId);
+        requirePage(page);
 
         LambdaQueryWrapper<TrackingEvent> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(TrackingEvent::getShipmentId, shipmentId)
-                .orderByAsc(TrackingEvent::getEventTime);
-        List<TrackingEvent> events = trackingEventMapper.selectList(wrapper);
-        // 按事件时间正序（最早在前，便于前端绘制轨迹链路）
-        events.sort(Comparator.comparing(TrackingEvent::getEventTime, Comparator.nullsLast(Comparator.naturalOrder())));
-        return events;
+        wrapper.eq(TrackingEvent::getShipmentId, shipmentId);
+        TrackingCursor cursor = parseTrackingCursor(page);
+        if (cursor != null) {
+            if (cursor.nullEventTime()) {
+                wrapper.isNull(TrackingEvent::getEventTime)
+                        .gt(TrackingEvent::getId, cursor.id());
+            } else {
+                // 非空时间按 (eventTime,id) 继续；NULL 段排在最后，因此也要纳入续扫范围。
+                wrapper.and(w -> w
+                        .gt(TrackingEvent::getEventTime, cursor.eventTime())
+                        .or()
+                        .eq(TrackingEvent::getEventTime, cursor.eventTime())
+                        .gt(TrackingEvent::getId, cursor.id())
+                        .or()
+                        .isNull(TrackingEvent::getEventTime));
+            }
+        }
+        // MySQL 默认 NULL 在最前；显式把 NULL 桶放到最后，并用 id 打破同时间并列。
+        wrapper.last("ORDER BY (event_time IS NULL) ASC, event_time ASC, id ASC LIMIT "
+                + page.probeSize());
+        return PageResult.of(trackingEventMapper.selectList(wrapper), page.size(),
+                this::encodeTrackingCursor);
     }
 
     @Override
@@ -113,6 +143,67 @@ public class LogisticsServiceImpl implements LogisticsService {
         shipment.setStatus(STATUS_CLOSED);
         shipmentMapper.updateById(shipment);
         return shipmentMapper.selectById(shipmentId);
+    }
+
+    // ------------------------------------------------------------------ 轨迹游标
+
+    private TrackingCursor parseTrackingCursor(PageRequest page) {
+        if (page == null || !page.hasCursor()) {
+            return null;
+        }
+        String payload = page.payload();
+        int firstSeparator = payload.indexOf('|');
+        if (firstSeparator <= 0 || firstSeparator == payload.length() - 1) {
+            throw invalidTrackingCursor(payload);
+        }
+        String kind = payload.substring(0, firstSeparator);
+        if ("N".equals(kind)) {
+            if (payload.indexOf('|', firstSeparator + 1) >= 0) {
+                throw invalidTrackingCursor(payload);
+            }
+            return new TrackingCursor(true, null, parseCursorId(payload, firstSeparator + 1));
+        }
+        if (!"V".equals(kind)) {
+            throw invalidTrackingCursor(payload);
+        }
+        int lastSeparator = payload.lastIndexOf('|');
+        if (lastSeparator <= firstSeparator + 1 || lastSeparator == payload.length() - 1) {
+            throw invalidTrackingCursor(payload);
+        }
+        String eventTime = payload.substring(firstSeparator + 1, lastSeparator);
+        if (eventTime.isBlank()) {
+            throw invalidTrackingCursor(payload);
+        }
+        return new TrackingCursor(false, eventTime, parseCursorId(payload, lastSeparator + 1));
+    }
+
+    private long parseCursorId(String payload, int start) {
+        try {
+            long id = Long.parseLong(payload.substring(start));
+            if (id <= 0) {
+                throw invalidTrackingCursor(payload);
+            }
+            return id;
+        } catch (NumberFormatException e) {
+            throw invalidTrackingCursor(payload);
+        }
+    }
+
+    private InvalidParamException invalidTrackingCursor(String payload) {
+        return new InvalidParamException("轨迹分页游标非法：" + payload);
+    }
+
+    private String encodeTrackingCursor(TrackingEvent event) {
+        if (event.getId() == null || event.getId() <= 0) {
+            throw new InvalidParamException("轨迹分页游标生成失败：id 缺失");
+        }
+        if (event.getEventTime() == null || event.getEventTime().isBlank()) {
+            return PageRequest.encodeCursor("N|" + event.getId());
+        }
+        return PageRequest.encodeCursor("V|" + event.getEventTime() + "|" + event.getId());
+    }
+
+    private record TrackingCursor(boolean nullEventTime, String eventTime, long id) {
     }
 
     // ------------------------------------------------------------------ 归属校验
@@ -141,5 +232,20 @@ public class LogisticsServiceImpl implements LogisticsService {
             throw new CodeErrorException("货件不存在或无权访问");
         }
         return shipment;
+    }
+
+    private void requirePage(PageRequest page) {
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
+    }
+
+    private void requireShopAllowed(Long shopId, String what) {
+        if (shopId == null) {
+            throw new CodeErrorException(what + "缺少店铺 ID");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
+        }
     }
 }

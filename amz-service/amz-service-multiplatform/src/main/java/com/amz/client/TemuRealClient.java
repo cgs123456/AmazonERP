@@ -111,9 +111,7 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
         List<UnifiedOrder> list = new ArrayList<>();
         JsonNode root = objectMapper.readTree(resp);
         if (root.path("code").asInt() != 0 && !root.path("success").asBoolean(false)) {
-            log.warn("Temu order list 非成功响应 code={} msg={}",
-                    root.path("code").asText(), root.path("message").asText());
-            return list;
+            throw new IllegalStateException("Temu order list failed: code=" + root.path("code").asText() + ", message=" + root.path("message").asText());
         }
         JsonNode data = root.path("data");
         JsonNode orders = data.path("order_list");

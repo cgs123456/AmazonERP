@@ -2,6 +2,9 @@ package com.amz.service.impl;
 
 import com.amz.analytics.AdPerformanceAnalyzer;
 import com.amz.client.AdvertisingApiClient;
+import com.amz.context.UserContext;
+import com.amz.exception.AttrIsNullException;
+import com.amz.exception.CodeErrorException;
 import com.amz.mapper.AdDailyReportMapper;
 import com.amz.mapper.AdKeywordMapper;
 import com.amz.mapper.BidScheduleMapper;
@@ -10,6 +13,8 @@ import com.amz.model.AdKeyword;
 import com.amz.model.AdReport;
 import com.amz.model.BidSchedule;
 import com.amz.optimizer.KeywordOptimizer;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.AdService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.slf4j.Logger;
@@ -35,6 +40,9 @@ public class AdServiceImpl implements AdService {
 
     private static final Logger log = LoggerFactory.getLogger(AdServiceImpl.class);
 
+    /** 活动级报表默认统计窗口，与广告首页近 7 天口径保持一致。 */
+    private static final int SHOP_REPORT_LOOKBACK_DAYS = 7;
+
     @Autowired
     private AdPerformanceAnalyzer analyzer;
 
@@ -54,34 +62,41 @@ public class AdServiceImpl implements AdService {
     private KeywordOptimizer keywordOptimizer;
 
     @Override
-    public List<AdReport> getShopReports(Long shopId) {
-        // 模拟活动级报表（生产应从 amz_ad_report 表或 Advertising API Reports 拉取）
-        List<AdReport> reports = new ArrayList<>();
-        AdReport r1 = new AdReport();
-        r1.setCampaignId("camp-001");
-        r1.setImpressions(50000L);
-        r1.setClicks(800L);
-        r1.setCost(new BigDecimal("480.00"));
-        r1.setSales(new BigDecimal("3200.00"));
-        r1.setOrders(60);
-        reports.add(r1);
+    public PageResult<AdReport> getShopReports(Long shopId, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        if (shopId == null) {
+            return PageResult.empty(req.size());
+        }
+        LocalDate end = LocalDate.now();
+        LocalDate start = end.minusDays(SHOP_REPORT_LOOKBACK_DAYS - 1L);
+        Long cursorId = req.hasCursor() ? req.cursorId() : null;
 
-        AdReport r2 = new AdReport();
-        r2.setCampaignId("camp-002");
-        r2.setImpressions(20000L);
-        r2.setClicks(150L);
-        r2.setCost(new BigDecimal("180.00"));
-        r2.setSales(new BigDecimal("300.00"));
-        r2.setOrders(10);
-        reports.add(r2);
-
-        analyzer.analyzeAll(reports);
-        return reports;
+        final List<AdDailyReport> rows;
+        try {
+            rows = adDailyReportMapper.aggregateCampaignReports(
+                    shopId, start, end, cursorId, req.probeSize());
+        } catch (Exception e) {
+            throw new IllegalStateException("查询广告日报聚合失败，shopId=" + shopId, e);
+        }
+        return PageResult.of(rows, req.size(), row -> PageRequest.encodeCursor(row.getId()))
+                .map(this::toReport);
     }
 
     @Override
     public AdReport getShopSummary(Long shopId) {
-        return analyzer.summarize(getShopReports(shopId));
+        if (shopId == null) {
+            return null;
+        }
+        LocalDate end = LocalDate.now();
+        LocalDate start = end.minusDays(SHOP_REPORT_LOOKBACK_DAYS - 1L);
+
+        final AdDailyReport summary;
+        try {
+            summary = adDailyReportMapper.aggregateShopReport(shopId, start, end);
+        } catch (Exception e) {
+            throw new IllegalStateException("查询广告日报汇总失败，shopId=" + shopId, e);
+        }
+        return summary == null || summary.getId() == null ? null : toReport(summary);
     }
 
     @Override
@@ -145,23 +160,23 @@ public class AdServiceImpl implements AdService {
     @Override
     public List<KeywordOptimizer.Suggestion> optimizeKeywords(Long shopId, String campaignId) {
         List<AdKeyword> keywords = advertisingApiClient.listKeywords(shopId, campaignId);
-        // 关键词级报表（模拟）
-        List<AdReport> reports = new ArrayList<>();
-        for (AdKeyword kw : keywords) {
-            AdReport r = new AdReport();
-            r.setKeyword(kw.getKeyword());
-            r.setImpressions(8000L);
-            r.setClicks(120L);
-            r.setCost(new BigDecimal("90.00"));
-            r.setSales(new BigDecimal("600.00"));
-            r.setOrders(12);
-            reports.add(r);
+        if (keywords == null || keywords.isEmpty()) {
+            return Collections.emptyList();
         }
-        return keywordOptimizer.optimize(keywords, reports);
+        // 日报表当前仅按 campaign/date 聚合，不能安全下推到单个关键词。
+        // 在引入关键词级报表前只返回 OBSERVE，避免用活动级数据伪造关键词指标。
+        return keywordOptimizer.optimize(keywords, Collections.emptyList());
     }
 
     @Override
+    @com.amz.annotation.ShopScoped
     public BidSchedule createBidSchedule(BidSchedule schedule) {
+        if (schedule == null || schedule.getShopId() == null) {
+            throw new AttrIsNullException("店铺ID不能为空");
+        }
+        if (!UserContext.isShopAllowedStrict(schedule.getShopId())) {
+            throw new CodeErrorException("店铺不存在或无权访问");
+        }
         if (schedule.getEnabled() == null) {
             schedule.setEnabled(1);
         }
@@ -170,9 +185,41 @@ public class AdServiceImpl implements AdService {
     }
 
     @Override
-    public List<BidSchedule> listBidSchedules(Long shopId) {
+    public PageResult<BidSchedule> listBidSchedules(Long shopId, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<BidSchedule> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(BidSchedule::getShopId, shopId);
-        return bidScheduleMapper.selectList(wrapper);
+        if (req.hasCursor()) {
+            wrapper.lt(BidSchedule::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(BidSchedule::getId)
+               .last("LIMIT " + req.probeSize());
+        List<BidSchedule> rows = bidScheduleMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(), schedule -> PageRequest.encodeCursor(schedule.getId()));
+    }
+
+    private AdReport toReport(AdDailyReport row) {
+        AdReport report = new AdReport();
+        report.setCampaignId(row.getCampaignId());
+        report.setImpressions(valueOrZero(row.getImpressions()));
+        report.setClicks(valueOrZero(row.getClicks()));
+        report.setCost(valueOrZero(row.getCost()));
+        report.setSales(valueOrZero(row.getSales()));
+        report.setOrders(valueOrZero(row.getOrders()));
+        report.setUnits(valueOrZero(row.getUnits()));
+        analyzer.fillDerivedMetrics(report);
+        return report;
+    }
+
+    private static long valueOrZero(Long value) {
+        return value == null ? 0L : value;
+    }
+
+    private static int valueOrZero(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private static BigDecimal valueOrZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 }

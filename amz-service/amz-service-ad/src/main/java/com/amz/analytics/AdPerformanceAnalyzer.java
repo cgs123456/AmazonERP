@@ -36,8 +36,9 @@ public class AdPerformanceAnalyzer {
         if (r == null) {
             return;
         }
-        // ACoS = cost / sales × 100
-        if (r.getSales() != null && r.getSales().compareTo(BigDecimal.ZERO) > 0) {
+        // ACoS = cost / sales × 100；成本和销售额都有效且为正时才计算。
+        if (r.getSales() != null && r.getSales().compareTo(BigDecimal.ZERO) > 0
+                && r.getCost() != null && r.getCost().compareTo(BigDecimal.ZERO) > 0) {
             r.setAcos(r.getCost().divide(r.getSales(), 4, RoundingMode.HALF_UP)
                     .multiply(HUNDRED).setScale(2, RoundingMode.HALF_UP));
             r.setRoas(r.getSales().divide(r.getCost(), 2, RoundingMode.HALF_UP));

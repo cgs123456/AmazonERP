@@ -5,6 +5,7 @@ import com.amz.client.dto.RemoteReportInfo;
 import com.amz.dto.SettlementIngestReport;
 import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.SettlementDetail;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,10 +69,10 @@ class SettlementServiceImplTest {
         ReflectionTestUtils.setField(settlementService, "maxRowErrors", 50);
     }
 
-    private static String row(String currency, String txType, String orderId, String sku,
+    private static String row(String currency, String txType, String amazonOrderId, String sku,
                               String amountType, String amount) {
         return String.join("\t", "900001", "2026-09-01T00:00:00Z", "2026-09-07T23:59:59Z",
-                "2026-09-08T00:00:00Z", currency, txType, orderId, sku, amountType, amount);
+                "2026-09-08T00:00:00Z", currency, txType, amazonOrderId, sku, amountType, amount);
     }
 
     private static String sampleTsv() {
@@ -292,12 +293,12 @@ class SettlementServiceImplTest {
     void listDelegates() {
         List<SettlementDetail> rows = new ArrayList<>();
         SettlementDetail d = new SettlementDetail();
-        d.setOrderId("111-1");
+        d.setAmazonOrderId("111-1");
         rows.add(d);
         when(settlementDetailMapper.selectList(any())).thenReturn(rows);
 
-        assertEquals(1, settlementService.list(SHOP_ID, "111-1").size());
-        assertEquals(1, settlementService.list(SHOP_ID, null).size());
+        assertEquals(1, settlementService.list(SHOP_ID, "111-1", PageRequest.first(50)).items().size());
+        assertEquals(1, settlementService.list(SHOP_ID, null, PageRequest.first(50)).items().size());
         verify(settlementDetailMapper, times(2)).selectList(any());
     }
 
@@ -306,6 +307,6 @@ class SettlementServiceImplTest {
     void shopIdRequired() {
         assertThrows(IllegalArgumentException.class,
                 () -> settlementService.sync(null, MARKETPLACE, null, null));
-        assertThrows(IllegalArgumentException.class, () -> settlementService.list(null, null));
+        assertThrows(IllegalArgumentException.class, () -> settlementService.list(null, null, PageRequest.first(50)));
     }
 }

@@ -11,16 +11,19 @@ import java.util.Map;
 /**
  * 数据源/中间件密码启动校验。
  * <p>
- * 生产环境若未通过环境变量注入密码，配置占位默认值为空，连接会快速失败暴露问题。
- * 此组件在启动阶段对关键密码做非空、非占位校验，仅输出 warn 日志，不抛异常阻断启动
- * （避免 amz-common 作为公共模块被各服务引入时因缺少某类中间件配置而拒绝启动）。
+ * 生产 profile 下发现空密码或占位默认值会直接拒绝启动，避免服务带着错误配置进入运行期；
+ * 非生产 profile 仅记录 warn，便于本地开发和离线演示。未配置的中间件属性会被跳过，
+ * 因此公共模块不会因为服务不使用的中间件而误拒绝启动。
  */
 @Slf4j
 @Component
 public class DataSourceValidator {
 
     /** 已知的占位默认值前缀（出现即视为未配置真实密码） */
-    private static final String[] PLACEHOLDER_PREFIXES = {"your_", "your-", "changeme", "placeholder"};
+    private static final String[] PLACEHOLDER_PREFIXES = {
+            "your_", "your-", "change_me", "change-me", "changeme",
+            "replace_me", "replace-me", "placeholder"
+    };
 
     private final Environment environment;
 
@@ -39,6 +42,7 @@ public class DataSourceValidator {
         passwordProperties.put("spring.rabbitmq.password", "RabbitMQ");
         passwordProperties.put("spring.data.mongodb.password", "MongoDB");
 
+        boolean prodProfile = isProdProfile();
         for (Map.Entry<String, String> entry : passwordProperties.entrySet()) {
             String propertyPath = entry.getKey();
             String label = entry.getValue();
@@ -47,14 +51,34 @@ public class DataSourceValidator {
             if (value == null) {
                 continue;
             }
-            if (value.isEmpty()) {
-                log.warn("[密码校验] {} 密码为空（属性 {}），请确认已通过环境变量注入；生产环境连接将失败暴露此问题。",
+            if (value.isBlank()) {
+                String message = String.format(
+                        "[密码校验] %s 密码为空（属性 %s），请通过环境变量、Secret 或配置中心注入真实密码。",
                         label, propertyPath);
+                rejectOrWarn(prodProfile, message);
             } else if (isPlaceholder(value)) {
-                log.warn("[密码校验] {} 密码仍为占位默认值 '{}'（属性 {}），请通过环境变量注入真实密码。",
-                        label, value, propertyPath);
+                String message = String.format(
+                        "[密码校验] %s 密码仍为占位默认值（属性 %s），请通过环境变量、Secret 或配置中心注入真实密码。",
+                        label, propertyPath);
+                rejectOrWarn(prodProfile, message);
             }
         }
+    }
+
+    private void rejectOrWarn(boolean prodProfile, String message) {
+        if (prodProfile) {
+            throw new IllegalStateException(message);
+        }
+        log.warn(message);
+    }
+
+    private boolean isProdProfile() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isPlaceholder(String value) {

@@ -12,6 +12,7 @@ import com.amz.model.FbaReceiptDiscrepancy;
 import com.amz.model.FreightAllocation;
 import com.amz.model.InventoryTransfer;
 import com.amz.model.Shipment;
+import com.amz.result.PageRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -188,6 +189,32 @@ class LogisticsUpgradeServiceImplTest {
     }
 
     @Test
+    @DisplayName("比价：报价超过扫描上限时结果不完整，且不得给出最低价推荐")
+    void compareQuotesCapsScanAndDoesNotRecommendPartial() {
+        List<CarrierQuote> quotes = new ArrayList<>();
+        for (int i = 0; i < 5001; i++) {
+            CarrierQuote q = quote(SHOP_ID, "CARRIER-" + i, "SEA");
+            q.setId((long) (10000 - i));
+            q.setPricePerKg(new BigDecimal("3.00").add(new BigDecimal(i).movePointLeft(4)));
+            quotes.add(q);
+        }
+        when(carrierQuoteMapper.selectList(any())).thenReturn(quotes);
+
+        Map<String, Object> result = service.compareQuotes(SHOP_ID, "Shenzhen", "LAX",
+                new BigDecimal("10"), null);
+
+        assertEquals(true, result.get("scanTruncated"));
+        assertEquals(5000, result.get("scannedQuoteCount"));
+        assertEquals(5000, result.get("scanLimit"));
+        assertEquals(false, result.get("comparisonComplete"));
+        assertEquals(5000, ((List<?>) result.get("quotes")).size(), "探测行不能计入业务结果");
+        assertEquals(null, result.get("recommended"), "扫描不完整时不能给出全局最低价");
+        assertEquals(true, ((Map<?, ?>) result.get("recommendedByCurrency")).isEmpty(),
+                "扫描不完整时也不能给出币种内最低价");
+        assertTrue(((List<?>) result.get("warnings")).toString().contains("扫描达到上限"),
+                result.get("warnings").toString());
+    }
+    @Test
     @DisplayName("比价：重量与体积都没给时直接报错，不返回一堆 0 元报价")
     void compareQuotesRequiresWeightOrVolume() {
         CodeErrorException e = assertThrows(CodeErrorException.class,
@@ -306,7 +333,7 @@ class LogisticsUpgradeServiceImplTest {
         foreign.setShopId(SHOP_ID + 100);
         when(shipmentMapper.selectById(31L)).thenReturn(foreign);
 
-        CodeErrorException e = assertThrows(CodeErrorException.class, () -> service.listAllocations(31L));
+        CodeErrorException e = assertThrows(CodeErrorException.class, () -> service.listAllocations(31L, PageRequest.first(50)));
         assertEquals("货件不存在或无权访问", e.getMessage());
     }
 

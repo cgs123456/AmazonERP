@@ -11,8 +11,19 @@ import lombok.Data;
 @Data
 public class IngestOutcome {
 
-    /** 是否成功定位到货件。false 表示该运单在系统内无对应货件，需由调用方回吐给用户补主单 */
+    /** 是否成功定位到货件。false 表示未匹配或因标识歧义拒绝写入 */
     private boolean matched;
+
+    /**
+     * 是否因外部标识命中多条货件而无法安全落库。
+     * <p>
+     * 运单号没有唯一约束；命中多条时若继续取第一条，会把甲货件的轨迹写进乙货件。
+     * 该状态必须与普通「未匹配」区分，调用方才能提示数据治理而不是让用户补录。
+     */
+    private boolean ambiguous;
+
+    /** 歧义字段：shipmentNo 或 trackingNo；仅在 ambiguous=true 时有值 */
+    private String conflictField;
 
     /** 定位到的货件 ID */
     private Long shipmentId;
@@ -32,6 +43,15 @@ public class IngestOutcome {
     public static IngestOutcome unmatched() {
         IngestOutcome outcome = new IngestOutcome();
         outcome.setMatched(false);
+        return outcome;
+    }
+
+    /** 命中多条候选时返回歧义结果；调用方不得把它当作普通未匹配静默处理。 */
+    public static IngestOutcome ambiguous(String conflictField) {
+        IngestOutcome outcome = new IngestOutcome();
+        outcome.setMatched(false);
+        outcome.setAmbiguous(true);
+        outcome.setConflictField(conflictField);
         return outcome;
     }
 

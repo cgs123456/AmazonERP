@@ -1,11 +1,19 @@
 package com.amz.controller;
 
 import com.amz.annotation.ShopScoped;
-import com.amz.model.*;
+import com.amz.model.CostAllocation;
+import com.amz.model.ProfitSnapshot;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.RealtimeProfitService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -38,8 +46,11 @@ public class RealtimeProfitController {
     public Result<List<ProfitSnapshot>> listSnapshots(@PathVariable Long shopId,
                                                        @RequestParam(required = false) String sku,
                                                        @RequestParam(required = false) String startTime,
-                                                       @RequestParam(required = false) String endTime) {
-        return Result.success(realtimeProfitService.listSnapshots(shopId, sku, startTime, endTime));
+                                                       @RequestParam(required = false) String endTime,
+                                                       @RequestParam(required = false) Integer size,
+                                                       @RequestParam(required = false) String cursor) {
+        return Result.paged(realtimeProfitService.listSnapshots(shopId, sku, startTime, endTime,
+                PageRequest.of(size, cursor)));
     }
 
     /** 利润趋势（按小时） */
@@ -76,8 +87,11 @@ public class RealtimeProfitController {
     public Result<List<CostAllocation>> listAllocations(@PathVariable Long shopId,
                                                          @RequestParam(required = false) String costType,
                                                          @RequestParam(required = false) String startDate,
-                                                         @RequestParam(required = false) String endDate) {
-        return Result.success(realtimeProfitService.listAllocations(shopId, costType, startDate, endDate));
+                                                         @RequestParam(required = false) String endDate,
+                                                         @RequestParam(required = false) Integer size,
+                                                         @RequestParam(required = false) String cursor) {
+        return Result.paged(realtimeProfitService.listAllocations(shopId, costType, startDate, endDate,
+                PageRequest.of(size, cursor)));
     }
 
     /** 执行成本分摊计算 */

@@ -13,6 +13,7 @@ public class RemoteReportInfo {
     private String reportType;
     /** IN_QUEUE / IN_PROGRESS / DONE / FATAL / CANCELLED。 */
     private String processingStatus;
+    private String createdTime;
     private String documentId;
 
     public boolean isDone() {

@@ -2,6 +2,8 @@ package com.amz.service;
 
 import com.amz.model.Shipment;
 import com.amz.model.TrackingEvent;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 
@@ -24,7 +26,7 @@ public interface LogisticsService {
     /**
      * 查询店铺货件列表。
      */
-    List<Shipment> listShipments(Long shopId, String status);
+    PageResult<Shipment> listShipments(Long shopId, String status, PageRequest page);
 
     /**
      * 同步货件状态（拉取承运商最新轨迹，更新货件状态）。
@@ -34,10 +36,11 @@ public interface LogisticsService {
     Shipment syncShipmentStatus(Long shipmentId);
 
     /**
-     * 查询货件的完整轨迹（用于前端轨迹可视化）。
-     * 返回按时间正序排列的轨迹点列表（含经纬度）。
+     * 查询货件的轨迹时间线（游标分页）。
+     * 按 {@code (eventTime, id)} 正序返回，eventTime 为空的行排在最后；
+     * 调用方必须携带 {@code nextCursor} 继续翻页，不能把单页当作完整时间线。
      */
-    List<TrackingEvent> getTrackingTimeline(Long shipmentId);
+    PageResult<TrackingEvent> getTrackingTimeline(Long shipmentId, PageRequest page);
 
     /**
      * 手工关闭货件。

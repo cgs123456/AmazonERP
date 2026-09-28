@@ -7,10 +7,16 @@ import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Base64;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 生产启动自检（fail-closed）单元测试。
@@ -95,6 +101,47 @@ class ConnectorStartupCheckTest {
                 "异常消息必须点明凭证表 amz_shop_credential，实际为：" + ex.getMessage());
     }
 
+    @Test
+    @DisplayName("bootstrap 专用 profile 允许空库启动，供一次性凭证导入进程使用")
+    void bootstrapProfileAllowsEmptyCredentialStore() {
+        ConnectorStartupCheck check = new ConnectorStartupCheck(env("bootstrap", "false"), emptyStore());
+
+        assertDoesNotThrow(check::verify);
+    }
+
+    @Test
+    @DisplayName("bootstrap 不得与 prod 同时激活，避免生产普通实例绕过凭证自检")
+    void bootstrapCannotBeCombinedWithProd() {
+        ConnectorStartupCheck check = new ConnectorStartupCheck(env("prod,bootstrap", "false"), emptyStore());
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, check::verify);
+
+        assertTrue(ex.getMessage().contains("bootstrap"));
+        assertTrue(ex.getMessage().contains("prod"));
+    }
+
+    @Test
+    @DisplayName("bootstrap 不得与 mock 同时激活，避免离线样例混入真实凭证导入")
+    void bootstrapCannotBeCombinedWithMock() {
+        ConnectorStartupCheck check = new ConnectorStartupCheck(env("bootstrap,mock", "false"), emptyStore());
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, check::verify);
+
+        assertTrue(ex.getMessage().contains("bootstrap"));
+        assertTrue(ex.getMessage().contains("mock"));
+    }
+
+    @Test
+    @DisplayName("启动自检只读取活跃店铺 ID，不逐店加载凭证")
+    void startupCheckDoesNotLoadCredentials() {
+        ShopCredentialStore store = mock(ShopCredentialStore.class);
+        when(store.getActiveShopIds()).thenReturn(Set.of(1L));
+        ConnectorStartupCheck check = new ConnectorStartupCheck(env("prod", "true"), store);
+
+        assertDoesNotThrow(check::verify);
+        verify(store).getActiveShopIds();
+        verify(store, never()).get(anyLong());
+    }
     @Test
     @DisplayName("require-credentials=false（默认）→ 离线/CI 口径不变，不抛异常")
     void skipsCheckWhenNotRequired() {

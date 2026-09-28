@@ -8,6 +8,7 @@ import com.amz.client.ProcurementServiceClient;
 import com.amz.client.ProductServiceClient;
 import com.amz.client.ReportServiceClient;
 import com.amz.context.UserContext;
+import com.amz.result.PageMeta;
 import com.amz.result.Result;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -27,6 +28,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +81,18 @@ public class ErpToolExecutor {
 
     private final Gson gson = new Gson();
 
+    /** Agent 按货件号反查时每页条数，避免一次拉取过多行。 */
+    private static final int SHIPMENT_LOOKUP_PAGE_SIZE = 200;
+
+    /** Agent 按货件号反查的最大页数；超过后必须明确报告未取全。 */
+    private static final int SHIPMENT_LOOKUP_MAX_PAGES = 10;
+
+    /** Agent 读取轨迹时间线时每页条数，服务端仍会强制自身 MAX_SIZE。 */
+    private static final int TRACKING_PAGE_SIZE = 200;
+
+    /** Agent 读取轨迹时间线的最大页数；达到上限仍有下一页时不得确认“最新”。 */
+    private static final int TRACKING_MAX_PAGES = 10;
+
     /**
      * 不依赖 shopId 取数的工具（或 shopId 仅作日志、下游忽略），不参与 shopId 越权校验。
      * 其余工具凡在 args 中携带 shopId 一律强制校验其归属，防止提示注入跨店取数/写数。
@@ -123,9 +137,8 @@ public class ErpToolExecutor {
             return fail("无权访问该店铺数据");
         }
 
-        // 工具粒度权限（A-3）：operate 类工具要求 OPERATOR 及以上角色。
-        // role 为 null（内部调用/评测/单测，无鉴权上下文）时放行，与 isShopAllowed
-        // 空 shops 语义一致，避免阻断内部流。
+        // 工具粒度权限（A-3）：operate 类工具要求已认证的 OPERATOR 及以上角色。
+        // 任何身份/角色上下文缺失都按拒绝处理，避免异步上下文丢失导致提权。
         if (OPERATE_TOOLS.contains(name) && !hasOperatePermission()) {
             log.warn("Agent 工具权限拦截 name={}, role={}, userId={}",
                     name, UserContext.getRole(), UserContext.getUserId());
@@ -191,14 +204,13 @@ public class ErpToolExecutor {
 
     /**
      * 当前调用方是否有 operate 权限（包可见，供单测直接断言）。
-     * role 缺失时放行（内部调用/评测/单测无鉴权上下文）。
+     * userId 或 role 缺失时拒绝（fail-closed）。
      */
     static boolean hasOperatePermission() {
+        Integer userId = UserContext.getUserId();
         String role = UserContext.getRole();
-        if (role == null) {
-            return true;
-        }
-        return "OPERATOR".equals(role) || "ADMIN".equals(role);
+        return userId != null && userId > 0
+                && ("OPERATOR".equals(role) || "ADMIN".equals(role));
     }
 
     /**
@@ -421,7 +433,10 @@ public class ErpToolExecutor {
         if (productServiceClient == null) {
             return fail("商品服务客户端未启用");
         }
-        // 构造请求体：sourceAsin 作为 sku 查询源 Listing
+        if (sourceAsin == null || sourceAsin.isBlank()) {
+            return fail("sourceAsin 不能为空");
+        }
+        // sourceAsin 使用独立字段；商品服务负责解析为真实卖家 SKU。
         String sourceMarketplaceId = toStr(args.get("sourceMarketplaceId"));
         if (sourceMarketplaceId == null) sourceMarketplaceId = "ATVPDKIKX0DER"; // 默认 US
         String targetLanguage = toStr(args.get("targetLanguage"));
@@ -430,7 +445,7 @@ public class ErpToolExecutor {
 
         Map<String, Object> reqBody = new HashMap<>();
         reqBody.put("shopId", shopId);
-        reqBody.put("sku", sourceAsin);  // 用 ASIN 作为 SKU 查询
+        reqBody.put("asin", sourceAsin);
         reqBody.put("sourceMarketplaceId", sourceMarketplaceId);
         reqBody.put("targetMarketplaceId", targetMarketplace);
         reqBody.put("targetLanguage", targetLanguage);
@@ -754,15 +769,43 @@ public class ErpToolExecutor {
         if (procurementServiceClient == null) {
             return fail("采购服务客户端未启用");
         }
+        final int pageSize = 50;
         try {
-            Result<List<Map<String, Object>>> result = procurementServiceClient.getSuppliers(shopId, keyword);
+            Result<List<Map<String, Object>>> result = procurementServiceClient.getSuppliers(
+                    shopId, null, keyword, pageSize, null);
             if (!isSuccess(result)) {
                 return fail("供应商查询失败: " + (result != null ? result.getMessage() : "无响应"));
             }
+            PageMeta page = result.getPage();
+            if (page == null) {
+                return fail("供应商分页元数据缺失，无法确认结果完整性");
+            }
             List<Map<String, Object>> list = result.getData();
-            int count = (list == null) ? 0 : list.size();
-            return ok(String.format("供应商查询完成 shopId=%d keyword=%s，共 %d 家", shopId, keyword, count),
-                    Map.of("shopId", shopId, "keyword", keyword, "count", count, "suppliers", list));
+            if (list == null) {
+                list = List.of();
+            }
+            boolean hasMore = page.isTruncated() || page.isHasMore();
+            String nextCursor = page.getNextCursor();
+            if (hasMore && (nextCursor == null || nextCursor.isBlank())) {
+                return fail("供应商分页游标缺失，无法继续查询，不能确认结果完整性");
+            }
+            String keywordLabel = keyword == null || keyword.isBlank() ? "ALL" : keyword;
+            String message = hasMore
+                    ? String.format("供应商查询完成 shopId=%d keyword=%s，本页 %d 家，hasMore=true，nextCursor=%s",
+                            shopId, keywordLabel, list.size(), nextCursor)
+                    : String.format("供应商查询完成 shopId=%d keyword=%s，共 %d 家", shopId, keywordLabel, list.size());
+            Map<String, Object> data = new LinkedHashMap<>();
+            data.put("shopId", shopId);
+            data.put("keyword", keyword);
+            data.put("count", list.size());
+            data.put("suppliers", list);
+            data.put("pageSize", page.getSize());
+            data.put("returned", page.getReturned());
+            data.put("hasMore", hasMore);
+            data.put("truncated", page.isTruncated());
+            data.put("nextCursor", nextCursor);
+            data.put("total", page.getTotal());
+            return ok(message, data);
         } catch (Exception e) {
             log.error("query_suppliers Feign 调用失败", e);
             return fail("采购服务暂时不可用: " + e.getMessage());
@@ -810,26 +853,24 @@ public class ErpToolExecutor {
             return fail("物流客户端未启用");
         }
         try {
-            // 仅提供 shipmentNo 时，先按店铺反查 shipmentId
+            // 仅提供 shipmentNo 时，先按店铺有界翻页反查 shipmentId。
+            // 只扫描前 N 页；若仍截断，必须返回“未取全”，不能误报“未找到”。
             if (shipmentId == null && shipmentNo != null && !shipmentNo.isBlank()) {
-                Result<List<Map<String, Object>>> listResult = logisticsServiceClient.listShipments(shopId, null);
-                if (isSuccess(listResult) && listResult.getData() != null) {
-                    shipmentId = listResult.getData().stream()
-                            .filter(s -> shipmentNo.equals(toStr(s.get("shipmentNo"))))
-                            .map(s -> toLong(s.get("id")))
-                            .findFirst()
-                            .orElse(null);
+                ShipmentLookup lookup = findShipmentByNo(shopId, shipmentNo);
+                if (lookup.error() != null) {
+                    return fail(lookup.error());
                 }
+                shipmentId = lookup.shipmentId();
             }
             if (shipmentId == null) {
                 return fail("未找到对应的物流货件（shipmentId / shipmentNo 无效）");
             }
-            Result<List<Map<String, Object>>> result = logisticsServiceClient.getTracking(shipmentId);
-            if (!isSuccess(result)) {
-                return fail("物流轨迹查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            TrackingScan scan = findTrackingTimeline(shipmentId);
+            if (scan.error() != null) {
+                return fail(scan.error());
             }
-            List<Map<String, Object>> tracking = result.getData();
-            int count = (tracking == null) ? 0 : tracking.size();
+            List<Map<String, Object>> tracking = scan.events();
+            int count = tracking.size();
             if (count == 0) {
                 return ok(String.format("货件 %s 暂无轨迹记录", shipmentId),
                         Map.of("shipmentId", shipmentId, "tracking", List.of()));
@@ -842,6 +883,110 @@ public class ErpToolExecutor {
             log.error("track_shipment Feign 调用失败", e);
             return fail("物流服务暂时不可用: " + e.getMessage());
         }
+    }
+
+    /**
+     * 有界读取轨迹时间线，只有翻到最后一页才允许判定“最新轨迹”。
+     * <p>
+     * 返回 {@code error != null} 表示结果不完整或查询失败，调用方不得据此推断最新状态。
+     */
+    private TrackingScan findTrackingTimeline(Long shipmentId) {
+        List<Map<String, Object>> events = new ArrayList<>();
+        Set<String> seenCursors = new HashSet<>();
+        String cursor = null;
+        for (int pageNo = 0; pageNo < TRACKING_MAX_PAGES; pageNo++) {
+            Result<List<Map<String, Object>>> result = logisticsServiceClient.getTracking(
+                    shipmentId, TRACKING_PAGE_SIZE, cursor);
+            if (!isSuccess(result)) {
+                return new TrackingScan(events,
+                        "物流轨迹查询失败: " + (result != null ? result.getMessage() : "无响应"));
+            }
+            List<Map<String, Object>> rows = result.getData();
+            if (rows != null) {
+                events.addAll(rows);
+            }
+
+            PageMeta page = result.getPage();
+            if (page == null) {
+                return new TrackingScan(events,
+                        "物流轨迹分页元数据缺失，无法确认结果完整性，不能确认最新轨迹");
+            }
+            boolean hasMore = page.isTruncated() || page.isHasMore();
+            if (!hasMore) {
+                return new TrackingScan(events, null);
+            }
+            String nextCursor = page.getNextCursor();
+            if (nextCursor == null || nextCursor.isBlank()) {
+                return new TrackingScan(events,
+                        "物流轨迹分页游标缺失，无法继续查询，不能确认最新轨迹");
+            }
+            if (!seenCursors.add(nextCursor)) {
+                return new TrackingScan(events,
+                        "物流轨迹分页游标重复，已停止查询，不能确认最新轨迹");
+            }
+            cursor = nextCursor;
+        }
+        return new TrackingScan(events, String.format(
+                "物流轨迹扫描超过 %d 页（每页 %d 条），结果未取全，不能确认最新轨迹",
+                TRACKING_MAX_PAGES, TRACKING_PAGE_SIZE));
+    }
+
+    /** 轨迹扫描结果：完整结束时 error 为 null，否则不得把已取片段当作全量。 */
+    private record TrackingScan(List<Map<String, Object>> events, String error) {
+    }
+
+    /**
+     * 按 shipmentNo 在店铺货件列表中做有界游标翻页。
+     * <p>
+     * 返回 {@code error != null} 表示无法完成完整查询；返回 {@code shipmentId == null}
+     * 且 {@code error == null} 才表示已经翻完所有页且确实不存在该货件。
+     */
+    private ShipmentLookup findShipmentByNo(Long shopId, String shipmentNo) {
+        String cursor = null;
+        Set<String> seenCursors = new HashSet<>();
+        for (int pageNo = 0; pageNo < SHIPMENT_LOOKUP_MAX_PAGES; pageNo++) {
+            Result<List<Map<String, Object>>> listResult = logisticsServiceClient.listShipments(
+                    shopId, null, SHIPMENT_LOOKUP_PAGE_SIZE, cursor);
+            if (!isSuccess(listResult)) {
+                return new ShipmentLookup(null,
+                        "货件列表查询失败: " + (listResult != null ? listResult.getMessage() : "无响应"));
+            }
+            for (Map<String, Object> shipment : listResult.getData()) {
+                if (shipment != null && shipmentNo.equals(toStr(shipment.get("shipmentNo")))) {
+                    Long id = toLong(shipment.get("id"));
+                    if (id != null) {
+                        return new ShipmentLookup(id, null);
+                    }
+                }
+            }
+
+            PageMeta page = listResult.getPage();
+            if (page == null) {
+                return new ShipmentLookup(null,
+                        "货件列表分页元数据缺失，无法确认结果完整性，不能判定 shipmentNo 不存在");
+            }
+            boolean hasMore = page.isTruncated() || page.isHasMore();
+            if (!hasMore) {
+                return new ShipmentLookup(null, null);
+            }
+            String nextCursor = page.getNextCursor();
+            if (nextCursor == null || nextCursor.isBlank()) {
+                return new ShipmentLookup(null,
+                        "货件列表分页游标缺失，无法继续反查，不能判定 shipmentNo 不存在");
+            }
+            if (!seenCursors.add(nextCursor)) {
+                return new ShipmentLookup(null,
+                        "货件列表分页游标重复，已停止反查，不能判定 shipmentNo 不存在");
+            }
+            cursor = nextCursor;
+        }
+        return new ShipmentLookup(null, String.format(
+                "货件列表扫描超过 %d 页（每页 %d 条），结果未取全，不能确认 shipmentNo 不存在",
+                SHIPMENT_LOOKUP_MAX_PAGES, SHIPMENT_LOOKUP_PAGE_SIZE));
+    }
+
+    /** 货件号反查结果：要么拿到 id，要么携带不可忽略的查询错误。 */
+    private record ShipmentLookup(Long shipmentId, String error) {
     }
 
     /**

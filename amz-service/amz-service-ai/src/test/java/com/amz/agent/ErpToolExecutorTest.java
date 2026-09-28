@@ -11,12 +11,16 @@ import com.amz.client.OrderServiceClient;
 import com.amz.client.ProcurementServiceClient;
 import com.amz.client.ProductServiceClient;
 import com.amz.client.ReportServiceClient;
+import com.amz.context.UserContext;
+import com.amz.result.PageMeta;
 import com.amz.result.Result;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Arrays;
@@ -33,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -70,6 +75,11 @@ class ErpToolExecutorTest {
 
     @BeforeEach
     void setUp() {
+        UserContext.setUserId(1);
+        UserContext.setRole("ADMIN");
+        UserContext.setShops(List.of(1L));
+        UserContext.setShopId(1L);
+
         orderServiceClient = mock(OrderServiceClient.class);
         inventoryServiceClient = mock(InventoryServiceClient.class);
         adServiceClient = mock(AdServiceClient.class);
@@ -92,8 +102,61 @@ class ErpToolExecutorTest {
         ReflectionTestUtils.setField(executor, "selectionAnalysisService", selectionAnalysisService);
     }
 
+    @AfterEach
+    void cleanup() {
+        UserContext.clear();
+    }
+
     private JsonObject json(String result) {
         return JsonParser.parseString(result).getAsJsonObject();
+    }
+
+    private Result<List<Map<String, Object>>> pagedShipments(
+            List<Map<String, Object>> rows, boolean hasMore, String nextCursor) {
+        Result<List<Map<String, Object>>> result = Result.success(rows);
+        PageMeta page = new PageMeta();
+        page.setSize(200);
+        page.setReturned(rows.size());
+        page.setHasMore(hasMore);
+        page.setTruncated(hasMore);
+        page.setNextCursor(nextCursor);
+        page.setTotal(null);
+        result.setPage(page);
+        return result;
+    }
+
+    private Result<List<Map<String, Object>>> pagedTracking(
+            List<Map<String, Object>> rows, boolean hasMore, String nextCursor) {
+        Result<List<Map<String, Object>>> result = Result.success(rows);
+        PageMeta page = new PageMeta();
+        page.setSize(200);
+        page.setReturned(rows.size());
+        page.setHasMore(hasMore);
+        page.setTruncated(hasMore);
+        page.setNextCursor(nextCursor);
+        page.setTotal(null);
+        result.setPage(page);
+        return result;
+    }
+
+    private FunctionCall trackShipmentCall(String shipmentNo) {
+        FunctionCall call = new FunctionCall();
+        call.setName("track_shipment");
+        Map<String, Object> args = new HashMap<>();
+        args.put("shopId", 1L);
+        args.put("shipmentNo", shipmentNo);
+        call.setArguments(args);
+        return call;
+    }
+
+    private FunctionCall trackShipmentByIdCall(Long shipmentId) {
+        FunctionCall call = new FunctionCall();
+        call.setName("track_shipment");
+        Map<String, Object> args = new HashMap<>();
+        args.put("shopId", 1L);
+        args.put("shipmentId", shipmentId);
+        call.setArguments(args);
+        return call;
     }
 
     // ===== 工具路由 =====
@@ -566,6 +629,146 @@ class ErpToolExecutorTest {
         assertTrue(json.get("message").getAsString().contains("基于真实健康度推导"));
     }
 
+    // ===== track_shipment 分页反查 =====
+
+    @Test
+    @DisplayName("track_shipment：按货件号有界翻页，命中后返回真实轨迹")
+    void testTrackShipmentScansPagesUntilMatch() {
+        Map<String, Object> other = new HashMap<>();
+        other.put("id", 7L);
+        other.put("shipmentNo", "SHP-OTHER");
+        Map<String, Object> target = new HashMap<>();
+        target.put("id", 99L);
+        target.put("shipmentNo", "SHP-TARGET");
+        when(logisticsServiceClient.listShipments(1L, null, 200, null))
+                .thenReturn(pagedShipments(List.of(other), true, "CUR-1"));
+        when(logisticsServiceClient.listShipments(1L, null, 200, "CUR-1"))
+                .thenReturn(pagedShipments(List.of(target), false, null));
+        when(logisticsServiceClient.getTracking(99L, 200, null))
+                .thenReturn(pagedTracking(List.of(
+                        Map.of("location", "LAX", "description", "Arrived")), false, null));
+
+        JsonObject json = json(executor.execute(trackShipmentCall("SHP-TARGET")));
+
+        assertTrue(json.get("ok").getAsBoolean(), json.toString());
+        assertTrue(json.get("message").getAsString().contains("最新轨迹"), json.toString());
+        verify(logisticsServiceClient).listShipments(1L, null, 200, null);
+        verify(logisticsServiceClient).listShipments(1L, null, 200, "CUR-1");
+    }
+
+    @Test
+    @DisplayName("track_shipment：达到扫描上限仍有下一页时不得误报未找到")
+    void testTrackShipmentBoundedScanReportsIncomplete() {
+        int[] page = {0};
+        when(logisticsServiceClient.listShipments(1L, null, 200, null))
+                .thenReturn(pagedShipments(List.of(), true, "CUR-1"));
+        when(logisticsServiceClient.listShipments(
+                org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(200),
+                org.mockito.ArgumentMatchers.anyString()))
+                .thenAnswer(invocation -> {
+                    page[0]++;
+                    return pagedShipments(List.of(), true, "CUR-" + (page[0] + 1));
+                });
+
+        JsonObject json = json(executor.execute(trackShipmentCall("SHP-NOT-IN-WINDOW")));
+
+        assertFalse(json.get("ok").getAsBoolean());
+        String message = json.get("message").getAsString();
+        assertTrue(message.contains("结果未取全"), message);
+        assertTrue(message.contains("不能确认"), message);
+        verify(logisticsServiceClient, org.mockito.Mockito.times(10))
+                .listShipments(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.isNull(),
+                        org.mockito.ArgumentMatchers.eq(200), org.mockito.ArgumentMatchers.nullable(String.class));
+    }
+
+    @Test
+    @DisplayName("track_shipment：缺少 _page 时 fail-closed，不得扫描成未找到")
+    void testTrackShipmentMissingPageMetadataFailsClosed() {
+        Map<String, Object> other = new HashMap<>();
+        other.put("id", 7L);
+        other.put("shipmentNo", "SHP-OTHER");
+        when(logisticsServiceClient.listShipments(1L, null, 200, null))
+                .thenReturn(Result.success(List.of(other)));
+
+        JsonObject json = json(executor.execute(trackShipmentCall("SHP-TARGET")));
+
+        assertFalse(json.get("ok").getAsBoolean());
+        assertTrue(json.get("message").getAsString().contains("分页元数据缺失"), json.toString());
+        assertFalse(json.get("message").getAsString().contains("未找到"), json.toString());
+    }
+
+    @Test
+    @DisplayName("track_shipment：货件列表查询失败时不得误报未找到")
+    void testTrackShipmentLookupFailureIsNotNotFound() {
+        when(logisticsServiceClient.listShipments(1L, null, 200, null))
+                .thenReturn(Result.failure("logistics down"));
+
+        JsonObject json = json(executor.execute(trackShipmentCall("SHP-TARGET")));
+
+        assertFalse(json.get("ok").getAsBoolean());
+        assertTrue(json.get("message").getAsString().contains("货件列表查询失败"), json.toString());
+        assertFalse(json.get("message").getAsString().contains("未找到"), json.toString());
+    }
+    @Test
+    @DisplayName("track_shipment：轨迹跨页时必须翻到最后一页再取最新轨迹")
+    void testTrackShipmentScansTrackingPagesUntilComplete() {
+        when(logisticsServiceClient.getTracking(99L, 200, null))
+                .thenReturn(pagedTracking(List.of(
+                        Map.of("location", "SHA", "description", "Departed")), true, "TRACK-1"));
+        when(logisticsServiceClient.getTracking(99L, 200, "TRACK-1"))
+                .thenReturn(pagedTracking(List.of(
+                        Map.of("location", "LAX", "description", "Arrived")), false, null));
+
+        JsonObject json = json(executor.execute(trackShipmentByIdCall(99L)));
+
+        assertTrue(json.get("ok").getAsBoolean(), json.toString());
+        assertTrue(json.get("message").getAsString().contains("Arrived"), json.toString());
+        verify(logisticsServiceClient).getTracking(99L, 200, null);
+        verify(logisticsServiceClient).getTracking(99L, 200, "TRACK-1");
+    }
+
+    @Test
+    @DisplayName("track_shipment：轨迹达到扫描上限仍有下一页时不得确认最新轨迹")
+    void testTrackShipmentTrackingScanLimitFailsClosed() {
+        int[] page = {0};
+        when(logisticsServiceClient.getTracking(
+                org.mockito.ArgumentMatchers.eq(99L),
+                org.mockito.ArgumentMatchers.eq(200),
+                nullable(String.class)))
+                .thenAnswer(invocation -> {
+                    page[0]++;
+                    return pagedTracking(List.of(), true, "TRACK-" + page[0]);
+                });
+
+        JsonObject json = json(executor.execute(trackShipmentByIdCall(99L)));
+
+        assertFalse(json.get("ok").getAsBoolean(), json.toString());
+        String message = json.get("message").getAsString();
+        assertTrue(message.contains("结果未取全"), message);
+        assertTrue(message.contains("不能确认最新轨迹"), message);
+        verify(logisticsServiceClient, org.mockito.Mockito.times(10))
+                .getTracking(org.mockito.ArgumentMatchers.eq(99L),
+                        org.mockito.ArgumentMatchers.eq(200), nullable(String.class));
+    }
+
+    @Test
+    @DisplayName("track_shipment：轨迹缺少 _page 时 fail-closed，不得把单页当完整结果")
+    void testTrackShipmentTrackingMissingPageMetadataFailsClosed() {
+        when(logisticsServiceClient.getTracking(99L, 200, null))
+                .thenReturn(Result.success(List.of(
+                        Map.of("location", "SHA", "description", "Departed"))));
+
+        JsonObject json = json(executor.execute(trackShipmentByIdCall(99L)));
+
+        assertFalse(json.get("ok").getAsBoolean(), json.toString());
+        String message = json.get("message").getAsString();
+        assertTrue(message.contains("轨迹分页元数据缺失"), message);
+        assertTrue(message.contains("不能确认最新轨迹"), message);
+        assertFalse(message.contains("最新轨迹【"), message);
+    }
+
     // ===== 工具 25-27：物流/采购真实数据接入（Item1 收尾）=====
 
     @Test
@@ -618,6 +821,33 @@ class ErpToolExecutorTest {
     }
 
     @Test
+    @DisplayName("crossMarketplaceListing：sourceAsin 必须作为 asin 传递，不能降级为 sku")
+    void testCrossMarketplaceListingPassesAsinAsAsin() {
+        FunctionCall call = new FunctionCall();
+        call.setName("cross_marketplace_listing");
+        Map<String, Object> args = new HashMap<>();
+        args.put("shopId", 1L);
+        args.put("sourceAsin", "B08X4");
+        args.put("targetMarketplace", "A1PA6795UKMFR9");
+        call.setArguments(args);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("taskId", 42L);
+        data.put("status", "PENDING");
+        when(productServiceClient.copyListing(any())).thenReturn(Result.success(data));
+
+        JsonObject json = json(executor.execute(call));
+        assertTrue(json.get("ok").getAsBoolean());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> bodyCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(productServiceClient).copyListing(bodyCaptor.capture());
+        Map<String, Object> body = bodyCaptor.getValue();
+        assertEquals("B08X4", body.get("asin"), "ASIN 必须走独立字段，由商品服务解析真实 SKU");
+        assertFalse(body.containsKey("sku"), "不得把 ASIN 静默填入 sku");
+    }
+
+    @Test
     @DisplayName("optimizeInventoryDistribution：客户端未启用 → ok=false")
     void testInventoryDistClientNullFails() {
         ErpToolExecutor noClient = new ErpToolExecutor();
@@ -656,6 +886,51 @@ class ErpToolExecutorTest {
         assertTrue(msg.contains("150"), msg);
     }
 
+    @Test
+    @DisplayName("query_suppliers：keyword 走 keyword 参数，并返回分页完整性元数据")
+    void testQuerySuppliersKeywordAndPaginationMetadata() {
+        FunctionCall call = new FunctionCall();
+        call.setName("query_suppliers");
+        Map<String, Object> args = new HashMap<>();
+        args.put("shopId", 1L);
+        args.put("keyword", "acme");
+        call.setArguments(args);
+
+        Map<String, Object> supplier = new HashMap<>();
+        supplier.put("supplierName", "Acme");
+        Result<List<Map<String, Object>>> response = Result.success(List.of(supplier));
+        PageMeta page = new PageMeta();
+        page.setSize(50);
+        page.setReturned(1);
+        page.setHasMore(false);
+        page.setTruncated(false);
+        page.setNextCursor(null);
+        page.setTotal(null);
+        response.setPage(page);
+        when(procurementServiceClient.getSuppliers(1L, null, "acme", 50, null))
+                .thenReturn(response);
+
+        JsonObject json = json(executor.execute(call));
+        assertTrue(json.get("ok").getAsBoolean(), json.toString());
+        assertTrue(json.get("message").getAsString().contains("共 1 家"), json.toString());
+        verify(procurementServiceClient).getSuppliers(1L, null, "acme", 50, null);
+    }
+
+    @Test
+    @DisplayName("query_suppliers：缺少 _page 时 fail-closed，不把单页伪装成完整结果")
+    void testQuerySuppliersMissingPageMetadataFailsClosed() {
+        FunctionCall call = new FunctionCall();
+        call.setName("query_suppliers");
+        Map<String, Object> args = new HashMap<>();
+        args.put("shopId", 1L);
+        call.setArguments(args);
+        when(procurementServiceClient.getSuppliers(1L, null, null, 50, null))
+                .thenReturn(Result.success(List.of(Map.of("supplierName", "Acme"))));
+
+        JsonObject json = json(executor.execute(call));
+        assertFalse(json.get("ok").getAsBoolean(), json.toString());
+        assertTrue(json.get("message").getAsString().contains("分页元数据缺失"), json.toString());
+    }
     @Test
     @DisplayName("createPurchasePlan：供应商比价成功 → ok=true，含供应商名（无 DEMO 前缀）")
     void testPurchasePlanWithCompare() {

@@ -37,7 +37,10 @@ public interface ProcurementServiceClient {
      */
     @GetMapping("/procurement/supplier/list/{shopId}")
     Result<List<Map<String, Object>>> getSuppliers(@PathVariable("shopId") Long shopId,
-                                                   @RequestParam(value = "status", required = false) String status);
+                                                   @RequestParam(value = "status", required = false) String status,
+                                                   @RequestParam(value = "keyword", required = false) String keyword,
+                                                   @RequestParam(value = "size", required = false) Integer size,
+                                                   @RequestParam(value = "cursor", required = false) String cursor);
 
     /**
      * 多供应商比价（按 SKU 查询多家供应商报价，含评分/交期/最低单价）。

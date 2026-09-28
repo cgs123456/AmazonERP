@@ -13,6 +13,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -59,7 +60,9 @@ class ToolPermissionTest {
     @Test
     @DisplayName("VIEWER 调用全部 operate 工具应被拒绝")
     void testViewerDeniedForAllOperateTools() {
+        UserContext.setUserId(1);
         UserContext.setRole("VIEWER");
+        UserContext.setShops(List.of(1L));
         ErpToolExecutor executor = new ErpToolExecutor();
 
         for (String tool : EXPECTED_OPERATE_TOOLS) {
@@ -75,7 +78,9 @@ class ToolPermissionTest {
     void testAdminAllowed() {
         // 用未知参数触发工具内部分支：能走到业务逻辑即证明通过权限门禁
         // （create_purchase_plan 无有效参数时返回失败而非权限拒绝）
+        UserContext.setUserId(1);
         UserContext.setRole("ADMIN");
+        UserContext.setShops(List.of(1L));
         ErpToolExecutor executor = new ErpToolExecutor();
 
         FunctionCall call = new FunctionCall();
@@ -87,15 +92,24 @@ class ToolPermissionTest {
     }
 
     @Test
-    @DisplayName("无鉴权上下文（role=null，如内部调用/单测）应放行")
-    void testNullRoleAllowed() {
-        // UserContext 未设置 role，保持 null
-        assertTrue(ErpToolExecutor.hasOperatePermission());
+    @DisplayName("无鉴权上下文（role=null）应拒绝 operate 工具")
+    void testNullRoleDenied() {
+        // UserContext 未设置 role 时必须 fail-closed，不能把内部调用/上下文丢失解释为管理员
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
+        assertFalse(ErpToolExecutor.hasOperatePermission());
+
+        ErpToolExecutor executor = new ErpToolExecutor();
+        JsonObject json = call(executor, "create_purchase_plan");
+        assertFalse(json.get("ok").getAsBoolean(), "role=null 不得执行 operate 工具");
+        assertTrue(json.get("message").getAsString().contains("OPERATOR"),
+                "拒绝信息应提示所需权限");
     }
 
     @Test
     @DisplayName("hasOperatePermission 角色判定")
     void testHasOperatePermissionRoles() {
+        UserContext.setUserId(1);
         UserContext.setRole("VIEWER");
         assertFalse(ErpToolExecutor.hasOperatePermission());
 

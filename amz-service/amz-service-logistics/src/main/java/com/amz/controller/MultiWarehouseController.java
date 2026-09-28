@@ -1,11 +1,20 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
-import com.amz.model.*;
+import com.amz.model.InventoryAlert;
+import com.amz.model.WarehouseStock;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.MultiWarehouseService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -24,6 +33,7 @@ public class MultiWarehouseController {
 
     /** 保存/更新库存快照 */
     @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/stock")
     public Result<WarehouseStock> saveStock(@RequestBody WarehouseStock stock) {
         return Result.success(multiWarehouseService.saveStock(stock));
@@ -34,8 +44,11 @@ public class MultiWarehouseController {
     @GetMapping("/stock/list/{shopId}")
     public Result<List<WarehouseStock>> listStock(@PathVariable Long shopId,
                                                    @RequestParam(required = false) String sku,
-                                                   @RequestParam(required = false) Long warehouseId) {
-        return Result.success(multiWarehouseService.listStock(shopId, sku, warehouseId));
+                                                   @RequestParam(required = false) Long warehouseId,
+                                                   @RequestParam(required = false) Integer size,
+                                                   @RequestParam(required = false) String cursor) {
+        return Result.paged(multiWarehouseService.listStock(
+                shopId, sku, warehouseId, PageRequest.of(size, cursor)));
     }
 
     /** 全局库存视图（按仓库类型聚合） */
@@ -57,6 +70,7 @@ public class MultiWarehouseController {
 
     /** 创建预警规则 */
     @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/alert")
     public Result<InventoryAlert> createAlert(@RequestBody InventoryAlert alert) {
         return Result.success(multiWarehouseService.createAlert(alert));
@@ -72,6 +86,7 @@ public class MultiWarehouseController {
 
     /** 启用/禁用预警规则 */
     @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/alert/{id}/toggle")
     public Result<Boolean> toggleAlert(@PathVariable Long id, @RequestParam boolean enabled) {
         multiWarehouseService.toggleAlert(id, enabled);

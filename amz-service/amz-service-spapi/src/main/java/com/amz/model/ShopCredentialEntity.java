@@ -63,4 +63,8 @@ public class ShopCredentialEntity {
     /** 更新时间。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
+
+    /** 乐观锁版本号；每次成功写入由 SQL 原子递增。 */
+    @TableField("version")
+    private Long version;
 }

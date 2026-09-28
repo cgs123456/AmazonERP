@@ -2,11 +2,21 @@ package com.amz.controller;
 
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
-import com.amz.model.*;
+import com.amz.model.CarrierQuote;
+import com.amz.model.FbaReceiptDiscrepancy;
+import com.amz.model.FreightAllocation;
+import com.amz.model.InventoryTransfer;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.LogisticsUpgradeService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -47,8 +57,11 @@ public class LogisticsUpgradeController {
     @ShopScoped
     @GetMapping("/quote/list/{shopId}")
     public Result<List<CarrierQuote>> listQuotes(@PathVariable Long shopId,
-                                                  @RequestParam(required = false) String serviceType) {
-        return Result.success(logisticsUpgradeService.listQuotes(shopId, serviceType));
+                                                  @RequestParam(required = false) String serviceType,
+                                                  @RequestParam(required = false) Integer size,
+                                                  @RequestParam(required = false) String cursor) {
+        return Result.paged(logisticsUpgradeService.listQuotes(
+                shopId, serviceType, PageRequest.of(size, cursor)));
     }
 
     /** 运费比价 */
@@ -115,8 +128,11 @@ public class LogisticsUpgradeController {
     @ShopScoped
     @GetMapping("/transfer/list/{shopId}")
     public Result<List<InventoryTransfer>> listTransfers(@PathVariable Long shopId,
-                                                          @RequestParam(required = false) String status) {
-        return Result.success(logisticsUpgradeService.listTransfers(shopId, status));
+                                                          @RequestParam(required = false) String status,
+                                                          @RequestParam(required = false) Integer size,
+                                                          @RequestParam(required = false) String cursor) {
+        return Result.paged(logisticsUpgradeService.listTransfers(
+                shopId, status, PageRequest.of(size, cursor)));
     }
 
     // ==================== 头程费用分摊 ====================
@@ -124,8 +140,11 @@ public class LogisticsUpgradeController {
     /** 查询货件头程费用分摊明细 */
     @ShopScoped
     @GetMapping("/freight/{shipmentId}")
-    public Result<List<FreightAllocation>> listAllocations(@PathVariable Long shipmentId) {
-        return Result.success(logisticsUpgradeService.listAllocations(shipmentId));
+    public Result<List<FreightAllocation>> listAllocations(@PathVariable Long shipmentId,
+                                                            @RequestParam(required = false) Integer size,
+                                                            @RequestParam(required = false) String cursor) {
+        return Result.paged(logisticsUpgradeService.listAllocations(
+                shipmentId, PageRequest.of(size, cursor)));
     }
 
     /** 按分摊方法计算头程费用 */
@@ -154,8 +173,11 @@ public class LogisticsUpgradeController {
     @ShopScoped
     @GetMapping("/discrepancy/list/{shopId}")
     public Result<List<FbaReceiptDiscrepancy>> listDiscrepancies(@PathVariable Long shopId,
-                                                                  @RequestParam(required = false) String status) {
-        return Result.success(logisticsUpgradeService.listDiscrepancies(shopId, status));
+                                                                  @RequestParam(required = false) String status,
+                                                                  @RequestParam(required = false) Integer size,
+                                                                  @RequestParam(required = false) String cursor) {
+        return Result.paged(logisticsUpgradeService.listDiscrepancies(
+                shopId, status, PageRequest.of(size, cursor)));
     }
 
     /** 将签收差异转入核查中 */

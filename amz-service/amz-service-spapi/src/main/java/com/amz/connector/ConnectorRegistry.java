@@ -4,6 +4,8 @@ import com.amz.connector.ConnectorEvidencePolicy.Assessment;
 import com.amz.connector.ConnectorEvidencePolicy.Criterion;
 import com.amz.connector.ConnectorEvidencePolicy.Evidence;
 import com.amz.connector.ConnectorEvidencePolicy.Level;
+import com.amz.client.SpApiOperationCatalog;
+import com.amz.client.SpApiOperationSpec;
 import com.amz.credential.ConnectorStartupCheck;
 import com.amz.credential.ShopCredentialStore;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,13 +26,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * <b>问题：</b>「支持哪些 operation」此前只存在于 README 与开发者记忆里。清单与实现一旦漂移，
  * 前端「已对接 / 未接通」标签、运维排障和验收 runbook 都会拿到错误事实：
  * 未实现的能力在清单里<b>缺字段</b>（前端显示空白，被读成「待配置」），
- * 而实际上它是「根本没有代码」。spec §1.4.1 已实测出 7 类未实现能力
- * （Notifications / RDT / Listings Items / Product Pricing / Catalog Items / Sellers / FBA Inbound）。
+ * 而实际上它是「根本没有代码」。spec §1.4.1 初始实测出 7 类未实现能力；
+ * Notifications、Listings Items、Product Pricing、Catalog Items 与 FBA Inbound
+ * 已纳入同一官方 operation 目录，能力清单与统一执行器同源。
  * <p>
  * <b>解决：</b>一张静态能力表 + 一条机器判定：
  * <ul>
- *   <li>{@link #spapiOperations()}：11 条已实现 operation（与 Task 5 的限流 operationId 同源）
- *       + 7 条<b>显式标注未实现</b>的官方能力，每条都带 spec 依据；</li>
+ *   <li>{@link #spapiOperations()}：90 条已实现 operation（与 client 包真实调用点同源）；</li>
  *   <li>{@link #spapiEvidence()}：A1–A8 的逐条证据声明，交给
  *       {@link ConnectorEvidencePolicy#evaluate} 出唯一结论，不在这里自行判定。</li>
  * </ul>
@@ -44,11 +46,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * <b>不含任何机密：</b>只输出 profile 名、布尔开关、凭证<b>条数</b>与脱敏后的自检结果；
  * clientId / clientSecret / refreshToken / accessKey / secretKey / 任何 token 一律不出现。
  * <p>
- * <b>端点路径说明（第 51 轮实测偏差登记）：</b>本清单对外挂在 {@code /spapi/connectors}，
- * 不在计划原文的 {@code /api/connectors}。原因是网关 {@code amz-gateway/application.yml}
- * 只有 {@code Path=/spapi/**} 等 15 段 Path= 路由（14 段 lb:// 服务 + 1 段 /ws/**）、<b>不存在</b> {@code /api/**} 前缀，
- * 挂 {@code /api/connectors} 会产生一个「代码里有、网关永远到不了」的死端点。
- * 统一对外路径 {@code /api/connectors} 需要新增网关路由（Plan 2 范围，本 Task 不做）。
+ * <b>端点路径说明：</b>服务直连路径是 {@code /spapi/connectors}；网关已提供
+ * {@code /api/connectors/**} 别名并重写到服务路径。对外调用可用网关别名，但该别名尚未在真实
+ * Nacos 服务发现与 Spring Cloud Gateway 运行期做过端到端验证。
  */
 @Component
 public class ConnectorRegistry {
@@ -209,9 +209,8 @@ public class ConnectorRegistry {
     /**
      * SP-API 能力表（权威清单）。
      * <p>
-     * 已实现 11 条 = Task 5 落地的限流 operationId（二者必须同源，否则限流表与能力表会各说一套）；
-     * 未实现 7 条 = spec §1.4.1 关键词全仓扫描命中 0 的官方能力。
-     * <b>未实现项不得删除</b>：删掉会让前端把「无代码」渲染成「未配置」。
+     * 90 条已实现 operation = 26 条既有客户端调用点 + 64 条统一 operation 目录。
+     * 能力清单必须与 client 包真实调用点同源，否则前端与运维会拿到错误事实。
      *
      * @return 不可变列表
      */
@@ -230,6 +229,8 @@ public class ConnectorRegistry {
                 Status.IMPLEMENTED, "FeedsClient.createFeed（variant=JSON_LISTINGS_FEED）"));
         operations.add(new Operation("feeds.getFeed", "/feeds/2021-06-30/feeds/{feedId}",
                 Status.IMPLEMENTED, "FeedsClient.getFeedStatus"));
+        operations.add(new Operation("feeds.getFeedDocument", "/feeds/2021-06-30/documents/{feedDocumentId}",
+                Status.IMPLEMENTED, "FeedsClient.fetchFeedResult"));
         operations.add(new Operation("reports.createReport", "/reports/2021-06-30/reports",
                 Status.IMPLEMENTED, "ReportsRealClient.createReport"));
         operations.add(new Operation("reports.getReport", "/reports/2021-06-30/reports/{reportId}",
@@ -241,22 +242,55 @@ public class ConnectorRegistry {
                 Status.IMPLEMENTED, "FeesRealClient.estimateFbaFees"));
         operations.add(new Operation("finances.listFinancialEvents", "/finances/v0/financialEvents",
                 Status.IMPLEMENTED, "FinancesRealClient.listFinancialEvents"));
+        operations.add(new Operation("sellers.getMarketplaceParticipations",
+                "/sellers/v1/marketplaceParticipations", Status.IMPLEMENTED,
+                "SellersClient.getMarketplaceParticipations"));
+        operations.add(new Operation("messaging.getMessagingActionsForOrder",
+                "/messaging/v1/orders/{amazonOrderId}", Status.IMPLEMENTED,
+                "AmazonMessagingRealClient.getMessagingActionsForOrder"));
+        operations.add(new Operation("messaging.GetAttributes",
+                "/messaging/v1/orders/{amazonOrderId}/attributes", Status.IMPLEMENTED,
+                "AmazonMessagingRealClient.getOrderAttributes"));
+        operations.add(new Operation("messaging.confirmCustomizationDetails",
+                "/messaging/v1/orders/{amazonOrderId}/messages/confirmCustomizationDetails",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(CONFIRM_CUSTOMIZATION_DETAILS)"));
+        operations.add(new Operation("messaging.createConfirmDeliveryDetails",
+                "/messaging/v1/orders/{amazonOrderId}/messages/confirmDeliveryDetails",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(CONFIRM_DELIVERY_DETAILS)"));
+        operations.add(new Operation("messaging.createLegalDisclosure",
+                "/messaging/v1/orders/{amazonOrderId}/messages/legalDisclosure",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(LEGAL_DISCLOSURE)"));
+        operations.add(new Operation("messaging.createConfirmOrderDetails",
+                "/messaging/v1/orders/{amazonOrderId}/messages/confirmOrderDetails",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(CONFIRM_ORDER_DETAILS)"));
+        operations.add(new Operation("messaging.createConfirmServiceDetails",
+                "/messaging/v1/orders/{amazonOrderId}/messages/confirmServiceDetails",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(CONFIRM_SERVICE_DETAILS)"));
+        operations.add(new Operation("messaging.CreateWarranty",
+                "/messaging/v1/orders/{amazonOrderId}/messages/warranty",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(WARRANTY)"));
+        operations.add(new Operation("messaging.createDigitalAccessKey",
+                "/messaging/v1/orders/{amazonOrderId}/messages/digitalAccessKey",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(DIGITAL_ACCESS_KEY)"));
+        operations.add(new Operation("messaging.createUnexpectedProblem",
+                "/messaging/v1/orders/{amazonOrderId}/messages/unexpectedProblem",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(UNEXPECTED_PROBLEM)"));
+        operations.add(new Operation("messaging.sendInvoice",
+                "/messaging/v1/orders/{amazonOrderId}/messages/invoice",
+                Status.IMPLEMENTED, "AmazonMessagingRealClient.sendMessage(INVOICE)；官方模型无 usage plan，限流走保守兜底"));
+        operations.add(new Operation("uploads.createUploadDestinationForResource",
+                "/uploads/2020-11-01/uploadDestinations/{resource}", Status.IMPLEMENTED,
+                "AmazonUploadsRealClient.createUploadDestinationForResource"));
+        operations.add(new Operation("tokens.createRestrictedDataToken",
+                "/tokens/2021-03-01/restrictedDataToken", Status.IMPLEMENTED,
+                "TokensClient.requestToken"));
 
-        // —— 未实现（spec §1.4.1：关键词命中 0）——
-        operations.add(new Operation("notifications", PATH_NOT_IMPLEMENTED,
-                Status.NOT_IMPLEMENTED, "spec §1.4.1 关键词 /notifications/v1 命中 0；订单与授权变更只能轮询；官方路径 notifications/v1/subscriptions"));
-        operations.add(new Operation("restrictedDataToken", PATH_NOT_IMPLEMENTED,
-                Status.NOT_IMPLEMENTED, "spec §1.4.1 / P0-37：无 RDT 时订单 PII 没有合规获取路径；官方路径 tokens/2021-03-01/restrictedDataToken"));
-        operations.add(new Operation("listingsItems", PATH_NOT_IMPLEMENTED,
-                Status.NOT_IMPLEMENTED, "spec §1.4.1 关键词 listings/2021-08-01 命中 0；只有 JSON_LISTINGS_FEED 间接写入；官方路径 listings/2021-08-01/items/{sellerId}/{sku}"));
-        operations.add(new Operation("productPricing", PATH_NOT_IMPLEMENTED,
-                Status.NOT_IMPLEMENTED, "spec §1.4.1 关键词 productPricing 命中 0；价格与 competitive pricing 只能间接来自 Feed 或报表；官方路径 products/pricing/v0/price"));
-        operations.add(new Operation("catalogItems", PATH_NOT_IMPLEMENTED,
-                Status.NOT_IMPLEMENTED, "spec §1.4.1 关键词 catalog/2022-04-01 命中 0；类目与属性校验无官方来源；官方路径 catalog/2022-04-01/items/{asin}"));
-        operations.add(new Operation("sellers.marketplaceParticipations", PATH_NOT_IMPLEMENTED,
-                Status.NOT_IMPLEMENTED, "spec §1.4.1 关键词 sellers/v1 命中 0；无法校验授权范围内的市场参与状态；官方路径 sellers/v1/marketplaceParticipations"));
-        operations.add(new Operation("fbaInbound", PATH_NOT_IMPLEMENTED,
-                Status.NOT_IMPLEMENTED, "spec §1.4.1 关键词 fba/inbound 命中 0；补货建议无法落成真实入库计划；官方路径 fba/inbound/v0/plans"));
+        // —— 剩余 64 条能力：统一来自官方 operation 目录 ——
+        for (SpApiOperationSpec spec : SpApiOperationCatalog.operations()) {
+            operations.add(new Operation(spec.operationId(), spec.path(),
+                    Status.IMPLEMENTED,
+                    "SpApiOperationCatalog + SpApiOperationClient（" + spec.family() + "）"));
+        }
         return Collections.unmodifiableList(operations);
     }
 
@@ -286,12 +320,13 @@ public class ConnectorRegistry {
                 "(无联调记录：未取得 SP-API 凭证，A5 只能由真实联调取证)"));
         // A6：清单与仓库源码关键字一致性由 ConnectorRegistryTest 自证 → E1
         evidence.add(new Evidence(Criterion.A6, Level.E1, "ConnectorRegistryTest（仓库内自证，无官方模型参与）"));
-        // A7：429 退避重试有桩测试；Outbox/DLQ/重放未实现 → E1
-        evidence.add(new Evidence(Criterion.A7, Level.E1,
-                "SpApiProtocolStubTest 429 退避；Outbox/DLQ/重放无实现"));
-        // A8：33 条官方 usage plan 与 6 份官方快照双向比对（sha256 锁）→ E3
+        // A7：Outbox 安全视图、DLQ 与显式重放已有离线/桩测试 → E3；真实 429/5xx 重放仍待联调
+        evidence.add(new Evidence(Criterion.A7, Level.E3,
+                "SpApiCallOutboxServiceTest + SpApiOutboxReplayExecutorTest + "
+                        + "ConnectorControllerOutboxContractTest；真实 429/5xx 重放与回读待联调"));
+        // A8：106 条官方 usage plan 与 15 份官方快照双向比对（sha256 锁）→ E3
         evidence.add(new Evidence(Criterion.A8, Level.E3,
-                "SpiRateLimiterTest（官方 usage plan 33 条逐项比对 + 快照 sha256）"));
+                "SpiRateLimiterTest（官方 usage plan 106 条逐项比对 + 快照 sha256）"));
         return Collections.unmodifiableList(evidence);
     }
 

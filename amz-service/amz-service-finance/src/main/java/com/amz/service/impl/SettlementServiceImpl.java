@@ -7,6 +7,8 @@ import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.SettlementDetail;
 import com.amz.parse.SettlementParser;
 import com.amz.parse.SettlementRow;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.result.Result;
 import com.amz.service.SettlementService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -170,17 +172,28 @@ public class SettlementServiceImpl implements SettlementService {
     }
 
     @Override
-    public List<SettlementDetail> list(Long shopId, String orderId) {
+    public PageResult<SettlementDetail> list(Long shopId, String amazonOrderId, PageRequest page) {
         if (shopId == null) {
             throw new IllegalArgumentException("shopId must not be null");
         }
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<SettlementDetail> qw = new LambdaQueryWrapper<SettlementDetail>()
-                .eq(SettlementDetail::getShopId, shopId)
-                .orderByDesc(SettlementDetail::getId);
-        if (orderId != null && !orderId.isBlank()) {
-            qw.eq(SettlementDetail::getOrderId, orderId);
+                .eq(SettlementDetail::getShopId, shopId);
+        if (amazonOrderId != null && !amazonOrderId.isBlank()) {
+            qw.eq(SettlementDetail::getAmazonOrderId, amazonOrderId);
         }
-        return settlementDetailMapper.selectList(qw);
+        Long cursorId = req.cursorId();
+        if (cursorId != null) {
+            qw.lt(SettlementDetail::getId, cursorId);
+        }
+        qw.orderByDesc(SettlementDetail::getId)
+                .last("LIMIT " + req.probeSize());
+        List<SettlementDetail> rows = settlementDetailMapper.selectList(qw);
+        if (rows.size() > req.size()) {
+            log.warn("结算明细列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页",
+                    shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(), row -> PageRequest.encodeCursor(row.getId()));
     }
 
     /**
@@ -228,7 +241,7 @@ public class SettlementServiceImpl implements SettlementService {
         SettlementDetail detail = new SettlementDetail();
         detail.setShopId(row.getShopId());
         detail.setSettlementId(row.getSettlementId());
-        detail.setOrderId(row.getOrderId());
+        detail.setAmazonOrderId(row.getAmazonOrderId());
         detail.setSku(row.getSku());
         detail.setTransactionType(row.getTransactionType());
         detail.setAmountType(row.getAmountType());

@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * SP-API 路径官方契约测试（P0-54）。
  * <p>
- * 断言方式：把 6 份 Amazon 官方 OpenAPI 模型快照（字节数 + sha256 双重锁定）解析成
+ * 断言方式：把 15 份 Amazon 官方 OpenAPI 模型快照（字节数 + sha256 双重锁定）解析成
  * <b>路径白名单</b>，再正则扫描 {@code src/main/java} 里所有以官方路径根开头的字符串字面量，
  * 要求「源码里的路径 ⊆ 官方模型声明的 paths」。
  * <p>
@@ -64,11 +64,30 @@ class SpApiPathContractTest {
             new Snapshot("/contracts/financesV0.json", 134109L,
                     "d80e881091367b0eccd4bde3ce834ed08877d3cf51095239eb8b1e328c0d19d6"),
             new Snapshot("/contracts/fbaInventory.json", 36985L,
-                    "7c14bcdb22de8ca2df45e5a40f2a422cff344d45985a68b9515b2e800edcc5ab"));
+                    "7c14bcdb22de8ca2df45e5a40f2a422cff344d45985a68b9515b2e800edcc5ab"),
+            new Snapshot("/contracts/messaging.json", 106025L,
+                    "16b585e87a3b72c3637ffa0890e08acb4e2090864f1e8b4c1a9271a06700a8a1"),
+            new Snapshot("/contracts/uploads_2020-11-01.json", 12157L,
+                    "202444dd425c24308366a4aaab28680dfb2ec70c25f4d9cd5441ea7d968ec3bd"),
+            new Snapshot("/contracts/sellers.json", 29604L,
+                    "497862ea32de8040453649986e2cd7c6fcc15b55e8022becc783e4a6d6ffcffd"),
+            new Snapshot("/contracts/tokens_2021-03-01.json", 15751L,
+                    "3cd09ae7f218c83f32536a894cb8c42f2191c94b9c27f6bcf0a164442089b061"),
+            new Snapshot("/contracts/notifications.json", 95405L,
+                    "6a5e945f2a53a91b9b97c27cd4570dc399db3dde2b777f623fc226fbcdc8469a"),
+            new Snapshot("/contracts/listingsItems_2021-08-01.json", 157514L,
+                    "117617f4c86dbd5c1708913103806a24c0ef0bbcfb6054e415d044d07761faeb"),
+            new Snapshot("/contracts/productPricing_2022-05-01.json", 105753L,
+                    "db6ffeab130bf1d4ab8fa47e4e83417d30d9cb682b3ce53f74ed51b62f6f817c"),
+            new Snapshot("/contracts/catalogItems_2022-04-01.json", 151872L,
+                    "1a029b01df1d847d3057740a6e877f89f2ab78104b5b4d8f4b839f8d00f600c2"),
+            new Snapshot("/contracts/fulfillmentInbound_2024-03-20.json", 560644L,
+                    "a4d4cdd08dd3f381f27154d7f9f503d45e0486d416c629598341bbd23c7ff487"));
 
     /** 我方向平台发起请求的路径根（源码里以这些前缀开头的字符串字面量都要被核对）。 */
     private static final List<String> PATH_ROOTS =
-            List.of("/orders/", "/reports/", "/feeds/", "/fba/", "/finances/", "/products/");
+            List.of("/orders/", "/reports/", "/feeds/", "/fba/", "/finances/", "/products/", "/messaging/", "/uploads/", "/sellers/", "/tokens/",
+                    "/notifications/", "/listings/", "/catalog/", "/batches/", "/inbound/");
 
     /** 未发布的 Reports 版本（P0-54）：任何源码/测试都不得再出现。 */
     private static final String UNPUBLISHED_REPORTS_VERSION = "2021-09-01";
@@ -81,7 +100,7 @@ class SpApiPathContractTest {
     private static final String TEST_SOURCES = "src/test/java";
 
     @Test
-    @DisplayName("6 份官方模型快照被字节数 + sha256 锁定（上游漂移必须显式暴露）")
+    @DisplayName("15 份官方模型快照被字节数 + sha256 锁定（上游漂移必须显式暴露）")
     void officialSnapshotsArePinned() throws Exception {
         for (Snapshot snapshot : SNAPSHOTS) {
             byte[] bytes = readResource(snapshot.resource());
@@ -110,8 +129,8 @@ class SpApiPathContractTest {
             sourcePaths.addAll(extractCandidatePaths(Files.readString(file, StandardCharsets.UTF_8)));
         }
 
-        assertTrue(sourcePaths.size() >= 8,
-                "只从源码提取到 " + sourcePaths.size() + " 个路径字面量（≥8 才算扫描有效）：" + sourcePaths);
+        assertTrue(sourcePaths.size() >= 15,
+                "只从源码提取到 " + sourcePaths.size() + " 个路径字面量（≥9 才算扫描有效）：" + sourcePaths);
 
         List<String> unknown = new ArrayList<>();
         for (String literal : sourcePaths) {
@@ -154,6 +173,30 @@ class SpApiPathContractTest {
     }
 
     @Test
+    @DisplayName("Tokens 路径与官方模型一致（RDT 创建）")
+    void tokensPathMatchesOfficialModel() throws Exception {
+        assertTrue(officialPaths().contains("/tokens/2021-03-01/restrictedDataToken"));
+    }
+
+    @Test
+    @DisplayName("Messaging 路径与官方模型一致（订单动作 + 九类发送动作）")
+    void messagingPathsMatchOfficialModel() throws Exception {
+        Set<String> officialPaths = officialPaths();
+        assertTrue(officialPaths.contains("/messaging/v1/orders/{amazonOrderId}"));
+        assertTrue(officialPaths.contains(
+                "/messaging/v1/orders/{amazonOrderId}/messages/confirmCustomizationDetails"));
+        assertTrue(officialPaths.contains(
+                "/messaging/v1/orders/{amazonOrderId}/messages/invoice"));
+    }
+
+    @Test
+    @DisplayName("Uploads 路径与官方模型一致（上传目的地创建）")
+    void uploadsPathMatchesOfficialModel() throws Exception {
+        Set<String> officialPaths = officialPaths();
+        assertTrue(officialPaths.contains("/uploads/2020-11-01/uploadDestinations/{resource}"));
+    }
+
+    @Test
     @DisplayName("Reports 与 Feeds 的版本段与官方模型一致（2021-06-30）")
     void reportsAndFeedsPathsUseThePublishedVersion() throws Exception {
         Set<String> officialPaths = officialPaths();
@@ -171,7 +214,7 @@ class SpApiPathContractTest {
                 "ReportsRealClient 的文档路径必须与官方模型一致");
     }
 
-    /** 汇总 6 份快照声明的全部 paths（去重）。 */
+    /** 汇总 15 份快照声明的全部 paths（去重）。 */
     private static Set<String> officialPaths() throws Exception {
         Set<String> paths = new LinkedHashSet<>();
         for (Snapshot snapshot : SNAPSHOTS) {

@@ -1,11 +1,15 @@
 package com.amz.client;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -23,6 +27,8 @@ import java.util.UUID;
 @Component
 @Profile("mock")
 public class ListingsMockClient implements ListingsClient {
+
+    private static final Gson GSON = new Gson();
 
     private static final Logger log = LoggerFactory.getLogger(ListingsMockClient.class);
 
@@ -43,5 +49,23 @@ public class ListingsMockClient implements ListingsClient {
         result.addProperty("processingStatus", "DONE");
         result.addProperty("resultFeedDocumentId", UUID.randomUUID().toString());
         return result;
+    }
+
+    @Override
+    public JsonObject getFeedResult(Long shopId, String feedSubmissionId) {
+        log.info("getFeedResult (mock) shopId={} feedSubmissionId={}", shopId, feedSubmissionId);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("feedId", feedSubmissionId);
+        summary.put("resultFeedDocumentId", "mock-result-" + feedSubmissionId);
+        summary.put("messagesProcessed", 1);
+        summary.put("messagesAccepted", 1);
+        summary.put("messagesInvalid", 0);
+        summary.put("errors", 0);
+        summary.put("warnings", 0);
+        summary.put("successful", true);
+        summary.put("partial", false);
+        summary.put("failed", false);
+        summary.put("issues", List.of());
+        return GSON.toJsonTree(summary).getAsJsonObject();
     }
 }

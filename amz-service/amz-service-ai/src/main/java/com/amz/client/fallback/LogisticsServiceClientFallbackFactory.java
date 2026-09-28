@@ -20,12 +20,15 @@ public class LogisticsServiceClientFallbackFactory implements FallbackFactory<Lo
             private String failMsg() { return "logistics service degraded: " + cause.getMessage(); }
 
             @Override
-            public Result<List<Map<String, Object>>> getTracking(Long shipmentId) {
+            public Result<List<Map<String, Object>>> getTracking(Long shipmentId,
+                                                                  Integer size,
+                                                                  String cursor) {
                 return Result.failure(failMsg());
             }
 
             @Override
-            public Result<List<Map<String, Object>>> listShipments(Long shopId, String status) {
+            public Result<List<Map<String, Object>>> listShipments(Long shopId, String status,
+                                                                   Integer size, String cursor) {
                 return Result.failure(failMsg());
             }
 

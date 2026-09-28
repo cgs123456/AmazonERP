@@ -1,4 +1,6 @@
 package com.amz.service;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import com.amz.dto.ReimbursementClaimSummary;
 import com.amz.dto.ReimbursementReconcileReport;
@@ -38,7 +40,7 @@ public interface ReimbursementClaimService {
     /** SUBMITTED / ACCEPTED → REJECTED。 */
     ReimbursementClaim reject(Long shopId, Long id, String reason);
 
-    List<ReimbursementClaim> list(Long shopId, String status);
+    PageResult<ReimbursementClaim> list(Long shopId, String status, PageRequest page);
 
     /** 按 ID 查询（含租户归属校验，越权返回 null）。 */
     ReimbursementClaim get(Long shopId, Long id);

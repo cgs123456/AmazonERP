@@ -1,6 +1,8 @@
 package com.amz.service;
 
 import com.amz.model.AdCampaignExt;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 
@@ -10,27 +12,27 @@ import java.util.List;
 public interface AdCampaignExtService {
 
     /**
-     * 创建广告活动。
+     * 在指定店铺下创建广告活动。
      */
-    AdCampaignExt createCampaign(AdCampaignExt campaign);
+    AdCampaignExt createCampaign(Long shopId, AdCampaignExt campaign);
 
     /**
-     * 更新广告活动。
+     * 更新指定店铺的广告活动，禁止改写记录归属。
      */
-    AdCampaignExt updateCampaign(AdCampaignExt campaign);
+    AdCampaignExt updateCampaign(Long shopId, AdCampaignExt campaign);
 
     /**
      * 查询店铺广告活动列表（按 adType 筛选，null 表示全部类型）。
      */
-    List<AdCampaignExt> listCampaigns(Long shopId, String adType);
+    PageResult<AdCampaignExt> listCampaigns(Long shopId, String adType, PageRequest page);
 
     /**
-     * 批量创建广告活动。
+     * 在指定店铺下批量创建广告活动。
      */
-    List<AdCampaignExt> batchCreate(List<AdCampaignExt> campaigns);
+    List<AdCampaignExt> batchCreate(Long shopId, List<AdCampaignExt> campaigns);
 
     /**
-     * 批量更新状态（ENABLED / PAUSED / ARCHIVED）。
+     * 批量更新指定店铺的活动状态（ENABLED / PAUSED / ARCHIVED）。
      */
-    List<AdCampaignExt> batchUpdateStatus(List<Long> ids, String status);
+    List<AdCampaignExt> batchUpdateStatus(Long shopId, List<Long> ids, String status);
 }

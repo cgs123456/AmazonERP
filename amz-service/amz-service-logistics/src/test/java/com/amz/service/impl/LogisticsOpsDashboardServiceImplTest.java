@@ -175,6 +175,22 @@ class LogisticsOpsDashboardServiceImplTest {
                 board.getWarnings().toString());
     }
 
+    @Test
+    @DisplayName("报价看板：聚合达到扫描上限时截断并明确标记结果不完整")
+    void quoteBoardMarksIncompleteWhenScanLimitReached() {
+        ReflectionTestUtils.setField(service, "aggregationScanLimit", 2);
+        when(carrierQuoteMapper.selectList(any())).thenReturn(List.of(
+                quote("COSCO", "SEA", LocalDate.now().plusDays(30)),
+                quote("Maersk", "SEA", LocalDate.now().plusDays(30)),
+                quote("DHL", "EXPRESS", LocalDate.now().plusDays(30))));
+
+        QuoteBoard board = service.quoteBoard(SHOP_ID);
+
+        assertEquals(2, board.getTotalQuotes(), "超限时必须只保留扫描上限内的行");
+        assertTrue(board.getWarnings().stream().anyMatch(w -> w.contains("报价扫描达到上限 2 条")
+                        && w.contains("结果不完整")),
+                board.getWarnings().toString());
+    }
     // ================================================================ 调拨看板
 
     @Test
@@ -246,6 +262,22 @@ class LogisticsOpsDashboardServiceImplTest {
         assertEquals(0, board.getTotalShippingCost().compareTo(BigDecimal.ZERO));
     }
 
+    @Test
+    @DisplayName("调拨看板：聚合达到扫描上限时截断并明确标记结果不完整")
+    void transferBoardMarksIncompleteWhenScanLimitReached() {
+        ReflectionTestUtils.setField(service, "aggregationScanLimit", 2);
+        when(inventoryTransferMapper.selectList(any())).thenReturn(List.of(
+                transfer("TRF-101", "DRAFT", 1),
+                transfer("TRF-102", "APPROVED", 1),
+                transfer("TRF-103", "IN_TRANSIT", 10)));
+
+        TransferBoard board = service.transferBoard(SHOP_ID);
+
+        assertEquals(2, board.getTotal());
+        assertTrue(board.getWarnings().stream().anyMatch(w -> w.contains("调拨单扫描达到上限 2 条")
+                        && w.contains("结果不完整")),
+                board.getWarnings().toString());
+    }
     // ================================================================ 头程成本看板
 
     @Test
@@ -331,6 +363,23 @@ class LogisticsOpsDashboardServiceImplTest {
         assertTrue(board.getWarnings().toString().contains("分摊方法"), board.getWarnings().toString());
     }
 
+    @Test
+    @DisplayName("头程成本看板：聚合达到扫描上限时截断并明确标记结果不完整")
+    void freightBoardMarksIncompleteWhenScanLimitReached() {
+        ReflectionTestUtils.setField(service, "aggregationScanLimit", 2);
+        when(shipmentMapper.selectList(any())).thenReturn(List.of(
+                shipment(801L, "SHP-801"),
+                shipment(802L, "SHP-802"),
+                shipment(803L, "SHP-803")));
+        when(freightAllocationMapper.selectList(any())).thenReturn(List.of());
+
+        FreightCostBoard board = service.freightCostBoard(SHOP_ID);
+
+        assertEquals(2, board.getUncoveredShipments());
+        assertTrue(board.getWarnings().stream().anyMatch(w -> w.contains("货件扫描达到上限 2 条")
+                        && w.contains("结果不完整")),
+                board.getWarnings().toString());
+    }
     // ================================================================ 签收差异看板
 
     @Test
@@ -430,6 +479,28 @@ class LogisticsOpsDashboardServiceImplTest {
         assertEquals(-10, board.getPendingItems().get(0).getDifference());
     }
 
+    @Test
+    @DisplayName("签收差异看板：聚合达到扫描上限时只反查展示清单对应的货件")
+    void receiptBoardMarksIncompleteAndLooksUpOnlyDisplayedShipments() {
+        ReflectionTestUtils.setField(service, "aggregationScanLimit", 2);
+        FbaReceiptDiscrepancy first = discrepancy(901L, 100, 90, "PENDING");
+        FbaReceiptDiscrepancy second = discrepancy(902L, 100, 95, "PENDING");
+        FbaReceiptDiscrepancy outsideLimit = discrepancy(903L, 100, 80, "PENDING");
+
+        when(fbaReceiptDiscrepancyMapper.selectList(any())).thenReturn(
+                List.of(first, second, outsideLimit));
+        when(shipmentMapper.selectList(any())).thenReturn(List.of(
+                shipment(901L, "SHP-901"), shipment(902L, "SHP-902")));
+
+        ReceiptBoard board = service.receiptBoard(SHOP_ID);
+
+        assertEquals(2, board.getTotal());
+        assertEquals(2, board.getPendingItems().size());
+        assertTrue(board.getPendingItems().stream().allMatch(i -> i.getShipmentNo() != null));
+        assertTrue(board.getWarnings().stream().anyMatch(w -> w.contains("签收差异记录扫描达到上限 2 条")
+                        && w.contains("结果不完整")),
+                board.getWarnings().toString());
+    }
     // ================================================================ 构造工具
 
     private CarrierQuote quote(String carrier, String serviceType, LocalDate expiry) {

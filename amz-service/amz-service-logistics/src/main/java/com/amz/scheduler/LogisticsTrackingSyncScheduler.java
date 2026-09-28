@@ -155,10 +155,15 @@ public class LogisticsTrackingSyncScheduler {
                         events, TrackingIngestService.SOURCE_API, shipment.getShopId());
                 queried++;
                 if (!outcome.isMatched()) {
-                    // 传给落库核心的货件编号取自库中记录，理论上必然匹配；
-                    // 走到这里说明匹配逻辑与数据不一致，需要显式暴露而非静默跳过
-                    log.warn("定时同步未能匹配回货件，请检查匹配逻辑：shipmentId={} shipmentNo={}",
-                            shipment.getId(), shipment.getShipmentNo());
+                    // 传给落库核心的货件编号取自库中记录，理论上必然匹配。
+                    // 歧义意味着同一标识已命中多条货件，必须显式告警而不是静默跳过。
+                    if (outcome.isAmbiguous()) {
+                        log.error("定时同步命中歧义货件，已拒绝写入：shipmentId={} shipmentNo={} conflictField={}",
+                                shipment.getId(), shipment.getShipmentNo(), outcome.getConflictField());
+                    } else {
+                        log.warn("定时同步未能匹配回货件，请检查匹配逻辑：shipmentId={} shipmentNo={}",
+                                shipment.getId(), shipment.getShipmentNo());
+                    }
                     continue;
                 }
                 accepted += outcome.getAccepted();

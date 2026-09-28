@@ -2,8 +2,18 @@ package com.amz.service.impl;
 
 import com.amz.context.UserContext;
 import com.amz.exception.CodeErrorException;
-import com.amz.mapper.*;
-import com.amz.model.*;
+import com.amz.mapper.CarrierQuoteMapper;
+import com.amz.mapper.FbaReceiptDiscrepancyMapper;
+import com.amz.mapper.FreightAllocationMapper;
+import com.amz.mapper.InventoryTransferMapper;
+import com.amz.mapper.ShipmentMapper;
+import com.amz.model.CarrierQuote;
+import com.amz.model.FbaReceiptDiscrepancy;
+import com.amz.model.FreightAllocation;
+import com.amz.model.InventoryTransfer;
+import com.amz.model.Shipment;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.LogisticsUpgradeService;
 import com.amz.util.BizNoGenerator;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -15,7 +25,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 物流升级服务实现。
@@ -43,6 +59,12 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
     private static final String STATUS_ACTIVE = "ACTIVE";
 
     private static final String QUOTE_EXPIRED = "EXPIRED";
+
+    /**
+     * 单次比价最多使用的有效扫描行数。
+     * <p>多取 1 条仅用于判断是否截断，截断结果不得用于最低价推荐。</p>
+     */
+    private static final int MAX_QUOTE_SCAN = 5000;
 
     // ---- 调拨单状态机 ----
     private static final String TRANSFER_DRAFT = "DRAFT";
@@ -140,14 +162,24 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
     }
 
     @Override
-    public List<CarrierQuote> listQuotes(Long shopId, String serviceType) {
-        return carrierQuoteMapper.selectList(new LambdaQueryWrapper<CarrierQuote>()
+    public PageResult<CarrierQuote> listQuotes(Long shopId, String serviceType, PageRequest page) {
+        requireShopAllowed(shopId, "报价");
+        requirePage(page);
+        LambdaQueryWrapper<CarrierQuote> wrapper = new LambdaQueryWrapper<CarrierQuote>()
                 .eq(CarrierQuote::getShopId, shopId)
                 .eq(CarrierQuote::getStatus, STATUS_ACTIVE)
                 .eq(serviceType != null && !serviceType.isBlank(), CarrierQuote::getServiceType, serviceType)
                 // 有效期内才算有效报价：只看 status 会让早已失效的运价继续参与选商
                 .and(w -> w.isNull(CarrierQuote::getExpiryDate)
-                        .or().ge(CarrierQuote::getExpiryDate, LocalDate.now())));
+                        .or().ge(CarrierQuote::getExpiryDate, LocalDate.now()));
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(CarrierQuote::getId, cursorId);
+        }
+        wrapper.orderByDesc(CarrierQuote::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(carrierQuoteMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     @Override
@@ -163,9 +195,9 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
             throw new CodeErrorException("体积不能为负数");
         }
 
-        // 全量取回本店同航线的报价，再在内存里区分「有效 / 已过期」——
-        // 直接把过期条件写进 SQL 就没法在返回里说明「有几条被排除了」，
-        // 使用者会因为看到承运商少了而怀疑报价丢了。
+        // 先限定最大扫描范围，再在内存里区分「有效 / 已过期」——
+        // 直接把过期条件写进 SQL 就没法在返回里说明「有几条被排除了」。
+        // 多取 1 条只用于探测截断，避免把不完整数据静默当成全量结论。
         LambdaQueryWrapper<CarrierQuote> wrapper = new LambdaQueryWrapper<CarrierQuote>()
                 .eq(CarrierQuote::getShopId, shopId)
                 .eq(CarrierQuote::getStatus, STATUS_ACTIVE);
@@ -175,7 +207,14 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
         if (destinationPort != null && !destinationPort.isBlank()) {
             wrapper.eq(CarrierQuote::getDestinationPort, destinationPort);
         }
-        List<CarrierQuote> all = carrierQuoteMapper.selectList(wrapper);
+        wrapper.orderByAsc(CarrierQuote::getId)
+                .last("LIMIT " + (MAX_QUOTE_SCAN + 1));
+
+        List<CarrierQuote> fetched = carrierQuoteMapper.selectList(wrapper);
+        boolean scanTruncated = fetched != null && fetched.size() > MAX_QUOTE_SCAN;
+        List<CarrierQuote> all = scanTruncated
+                ? new ArrayList<>(fetched.subList(0, MAX_QUOTE_SCAN))
+                : (fetched == null ? List.of() : fetched);
 
         LocalDate today = LocalDate.now();
         List<CarrierQuote> expired = new ArrayList<>();
@@ -202,13 +241,19 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
                 Comparator.comparing(c -> (BigDecimal) c.get("totalCost"))));
 
         Map<String, String> recommendedByCurrency = new LinkedHashMap<>();
-        byCurrency.forEach((currency, list) -> {
-            if (!list.isEmpty()) {
-                recommendedByCurrency.put(currency, (String) list.get(0).get("carrierName"));
-            }
-        });
+        if (!scanTruncated) {
+            byCurrency.forEach((currency, list) -> {
+                if (!list.isEmpty()) {
+                    recommendedByCurrency.put(currency, (String) list.get(0).get("carrierName"));
+                }
+            });
+        }
 
         List<String> warnings = new ArrayList<>();
+        if (scanTruncated) {
+            warnings.add("报价扫描达到上限（" + MAX_QUOTE_SCAN
+                    + " 条），本次结果不完整，已禁止给出最低价推荐；请缩小航线范围后重试");
+        }
         if (expired.size() > 0) {
             warnings.add("已排除 " + expired.size() + " 条已过失效日期的报价，不计入比价");
         }
@@ -216,7 +261,7 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
             warnings.add("本航线存在多种币种（" + String.join(" / ", byCurrency.keySet())
                     + "），金额不可直接比较，已按币种分别排序");
         }
-        if (byCurrency.isEmpty()) {
+        if (byCurrency.isEmpty() && !scanTruncated) {
             warnings.add("该航线没有有效报价，请先补充报价或延长报价有效期");
         }
 
@@ -232,8 +277,13 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
         result.put("byCurrency", byCurrency);
         result.put("recommendedByCurrency", recommendedByCurrency);
         // 仅在同币种时才给「全局推荐」；跨币种给出单一最优是错的结论
-        result.put("recommended", byCurrency.size() == 1 ? recommendedByCurrency.values().iterator().next() : null);
+        result.put("recommended", !scanTruncated && byCurrency.size() == 1
+                ? recommendedByCurrency.values().iterator().next() : null);
         result.put("excludedExpiredCount", expired.size());
+        result.put("scannedQuoteCount", all.size());
+        result.put("scanLimit", MAX_QUOTE_SCAN);
+        result.put("scanTruncated", scanTruncated);
+        result.put("comparisonComplete", !scanTruncated);
         result.put("warnings", warnings);
         return result;
     }
@@ -437,14 +487,22 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
     }
 
     @Override
-    public List<InventoryTransfer> listTransfers(Long shopId, String status) {
+    public PageResult<InventoryTransfer> listTransfers(Long shopId, String status, PageRequest page) {
+        requireShopAllowed(shopId, "调拨单");
+        requirePage(page);
         LambdaQueryWrapper<InventoryTransfer> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(InventoryTransfer::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(InventoryTransfer::getStatus, status);
         }
-        wrapper.orderByDesc(InventoryTransfer::getId);
-        return inventoryTransferMapper.selectList(wrapper);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(InventoryTransfer::getId, cursorId);
+        }
+        wrapper.orderByDesc(InventoryTransfer::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(inventoryTransferMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     // ==================== 头程费用分摊 ====================
@@ -480,12 +538,21 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
     }
 
     @Override
-    public List<FreightAllocation> listAllocations(Long shipmentId) {
+    public PageResult<FreightAllocation> listAllocations(Long shipmentId, PageRequest page) {
+        requirePage(page);
         // 分摊明细本身带 shop_id，但入口只有 shipmentId；
         // 先校验货件归属，避免用他店 shipmentId 读到成本构成（成本是敏感的定价信息）
         requireShipment(shipmentId);
-        return freightAllocationMapper.selectList(new LambdaQueryWrapper<FreightAllocation>()
-                .eq(FreightAllocation::getShipmentId, shipmentId));
+        LambdaQueryWrapper<FreightAllocation> wrapper = new LambdaQueryWrapper<FreightAllocation>()
+                .eq(FreightAllocation::getShipmentId, shipmentId);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(FreightAllocation::getId, cursorId);
+        }
+        wrapper.orderByDesc(FreightAllocation::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(freightAllocationMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     @Override
@@ -655,14 +722,22 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
     }
 
     @Override
-    public List<FbaReceiptDiscrepancy> listDiscrepancies(Long shopId, String status) {
+    public PageResult<FbaReceiptDiscrepancy> listDiscrepancies(Long shopId, String status, PageRequest page) {
+        requireShopAllowed(shopId, "签收差异");
+        requirePage(page);
         LambdaQueryWrapper<FbaReceiptDiscrepancy> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FbaReceiptDiscrepancy::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(FbaReceiptDiscrepancy::getStatus, status);
         }
-        wrapper.orderByDesc(FbaReceiptDiscrepancy::getId);
-        return fbaReceiptDiscrepancyMapper.selectList(wrapper);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(FbaReceiptDiscrepancy::getId, cursorId);
+        }
+        wrapper.orderByDesc(FbaReceiptDiscrepancy::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(fbaReceiptDiscrepancyMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     @Override
@@ -713,6 +788,12 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
      * 请求体中的 shopId 需要在这里兜住，否则可以往他店写报价 / 调拨单 / 差异记录。
      * 信任模型与切面保持一致：{@code UserContext} 无 shops 时跳过（内部调用、AI 工具）。
      */
+    private void requirePage(PageRequest page) {
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
+    }
+
     private void requireShopAllowed(Long shopId, String what) {
         if (shopId == null) {
             throw new CodeErrorException(what + "缺少店铺 ID");

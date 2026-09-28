@@ -4,8 +4,11 @@ import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.connector.HttpTransport;
+import com.amz.connector.LocalApiException;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiCallException;
 import com.amz.connector.SpApiEndpointResolver;
+import com.amz.connector.RestrictedResource;
 import com.amz.connector.SpApiRequestFactory;
 import com.amz.ratelimit.SpiRateLimiter;
 import com.google.gson.JsonElement;
@@ -15,6 +18,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
@@ -75,6 +79,7 @@ public class OrdersClient {
      * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
      */
     private final ObjectProvider<MeterRegistry> meterRegistryProvider;
+    private final SpApiGateway gateway;
 
     public OrdersClient(HttpTransport httpTransport,
                         LwaTokenManager lwaTokenManager,
@@ -82,12 +87,27 @@ public class OrdersClient {
                         SpiRateLimiter spiRateLimiter,
                         SpApiRequestFactory requestFactory,
                         ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this(httpTransport, lwaTokenManager, shopCredentialStore, spiRateLimiter,
+                requestFactory, meterRegistryProvider,
+                new SpApiGateway(httpTransport, lwaTokenManager, shopCredentialStore,
+                        spiRateLimiter, requestFactory, meterRegistryProvider));
+    }
+
+    @Autowired
+    public OrdersClient(HttpTransport httpTransport,
+                        LwaTokenManager lwaTokenManager,
+                        ShopCredentialStore shopCredentialStore,
+                        SpiRateLimiter spiRateLimiter,
+                        SpApiRequestFactory requestFactory,
+                        ObjectProvider<MeterRegistry> meterRegistryProvider,
+                        SpApiGateway gateway) {
         this.httpTransport = httpTransport;
         this.lwaTokenManager = lwaTokenManager;
         this.shopCredentialStore = shopCredentialStore;
         this.spiRateLimiter = spiRateLimiter;
         this.requestFactory = requestFactory;
         this.meterRegistryProvider = meterRegistryProvider;
+        this.gateway = gateway;
     }
 
     /**
@@ -117,54 +137,94 @@ public class OrdersClient {
      * @param shopId        店铺 ID
      * @param marketplaceId Marketplace ID
      * @param amazonOrderId Amazon 订单号
-     * @return payload.OrderItems 数组中的行对象列表；接口异常时返回空列表（由调用方降级）
+     * @return payload.OrderItems 数组中的行对象列表；接口失败时抛出类型化异常，绝不伪装成空列表
      */
     public List<JsonObject> fetchOrderItems(Long shopId, String marketplaceId, String amazonOrderId) {
-        ShopCredential credential = shopCredentialStore.get(shopId);
-        if (credential == null) {
-            throw new IllegalArgumentException("No credential found for shopId=" + shopId);
-        }
-        String region = MarketplaceRegistry.resolveRegion(marketplaceId);
-        // P0-51：端点解析统一走 requestFactory（官方主机或非生产覆盖，与出站主机校验同源）
-        SpApiEndpointResolver.Endpoint ep = requestFactory.resolveEndpoint(region);
-        String endpoint = ep.baseUrl();
-        String host = ep.host();
-        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
-        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
-
-        String accessToken = lwaTokenManager.getToken(credential);
-
-        spiRateLimiter.acquire(shopId, OP_GET_ORDER_ITEMS);
-
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
         String path = ORDER_ITEMS_PATH + amazonOrderId + "/orderItems";
-        HttpRequest request = requestFactory.spApi(
-                "GET", endpoint, host, awsRegion, path, null, null,
-                accessToken, credential.getAccessKey(), credential.getSecretKey());
-
-        try {
-            HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_ORDER_ITEMS);
-            if (response == null || response.statusCode() != 200) {
-                log.warn("fetchOrderItems failed orderId={} status={}",
-                        amazonOrderId, response == null ? -1 : response.statusCode());
-                return new ArrayList<>();
+        JsonObject body = gateway.callJsonWithStatuses(
+                "GET", shop, OP_GET_ORDER_ITEMS, path, null, null, 200);
+        JsonObject payload = body.has("payload") && body.get("payload").isJsonObject()
+                ? body.getAsJsonObject("payload") : body;
+        List<JsonObject> items = new ArrayList<>();
+        if (payload.has("OrderItems") && payload.get("OrderItems").isJsonArray()) {
+            for (JsonElement e : payload.getAsJsonArray("OrderItems")) {
+                items.add(e.getAsJsonObject());
             }
-            JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
-            JsonObject payload = body.has("payload") && body.get("payload").isJsonObject()
-                    ? body.getAsJsonObject("payload") : body;
-            List<JsonObject> items = new ArrayList<>();
-            if (payload.has("OrderItems") && payload.get("OrderItems").isJsonArray()) {
-                for (JsonElement e : payload.getAsJsonArray("OrderItems")) {
-                    items.add(e.getAsJsonObject());
-                }
-            }
-            return items;
-        } catch (Exception e) {
-            // 行级明细拉取失败不应阻断订单主流程：返回空列表由调度器降级为订单级消息
-            log.warn("fetchOrderItems error orderId={}: {}", amazonOrderId, e.getMessage());
-            return new ArrayList<>();
         }
+        return items;
     }
 
+    /**
+     * 拉取包含买家信息与配送地址的订单列表，所有业务请求均使用按精确资源范围申请的 RDT。
+     * 受限令牌获取失败时直接失败，绝不回退 LWA，避免请求未授权的 PII。
+     */
+    public List<JsonObject> fetchOrdersWithRestrictedData(Long shopId, String marketplaceId,
+                                                          Instant createdAfter,
+                                                          List<String> orderStatuses) {
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
+        List<RestrictedResource> resources = List.of(new RestrictedResource(
+                "GET", ORDERS_PATH, List.of("buyerInfo", "shippingAddress")));
+
+        List<JsonObject> allOrders = new ArrayList<>();
+        String nextToken = null;
+        int pageCount = 0;
+
+        do {
+            TreeMap<String, String> params = new TreeMap<>();
+            params.put("CreatedAfter", ISO_INSTANT.format(createdAfter));
+            params.put("MarketplaceIds", marketplaceId);
+            if (orderStatuses != null && !orderStatuses.isEmpty()) {
+                params.put("OrderStatuses", String.join(",", orderStatuses));
+            }
+            if (nextToken != null) {
+                params.put("NextToken", nextToken);
+            }
+            String queryString = buildCanonicalQueryString(params);
+
+            JsonObject body = gateway.callJsonWithRestrictedData(
+                    "GET", shop, OP_GET_ORDERS, ORDERS_PATH, queryString, null,
+                    resources, null, 200);
+            JsonObject payload = body.has("payload") && body.get("payload").isJsonObject()
+                    ? body.getAsJsonObject("payload") : body;
+            if (payload.has("Orders") && payload.get("Orders").isJsonArray()) {
+                for (JsonElement e : payload.getAsJsonArray("Orders")) {
+                    allOrders.add(e.getAsJsonObject());
+                }
+            }
+            nextToken = (payload.has("NextToken") && !payload.get("NextToken").isJsonNull())
+                    ? payload.get("NextToken").getAsString() : null;
+            pageCount++;
+            log.debug("fetchOrdersWithRestrictedData shopId={} page={} collected={} hasNext={}",
+                    shopId, pageCount, allOrders.size(), nextToken != null);
+        } while (nextToken != null);
+
+        log.info("fetchOrdersWithRestrictedData done shopId={} pages={} total={}",
+                shopId, pageCount, allOrders.size());
+        return allOrders;
+    }
+
+    /**
+     * 拉取单个订单的买家字段，RDT 路径必须与实际业务请求路径完全一致。
+     */
+    public List<JsonObject> fetchOrderItemsWithRestrictedData(Long shopId, String marketplaceId,
+                                                              String amazonOrderId) {
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
+        String path = ORDER_ITEMS_PATH + amazonOrderId + "/orderItems";
+        List<RestrictedResource> resources = List.of(
+                new RestrictedResource("GET", path, List.of("buyerInfo")));
+        JsonObject body = gateway.callJsonWithRestrictedData(
+                "GET", shop, OP_GET_ORDER_ITEMS, path, null, null, resources, null, 200);
+        JsonObject payload = body.has("payload") && body.get("payload").isJsonObject()
+                ? body.getAsJsonObject("payload") : body;
+        List<JsonObject> items = new ArrayList<>();
+        if (payload.has("OrderItems") && payload.get("OrderItems").isJsonArray()) {
+            for (JsonElement e : payload.getAsJsonArray("OrderItems")) {
+                items.add(e.getAsJsonObject());
+            }
+        }
+        return items;
+    }
     /**
      * 拉取指定店铺在某 marketplace 下、createdAfter 之后的订单列表。
      *
@@ -177,29 +237,13 @@ public class OrdersClient {
     @SentinelResource(value = "fetchOrders", fallback = "fetchOrdersFallback")
     public List<JsonObject> fetchOrders(Long shopId, String marketplaceId,
                                         Instant createdAfter, List<String> orderStatuses) {
-        ShopCredential credential = shopCredentialStore.get(shopId);
-        if (credential == null) {
-            throw new IllegalArgumentException("No credential found for shopId=" + shopId);
-        }
-
-        String region = MarketplaceRegistry.resolveRegion(marketplaceId);
-        // P0-51：端点解析统一走 requestFactory（官方主机或非生产覆盖，与出站主机校验同源）
-        SpApiEndpointResolver.Endpoint ep = requestFactory.resolveEndpoint(region);
-        String endpoint = ep.baseUrl();
-        String host = ep.host();
-        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
-        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
-
-        String accessToken = lwaTokenManager.getToken(credential);
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
 
         List<JsonObject> allOrders = new ArrayList<>();
         String nextToken = null;
         int pageCount = 0;
 
         do {
-            // 主动限流：按 (shopId, orders.getOrders) 维度令牌桶阻塞等待，避免触发 429
-            spiRateLimiter.acquire(shopId, OP_GET_ORDERS);
-
             TreeMap<String, String> params = new TreeMap<>();
             params.put("CreatedAfter", ISO_INSTANT.format(createdAfter));
             params.put("MarketplaceIds", marketplaceId);
@@ -211,25 +255,8 @@ public class OrdersClient {
             }
             String queryString = buildCanonicalQueryString(params);
 
-            HttpRequest request = requestFactory.spApi(
-                    "GET", endpoint, host, awsRegion, ORDERS_PATH, queryString, null,
-                    accessToken, credential.getAccessKey(), credential.getSecretKey());
-
-            HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_ORDERS);
-            if (response == null || response.statusCode() != 200) {
-                int status = response == null ? -1 : response.statusCode();
-                // 401/403：access_token 失效或被吊销，主动驱逐缓存，
-                // 下次调用将重新走 LWA 刷新，避免在剩余 TTL 内持续 401
-                if (status == 401 || status == 403) {
-                    lwaTokenManager.invalidate(credential);
-                    log.warn("fetchOrders got {} — LWA token cache invalidated shopId={}", status, shopId);
-                }
-                throw new RuntimeException("fetchOrders failed shopId=" + shopId
-                        + " status=" + status
-                        + " body=" + (response == null ? "" : response.body()));
-            }
-
-            JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
+            JsonObject body = gateway.callJsonWithStatuses(
+                    "GET", shop, OP_GET_ORDERS, ORDERS_PATH, queryString, null, 200);
             JsonObject payload = body.has("payload") && body.get("payload").isJsonObject()
                     ? body.getAsJsonObject("payload") : body;
             if (payload.has("Orders") && payload.get("Orders").isJsonArray()) {

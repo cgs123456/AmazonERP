@@ -2,8 +2,8 @@ package com.amz.service;
 
 import com.amz.model.PurchasePlan;
 import com.amz.model.PurchaseOrderItem;
-
-import java.util.List;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import java.util.Map;
 
 /**
@@ -22,9 +22,8 @@ public interface PurchasePlanService {
 
     /** 将采购计划转为采购订单 */
     Map<String, Object> convertToOrder(Long planId);
-
-    /** 查询采购计划列表 */
-    List<PurchasePlan> listPlans(Long shopId, String status);
+    /** 查询采购计划列表（游标分页，显式返回截断状态） */
+    PageResult<PurchasePlan> listPlans(Long shopId, String status, PageRequest page);
 
     /** 获取采购计划详情 */
     PurchasePlan getPlan(Long id);

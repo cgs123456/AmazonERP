@@ -38,4 +38,13 @@ public interface ListingsClient {
      * @return 包含 processingStatus 等字段的 JSON 对象
      */
     JsonObject getFeedStatus(Long shopId, String feedSubmissionId);
+
+    /**
+     * 查询 Feed 结构化 processing report。
+     *
+     * @param shopId           店铺 ID
+     * @param feedSubmissionId Feed 提交 ID
+     * @return 包含 messagesAccepted / messagesInvalid / errors / successful 等字段的结果
+     */
+    JsonObject getFeedResult(Long shopId, String feedSubmissionId);
 }

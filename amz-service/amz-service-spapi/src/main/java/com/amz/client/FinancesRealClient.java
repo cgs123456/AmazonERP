@@ -67,14 +67,18 @@ public class FinancesRealClient implements FinancesClient {
             JsonObject resp = gateway.callJson("GET", shop, OP_LIST_FINANCIAL_EVENTS,
                     FINANCES_PATH, SpApiGateway.canonicalQuery(params), null);
 
-            JsonObject payload = resp.has("payload") && resp.get("payload").isJsonObject()
-                    ? resp.getAsJsonObject("payload") : new JsonObject();
-            JsonObject financialEvents = payload.has("FinancialEvents")
-                    && payload.get("FinancialEvents").isJsonObject()
-                    ? payload.getAsJsonObject("FinancialEvents") : null;
+            JsonObject payload = object(resp, "payload");
+            if (payload == null) {
+                throw new IllegalStateException("Finances response missing payload, page=" + (page + 1));
+            }
+            JsonObject financialEvents = object(payload, "FinancialEvents");
+            if (financialEvents == null) {
+                throw new IllegalStateException(
+                        "Finances response missing payload.FinancialEvents, page=" + (page + 1));
+            }
             all.addAll(FinancialEventParser.parse(financialEvents));
 
-            nextToken = str(resp, "nextToken");
+            nextToken = str(payload, "NextToken");
             page++;
             if (nextToken == null || nextToken.isBlank()) {
                 break;
@@ -89,6 +93,12 @@ public class FinancesRealClient implements FinancesClient {
         return all;
     }
 
+    private static JsonObject object(JsonObject holder, String key) {
+        if (holder == null || !holder.has(key) || !holder.get(key).isJsonObject()) {
+            return null;
+        }
+        return holder.getAsJsonObject(key);
+    }
     private static String str(JsonObject o, String key) {
         if (o == null || !o.has(key) || o.get(key).isJsonNull()) {
             return null;

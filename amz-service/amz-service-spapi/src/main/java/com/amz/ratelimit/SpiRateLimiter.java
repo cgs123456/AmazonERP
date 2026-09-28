@@ -1,10 +1,16 @@
 package com.amz.ratelimit;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -29,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 也可能因为窗口固定而长时间误伤（{@code reports.createReport} 的 0.0167 req/s 若写成
  * 15 req/15min，突发后用满一次要等整窗）。令牌桶是官方 rate+burst 的直接映射。
  * <p>
- * 官方数值来源：{@code src/test/resources/contracts/} 下 6 份官方 OpenAPI 模型快照
+ * 官方数值来源：{@code src/test/resources/contracts/} 下 15 份官方 OpenAPI 模型快照
  * {@code description} 的 "Usage Plan" 表，逐项由 {@link com.amz.ratelimit.SpiRateLimiter#officialPlans()}
  * 暴露给契约测试比对（见 {@code SpiRateLimiterTest}）。**未知 operationId 一律落到保守兜底
  * 1 req/s + burst 30（与旧实现 30 req/30s 等效）并打一次 WARN**，绝不静默放大配额。
@@ -39,9 +45,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * ——旧实现是「只收紧不恢复 + endpoint 维度」，单店被限流会永久拖慢所有店铺。
  */
 @Component
-public class SpiRateLimiter {
+public class SpiRateLimiter implements MeterBinder {
 
     private static final Logger log = LoggerFactory.getLogger(SpiRateLimiter.class);
+
+    /** P0-52b：结构化观测与 Prometheus 抓取共用的指标名。 */
+    private static final String RATE_LIMIT_METRIC = "spapi.ratelimit.limit";
+
+    private static final String METRIC_KIND_OBSERVED = "observed";
+    private static final String METRIC_KIND_EFFECTIVE = "effective";
 
     /** 未知 operationId 的兜底速率（req/s）：与旧实现 30 req/30s 等效，不改变既有放行量。 */
     private static final double FALLBACK_RATE_PER_SECOND = 1.0d;
@@ -72,9 +84,66 @@ public class SpiRateLimiter {
         private boolean initialized;
     }
 
+    /**
+     * 一次有效 {@code x-amzn-RateLimit-Limit} 观测的结构化快照。
+     * <p>
+     * {@code observedRatePerSecond} 是平台原始观测值；{@code effectiveRatePerSecond} 是本地实际
+     * 采用的速率（恒 ≤ 官方值）。两者分开保留，避免验收时只看到 WARN 文本，或把平台高于官方
+     * 默认值的观测误当成已放大配额。
+     *
+     * @param shopId                  店铺 ID
+     * @param operationId             官方 operationId
+     * @param variant                 分档值；无分档时为 null
+     * @param headerValue             平台响应头原始值（trim 后）
+     * @param observedRatePerSecond   平台观测速率（req/s）
+     * @param effectiveRatePerSecond  本地实际生效速率（req/s）
+     * @param burst                   官方 burst（观测只改速率，不改 burst）
+     * @param observedAt              观测时间
+     */
+    public record RateLimitObservation(
+            Long shopId,
+            String operationId,
+            String variant,
+            String headerValue,
+            double observedRatePerSecond,
+            double effectiveRatePerSecond,
+            int burst,
+            Instant observedAt) {
+
+        public RateLimitObservation {
+            Objects.requireNonNull(shopId, "shopId must not be null");
+            if (operationId == null || operationId.isBlank()) {
+                throw new IllegalArgumentException("operationId must not be blank");
+            }
+            if (headerValue == null || headerValue.isBlank()) {
+                throw new IllegalArgumentException("headerValue must not be blank");
+            }
+            if (!(observedRatePerSecond > 0.0d) || !Double.isFinite(observedRatePerSecond)) {
+                throw new IllegalArgumentException("observedRatePerSecond must be positive and finite");
+            }
+            if (!(effectiveRatePerSecond > 0.0d) || !Double.isFinite(effectiveRatePerSecond)) {
+                throw new IllegalArgumentException("effectiveRatePerSecond must be positive and finite");
+            }
+            if (effectiveRatePerSecond > observedRatePerSecond) {
+                throw new IllegalArgumentException("effectiveRatePerSecond must not exceed observedRatePerSecond");
+            }
+            if (burst < 1) {
+                throw new IllegalArgumentException("burst must be >= 1");
+            }
+            Objects.requireNonNull(observedAt, "observedAt must not be null");
+        }
+    }
     /** {@code shopId:operationKey} -> 令牌桶。 */
     private final ConcurrentHashMap<String, TokenBucket> buckets = new ConcurrentHashMap<>();
 
+    /** {@code shopId:operationKey} -> 最近一次有效观测快照；恢复官方配额后仍保留，供验收取证。 */
+    private final ConcurrentHashMap<String, RateLimitObservation> observations = new ConcurrentHashMap<>();
+
+    /** Spring Boot 绑定的指标注册表；未注入时为 null，不影响限流主链路。 */
+    private volatile MeterRegistry meterRegistry;
+
+    /** 已注册 Gauge 的观测键，避免重复注册同一时间序列。 */
+    private final Set<String> meterKeys = ConcurrentHashMap.newKeySet();
     /** {@code shopId:operationKey} -> 观测收紧后的速率（req/s，恒 ≤ 官方值）。 */
     private final ConcurrentHashMap<String, Double> observedRates = new ConcurrentHashMap<>();
 
@@ -150,6 +219,41 @@ public class SpiRateLimiter {
     }
 
     /**
+     * 返回最近一次有效限流观测的不可变快照，按店铺与 operation 稳定排序。
+     * <p>
+     * 该出口只读、不改变限流状态；无观测时返回空列表。它用于验收时核对平台响应头是否
+     * 真正进入本地限流器，不能替代真实 429/响应头联调。
+     */
+    public List<RateLimitObservation> observations() {
+        return List.copyOf(observations.values().stream()
+                .sorted(Comparator.comparingLong(RateLimitObservation::shopId)
+                        .thenComparing(RateLimitObservation::operationId)
+                        .thenComparing(observation -> observation.variant() == null
+                                ? "" : observation.variant())
+                        .thenComparing(RateLimitObservation::observedAt))
+                .toList());
+    }
+
+    /**
+     * 将已存在的观测注册为 Micrometer Gauge；后续观测也会动态注册。
+     * <p>
+     * 未绑定 registry 时限流主链路完全不受影响。Gauge 的 supplier 每次抓取时读取当前
+     * 快照，因此恢复观测会更新同一时间序列，而不会留下过期的旧值。
+     */
+    @Override
+    public void bindTo(MeterRegistry registry) {
+        Objects.requireNonNull(registry, "registry must not be null");
+        this.meterRegistry = registry;
+        observations.values().stream()
+                .sorted(Comparator.comparingLong(RateLimitObservation::shopId)
+                        .thenComparing(RateLimitObservation::operationId)
+                        .thenComparing(observation -> observation.variant() == null
+                                ? "" : observation.variant()))
+                .forEach(observation -> publishRateLimitMetrics(
+                        observationKey(observation), observation));
+    }
+
+    /**
      * 根据 {@code x-amzn-RateLimit-Limit} 响应头记录**该店铺该 operation** 的观测速率。
      * <p>
      * 与旧实现的区别：① 只影响传入的 {@code shopId}（其它店铺不受牵连）；
@@ -177,7 +281,7 @@ public class SpiRateLimiter {
                     rateLimitHeader, shopId, operationKey(operationId, variant));
             return;
         }
-        updateLimitObserved(shopId, operationId, variant, observed);
+        updateLimitObserved(shopId, operationId, variant, observed, rateLimitHeader.trim());
     }
 
     /** 直接以观测速率（req/s）更新店铺级配额；由 {@link #updateLimit} 或测试调用。 */
@@ -188,6 +292,18 @@ public class SpiRateLimiter {
     /** {@link #updateLimitObserved(Long, String, double)} 的分档版本。 */
     public void updateLimitObserved(Long shopId, String operationId, String variant,
                                     double observedRatePerSecond) {
+        updateLimitObserved(shopId, operationId, variant, observedRatePerSecond,
+                Double.toString(observedRatePerSecond));
+    }
+
+    /**
+     * 更新限流状态并保留原始观测文本。
+     * <p>
+     * 分成公开的数值入口与私有文本入口，避免 {@code updateLimit("5")} 在结构化出口里
+     * 被改写成 {@code "5.0"}，验收时无法与平台原始响应头逐字对照。
+     */
+    private void updateLimitObserved(Long shopId, String operationId, String variant,
+                                     double observedRatePerSecond, String headerValue) {
         Objects.requireNonNull(shopId, "shopId must not be null");
         String operation = requireOperationId(operationId);
         if (!(observedRatePerSecond > 0.0d) || !Double.isFinite(observedRatePerSecond)) {
@@ -195,9 +311,18 @@ public class SpiRateLimiter {
                     observedRatePerSecond, shopId, operationKey(operation, variant));
             return;
         }
-        UsagePlan official = officialPlan(operation, variant);
-        String operationKey = operationKey(operation, variant);
+        String normalizedVariant = variant == null || variant.isBlank() ? null : variant;
+        UsagePlan official = officialPlan(operation, normalizedVariant);
+        String operationKey = operationKey(operation, normalizedVariant);
         String key = shopId + ":" + operationKey;
+        double effective = Math.min(observedRatePerSecond, official.ratePerSecond());
+
+        // 先保留观测快照：即使速率未变化，最新响应头与时间也必须可审计。
+        RateLimitObservation observation = new RateLimitObservation(
+                shopId, operation, normalizedVariant, headerValue,
+                observedRatePerSecond, effective, official.burst(), Instant.now());
+        observations.put(key, observation);
+        publishRateLimitMetrics(key, observation);
 
         // 观测值高于官方默认值时按官方值处理：既不放大（遵守平台配额），也能撤销之前的收紧。
         if (observedRatePerSecond >= official.ratePerSecond()) {
@@ -209,16 +334,56 @@ public class SpiRateLimiter {
             return;
         }
 
-        double tightened = Math.min(observedRatePerSecond, official.ratePerSecond());
         Double previous = observedRates.get(key);
-        if (previous != null && Double.compare(previous, tightened) == 0) {
+        if (previous != null && Double.compare(previous, effective) == 0) {
             return;
         }
-        observedRates.put(key, tightened);
+        observedRates.put(key, effective);
         log.warn("updateLimit tightened: shopId={} operation={} observed={}req/s → effective {}req/s"
                         + " (official {}req/s, burst {}); previous={}req/s",
-                shopId, operationKey, observedRatePerSecond, tightened,
+                shopId, operationKey, observedRatePerSecond, effective,
                 official.ratePerSecond(), official.burst(), previous);
+    }
+
+    private static String observationKey(RateLimitObservation observation) {
+        return observation.shopId() + ":" + operationKey(observation.operationId(), observation.variant());
+    }
+
+    /**
+     * 注册一个观测键的 observed/effective 两个 Gauge。指标值从当前快照读取，
+     * 因此后续恢复或再次收紧都会反映到同一时间序列。
+     */
+    private void publishRateLimitMetrics(String key, RateLimitObservation observation) {
+        MeterRegistry registry = meterRegistry;
+        if (registry == null) {
+            return;
+        }
+        registerGauge(registry, key, observation, METRIC_KIND_OBSERVED);
+        registerGauge(registry, key, observation, METRIC_KIND_EFFECTIVE);
+    }
+
+    private void registerGauge(MeterRegistry registry, String key,
+                               RateLimitObservation observation, String kind) {
+        String meterKey = System.identityHashCode(registry) + ":" + key + ":" + kind;
+        if (!meterKeys.add(meterKey)) {
+            return;
+        }
+        Gauge.builder(RATE_LIMIT_METRIC, this, limiter -> limiter.metricValue(key, kind))
+                .description("SP-API rate limit observed from response headers and effective local limit")
+                .tags("shopId", String.valueOf(observation.shopId()),
+                        "operation", observation.operationId(),
+                        "variant", observation.variant() == null ? "" : observation.variant(),
+                        "kind", kind)
+                .register(registry);
+    }
+
+    private double metricValue(String key, String kind) {
+        RateLimitObservation observation = observations.get(key);
+        if (observation == null) {
+            return 0.0d;
+        }
+        return METRIC_KIND_OBSERVED.equals(kind)
+                ? observation.observedRatePerSecond() : observation.effectiveRatePerSecond();
     }
 
     /** 店铺级观测优先；未观测到则官方默认。 */
@@ -320,7 +485,7 @@ public class SpiRateLimiter {
     }
 
     /**
-     * 官方 usage plan 表（33 个 operation，逐项来自 6 份官方模型快照的 "Usage Plan" 表）。
+     * 官方 usage plan 表（106 个 operation，逐项来自 15 份官方模型快照的 "Usage Plan" 表）。
      * <p>
      * 改动这里的任何数值都必须同时改 {@code src/test/resources/contracts/} 的快照，
      * 否则 {@code SpiRateLimiterTest#officialPlansMatchContractSnapshots} 会以官方期望值失败。
@@ -376,6 +541,98 @@ public class SpiRateLimiter {
         // contracts/fbaInventory.json（createInventoryItem/deleteInventoryItem/addInventory
         // 在官方模型中没有 usage plan 表，因此不登记 → 落到保守兜底）
         put(plans, "fbaInventory.getInventorySummaries", 2, 2);
+
+        // contracts/messaging.json（sendInvoice 没有 usage plan 表，不登记猜测值）
+        put(plans, "messaging.getMessagingActionsForOrder", 1, 5);
+        put(plans, "messaging.GetAttributes", 1, 5);
+        put(plans, "messaging.confirmCustomizationDetails", 1, 5);
+        put(plans, "messaging.createConfirmDeliveryDetails", 1, 5);
+        put(plans, "messaging.createLegalDisclosure", 1, 5);
+        put(plans, "messaging.createConfirmOrderDetails", 1, 5);
+        put(plans, "messaging.createConfirmServiceDetails", 1, 5);
+        put(plans, "messaging.CreateWarranty", 1, 5);
+        put(plans, "messaging.createDigitalAccessKey", 1, 5);
+        put(plans, "messaging.createUnexpectedProblem", 1, 5);
+
+        // contracts/uploads_2020-11-01.json
+        put(plans, "uploads.createUploadDestinationForResource", 10, 10);
+
+        // contracts/sellers.json（getAccount 尚未提供客户端，但官方配额必须完整登记）
+        put(plans, "sellers.getMarketplaceParticipations", 0.016, 15);
+        put(plans, "sellers.getAccount", 0.016, 15);
+
+        // contracts/tokens_2021-03-01.json
+        put(plans, "tokens.createRestrictedDataToken", 1, 10);
+
+
+        // contracts/notifications.json
+        put(plans, "notifications.getSubscriptions", 1, 5);
+        put(plans, "notifications.getSubscription", 1, 5);
+        put(plans, "notifications.createSubscription", 1, 5);
+        put(plans, "notifications.getSubscriptionById", 1, 5);
+        put(plans, "notifications.deleteSubscriptionById", 1, 5);
+        put(plans, "notifications.sendTestNotification", 1, 5);
+        put(plans, "notifications.getDestinations", 1, 5);
+        put(plans, "notifications.createDestination", 1, 5);
+        put(plans, "notifications.getDestination", 1, 5);
+        put(plans, "notifications.deleteDestination", 1, 5);
+
+        // contracts/listingsItems_2021-08-01.json
+        put(plans, "listingsItems.deleteListingsItem", 5, 5);
+        put(plans, "listingsItems.getListingsItem", 5, 10);
+        put(plans, "listingsItems.patchListingsItem", 5, 5);
+        put(plans, "listingsItems.putListingsItem", 5, 10);
+        put(plans, "listingsItems.searchListingsItems", 5, 5);
+
+        // contracts/productPricing_2022-05-01.json
+        put(plans, "productPricing.getFeaturedOfferExpectedPriceBatch", 0.033, 1);
+        put(plans, "productPricing.getCompetitiveSummary", 0.033, 1);
+
+        // contracts/catalogItems_2022-04-01.json
+        put(plans, "catalogItems.searchCatalogItems", 2, 2);
+        put(plans, "catalogItems.getCatalogItem", 2, 2);
+
+        // contracts/fulfillmentInbound_2024-03-20.json
+        put(plans, "fbaInbound.listInboundPlans", 2, 6);
+        put(plans, "fbaInbound.createInboundPlan", 2, 2);
+        put(plans, "fbaInbound.getInboundPlan", 2, 6);
+        put(plans, "fbaInbound.listInboundPlanBoxes", 2, 6);
+        put(plans, "fbaInbound.cancelInboundPlan", 2, 2);
+        put(plans, "fbaInbound.listInboundPlanItems", 2, 6);
+        put(plans, "fbaInbound.updateInboundPlanName", 2, 30);
+        put(plans, "fbaInbound.listPackingGroupBoxes", 2, 30);
+        put(plans, "fbaInbound.listPackingGroupItems", 2, 30);
+        put(plans, "fbaInbound.setPackingInformation", 2, 2);
+        put(plans, "fbaInbound.listPackingOptions", 2, 6);
+        put(plans, "fbaInbound.generatePackingOptions", 2, 2);
+        put(plans, "fbaInbound.confirmPackingOption", 2, 2);
+        put(plans, "fbaInbound.listInboundPlanPallets", 2, 6);
+        put(plans, "fbaInbound.listPlacementOptions", 2, 6);
+        put(plans, "fbaInbound.generatePlacementOptions", 2, 2);
+        put(plans, "fbaInbound.confirmPlacementOption", 2, 2);
+        put(plans, "fbaInbound.getShipment", 2, 6);
+        put(plans, "fbaInbound.listShipmentBoxes", 2, 30);
+        put(plans, "fbaInbound.listShipmentContentUpdatePreviews", 2, 30);
+        put(plans, "fbaInbound.generateShipmentContentUpdatePreviews", 2, 30);
+        put(plans, "fbaInbound.getShipmentContentUpdatePreview", 2, 30);
+        put(plans, "fbaInbound.confirmShipmentContentUpdatePreview", 2, 30);
+        put(plans, "fbaInbound.getDeliveryChallanDocument", 2, 6);
+        put(plans, "fbaInbound.listDeliveryWindowOptions", 2, 30);
+        put(plans, "fbaInbound.generateDeliveryWindowOptions", 2, 30);
+        put(plans, "fbaInbound.confirmDeliveryWindowOptions", 2, 30);
+        put(plans, "fbaInbound.listShipmentItems", 2, 30);
+        put(plans, "fbaInbound.updateShipmentName", 2, 30);
+        put(plans, "fbaInbound.listShipmentPallets", 2, 30);
+        put(plans, "fbaInbound.updateShipmentSourceAddress", 2, 30);
+        put(plans, "fbaInbound.updateShipmentTrackingDetails", 2, 2);
+        put(plans, "fbaInbound.listTransportationOptions", 2, 6);
+        put(plans, "fbaInbound.generateTransportationOptions", 2, 2);
+        put(plans, "fbaInbound.confirmTransportationOptions", 2, 2);
+        put(plans, "fbaInbound.listItemComplianceDetails", 2, 6);
+        put(plans, "fbaInbound.updateItemComplianceDetails", 2, 6);
+        put(plans, "fbaInbound.createMarketplaceItemLabels", 2, 30);
+        put(plans, "fbaInbound.setPrepDetails", 2, 30);
+        put(plans, "fbaInbound.getInboundOperationStatus", 2, 6);
 
         return Map.copyOf(plans);
     }

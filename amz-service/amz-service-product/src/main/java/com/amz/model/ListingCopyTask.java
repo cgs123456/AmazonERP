@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 
 /**
  * Listing 跨站点复制任务。
- * 状态流转：PENDING -> PROCESSING -> SUBMITTED -> SUCCESS / FAILED
+ * 状态流转：PENDING -> PROCESSING -> SUBMITTED -> SUCCESS / PARTIAL / FAILED / TIMEOUT
  */
 @Data
 @TableName("amz_listing_copy_task")
@@ -33,6 +33,9 @@ public class ListingCopyTask implements Serializable {
 
     @TableField("sku")
     private String sku;
+
+    @TableField("product_type")
+    private String productType;
 
     @TableField("source_title")
     private String sourceTitle;
@@ -60,6 +63,18 @@ public class ListingCopyTask implements Serializable {
 
     @TableField("feed_submission_id")
     private String feedSubmissionId;
+
+    @TableField("poll_attempts")
+    private Integer pollAttempts;
+
+    @TableField("next_poll_time")
+    private LocalDateTime nextPollTime;
+
+    @TableField("last_polled_at")
+    private LocalDateTime lastPolledAt;
+
+    @TableField("poll_deadline")
+    private LocalDateTime pollDeadline;
 
     @TableField("error_message")
     private String errorMessage;

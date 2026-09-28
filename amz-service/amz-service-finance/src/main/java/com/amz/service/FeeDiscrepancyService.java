@@ -1,4 +1,6 @@
 package com.amz.service;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import com.amz.dto.FeeDiscrepancyScanReport;
 import com.amz.dto.InboundShortageRequest;
@@ -30,7 +32,7 @@ public interface FeeDiscrepancyService {
     /**
      * 查询候选（可按状态、类型过滤）。
      */
-    List<FeeDiscrepancy> list(Long shopId, String status, String type);
+    PageResult<FeeDiscrepancy> list(Long shopId, String status, String type, PageRequest page);
 
     /**
      * 按 ID 查询（含租户归属校验）。

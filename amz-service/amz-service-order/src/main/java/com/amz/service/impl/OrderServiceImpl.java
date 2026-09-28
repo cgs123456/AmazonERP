@@ -7,11 +7,14 @@ import com.amz.constant.MqConstant;
 import com.amz.enums.OrderStatusEnum;
 import com.amz.exception.MessageProcessLimitExceededException;
 import com.amz.mapper.OrderAttributeMapper;
+import com.amz.mapper.OrderItemMapper;
 import com.amz.mapper.OrderMapper;
 import com.amz.model.dto.OrderDto;
+import com.amz.model.dto.OrderItemSyncDto;
 import com.amz.model.dto.OrderSyncDto;
 import com.amz.model.pojo.CustomAttribute;
 import com.amz.model.pojo.Order;
+import com.amz.model.pojo.OrderItem;
 import com.amz.model.pojo.OrderAttribute;
 import com.amz.model.pojo.Product;
 import com.amz.result.Result;
@@ -61,6 +64,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private OrderMapper orderMapper;
+
+    @Autowired
+    private OrderItemMapper orderItemMapper;
 
     @Autowired
     private ProductClient productClient;
@@ -190,11 +196,35 @@ public class OrderServiceImpl implements OrderService {
             return;
         }
 
-        // 幂等查重：按 amazonOrderId 查询（amz_order.uk_amazon_order 唯一索引保证）
-        Long existCount = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
-                .eq(Order::getAmazonOrderId, syncDto.getAmazonOrderId()));
+        // 幂等查重：必须带店铺（和站点）维度，不能只按 amazonOrderId 判重。
+        //
+        // 为什么改：amz_order 的唯一键已由 Flyway V4 收敛为
+        // uk_shop_market_order (shop_id, marketplace_id, amazon_order_id)（spec P0-40）。
+        // 在此之前只按 amazonOrderId 查重，等价于假设「订单号全局唯一」——一旦同一订单号
+        // 出现在另一个店铺/站点，本店的订单会被判成「已存在的重复订单」而**静默丢弃**：
+        // 日志写的是幂等跳过，界面上就是订单少了一张且没有任何报错。
+        // 这是多租户 ERP 最难排查的一类缺陷（数据丢失 + 不可观测），因此查重条件必须与
+        // 唯一键同构：shop_id + marketplace_id + amazon_order_id。
+        LambdaQueryWrapper<Order> dedupQuery = new LambdaQueryWrapper<Order>()
+                .eq(Order::getAmazonOrderId, syncDto.getAmazonOrderId());
+        if (syncDto.getShopId() != null) {
+            dedupQuery.eq(Order::getShopId, syncDto.getShopId());
+        } else {
+            // 缺 shopId 时绝不能退化成全局判重：宁可放行让唯一索引去兜底（重复会报
+            // DuplicateKeyException，是可观测的失败），也不要静默丢单。
+            log.warn("syncAmazonOrder 缺少 shopId，降级为不带店铺维度的查重：amazonOrderId={}",
+                    syncDto.getAmazonOrderId());
+        }
+        if (syncDto.getMarketplaceId() != null && !syncDto.getMarketplaceId().isEmpty()) {
+            dedupQuery.eq(Order::getMarketplaceId, syncDto.getMarketplaceId());
+        }
+        Long existCount = orderMapper.selectCount(dedupQuery);
         if (existCount != null && existCount > 0) {
-            log.info("syncAmazonOrder 幂等跳过：amazonOrderId={} 已存在", syncDto.getAmazonOrderId());
+            log.info("syncAmazonOrder 幂等跳过：shopId={}, marketplaceId={}, amazonOrderId={} 已存在",
+                    syncDto.getShopId(), syncDto.getMarketplaceId(), syncDto.getAmazonOrderId());
+            // 订单已存在时仍然补写明细行：首轮同步可能没拿到行级数据（orderItems 端点失败/限流），
+            // 重投时若直接返回，明细会永久缺失且没有任何报错。幂等由 uk_order_item 保证。
+            persistOrderItems(syncDto);
             return;
         }
 
@@ -218,6 +248,7 @@ public class OrderServiceImpl implements OrderService {
             orderMapper.insert(order);
             log.info("syncAmazonOrder 落库成功：amazonOrderId={}, shopId={}",
                     syncDto.getAmazonOrderId(), syncDto.getShopId());
+            persistOrderItems(syncDto);
             // 业财一体化：订单落库成功后触发凭证生成（借应收 / 贷收入 + 多币种换算）。
             // B1 默认走 MQ（finance 侧消费，失败进 DLQ；generateOrderVoucher 幂等，重投安全）。
             // 同步 Feign 仅在 finance.voucher.async=false 时作为回退保留。
@@ -263,6 +294,83 @@ public class OrderServiceImpl implements OrderService {
             // 并发场景下唯一索引兜底：另一线程已插入，视为幂等成功
             log.warn("syncAmazonOrder 并发幂等跳过：amazonOrderId={}", syncDto.getAmazonOrderId());
         }
+    }
+
+    /**
+     * 落库订单明细行（V5 {@code amz_order_item}）。
+     * <p>
+     * 幂等键与表唯一键 {@code uk_order_item(shop_id, amazon_order_id, amazon_order_item_id)}
+     * 同构：先查后写（存在则 update，不存在则 insert），并捕获并发下的 DuplicateKeyException。
+     * 之所以不用“先删后插”：删除窗口内明细会短暂消失，且 delete+insert 会把 update_time
+     * 全部刷新、掩盖真实变更时间，不利于对账。
+     *
+     * @param syncDto 订单同步 DTO，{@code orderItems} 为空时直接返回（不写占位行）
+     */
+    private void persistOrderItems(OrderSyncDto syncDto) {
+        List<OrderItemSyncDto> items = syncDto.getOrderItems();
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        Long shopId = syncDto.getShopId();
+        if (shopId == null) {
+            // shop_id 是 NOT NULL：缺店铺维度时无法落明细。宁可显式告警并跳过，
+            // 也绝不用 0 或默认值伪造归属——那会让明细挂到错误店铺且不可察觉。
+            log.warn("订单明细落库跳过：缺少 shopId，amazonOrderId={}, itemCount={}",
+                    syncDto.getAmazonOrderId(), items.size());
+            return;
+        }
+        int saved = 0;
+        for (OrderItemSyncDto item : items) {
+            String itemId = item.getAmazonOrderItemId();
+            if (itemId == null || itemId.isEmpty()) {
+                log.warn("订单明细落库跳过一行：缺少 amazonOrderItemId，amazonOrderId={}",
+                        syncDto.getAmazonOrderId());
+                continue;
+            }
+            try {
+                OrderItem entity = toOrderItem(syncDto, item, shopId);
+                OrderItem existing = orderItemMapper.selectOne(new LambdaQueryWrapper<OrderItem>()
+                        .eq(OrderItem::getShopId, shopId)
+                        .eq(OrderItem::getAmazonOrderId, syncDto.getAmazonOrderId())
+                        .eq(OrderItem::getAmazonOrderItemId, itemId));
+                if (existing != null) {
+                    entity.setId(existing.getId());
+                    orderItemMapper.updateById(entity);
+                } else {
+                    orderItemMapper.insert(entity);
+                }
+                saved++;
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                log.warn("订单明细并发幂等跳过：amazonOrderId={}, amazonOrderItemId={}",
+                        syncDto.getAmazonOrderId(), itemId);
+            }
+        }
+        log.info("订单明细落库：amazonOrderId={}, shopId={}, 成功行数={}/{}",
+                syncDto.getAmazonOrderId(), shopId, saved, items.size());
+    }
+
+    /**
+     * 明细行映射。币种/配送渠道缺省时回退订单级取值（同一订单内这两个值是订单级属性）。
+     * product_id 暂不解析：ProductClient 只提供按 ID 查询，没有 SKU 反查接口，
+     * 强行猜测映射会制造错误的商品关联，因此保持 NULL 并留待商品侧提供 SKU 查询。
+     */
+    private OrderItem toOrderItem(OrderSyncDto syncDto, OrderItemSyncDto item, Long shopId) {
+        OrderItem entity = new OrderItem();
+        entity.setShopId(shopId);
+        entity.setMarketplaceId(syncDto.getMarketplaceId());
+        entity.setAmazonOrderId(syncDto.getAmazonOrderId());
+        entity.setAmazonOrderItemId(item.getAmazonOrderItemId());
+        entity.setAsin(item.getAsin());
+        entity.setSellerSku(item.getSellerSku());
+        entity.setTitle(item.getTitle());
+        entity.setQuantity(item.getQuantity() == null ? 0 : item.getQuantity());
+        entity.setItemPrice(item.getItemPrice());
+        entity.setItemTax(item.getItemTax());
+        entity.setPromotionDiscount(item.getPromotionDiscount());
+        entity.setCurrency(item.getCurrency() != null ? item.getCurrency() : syncDto.getCurrency());
+        entity.setFulfillmentChannel(item.getFulfillmentChannel() != null
+                ? item.getFulfillmentChannel() : syncDto.getFulfillmentChannel());
+        return entity;
     }
 
     /**

@@ -19,7 +19,7 @@ public class PlatformMessage implements Serializable {
     private String platformMessageId;
     private String buyerName;
     private String buyerEmail;
-    private String orderId;
+    private String platformOrderNo;
     private String subject;
     private String content;
     private String direction;

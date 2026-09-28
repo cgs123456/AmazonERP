@@ -1,6 +1,9 @@
 package com.amz.service;
 
+import com.amz.dto.KingdeeSyncResult;
 import com.amz.model.AccountingVoucher;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -33,13 +36,25 @@ public interface FinanceService {
 
     /**
      * 同步凭证到金蝶。
+     * <p>
+     * 返回值必须保留 {@code SYNCED/MOCK/SKIPPED/FAILED/NOT_FOUND/FORBIDDEN/NOT_CONFIGURED}
+     * 语义；禁止用 boolean 把模拟、并发跳过和真实入账混为一谈。
      */
-    boolean syncToKingdee(Long voucherId);
+    KingdeeSyncResult syncToKingdee(Long voucherId);
 
     /**
-     * 查询店铺凭证列表。
+     * 查询店铺凭证列表（游标分页）。
+     * <p>
+     * 返回 {@link PageResult} 而不是裸 {@code List}：凭证明细由调度器持续写入，
+     * 一次性取全量或硬编码 LIMIT 都会在数据量上来之后悄悄漏单，
+     * 而调用方看到的仍是 HTTP 200 和一个「看起来正常」的数组。
+     *
+     * @param shopId     店铺 ID
+     * @param sourceType 来源类型过滤；null 或空白表示不过滤
+     * @param page       分页参数；null 表示首页 + 默认页大小
+     * @return 本页数据 + 截断事实（{@code hasMore} / {@code nextCursor}）
      */
-    List<AccountingVoucher> listVouchers(Long shopId, String sourceType);
+    PageResult<AccountingVoucher> listVouchers(Long shopId, String sourceType, PageRequest page);
 
     /**
      * 查询店铺某时间段内的总利润（收入 - 成本 - 费用，CNY）。

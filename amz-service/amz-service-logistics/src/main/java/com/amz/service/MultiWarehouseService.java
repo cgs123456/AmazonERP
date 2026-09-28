@@ -1,6 +1,9 @@
 package com.amz.service;
 
-import com.amz.model.*;
+import com.amz.model.InventoryAlert;
+import com.amz.model.WarehouseStock;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 import java.util.Map;
@@ -12,7 +15,7 @@ public interface MultiWarehouseService {
 
     // ==================== 库存快照 ====================
     WarehouseStock saveStock(WarehouseStock stock);
-    List<WarehouseStock> listStock(Long shopId, String sku, Long warehouseId);
+    PageResult<WarehouseStock> listStock(Long shopId, String sku, Long warehouseId, PageRequest page);
     Map<String, Object> globalInventoryView(Long shopId, String sku);
     Map<String, Object> agingAnalysis(Long shopId);
 

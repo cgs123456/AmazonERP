@@ -55,11 +55,20 @@ public class TranslationService {
     private static final String REDIS_KEY_PREFIX = "amz:trans:";
     private static final long REDIS_TTL_MINUTES = 60;
 
-    @Value("${deepseek.api_url}")
+    @Value("${deepseek.api-url}")
     private String apiUrl;
 
-    @Value("${deepseek.api_key}")
+    @Value("${deepseek.api-key}")
     private String apiKey;
+
+    @Value("${deepseek.model-name:deepseek-chat}")
+    private String modelName;
+
+    @Value("${deepseek.temperature:0.7}")
+    private double temperature;
+
+    @Value("${deepseek.timeout:60}")
+    private long timeoutSeconds;
 
     @Autowired
     private TranslationCacheMapper translationCacheMapper;
@@ -179,7 +188,7 @@ public class TranslationService {
      */
     private String callDeepSeek(String sourceText, String sourceLang, String targetLang) throws IOException, InterruptedException {
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", "deepseek-chat");
+        requestBody.addProperty("model", modelName);
 
         JsonArray messages = new JsonArray();
         JsonObject systemMsg = new JsonObject();
@@ -194,12 +203,12 @@ public class TranslationService {
         messages.add(systemMsg);
         messages.add(userMsg);
         requestBody.add("messages", messages);
-        requestBody.addProperty("temperature", 0.3);
+        requestBody.addProperty("temperature", temperature);
         requestBody.addProperty("max_tokens", 500);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(apiUrl + "/chat/completions"))
-                .timeout(Duration.ofSeconds(30))
+                .timeout(Duration.ofSeconds(timeoutSeconds))
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString(), StandardCharsets.UTF_8))

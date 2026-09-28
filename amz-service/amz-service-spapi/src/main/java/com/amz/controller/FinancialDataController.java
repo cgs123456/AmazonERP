@@ -1,5 +1,7 @@
 package com.amz.controller;
 
+import com.amz.annotation.InternalServiceAccess;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.client.FeesClient;
 import com.amz.client.FinancesClient;
@@ -8,6 +10,7 @@ import com.amz.client.dto.FeeEstimate;
 import com.amz.client.dto.FinancialEvent;
 import com.amz.client.dto.ReportInfo;
 import com.amz.connector.ErrorSummary;
+import com.amz.connector.LocalApiException;
 import com.amz.result.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,6 +51,8 @@ public class FinancialDataController {
     /**
      * 创建报表请求，返回 reportId（轮询节奏由调用方控制）。
      */
+    @InternalServiceAccess("amz-service-finance")
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/report/request")
     public Result<String> requestReport(@RequestParam Long shopId,
@@ -61,13 +66,14 @@ public class FinancialDataController {
             return Result.success(reportId);
         } catch (Exception e) {
             log.error("requestReport failed shopId={} reportType={}", shopId, reportType, e);
-            return Result.failure("报表请求失败：" + ErrorSummary.of(e));
+            return Result.failure("报表请求失败：" + ErrorSummary.of(e), ErrorSummary.toApiError(e));
         }
     }
 
     /**
      * 查询报表处理状态（DONE 时携带 documentId）。
      */
+    @InternalServiceAccess("amz-service-finance")
     @ShopScoped
     @GetMapping("/report/{reportId}")
     public Result<ReportInfo> getReport(@PathVariable String reportId,
@@ -76,13 +82,14 @@ public class FinancialDataController {
             return Result.success(reportsClient.getReport(shopId, reportId));
         } catch (Exception e) {
             log.error("getReport failed shopId={} reportId={}", shopId, reportId, e);
-            return Result.failure("报表状态查询失败：" + ErrorSummary.of(e));
+            return Result.failure("报表状态查询失败：" + ErrorSummary.of(e), ErrorSummary.toApiError(e));
         }
     }
 
     /**
      * 下载报表结果文档（自动按元数据解压，结算原表为 TSV 文本）。
      */
+    @InternalServiceAccess("amz-service-finance")
     @ShopScoped
     @GetMapping("/document/{documentId}")
     public Result<String> downloadDocument(@PathVariable String documentId,
@@ -91,13 +98,14 @@ public class FinancialDataController {
             return Result.success(reportsClient.downloadDocument(shopId, documentId));
         } catch (Exception e) {
             log.error("downloadDocument failed shopId={} documentId={}", shopId, documentId, e);
-            return Result.failure("报表文档下载失败：" + ErrorSummary.of(e));
+            return Result.failure("报表文档下载失败：" + ErrorSummary.of(e), ErrorSummary.toApiError(e));
         }
     }
 
     /**
      * 按入账时间窗口拉取结算事件（INCOME / REFUND / FEE / ADJUSTMENT 四类，有符号金额）。
      */
+    @InternalServiceAccess("amz-service-finance")
     @ShopScoped
     @GetMapping("/events")
     public Result<List<FinancialEvent>> listEvents(@RequestParam Long shopId,
@@ -107,7 +115,7 @@ public class FinancialDataController {
             return Result.success(financesClient.listFinancialEvents(shopId, postedAfter, postedBefore));
         } catch (Exception e) {
             log.error("listEvents failed shopId={}", shopId, e);
-            return Result.failure("结算事件拉取失败：" + ErrorSummary.of(e));
+            return Result.failure("结算事件拉取失败：" + ErrorSummary.of(e), ErrorSummary.toApiError(e));
         }
     }
 
@@ -116,6 +124,8 @@ public class FinancialDataController {
      *
      * @param idType 标识类型：ASIN（默认）或 SKU —— 结算原表只带 SKU，费用比对场景传 SKU
      */
+    @InternalServiceAccess("amz-service-finance")
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/fees/estimate")
     public Result<FeeEstimate> estimateFees(@RequestParam Long shopId,
@@ -129,10 +139,11 @@ public class FinancialDataController {
             return Result.success(feesClient.estimateFbaFees(shopId, marketplaceId, idType, idValue,
                     sku, price, currency));
         } catch (IllegalArgumentException e) {
-            return Result.failure(e.getMessage());
+            return Result.failure("费用预估参数无效：" + ErrorSummary.of(e),
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         } catch (Exception e) {
             log.error("estimateFees failed shopId={} idType={} idValue={}", shopId, idType, idValue, e);
-            return Result.failure("费用预估失败：" + ErrorSummary.of(e));
+            return Result.failure("费用预估失败：" + ErrorSummary.of(e), ErrorSummary.toApiError(e));
         }
     }
 }

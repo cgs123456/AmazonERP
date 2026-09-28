@@ -75,6 +75,10 @@ python tools\release\release_manifest.py verify `
 Get-FileHash -Algorithm SHA256 release-manifest.json
 ```
 
+## CI 清单 artifact 的边界
+
+CI 中的 `release-manifest` job 会使用 `github.sha`、`0.0.0-ci`、`ghcr.io/<owner>/<repo>:<sha>` 和全零 `sha256:000...000` 生成并校验 artifact。它只证明：当前源码输入、manifest CLI 和 artifact 可复现。这个 artifact 不是发布清单，不能进入部署记录，也不能在后续被“补填”成真实 digest。
+
 ## 发布记录必须回填
 
 - Git commit（40 位小写 SHA-1）；

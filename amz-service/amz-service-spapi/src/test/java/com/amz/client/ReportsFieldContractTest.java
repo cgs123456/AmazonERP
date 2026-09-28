@@ -66,9 +66,9 @@ class ReportsFieldContractTest {
     /** Feeds 结果报告的官方真实属性名（上游描述笔误指向的就是它）。 */
     private static final String FEEDS_RESULT_FIELD = "resultFeedDocumentId";
 
-    /** 匹配 {@code str(x, "field")} 形式（允许空白）。 */
+    /** 匹配 {@code str(x, "field")} / {@code required(x, "field")} 形式（允许空白）。 */
     private static final Pattern RESPONSE_FIELD_READ =
-            Pattern.compile("str\\(\\s*[A-Za-z_][A-Za-z0-9_]*\\s*,\\s*\"([A-Za-z0-9_]+)\"\\s*\\)");
+            Pattern.compile("(?:str|required)\\(\\s*[A-Za-z_][A-Za-z0-9_]*\\s*,\\s*\"([A-Za-z0-9_]+)\"\\s*\\)");
 
     private static final String SOURCE_RELATIVE =
             "src/main/java/com/amz/client/ReportsRealClient.java";

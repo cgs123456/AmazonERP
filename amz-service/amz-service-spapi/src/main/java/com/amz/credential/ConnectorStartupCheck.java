@@ -6,6 +6,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -23,9 +24,10 @@ import java.util.stream.Collectors;
  *   <li>false → 仅记录 warn 并跳过（离线开发/CI）</li>
  * </ul>
  * <p>
- * 注意：本类只读取凭证**条数**（{@link ShopCredentialStore#getActiveShopIds()}），
- * 不接触任何凭证内容；格式校验（如 AMZ_CRYPTO_KEY 必须 32 字节 base64）由
- * {@code CryptoUtil} 在自身 {@code @PostConstruct} 中 fail-closed 完成。
+ * 注意：本类只读取活跃店铺 ID 数量，不逐条解密全部凭证。这样店铺数增长时启动自检
+ * 仍是轻量的主键分页查询；凭证结构在读取、写入和预检路径校验，格式校验（如
+ * AMZ_CRYPTO_KEY 必须 32 字节 base64）由 {@code CryptoUtil} 在自身
+ * {@code @PostConstruct} 中 fail-closed 完成。
  * <p>
  * 依赖顺序：本类通过构造器依赖 {@link ShopCredentialStore}，Spring 会先完成 store 的
  * {@code loadFromDb()} 再执行本类的 {@code verify()}，因此此处读到的是启动时的最终缓存状态。
@@ -39,6 +41,12 @@ public class ConnectorStartupCheck {
 
     /** 离线样例数据 profile；生产启用即视为配置错误。 */
     public static final String MOCK_PROFILE = "mock";
+
+    /** 生产 profile；bootstrap 不得与它同时激活。 */
+    public static final String PROD_PROFILE = "prod";
+
+    /** 仅用于一次性导入首条凭证的专用 profile；不提供 Web 业务能力。 */
+    public static final String BOOTSTRAP_PROFILE = "bootstrap";
 
     /** 店铺凭证表名（仅在错误消息与日志中使用）。 */
     public static final String CREDENTIAL_TABLE = "amz_shop_credential";
@@ -66,9 +74,33 @@ public class ConnectorStartupCheck {
         String[] activeProfiles = environment.getActiveProfiles();
         boolean mockActive = Arrays.stream(activeProfiles)
                 .anyMatch(profile -> MOCK_PROFILE.equalsIgnoreCase(profile));
-        int credentialCount = credentialStore.getActiveShopIds().size();
+        Set<Long> activeShopIds = credentialStore.getActiveShopIds();
+        int credentialCount = activeShopIds.size();
+        boolean prodActive = Arrays.stream(activeProfiles)
+                .anyMatch(profile -> PROD_PROFILE.equalsIgnoreCase(profile));
+        boolean bootstrapActive = Arrays.stream(activeProfiles)
+                .anyMatch(profile -> BOOTSTRAP_PROFILE.equalsIgnoreCase(profile));
 
         this.lastState = new StartupState(activeProfiles, mockActive, credentialsRequired, credentialCount);
+
+        if (bootstrapActive) {
+            if (credentialsRequired) {
+                throw new IllegalStateException(String.format(
+                        "bootstrap 启动配置冲突：profile=bootstrap 时 %s 必须为 false，"
+                                + "否则空库无法进入一次性凭证导入流程。activeProfiles=%s。",
+                        REQUIRE_CREDENTIALS_KEY, profileSummary(activeProfiles)));
+            }
+            if (prodActive || mockActive) {
+                throw new IllegalStateException(String.format(
+                        "bootstrap 启动配置冲突：profile=bootstrap 不得与 prod/mock 同时激活（activeProfiles=%s）。"
+                                + "bootstrap 只用于无 Web 的一次性凭证导入；普通生产实例必须使用 prod。",
+                        profileSummary(activeProfiles)));
+            }
+            log.warn("[ConnectorStartupCheck] bootstrap 模式：允许空库启动以导入首条凭证，"
+                            + "已加载店铺凭证={}。该 profile 必须禁用 Web 应用类型并在导入后退出。",
+                    credentialCount);
+            return;
+        }
 
         if (!credentialsRequired) {
             log.warn("[ConnectorStartupCheck] 未启用凭证强制校验（{} = false）：跳过 mock 与凭证检查。"

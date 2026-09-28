@@ -1,7 +1,10 @@
 package com.amz.auth;
 
 import com.amz.config.SpApiConfig;
+import com.amz.connector.ErrorSummary;
+import com.amz.connector.LwaTokenException;
 import com.amz.credential.ShopCredential;
+import com.amz.result.ApiError;
 import com.amz.testsupport.RecordingHttpTransport;
 import com.amz.testsupport.TestCredentials;
 import com.google.gson.JsonObject;
@@ -23,6 +26,7 @@ import java.util.Objects;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -163,8 +167,10 @@ class LwaTokenExchangeContractTest {
                 "{\"token_type\":\"bearer\",\"expires_in\":3600}");
         LwaTokenManager manager = new LwaTokenManager(transport, config());
 
-        RuntimeException e = assertThrows(RuntimeException.class,
+        LwaTokenException e = assertThrows(LwaTokenException.class,
                 () -> manager.getToken(TestCredentials.farEast()));
+        assertEquals(LwaTokenException.CODE_INVALID_RESPONSE, e.getCode());
+        assertEquals(200, e.getPlatformStatus());
         assertTrue(e.getMessage().contains("access_token"), e.getMessage());
     }
 
@@ -175,8 +181,9 @@ class LwaTokenExchangeContractTest {
                 "{\"access_token\":\"Atza|no-expiry\",\"token_type\":\"bearer\"}");
         LwaTokenManager manager = new LwaTokenManager(transport, config());
 
-        RuntimeException e = assertThrows(RuntimeException.class,
+        LwaTokenException e = assertThrows(LwaTokenException.class,
                 () -> manager.getToken(TestCredentials.northAmerica()));
+        assertEquals(LwaTokenException.CODE_INVALID_RESPONSE, e.getCode());
         assertTrue(e.getMessage().contains("expires_in"), e.getMessage());
     }
 
@@ -187,8 +194,9 @@ class LwaTokenExchangeContractTest {
                 "{\"access_token\":\"Atza|no-type\",\"expires_in\":3600}");
         LwaTokenManager manager = new LwaTokenManager(transport, config());
 
-        RuntimeException e = assertThrows(RuntimeException.class,
+        LwaTokenException e = assertThrows(LwaTokenException.class,
                 () -> manager.getToken(TestCredentials.northAmerica()));
+        assertEquals(LwaTokenException.CODE_INVALID_RESPONSE, e.getCode());
         assertTrue(e.getMessage().contains("token_type"), e.getMessage());
     }
 
@@ -199,22 +207,52 @@ class LwaTokenExchangeContractTest {
                 "{\"access_token\":\"Atza|wrong-type\",\"token_type\":\"mac\",\"expires_in\":3600}");
         LwaTokenManager manager = new LwaTokenManager(transport, config());
 
-        RuntimeException e = assertThrows(RuntimeException.class,
+        LwaTokenException e = assertThrows(LwaTokenException.class,
                 () -> manager.getToken(TestCredentials.northAmerica()));
+        assertEquals(LwaTokenException.CODE_INVALID_RESPONSE, e.getCode());
         assertTrue(e.getMessage().contains("token_type"), e.getMessage());
     }
 
     @Test
-    @DisplayName("非 200 响应必须抛出，且错误信息保留状态码（不得静默降级）")
+    @DisplayName("invalid_grant：类型化为 LWA_AUTH_FAILED，并保留状态、平台码和安全消息")
     void non200FailsClosed() {
         RecordingHttpTransport transport = RecordingHttpTransport.of(
                 request -> new RecordingHttpTransport.Reply(400,
                         "{\"error\":\"invalid_grant\",\"error_description\":\"refresh token is invalid\"}"));
         LwaTokenManager manager = new LwaTokenManager(transport, config());
 
-        RuntimeException e = assertThrows(RuntimeException.class,
+        LwaTokenException e = assertThrows(LwaTokenException.class,
                 () -> manager.getToken(TestCredentials.northAmerica()));
-        assertTrue(e.getMessage().contains("400"), e.getMessage());
+        assertEquals(LwaTokenException.CODE_AUTH_FAILED, e.getCode());
+        assertEquals(400, e.getPlatformStatus());
+        assertEquals("invalid_grant", e.getPlatformCode());
+        assertEquals("refresh token is invalid", e.getPlatformMessage());
+        assertFalse(e.getMessage().contains(TestCredentials.northAmerica().getRefreshToken()),
+                e.getMessage());
+        assertFalse(e.getMessage().contains(TestCredentials.FAKE_CLIENT_SECRET), e.getMessage());
+
+        ApiError apiError = ErrorSummary.toApiError(e);
+        assertEquals(LwaTokenException.CODE_AUTH_FAILED, apiError.getCode());
+        assertEquals(400, apiError.getPlatformStatus());
+        assertEquals("invalid_grant", apiError.getPlatformCode());
+        assertEquals("refresh token is invalid", apiError.getPlatformMessage());
+        assertNull(apiError.getRequestId());
+    }
+
+    @Test
+    @DisplayName("LWA 5xx：类型化为上游故障，不与凭证失效混为一类")
+    void upstreamFailureIsClassifiedSeparately() {
+        RecordingHttpTransport transport = RecordingHttpTransport.of(
+                request -> new RecordingHttpTransport.Reply(503,
+                        "{\"error\":\"server_error\",\"error_description\":\"temporarily unavailable\"}"));
+        LwaTokenManager manager = new LwaTokenManager(transport, config());
+
+        LwaTokenException e = assertThrows(LwaTokenException.class,
+                () -> manager.getToken(TestCredentials.northAmerica()));
+
+        assertEquals(LwaTokenException.CODE_UPSTREAM_ERROR, e.getCode());
+        assertEquals(503, e.getPlatformStatus());
+        assertEquals(LwaTokenException.CODE_UPSTREAM_ERROR, ErrorSummary.toApiError(e).getCode());
     }
 
     @Test
@@ -223,8 +261,10 @@ class LwaTokenExchangeContractTest {
         RecordingHttpTransport transport = RecordingHttpTransport.failing(new IOException("connect refused"));
         LwaTokenManager manager = new LwaTokenManager(transport, config());
 
-        RuntimeException e = assertThrows(RuntimeException.class,
+        LwaTokenException e = assertThrows(LwaTokenException.class,
                 () -> manager.getToken(TestCredentials.northAmerica()));
+        assertEquals(LwaTokenException.CODE_TRANSPORT_ERROR, e.getCode());
+        assertNull(e.getPlatformStatus());
         assertTrue(e.getMessage().contains(TestCredentials.FAKE_CLIENT_ID), e.getMessage());
         assertEquals(1, transport.requestCount());
     }

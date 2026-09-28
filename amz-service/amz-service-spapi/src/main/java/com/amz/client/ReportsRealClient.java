@@ -74,7 +74,10 @@ public class ReportsRealClient implements ReportsClient {
 
         JsonObject resp = gateway.callJson("POST", shop, OP_CREATE_REPORT, REPORTS_PATH,
                 null, body.toString());
-        String reportId = resp.has("reportId") ? resp.get("reportId").getAsString() : null;
+        String reportId = str(resp, "reportId");
+        if (reportId == null || reportId.isBlank()) {
+            throw new IllegalStateException("createReport response missing required reportId");
+        }
         log.info("createReport shopId={} reportType={} reportId={}", shopId, reportType, reportId);
         return reportId;
     }
@@ -86,9 +89,10 @@ public class ReportsRealClient implements ReportsClient {
                 REPORTS_PATH + "/" + reportId, null, null);
 
         ReportInfo info = new ReportInfo();
-        info.setReportId(str(resp, "reportId"));
-        info.setReportType(str(resp, "reportType"));
-        info.setProcessingStatus(str(resp, "processingStatus"));
+        info.setReportId(required(resp, "reportId"));
+        info.setReportType(required(resp, "reportType"));
+        info.setProcessingStatus(required(resp, "processingStatus"));
+        info.setCreatedTime(required(resp, "createdTime"));
         info.setDocumentId(str(resp, "reportDocumentId"));
         return info;
     }
@@ -117,6 +121,13 @@ public class ReportsRealClient implements ReportsClient {
         }
     }
 
+    private static String required(JsonObject o, String key) {
+        String value = str(o, key);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("getReport response missing required " + key);
+        }
+        return value;
+    }
     private static String str(JsonObject o, String key) {
         if (o == null || !o.has(key) || o.get(key).isJsonNull()) {
             return null;

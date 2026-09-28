@@ -89,36 +89,44 @@ public class FeesRealClient implements FeesClient {
         BigDecimal fulfillment = BigDecimal.ZERO;
         BigDecimal other = BigDecimal.ZERO;
 
-        JsonObject payload = resp.has("payload") && resp.get("payload").isJsonObject()
-                ? resp.getAsJsonObject("payload") : null;
-        JsonArray results = payload != null && payload.has("FeesEstimateResultList")
-                && payload.get("FeesEstimateResultList").isJsonArray()
-                ? payload.getAsJsonArray("FeesEstimateResultList") : null;
-        if (results != null && results.size() > 0) {
-            JsonObject result = results.get(0).getAsJsonObject();
-            JsonObject feesEstimate = result.has("FeesEstimate")
-                    && result.get("FeesEstimate").isJsonObject()
-                    ? result.getAsJsonObject("FeesEstimate") : null;
-            if (feesEstimate != null && feesEstimate.has("FeeDetailList")
-                    && feesEstimate.get("FeeDetailList").isJsonArray()) {
-                for (JsonElement el : feesEstimate.getAsJsonArray("FeeDetailList")) {
-                    JsonObject detail = el.getAsJsonObject();
-                    String feeType = str(detail, "FeeType");
-                    BigDecimal amount = amount(detail, "FeeAmount");
-                    if (amount == null) {
-                        continue;
-                    }
-                    if (feeType != null && feeType.contains("Referral")) {
-                        referral = referral.add(amount);
-                    } else if (feeType != null && feeType.contains("Fulfillment")) {
-                        fulfillment = fulfillment.add(amount);
-                    } else {
-                        other = other.add(amount);
-                    }
+        JsonObject payload = object(resp, "payload");
+        if (payload == null) {
+            throw new IllegalStateException("Fees estimate response missing payload");
+        }
+        JsonObject result = object(payload, "FeesEstimateResult");
+        if (result == null) {
+            throw new IllegalStateException("Fees estimate response missing payload.FeesEstimateResult");
+        }
+        String status = str(result, "Status");
+        if (!"Success".equals(status)) {
+            JsonObject error = object(result, "Error");
+            String code = str(error, "Code");
+            String errorMessage = str(error, "Message");
+            throw new IllegalStateException("Fees estimate failed: status=" + status
+                    + ", code=" + code + ", message=" + errorMessage);
+        }
+        JsonObject feesEstimate = object(result, "FeesEstimate");
+        if (feesEstimate == null) {
+            throw new IllegalStateException("Fees estimate Success response missing FeesEstimate");
+        }
+        JsonArray details = array(feesEstimate, "FeeDetailList");
+        if (details != null) {
+            for (JsonElement el : details) {
+                JsonObject detail = el.getAsJsonObject();
+                String feeType = str(detail, "FeeType");
+                BigDecimal amount = amount(detail, "FeeAmount");
+                if (amount == null) {
+                    continue;
+                }
+                if (feeType != null && feeType.contains("Referral")) {
+                    referral = referral.add(amount);
+                } else if (feeType != null && feeType.contains("Fulfillment")) {
+                    fulfillment = fulfillment.add(amount);
+                } else {
+                    other = other.add(amount);
                 }
             }
-        }
-        estimate.setReferralFee(referral);
+        }        estimate.setReferralFee(referral);
         estimate.setFulfillmentFee(fulfillment);
         estimate.setOtherFees(other);
         estimate.setTotalFees(referral.add(fulfillment).add(other));
@@ -128,6 +136,19 @@ public class FeesRealClient implements FeesClient {
         return estimate;
     }
 
+    private static JsonObject object(JsonObject holder, String key) {
+        if (holder == null || !holder.has(key) || !holder.get(key).isJsonObject()) {
+            return null;
+        }
+        return holder.getAsJsonObject(key);
+    }
+
+    private static JsonArray array(JsonObject holder, String key) {
+        if (holder == null || !holder.has(key) || !holder.get(key).isJsonArray()) {
+            return null;
+        }
+        return holder.getAsJsonArray(key);
+    }
     private static String str(JsonObject o, String key) {
         if (o == null || !o.has(key) || o.get(key).isJsonNull()) {
             return null;

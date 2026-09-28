@@ -107,9 +107,7 @@ public class TikTokRealClient extends AbstractPlatformClient implements TikTokCl
         List<UnifiedOrder> list = new ArrayList<>();
         JsonNode root = objectMapper.readTree(resp);
         if (root.path("code").asInt() != 0) {
-            log.warn("TikTok orders/search 非成功响应 code={} msg={}",
-                    root.path("code").asText(), root.path("message").asText());
-            return list;
+            throw new IllegalStateException("TikTok order list failed: code=" + root.path("code").asText() + ", message=" + root.path("message").asText());
         }
         JsonNode orders = root.path("data").path("orders");
         if (orders.isArray()) {

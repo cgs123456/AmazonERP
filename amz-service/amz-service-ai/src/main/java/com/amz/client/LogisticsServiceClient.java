@@ -23,14 +23,20 @@ public interface LogisticsServiceClient {
      * 返回 List&lt;Map&gt; 以复用物流模块自身的数据模型，避免跨模块耦合。
      */
     @GetMapping("/logistics/shipment/{shipmentId}/tracking")
-    Result<List<Map<String, Object>>> getTracking(@PathVariable("shipmentId") Long shipmentId);
+    Result<List<Map<String, Object>>> getTracking(
+            @PathVariable("shipmentId") Long shipmentId,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "cursor", required = false) String cursor);
 
     /**
      * 查询店铺货件列表（用于按 shipmentNo 反查 shipmentId）。
      */
     @GetMapping("/logistics/shipment/list/{shopId}")
-    Result<List<Map<String, Object>>> listShipments(@PathVariable("shopId") Long shopId,
-                                                    @RequestParam(value = "status", required = false) String status);
+    Result<List<Map<String, Object>>> listShipments(
+            @PathVariable("shopId") Long shopId,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "size", required = false) Integer size,
+            @RequestParam(value = "cursor", required = false) String cursor);
 
     /**
      * 多仓库存全局视图（按仓库类型聚合，含库存分布/库龄/缺货项）。

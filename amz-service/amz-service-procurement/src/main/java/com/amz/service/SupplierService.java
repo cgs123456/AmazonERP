@@ -2,6 +2,8 @@ package com.amz.service;
 
 import com.amz.model.Supplier;
 import com.amz.model.SupplierProduct;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -19,7 +21,7 @@ public interface SupplierService {
     Supplier updateSupplier(Supplier supplier);
 
     /** 查询店铺供应商列表 */
-    List<Supplier> listSuppliers(Long shopId, String status);
+    PageResult<Supplier> listSuppliers(Long shopId, String status, String keyword, PageRequest page);
 
     /** 获取供应商详情 */
     Supplier getSupplier(Long id);

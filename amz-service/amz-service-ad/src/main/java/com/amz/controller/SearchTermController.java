@@ -1,15 +1,25 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.AdAutoRule;
 import com.amz.model.AdSearchTerm;
 import com.amz.model.AdAsinKeyword;
 import com.amz.model.ConvertingTerm;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.AdAutoRuleService;
 import com.amz.service.SearchTermService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -30,6 +40,7 @@ public class SearchTermController {
     // ==================== 搜索词报表 ====================
 
     /** 保存搜索词报表数据 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping
     public Result<AdSearchTerm> saveSearchTerm(@RequestBody AdSearchTerm searchTerm) {
@@ -41,8 +52,11 @@ public class SearchTermController {
     @GetMapping("/list/{shopId}")
     public Result<List<AdSearchTerm>> listSearchTerms(@PathVariable Long shopId,
                                                        @RequestParam(required = false) String campaignId,
-                                                       @RequestParam(required = false) String searchTerm) {
-        return Result.success(searchTermService.listSearchTerms(shopId, campaignId, searchTerm));
+                                                       @RequestParam(required = false) String searchTerm,
+                                                       @RequestParam(required = false) Integer size,
+                                                       @RequestParam(required = false) String cursor) {
+        return Result.paged(searchTermService.listSearchTerms(
+                shopId, campaignId, searchTerm, PageRequest.of(size, cursor)));
     }
 
     /** 搜索词综合分析 */
@@ -66,6 +80,7 @@ public class SearchTermController {
     // ==================== 出单词库 ====================
 
     /** 自动提取出单词 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/converting/extract/{shopId}")
     public Result<List<ConvertingTerm>> extractConvertingTerms(@PathVariable Long shopId,
@@ -77,8 +92,11 @@ public class SearchTermController {
     @ShopScoped
     @GetMapping("/converting/list/{shopId}")
     public Result<List<ConvertingTerm>> listConvertingTerms(@PathVariable Long shopId,
-                                                             @RequestParam(required = false) String asin) {
-        return Result.success(searchTermService.listConvertingTerms(shopId, asin));
+                                                             @RequestParam(required = false) String asin,
+                                                             @RequestParam(required = false) Integer size,
+                                                             @RequestParam(required = false) String cursor) {
+        return Result.paged(searchTermService.listConvertingTerms(
+                shopId, asin, PageRequest.of(size, cursor)));
     }
 
     // ==================== ASIN 关键词反查 ====================
@@ -87,11 +105,15 @@ public class SearchTermController {
     @ShopScoped
     @GetMapping("/asin-reverse/{shopId}")
     public Result<List<AdAsinKeyword>> reverseLookupAsin(@PathVariable Long shopId,
-                                                          @RequestParam String asin) {
-        return Result.success(searchTermService.reverseLookupAsin(shopId, asin));
+                                                          @RequestParam String asin,
+                                                          @RequestParam(required = false) Integer size,
+                                                          @RequestParam(required = false) String cursor) {
+        return Result.paged(searchTermService.reverseLookupAsin(
+                shopId, asin, PageRequest.of(size, cursor)));
     }
 
     /** 批量保存 ASIN 关键词反查数据 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/asin-reverse/batch")
     public Result<List<AdAsinKeyword>> saveAsinKeywords(@RequestBody List<AdAsinKeyword> keywords) {
@@ -101,6 +123,7 @@ public class SearchTermController {
     // ==================== 广告自动规则 ====================
 
     /** 创建自动规则 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/rule")
     public Result<AdAutoRule> createRule(@RequestBody AdAutoRule rule) {
@@ -108,6 +131,7 @@ public class SearchTermController {
     }
 
     /** 更新规则 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PutMapping("/rule/{id}")
     public Result<AdAutoRule> updateRule(@PathVariable Long id, @RequestBody AdAutoRule rule) {
@@ -119,11 +143,14 @@ public class SearchTermController {
     @ShopScoped
     @GetMapping("/rule/list/{shopId}")
     public Result<List<AdAutoRule>> listRules(@PathVariable Long shopId,
-                                               @RequestParam(required = false) String ruleType) {
-        return Result.success(adAutoRuleService.listRules(shopId, ruleType));
+                                               @RequestParam(required = false) String ruleType,
+                                               @RequestParam(required = false) Integer size,
+                                               @RequestParam(required = false) String cursor) {
+        return Result.paged(adAutoRuleService.listRules(shopId, ruleType, PageRequest.of(size, cursor)));
     }
 
     /** 启用/禁用规则 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/rule/{id}/toggle")
     public Result<Boolean> toggleRule(@PathVariable Long id, @RequestParam boolean enabled) {
@@ -131,6 +158,7 @@ public class SearchTermController {
     }
 
     /** 删除规则 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @DeleteMapping("/rule/{id}")
     public Result<Boolean> deleteRule(@PathVariable Long id) {
@@ -138,6 +166,7 @@ public class SearchTermController {
     }
 
     /** 执行所有启用的规则 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/rule/execute/{shopId}")
     public Result<Map<String, Object>> executeRules(@PathVariable Long shopId) {
@@ -145,6 +174,7 @@ public class SearchTermController {
     }
 
     /** 执行单个规则 */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/rule/{ruleId}/execute")
     public Result<Map<String, Object>> executeRule(@PathVariable Long ruleId) {

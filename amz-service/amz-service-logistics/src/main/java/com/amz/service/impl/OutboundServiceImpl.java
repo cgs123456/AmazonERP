@@ -1,10 +1,14 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.mapper.OutboundOrderMapper;
 import com.amz.model.OutboundOrder;
 import com.amz.model.WarehouseInventory;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.OutboundService;
 import com.amz.service.WarehouseService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -30,10 +34,13 @@ public class OutboundServiceImpl implements OutboundService {
 
     @Override
     public OutboundOrder createOutboundOrder(OutboundOrder order) {
-        order.setOutboundNo(BizNoGenerator.next("OUT"));
-        if (order.getStatus() == null) {
-            order.setStatus("PENDING");
+        if (order == null) {
+            throw new CodeErrorException("出库单内容不能为空");
         }
+        requireShopAllowed(order.getShopId(), "出库单");
+        order.setOutboundNo(BizNoGenerator.next("OUT"));
+        // 创建入口只允许产生初始态，客户端不能绕过拣货/打包直接写入 SHIPPED
+        order.setStatus("PENDING");
         if (order.getShippedItems() == null) {
             order.setShippedItems(0);
         }
@@ -42,14 +49,24 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     @Override
-    public List<OutboundOrder> listOutboundOrders(Long shopId, String status) {
+    public PageResult<OutboundOrder> listOutboundOrders(Long shopId, String status, PageRequest page) {
+        requireShopAllowed(shopId, "出库单");
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
         LambdaQueryWrapper<OutboundOrder> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(OutboundOrder::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(OutboundOrder::getStatus, status);
         }
-        wrapper.orderByDesc(OutboundOrder::getId);
-        return outboundOrderMapper.selectList(wrapper);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(OutboundOrder::getId, cursorId);
+        }
+        wrapper.orderByDesc(OutboundOrder::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(outboundOrderMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     @Override
@@ -57,7 +74,7 @@ public class OutboundServiceImpl implements OutboundService {
     public OutboundOrder pickOutbound(Long id) {
         OutboundOrder order = mustExist(id);
         if (!"PENDING".equals(order.getStatus())) {
-            throw new IllegalStateException("仅 PENDING 状态可开始拣货，当前=" + order.getStatus());
+            throw new CodeErrorException("仅 PENDING 状态可开始拣货，当前=" + order.getStatus());
         }
         order.setStatus("PICKING");
         outboundOrderMapper.updateById(order);
@@ -69,7 +86,7 @@ public class OutboundServiceImpl implements OutboundService {
     public OutboundOrder packOutbound(Long id) {
         OutboundOrder order = mustExist(id);
         if (!"PICKING".equals(order.getStatus())) {
-            throw new IllegalStateException("仅 PICKING 状态可打包，当前=" + order.getStatus());
+            throw new CodeErrorException("仅 PICKING 状态可打包，当前=" + order.getStatus());
         }
         order.setStatus("PACKED");
         outboundOrderMapper.updateById(order);
@@ -81,7 +98,7 @@ public class OutboundServiceImpl implements OutboundService {
     public OutboundOrder shipOutbound(Long id, String carrier, String trackingNo, List<WarehouseInventory> items) {
         OutboundOrder order = mustExist(id);
         if (!"PACKED".equals(order.getStatus())) {
-            throw new IllegalStateException("仅 PACKED 状态可发货，当前=" + order.getStatus());
+            throw new CodeErrorException("仅 PACKED 状态可发货，当前=" + order.getStatus());
         }
         // 扣减库存
         if (items != null) {
@@ -107,10 +124,11 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public OutboundOrder cancelOutbound(Long id) {
         OutboundOrder order = mustExist(id);
         if (!"PENDING".equals(order.getStatus()) && !"PICKING".equals(order.getStatus())) {
-            throw new IllegalStateException("仅 PENDING / PICKING 状态可取消，当前=" + order.getStatus());
+            throw new CodeErrorException("仅 PENDING / PICKING 状态可取消，当前=" + order.getStatus());
         }
         order.setStatus("CANCELLED");
         outboundOrderMapper.updateById(order);
@@ -118,10 +136,22 @@ public class OutboundServiceImpl implements OutboundService {
     }
 
     private OutboundOrder mustExist(Long id) {
+        if (id == null) {
+            throw new CodeErrorException("出库单 ID 不能为空");
+        }
         OutboundOrder order = outboundOrderMapper.selectById(id);
-        if (order == null) {
-            throw new IllegalArgumentException("出库单不存在：id=" + id);
+        if (order == null || !UserContext.isShopAllowed(order.getShopId())) {
+            throw new CodeErrorException("出库单不存在或无权访问");
         }
         return order;
+    }
+
+    private void requireShopAllowed(Long shopId, String what) {
+        if (shopId == null) {
+            throw new CodeErrorException(what + "缺少店铺 ID");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
+        }
     }
 }

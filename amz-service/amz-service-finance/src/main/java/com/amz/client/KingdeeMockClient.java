@@ -16,9 +16,15 @@ import org.springframework.stereotype.Component;
 public class KingdeeMockClient implements KingdeeClient {
 
     @Override
+    public boolean isMock() {
+        return true;
+    }
+
+    @Override
     public String syncVoucher(AccountingVoucher voucher) {
-        String kingdeeNo = "KD-" + System.currentTimeMillis();
-        log.info("金蝶凭证同步模拟：voucherNo={} → kingdeeNo={}", voucher.getVoucherNo(), kingdeeNo);
+        String kingdeeNo = "KINGDEE_MOCK_" + System.currentTimeMillis();
+        log.info("金蝶凭证同步模拟：voucherNo={} → kingdeeNo={}（仅演示，不代表真实入账）",
+                voucher.getVoucherNo(), kingdeeNo);
         return kingdeeNo;
     }
 }

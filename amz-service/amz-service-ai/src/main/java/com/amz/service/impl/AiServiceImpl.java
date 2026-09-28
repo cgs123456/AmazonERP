@@ -6,7 +6,12 @@ import com.google.gson.JsonObject;
 import com.amz.result.Result;
 import com.amz.service.AiService;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.*;
+import okhttp3.MediaType;
+import okhttp3.OkHttp;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -18,11 +23,17 @@ import java.util.List;
 @Service
 public class AiServiceImpl implements AiService {
 
-    @Value("${deepseek.api_url}")
+    @Value("${deepseek.api-url}")
     private String apiUrl;
 
-    @Value("${deepseek.api_key}")
+    @Value("${deepseek.api-key}")
     private String apiKey;
+
+    @Value("${deepseek.model-name:deepseek-chat}")
+    private String modelName;
+
+    @Value("${deepseek.temperature:0.7}")
+    private double temperature;
 
     /** 共享 OkHttp 客户端（连接池/线程池进程内复用，见 AiHttpClientConfig）。 */
     @Autowired
@@ -32,8 +43,11 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public Result<String> chat(String prompt) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return Result.failure("DeepSeek 未配置：请设置 DEEPSEEK_API_KEY");
+        }
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", "deepseek-chat");
+        requestBody.addProperty("model", modelName);
 
         JsonArray messages = new JsonArray();
         JsonObject userMessage = new JsonObject();
@@ -41,6 +55,7 @@ public class AiServiceImpl implements AiService {
         userMessage.addProperty("content", prompt);
         messages.add(userMessage);
         requestBody.add("messages", messages);
+        requestBody.addProperty("temperature", temperature);
 
         RequestBody body = RequestBody.create(
                 requestBody.toString(),
@@ -81,6 +96,9 @@ public class AiServiceImpl implements AiService {
 
     @Override
     public Result<String> agentChat(com.amz.model.dto.AgentChatDto agentChatDto) {
+        if (apiKey == null || apiKey.isBlank()) {
+            return Result.failure("DeepSeek 未配置：请设置 DEEPSEEK_API_KEY");
+        }
         // 防御性校验：DTO 本体与 messages 均可能为 null（未加 @NotNull），直接遍历会 NPE
         if (agentChatDto == null) {
             return Result.failure("messages 不能为空");
@@ -91,7 +109,7 @@ public class AiServiceImpl implements AiService {
         }
 
         JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", "deepseek-chat");
+        requestBody.addProperty("model", modelName);
 
         JsonArray msgArray = new JsonArray();
         // 如果提供了 systemPrompt，作为第一条 system 消息
@@ -109,6 +127,7 @@ public class AiServiceImpl implements AiService {
             msgArray.add(m);
         }
         requestBody.add("messages", msgArray);
+        requestBody.addProperty("temperature", temperature);
 
         RequestBody body = RequestBody.create(
                 requestBody.toString(),

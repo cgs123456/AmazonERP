@@ -3,6 +3,8 @@ package com.amz.service;
 import com.amz.model.AdReport;
 import com.amz.model.BidSchedule;
 import com.amz.optimizer.KeywordOptimizer;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 import java.util.Map;
@@ -13,9 +15,10 @@ import java.util.Map;
 public interface AdService {
 
     /**
-     * 查询店铺广告报表（活动级），含 ACoS/ROAS 等派生指标。
+     * 分页查询店铺广告报表（活动级），含 ACoS/ROAS 等派生指标。
+     * 聚合和截断都在数据库层完成，不把全店日报加载进 JVM。
      */
-    List<AdReport> getShopReports(Long shopId);
+    PageResult<AdReport> getShopReports(Long shopId, PageRequest page);
 
     /**
      * 查询店铺整体汇总指标。
@@ -49,5 +52,5 @@ public interface AdService {
     /**
      * 查询店铺的分时调价规则。
      */
-    List<BidSchedule> listBidSchedules(Long shopId);
+    PageResult<BidSchedule> listBidSchedules(Long shopId, PageRequest page);
 }

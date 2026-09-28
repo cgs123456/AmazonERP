@@ -7,6 +7,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
@@ -101,6 +102,28 @@ public class ResilientHttpClient {
     }
 
     /**
+     * POST JSON 并返回完整响应，供需要读取 Set-Cookie / 响应头的连接器使用。
+     */
+    public ResponseEntity<String> postForEntity(String target, String url,
+                                                Map<String, String> headers, String body) {
+        HttpEntity<String> entity = new HttpEntity<>(body, toHttpHeaders(headers, true));
+        return execute(target, () -> restTemplate.exchange(
+                url, HttpMethod.POST, entity, String.class));
+    }
+
+    /**
+     * POST JSON 且最多发送一次，不进行 IO/5xx 自动重试。
+     * <p>用于创建凭证、下单等非幂等写操作：请求可能已到达对端但响应丢失时，
+     * 自动重试会造成重复入账。失败后由业务侧通过幂等查询或人工补偿处理。
+     */
+    public ResponseEntity<String> postForEntityOnce(String target, String url,
+                                                    Map<String, String> headers, String body) {
+        HttpEntity<String> entity = new HttpEntity<>(body, toHttpHeaders(headers, true));
+        return executeOnce(target, () -> restTemplate.exchange(
+                url, HttpMethod.POST, entity, String.class));
+    }
+
+    /**
      * GET 并反序列化为指定类型（等价于 {@code RestTemplate.getForObject}，但带弹性保护）。
      */
     public <T> T getForObject(String target, String url, Class<T> responseType) {
@@ -183,6 +206,41 @@ public class ResilientHttpClient {
         // 理论不可达（循环内必然 return 或 throw），兜底保证编译期确定性
         throw lastError != null ? lastError
                 : new IllegalStateException("出站调用异常终止：target=" + tag);
+    }
+
+    /**
+     * 以弹性护栏执行任意调用，但不自动重试。
+     * <p>适用于非幂等写操作。熔断准入、失败计数和指标仍与 {@link #execute(String, Supplier)} 一致。
+     */
+    public <T> T executeOnce(String target, Supplier<T> action) {
+        String tag = target == null || target.isBlank() ? "unknown" : target;
+        SimpleCircuitBreaker breaker = breakerFor(tag);
+
+        try {
+            breaker.acquirePermission();
+        } catch (CircuitBreakerOpenException e) {
+            count(METRIC_REQUESTS, "target", tag, "outcome", "circuit_open");
+            log.warn("出站调用被熔断拒绝：target={} {}", tag, e.getMessage());
+            throw e;
+        }
+
+        long startNanos = System.nanoTime();
+        try {
+            T result = action.get();
+            breaker.onSuccess();
+            count(METRIC_REQUESTS, "target", tag, "outcome", "success");
+            recordLatency(tag, startNanos);
+            return result;
+        } catch (RuntimeException e) {
+            if (isCircuitFailure(e)) {
+                breaker.onFailure();
+            } else {
+                breaker.onSuccess();
+            }
+            count(METRIC_REQUESTS, "target", tag, "outcome", "failure");
+            recordLatency(tag, startNanos);
+            throw e;
+        }
     }
 
     /**

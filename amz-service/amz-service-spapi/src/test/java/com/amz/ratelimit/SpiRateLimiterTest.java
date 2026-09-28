@@ -1,6 +1,8 @@
 package com.amz.ratelimit;
 
 import com.google.gson.JsonObject;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -8,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +20,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,7 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * SP-API 限流器行为测试（Task 5）。
  * <p>
  * 断言对象是<b>官方 usage plan</b>（rate + burst），不是本仓库自定的滑动窗口：
- * 官方数值逐项取自 {@code src/test/resources/contracts/} 下 6 份官方 OpenAPI 模型快照的
+ * 官方数值逐项取自 {@code src/test/resources/contracts/} 下 15 份官方 OpenAPI 模型快照的
  * {@code description} "Usage Plan" 表（字节数与 sha256 由
  * {@link com.amz.client.SpApiPathContractTest} 锁定），因此本类可达到 E3 级证据
  * （官方夹具），而旧实现的「自写自测」只能到 E1。
@@ -58,6 +62,9 @@ class SpiRateLimiterTest {
     /** 官方 orders.getOrders：0.0167 req/s，burst 20（contracts/ordersV0.json）——补令牌约 60s。 */
     private static final String ORDERS_GET_ORDERS = "orders.getOrders";
 
+    /** 官方 tokens.createRestrictedDataToken：1 req/s，burst 10（contracts/tokens_2021-03-01.json）。 */
+    private static final String TOKENS_CREATE_RDT = "tokens.createRestrictedDataToken";
+
     /** 官方模型快照：classpath 资源 + 限流键分组前缀 + 字节数 + sha256（来源见 contracts/README.md）。 */
     private record Snapshot(String resource, String groupPrefix, long bytes, String sha256) {
     }
@@ -74,8 +81,25 @@ class SpiRateLimiterTest {
             new Snapshot("/contracts/productFeesV0.json", "fees", 49426L,
                     "d06ad35f909d8c0985845f21420c1f75599531465b27f46d4946f7d7f522fc35"),
             new Snapshot("/contracts/fbaInventory.json", "fbaInventory", 36985L,
-                    "7c14bcdb22de8ca2df45e5a40f2a422cff344d45985a68b9515b2e800edcc5ab"));
-
+                    "7c14bcdb22de8ca2df45e5a40f2a422cff344d45985a68b9515b2e800edcc5ab"),
+            new Snapshot("/contracts/messaging.json", "messaging", 106025L,
+                    "16b585e87a3b72c3637ffa0890e08acb4e2090864f1e8b4c1a9271a06700a8a1"),
+            new Snapshot("/contracts/uploads_2020-11-01.json", "uploads", 12157L,
+                    "202444dd425c24308366a4aaab28680dfb2ec70c25f4d9cd5441ea7d968ec3bd"),
+            new Snapshot("/contracts/sellers.json", "sellers", 29604L,
+                    "497862ea32de8040453649986e2cd7c6fcc15b55e8022becc783e4a6d6ffcffd"),
+            new Snapshot("/contracts/tokens_2021-03-01.json", "tokens", 15751L,
+                    "3cd09ae7f218c83f32536a894cb8c42f2191c94b9c27f6bcf0a164442089b061"),
+            new Snapshot("/contracts/notifications.json", "notifications", 95405L,
+                    "6a5e945f2a53a91b9b97c27cd4570dc399db3dde2b777f623fc226fbcdc8469a"),
+            new Snapshot("/contracts/listingsItems_2021-08-01.json", "listingsItems", 157514L,
+                    "117617f4c86dbd5c1708913103806a24c0ef0bbcfb6054e415d044d07761faeb"),
+            new Snapshot("/contracts/productPricing_2022-05-01.json", "productPricing", 105753L,
+                    "db6ffeab130bf1d4ab8fa47e4e83417d30d9cb682b3ce53f74ed51b62f6f817c"),
+            new Snapshot("/contracts/catalogItems_2022-04-01.json", "catalogItems", 151872L,
+                    "1a029b01df1d847d3057740a6e877f89f2ab78104b5b4d8f4b839f8d00f600c2"),
+            new Snapshot("/contracts/fulfillmentInbound_2024-03-20.json", "fbaInbound", 560644L,
+                    "a4d4cdd08dd3f381f27154d7f9f503d45e0486d416c629598341bbd23c7ff487"));
     /** 官方 usage plan 表的数据行，形如 {@code "| 0.0222 | 10 |"}。 */
     private static final Pattern USAGE_PLAN_ROW =
             Pattern.compile("\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*\\|\\s*([0-9]+)\\s*\\|");
@@ -222,13 +246,81 @@ class SpiRateLimiterTest {
     }
 
     @Test
-    @DisplayName("官方契约：officialPlans() 与 6 份模型快照的 Usage Plan 表逐项一致（33 个 operation）")
+    @DisplayName("结构化观测：保留原始头值、观测速率、回填生效值、burst 与时间")
+    void observationsExposeStructuredRateLimitState() {
+        SpiRateLimiter limiter = new SpiRateLimiter();
+        Instant before = Instant.now();
+        limiter.updateLimit(SHOP_A, REPORTS_CREATE, "0.005");
+        Instant after = Instant.now();
+
+        List<SpiRateLimiter.RateLimitObservation> observations = limiter.observations();
+        assertEquals(1, observations.size(), "每次有效观测都必须留下结构化记录，不能只写 WARN 日志");
+        SpiRateLimiter.RateLimitObservation tightened = observations.get(0);
+        assertEquals(SHOP_A, tightened.shopId());
+        assertEquals(REPORTS_CREATE, tightened.operationId());
+        assertNull(tightened.variant());
+        assertEquals("0.005", tightened.headerValue(),
+                "必须保留平台原始头值，便于验收报告核对，而不是只保留四舍五入后的速率");
+        assertEquals(0.005d, tightened.observedRatePerSecond(), 1e-9);
+        assertEquals(0.005d, tightened.effectiveRatePerSecond(), 1e-9);
+        assertEquals(15, tightened.burst(), "观测收紧只改速率，burst 仍为官方值");
+        assertFalse(tightened.observedAt().isBefore(before));
+        assertFalse(tightened.observedAt().isAfter(after));
+
+        limiter.updateLimit(SHOP_A, REPORTS_CREATE, "5");
+        SpiRateLimiter.RateLimitObservation recovered = limiter.observations().get(0);
+        assertEquals("5", recovered.headerValue(), "恢复观测也必须保留最新原始头值");
+        assertEquals(5.0d, recovered.observedRatePerSecond(), 1e-9);
+        assertEquals(0.0167d, recovered.effectiveRatePerSecond(), 1e-9,
+                "观测值高于官方值时，结构化出口必须显示封顶后的生效值，不能显示未采用的 5 req/s");
+        assertEquals(0.0167d, limiter.planFor(SHOP_A, REPORTS_CREATE).ratePerSecond(), 1e-9);
+    }
+
+    @Test
+    @DisplayName("Micrometer：观测值与回填生效值以 spapi.ratelimit.limit Gauge 暴露")
+    void micrometerExposesObservedAndEffectiveRateLimit() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        SpiRateLimiter limiter = new SpiRateLimiter();
+        limiter.bindTo(registry);
+        limiter.updateLimit(SHOP_A, REPORTS_CREATE, "0.005");
+
+        Gauge observed = registry.get("spapi.ratelimit.limit")
+                .tags("shopId", String.valueOf(SHOP_A), "operation", REPORTS_CREATE,
+                        "variant", "", "kind", "observed")
+                .gauge();
+        Gauge effective = registry.get("spapi.ratelimit.limit")
+                .tags("shopId", String.valueOf(SHOP_A), "operation", REPORTS_CREATE,
+                        "variant", "", "kind", "effective")
+                .gauge();
+        assertNotNull(observed, "必须暴露平台原始观测值 Gauge");
+        assertNotNull(effective, "必须暴露回填后实际生效值 Gauge");
+        assertEquals(0.005d, observed.value(), 1e-9);
+        assertEquals(0.005d, effective.value(), 1e-9);
+
+        limiter.updateLimit(SHOP_A, REPORTS_CREATE, "5");
+        assertEquals(5.0d, observed.value(), 1e-9,
+                "平台原始观测值必须随最新响应头更新");
+        assertEquals(0.0167d, effective.value(), 1e-9,
+                "生效值必须始终反映实际限流计划，不得放大到官方值以上");
+    }
+    @Test
+    @DisplayName("官方契约：officialPlans() 与 15 份模型快照的 Usage Plan 表逐项一致（106 个 operation）")
     void officialPlansMatchContractSnapshots() throws Exception {
         Map<String, double[]> fromSnapshots = usagePlansFromSnapshots();
 
-        assertEquals(33, fromSnapshots.size(),
-                "6 份官方模型快照的 Usage Plan 表应解析出 33 个 operation；"
+        assertEquals(106, fromSnapshots.size(),
+                "15 份官方模型快照的 Usage Plan 表应解析出 106 个 operation；"
                         + "数量变化说明快照被替换或解析规则失效，必须显式复核");
+
+        assertNotNull(fromSnapshots.get("sellers.getMarketplaceParticipations"));
+        assertEquals(0.016d, fromSnapshots.get("sellers.getMarketplaceParticipations")[0], 1e-9);
+        assertEquals(15, (int) fromSnapshots.get("sellers.getMarketplaceParticipations")[1]);
+        assertNotNull(fromSnapshots.get("sellers.getAccount"));
+        assertEquals(0.016d, fromSnapshots.get("sellers.getAccount")[0], 1e-9);
+        assertEquals(15, (int) fromSnapshots.get("sellers.getAccount")[1]);
+        assertNotNull(fromSnapshots.get(TOKENS_CREATE_RDT));
+        assertEquals(1.0d, fromSnapshots.get(TOKENS_CREATE_RDT)[0], 1e-9);
+        assertEquals(10, (int) fromSnapshots.get(TOKENS_CREATE_RDT)[1]);
 
         Map<String, UsagePlan> fromCode = new SpiRateLimiter().officialPlans();
         assertEquals(fromSnapshots.keySet(), fromCode.keySet(),
@@ -250,11 +342,13 @@ class SpiRateLimiterTest {
         // 反向护栏：官方模型中没有配额表的 operation 不得被凭空登记（避免臆造数值）
         assertNull(fromCode.get("fbaInventory.createInventoryItem"),
                 "createInventoryItem 在官方模型中没有 Usage Plan 表，不得登记猜测值");
+        assertNull(fromCode.get("messaging.sendInvoice"),
+                "sendInvoice 在官方模型中没有 Usage Plan 表，不得登记猜测值");
         assertNull(fromCode.get("feeds.createFeed|JSON_LISTINGS_FEED"),
                 "JSON_LISTINGS_FEED 的分档配额不在模型快照内，不得登记猜测值");
     }
 
-    /** 解析 6 份官方模型快照的 Usage Plan 表：{@code 分组.operationId -> [rate, burst]}。 */
+    /** 解析 15 份官方模型快照的 Usage Plan 表：{@code 分组.operationId -> [rate, burst]}。 */
     private static Map<String, double[]> usagePlansFromSnapshots() throws Exception {
         Map<String, double[]> plans = new LinkedHashMap<>();
         for (Snapshot snapshot : SNAPSHOTS) {

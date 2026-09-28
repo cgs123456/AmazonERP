@@ -4,7 +4,9 @@ import com.amz.auth.LwaTokenManager;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.connector.HttpTransport;
+import com.amz.connector.LocalApiException;
 import com.amz.connector.MarketplaceRegistry;
+import com.amz.connector.SpApiCallException;
 import com.amz.connector.SpApiEndpointResolver;
 import com.amz.connector.SpApiRequestFactory;
 import com.amz.ratelimit.SpiRateLimiter;
@@ -15,6 +17,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import com.alibaba.csp.sentinel.annotation.SentinelResource;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
@@ -79,6 +82,7 @@ public class FbaInventoryClient {
      * Micrometer 指标注册表（软依赖，未配置时退化为无指标）。
      */
     private final ObjectProvider<MeterRegistry> meterRegistryProvider;
+    private final SpApiGateway gateway;
 
     public FbaInventoryClient(HttpTransport httpTransport,
                               LwaTokenManager lwaTokenManager,
@@ -86,12 +90,27 @@ public class FbaInventoryClient {
                               SpiRateLimiter spiRateLimiter,
                               SpApiRequestFactory requestFactory,
                               ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this(httpTransport, lwaTokenManager, shopCredentialStore, spiRateLimiter,
+                requestFactory, meterRegistryProvider,
+                new SpApiGateway(httpTransport, lwaTokenManager, shopCredentialStore,
+                        spiRateLimiter, requestFactory, meterRegistryProvider));
+    }
+
+    @Autowired
+    public FbaInventoryClient(HttpTransport httpTransport,
+                              LwaTokenManager lwaTokenManager,
+                              ShopCredentialStore shopCredentialStore,
+                              SpiRateLimiter spiRateLimiter,
+                              SpApiRequestFactory requestFactory,
+                              ObjectProvider<MeterRegistry> meterRegistryProvider,
+                              SpApiGateway gateway) {
         this.httpTransport = httpTransport;
         this.lwaTokenManager = lwaTokenManager;
         this.shopCredentialStore = shopCredentialStore;
         this.spiRateLimiter = spiRateLimiter;
         this.requestFactory = requestFactory;
         this.meterRegistryProvider = meterRegistryProvider;
+        this.gateway = gateway;
     }
 
     /**
@@ -104,29 +123,13 @@ public class FbaInventoryClient {
      */
     @SentinelResource(value = "fetchAllInventory", fallback = "fetchAllInventoryFallback")
     public List<JsonObject> fetchAllInventory(Long shopId, String marketplaceId) {
-        ShopCredential credential = shopCredentialStore.get(shopId);
-        if (credential == null) {
-            throw new IllegalArgumentException("No credential found for shopId=" + shopId);
-        }
-
-        String region = MarketplaceRegistry.resolveRegion(marketplaceId);
-        // P0-51：端点解析统一走 requestFactory（官方主机或非生产覆盖，与出站主机校验同源）
-        SpApiEndpointResolver.Endpoint ep = requestFactory.resolveEndpoint(region);
-        String endpoint = ep.baseUrl();
-        String host = ep.host();
-        // 分组码 NA/EU/FE 不是 AWS region：SigV4 作用域必须用真实 region（P0-48）
-        String awsRegion = MarketplaceRegistry.resolveAwsRegion(region);
-
-        String accessToken = lwaTokenManager.getToken(credential);
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
 
         List<JsonObject> allItems = new ArrayList<>();
         String nextToken = null;
         int pageCount = 0;
 
         do {
-            // 发请求前按 (shopId, operationId) 维度令牌桶限流（与 OrdersClient 一致）
-            spiRateLimiter.acquire(shopId, OP_GET_INVENTORY_SUMMARIES);
-
             TreeMap<String, String> params = new TreeMap<>();
             params.put("details", "true");
             params.put("granularityType", "Marketplace");
@@ -137,24 +140,8 @@ public class FbaInventoryClient {
             }
             String queryString = buildCanonicalQueryString(params);
 
-            HttpRequest request = requestFactory.spApi(
-                    "GET", endpoint, host, awsRegion, INVENTORY_PATH, queryString, null,
-                    accessToken, credential.getAccessKey(), credential.getSecretKey());
-
-            HttpResponse<String> response = sendWithRetry(request, shopId, OP_GET_INVENTORY_SUMMARIES);
-            if (response == null || response.statusCode() != 200) {
-                int status = response == null ? -1 : response.statusCode();
-                // 401/403：access_token 失效，主动驱逐 LWA 缓存（与 OrdersClient 对齐）
-                if (status == 401 || status == 403) {
-                    lwaTokenManager.invalidate(credential);
-                    log.warn("fetchAllInventory got {} — LWA token cache invalidated shopId={}", status, shopId);
-                }
-                throw new RuntimeException("fetchAllInventory failed shopId=" + shopId
-                        + " status=" + status
-                        + " body=" + (response == null ? "" : response.body()));
-            }
-
-            JsonObject body = JsonParser.parseString(response.body()).getAsJsonObject();
+            JsonObject body = gateway.callJsonWithStatuses(
+                    "GET", shop, OP_GET_INVENTORY_SUMMARIES, INVENTORY_PATH, queryString, null, 200);
             JsonObject payload = body.has("payload") && body.get("payload").isJsonObject()
                     ? body.getAsJsonObject("payload") : body;
             if (payload.has("inventorySummaries") && payload.get("inventorySummaries").isJsonArray()) {

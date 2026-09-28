@@ -3,6 +3,7 @@ package com.amz.mq.consumer;
 import com.amz.constant.MqConstant;
 import com.amz.exception.MessageProcessLimitExceededException;
 import com.amz.model.dto.OrderDto;
+import com.amz.model.dto.OrderItemSyncDto;
 import com.amz.model.dto.OrderSyncDto;
 import com.amz.model.pojo.CustomAttribute;
 import com.amz.service.OrderService;
@@ -202,7 +203,51 @@ public class OrderConsumer {
         if (buyerInfo != null && !buyerInfo.isNull()) {
             dto.setBuyerName(textOrNull(buyerInfo, "buyerName"));
         }
+
+        JsonNode itemsNode = root.get("orderItems");
+        if (itemsNode != null && itemsNode.isArray() && itemsNode.size() > 0) {
+            List<OrderItemSyncDto> items = new ArrayList<>();
+            for (JsonNode itemNode : itemsNode) {
+                OrderItemSyncDto item = new OrderItemSyncDto();
+                item.setAmazonOrderItemId(textOrNull(itemNode, "amazonOrderItemId"));
+                item.setAsin(textOrNull(itemNode, "asin"));
+                item.setSellerSku(textOrNull(itemNode, "sellerSku"));
+                item.setTitle(textOrNull(itemNode, "title"));
+                JsonNode qtyNode = itemNode.get("quantity");
+                if (qtyNode != null && !qtyNode.isNull()) {
+                    item.setQuantity(qtyNode.asInt());
+                }
+                item.setItemPrice(decimalOrNull(itemNode, "itemPrice"));
+                item.setItemTax(decimalOrNull(itemNode, "itemTax"));
+                item.setPromotionDiscount(decimalOrNull(itemNode, "promotionDiscount"));
+                item.setCurrency(textOrNull(itemNode, "currency"));
+                item.setFulfillmentChannel(textOrNull(itemNode, "fulfillmentChannel"));
+                items.add(item);
+            }
+            dto.setOrderItems(items);
+        }
         return dto;
+    }
+
+    /**
+     * 金额字段解析：SP-API 金额是字符串（"19.99"），必须按字符串精确解析为 BigDecimal。
+     * 解析失败返回 null（保留“未知”），禁止静默填 0——0 和“没有”在财务上是两件事。
+     */
+    private BigDecimal decimalOrNull(JsonNode node, String field) {
+        JsonNode n = node.get(field);
+        if (n == null || n.isNull()) {
+            return null;
+        }
+        String s = n.asText();
+        if (s == null || s.isEmpty()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(s);
+        } catch (NumberFormatException e) {
+            log.warn("SP-API 订单明细金额解析失败：{}={}", field, s);
+            return null;
+        }
     }
 
     /**

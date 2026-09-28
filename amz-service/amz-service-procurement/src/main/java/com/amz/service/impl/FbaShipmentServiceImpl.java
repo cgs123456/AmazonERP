@@ -3,25 +3,38 @@ package com.amz.service.impl;
 import com.amz.context.UserContext;
 import com.amz.util.BizNoGenerator;
 
+import com.amz.dto.BatchCostSummary;
 import com.amz.exception.AttrIsNullException;
+import com.amz.exception.CodeErrorException;
+import com.amz.exception.InvalidParamException;
 import com.amz.mapper.FbaShipmentItemMapper;
 import com.amz.mapper.FbaShipmentMapper;
 import com.amz.mapper.InventoryBatchMapper;
 import com.amz.model.FbaShipment;
 import com.amz.model.FbaShipmentItem;
 import com.amz.model.InventoryBatch;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.FbaShipmentService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * FBA 货件管理服务实现。
@@ -33,6 +46,19 @@ import java.util.*;
 public class FbaShipmentServiceImpl implements FbaShipmentService {
 
     private static final DateTimeFormatter BATCH_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    /**
+     * 费用分摊/签收属于整单事务，必须读取全量明细。
+     * 超过该上限直接失败，禁止只处理前几页后静默写坏成本与库存。
+     */
+    private static final int MAX_SHIPMENT_ITEMS_FOR_MUTATION = 10_000;
+
+    private static final int SHIPMENT_ITEM_PAGE_SIZE = PageRequest.MAX_SIZE;
+
+    /** FIFO 出库必须读取全量 ACTIVE 批次；超过上限直接失败，禁止静默漏扣。 */
+    private static final int MAX_BATCHES_FOR_FIFO = 10_000;
+
+    private static final int BATCH_PAGE_SIZE = PageRequest.MAX_SIZE;
 
     @Autowired
     private FbaShipmentMapper fbaShipmentMapper;
@@ -52,7 +78,7 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         // 多租户越权防护：创建入口仅携带 Body、无 shopId 参数可被 ShopScoped 切面拦截，
         // 此处显式校验目标店铺归属（与 ProcurementServiceImpl#mustGetAuthorized 同模式）
         if (!UserContext.isShopAllowed(shipment.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺的货件：shopId=" + shipment.getShopId());
+            throw new CodeErrorException("无权操作该店铺的货件：shopId=" + shipment.getShopId());
         }
         shipment.setShipmentNo(BizNoGenerator.next("FBA"));
         if (shipment.getStatus() == null) {
@@ -100,23 +126,79 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
     }
 
     @Override
-    public List<FbaShipmentItem> listShipmentItems(Long shipmentId) {
+    public PageResult<FbaShipmentItem> listShipmentItems(Long shipmentId, PageRequest page) {
         // 越权防护：先校验父货件归属（兼存在性校验）
         mustGetAuthorized(shipmentId);
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
+        return queryShipmentItemsPage(shipmentId, page, false);
+    }
+
+    /**
+     * 查询一页货件明细。调用方必须先完成父货件归属校验。
+     */
+    private PageResult<FbaShipmentItem> queryShipmentItemsPage(Long shipmentId, PageRequest page,
+                                                                 boolean forUpdate) {
         LambdaQueryWrapper<FbaShipmentItem> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FbaShipmentItem::getFbaShipmentId, shipmentId);
-        return fbaShipmentItemMapper.selectList(wrapper);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(FbaShipmentItem::getId, cursorId);
+        }
+        wrapper.orderByDesc(FbaShipmentItem::getId)
+                .last("LIMIT " + page.probeSize() + (forUpdate ? " FOR UPDATE" : ""));
+        return PageResult.of(fbaShipmentItemMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
+    }
+
+    /**
+     * 费用分摊/签收读取整单全量明细。
+     * <p>只读第一页会漏摊后续 SKU，甚至把部分签收误判为整单完成；
+     * 超过硬上限则 fail-closed，提示拆分货件，而不是继续产生错误结果。</p>
+     */
+    private List<FbaShipmentItem> loadAllShipmentItemsForMutation(FbaShipment authorizedShipment) {
+        List<FbaShipmentItem> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(SHIPMENT_ITEM_PAGE_SIZE);
+        while (true) {
+            PageResult<FbaShipmentItem> current =
+                    queryShipmentItemsPage(authorizedShipment.getId(), page, true);
+            all.addAll(current.items());
+            if (all.size() > MAX_SHIPMENT_ITEMS_FOR_MUTATION) {
+                throw new CodeErrorException("货件明细超过安全上限 "
+                        + MAX_SHIPMENT_ITEMS_FOR_MUTATION + " 条，无法安全完成整单分摊/签收；请拆分货件后重试");
+            }
+            if (!current.hasMore()) {
+                return all;
+            }
+            page = PageRequest.of(SHIPMENT_ITEM_PAGE_SIZE, current.nextCursor());
+        }
     }
 
     @Override
-    public List<FbaShipment> listShipments(Long shopId, String status) {
+    public PageResult<FbaShipment> listShipments(Long shopId, String status, PageRequest page) {
+        if (shopId == null) {
+            throw new AttrIsNullException("店铺ID不能为空");
+        }
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            throw new CodeErrorException("无权查询该店铺的货件：shopId=" + shopId);
+        }
         LambdaQueryWrapper<FbaShipment> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FbaShipment::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(FbaShipment::getStatus, status);
         }
-        wrapper.orderByDesc(FbaShipment::getId);
-        return fbaShipmentMapper.selectList(wrapper);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(FbaShipment::getId, cursorId);
+        }
+        wrapper.orderByDesc(FbaShipment::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(fbaShipmentMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     @Override
@@ -126,7 +208,7 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
             throw new AttrIsNullException("货件不存在：id=" + id);
         }
         if (!UserContext.isShopAllowed(shipment.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺的货件：id=" + id);
+            throw new CodeErrorException("无权操作该店铺的货件：id=" + id);
         }
         return shipment;
     }
@@ -157,7 +239,7 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
     public FbaShipment confirmShipment(Long id, String carrier, String trackingNo) {
         FbaShipment shipment = getShipment(id);
         if (!"READY_TO_SHIP".equals(shipment.getStatus()) && !"CREATED".equals(shipment.getStatus())) {
-            throw new IllegalStateException("仅 READY_TO_SHIP/CREATED 状态可确认发货，当前状态：" + shipment.getStatus());
+            throw new CodeErrorException("仅 READY_TO_SHIP/CREATED 状态可确认发货，当前状态：" + shipment.getStatus());
         }
         shipment.setCarrier(carrier);
         shipment.setMasterTrackingNo(trackingNo);
@@ -171,16 +253,16 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> allocateCosts(Long shipmentId) {
         FbaShipment shipment = getShipment(shipmentId);
-        List<FbaShipmentItem> items = listShipmentItems(shipmentId);
+        List<FbaShipmentItem> items = loadAllShipmentItemsForMutation(shipment);
 
         if (items.isEmpty()) {
-            throw new IllegalStateException("货件无明细，无法分摊费用");
+            throw new CodeErrorException("货件无明细，无法分摊费用");
         }
 
         // 计算总数量用于按比例分摊
         int totalQty = items.stream().mapToInt(FbaShipmentItem::getQuantity).sum();
         if (totalQty <= 0) {
-            throw new IllegalStateException("货件总数量为0，无法分摊费用");
+            throw new CodeErrorException("货件总数量为0，无法分摊费用");
         }
 
         BigDecimal totalFreight = shipment.getFreightCost() != null ? shipment.getFreightCost() : BigDecimal.ZERO;
@@ -244,12 +326,86 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         if (receivedItems == null || receivedItems.isEmpty()) {
             throw new AttrIsNullException("验收明细不能为空");
         }
-        List<FbaShipmentItem> items = listShipmentItems(shipmentId);
+        List<FbaShipmentItem> items = loadAllShipmentItemsForMutation(shipment);
+        Map<Long, FbaShipmentItem> itemsById = new LinkedHashMap<>();
+        for (FbaShipmentItem item : items) {
+            if (item.getId() == null) {
+                throw new CodeErrorException("货件明细ID缺失，无法签收");
+            }
+            if (item.getQuantity() == null || item.getQuantity() <= 0) {
+                throw new CodeErrorException("货件明细数量非法：itemId=" + item.getId());
+            }
+            itemsById.put(item.getId(), item);
+        }
 
+        List<ReceiptLine> receiptLines = parseReceiptLines(receivedItems, itemsById);
         List<Map<String, Object>> results = new ArrayList<>();
-        boolean allReceived = true;
         boolean hasDiscrepancy = false;
 
+        for (ReceiptLine line : receiptLines) {
+            FbaShipmentItem item = itemsById.get(line.itemId());
+            if (item.getReceivedQuantity() != null && item.getReceivedQuantity() > 0
+                    && !item.getReceivedQuantity().equals(line.receivedQty())) {
+                throw new CodeErrorException("明细已签收，禁止重复或变更签收数量：itemId="
+                        + line.itemId() + ", 已签收=" + item.getReceivedQuantity()
+                        + ", 本次=" + line.receivedQty());
+            }
+
+            int discrepancy = line.receivedQty() - item.getQuantity();
+            item.setReceivedQuantity(line.receivedQty());
+            if (fbaShipmentItemMapper.updateById(item) != 1) {
+                throw new CodeErrorException("签收数量更新失败：itemId=" + line.itemId());
+            }
+
+            if (line.receivedQty() > 0) {
+                receiveBatch(shipmentId, line.itemId(), line.receivedQty());
+            }
+
+            Map<String, Object> itemResult = new LinkedHashMap<>();
+            itemResult.put("sku", item.getSku());
+            itemResult.put("expectedQty", item.getQuantity());
+            itemResult.put("receivedQty", line.receivedQty());
+            itemResult.put("discrepancy", discrepancy);
+            if (discrepancy != 0) {
+                hasDiscrepancy = true;
+                itemResult.put("status", discrepancy > 0 ? "OVER_RECEIVING" : "SHORT_RECEIVING");
+            } else {
+                itemResult.put("status", "MATCHED");
+            }
+            results.add(itemResult);
+        }
+
+        boolean allReceived = items.stream().allMatch(item ->
+                item.getQuantity() != null && item.getQuantity() > 0
+                        && item.getReceivedQuantity() != null
+                        && item.getReceivedQuantity() >= item.getQuantity());
+        long pendingItemCount = items.stream().filter(item ->
+                item.getQuantity() == null || item.getQuantity() <= 0
+                        || item.getReceivedQuantity() == null
+                        || item.getReceivedQuantity() < item.getQuantity()).count();
+
+        shipment.setStatus(allReceived ? "CLOSED" : "RECEIVING");
+        shipment.setActualArrival(LocalDate.now());
+        fbaShipmentMapper.updateById(shipment);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("shipmentId", shipmentId);
+        result.put("shipmentNo", shipment.getShipmentNo());
+        result.put("hasDiscrepancy", hasDiscrepancy);
+        result.put("allReceived", allReceived);
+        result.put("pendingItemCount", pendingItemCount);
+        result.put("itemResults", results);
+
+        if (hasDiscrepancy) {
+            log.warn("FBA货件存在签收差异：shipmentNo={}, 详情={}", shipment.getShipmentNo(), results);
+        }
+        return result;
+    }
+
+    private List<ReceiptLine> parseReceiptLines(List<Map<String, Object>> receivedItems,
+                                                Map<Long, FbaShipmentItem> itemsById) {
+        List<ReceiptLine> lines = new ArrayList<>();
+        Set<Long> seenItemIds = new HashSet<>();
         for (Map<String, Object> received : receivedItems) {
             if (received == null || received.get("itemId") == null || received.get("receivedQty") == null) {
                 throw new AttrIsNullException("验收明细缺 itemId/receivedQty");
@@ -265,65 +421,31 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
             if (receivedQty < 0) {
                 throw new AttrIsNullException("验收数量不能为负数：itemId=" + itemId);
             }
-
-            FbaShipmentItem item = items.stream()
-                    .filter(i -> i.getId().equals(itemId))
-                    .findFirst()
-                    .orElseThrow(() -> new AttrIsNullException("货件明细不存在：itemId=" + itemId));
-
-            int discrepancy = receivedQty - item.getQuantity();
-            item.setReceivedQuantity(receivedQty);
-            fbaShipmentItemMapper.updateById(item);
-
-            // 创建库存批次
-            if (receivedQty > 0) {
-                receiveBatch(shipmentId, itemId, receivedQty);
+            if (!itemsById.containsKey(itemId)) {
+                throw new AttrIsNullException("货件明细不存在：itemId=" + itemId);
             }
-
-            Map<String, Object> itemResult = new LinkedHashMap<>();
-            itemResult.put("sku", item.getSku());
-            itemResult.put("expectedQty", item.getQuantity());
-            itemResult.put("receivedQty", receivedQty);
-            itemResult.put("discrepancy", discrepancy);
-            if (discrepancy != 0) {
-                hasDiscrepancy = true;
-                itemResult.put("status", discrepancy > 0 ? "OVER_RECEIVING" : "SHORT_RECEIVING");
-            } else {
-                itemResult.put("status", "MATCHED");
+            if (!seenItemIds.add(itemId)) {
+                throw new CodeErrorException("同一货件明细在签收请求中重复提交：itemId=" + itemId);
             }
-            results.add(itemResult);
-
-            if (receivedQty < item.getQuantity()) {
-                allReceived = false;
-            }
+            lines.add(new ReceiptLine(itemId, receivedQty));
         }
-
-        // 更新货件状态
-        if (allReceived) {
-            shipment.setStatus("CLOSED");
-        } else {
-            shipment.setStatus("RECEIVING");
-        }
-        shipment.setActualArrival(LocalDate.now());
-        fbaShipmentMapper.updateById(shipment);
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("shipmentId", shipmentId);
-        result.put("shipmentNo", shipment.getShipmentNo());
-        result.put("hasDiscrepancy", hasDiscrepancy);
-        result.put("allReceived", allReceived);
-        result.put("itemResults", results);
-
-        if (hasDiscrepancy) {
-            log.warn("FBA货件存在签收差异：shipmentNo={}, 详情={}", shipment.getShipmentNo(), results);
-        }
-
-        return result;
+        return lines;
     }
 
+    private record ReceiptLine(Long itemId, Integer receivedQty) {
+    }
     @Override
     @Transactional(rollbackFor = Exception.class)
     public InventoryBatch receiveBatch(Long shipmentId, Long shipmentItemId, Integer receivedQty) {
+        if (shipmentId == null || shipmentItemId == null) {
+            throw new AttrIsNullException("货件ID和货件明细ID不能为空");
+        }
+        if (receivedQty == null) {
+            throw new AttrIsNullException("入库数量不能为空");
+        }
+        if (receivedQty <= 0) {
+            throw new CodeErrorException("入库数量必须大于0");
+        }
         FbaShipment shipment = getShipment(shipmentId);
         FbaShipmentItem item = fbaShipmentItemMapper.selectById(shipmentItemId);
         if (item == null) {
@@ -331,7 +453,34 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         }
         // 归属一致性：明细必须挂靠当前货件，防止用自店货件 ID 套他店明细建批次
         if (!shipmentId.equals(item.getFbaShipmentId())) {
-            throw new IllegalStateException("货件明细不属于当前货件：itemId=" + shipmentItemId);
+            throw new CodeErrorException("货件明细不属于当前货件：itemId=" + shipmentItemId);
+        }
+        if (item.getQuantity() == null || item.getQuantity() <= 0) {
+            throw new CodeErrorException("货件明细数量必须大于0：itemId=" + shipmentItemId);
+        }
+
+        if (item.getReceivedQuantity() == null) {
+            item.setReceivedQuantity(0);
+        }
+        if (item.getReceivedQuantity() > 0 && !item.getReceivedQuantity().equals(receivedQty)) {
+            throw new CodeErrorException("货件明细已签收，禁止变更入库数量：itemId=" + shipmentItemId
+                    + ", 已签收=" + item.getReceivedQuantity() + ", 本次=" + receivedQty);
+        }
+
+        // 明细已绑定批次时，重复调用必须返回原批次，不能再次插入库存。
+        if (item.getBatchNo() != null) {
+            InventoryBatch existing = inventoryBatchMapper.selectOne(
+                    new LambdaQueryWrapper<InventoryBatch>()
+                            .eq(InventoryBatch::getBatchNo, item.getBatchNo()));
+            if (existing == null) {
+                throw new CodeErrorException("货件明细已绑定批次号但批次不存在：itemId=" + shipmentItemId
+                        + ", batchNo=" + item.getBatchNo());
+            }
+            return existing;
+        }
+
+        if (item.getReceivedQuantity() == 0) {
+            item.setReceivedQuantity(receivedQty);
         }
 
         // 计算批次单位成本（采购成本 + 分摊的头程费用）
@@ -350,6 +499,7 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         batch.setBatchNo(BizNoGenerator.next("BAT" + LocalDate.now().format(BATCH_FMT)));
         batch.setPurchaseOrderId(null);
         batch.setInboundOrderId(shipmentId);
+        batch.setShipmentItemId(shipmentItemId);
         batch.setSku(item.getSku());
         batch.setAsin(item.getAsin());
         batch.setWarehouseId(shipment.getWarehouseId());
@@ -362,39 +512,179 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         batch.setTotalCost(totalCost);
         batch.setInboundDate(LocalDate.now());
         batch.setStatus("ACTIVE");
-        inventoryBatchMapper.insert(batch);
+
+        final int inserted;
+        try {
+            inserted = inventoryBatchMapper.insert(batch);
+        } catch (DuplicateKeyException e) {
+            // MySQL REPEATABLE READ 下普通 SELECT 可能沿用旧快照，冲突回查必须使用当前读。
+            InventoryBatch existing = inventoryBatchMapper.selectOne(
+                    new LambdaQueryWrapper<InventoryBatch>()
+                            .eq(InventoryBatch::getShipmentItemId, shipmentItemId)
+                            .last("FOR UPDATE"));
+            if (existing == null || existing.getBatchNo() == null) {
+                throw new CodeErrorException("库存批次幂等冲突且无法读取已有批次：itemId=" + shipmentItemId);
+            }
+            // 并发冲突赢家已经落库；本事务补齐明细绑定，后续重试直接复用批次。
+            item.setBatchNo(existing.getBatchNo());
+            if (fbaShipmentItemMapper.updateById(item) != 1) {
+                throw new CodeErrorException("库存批次幂等冲突后绑定货件明细失败：itemId=" + shipmentItemId);
+            }
+            return existing;
+        }
+        if (inserted != 1) {
+            throw new CodeErrorException("库存批次写入失败：itemId=" + shipmentItemId);
+        }
+
+        item.setBatchNo(batch.getBatchNo());
+        if (fbaShipmentItemMapper.updateById(item) != 1) {
+            throw new CodeErrorException("库存批次绑定货件明细失败：itemId=" + shipmentItemId);
+        }
 
         log.info("批次入库完成：batchNo={}, sku={}, qty={}, unitCost={}", batch.getBatchNo(), batch.getSku(), receivedQty, batch.getUnitCost());
         return batch;
     }
-
     @Override
-    public List<InventoryBatch> listBatchesBySku(Long shopId, String sku) {
-        LambdaQueryWrapper<InventoryBatch> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(InventoryBatch::getShopId, shopId)
-               .eq(InventoryBatch::getSku, sku)
-               .eq(InventoryBatch::getStatus, "ACTIVE")
-               .orderByAsc(InventoryBatch::getInboundDate);  // FIFO：按入库日期升序
-        return inventoryBatchMapper.selectList(wrapper);
+    public PageResult<InventoryBatch> listBatchesBySku(Long shopId, String sku, PageRequest page) {
+        validateBatchScope(shopId, sku);
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
+        return queryBatchPage(shopId, sku, page);
     }
 
     @Override
+    public BatchCostSummary getBatchCostSummary(Long shopId, String sku) {
+        validateBatchScope(shopId, sku);
+        return inventoryBatchMapper.sumActiveBatchCost(shopId, sku);
+    }
+
+    /**
+     * 查询一页 FIFO 批次。调用方必须先完成店铺/SKU 校验。
+     */
+    private PageResult<InventoryBatch> queryBatchPage(Long shopId, String sku, PageRequest page) {
+        LambdaQueryWrapper<InventoryBatch> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(InventoryBatch::getShopId, shopId)
+               .eq(InventoryBatch::getSku, sku)
+               .eq(InventoryBatch::getStatus, "ACTIVE");
+
+        BatchCursor cursor = parseBatchCursor(page);
+        if (cursor != null) {
+            wrapper.and(w -> w
+                    .gt(InventoryBatch::getInboundDate, cursor.inboundDate())
+                    .or(n -> n.eq(InventoryBatch::getInboundDate, cursor.inboundDate())
+                              .gt(InventoryBatch::getId, cursor.id())));
+        }
+
+        wrapper.orderByAsc(InventoryBatch::getInboundDate)
+               .orderByAsc(InventoryBatch::getId)
+               .last("LIMIT " + page.probeSize());
+
+        return PageResult.of(inventoryBatchMapper.selectList(wrapper), page.size(), item -> {
+            if (item.getInboundDate() == null || item.getId() == null) {
+                throw new CodeErrorException("库存批次缺少 FIFO 排序键：batchId=" + item.getId());
+            }
+            return PageRequest.encodeCursor(item.getInboundDate() + "|" + item.getId());
+        });
+    }
+
+    /**
+     * FIFO 出库读取全量 ACTIVE 批次。
+     * <p>公开列表已经分页；若出库误用第一页会静默漏扣并算错成本，
+     * 因此这里循环读取，超过安全上限则 fail-closed。</p>
+     */
+    private List<InventoryBatch> loadAllBatchesForFifo(Long shopId, String sku) {
+        validateBatchScope(shopId, sku);
+        List<InventoryBatch> all = new ArrayList<>();
+        PageRequest page = PageRequest.first(BATCH_PAGE_SIZE);
+        while (true) {
+            PageResult<InventoryBatch> current = queryBatchPage(shopId, sku, page);
+            all.addAll(current.items());
+            if (all.size() > MAX_BATCHES_FOR_FIFO) {
+                throw new CodeErrorException("SKU 的 ACTIVE 批次超过安全上限 "
+                        + MAX_BATCHES_FOR_FIFO + " 条，无法安全完成 FIFO 出库；请先归档或清理历史批次");
+            }
+            if (!current.hasMore()) {
+                return all;
+            }
+            page = PageRequest.of(BATCH_PAGE_SIZE, current.nextCursor());
+        }
+    }
+
+    private void validateBatchScope(Long shopId, String sku) {
+        if (shopId == null) {
+            throw new AttrIsNullException("店铺ID不能为空");
+        }
+        if (sku == null || sku.isBlank()) {
+            throw new AttrIsNullException("SKU不能为空");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            throw new CodeErrorException("无权查询该店铺的库存批次：shopId=" + shopId);
+        }
+    }
+
+    private BatchCursor parseBatchCursor(PageRequest page) {
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
+        if (!page.hasCursor()) {
+            return null;
+        }
+        String[] parts = page.payload().split("\\|", -1);
+        if (parts.length != 2) {
+            throw new InvalidParamException("库存批次游标非法：" + page.payload());
+        }
+        try {
+            LocalDate inboundDate = LocalDate.parse(parts[0]);
+            long id = Long.parseLong(parts[1]);
+            if (id <= 0) {
+                throw new InvalidParamException("库存批次游标非法：id 必须 > 0，实际 " + id);
+            }
+            return new BatchCursor(inboundDate, id);
+        } catch (DateTimeParseException | NumberFormatException e) {
+            throw new InvalidParamException("库存批次游标非法：" + page.payload());
+        }
+    }
+
+    private record BatchCursor(LocalDate inboundDate, long id) {
+    }
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public List<Map<String, Object>> fifoOutbound(Long shopId, String sku, Integer quantity) {
-        List<InventoryBatch> batches = listBatchesBySku(shopId, sku);
+        if (quantity == null) {
+            throw new AttrIsNullException("出库数量不能为空");
+        }
+        if (quantity <= 0) {
+            throw new CodeErrorException("出库数量必须大于0");
+        }
+        List<InventoryBatch> batches = loadAllBatchesForFifo(shopId, sku);
+        long availableTotal = batches.stream()
+                .map(InventoryBatch::getAvailableQuantity)
+                .filter(Objects::nonNull)
+                .mapToLong(Integer::longValue)
+                .filter(value -> value > 0)
+                .sum();
+        if (availableTotal < quantity) {
+            throw new CodeErrorException("FIFO出库库存不足：shopId=" + shopId
+                    + ", sku=" + sku + ", 请求=" + quantity + ", 可用=" + availableTotal);
+        }
+
         List<Map<String, Object>> outboundDetails = new ArrayList<>();
         int remaining = quantity;
 
         for (InventoryBatch batch : batches) {
             if (remaining <= 0) break;
-            if (batch.getAvailableQuantity() <= 0) continue;
+            int availableQty = batch.getAvailableQuantity() == null ? 0 : batch.getAvailableQuantity();
+            if (availableQty <= 0) continue;
 
-            int deductQty = Math.min(batch.getAvailableQuantity(), remaining);
-            batch.setAvailableQuantity(batch.getAvailableQuantity() - deductQty);
-            if (batch.getAvailableQuantity() == 0) {
-                batch.setStatus("DEPLETED");
+            int deductQty = Math.min(availableQty, remaining);
+            int affected = inventoryBatchMapper.decreaseAvailableQuantityAtomic(
+                    batch.getId(), shopId, sku, deductQty);
+            if (affected != 1) {
+                throw new CodeErrorException("FIFO出库并发冲突或库存不足，事务已回滚：shopId=" + shopId
+                        + ", sku=" + sku + ", batchNo=" + batch.getBatchNo()
+                        + ", 请求扣减=" + deductQty);
             }
-            inventoryBatchMapper.updateById(batch);
 
             BigDecimal subtotal = batch.getUnitCost().multiply(BigDecimal.valueOf(deductQty));
 

@@ -28,6 +28,7 @@ public class InventoryBatch implements Serializable {
     private String batchNo;
     private Long purchaseOrderId;
     private Long inboundOrderId;
+    private Long shipmentItemId;
     private String sku;
     private String asin;
     private Long warehouseId;

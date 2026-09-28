@@ -9,6 +9,8 @@ import com.amz.model.pojo.Product;
 import com.amz.model.pojo.ProductAttribute;
 import com.amz.model.pojo.Shop;
 import com.amz.model.vo.ProductVo;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.result.Result;
 import com.amz.service.ProductService;
 import lombok.extern.slf4j.Slf4j;
@@ -152,24 +154,34 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
-    public Result<List<Product>> searchProducts(String keyword) {
+    public Result<List<Product>> searchProducts(String keyword, PageRequest page) {
         // 搜索限定当前店铺（与 getProductList 同口径，避免跨店数据暴露）
         Long shopId = UserContext.getShopId();
         if (shopId == null) {
             return Result.failure("请先选择店铺");
         }
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<Product> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Product::getShopId, shopId.intValue());
-        if (keyword == null || keyword.trim().isEmpty()) {
-            // 无关键词时返回本店商品（最多 20 条）
-            wrapper.last("LIMIT 20");
-            return Result.success(productMapper.selectList(wrapper));
+        if (keyword != null && !keyword.trim().isEmpty()) {
+            wrapper.and(w -> w.like(Product::getName, keyword)
+                   .or().like(Product::getDescription, keyword)
+                   .or().like(Product::getBrand, keyword));
         }
-        wrapper.and(w -> w.like(Product::getName, keyword)
-               .or().like(Product::getDescription, keyword)
-               .or().like(Product::getBrand, keyword))
-               .last("LIMIT 20");
-        return Result.success(productMapper.selectList(wrapper));
+        // keyset：商品 id 自增，按 id DESC 翻页与新增商品互不干扰（OFFSET 会漏行/重复）
+        if (req.hasCursor()) {
+            wrapper.lt(Product::getId, req.cursorId().intValue());
+        }
+        wrapper.orderByDesc(Product::getId)
+               .last("LIMIT " + req.probeSize());
+        List<Product> rows = productMapper.selectList(wrapper);
+        PageResult<Product> result = PageResult.of(rows, req.size(),
+                p -> PageRequest.encodeCursor(String.valueOf(p.getId())));
+        if (result.truncated()) {
+            log.warn("商品搜索被分页截断：shopId={} keyword={} size={}，请用 nextCursor 继续翻页",
+                    shopId, keyword, req.size());
+        }
+        return Result.paged(result);
     }
 
     @Override

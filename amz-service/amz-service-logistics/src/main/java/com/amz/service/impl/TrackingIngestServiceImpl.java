@@ -10,6 +10,7 @@ import com.amz.service.TrackingStatusMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -70,17 +71,41 @@ public class TrackingIngestServiceImpl implements TrackingIngestService {
     @Autowired
     private TrackingStatusMapper statusMapper;
 
+    /**
+     * 单货件既有轨迹指纹的安全上限。
+     * <p>
+     * 指纹用于判断新增轨迹是否已存在。原先无条件加载该货件全部轨迹，
+     * 长生命周期或异常数据会让单次落库占满堆内存。超过上限时 fail-closed，
+     * 宁可让调用方重试/治理数据，也不能在指纹不完整时继续写入并制造重复轨迹。
+     */
+    @Value("${amz.logistics.tracking.max-existing-events:10000}")
+    private int maxExistingEvents = 10000;
+
+    /** 延误判定单批扫描量；每批按 id 游标推进，避免一次性加载全部非终态货件。 */
+    @Value("${amz.logistics.delay-check.batch-size:500}")
+    private int delayScanBatchSize = 500;
+
+    /** 单轮延误判定的最大扫描量；超过时抛错回滚，避免静默漏判。 */
+    @Value("${amz.logistics.delay-check.max-scan:50000}")
+    private int delayScanMaxRows = 50000;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public IngestOutcome ingest(String shipmentNo, String trackingNo, List<TrackingEvent> events,
                                String source, Long shopId) {
-        Shipment shipment = resolveShipment(shipmentNo, trackingNo, shopId);
-        if (shipment == null) {
+        ResolveResult resolved = resolveShipment(shipmentNo, trackingNo, shopId);
+        if (resolved.ambiguous()) {
+            log.warn("轨迹落库拒绝写入：{} 命中多条货件，shipmentNo={} trackingNo={} source={} shopId={}",
+                    resolved.conflictField(), shipmentNo, trackingNo, source, shopId);
+            return IngestOutcome.ambiguous(resolved.conflictField());
+        }
+        if (!resolved.found()) {
             log.warn("轨迹落库未匹配到货件，已回吐给调用方：shipmentNo={} trackingNo={} source={} shopId={}",
                     shipmentNo, trackingNo, source, shopId);
             return IngestOutcome.unmatched();
         }
 
+        Shipment shipment = resolved.shipment();
         IngestOutcome outcome = IngestOutcome.matched(shipment.getId());
         if (events == null || events.isEmpty()) {
             // 已定位到货件但本次无轨迹（典型情形：API 查询成功但对端暂无数据）：
@@ -138,23 +163,56 @@ public class TrackingIngestServiceImpl implements TrackingIngestService {
     @Transactional(rollbackFor = Exception.class)
     public int markDelayedShipments(int graceDays) {
         LocalDate threshold = LocalDate.now().minusDays(Math.max(0, graceDays));
-        List<Shipment> candidates = shipmentMapper.selectList(new LambdaQueryWrapper<Shipment>()
-                .notIn(Shipment::getStatus, TERMINAL_STATUSES)
-                .isNotNull(Shipment::getEta));
-
+        int batchSize = Math.max(1, delayScanBatchSize);
+        int maxRows = Math.max(1, delayScanMaxRows);
+        Long lastId = null;
+        int scanned = 0;
         int marked = 0;
-        for (Shipment shipment : candidates) {
-            if (STATUS_DELAYED.equals(shipment.getStatus())) {
-                continue;
+
+        while (true) {
+            int remaining = maxRows - scanned;
+            if (remaining <= 0) {
+                throw new IllegalStateException("延误判定扫描超过安全上限，已回滚本轮结果：maxScan="
+                        + maxRows + "，请缩小时间窗口或提高 amz.logistics.delay-check.max-scan");
             }
-            LocalDate eta = parseDate(shipment.getEta());
-            if (eta == null || !eta.isBefore(threshold)) {
-                continue;
+            int allowed = Math.min(batchSize, remaining);
+            // 多查一行只用于探测“是否还有下一页”，不会把探测行当成业务结果处理。
+            List<Shipment> probed = shipmentMapper.selectList(new LambdaQueryWrapper<Shipment>()
+                    .select(Shipment::getId, Shipment::getStatus, Shipment::getEta)
+                    .notIn(Shipment::getStatus, TERMINAL_STATUSES)
+                    .isNotNull(Shipment::getEta)
+                    .gt(lastId != null, Shipment::getId, lastId)
+                    .orderByAsc(Shipment::getId)
+                    .last("LIMIT " + (allowed + 1)));
+            if (probed.isEmpty()) {
+                break;
             }
-            log.info("ETA 超期判定延误：shipmentId={} eta={} 阈值={}", shipment.getId(), eta, threshold);
-            shipment.setStatus(STATUS_DELAYED);
-            shipmentMapper.updateById(shipment);
-            marked++;
+            boolean hasMore = probed.size() > allowed;
+            List<Shipment> batch = hasMore ? probed.subList(0, allowed) : probed;
+            if (hasMore && scanned + batch.size() >= maxRows) {
+                throw new IllegalStateException("延误判定仍有未扫描候选，但已达到安全上限，已回滚本轮结果：maxScan="
+                        + maxRows + "，请缩小时间窗口或提高 amz.logistics.delay-check.max-scan");
+            }
+
+            for (Shipment shipment : batch) {
+                if (STATUS_DELAYED.equals(shipment.getStatus())) {
+                    continue;
+                }
+                LocalDate eta = parseDate(shipment.getEta());
+                if (eta == null || !eta.isBefore(threshold)) {
+                    continue;
+                }
+                log.info("ETA 超期判定延误：shipmentId={} eta={} 阈值={}", shipment.getId(), eta, threshold);
+                shipment.setStatus(STATUS_DELAYED);
+                shipmentMapper.updateById(shipment);
+                marked++;
+            }
+
+            scanned += batch.size();
+            lastId = batch.get(batch.size() - 1).getId();
+            if (!hasMore) {
+                break;
+            }
         }
         return marked;
     }
@@ -164,30 +222,61 @@ public class TrackingIngestServiceImpl implements TrackingIngestService {
     /**
      * 定位货件：优先货件编号（唯一约束），退化为主运单号。
      * <p>
-     * 用 selectList 取首条而非 selectOne：主运单号未建唯一索引，
-     * 数据异常时 selectOne 会抛异常中断整批导入，而取首条能让其余记录继续落库。
+     * 运单号当前没有唯一约束。命中多条时必须 fail-closed 并回吐冲突字段，
+     * 绝不能取第一条：轨迹一旦写入错误货件，后续状态、延误与时效统计会连锁失真。
+     * 查询只探测两条，避免异常数据把整批导入的内存和响应时间拖垮。
      * <p>
      * {@code shopId} 非空时追加店铺条件：货件编号与运单号均来自外部输入，
      * 不加此条件则可用他店运单号把轨迹写入他店货件。
      */
-    private Shipment resolveShipment(String shipmentNo, String trackingNo, Long shopId) {
+    private ResolveResult resolveShipment(String shipmentNo, String trackingNo, Long shopId) {
         if (shipmentNo != null && !shipmentNo.isBlank()) {
             List<Shipment> byNo = shipmentMapper.selectList(new LambdaQueryWrapper<Shipment>()
                     .eq(Shipment::getShipmentNo, shipmentNo.trim())
-                    .eq(shopId != null, Shipment::getShopId, shopId));
-            if (!byNo.isEmpty()) {
-                return byNo.get(0);
+                    .eq(shopId != null, Shipment::getShopId, shopId)
+                    .orderByAsc(Shipment::getId)
+                    .last("LIMIT 2"));
+            if (byNo.size() > 1) {
+                return ResolveResult.ambiguous("shipmentNo");
+            }
+            if (byNo.size() == 1) {
+                return ResolveResult.found(byNo.get(0));
             }
         }
         if (trackingNo != null && !trackingNo.isBlank()) {
             List<Shipment> byTracking = shipmentMapper.selectList(new LambdaQueryWrapper<Shipment>()
                     .eq(Shipment::getMasterTrackingNo, trackingNo.trim())
-                    .eq(shopId != null, Shipment::getShopId, shopId));
-            if (!byTracking.isEmpty()) {
-                return byTracking.get(0);
+                    .eq(shopId != null, Shipment::getShopId, shopId)
+                    .orderByAsc(Shipment::getId)
+                    .last("LIMIT 2"));
+            if (byTracking.size() > 1) {
+                return ResolveResult.ambiguous("trackingNo");
+            }
+            if (byTracking.size() == 1) {
+                return ResolveResult.found(byTracking.get(0));
             }
         }
-        return null;
+        return ResolveResult.notFound();
+    }
+
+    /** 货件定位结果；歧义与未匹配必须由调用方区分处理。 */
+    private record ResolveResult(Shipment shipment, boolean ambiguous, String conflictField) {
+
+        static ResolveResult found(Shipment shipment) {
+            return new ResolveResult(shipment, false, null);
+        }
+
+        static ResolveResult ambiguous(String conflictField) {
+            return new ResolveResult(null, true, conflictField);
+        }
+
+        static ResolveResult notFound() {
+            return new ResolveResult(null, false, null);
+        }
+
+        boolean found() {
+            return shipment != null && !ambiguous;
+        }
     }
 
     /**
@@ -266,10 +355,27 @@ public class TrackingIngestServiceImpl implements TrackingIngestService {
         }
     }
 
-    /** 读取该货件已有轨迹指纹，用于增量合并判定 */
+    /**
+     * 读取该货件已有轨迹指纹，用于增量合并判定。
+     * <p>
+     * 多查一条用于探测是否超过安全上限。超限时 fail-closed：若只读取前 N 条，
+     * 第 N+1 条之后的历史轨迹会被误判为“不存在”，从而插入重复数据并污染时效统计。
+     */
     private Set<String> loadFingerprints(Long shipmentId) {
+        int limit = Math.max(1, maxExistingEvents);
         List<TrackingEvent> existing = trackingEventMapper.selectList(
-                new LambdaQueryWrapper<TrackingEvent>().eq(TrackingEvent::getShipmentId, shipmentId));
+                new LambdaQueryWrapper<TrackingEvent>()
+                        .select(TrackingEvent::getId, TrackingEvent::getEventStatus,
+                                TrackingEvent::getEventTime, TrackingEvent::getLocation,
+                                TrackingEvent::getDescription)
+                        .eq(TrackingEvent::getShipmentId, shipmentId)
+                        .orderByAsc(TrackingEvent::getId)
+                        .last("LIMIT " + (limit + 1)));
+        if (existing.size() > limit) {
+            throw new IllegalStateException("货件既有轨迹超过指纹安全上限，已拒绝写入：shipmentId="
+                    + shipmentId + " limit=" + limit
+                    + "，请归档历史轨迹或提高 amz.logistics.tracking.max-existing-events");
+        }
         Set<String> fingerprints = new HashSet<>(Math.max(16, existing.size() * 2));
         for (TrackingEvent event : existing) {
             fingerprints.add(fingerprintOf(event));

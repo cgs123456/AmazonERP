@@ -37,6 +37,13 @@ public interface SpapiFeedsClient {
                                               @PathVariable("feedId") String feedId);
 
     /**
+     * 查询 Feed 结构化 processing report；只有 successful=true 才代表全部消息被接受。
+     */
+    @GetMapping("/result/{shopId}/{feedId}")
+    Result<Map<String, Object>> getFeedResult(@PathVariable("shopId") Long shopId,
+                                              @PathVariable("feedId") String feedId);
+
+    /**
      * Feed 提交请求体：shopId + 目标 marketplaceId + JSON 内容。
      */
     class FeedSubmitRequest {

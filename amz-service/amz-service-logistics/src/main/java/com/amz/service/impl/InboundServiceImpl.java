@@ -1,10 +1,14 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.mapper.InboundOrderMapper;
 import com.amz.model.InboundOrder;
 import com.amz.model.WarehouseInventory;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.InboundService;
 import com.amz.service.WarehouseService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -30,10 +34,13 @@ public class InboundServiceImpl implements InboundService {
 
     @Override
     public InboundOrder createInboundOrder(InboundOrder order) {
-        order.setInboundNo(BizNoGenerator.next("IN"));
-        if (order.getStatus() == null) {
-            order.setStatus("PENDING");
+        if (order == null) {
+            throw new CodeErrorException("入库单内容不能为空");
         }
+        requireShopAllowed(order.getShopId(), "入库单");
+        order.setInboundNo(BizNoGenerator.next("IN"));
+        // 创建入口只允许产生初始态，客户端不能绕过入库流程直接写入 RECEIVED 等状态
+        order.setStatus("PENDING");
         if (order.getReceivedItems() == null) {
             order.setReceivedItems(0);
         }
@@ -42,14 +49,24 @@ public class InboundServiceImpl implements InboundService {
     }
 
     @Override
-    public List<InboundOrder> listInboundOrders(Long shopId, String status) {
+    public PageResult<InboundOrder> listInboundOrders(Long shopId, String status, PageRequest page) {
+        requireShopAllowed(shopId, "入库单");
+        if (page == null) {
+            throw new CodeErrorException("分页参数不能为空");
+        }
         LambdaQueryWrapper<InboundOrder> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(InboundOrder::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(InboundOrder::getStatus, status);
         }
-        wrapper.orderByDesc(InboundOrder::getId);
-        return inboundOrderMapper.selectList(wrapper);
+        Long cursorId = page.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(InboundOrder::getId, cursorId);
+        }
+        wrapper.orderByDesc(InboundOrder::getId)
+                .last("LIMIT " + page.probeSize());
+        return PageResult.of(inboundOrderMapper.selectList(wrapper), page.size(),
+                item -> PageRequest.encodeCursor(item.getId()));
     }
 
     @Override
@@ -57,7 +74,7 @@ public class InboundServiceImpl implements InboundService {
     public InboundOrder transitInbound(Long id) {
         InboundOrder order = mustExist(id);
         if (!"PENDING".equals(order.getStatus())) {
-            throw new IllegalStateException("仅 PENDING 状态可流转到 IN_TRANSIT，当前=" + order.getStatus());
+            throw new CodeErrorException("仅 PENDING 状态可流转到 IN_TRANSIT，当前=" + order.getStatus());
         }
         order.setStatus("IN_TRANSIT");
         inboundOrderMapper.updateById(order);
@@ -69,7 +86,7 @@ public class InboundServiceImpl implements InboundService {
     public InboundOrder receiveInbound(Long id, List<WarehouseInventory> items) {
         InboundOrder order = mustExist(id);
         if (!"IN_TRANSIT".equals(order.getStatus()) && !"PARTIAL".equals(order.getStatus())) {
-            throw new IllegalStateException("仅 IN_TRANSIT / PARTIAL 状态可到货验收，当前=" + order.getStatus());
+            throw new CodeErrorException("仅 IN_TRANSIT / PARTIAL 状态可到货验收，当前=" + order.getStatus());
         }
         if (items != null) {
             int received = order.getReceivedItems() == null ? 0 : order.getReceivedItems();
@@ -101,10 +118,11 @@ public class InboundServiceImpl implements InboundService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public InboundOrder cancelInbound(Long id) {
         InboundOrder order = mustExist(id);
-        if ("RECEIVED".equals(order.getStatus()) || "CANCELLED".equals(order.getStatus())) {
-            throw new IllegalStateException("已收货 / 已取消的入库单不可取消，当前=" + order.getStatus());
+        if (!"PENDING".equals(order.getStatus()) && !"PARTIAL".equals(order.getStatus())) {
+            throw new CodeErrorException("仅 PENDING / PARTIAL 状态可取消，当前=" + order.getStatus());
         }
         order.setStatus("CANCELLED");
         inboundOrderMapper.updateById(order);
@@ -112,10 +130,22 @@ public class InboundServiceImpl implements InboundService {
     }
 
     private InboundOrder mustExist(Long id) {
+        if (id == null) {
+            throw new CodeErrorException("入库单 ID 不能为空");
+        }
         InboundOrder order = inboundOrderMapper.selectById(id);
-        if (order == null) {
-            throw new IllegalArgumentException("入库单不存在：id=" + id);
+        if (order == null || !UserContext.isShopAllowed(order.getShopId())) {
+            throw new CodeErrorException("入库单不存在或无权访问");
         }
         return order;
+    }
+
+    private void requireShopAllowed(Long shopId, String what) {
+        if (shopId == null) {
+            throw new CodeErrorException(what + "缺少店铺 ID");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
+        }
     }
 }

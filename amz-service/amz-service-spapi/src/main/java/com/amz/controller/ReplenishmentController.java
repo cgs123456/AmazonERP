@@ -1,5 +1,8 @@
 package com.amz.controller;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
+import com.amz.connector.ErrorSummary;
+import com.amz.connector.LocalApiException;
 
 import com.amz.mapper.ReplenishmentSuggestionMapper;
 import com.amz.model.ReplenishmentSuggestion;
@@ -52,7 +55,8 @@ public class ReplenishmentController {
     @GetMapping("/list/{shopId}")
     public Result<List<ReplenishmentSuggestion>> list(@PathVariable Long shopId) {
         if (shopId == null) {
-            return Result.failure("shopId must not be null");
+            return Result.failure("shopId must not be null",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         }
         List<ReplenishmentSuggestion> list = replenishmentSuggestionMapper.selectList(
                 new LambdaQueryWrapper<ReplenishmentSuggestion>()
@@ -71,7 +75,8 @@ public class ReplenishmentController {
     @PostMapping("/calc/{shopId}")
     public Result<Integer> calc(@PathVariable Long shopId) {
         if (shopId == null) {
-            return Result.failure("shopId must not be null");
+            return Result.failure("shopId must not be null",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         }
         try {
             int count = replenishmentScheduler.calcShopReplenishment(shopId);
@@ -79,7 +84,7 @@ public class ReplenishmentController {
             return Result.success(count);
         } catch (Exception e) {
             log.error("manual replenish calc failed shopId={}", shopId, e);
-            return Result.failure("calc failed");
+            return Result.failure("calc failed: " + ErrorSummary.of(e), ErrorSummary.toApiError(e));
         }
     }
 
@@ -93,7 +98,8 @@ public class ReplenishmentController {
     @GetMapping("/urgent/{shopId}")
     public Result<List<ReplenishmentSuggestion>> urgent(@PathVariable Long shopId) {
         if (shopId == null) {
-            return Result.failure("shopId must not be null");
+            return Result.failure("shopId must not be null",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
         }
         List<ReplenishmentSuggestion> list = replenishmentSuggestionMapper.selectList(
                 new LambdaQueryWrapper<ReplenishmentSuggestion>()

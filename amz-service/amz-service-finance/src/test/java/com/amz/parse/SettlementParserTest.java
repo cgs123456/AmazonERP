@@ -29,10 +29,10 @@ class SettlementParserTest {
         return HEADER + "\n" + String.join("\n", rows) + "\n";
     }
 
-    private static String row(String settlementId, String currency, String txType, String orderId,
+    private static String row(String settlementId, String currency, String txType, String amazonOrderId,
                               String sku, String amountType, String amount) {
         return String.join("\t", settlementId, "2026-09-01T00:00:00Z", "2026-09-07T23:59:59Z",
-                "2026-09-08T00:00:00Z", currency, txType, orderId, sku, amountType, amount);
+                "2026-09-08T00:00:00Z", currency, txType, amazonOrderId, sku, amountType, amount);
     }
 
     @Test
@@ -50,7 +50,7 @@ class SettlementParserTest {
 
         SettlementRow first = result.getRows().get(0);
         assertEquals("900001", first.getSettlementId());
-        assertEquals("111-0001", first.getOrderId());
+        assertEquals("111-0001", first.getAmazonOrderId());
         assertEquals("SKU-ALPHA", first.getSku());
         assertEquals("Order", first.getTransactionType());
         assertEquals("Principal", first.getAmountType());
@@ -73,7 +73,7 @@ class SettlementParserTest {
         assertEquals(new BigDecimal("29.99"), r.getAmount());
         assertEquals("USD", r.getCurrency());
         assertEquals("SKU-X", r.getSku());
-        assertEquals("111-9", r.getOrderId());
+        assertEquals("111-9", r.getAmazonOrderId());
         assertEquals("900009", r.getSettlementId());
     }
 
@@ -85,7 +85,7 @@ class SettlementParserTest {
 
         SettlementParser.ParseResult result = SettlementParser.parse(content);
         assertEquals(1, result.getRows().size());
-        assertNull(result.getRows().get(0).getOrderId());
+        assertNull(result.getRows().get(0).getAmazonOrderId());
         assertEquals("Adjustment", result.getRows().get(0).getTransactionType());
     }
 
@@ -138,7 +138,7 @@ class SettlementParserTest {
         SettlementRow a = first.getRows().get(0);
         SettlementRow b = new SettlementRow();
         b.setSettlementId(a.getSettlementId());
-        b.setOrderId(a.getOrderId());
+        b.setAmazonOrderId(a.getAmazonOrderId());
         b.setSku(a.getSku());
         b.setAmountType(a.getAmountType());
         b.setAmount(a.getAmount());

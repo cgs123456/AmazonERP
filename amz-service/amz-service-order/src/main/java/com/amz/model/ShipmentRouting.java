@@ -14,7 +14,7 @@ public class ShipmentRouting {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long shopId;
-    private String orderId;
+    private String amazonOrderId;
     private String sku;
     private String asin;
     private Integer quantity;

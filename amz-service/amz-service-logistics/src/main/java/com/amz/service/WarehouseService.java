@@ -2,6 +2,8 @@ package com.amz.service;
 
 import com.amz.model.Warehouse;
 import com.amz.model.WarehouseInventory;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 
@@ -29,7 +31,7 @@ public interface WarehouseService {
     /**
      * 查询仓库库存列表（按仓库 / SKU 筛选）。
      */
-    List<WarehouseInventory> listInventory(Long warehouseId, String sku, Long shopId);
+    PageResult<WarehouseInventory> listInventory(Long warehouseId, String sku, Long shopId, PageRequest page);
 
     /**
      * 设置 / 更新库位码。

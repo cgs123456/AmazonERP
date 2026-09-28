@@ -7,8 +7,21 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # Job 1: 静态检查（最快，5s 级别）
+  # Job 1: Phase 0 critical static gate
   checkstyle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+      - name: Run critical Checkstyle
+        run: mvn -B checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml
+
+  # Informational complete style report; it must never be confused with the gate above.
+  checkstyle-full:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -18,8 +31,42 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
-      - name: Run Checkstyle (Google Checks)
+      - name: Run full Google Checks (informational)
         run: mvn -B checkstyle:check -Dcheckstyle.config.location=google_checks.xml
+
+  # Job 1.1: repository and deterministic release-tool gates
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Repository hygiene
+        run: python tools/release/repository_hygiene.py --root .
+      - name: Release tool tests
+        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest -v
+
+  # Job 1.2: prove the manifest CLI works from the exact checked-in source.
+  release-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build deterministic manifest
+        env:
+          RELEASE_COMMIT: ${{ github.sha }}
+          RELEASE_IMAGE_REF: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          RELEASE_IMAGE_DIGEST: sha256:0000000000000000000000000000000000000000000000000000000000000000
+        run: python tools/release/release_manifest.py build --root . --commit "$RELEASE_COMMIT" --version "0.0.0-ci" --image-ref "$RELEASE_IMAGE_REF" --image-digest "$RELEASE_IMAGE_DIGEST" --output release-manifest.json
+      - name: Verify generated manifest
+        run: python tools/release/release_manifest.py verify --manifest release-manifest.json --root .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest.json
 
   # Job 2: 测试 + 编译
   test:
@@ -62,6 +109,25 @@ jobs:
           cache: maven
       - name: Compile all modules
         run: mvn -B compile
+      # 整仓执行：任何模块只要出现 src/test/java 就必须在 CI 中执行。
+      # 旧写法用硬编码 -pl 清单，导致 amz-service-message 的 8 例测试在 CI 中从未运行。
+      # 该不变量由 CiWorkflowContractTest 守卫（新增模块无需再改此处）。
+      # 整仓执行：任何模块只要出现 src/test/java 就必须在 CI 中执行。
+      # 旧写法用硬编码 -pl 清单，导致 amz-service-message 的 8 例测试在 CI 中从未运行。
+      # 该不变量由 CiWorkflowContractTest 守卫（新增模块无需再改此处）。
+      #
+      # AD_MYSQL_IT_*：把 amz-service-ad 的 AdMigrationMySqlIT（真机 MySQL 8 的 Flyway
+      # + Mapper 集成测试）接进常驻执行。它自带 @EnabledIfEnvironmentVariable 守卫，
+      # 没设这三个变量就跳过，所以本地无 MySQL 不受影响。
+      # 触发方式必须是整仓 mvn test + 根 pom 的 surefire <includes>**/*IT.java</includes>，
+      # 不能改成 -Dtest=AdMigrationMySqlIT：CiWorkflowContractTest 把 -Dtest= 判为收窄范围。
+      # 数据库由 IT 自己 CREATE DATABASE 建立（CI 的 mysql service 只给空实例）。
+      #
+      # FLYWAY_ALL_IT_*：把 amz-service-spapi 的 AllModulesFlywayMySqlIT 接进常驻执行。
+      # 它用 Flyway 在真实 MySQL 8 上依次跑完全部 14 个库 x 49 个迁移，覆盖此前只被
+      # apply_migrations.py 裸 SQL 执行过（绕过 Flyway）的 13 个库 —— 版本号重复 /
+      # 应用顺序 / baseline 行为 / Flyway 专有语法这类问题只在 Flyway 下才暴露，部署时
+      # 表现为服务启动失败。同理不得改用 -Dtest= 触发。
       - name: Run all unit tests
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
@@ -70,7 +136,23 @@ jobs:
           RABBITMQ_USERNAME: guest
           RABBITMQ_PASSWORD: guest
           NACOS_ADDR: ''
-        run: mvn -B test -pl amz-common,amz-service/amz-service-spapi,amz-service/amz-service-user,amz-service/amz-service-product,amz-service/amz-service-order,amz-service/amz-service-search,amz-service/amz-service-ai,amz-service/amz-service-ad,amz-service/amz-service-procurement,amz-service/amz-service-customer,amz-service/amz-service-logistics,amz-service/amz-service-ops,amz-service/amz-service-report,amz-service/amz-service-finance,amz-service/amz-service-multiplatform
+          AD_MYSQL_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          AD_MYSQL_IT_USER: root
+          AD_MYSQL_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          FLYWAY_ALL_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          FLYWAY_ALL_IT_USER: root
+          FLYWAY_ALL_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+        run: mvn -B test -fae
+      - name: Verify clean checkout
+        if: always()
+        run: |
+          git diff --exit-code
+          untracked="$(git ls-files --others --exclude-standard)"
+          if [ -n "$untracked" ]; then
+            echo "Untracked source pollution detected:"
+            printf '%s\n' "$untracked"
+            exit 1
+          fi
 
   # Job 2.5: 前端类型检查 + 单元测试 + 构建
   frontend:
@@ -95,10 +177,99 @@ jobs:
         working-directory: amz-frontend
         run: npm run build
 
+  # Job 2.6: 模拟数据工具链（DDL 漂移门禁 / 确定性 / 清理产物）
+  synthetic-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Schema snapshot freshness (DDL drift gate)
+        run: python tools/synthetic-data/snapshot_schema.py --check
+      - name: Unit tests (ddl parser + purge + schema load)
+        working-directory: tools/synthetic-data
+        run: python -m unittest test_ddl_parser test_purge test_schema_load
+      - name: Generate + verify (ci tier, deterministic)
+        working-directory: tools/synthetic-data
+        run: |
+          python generate.py --tier ci --reset --out out/ci
+          python verify.py --tier ci --dataset out/ci
+      - name: Cleanup artefacts (registry.sql + cleanup.sql)
+        working-directory: tools/synthetic-data
+        run: python purge.py --tier ci --emit --registry
+      - name: Install sqlglot (MySQL -> SQLite translation)
+        working-directory: tools/synthetic-data
+        run: pip install sqlglot
+      - name: Cleanup semantics (SQLite simulation of cleanup.sql)
+        working-directory: tools/synthetic-data
+        run: python verify_cleanup.py --tier ci
+      - name: Load into a SQLite rebuild of the real schema
+        working-directory: tools/synthetic-data
+        run: |
+          python verify_schema_load.py --tier ci --cleanup --report out/ci/schema-load-report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: schema-load-report
+          path: tools/synthetic-data/out/ci/schema-load-report.json
+
+  # Job 2.7: 真实 MySQL 8 导入（把 SQLite 仿真升级成 mysqld 实证）
+  # verify_schema_load.py 只证明「数据符合真实 DDL 的列定义」，它跑在 SQLite 上；
+  # 这个 job 用 mysql:8.0 service 真跑一遍：建库 -> 应用 49 个 Flyway 迁移 -> 灌数
+  # -> 行数核对（基线 + manifest）-> cleanup.sql 删除并回到基线。
+  mysql-import:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install the mysql client
+        run: sudo apt-get update && sudo apt-get install -y mysql-client
+      - name: Build the real schemas (14 databases / 49 Flyway migrations)
+        working-directory: tools/synthetic-data
+        env:
+          MYSQL_PWD: ci_root_pass
+        run: python apply_migrations.py --host 127.0.0.1 --port 3306 --user root
+      - name: Generate the ci dataset
+        working-directory: tools/synthetic-data
+        run: |
+          python generate.py --tier ci --reset --out out/ci
+          python purge.py --tier ci --emit --registry
+      - name: Baseline (the rows the migrations seed themselves)
+        working-directory: tools/synthetic-data
+        env:
+          MYSQL_PWD: ci_root_pass
+        run: python verify_import.py --tier ci --host 127.0.0.1 --port 3306 --user root --save-baseline out/ci/baseline.json --baseline-only
+      - name: Load + verify + cleanup on real MySQL 8
+        working-directory: tools/synthetic-data
+        env:
+          MYSQL_PWD: ci_root_pass
+        run: |
+          bash ./load.sh --tier ci --host 127.0.0.1 --port 3306 --user root --password ci_root_pass
+          python verify_import.py --tier ci --host 127.0.0.1 --port 3306 --user root --baseline out/ci/baseline.json --cleanup --report out/ci/import-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mysql-import-report
+          path: tools/synthetic-data/out/ci/import-report.json
+
   # Job 3: 构建 Docker 镜像（仅 master 分支）
   docker:
     if: github.ref == 'refs/heads/master'
-    needs: [ checkstyle, test, frontend ]
+    needs: [ checkstyle, hygiene, release-manifest, test, frontend, synthetic-data, mysql-import ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

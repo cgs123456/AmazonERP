@@ -1,5 +1,6 @@
 package com.amz.client;
 
+import com.amz.exception.ConnectorException;
 import com.amz.http.ResilientHttpClient;
 import com.amz.model.TrackingEvent;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,15 +25,15 @@ import java.util.Map;
  * <p>
  * 仅在 {@code spring.profiles.active} 非 {@code mock} 时生效。
  * <p>
- * <b>三层降级，保证「没有凭证也不影响系统运行」：</b>
+ * <b>配置与调用失败必须显式区分：</b>
  * <ol>
- *   <li>配置未开启 / 凭证缺失 → 直接返回空列表，<b>不发起任何外部请求</b>（不白白消耗配额与触发对端风控）</li>
- *   <li>对端返回错误码或响应畸形 → 记 error 日志并返回空列表</li>
- *   <li>网络异常 / 熔断打开 → 由 {@link ResilientHttpClient} 负责重试与快速失败，异常在此层收敛为空列表</li>
+ *   <li>总开关关闭 → {@link ConnectorException.Reason#DISABLED}，调用方应跳过；</li>
+ *   <li>已启用但缺少凭证或出站客户端未装配 → {@link ConnectorException.Reason#NOT_CONFIGURED}；</li>
+ *   <li>网络、熔断、对端错误码、rejected 或响应畸形 → {@link ConnectorException.Reason#CALL_FAILED}。</li>
  * </ol>
- * 之所以一律降级为「空轨迹」而不向上抛异常：轨迹更新是<b>可延迟的后台增益</b>，
- * 一次对端抖动不该让整个货件同步流程报错——那会把「暂时没更新」变成「同步失败」，
- * 让运维去追一个无须处理的告警。货件在没有新轨迹时保持原状态，语义上也是正确的。
+ * 只有「调用成功且 accepted 为空」才返回空列表，绝不能把失败伪装成无轨迹。
+ * 调度器先通过 {@link #isAvailable()} 跳过未配置状态；已配置后的单次失败由调度器逐单捕获并计入
+ * failed，不中断整轮。这样既不会空转，也不会掩盖需要运维处理的真实故障。
  * <p>
  * <b>本层不做状态映射与时间归一化：</b>只搬运承运商原文（{@code stage}/描述/原始时间），
  * 交由落库核心统一处理。否则 17track 与外部导入两条入口会各自解出不同状态，
@@ -73,19 +74,17 @@ public class LogisticsTrackingRealClient implements LogisticsTrackingClient {
 
     @Override
     public boolean isAvailable() {
-        return unavailableReason() == null;
+        return availabilityFailure() == null;
     }
 
     @Override
     public List<TrackingEvent> queryTracking(String trackingNo, String carrier) {
-        String reason = unavailableReason();
-        if (reason != null) {
-            log.warn("物流轨迹 API 不可用（{}），跳过查询：trackingNo={} carrier={}", reason, trackingNo, carrier);
-            return Collections.emptyList();
+        ConnectorException unavailable = availabilityFailure();
+        if (unavailable != null) {
+            throw unavailable;
         }
         if (!StringUtils.hasText(trackingNo)) {
-            log.warn("运单号为空，跳过物流轨迹查询：carrier={}", carrier);
-            return Collections.emptyList();
+            throw new IllegalArgumentException("运单号不能为空");
         }
 
         try {
@@ -94,12 +93,11 @@ public class LogisticsTrackingRealClient implements LogisticsTrackingClient {
             headers.put(properties.getApiKeyHeader(), properties.getApiKey());
             String response = httpClient.post(TARGET, url, headers, buildRequestBody(trackingNo, carrier));
             return parseEvents(response, trackingNo);
+        } catch (ConnectorException e) {
+            throw e;
         } catch (Exception e) {
-            // 含网络异常、熔断打开、JSON 解析异常：统一收敛为空列表，
-            // 由下一次调度自然重试（轨迹按指纹幂等合并，重试无副作用）
-            log.error("17track 轨迹查询失败，本次跳过（下次调度将重试）：trackingNo={} carrier={} err={}",
-                    trackingNo, carrier, e.getMessage());
-            return Collections.emptyList();
+            throw ConnectorException.callFailed(TARGET,
+                    "17TRACK 轨迹查询失败：trackingNo=" + trackingNo + " carrier=" + carrier, e);
         }
     }
 
@@ -168,22 +166,27 @@ public class LogisticsTrackingRealClient implements LogisticsTrackingClient {
 
         int code = root.path("code").asInt(Integer.MIN_VALUE);
         if (code != 0) {
-            // 非 0 多为鉴权失效或配额耗尽 —— 必须显式暴露，否则表现为「物流一直不更新」，
-            // 排查时会先怀疑承运商而找错方向
+            // 非 0 多为鉴权失效或配额耗尽，必须显式暴露；否则表现为「物流一直不更新」，
+            // 排查时会先怀疑承运商而找错方向。
             String message = firstText(root.path("data"), "message");
             if (message == null) {
                 message = firstText(root, "message");
             }
-            log.error("17track 返回错误码：trackingNo={} code={} message={}", trackingNo, code, message);
-            return Collections.emptyList();
+            throw ConnectorException.callFailed(TARGET,
+                    "17TRACK 返回错误码：trackingNo=" + trackingNo + " code=" + code + " message=" + message);
         }
 
-        logRejected(root.path("data").path("rejected"), trackingNo);
+        JsonNode data = root.path("data");
+        String rejected = rejectedMessage(data.path("rejected"), trackingNo);
+        if (rejected != null) {
+            throw ConnectorException.callFailed(TARGET, rejected);
+        }
 
-        JsonNode accepted = root.path("data").path("accepted");
+        JsonNode accepted = data.path("accepted");
         if (!accepted.isArray()) {
-            log.warn("17track 响应缺少 accepted 节点：trackingNo={} body={}", trackingNo, abbreviate(response));
-            return Collections.emptyList();
+            throw ConnectorException.callFailed(TARGET,
+                    "17TRACK 响应缺少 accepted 数组：trackingNo=" + trackingNo
+                            + " body=" + abbreviate(response));
         }
 
         List<TrackingEvent> events = new ArrayList<>();
@@ -203,21 +206,33 @@ public class LogisticsTrackingRealClient implements LogisticsTrackingClient {
     }
 
     /**
-     * 记录被拒运单。
+     * 把被拒运单转换为可诊断的错误信息。
      * <p>
      * 17track 对「单号格式不合法 / 已超出跟踪期限 / 配额不足」等情形仍返回 HTTP 200，
-     * 只是把该单号放进 {@code rejected}。若不读取该节点，调用方只会看到一条空轨迹，
-     * 进而误判为「承运商还没更新」——这是最容易误导排查方向的一类静默失败。
+     * 只是把该单号放进 {@code rejected}。若只记日志后继续返回空列表，调用方会误判为
+     * 「承运商还没更新」；因此这里必须返回错误并向上抛出。
+     *
+     * @return 无 rejected 时返回 null；存在 rejected 时返回包含对端错误码与消息的文本
      */
-    private void logRejected(JsonNode rejected, String trackingNo) {
-        if (!rejected.isArray() || rejected.isEmpty()) {
-            return;
+    private String rejectedMessage(JsonNode rejected, String trackingNo) {
+        if (rejected.isMissingNode() || rejected.isNull()) {
+            return null;
         }
+        if (!rejected.isArray()) {
+            throw ConnectorException.callFailed(TARGET,
+                    "17TRACK rejected 节点不是数组：trackingNo=" + trackingNo);
+        }
+        if (rejected.isEmpty()) {
+            return null;
+        }
+
+        StringBuilder detail = new StringBuilder("17TRACK 拒绝该运单：trackingNo=").append(trackingNo);
         for (JsonNode item : rejected) {
-            log.error("17track 拒绝该运单：query={} number={} errorCode={} errorMessage={}",
-                    trackingNo, firstText(item, "number"),
-                    firstText(item.path("error"), "code"), firstText(item.path("error"), "message"));
+            detail.append(" number=").append(firstText(item, "number"))
+                    .append(" errorCode=").append(firstText(item.path("error"), "code"))
+                    .append(" errorMessage=").append(firstText(item.path("error"), "message"));
         }
+        return detail.toString();
     }
 
     /**
@@ -316,20 +331,23 @@ public class LogisticsTrackingRealClient implements LogisticsTrackingClient {
     }
 
     /**
-     * 判断不可用原因；可用时返回 null。
+     * 返回不可用原因；可用时返回 null。
      * <p>
      * 区分「未开启」与「缺凭证」：前者是预期配置，后者是部署遗漏，
-     * 两者运维含义完全不同，日志里必须能区分。
+     * 两者运维含义完全不同，调用方必须能分别处理。
      */
-    private String unavailableReason() {
+    private ConnectorException availabilityFailure() {
         if (properties == null || !properties.isEnabled()) {
-            return "未开启，amz.logistics.tracking.enabled=false";
+            return ConnectorException.disabled(TARGET,
+                    "17TRACK 未开启：amz.logistics.tracking.enabled=false");
         }
         if (!StringUtils.hasText(properties.getApiKey())) {
-            return "缺少凭证 amz.logistics.tracking.api-key";
+            return ConnectorException.notConfigured(TARGET,
+                    "17TRACK 缺少凭证：amz.logistics.tracking.api-key");
         }
         if (httpClient == null) {
-            return "统一出站客户端未装配";
+            return ConnectorException.notConfigured(TARGET,
+                    "17TRACK 统一出站客户端未装配");
         }
         return null;
     }

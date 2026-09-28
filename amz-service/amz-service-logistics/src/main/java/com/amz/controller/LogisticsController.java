@@ -4,10 +4,17 @@ import com.amz.annotation.ShopScoped;
 
 import com.amz.model.Shipment;
 import com.amz.model.TrackingEvent;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.LogisticsService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -29,6 +36,7 @@ public class LogisticsController {
      * 创建头程物流单 / FBA 货件。
      * POST /logistics/shipment
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/shipment")
     public Result<Shipment> createShipment(@RequestBody Shipment shipment) {
         return Result.success(logisticsService.createShipment(shipment));
@@ -42,8 +50,11 @@ public class LogisticsController {
     @GetMapping("/shipment/list/{shopId}")
     public Result<List<Shipment>> listShipments(
             @PathVariable Long shopId,
-            @RequestParam(required = false) String status) {
-        return Result.success(logisticsService.listShipments(shopId, status));
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor) {
+        return Result.paged(logisticsService.listShipments(
+                shopId, status, PageRequest.of(size, cursor)));
     }
 
     /**
@@ -61,15 +72,19 @@ public class LogisticsController {
     }
 
     /**
-     * 查询货件完整轨迹（轨迹可视化）。
-     * GET /logistics/shipment/{shipmentId}/tracking
+     * 查询货件轨迹时间线（轨迹可视化，游标分页）。
+     * GET /logistics/shipment/{shipmentId}/tracking?size=200&cursor=...
      * <p>
      * 归属校验同样在服务层完成——轨迹表不含店铺字段，
      * 数据一旦取出来租户边界就已被越过，必须在校验之后才查。
      */
     @GetMapping("/shipment/{shipmentId}/tracking")
-    public Result<List<TrackingEvent>> getTracking(@PathVariable Long shipmentId) {
-        return Result.success(logisticsService.getTrackingTimeline(shipmentId));
+    public Result<List<TrackingEvent>> getTracking(
+            @PathVariable Long shipmentId,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor) {
+        return Result.paged(logisticsService.getTrackingTimeline(
+                shipmentId, PageRequest.of(size, cursor)));
     }
 
     /**

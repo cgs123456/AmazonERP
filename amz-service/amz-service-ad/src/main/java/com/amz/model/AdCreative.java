@@ -22,6 +22,8 @@ public class AdCreative implements Serializable {
     @TableId(type = IdType.AUTO)
     private Long id;
 
+    private Long shopId;
+
     private String campaignId;
 
     /** 素材类型：VIDEO / IMAGE / STORE_SPOTLIGHT / CUSTOM_HEADLINE */

@@ -1,12 +1,22 @@
 package com.amz.controller;
 
 import com.amz.annotation.ShopScoped;
-import com.amz.model.*;
+import com.amz.model.OrderAuditRule;
+import com.amz.model.OrderSplitLog;
+import com.amz.model.ShipmentRouting;
 import com.amz.model.pojo.Order;
 import com.amz.result.Result;
 import com.amz.service.OrderAuditService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -86,12 +96,12 @@ public class OrderAuditController {
     @ShopScoped
     @GetMapping("/route/{shopId}")
     public Result<ShipmentRouting> routeOrder(@PathVariable Long shopId,
-                                              @RequestParam String orderId,
+                                              @RequestParam String amazonOrderId,
                                               @RequestParam String sku,
                                               @RequestParam(required = false) String asin,
                                               @RequestParam(defaultValue = "1") Integer quantity,
                                               @RequestParam(defaultValue = "US") String country) {
-        return Result.success(orderAuditService.routeOrder(shopId, orderId, sku, asin, quantity, country));
+        return Result.success(orderAuditService.routeOrder(shopId, amazonOrderId, sku, asin, quantity, country));
     }
 
     // ==================== 拆分日志 ====================

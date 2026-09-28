@@ -1,12 +1,20 @@
 package com.amz.controller;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 
 import com.amz.model.InboundOrder;
 import com.amz.model.WarehouseInventory;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.InboundService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
@@ -25,6 +33,7 @@ public class InboundController {
      * 创建入库单。
      * POST /logistics/inbound
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping
     public Result<InboundOrder> create(@RequestBody InboundOrder order) {
         return Result.success(inboundService.createInboundOrder(order));
@@ -37,14 +46,18 @@ public class InboundController {
     @ShopScoped
     @GetMapping("/list/{shopId}")
     public Result<List<InboundOrder>> list(@PathVariable Long shopId,
-                                           @RequestParam(required = false) String status) {
-        return Result.success(inboundService.listInboundOrders(shopId, status));
+                                           @RequestParam(required = false) String status,
+                                           @RequestParam(required = false) Integer size,
+                                           @RequestParam(required = false) String cursor) {
+        return Result.paged(inboundService.listInboundOrders(
+                shopId, status, PageRequest.of(size, cursor)));
     }
 
     /**
      * 入库单状态流转：PENDING → IN_TRANSIT。
      * POST /logistics/inbound/{id}/transit
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/{id}/transit")
     public Result<InboundOrder> transit(@PathVariable Long id) {
         return Result.success(inboundService.transitInbound(id));
@@ -54,6 +67,7 @@ public class InboundController {
      * 到货验收 + 库存增加。
      * POST /logistics/inbound/{id}/receive
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/{id}/receive")
     public Result<InboundOrder> receive(@PathVariable Long id,
                                         @RequestBody List<WarehouseInventory> items) {
@@ -64,6 +78,7 @@ public class InboundController {
      * 取消入库单。
      * POST /logistics/inbound/{id}/cancel
      */
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/{id}/cancel")
     public Result<InboundOrder> cancel(@PathVariable Long id) {
         return Result.success(inboundService.cancelInbound(id));

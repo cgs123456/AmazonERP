@@ -13,7 +13,7 @@ import java.math.BigDecimal;
 @Data
 public class RemoteFinancialEvent {
 
-    /** 幂等键：type:orderId:postedAt:feeType:amount。 */
+    /** 幂等键：type:amazonOrderId:postedAt:feeType:amount。 */
     private String eventId;
     /** INCOME / REFUND / FEE / ADJUSTMENT。 */
     private String type;

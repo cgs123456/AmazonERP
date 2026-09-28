@@ -1,7 +1,14 @@
 package com.amz.service.impl;
 
-import com.amz.mapper.*;
-import com.amz.model.*;
+import com.amz.exception.InvalidParamException;
+import com.amz.mapper.CostAllocationMapper;
+import com.amz.mapper.ProfitDetailMapper;
+import com.amz.mapper.ProfitSnapshotMapper;
+import com.amz.model.CostAllocation;
+import com.amz.model.ProfitDetail;
+import com.amz.model.ProfitSnapshot;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.RealtimeProfitService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -15,7 +22,11 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -29,11 +40,27 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
 
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /** 快照列表安全上限：快照按小时持续写入，无界查询会随时间线性膨胀。 */
-    private static final int SNAPSHOT_LIMIT = 2000;
-
     /** 趋势回看上限（小时）：防止 hours 传超大值拉全表。 */
     private static final int MAX_TREND_HOURS = 168;
+
+    /**
+     * 趋势内部聚合的单次取数上限。
+     * <p>
+     * 快照按小时写入，趋势又按单 SKU 过滤，168 小时窗口内最多约 168 行，
+     * 远低于 {@link PageRequest#MAX_SIZE}。这里刻意不开「内部绕过上限」的口子：
+     * 一旦存在绕过入口，MAX_SIZE 就从硬约束退化成可协商的建议值，
+     * 分页保证会在下一个「内部调用」里被悄悄打破。
+     */
+    private static final int TREND_FETCH_LIMIT = MAX_TREND_HOURS;
+
+    /** 头程分摊扫描上限：触顶即告警，不再静默丢弃更旧的分摊记录。 */
+    private static final int HEADHAUL_SCAN_LIMIT = 200;
+
+    /** 头程分摊回看天数：超出窗口的分摊视为已摊销完毕，不参与当前小时利润。 */
+    private static final long HEADHAUL_LOOKBACK_DAYS = 90L;
+
+    /** 复合游标分隔符：载荷形如 {@code 2026-09-27 10:00:00|123}。 */
+    private static final String CURSOR_SEP = "|";
 
     @Autowired
     private ProfitSnapshotMapper profitSnapshotMapper;
@@ -127,16 +154,60 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     }
 
     @Override
-    public List<ProfitSnapshot> listSnapshots(Long shopId, String sku, String startTime, String endTime) {
+    public PageResult<ProfitSnapshot> listSnapshots(Long shopId, String sku, String startTime, String endTime,
+                                                    PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<ProfitSnapshot> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ProfitSnapshot::getShopId, shopId);
         if (sku != null && !sku.isBlank()) wrapper.eq(ProfitSnapshot::getSku, sku);
         if (startTime != null) wrapper.ge(ProfitSnapshot::getStatTime, LocalDateTime.parse(startTime, DT_FMT));
         if (endTime != null) wrapper.le(ProfitSnapshot::getStatTime, LocalDateTime.parse(endTime, DT_FMT));
-        wrapper.orderByDesc(ProfitSnapshot::getStatTime);
-        // B2：兜底上限（常量拼接，无注入面；调用方传合法时间范围时无行为变化）
-        wrapper.last("LIMIT " + SNAPSHOT_LIMIT);
-        return profitSnapshotMapper.selectList(wrapper);
+        // 同一小时可能有多个 SKU/ASIN 的快照，stat_time 并列，单列 id 游标无法保证稳定顺序，
+        // 必须用 (stat_time, id) 复合游标。
+        if (req.hasCursor()) {
+            Object[] key = decodeSnapshotCursor(req.payload());
+            wrapper.apply("(stat_time < {0} OR (stat_time = {0} AND id < {1}))", key[0], key[1]);
+        }
+        wrapper.orderByDesc(ProfitSnapshot::getStatTime)
+               .orderByDesc(ProfitSnapshot::getId);
+        // 探测行：多取 1 行判定 hasMore，不额外 COUNT(*)；LIMIT 由常量拼接，无注入面
+        wrapper.last("LIMIT " + req.probeSize());
+        List<ProfitSnapshot> rows = profitSnapshotMapper.selectList(wrapper);
+        PageResult<ProfitSnapshot> result = PageResult.of(rows, req.size(), this::snapshotCursor);
+        if (result.truncated()) {
+            log.warn("利润快照列表被分页截断：shopId={} sku={} size={}，请用 nextCursor 继续翻页",
+                    shopId, sku, req.size());
+        }
+        return result;
+    }
+
+    /** 由本页最后一行生成下一页游标：(stat_time, id) 复合键。 */
+    private String snapshotCursor(ProfitSnapshot snapshot) {
+        return PageRequest.encodeCursor(snapshot.getStatTime().format(DT_FMT) + CURSOR_SEP + snapshot.getId());
+    }
+
+    /**
+     * 解析快照游标载荷 {@code statTime|id}。
+     *
+     * @throws InvalidParamException 载荷格式不合法（篡改过的游标，或跨端点混用了别的游标）
+     */
+    private Object[] decodeSnapshotCursor(String payload) {
+        int sep = payload.lastIndexOf(CURSOR_SEP);
+        if (sep <= 0 || sep == payload.length() - 1) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        LocalDateTime statTime;
+        long id;
+        try {
+            statTime = LocalDateTime.parse(payload.substring(0, sep), DT_FMT);
+            id = Long.parseLong(payload.substring(sep + 1));
+        } catch (RuntimeException e) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        if (id <= 0) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        return new Object[]{statTime, id};
     }
 
     @Override
@@ -146,7 +217,13 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         if (hours > MAX_TREND_HOURS) hours = MAX_TREND_HOURS;
         String since = LocalDateTime.now().minusHours(hours).format(DT_FMT);
         String until = LocalDateTime.now().format(DT_FMT);
-        List<ProfitSnapshot> snapshots = listSnapshots(shopId, sku, since, until);
+        PageResult<ProfitSnapshot> snapshotPage = listSnapshots(shopId, sku, since, until,
+                PageRequest.first(TREND_FETCH_LIMIT));
+        List<ProfitSnapshot> snapshots = snapshotPage.items();
+        if (snapshotPage.truncated()) {
+            log.warn("利润趋势聚合被截断：shopId={} sku={} hours={}，仅聚合前 {} 条快照",
+                    shopId, sku, hours, TREND_FETCH_LIMIT);
+        }
 
         List<Map<String, Object>> trendData = snapshots.stream().map(s -> {
             Map<String, Object> point = new LinkedHashMap<>();
@@ -169,6 +246,9 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         result.put("shopId", shopId);
         result.put("sku", sku);
         result.put("hours", hours);
+        result.put("snapshotCount", snapshots.size());
+        // 截断必须机器可读：调用方不能把「窗口内还有快照没聚合进来」当成完整趋势
+        result.put("trendTruncated", snapshotPage.truncated());
         result.put("totalSales", totalSales);
         result.put("totalNetProfit", totalNetProfit);
         result.put("trendData", trendData);
@@ -228,14 +308,53 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     }
 
     @Override
-    public List<CostAllocation> listAllocations(Long shopId, String costType, String startDate, String endDate) {
+    public PageResult<CostAllocation> listAllocations(Long shopId, String costType, String startDate, String endDate,
+                                                      PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<CostAllocation> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(CostAllocation::getShopId, shopId);
         if (costType != null && !costType.isBlank()) wrapper.eq(CostAllocation::getCostType, costType);
         if (startDate != null) wrapper.ge(CostAllocation::getAllocDate, LocalDate.parse(startDate));
         if (endDate != null) wrapper.le(CostAllocation::getAllocDate, LocalDate.parse(endDate));
-        wrapper.orderByDesc(CostAllocation::getAllocDate);
-        return costAllocationMapper.selectList(wrapper);
+        // 同一天可能有多条分摊记录，故同样用 (alloc_date, id) 复合游标
+        if (req.hasCursor()) {
+            Object[] key = decodeAllocCursor(req.payload());
+            wrapper.apply("(alloc_date < {0} OR (alloc_date = {0} AND id < {1}))", key[0], key[1]);
+        }
+        wrapper.orderByDesc(CostAllocation::getAllocDate)
+               .orderByDesc(CostAllocation::getId);
+        // 此端点此前完全没有上限（P1-02 无界列表），一并纳入统一分页
+        wrapper.last("LIMIT " + req.probeSize());
+        List<CostAllocation> rows = costAllocationMapper.selectList(wrapper);
+        PageResult<CostAllocation> result = PageResult.of(rows, req.size(), this::allocCursor);
+        if (result.truncated()) {
+            log.warn("费用分摊列表被分页截断：shopId={} costType={} size={}", shopId, costType, req.size());
+        }
+        return result;
+    }
+
+    /** 由本页最后一行生成下一页游标：(alloc_date, id) 复合键。 */
+    private String allocCursor(CostAllocation allocation) {
+        return PageRequest.encodeCursor(allocation.getAllocDate() + CURSOR_SEP + allocation.getId());
+    }
+
+    private Object[] decodeAllocCursor(String payload) {
+        int sep = payload.lastIndexOf(CURSOR_SEP);
+        if (sep <= 0 || sep == payload.length() - 1) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        LocalDate allocDate;
+        long id;
+        try {
+            allocDate = LocalDate.parse(payload.substring(0, sep));
+            id = Long.parseLong(payload.substring(sep + 1));
+        } catch (RuntimeException e) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        if (id <= 0) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        return new Object[]{allocDate, id};
     }
 
     @Override
@@ -355,11 +474,20 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     private BigDecimal loadHeadhaulForSku(Long shopId, String sku) {
         // 从分摊记录中查找该 SKU 最近头程费用
         LambdaQueryWrapper<CostAllocation> wrapper = new LambdaQueryWrapper<>();
+        // 此前是「按 allocDate 倒序取 10 条」，既没有时间窗口也没有触顶告警：
+        // 分摊记录一旦超过 10 条，更旧的头程成本会被静默丢弃，利润被高估而不留痕迹。
+        // 现在改为「90 天回看窗口 + 200 条上限 + 触顶 WARN」，把隐式截断变成显式信号。
         wrapper.eq(CostAllocation::getShopId, shopId)
                 .eq(CostAllocation::getCostType, "HEADHAUL")
+                .ge(CostAllocation::getAllocDate, LocalDate.now().minusDays(HEADHAUL_LOOKBACK_DAYS))
                 .orderByDesc(CostAllocation::getAllocDate)
-                .last("LIMIT 10");
+                .last("LIMIT " + HEADHAUL_SCAN_LIMIT);
         List<CostAllocation> allocations = costAllocationMapper.selectList(wrapper);
+        if (allocations.size() >= HEADHAUL_SCAN_LIMIT) {
+            log.warn("头程分摊扫描触顶：shopId={} 近 {} 天内超过 {} 条 HEADHAUL 记录，"
+                            + "更早的分摊未计入头程成本，请拆分分摊批次或缩短回看窗口",
+                    shopId, HEADHAUL_LOOKBACK_DAYS, HEADHAUL_SCAN_LIMIT);
+        }
         BigDecimal total = BigDecimal.ZERO;
         for (CostAllocation a : allocations) {
             if (a.getAllocDetails() != null && a.getAllocDetails().contains("\"" + sku + "\"")) {

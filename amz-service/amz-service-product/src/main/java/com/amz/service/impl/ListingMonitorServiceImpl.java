@@ -1,8 +1,16 @@
 package com.amz.service.impl;
 
 import com.amz.exception.AttrIsNullException;
-import com.amz.mapper.*;
-import com.amz.model.*;
+import com.amz.mapper.BuyBoxMapper;
+import com.amz.mapper.CompetitorMonitorMapper;
+import com.amz.mapper.KeywordRankingMapper;
+import com.amz.mapper.ListingChangeLogMapper;
+import com.amz.mapper.ListingHealthMapper;
+import com.amz.model.BuyBox;
+import com.amz.model.CompetitorMonitor;
+import com.amz.model.KeywordRanking;
+import com.amz.model.ListingChangeLog;
+import com.amz.model.ListingHealth;
 import com.amz.service.ListingMonitorService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -14,7 +22,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**

@@ -57,7 +57,7 @@ public class User implements Serializable {
     private String address;
 
     /**
-     * 角色：ADMIN/OPERATOR/VIEWER，DB 默认 VIEWER，由 19-init-tables-field-permission.sql 维护。
+     * 角色：ADMIN/OPERATOR/VIEWER，DB 默认 VIEWER；V1 迁移内建该列。
      */
     @TableField("role")
     private String role;
