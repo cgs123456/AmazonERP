@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.codec.ServerCodecConfigurer;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -23,15 +24,19 @@ import java.util.List;
 public class SentinelGatewayConfig {
 
     private final List<ViewResolver> viewResolvers;
+    private final ServerCodecConfigurer serverCodecConfigurer;
 
-    public SentinelGatewayConfig(ObjectProvider<List<ViewResolver>> viewResolversProvider) {
+    public SentinelGatewayConfig(ObjectProvider<List<ViewResolver>> viewResolversProvider,
+                                 ServerCodecConfigurer serverCodecConfigurer) {
         this.viewResolvers = viewResolversProvider.getIfAvailable(Collections::emptyList);
+        this.serverCodecConfigurer = serverCodecConfigurer;
     }
 
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public SentinelGatewayBlockExceptionHandler sentinelGatewayBlockExceptionHandler() {
-        return new SentinelGatewayBlockExceptionHandler(viewResolvers, null);
+        // 不能传 null：Sentinel 1.8.9 的 handler 会直接解引用 ServerCodecConfigurer。
+        return new SentinelGatewayBlockExceptionHandler(viewResolvers, serverCodecConfigurer);
     }
 
     @Bean

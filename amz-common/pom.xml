@@ -87,20 +87,25 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Spring Data Redis：供 FieldPermissionService 缓存字段权限规则；optional，
-             运行时由引用方（order/procurement/finance/user 等服务）的 spring-boot-starter-data-redis 提供。 -->
+        <!-- Spring Data Redis：FieldPermissionServiceImpl 在类加载期引用 RedisTemplate，
+             因此本模块必须提供该类。这里刻意依赖类库 spring-data-redis 而不是 Boot starter：
+             starter 会被 amz-gateway 显式 exclude（网关是 WebFlux，不需要 servlet/自动配置），
+             而纯类库可以随 amz-common 传递，保证 gateway 也能加载该 Service 类。
+             各业务服务自己声明 spring-boot-starter-data-redis，自动配置行为不变。 -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-            <optional>true</optional>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
         </dependency>
 
         <!-- Spring JDBC：供 FieldPermissionService 启动时从 DB 加载权限规则；optional，
              运行时由引用方的 mybatis-plus-spring-boot3-starter 传递提供。 -->
+        <!-- 本模块的 FieldPermissionServiceImpl 在类加载期就引用 JdbcTemplate 与
+             org.springframework.dao.EmptyResultDataAccessException（spring-tx），
+             所以不能声明为 optional：没有 mybatis-plus 的消费方（如 amz-gateway）
+             会因缺少这两个类而启动失败（Boot 3.5 / Spring Cloud 2025 升级时暴露）。 -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-jdbc</artifactId>
-            <optional>true</optional>
         </dependency>
 
         <!-- Seata 分布式事务（AT 模式）—— 所有微服务通过 amz-common 继承该依赖 -->
