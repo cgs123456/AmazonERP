@@ -244,7 +244,7 @@
     {
       "path": "docs/superpowers/plans/2026-09-28-production-hardening-phase0.md",
       "rule": "secret-like-assignment",
-      "sha256": "caee2e92b9e4db6a28f117684a0991227474b39f8e54998ebca723329330722e"
+      "sha256": "4e4ee79edb19581bca71329e3b5bed541d54ab06e9cbdb24895e8bdd6eb4ebe7"
     },
     {
       "path": "docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md",

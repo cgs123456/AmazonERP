@@ -10,14 +10,27 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-28-full-project-review.md` §11 Phase 0、§12.1、§17；`docs/superpowers/specs/2026-09-26-production-upgrade-execution-matrix.md` §1、§3 Wave 0、REL-01/REL-02/REL-03/REL-05/REL-06/REL-10。
 
-## Status Addendum (2026-09-28)
+## Status Addendum（2026-09-29 更新，覆盖 2026-09-28 版）
 
-- Tasks 0-7 的实现与本地验证已完成（commit `4dfde26`..`f01738c`，另含 `5ca0fdd`/`a5e4f5d`/`5e8eba1`/`cde9477`/`1f8d772` 收尾）。
-- 下方各 Task 的 checkbox 保留为实施时的逐步记录，未逐条回填；实际完成状态以
-  `docs/superpowers/evidence/2026-09-28-phase0-verification.md` 为准。
-- 远端 CI（ci.yml 9/9 jobs）已于 2026-09-28 在 master 首次真实通过（run 36385434376），
-  其中暴露并修复了两个本地验证无法发现的缺陷（hygiene 行尾敏感、schema snapshot 绝对路径）。
-- 仍为 `NOT VERIFIED`：`release.yml` 远端执行（tag 触发）、`actionlint` 静态校验。
+- **Task 0-7：已完成**。实现提交 `4dfde26`..`f01738c`（另含 `5ca0fdd` / `a5e4f5d` / `5e8eba1` /
+  `cde9477` / `1f8d772` 收尾），逐 Task 提交见
+  `docs/superpowers/evidence/2026-09-28-phase0-verification.md` 的 Commits 表。
+- **Task 8：未做**（本次核对新增结论）。依据：
+  1. 计划要求的产物 `docs/superpowers/evidence/2026-09-28-baseline-split-map.json` **不存在**；
+  2. 仓库里没有任何 `feat(api-ready):` / `docs(api-ready):` 提交（Task 8 Step 3 要求的按子系统拆分提交）；
+  3. 当年那批 dirty 文件是被 `d2b7619`（137 文件）/ `7d933f2`（218 文件）/ `fc07f6b`（328 文件）
+     三个**整包提交**吸收的，不是按子系统拆分。工作区现在是干净的，但那是整包提交的结果，
+     不是 Task 8 的产物；也不存在任何 `review-required` 清单。
+  => **Phase 0 退出条件第 9 条未满足**，Phase 0 不能宣称整体完成。
+- **本次勾选的依据与边界**：step 勾选的依据是「产物存在 + 今日复跑 GREEN」。
+  各 Task 的 Step 2（RED）按 TDD 当时执行，**日志未逐条归档、无法追溯复验**，本次不宣称已复验。
+- 远端 CI：master run `36385434376` 首次 9/9 通过（暴露并修复 hygiene 行尾敏感、
+  schema snapshot 内嵌绝对路径两个本地无法发现的缺陷）；`36450964636`（PR #2 合并后）再次 9/9 全绿。
+- `actionlint` 静态校验已于 2026-09-29 完成（1.7.12，ci.yml / release.yml 0 问题），不再是 NOT VERIFIED。
+- 仍 NOT VERIFIED：`release.yml` 远端执行（tag 触发，从未跑）；`cfa6149` 前端镜像瘦身的远端构建
+  （ci 的 docker job 只有 `docker build -t amazon-erp:latest .`，构建根目录 Java Dockerfile，
+  不跑 bake 的 17 target、不构建 frontend、不跑 grype）。见
+  `2026-09-28-container-cve-remediation.md` §13.7 / §13.8。
 
 ## Global Constraints
 
@@ -36,6 +49,8 @@
 
 ### Task 0: 冻结现有 API-Ready 基线
 
+**核对 (2026-09-29)：** 产物 `phase0-baseline-inventory.json` + `.sha256` 存在且哈希一致（`7b460be7…`）；恢复快照目录存在（HEAD `3c8f21e`、652 条、metadata 记录 `ManifestSHA256: BBB2E3A7…`）。但快照里的清单实际名为 `changed-files-sha256.csv`（实测哈希 `BBB2E3A7…`，与 metadata 一致），Step 1 原命令写的 `manifest.tsv` 路径不存在 —— 已按实际文件名更正。
+
 **Files:**
 - Create: `/docs/superpowers/evidence/2026-09-28-phase0-baseline-inventory.json`
 - Create: `/docs/superpowers/evidence/2026-09-28-phase0-baseline-inventory.sha256`
@@ -45,17 +60,17 @@
 - Consumes: 现有恢复快照和 Git 状态。
 - Produces: 只读基线清单，含 HEAD、分支、status 输出 SHA-256、恢复快照路径、manifest SHA-256、生成命令；后续任务以此为“不得丢失”的冻结边界。
 
-- [ ] **Step 1: 验证恢复快照存在且 manifest 哈希一致**
+- [x] **Step 1: 验证恢复快照存在且 manifest 哈希一致**
 
 ```powershell
 $snapshot = 'C:\Users\Administrator\Desktop\AmazonERP-recovery-20260928-092159'
-$manifest = Join-Path $snapshot 'manifest.tsv'
+$manifest = Join-Path $snapshot 'changed-files-sha256.csv'
 $expected = 'BBB2E3A7EB2CFB178C3B4CDA7B041C1E0EFE0051E665E12D076998D9AE36713F'
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $manifest).Hash
 if ($actual -ne $expected) { throw "Recovery manifest drift: $actual" }
 ```
 
-- [ ] **Step 2: 生成确定性只读状态清单**
+- [x] **Step 2: 生成确定性只读状态清单**
 
 ```powershell
 $status = git status --porcelain=v2 --branch
@@ -73,7 +88,7 @@ $json = ($inventory | ConvertTo-Json -Depth 5) + "`n"
 [IO.File]::WriteAllText((Join-Path (Get-Location) 'docs/superpowers/evidence/2026-09-28-phase0-baseline-inventory.json'), $json, [Text.UTF8Encoding]::new($false))
 ```
 
-- [ ] **Step 3: 记录证据文件哈希**
+- [x] **Step 3: 记录证据文件哈希**
 
 ```powershell
 $file = 'docs/superpowers/evidence/2026-09-28-phase0-baseline-inventory.json'
@@ -81,7 +96,7 @@ $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvarian
 "$hash  $file`n" | Set-Content -NoNewline -Encoding utf8NoBOM 'docs/superpowers/evidence/2026-09-28-phase0-baseline-inventory.sha256'
 ```
 
-- [ ] **Step 4: 用临时 index 提交 Task 0**
+- [x] **Step 4: 用临时 index 提交 Task 0**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -97,6 +112,8 @@ Remove-Item -LiteralPath $idx
 
 ### Task 1: 仓库卫生扫描器
 
+**核对 (2026-09-29)：** `repository_hygiene.py` / `test_repository_hygiene.py` / `hygiene-baseline.json` 齐备；今日复跑 `python tools/release/repository_hygiene.py --root .` -> 0 findings（exit 0）。
+
 **Files:**
 - Create: `tools/release/__init__.py`
 - Create: `tools/release/repository_hygiene.py`
@@ -111,7 +128,7 @@ Remove-Item -LiteralPath $idx
   - `scan_repository(root: Path, include_untracked: bool, allowlist: HygieneAllowlist) -> list[Finding]`
   - CLI `python tools/release/repository_hygiene.py --root . [--include-untracked] [--json PATH]`，exit `0` 无阻断项，`1` 有阻断项，`2` 参数/配置错误。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tools/release/test_repository_hygiene.py` 写 7 个测试：根目录 `_run.log`、`round33-result.json`、`.patch_tmp.py`、12 MiB 文件被标记；GitHub token 被标记；`${DB_PASSWORD}` 和 `example-secret` 不标记；allowlist 中精确 path+rule 被允许；同文件新出现未允许 Secret 仍标记。
 
@@ -133,12 +150,12 @@ def test_flags_root_round_artifact_and_secret_placeholder_is_allowed(self):
     self.assertNotIn(("secret-like-assignment", "safe.env"), codes)
 ```
 
-- [ ] **Step 2: 运行确认 RED**
+- [x] **Step 2: 运行确认 RED**
 
 Run: `python -m unittest tools.release.test_repository_hygiene -v`  
 Expected: `ImportError` 或 `ModuleNotFoundError`，对应 `repository_hygiene` 尚不存在。
 
-- [ ] **Step 3: 最小实现扫描器**
+- [x] **Step 3: 最小实现扫描器**
 
 实现规则：
 
@@ -163,17 +180,17 @@ LARGE_FILE_BYTES = 10 * 1024 * 1024
 
 扫描文件内容时按 UTF-8 解码；二进制只做大小规则；JSON allowlist 以 `path + rule + sha256` 精确放行。`--json` 输出排序后的 findings、计数和规则版本。`.gitignore` 增加根目录临时产物模式 `_*.log`、`mvn-*.log`、`round*-*.json`、`*.tmp`、`*.bak`、`*.orig`、`*.rej`，但不得忽略 `docs/`、`tools/release/` 或已受版本控制文件。
 
-- [ ] **Step 4: 运行确认 GREEN**
+- [x] **Step 4: 运行确认 GREEN**
 
 Run: `python -m unittest tools.release.test_repository_hygiene -v`  
 Expected: 7 tests PASS。
 
-- [ ] **Step 5: 对当前仓库执行本地冻结扫描，不自动删除**
+- [x] **Step 5: 对当前仓库执行本地冻结扫描，不自动删除**
 
 Run: `python tools/release/repository_hygiene.py --root . --include-untracked --json docs/superpowers/evidence/2026-09-28-hygiene-baseline.json`  
 Expected: 非零 exit 可接受；报告必须完整列出临时脚本、根日志、大文件和潜在 Secret。该报告用于后续人工拆分，不直接授权删除；如发现真实 Secret，必须轮换，不能只删文件。
 
-- [ ] **Step 6: 用临时 index 提交 Task 1**
+- [x] **Step 6: 用临时 index 提交 Task 1**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -188,6 +205,8 @@ Remove-Item -LiteralPath $idx
 ---
 
 ### Task 2: 确定性发布清单
+
+**核对 (2026-09-29)：** `release_manifest.py` + 测试 + `docs/examples/release-manifest.example.json` + runbook 齐备；今日 7 模块 unittest 68 tests OK。
 
 **Files:**
 - Create: `tools/release/release_manifest.py`
@@ -204,7 +223,7 @@ Remove-Item -LiteralPath $idx
   - CLI `python tools/release/release_manifest.py verify --manifest <path> --root .`
   - `manifestSha256` 用于发布记录和部署准入。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `test_release_manifest.py` 必须覆盖：相同输入生成 byte-identical JSON；commit 不是 40 位小写 hex 时报错；digest 不是 `sha256:<64hex>` 时报错；前端 tree digest 随 `amz-frontend/src` 内容变化；不随 `node_modules`、`dist`、mtime 变化；49 个当前 Flyway 文件全部进入迁移清单；每个迁移项含 `module`、`path`、`sha256`；manifest 不含绝对路径、当前时间和随机字段。
 
@@ -215,12 +234,12 @@ def test_manifest_is_byte_identical_for_same_input(self):
     self.assertEqual(first, second)
 ```
 
-- [ ] **Step 2: 运行确认 RED**
+- [x] **Step 2: 运行确认 RED**
 
 Run: `python -m unittest tools.release.test_release_manifest -v`  
 Expected: `ModuleNotFoundError: tools.release.release_manifest`。
 
-- [ ] **Step 3: 实现确定性 manifest**
+- [x] **Step 3: 实现确定性 manifest**
 
 JSON 顶层固定为：
 
@@ -237,17 +256,17 @@ JSON 顶层固定为：
 
 `canonical_json` 使用 `json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"`；frontend digest 只纳入 `package.json`、`package-lock.json`、`tsconfig*.json`、`vite.config.*`、`index.html` 和 `src/**` 的文件，路径统一 `/` 并按 bytes 排序；每个条目哈希 `relative_path + NUL + content_sha256` 后再次 SHA-256。migration digest 同样排除 `target/`，路径按字典序排序，先计算完整 manifest（`manifestSha256` 临时设为空字符串），再把规范 JSON 去掉该字段后的 SHA-256 写入 `manifestSha256`，重新序列化一次。
 
-- [ ] **Step 4: 运行确认 GREEN**
+- [x] **Step 4: 运行确认 GREEN**
 
 Run: `python -m unittest tools.release.test_release_manifest -v`  
 Expected: 全部 PASS；当前仓库迁移数必须为 49，若不是则报告实际计数并停止，不修改数字迎合测试。
 
-- [ ] **Step 5: 生成示例并写 runbook**
+- [x] **Step 5: 生成示例并写 runbook**
 
 Run: `python tools/release/release_manifest.py build --root . --commit 3c8f21ed21c2cc77cbf08d1f12ddd4256265ac25 --version 0.1.0 --image-ref ghcr.io/example/amazonerp-spapi:0.1.0 --image-digest sha256:0000000000000000000000000000000000000000000000000000000000000000 --output docs/examples/release-manifest.example.json`  
 Runbook 必须说明：发布清单是证据，不替代镜像签名；placeholder digest 示例不得用于部署；verify 必须从干净 clone 执行；提交、tag、CI run URL、镜像 digest 必须回填到发布记录。
 
-- [ ] **Step 6: 用临时 index 提交 Task 2**
+- [x] **Step 6: 用临时 index 提交 Task 2**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -263,6 +282,8 @@ Remove-Item -LiteralPath $idx
 
 ### Task 3: OCI 多服务构建元数据
 
+**核对 (2026-09-29)：** `docker-bake.hcl` 实测 17 个 target（gateway + 15 service + frontend）+ `services.json` + 测试齐备；bake 本身从未在远端真实构建过（只有 release.yml 会跑，tag 触发）。
+
 **Files:**
 - Create: `tools/release/services.json`
 - Create: `tools/release/test_services_manifest.py`
@@ -274,16 +295,16 @@ Remove-Item -LiteralPath $idx
 - Consumes: 15 个 `amz-service/*` 子模块、`amz-gateway`、各模块端口、Dockerfile build args。
 - Produces: `services.json` schema v1，字段 `name`、`module`、`port`、`healthPath`、`imageSuffix`；Bake targets `gateway` 和每个 service，共用 `docker-bake.hcl` variables；Dockerfile 接收 `VERSION`、`VCS_REF`、`BUILD_DATE` 并写入 OCI labels。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `test_services_manifest.py` 必须断言：17 个构建目标（1 gateway + 15 service + frontend）；每个 `module` 在文件系统中存在；每个 `port` 在 1024..65535；name/suffix 唯一；每个服务的 `application*.yml` 默认端口与 `services.json` 一致；`Dockerfile` 含 `org.opencontainers.image.revision`、`.version`、`.created`、`.source` labels；`docker-bake.hcl` 的 target 集与 JSON 完全一致；frontend target 使用 `amz-frontend/Dockerfile`（若不存在则在 Task 内新增）。
 
-- [ ] **Step 2: 运行确认 RED**
+- [x] **Step 2: 运行确认 RED**
 
 Run: `python -m unittest tools.release.test_services_manifest -v`  
 Expected: FAIL，`services.json` 和 `docker-bake.hcl` 不存在。
 
-- [ ] **Step 3: 填写准确的 service metadata**
+- [x] **Step 3: 填写准确的 service metadata**
 
 从每个模块的 `application.yml` 按事实读取端口；无法证明默认端口时先将测试设为 RED，修正配置或 metadata，不猜测。`services.json` 使用稳定排序：
 
@@ -297,7 +318,7 @@ Expected: FAIL，`services.json` 和 `docker-bake.hcl` 不存在。
 }
 ```
 
-- [ ] **Step 4: 实现 Bake targets 和 OCI labels**
+- [x] **Step 4: 实现 Bake targets 和 OCI labels**
 
 `docker-bake.hcl` 定义 `variable "REGISTRY"`、`variable "TAG"`、`variable "GIT_SHA"`、`variable "BUILD_DATE"`；target `common` 设置 `context = "."`、`dockerfile = "Dockerfile"`、`platforms = ["linux/amd64", "linux/arm64"]`、labels；每服务 target 继承 common 并传 `MODULE`/`PORT`。Dockerfile 在最终 stage 添加：
 
@@ -313,12 +334,12 @@ LABEL org.opencontainers.image.version="${VERSION}" \
 
 多架构参数化只代表构建配方可表达；未实际 build/push 前不得声称镜像已发布。
 
-- [ ] **Step 5: 运行确认 GREEN**
+- [x] **Step 5: 运行确认 GREEN**
 
 Run: `python -m unittest tools.release.test_services_manifest -v`  
 若本机 Docker/Buildx 可用：Run: `docker buildx bake --print`，Expected: 所有 target 可解析。若工具不可用，记录 `NOT VERIFIED`，不得伪造成功。
 
-- [ ] **Step 6: 用临时 index 提交 Task 3**
+- [x] **Step 6: 用临时 index 提交 Task 3**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -334,6 +355,8 @@ Remove-Item -LiteralPath $idx
 
 ### Task 4: CI 硬门禁与关键 Checkstyle
 
+**核对 (2026-09-29)：** `checkstyle-critical.xml` + ci.yml 齐备；`continue-on-error` 实测只出现在信息性的 `checkstyle-full` job；Java 治理测试已由 commit `d2069d9` 改为从目录动态推导套件（不再钉字符串），5/5 通过。
+
 **Files:**
 - Create: `checkstyle-critical.xml`
 - Create: `amz-service/amz-service-spapi/src/test/java/com/amz/deploy/ReleaseGovernanceContractTest.java`
@@ -344,11 +367,11 @@ Remove-Item -LiteralPath $idx
 - Consumes: Task 1/2/3 的 CLI、services manifest、CI workflow。
 - Produces: CI jobs `hygiene`、`release-manifest`、严格 critical Checkstyle；`test` 在 clean checkout 中执行全仓 `mvn -B test -fae`；禁止任何承载必需门禁的 job/step 使用 `continue-on-error: true`；发布门禁覆盖所有新增工具。
 
-- [ ] **Step 1: 写失败契约测试**
+- [x] **Step 1: 写失败契约测试**
 
 `ReleaseGovernanceContractTest` 读取 CI YAML 和工具文件，断言：CI 对 push/PR 执行 `repository_hygiene.py`；执行 `test_repository_hygiene.py`、`test_release_manifest.py`、`test_services_manifest.py`；`test` job 不设置 `continue-on-error`；`checkstyle` job 使用 `checkstyle-critical.xml` 且不设置 `continue-on-error`；`release-manifest` 生成结果并上传 artifact；每个必需 job 都出现在 `docker` 的 `needs` 中（除不可用的 release-only job）。
 
-- [ ] **Step 2: 运行确认 RED**
+- [x] **Step 2: 运行确认 RED**
 
 Run:
 
@@ -359,7 +382,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 
 Expected: compile/test FAIL，CI 尚未满足契约。
 
-- [ ] **Step 3: 建立可满足的 critical Checkstyle**
+- [x] **Step 3: 建立可满足的 critical Checkstyle**
 
 `checkstyle-critical.xml` 只放当前代码可稳定满足的规则：`FileTabCharacter`、`RegexpSingleline` 禁止尾随空白、`NewlineAtEndOfFile`、`AvoidStarImport`（按当前实际违规清零或保留明确 baseline，不允许规则存在却继续违规）、`OneTopLevelClass`、`OuterTypeFilename`。先运行：
 
@@ -369,7 +392,7 @@ Expected: compile/test FAIL，CI 尚未满足契约。
 
 若现有代码有违规，按规则逐项修最小代码或删掉并未真正执行的规则，不得把失败规则留在“强制门禁”里。完整 `google_checks.xml` 可继续作为 informational job，但必须改名并明确 `continue-on-error: true`，不能被描述为通过。
 
-- [ ] **Step 4: 改造 CI 工作流**
+- [x] **Step 4: 改造 CI 工作流**
 
 在新 job 中执行：
 
@@ -389,7 +412,7 @@ Expected: compile/test FAIL，CI 尚未满足契约。
 
 CI 中的 placeholder digest 只能证明工具可运行；不得作为发布产物。增加 `clean-tree` step：在 build/test 完成后执行 `git diff --exit-code` 与 `git ls-files --others --exclude-standard`，确保测试不写 tracked 工作区。若 synthetic-data 生成的 `out/` 被忽略，不将其误判为源码污染。
 
-- [ ] **Step 5: 运行本地 CI 等价验证**
+- [x] **Step 5: 运行本地 CI 等价验证**
 
 Run:
 
@@ -401,7 +424,7 @@ $env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp'
 
 Expected: Python 全部 PASS；Maven 18/18 modules SUCCESS。若当前脏工作区导致 hygiene 失败，记录真实 findings，不改扫描器掩盖问题。
 
-- [ ] **Step 6: 用临时 index 提交 Task 4**
+- [x] **Step 6: 用临时 index 提交 Task 4**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -417,6 +440,8 @@ Remove-Item -LiteralPath $idx
 
 ### Task 5: GHCR、SBOM、漏洞扫描与签名发布工作流
 
+**核对 (2026-09-29)：** release.yml 实测含 REGISTRY=ghcr.io、Syft SBOM、17 次 grype、cve_gate、cosign sign、manifest build/verify；**远端仍未执行**，保持 NOT VERIFIED。
+
 **Files:**
 - Create: `.github/workflows/release.yml`
 - Create: `tools/release/test_release_workflow.py`
@@ -426,29 +451,29 @@ Remove-Item -LiteralPath $idx
 - Consumes: protected tag `v*.*.*`、Task 3 的 `docker-bake.hcl`、Task 2 manifest CLI、GitHub OIDC。
 - Produces: 以 tag 触发的发布工作流，输出不可变 GHCR image digests、Syft SPDX JSON、Grype JSON/SARIF、Cosign signature、release manifest artifact；发布前执行全仓测试、hygiene、critical Checkstyle。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 `test_release_workflow.py` 解析 YAML 文本并断言：触发器只有 `workflow_dispatch` 和 `push.tags`；permissions 为 `contents: write`、`packages: write`、`id-token: write`；使用 `docker/setup-buildx-action`、`docker/login-action`、`docker/bake-action`、`anchore/sbom-action`、`anchore/scan-action`、`sigstore/cosign-installer`；禁止 `latest` 作为唯一 tag；扫描 `HIGH`/`CRITICAL` 且 `fail-build: true`；manifest 使用 bake 输出的 digest，而不是重新 build；release 资产含 manifest、SBOM、scan report、checksums；不存在明文 secret 或 `|| true`。
 
-- [ ] **Step 2: 运行确认 RED**
+- [x] **Step 2: 运行确认 RED**
 
 Run: `python -m unittest tools.release.test_release_workflow -v`  
 Expected: FAIL，`.github/workflows/release.yml` 不存在。
 
-- [ ] **Step 3: 实现发布工作流**
+- [x] **Step 3: 实现发布工作流**
 
 流程固定为：checkout full history → setup Java/Node/Python → hygiene/tests → `mvn test -fae` → frontend checks/build → Buildx → Bake push → 从 `bake-metadata.json` 提取 digest → Syft per image → Grype fail on High/Critical → Cosign keyless sign digest → release manifest → `sha256sum` → upload artifacts。标签必须是语义化 tag，镜像 tag 至少包含不可变 commit SHA；禁止用 `latest` 取代 digest。GitHub OIDC 权限只授予发布 job。
 
-- [ ] **Step 4: 运行确认 GREEN（本地静态）**
+- [x] **Step 4: 运行确认 GREEN（本地静态）**
 
 Run: `python -m unittest tools.release.test_release_workflow -v`  
 若本机有 `actionlint`：Run: `actionlint .github/workflows/release.yml`；若无该工具，记录 `actionlint NOT VERIFIED`，不得安装后把本地静态结果称为 GitHub Actions 成功。
 
-- [ ] **Step 5: 写发布候选 runbook**
+- [x] **Step 5: 写发布候选 runbook**
 
 Runbook 逐项列出：tag 规则、分支保护、必需环境审批、GHCR 权限、OIDC subject、故障时如何删除错误 tag（不动已发布 digest）、SBOM/扫描/签名的验证命令、release manifest 回填、失败后如何停止发布。明确 GitHub workflow 只有在远端实际通过后才可标记 VERIFIED。
 
-- [ ] **Step 6: 用临时 index 提交 Task 5**
+- [x] **Step 6: 用临时 index 提交 Task 5**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -464,6 +489,8 @@ Remove-Item -LiteralPath $idx
 
 ### Task 6: 回滚演练脚本与 Runbook
 
+**核对 (2026-09-29)：** `rollback_drill.py` 默认 dry-run（只有 `--apply` 才真正执行）+ `release-rollback.md` runbook 齐备。
+
 **Files:**
 - Create: `tools/release/rollback_drill.py`
 - Create: `tools/release/test_rollback_drill.py`
@@ -478,29 +505,29 @@ Remove-Item -LiteralPath $idx
   - CLI `python tools/release/rollback_drill.py execute --plan <json> [--apply]`
   - 默认 dry-run；`--apply` 才调用 `kubectl`。若镜像 digest 或 Flyway 版本不兼容，exit `2` 并拒绝生成可执行步骤。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 覆盖：相同 commit/digest 变异或缺失字段被拒绝；上一 manifest 迁移数少、checksum 不同或版本回退时拒绝自动 DB rollback；plan 只含 `kubectl set image`/`rollout status` 命令；默认 dry-run 不调用 `subprocess.run`；`--apply` 调用顺序可捕获并可断言；Kubernetes context 为空时拒绝执行。
 
-- [ ] **Step 2: 运行确认 RED**
+- [x] **Step 2: 运行确认 RED**
 
 Run: `python -m unittest tools.release.test_rollback_drill -v`  
 Expected: FAIL，模块不存在。
 
-- [ ] **Step 3: 实现无副作用优先的 rollback plan**
+- [x] **Step 3: 实现无副作用优先的 rollback plan**
 
 Planner 比较 manifest：`source.commit`、`image.ref`、`image.digest`、`migrations.treeSha256`、`migrations.count`。若 migration 有差异，plan 设置 `databaseAction = "MANUAL_REVIEW_REQUIRED"` 并禁止 `--apply`；应用回滚仅允许 image digest 回退。命令必须使用 list 参数，禁止 shell 字符串拼接。执行器记录 JSON lines 到 stdout，但不得打印 Secret 或环境变量。
 
-- [ ] **Step 4: 运行确认 GREEN**
+- [x] **Step 4: 运行确认 GREEN**
 
 Run: `python -m unittest tools.release.test_rollback_drill -v`  
 Expected: 全部 PASS；dry-run 用例证明没有 `kubectl` 调用。
 
-- [ ] **Step 5: 写回滚 runbook**
+- [x] **Step 5: 写回滚 runbook**
 
 明确：Phase 0 只验证应用镜像回滚；Flyway 没有自动 down migration，数据库回滚必须按每个迁移的 runbook 人工评审。若当前迁移不向后兼容，先停写、备份/PITR、走数据修复方案，禁止把 `flyway undo` 当默认操作。
 
-- [ ] **Step 6: 用临时 index 提交 Task 6**
+- [x] **Step 6: 用临时 index 提交 Task 6**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -516,6 +543,8 @@ Remove-Item -LiteralPath $idx
 
 ### Task 7: 干净 Clone 复验与 Phase 0 证据
 
+**核对 (2026-09-29)：** `verify_clean_clone.ps1` + `test_verify_clean_clone.py` + `phase0-cleanclone-evidence.json` 齐备（7/7）；证据文档表格列为 Check / Command / Exit Code / Status，比 Step 5 要求的三栏更细，视为满足。
+
 **Files:**
 - Create: `docs/superpowers/evidence/2026-09-28-phase0-verification.md`
 - Create: `tools/release/verify_clean_clone.ps1`
@@ -525,16 +554,16 @@ Remove-Item -LiteralPath $idx
 - Consumes: 已提交 Phase 0 内容、Maven/Node 本地路径、Git remote。
 - Produces: 可重复执行的 clean clone 验证脚本和证据文档；每项记录命令、exit code、关键输出、commit、日期和 `VERIFIED/NOT VERIFIED`。
 
-- [ ] **Step 1: 写脚本测试**
+- [x] **Step 1: 写脚本测试**
 
 测试脚本从临时目录 clone local repo，断言：clone 后 `git status --porcelain` 为空；Python release tests 通过；hygiene scan 通过；Maven reactor 18/18；frontend typecheck/tests/build 通过；脚本不修改原仓库；失败时保留工作目录并打印路径；环境缺少 Node/Maven 时返回 `NOT VERIFIED` 而不是伪造 PASS。
 
-- [ ] **Step 2: 运行确认 RED**
+- [x] **Step 2: 运行确认 RED**
 
 Run: `python -m unittest tools.release.test_verify_clean_clone -v`  
 Expected: FAIL，脚本不存在。
 
-- [ ] **Step 3: 实现 clean clone 脚本**
+- [x] **Step 3: 实现 clean clone 脚本**
 
 ```powershell
 param(
@@ -553,7 +582,7 @@ $ErrorActionPreference = 'Stop'
 
 脚本不得运行 `git clean`；工作目录已经由 mktemp 生成，清理仅允许删除该脚本创建的 temp root，并在删除前验证 resolved path 位于 `$env:TEMP` 下。
 
-- [ ] **Step 4: 运行确认 GREEN**
+- [x] **Step 4: 运行确认 GREEN**
 
 Run:
 
@@ -564,11 +593,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/release/verify_clean_c
 
 Expected: 本机可行的检查全部 PASS；Docker、GHCR、GitHub Actions、Cosign、Syft、Grype 和 Kubernetes 缺失时明确写入 `NOT VERIFIED`。
 
-- [ ] **Step 5: 写入证据文档**
+- [x] **Step 5: 写入证据文档**
 
 文档必须分三栏：`检查项`、`本地证据`、`状态`。至少记录：recovery snapshot、repository hygiene、release tool tests、Maven reactor、frontend typecheck/tests/build、manifest deterministic check、clean clone status。不得把“本地单元测试通过”写成“发布工作流通过”。
 
-- [ ] **Step 6: 用临时 index 提交 Task 7**
+- [x] **Step 6: 用临时 index 提交 Task 7**
 
 ```powershell
 $idx = Join-Path $env:TEMP ('amz-index-' + [guid]::NewGuid())
@@ -583,6 +612,8 @@ Remove-Item -LiteralPath $idx
 ---
 
 ### Task 8: 拆分现有 API-Ready 工作区基线
+
+**核对 (2026-09-29)：未做。** 无 `baseline-split-map.json`、无 `feat(api-ready):` 拆分提交、dirty 文件被 `d2b7619` / `7d933f2` / `fc07f6b` 整包提交吸收。step 保持未勾选。
 
 **Files:**
 - Modify: 既有 dirty tracked/untracked source、test、docs、deployment 文件。
@@ -629,12 +660,12 @@ Expected: 剩余 dirty 项只能是明确记录的外部产物或下一 Phase �
 
 ## Phase 0 退出条件
 
-- [ ] 恢复快照和冻结清单存在，哈希一致。
-- [ ] tracked 发布树通过 repository hygiene；不存在真实 Secret、日志、临时脚本或 >10 MiB 非必要文件。
-- [ ] Release manifest 对同一 commit/镜像 digest/源码输入逐字节确定，包含全部 49 个 Flyway checksum。
-- [ ] Docker Bake 能表达 1 gateway + 15 service + frontend 的可追溯构建；未实际构建的镜像不标为已发布。
-- [ ] CI 的必需检查不可 `continue-on-error`，关键 Python/契约测试、Checkstyle、Maven、前端、clean-tree 都阻断失败。
-- [ ] 发布工作流定义 GHCR、SBOM、Grype、Cosign 和 manifest；远端未跑前保持 `NOT VERIFIED`。
-- [ ] 回滚演练默认 dry-run，数据库回滚无自动 down 假设。
-- [ ] 从干净 clone 可复现本地构建与测试；所有未验证外部环节明确列出。
+- [x] 恢复快照和冻结清单存在，哈希一致。
+- [x] tracked 发布树通过 repository hygiene；不存在真实 Secret、日志、临时脚本或 >10 MiB 非必要文件。
+- [x] Release manifest 对同一 commit/镜像 digest/源码输入逐字节确定，包含全部 49 个 Flyway checksum。
+- [x] Docker Bake 能表达 1 gateway + 15 service + frontend 的可追溯构建；未实际构建的镜像不标为已发布。
+- [x] CI 的必需检查不可 `continue-on-error`，关键 Python/契约测试、Checkstyle、Maven、前端、clean-tree 都阻断失败。
+- [x] 发布工作流定义 GHCR、SBOM、Grype、Cosign 和 manifest；远端未跑前保持 `NOT VERIFIED`。
+- [x] 回滚演练默认 dry-run，数据库回滚无自动 down 假设。
+- [x] 从干净 clone 可复现本地构建与测试；所有未验证外部环节明确列出。
 - [ ] 现有 API-Ready 改动完成 subsystem 拆分，或明确列出尚未完成的 `review-required` 路径；不得用“代码存在”代替“发布成功”。
