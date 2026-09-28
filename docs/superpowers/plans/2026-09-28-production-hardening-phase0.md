@@ -10,6 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-28-full-project-review.md` §11 Phase 0、§12.1、§17；`docs/superpowers/specs/2026-09-26-production-upgrade-execution-matrix.md` §1、§3 Wave 0、REL-01/REL-02/REL-03/REL-05/REL-06/REL-10。
 
+## Status Addendum (2026-09-28)
+
+- Tasks 0-7 的实现与本地验证已完成（commit `4dfde26`..`f01738c`，另含 `5ca0fdd`/`a5e4f5d`/`5e8eba1`/`cde9477`/`1f8d772` 收尾）。
+- 下方各 Task 的 checkbox 保留为实施时的逐步记录，未逐条回填；实际完成状态以
+  `docs/superpowers/evidence/2026-09-28-phase0-verification.md` 为准。
+- 远端 CI（ci.yml 9/9 jobs）已于 2026-09-28 在 master 首次真实通过（run 36385434376），
+  其中暴露并修复了两个本地验证无法发现的缺陷（hygiene 行尾敏感、schema snapshot 绝对路径）。
+- 仍为 `NOT VERIFIED`：`release.yml` 远端执行（tag 触发）、`actionlint` 静态校验。
+
 ## Global Constraints
 
 - 当前基线：分支 `codex/api-ready-connectors`、HEAD `3c8f21ed21c2cc77cbf08d1f12ddd4256265ac25`；工作区高度 dirty 是事实，不得用 `git reset --hard`、`git clean`、批量删除恢复“干净”。

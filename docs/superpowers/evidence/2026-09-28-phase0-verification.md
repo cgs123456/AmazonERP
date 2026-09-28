@@ -46,3 +46,41 @@
 - `tools/release/verify_clean_clone.ps1` fixed: on success it now keeps `evidence.json`
   and removes only `clone-*` work dirs (previously the whole WorkRoot including evidence was deleted,
   making the "preserved" message misleading).
+
+## Remote CI Evidence (2026-09-28)
+
+First remote GitHub Actions runs for this branch (repo default branch `master`, commit `1f8d772`):
+
+| Run | Trigger | Result | Evidence |
+|-----|---------|--------|----------|
+| 36384609340 | push to master (`cde9477`) | FAILURE (2 jobs) | exposed two real defects; fixed in `1f8d772` |
+| 36385434376 | push to master (`1f8d772`) | **SUCCESS (9/9 jobs)** | checkstyle, checkstyle-full, hygiene, release-manifest, test (incl. MySQL ITs), frontend, synthetic-data, mysql-import, docker |
+
+All jobs ran with `continue-on-error` absent except the informational `checkstyle-full`.
+
+### Defects exposed by the first remote run (and fixed in `1f8d772`)
+
+1. `hygiene` job: the allowlist was hash-pinned to raw working-tree bytes. Git rewrites line
+   endings on checkout (`.gitattributes` / `core.autocrlf`), so 17 of 60 entries failed to match
+   on the Linux runner. Fix: `repository_hygiene.py` now hashes text content with CRLF/CR
+   normalised to LF; allowlist regenerated.
+2. `synthetic-data` job (DDL drift gate): the committed `schema-snapshot.json` embedded 50 absolute
+   paths (`C:\Users\...`) and per-file sha256 over raw bytes, so the gate could only ever pass on
+   the machine and path that generated it. Fix: `snapshot_schema.py` emits repository-relative
+   paths only; `ddl_parser.py` hashes DDL text with LF normalisation; snapshot + DDL_SOURCES
+   regenerated. This was a direct violation of the Phase 0 deterministic-manifest rule (no
+   absolute paths) that local verification could not catch.
+
+### First-ever remote verifications unlocked by this run
+
+- Full Maven reactor tests **including** `AdMigrationMySqlIT` and `AllModulesFlywayMySqlIT`
+  (real MySQL 8 service containers) - PASSED. These had never run anywhere before (locally they
+  are skipped without `AD_MYSQL_IT_*` / `FLYWAY_ALL_IT_*` env vars).
+- `mysql-import` job (14 databases x 49 Flyway migrations, real MySQL 8 import + cleanup) - PASSED.
+- `docker` job (image build on master) - PASSED.
+
+### Still NOT VERIFIED
+
+- `release.yml` (GHCR push + Syft SBOM + Grype scan + Cosign signing): tag-triggered; no tag has
+  been pushed. Requires a deliberate release action.
+- `actionlint` static check of `release.yml`: tool not installed.
