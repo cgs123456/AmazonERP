@@ -24,7 +24,10 @@ COPY amz-frontend/public ./public
 
 RUN npm run build
 
-FROM nginx:1.27-alpine
+# 1.27-alpine 指向的 Alpine 包已过期：Grype 扫出 103 个 HIGH/CRITICAL
+# （openssl 3.3.3 / curl 8.12.1 / libxml2 2.13.4 等，Alpine 仓库均已有修复版本）。
+# 升到 1.30.5-alpine 后同一 DB 复扫降到 4 个，其中 3 个（tiff/zlib）上游暂无修复版本。
+FROM nginx:1.30.5-alpine
 
 ARG VERSION=dev
 ARG VCS_REF=unknown

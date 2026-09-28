@@ -2,7 +2,7 @@ package com.amz.agent.eval;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
 public class LlmEvalScorer {
 
     @Autowired(required = false)
-    private ChatLanguageModel scoringModel;
+    private ChatModel scoringModel;
 
     public boolean isAvailable() {
         return scoringModel != null;
@@ -43,7 +43,7 @@ public class LlmEvalScorer {
         String prompt = buildPrompt(evalCase, response);
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
-                String text = scoringModel.generate(prompt);
+                String text = scoringModel.chat(prompt);
                 LlmEvalScore parsed = parseScores(text);
                 if (parsed != null) {
                     return parsed;

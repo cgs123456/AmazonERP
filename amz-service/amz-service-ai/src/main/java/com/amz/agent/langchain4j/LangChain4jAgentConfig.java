@@ -1,7 +1,7 @@
 package com.amz.agent.langchain4j;
 
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.service.AiServices;
 import lombok.extern.slf4j.Slf4j;
@@ -42,12 +42,12 @@ public class LangChain4jAgentConfig {
     private ErpTools erpTools;
 
     /**
-     * DeepSeek 兼容 OpenAI 接口的 ChatLanguageModel。
+     * DeepSeek 兼容 OpenAI 接口的 ChatModel。
      * 仅当 deepseek.api-key 非空时才创建 Bean。
      */
     @Bean
     @ConditionalOnExpression("'${deepseek.api-key:}'.trim().length() > 0")
-    public ChatLanguageModel chatLanguageModel() {
+    public ChatModel chatLanguageModel() {
         log.info("初始化 LangChain4j OpenAiChatModel: baseUrl={}, model={}", baseUrl, modelName);
         return OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
@@ -65,10 +65,10 @@ public class LangChain4jAgentConfig {
      */
     @Bean
     @ConditionalOnExpression("'${deepseek.api-key:}'.trim().length() > 0")
-    public ErpAgentInterface erpAgent(ChatLanguageModel chatLanguageModel) {
+    public ErpAgentInterface erpAgent(ChatModel chatLanguageModel) {
         log.info("初始化 LangChain4j ErpAgent (AiServices 代理)");
         var builder = AiServices.builder(ErpAgentInterface.class)
-                .chatLanguageModel(chatLanguageModel)
+                .chatModel(chatLanguageModel)
                 .chatMemoryProvider(sessionId -> MessageWindowChatMemory.builder()
                         .id(sessionId)
                         .maxMessages(20)

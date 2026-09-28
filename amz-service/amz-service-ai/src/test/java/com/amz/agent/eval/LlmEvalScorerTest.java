@@ -1,6 +1,6 @@
 package com.amz.agent.eval;
 
-import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.ChatModel;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
 class LlmEvalScorerTest {
 
     @Mock
-    private ChatLanguageModel scoringModel;
+    private ChatModel scoringModel;
 
     @InjectMocks
     private LlmEvalScorer scorer;
@@ -45,7 +45,7 @@ class LlmEvalScorerTest {
     @Test
     @DisplayName("合法 JSON 应解析出四指标且不过 error")
     void testValidJsonParsed() {
-        when(scoringModel.generate(anyString())).thenReturn(
+        when(scoringModel.chat(anyString())).thenReturn(
                 "{\"faithfulness\":0.85,\"answer_relevancy\":0.9,"
                         + "\"tool_selection_accuracy\":0.8,\"completeness\":0.75}");
 
@@ -61,7 +61,7 @@ class LlmEvalScorerTest {
     @Test
     @DisplayName("带 ```json fences 的输出应能解析")
     void testFencedJsonParsed() {
-        when(scoringModel.generate(anyString())).thenReturn(
+        when(scoringModel.chat(anyString())).thenReturn(
                 "```json\n{\"faithfulness\":1,\"answer_relevancy\":1,"
                         + "\"tool_selection_accuracy\":1,\"completeness\":1}\n```");
 
@@ -74,7 +74,7 @@ class LlmEvalScorerTest {
     @Test
     @DisplayName("越界分值应钳制到 [0,1]")
     void testOutOfRangeClamped() {
-        when(scoringModel.generate(anyString())).thenReturn(
+        when(scoringModel.chat(anyString())).thenReturn(
                 "{\"faithfulness\":2.5,\"answer_relevancy\":-1,"
                         + "\"tool_selection_accuracy\":0.5,\"completeness\":0.5}");
 
@@ -88,13 +88,13 @@ class LlmEvalScorerTest {
     @Test
     @DisplayName("垃圾输出应重试 1 次后标记 score_error")
     void testGarbageMarksScoreErrorAfterRetry() {
-        when(scoringModel.generate(anyString())).thenReturn("not json at all");
+        when(scoringModel.chat(anyString())).thenReturn("not json at all");
 
         LlmEvalScore score = scorer.score(demoCase(), "ok");
 
         assertTrue(score.isScoreError());
         // 初次 + 重试共 2 次调用
-        verify(scoringModel, times(2)).generate(anyString());
+        verify(scoringModel, times(2)).chat(anyString());
     }
 
     @Test
@@ -110,14 +110,14 @@ class LlmEvalScorerTest {
     @Test
     @DisplayName("prompt 应包含问题与期望工具（可审查性）")
     void testPromptContainsCase() {
-        when(scoringModel.generate(anyString())).thenReturn(
+        when(scoringModel.chat(anyString())).thenReturn(
                 "{\"faithfulness\":0.5,\"answer_relevancy\":0.5,"
                         + "\"tool_selection_accuracy\":0.5,\"completeness\":0.5}");
 
         scorer.score(demoCase(), "ok");
 
         org.mockito.ArgumentCaptor<String> captor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(scoringModel).generate(captor.capture());
+        verify(scoringModel).chat(captor.capture());
         assertTrue(captor.getValue().contains("最近7天订单如何？"));
         assertTrue(captor.getValue().contains("query_orders"));
     }

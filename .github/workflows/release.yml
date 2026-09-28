@@ -116,6 +116,25 @@ jobs:
           fail-build: true
           severity-cutoff: high
           output-format: sarif
+      # gateway 之外的 16 个镜像同样必须过 HIGH/CRITICAL 门禁。
+      # 只扫 gateway 会给出错误结论：gateway 是 WebFlux（无 Tomcat），恰好是 17 个镜像里
+      # 最干净的一个；实测其他服务在修复前各有 28~35 个 HIGH/CRITICAL。
+      - name: Scan remaining images
+        if: github.event_name == 'push'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ needs.quality-gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          for name in ad ai customer finance logistics message multiplatform ops order procurement product report search spapi user frontend; do
+            echo "::group::grype ${name}"
+            docker run --rm \
+              -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+              anchore/grype:latest \
+              "registry:${REGISTRY}/${OWNER}/amazonerp-${name}:${VERSION}" \
+              --fail-on high
+            echo "::endgroup::"
+          done
       - uses: sigstore/cosign-installer@v3
         if: github.event_name == 'push'
       - name: Cosign sign image digest
