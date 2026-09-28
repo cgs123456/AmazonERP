@@ -7,6 +7,18 @@ RELEASE_YML = os.path.join(
     os.path.dirname(__file__), "..", "..", ".github", "workflows", "release.yml"
 )
 
+CI_YML = os.path.join(os.path.dirname(RELEASE_YML), "ci.yml")
+_TOOL_TEST = re.compile(r"tools\.release\.test_[a-z0-9_]+")
+
+
+def release_tool_test_commands(raw):
+    """Every `python -m unittest tools.release.* ...` command in a workflow."""
+    return sorted(
+        tuple(_TOOL_TEST.findall(line))
+        for line in raw.splitlines()
+        if "python -m unittest" in line and "tools.release." in line
+    )
+
 
 class TestReleaseWorkflow(unittest.TestCase):
     @classmethod
@@ -109,6 +121,18 @@ class TestReleaseWorkflow(unittest.TestCase):
             self.raw,
             r"(?m)^\s*REGISTRY:\s*\$\{\{\s*env\.REGISTRY\s*\}\}/\$\{\{\s*github\.repository_owner\s*\}\}",
         )
+
+
+    def test_ci_and_release_run_the_same_release_tool_tests(self):
+        # This list is copied into both workflows. Extending one of them only
+        # silently leaves the other pipeline unable to fail on the new test,
+        # and no existing check notices -- which is exactly how a gate ends up
+        # being enforced in CI but not at release time.
+        release_cmd = release_tool_test_commands(self.raw)
+        self.assertTrue(release_cmd, "release.yml no longer runs the release tool tests")
+        with open(CI_YML, "r", encoding="utf-8") as fh:
+            ci_cmd = release_tool_test_commands(fh.read())
+        self.assertEqual(release_cmd, ci_cmd, "ci.yml and release.yml must run identical release tool tests")
 
 
 if __name__ == "__main__":
