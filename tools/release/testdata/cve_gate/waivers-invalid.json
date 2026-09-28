@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "waivers": [
+    {
+      "id": "missing-fields",
+      "images": [
+        "amazonerp-gateway"
+      ],
+      "vulnerabilities": [
+        "X"
+      ]
+    }
+  ]
+}

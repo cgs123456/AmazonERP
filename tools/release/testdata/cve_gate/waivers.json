@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "waivers": [
+    {
+      "id": "sample-netty",
+      "images": [
+        "amazonerp-gateway"
+      ],
+      "vulnerabilities": [
+        "GHSA-test-netty-handler"
+      ],
+      "packages": [
+        "netty-handler"
+      ],
+      "package_versions": [
+        "4.1.124.Final"
+      ],
+      "expires": "2026-12-31",
+      "owner": "test",
+      "justification": "sample"
+    },
+    {
+      "id": "sample-zlib",
+      "images": [
+        "amazonerp-frontend"
+      ],
+      "vulnerabilities": [
+        "GHSA-test-zlib"
+      ],
+      "packages": [
+        "zlib"
+      ],
+      "package_versions": [
+        "1.3.2-r0"
+      ],
+      "expires": "2026-12-31",
+      "owner": "test",
+      "justification": "sample"
+    }
+  ]
+}
