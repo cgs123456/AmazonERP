@@ -137,7 +137,10 @@ class ServicesManifestTest(unittest.TestCase):
         self.assertEqual(".", extract_string(common, "context"))
         self.assertEqual("Dockerfile", extract_string(common, "dockerfile"))
         self.assertIn('"linux/amd64"', common)
-        self.assertIn('"linux/arm64"', common)
+        # arm64 is deliberately deferred until the jar build moves out of the
+        # image: 17 in-container Maven builds under QEMU exceed practical
+        # runner time limits. Re-enabling it must be a conscious change.
+        self.assertNotIn('"linux/arm64"', common)
 
         for service in self.services:
             with self.subTest(service=service["name"]):
