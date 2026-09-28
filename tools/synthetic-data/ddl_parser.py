@@ -513,6 +513,15 @@ def _read_bytes(path: str) -> bytes:
     with open(path, 'rb') as source:
         return source.read()
 
+def _text_sha256(path: str) -> str:
+    # Git may check the same blob out with LF (Linux CI) or CRLF (Windows).
+    # Hashing raw bytes made the committed snapshot machine-dependent, so the
+    # drift gate only ever passed on the machine that generated it.
+    blob = _read_bytes(path)
+    if b'\x00' not in blob:
+        blob = blob.replace(b'\r\n', b'\n').replace(b'\r', b'\n')
+    return hashlib.sha256(blob).hexdigest()
+
 
 def parse_sql_file(path: str, group: str, db_hint=None):
     """Parse one .sql file -> (tables, alters, stats, issues)."""
@@ -580,7 +589,7 @@ def parse_sql_file(path: str, group: str, db_hint=None):
         'group': group,
         'bytes': len(text.encode('utf-8')),
         'lines': text.count('\n') + 1,
-        'sha256': hashlib.sha256(_read_bytes(path)).hexdigest(),
+        'sha256': _text_sha256(path),
         'tables': len(tables),
         'insert_statements': inserts,
         'db_hint': db_hint,

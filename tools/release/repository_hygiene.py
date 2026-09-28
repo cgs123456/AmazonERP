@@ -192,11 +192,16 @@ def _candidate_files(root: Path, include_untracked: bool) -> list[Path]:
 
 
 def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    """Hash file content with CRLF/CR normalised to LF.
+
+    The gate runs on Linux CI and on Windows dev boxes. Git rewrites line
+    endings on checkout according to ``.gitattributes``/``core.autocrlf``, so
+    hashing raw bytes made every allowlist entry platform-specific.
+    """
+    blob = path.read_bytes()
+    if b"\x00" not in blob:
+        blob = blob.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(blob).hexdigest()
 
 
 def _is_placeholder(value: str) -> bool:

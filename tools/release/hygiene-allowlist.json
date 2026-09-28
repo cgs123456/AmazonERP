@@ -4,32 +4,32 @@
     {
       "path": ".start-backend-final.bat",
       "rule": "secret-like-assignment",
-      "sha256": "b9484aa32b409f45df30e6d31f7f5f20b0f75daf1679c6bf88ab57652deb0365"
+      "sha256": "f165cfd41399a677c2b44caa77c9f453270fc73cece6a6ede9439aafeed427cc"
     },
     {
       "path": "amz-common/src/main/java/com/amz/config/FeignAuthRelayConfig.java",
       "rule": "secret-like-assignment",
-      "sha256": "f966aeef0a2acf80cb782b642d0aa17c755f2150a8c80cd3485f5670672d59cc"
+      "sha256": "d4f088a44cc1a7e6f59842868ce7e8a85cecc2ef763edf2edd2d4dca31ee3acf"
     },
     {
       "path": "amz-common/src/main/java/com/amz/interceptor/BaseAuthInterceptor.java",
       "rule": "secret-like-assignment",
-      "sha256": "ff9b451a436c4480ae08e13884ef6bf63231a5aaa1f4749afbfde92c01b20a0e"
+      "sha256": "758a5fcf658a4393c4e62bf03ed5a8cf9d0c06ed278629486e3e3f1b166a494d"
     },
     {
       "path": "amz-common/src/main/java/com/amz/lock/DistributedJobLock.java",
       "rule": "secret-like-assignment",
-      "sha256": "d2053175d8b646b08326217a1ac6c76705866bcb168804e6a4ef4d0dae8ce604"
+      "sha256": "59e8294956e709a1188ab2ca423a3889a360308402c97deedce7ac9615c8abc0"
     },
     {
       "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
       "rule": "secret-like-assignment",
-      "sha256": "554fcde8030a8b57b903d0c032d72b8d7bbee6ff12a005c91ecec33eb802abd3"
+      "sha256": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1"
     },
     {
       "path": "amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
       "rule": "secret-like-assignment",
-      "sha256": "c321bf8ed8811331cecb7d5f17fed69c9458ab99a2b05e6fc3c162afb3e12216"
+      "sha256": "bc7d6cf2647edece59e5f23bb60200ddab4fdb08f1b39a06ee6b956d365c6158"
     },
     {
       "path": "amz-frontend/src/__tests__/ConnectorCenter.test.ts",
@@ -74,7 +74,7 @@
     {
       "path": "amz-frontend/src/router/index.ts",
       "rule": "secret-like-assignment",
-      "sha256": "ccd2c8437f90869939d276487a80eb32a5f4fb669c081662eb21e53c93312ede"
+      "sha256": "d260b00f329994d12c291de1e6c747c1076586136977a3d784d2a0ad330ba31d"
     },
     {
       "path": "amz-frontend/src/utils/websocket.ts",
@@ -84,7 +84,7 @@
     {
       "path": "amz-frontend/src/views/ConnectorCenter.vue",
       "rule": "secret-like-assignment",
-      "sha256": "524c83c4dfdae053f743f2ed30dd5152144d1e664ee606857d975ac3423487e0"
+      "sha256": "e409671560d039921de9fe4981b1fbdd589dfe2f5c20bd59744aaf35f2f27a92"
     },
     {
       "path": "amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java",
@@ -94,7 +94,7 @@
     {
       "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java",
       "rule": "secret-like-assignment",
-      "sha256": "1b077fc2065569f7f5a8c6020712694259edf156d67c48ff1883d3d483e7e633"
+      "sha256": "1d5d5a75e3a4e0cd7e19a7384cf7009771e3cec5d3b1ec5622552360333a4cc0"
     },
     {
       "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdMigrationMySqlIT.java",
@@ -124,7 +124,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/RestrictedDataTokenManager.java",
       "rule": "secret-like-assignment",
-      "sha256": "95d77ca5bf462fb5e09d2871e3dfe12b92b378cedd0be1e7fe381f0ba4e65926"
+      "sha256": "1be0ed5cecd6a19c929e090fa30e09a5689ed1e5cebd4480c3f3f0f93b0a5b0f"
     },
     {
       "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/SpApiConnectivityPreflight.java",
@@ -149,7 +149,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/AmazonUploadsRealClientContractTest.java",
       "rule": "secret-like-assignment",
-      "sha256": "51980b0d482ce03e262bf08e9f618716c4c65a6f45112e87192919ff8f5ea01f"
+      "sha256": "520ef974e4d7041f102dcdf4b89625847447bca7b5546a724e0a50bf7dd81588"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/FeedsResultDocumentTest.java",
@@ -159,7 +159,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/ReportsRealClientStubTest.java",
       "rule": "secret-like-assignment",
-      "sha256": "9096bc37e9031e11bd8e01869442a2bf64790a1ce1fa2daa35e29adfd1a963bf"
+      "sha256": "f2d30f28d25c5d55e59296be5dd2d848613cb60f3cf41a3a47a380dc540d1e3a"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiEndpointOverrideSafetyTest.java",
@@ -179,7 +179,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/TokensClientContractTest.java",
       "rule": "secret-like-assignment",
-      "sha256": "b886602619cf35df06ff211eeb177b303bfcd6d4a6b47d49648100eac8c67642"
+      "sha256": "5635e4d357ba2c0c81f739f125e6e8bb58ebe14dee1975cc8a0b1ac49fa6cb2b"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/ConnectorRegistryTest.java",
@@ -204,7 +204,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "9f05adb301b5ca6a48955ccd450e2c97cf9d51b101a4e2c906ce9b2278059b0e"
+      "sha256": "7b581eea4a24addd435350dd1c4d4483b11e2162ce52cb6840c0eff1c8e402cc"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BootstrapDeploymentContractTest.java",
@@ -214,7 +214,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java",
       "rule": "secret-like-assignment",
-      "sha256": "61983721978fcfd8b017e06cc408b0aeab1ba3cbabe19a2525e1a4863f222e37"
+      "sha256": "e9bcb54c984948a59114a149af59c7fce54701324c4483f20e6382c1fce9efcc"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/integration/SpApiIntegrationTest.java",
@@ -249,12 +249,12 @@
     {
       "path": "docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md",
       "rule": "secret-like-assignment",
-      "sha256": "3dab857a48c75e637175900beca5a752d3f7431b41df8d0fa6a9a20609ce75db"
+      "sha256": "0ce4a8814966b606dceafb52be2310cb4ea40102bd9669caf2ca00d377f3f4ec"
     },
     {
       "path": "docs/superpowers/runbooks/release-candidate-checklist.md",
       "rule": "secret-like-assignment",
-      "sha256": "b39bb557b3637c8c6094d0027b4e73685cc099bc8c66c9333b7da59b899ec952"
+      "sha256": "9637937922247711f8a1c0fa3a6fce79e2f4729b511ae527bcbb6b4a4e63aac0"
     },
     {
       "path": "docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md",
@@ -269,7 +269,7 @@
     {
       "path": "loadtest/gatling/ErpStressTest.scala",
       "rule": "secret-like-assignment",
-      "sha256": "2d2dcbe49e7cdf9537d41612f133b7293d561fcd572735941084c1f3f4a0dc55"
+      "sha256": "cb96c88eebc0d139887c32acd29d9344d27bb7b28770d34842f5ae6f4b05bb18"
     },
     {
       "path": "loadtest/jmeter/README.md",
@@ -279,27 +279,27 @@
     {
       "path": "tools/connector-acceptance/acceptance_runner.py",
       "rule": "aws-access-key",
-      "sha256": "6eee1eced47c2813f49c70a4b04639581fe9f8332e0503cba7447ea32a80ab4c"
+      "sha256": "d644e31f0f76541a2cc7b163ecad037af26861ffb28ac629e0ac9e77b98d03db"
     },
     {
       "path": "tools/connector-acceptance/acceptance_runner.py",
       "rule": "secret-like-assignment",
-      "sha256": "6eee1eced47c2813f49c70a4b04639581fe9f8332e0503cba7447ea32a80ab4c"
+      "sha256": "d644e31f0f76541a2cc7b163ecad037af26861ffb28ac629e0ac9e77b98d03db"
     },
     {
       "path": "tools/connector-acceptance/fake-service.py",
       "rule": "aws-access-key",
-      "sha256": "0da083c4ddbb9deb0db21535c3ec019adc1ca01aea4cbb68373ec19eacbbab0c"
+      "sha256": "eff1e3e63a296929a78b95825e1c3f98b67b146342294d7780eac483225619fb"
     },
     {
       "path": "tools/connector-acceptance/fake-service.py",
       "rule": "secret-like-assignment",
-      "sha256": "0da083c4ddbb9deb0db21535c3ec019adc1ca01aea4cbb68373ec19eacbbab0c"
+      "sha256": "eff1e3e63a296929a78b95825e1c3f98b67b146342294d7780eac483225619fb"
     },
     {
       "path": "tools/synthetic-data/ddl_parser.py",
       "rule": "secret-like-assignment",
-      "sha256": "27d18d581b59c01f0b535ef375b4623f1690f9ebaf05879d9d71253f545a2232"
+      "sha256": "44e52cbc1969b2b992642a7a2f6c5cfe0023ff2ac235a8544b7774a0f41ccbc3"
     }
   ]
 }

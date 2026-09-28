@@ -2,7 +2,6 @@
   "tool_version": "1.2.0",
   "sources": [
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\docker\\init-sql\\01-init-databases.sql",
       "group": "compose-init-sql",
       "bytes": 1668,
       "lines": 21,
@@ -18,7 +17,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ad\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 11578,
       "lines": 243,
@@ -34,11 +32,10 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ad\\src\\main\\resources\\db\\migration\\V2__campaign_metadata_unique.sql",
       "group": "flyway-migration",
       "bytes": 489,
       "lines": 13,
-      "sha256": "d23c50a77d903a11ba6c20cd5dcda7396f3bc218286fb6ecdb1aba41dc313362",
+      "sha256": "518540ab315425a88dae307c0174aa3157db397bfcc8b18721a57625e596b658",
       "tables": 0,
       "insert_statements": 0,
       "db_hint": "amz_ad",
@@ -50,7 +47,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ad\\src\\main\\resources\\db\\migration\\V3__ad_daily_report_update_time.sql",
       "group": "flyway-migration",
       "bytes": 351,
       "lines": 6,
@@ -66,7 +62,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ad\\src\\main\\resources\\db\\migration\\V4__search_term_keyword_key_type.sql",
       "group": "flyway-migration",
       "bytes": 1181,
       "lines": 17,
@@ -82,7 +77,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ad\\src\\main\\resources\\db\\migration\\V5__ad_resource_tenant_scope.sql",
       "group": "flyway-migration",
       "bytes": 1526,
       "lines": 41,
@@ -98,7 +92,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ad\\src\\main\\resources\\db\\migration\\V6__keyword_base_bid.sql",
       "group": "flyway-migration",
       "bytes": 625,
       "lines": 12,
@@ -114,7 +107,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ad\\src\\main\\resources\\db\\migration\\V7__ad_business_uniqueness.sql",
       "group": "flyway-migration",
       "bytes": 5899,
       "lines": 155,
@@ -130,7 +122,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ai\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 5047,
       "lines": 90,
@@ -146,7 +137,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ai\\src\\main\\resources\\db\\migration\\V2__agent_eval_log.sql",
       "group": "flyway-migration",
       "bytes": 795,
       "lines": 16,
@@ -162,7 +152,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-customer\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 8958,
       "lines": 156,
@@ -178,7 +167,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-finance\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 1488,
       "lines": 27,
@@ -194,7 +182,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-finance\\src\\main\\resources\\db\\migration\\V2__settlement_detail.sql",
       "group": "flyway-migration",
       "bytes": 1819,
       "lines": 29,
@@ -210,7 +197,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-finance\\src\\main\\resources\\db\\migration\\V3__payment_collection.sql",
       "group": "flyway-migration",
       "bytes": 1975,
       "lines": 30,
@@ -226,7 +212,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-finance\\src\\main\\resources\\db\\migration\\V4__fee_discrepancy.sql",
       "group": "flyway-migration",
       "bytes": 2035,
       "lines": 29,
@@ -242,7 +227,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-finance\\src\\main\\resources\\db\\migration\\V5__reimbursement_claim.sql",
       "group": "flyway-migration",
       "bytes": 2396,
       "lines": 36,
@@ -258,11 +242,10 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-finance\\src\\main\\resources\\db\\migration\\V6__kingdee_sync_lease.sql",
       "group": "flyway-migration",
       "bytes": 302,
       "lines": 6,
-      "sha256": "fd1f4e8d06c42d34c3dbe01b771a8c9de4c63b2eb0d9949d464ec05e097dd876",
+      "sha256": "6d79b14925d7b64c8030b46bae7e96f61fed4761a67fc44840f30745aa1b1f95",
       "tables": 0,
       "insert_statements": 0,
       "db_hint": "amz_finance",
@@ -274,7 +257,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-finance\\src\\main\\resources\\db\\migration\\V7__order_number_column_rename.sql",
       "group": "flyway-migration",
       "bytes": 1603,
       "lines": 26,
@@ -290,7 +272,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-logistics\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 13598,
       "lines": 266,
@@ -306,7 +287,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-logistics\\src\\main\\resources\\db\\migration\\V2__tracking_source.sql",
       "group": "flyway-migration",
       "bytes": 2630,
       "lines": 55,
@@ -322,7 +302,6 @@
       "dynamic_ddl": 9
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-logistics\\src\\main\\resources\\db\\migration\\V3__shipment_last_track_time.sql",
       "group": "flyway-migration",
       "bytes": 1917,
       "lines": 39,
@@ -338,7 +317,6 @@
       "dynamic_ddl": 6
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-logistics\\src\\main\\resources\\db\\migration\\V4__tracking_timeline_index.sql",
       "group": "flyway-migration",
       "bytes": 1436,
       "lines": 30,
@@ -354,7 +332,6 @@
       "dynamic_ddl": 3
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-logistics\\src\\main\\resources\\db\\migration\\V5__shipment_tracking_lookup_index.sql",
       "group": "flyway-migration",
       "bytes": 1220,
       "lines": 27,
@@ -370,7 +347,6 @@
       "dynamic_ddl": 3
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-multiplatform\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 9521,
       "lines": 165,
@@ -386,7 +362,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-multiplatform\\src\\main\\resources\\db\\migration\\V2__unified_order_items.sql",
       "group": "flyway-migration",
       "bytes": 431,
       "lines": 8,
@@ -402,7 +377,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-multiplatform\\src\\main\\resources\\db\\migration\\V3__platform_message_order_no.sql",
       "group": "flyway-migration",
       "bytes": 997,
       "lines": 16,
@@ -418,7 +392,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-ops\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 4448,
       "lines": 98,
@@ -434,7 +407,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-order\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 9086,
       "lines": 184,
@@ -450,7 +422,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-order\\src\\main\\resources\\db\\migration\\V2__order_reference_key_types.sql",
       "group": "flyway-migration",
       "bytes": 1671,
       "lines": 29,
@@ -466,7 +437,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-order\\src\\main\\resources\\db\\migration\\V3__order_coupon_key_type.sql",
       "group": "flyway-migration",
       "bytes": 1312,
       "lines": 21,
@@ -482,7 +452,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-order\\src\\main\\resources\\db\\migration\\V4__order_shop_scoped_identity.sql",
       "group": "flyway-migration",
       "bytes": 2889,
       "lines": 39,
@@ -498,7 +467,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-order\\src\\main\\resources\\db\\migration\\V5__order_item_table.sql",
       "group": "flyway-migration",
       "bytes": 3583,
       "lines": 50,
@@ -514,11 +482,10 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-procurement\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 13152,
       "lines": 243,
-      "sha256": "4a8022ef294580576e9674250a37c4dbf04bf77651aad72efefe328d3eec6e04",
+      "sha256": "93413f09780d80789753dec4ddac2a3e5075d0de1c8afc70e44468eaf5c80dd1",
       "tables": 10,
       "insert_statements": 2,
       "db_hint": "amz_procurement",
@@ -530,7 +497,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-procurement\\src\\main\\resources\\db\\migration\\V2__fba_receipt_idempotency.sql",
       "group": "flyway-migration",
       "bytes": 386,
       "lines": 5,
@@ -546,7 +512,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-product\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 8658,
       "lines": 192,
@@ -562,7 +527,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-product\\src\\main\\resources\\db\\migration\\V2__listing_product_type.sql",
       "group": "flyway-migration",
       "bytes": 460,
       "lines": 8,
@@ -578,7 +542,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-product\\src\\main\\resources\\db\\migration\\V3__listing_copy_polling.sql",
       "group": "flyway-migration",
       "bytes": 1006,
       "lines": 17,
@@ -594,11 +557,10 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-product\\src\\main\\resources\\db\\migration\\V4__listing_copy_partial_status.sql",
       "group": "flyway-migration",
       "bytes": 373,
       "lines": 7,
-      "sha256": "d8855de879f332e1703824a8654df0fde3ff6abdcff6bef3c8410609742d7a06",
+      "sha256": "8bba274b6199e389c31254b6358533fc6532f76a57e502a6058e472c1d45b149",
       "tables": 0,
       "insert_statements": 0,
       "db_hint": "amz_product",
@@ -610,7 +572,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-report\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 7483,
       "lines": 147,
@@ -626,7 +587,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-search\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 360,
       "lines": 11,
@@ -642,7 +602,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 5321,
       "lines": 114,
@@ -658,7 +617,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V2__spapi_call_outbox.sql",
       "group": "flyway-migration",
       "bytes": 5627,
       "lines": 65,
@@ -674,7 +632,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V3__spapi_outbox_replay_metadata.sql",
       "group": "flyway-migration",
       "bytes": 824,
       "lines": 15,
@@ -690,11 +647,10 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V4__feed_result_error.sql",
       "group": "flyway-migration",
       "bytes": 1560,
       "lines": 26,
-      "sha256": "c1d1d95b2739bcba50354619dd96405583bd785afa1746fc220c926a074ba4cc",
+      "sha256": "3ed1709e230c11bb20b280ca417f9ada7d4598dc105613438d3c3ed09c10eaff",
       "tables": 1,
       "insert_statements": 0,
       "db_hint": "amz_spapi",
@@ -706,7 +662,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V5__spapi_outbox_token_source.sql",
       "group": "flyway-migration",
       "bytes": 1171,
       "lines": 18,
@@ -722,7 +677,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V6__spapi_notification_destination.sql",
       "group": "flyway-migration",
       "bytes": 2339,
       "lines": 31,
@@ -738,7 +692,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V7__spapi_notification_subscription.sql",
       "group": "flyway-migration",
       "bytes": 2363,
       "lines": 30,
@@ -754,7 +707,6 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V8__spapi_notification_inbox.sql",
       "group": "flyway-migration",
       "bytes": 3807,
       "lines": 47,
@@ -770,11 +722,10 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-spapi\\src\\main\\resources\\db\\migration\\V9__spapi_credential_version.sql",
       "group": "flyway-migration",
       "bytes": 482,
       "lines": 10,
-      "sha256": "1c9ea01d796fc383b6f4053d01faba53bcdce3c52297da2df7bc529ddc31ace0",
+      "sha256": "5f12926db76526ab1c83d917179fd594922b3ae1f4d4e5994cbc25147704ce2a",
       "tables": 0,
       "insert_statements": 0,
       "db_hint": "amz_spapi",
@@ -786,11 +737,10 @@
       "dynamic_ddl": 0
     },
     {
-      "file": "C:\\Users\\Administrator\\Desktop\\AmazonERP\\amz-service\\amz-service-user\\src\\main\\resources\\db\\migration\\V1__init.sql",
       "group": "flyway-migration",
       "bytes": 6054,
       "lines": 115,
-      "sha256": "b81feba4dfec77540f2c36e5fd20cee005224218d999ea903b02cad6408bb143",
+      "sha256": "4b81cafea1a9280823a256b7f79ef13e62fc07393cdfc9d22f93ea5c6a01896f",
       "tables": 6,
       "insert_statements": 2,
       "db_hint": "amz_user",

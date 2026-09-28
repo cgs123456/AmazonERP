@@ -237,7 +237,9 @@ def build(root: str) -> dict:
             alter['path'] = rel(root, alter.pop('file'))
             alters.append(alter)
         stats['db_source'] = db_source
-        stats['path'] = rel(root, path)
+        # Keep the payload machine-independent: drop the absolute path the parser
+        # records and expose only the repository-relative one (Phase 0 rule).
+        stats['path'] = rel(root, stats.pop('file', path))
         stats['dynamic_ddl'] = sum(1 for issue in file_issues if issue['kind'] == 'dynamic-ddl')
         source_stats.append(stats)
         for issue in file_issues:
