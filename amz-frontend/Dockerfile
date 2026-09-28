@@ -26,8 +26,17 @@ RUN npm run build
 
 # 1.27-alpine 指向的 Alpine 包已过期：Grype 扫出 103 个 HIGH/CRITICAL
 # （openssl 3.3.3 / curl 8.12.1 / libxml2 2.13.4 等，Alpine 仓库均已有修复版本）。
-# 升到 1.30.5-alpine 后同一 DB 复扫降到 4 个，其中 3 个（tiff/zlib）上游暂无修复版本。
+# 升到 1.30.5-alpine 后同一 DB 复扫降到 4 个：tiff x2 / zlib / libexpat。
+# 再删掉 image-filter 动态模块后降到 1 个（zlib 1.3.2-r0，Alpine 暂无修复版本），
+# 见下面的 apk del：tiff <- libgd <- nginx-module-image-filter，
+# libexpat <- fontconfig <- libgd，这两级依赖都只由该模块引入。
 FROM nginx:1.30.5-alpine
+
+# 能删的依据：本镜像的 nginx.conf 里没有任何 load_module，
+# /usr/lib/nginx/modules/*.so 只是躺在磁盘上、不会被加载，所以 image-filter 对静态资源
+# 服务和 /api、/ws 反代都不起作用。nginx -t 写在同一条 RUN 里，一旦将来有人真的
+# load_module 了这个模块，构建会立刻失败，而不是让裁剪悄悄失效。
+RUN apk del nginx-module-image-filter libgd tiff && nginx -t
 
 ARG VERSION=dev
 ARG VCS_REF=unknown
