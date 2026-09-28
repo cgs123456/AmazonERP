@@ -57,6 +57,34 @@ class TestReleaseWorkflow(unittest.TestCase):
         for asset in ["manifest", "sbom", "checksums"]:
             self.assertIn(asset, self.raw.lower())
 
+    # --- cross-artifact contracts (added after the first real release dry run) ---
+    # Presence-only checks above let a workflow ship that could never run: the
+    # manifest step called a CLI shape that does not exist and every image
+    # reference disagreed with docker-bake.hcl. These tests bind the workflow to
+    # the real CLI signature and to the real bake image names/tags.
+
+    def test_manifest_invocation_matches_cli(self):
+        self.assertIn("release_manifest.py build", self.raw)
+        for arg in ["--root", "--commit", "--image-ref", "--image-digest", "--output"]:
+            self.assertIn(arg, self.raw, f"manifest step missing {arg}")
+        self.assertNotRegex(self.raw, r"release_manifest\.py\s+--version")
+
+    def test_image_name_matches_bake_targets(self):
+        # docker-bake.hcl publishes ghcr.io/<owner>/amazonerp-gateway:<TAG>
+        self.assertIn("amazonerp-gateway", self.raw)
+        self.assertNotIn("amz-gateway", self.raw)
+
+    def test_bake_tag_matches_release_version(self):
+        # TAG defaults to "dev" in docker-bake.hcl; the workflow must override it.
+        self.assertRegex(
+            self.raw,
+            r"(?m)^\s*TAG:\s*\$\{\{\s*needs\.quality-gate\.outputs\.version",
+        )
+
+    def test_workflow_dispatch_builds_without_pushing(self):
+        # The advertised dry_run dispatch must not push to the registry.
+        self.assertRegex(self.raw, r"push:\s*\$\{\{\s*github\.event_name == 'push'")
+
 
 if __name__ == "__main__":
     unittest.main()

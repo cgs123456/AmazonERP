@@ -16,6 +16,10 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
+  # Must match the target published by docker-bake.hcl
+  # (`${REGISTRY}/amazonerp-gateway:${TAG}`), and the tag below must match the
+  # TAG variable the bake step exports.
+  IMAGE_NAME: amazonerp-gateway
 
 jobs:
   quality-gate:
@@ -34,7 +38,7 @@ jobs:
           java-version: "17"
       - uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -46,9 +50,16 @@ jobs:
         run: mvn -B -ntp test -fae
       - name: Frontend Build
         run: cd amz-frontend && npm ci && npm run build
+      - name: Release tool tests
+        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill -v
       - name: Extract version
         id: meta
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dryrun-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
 
   release:
     needs: quality-gate
@@ -57,58 +68,74 @@ jobs:
       contents: write
       packages: write
       id-token: write
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    # Tag pushes publish; workflow_dispatch is a build-only dry run.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
+        if: github.event_name == 'push'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake push images
+      - name: Bake images
         uses: docker/bake-action@v5
+        env:
+          # docker-bake.hcl defaults TAG to "dev"; override it so the pushed
+          # tag is the release version, not the placeholder.
+          TAG: ${{ needs.quality-gate.outputs.version }}
+          GIT_SHA: ${{ github.sha }}
         with:
           files: docker-bake.hcl
-          push: true
-          set: |
-            *.args.VERSION=${{ needs.quality-gate.outputs.version }}
-            *.output=type=registry
+          push: ${{ github.event_name == 'push' }}
           provenance: false
-      - name: Extract bake metadata digests
+      - name: Extract bake metadata digest
         id: bake-metadata
+        if: github.event_name == 'push'
         run: |
-          BAKE_OUTPUT=$(docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway:${{ github.ref_name }}" --format '{{json .Manifest.Digest}}')
-          echo "digest=${BAKE_OUTPUT}" >> "$GITHUB_OUTPUT"
+          DIGEST=$(docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ needs.quality-gate.outputs.version }}" --format '{{json .Manifest.Digest}}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
       - uses: anchore/sbom-action@v0
+        if: github.event_name == 'push'
         with:
-          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway:${{ github.ref_name }}
+          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ needs.quality-gate.outputs.version }}
           format: spdx-json
           artifact-name: sbom-gateway.spdx.json
       - uses: anchore/scan-action@v4
         id: scan
+        if: github.event_name == 'push'
         with:
-          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway:${{ github.ref_name }}
+          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ needs.quality-gate.outputs.version }}
           fail-build: true
           severity-cutoff: high
           output-format: sarif
       - uses: sigstore/cosign-installer@v3
+        if: github.event_name == 'push'
       - name: Cosign sign image digest
-        run: cosign sign --yes "${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway@${{ steps.bake-metadata.outputs.digest }}"
+        if: github.event_name == 'push'
+        run: cosign sign --yes "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@${{ steps.bake-metadata.outputs.digest }}"
       - name: Generate release manifest
+        if: github.event_name == 'push'
         run: |
-          python tools/release/release_manifest.py \
+          python tools/release/release_manifest.py build \
+            --root . \
+            --commit "${{ github.sha }}" \
             --version "${{ needs.quality-gate.outputs.version }}" \
-            --image "${{ env.REGISTRY }}/${{ github.repository_owner }}/amz-gateway" \
-            --digest "${{ steps.bake-metadata.outputs.digest }}" \
+            --image-ref "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}" \
+            --image-digest "${{ steps.bake-metadata.outputs.digest }}" \
             --output ./release-manifest.json
+      - name: Verify release manifest
+        if: github.event_name == 'push'
+        run: python tools/release/release_manifest.py verify --manifest ./release-manifest.json --root .
       - name: Checksums
+        if: github.event_name == 'push'
         run: |
           sha256sum release-manifest.json sbom-gateway.spdx.json > checksums.sha256
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
         with:
           name: release-assets
           path: |
@@ -116,6 +143,7 @@ jobs:
             sbom-gateway.spdx.json
             checksums.sha256
       - name: Create GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
@@ -123,4 +151,3 @@ jobs:
             release-manifest.json
             sbom-gateway.spdx.json
             checksums.sha256
-
