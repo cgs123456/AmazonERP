@@ -100,3 +100,28 @@ tag、CI URL、镜像 digest 和清单必须在同一条发布记录中互相可
 ## 回滚
 
 回滚时按发布记录中的上一版本 commit、镜像 digest 和清单重新执行同一套准入检查，不要使用移动 tag。Flyway 迁移默认前滚；清单只记录迁移集合，不会自动回退数据库。若必须恢复数据库，应按数据库故障恢复流程执行，并保留失败版本清单和审计记录。
+
+## 多服务 OCI 构建元数据
+
+`tools/release/services.json` 是 gateway、15 个 Java 微服务端口与模块路径的静态清单；`docker-bake.hcl` 为它们和 frontend 定义 17 个 target。这里的“可表达”只证明构建配方完整，不证明镜像已经构建、推送、扫描或部署。
+
+解析并检查 Bake 配方：
+
+```powershell
+$env:REGISTRY = 'ghcr.io/<owner>'
+$env:TAG = '<semver>'
+$env:GIT_SHA = (git rev-parse HEAD).Trim()
+$env:BUILD_DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+docker buildx bake --file docker-bake.hcl --print
+```
+
+正式构建必须使用不可变 `TAG`、40 位 `GIT_SHA` 和镜像 digest，禁止以 `latest` 或分支名部署：
+
+```powershell
+docker buildx bake --file docker-bake.hcl --push
+docker buildx imagetools inspect "$env:REGISTRY/amazonerp-spapi:$env:TAG" --format '{{json .Manifest.Digest}}'
+```
+
+所选 registry 必须允许 `linux/amd64` 与 `linux/arm64` 清单。frontend 镜像使用 `amz-frontend/Dockerfile`，在容器内提供 SPA history fallback，并把 `/api/` 转发到 `amz-gateway:10010`、把 `/ws/` 转发到 `amz-service-message:8888`。
+
+发布记录需要为 17 个 target 分别登记实际 digest；仅让 `docker buildx bake --file docker-bake.hcl --print` 成功不能替代构建、SBOM、漏洞扫描、签名和运行验证。

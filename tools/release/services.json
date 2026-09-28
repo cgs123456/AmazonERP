@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    {
+      "name": "ad",
+      "module": "amz-service/amz-service-ad",
+      "port": 8097,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "ad"
+    },
+    {
+      "name": "ai",
+      "module": "amz-service/amz-service-ai",
+      "port": 8091,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "ai"
+    },
+    {
+      "name": "customer",
+      "module": "amz-service/amz-service-customer",
+      "port": 8099,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "customer"
+    },
+    {
+      "name": "finance",
+      "module": "amz-service/amz-service-finance",
+      "port": 8103,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "finance"
+    },
+    {
+      "name": "gateway",
+      "module": "amz-gateway",
+      "port": 10010,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "gateway"
+    },
+    {
+      "name": "logistics",
+      "module": "amz-service/amz-service-logistics",
+      "port": 8100,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "logistics"
+    },
+    {
+      "name": "message",
+      "module": "amz-service/amz-service-message",
+      "port": 8889,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "message"
+    },
+    {
+      "name": "multiplatform",
+      "module": "amz-service/amz-service-multiplatform",
+      "port": 8104,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "multiplatform"
+    },
+    {
+      "name": "ops",
+      "module": "amz-service/amz-service-ops",
+      "port": 8101,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "ops"
+    },
+    {
+      "name": "order",
+      "module": "amz-service/amz-service-order",
+      "port": 8105,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "order"
+    },
+    {
+      "name": "procurement",
+      "module": "amz-service/amz-service-procurement",
+      "port": 8098,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "procurement"
+    },
+    {
+      "name": "product",
+      "module": "amz-service/amz-service-product",
+      "port": 8095,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "product"
+    },
+    {
+      "name": "report",
+      "module": "amz-service/amz-service-report",
+      "port": 8102,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "report"
+    },
+    {
+      "name": "search",
+      "module": "amz-service/amz-service-search",
+      "port": 8090,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "search"
+    },
+    {
+      "name": "spapi",
+      "module": "amz-service/amz-service-spapi",
+      "port": 8096,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "spapi"
+    },
+    {
+      "name": "user",
+      "module": "amz-service/amz-service-user",
+      "port": 8080,
+      "healthPath": "/actuator/health",
+      "imageSuffix": "user"
+    }
+  ]
+}

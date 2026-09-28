@@ -61,9 +61,16 @@ RUN tar -xzf /tmp/skywalking-agent.tgz -C / && rm /tmp/skywalking-agent.tgz
 # openjdk 官方镜像已下架，改用 Eclipse Temurin（Adoptium 官方维护）
 FROM eclipse-temurin:17-jre
 
-LABEL org.opencontainers.image.title="AmazonERP"
-LABEL org.opencontainers.image.description="Amazon ERP 微服务跨境电商管理平台"
-LABEL org.opencontainers.image.source="https://github.com/cgs123456/AmazonERP"
+ARG VERSION=dev
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+
+LABEL org.opencontainers.image.title="AmazonERP" \
+      org.opencontainers.image.description="Amazon ERP 微服务跨境电商管理平台" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.source="https://github.com/cgs123456/AmazonERP"
 
 # 安装 curl 供 HEALTHCHECK 使用（--no-install-recommends 避免冗余包，随后清理 apt 缓存减小镜像体积）
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
