@@ -43,9 +43,10 @@ class ReleaseGovernanceContractTest {
 
         List<String> releaseToolRuns = runsForStep(jobs, "hygiene", "Release tool tests");
         String expectedTests = "python -m unittest tools.release.test_repository_hygiene "
-                + "tools.release.test_release_manifest tools.release.test_services_manifest -v";
+                + "tools.release.test_release_manifest tools.release.test_services_manifest "
+                + "tools.release.test_release_workflow tools.release.test_rollback_drill -v";
         assertTrue(releaseToolRuns.contains(expectedTests),
-                "CI must run all three Phase 0 release tool test suites");
+                "CI must run all five Phase 0 release tool test suites");
 
         List<String> manifestRuns = runsForStep(jobs, "release-manifest", "Build deterministic manifest");
         assertFalse(manifestRuns.isEmpty(), "CI must build a deterministic release manifest");
