@@ -84,6 +84,10 @@ jobs:
       - name: Bake images
         uses: docker/bake-action@v5
         env:
+          # docker-bake.hcl variables are overridden by same-named environment
+          # variables, so the workflow-level REGISTRY=ghcr.io would silently
+          # strip the owner namespace and make every push fail with 400.
+          REGISTRY: ${{ env.REGISTRY }}/${{ github.repository_owner }}
           # docker-bake.hcl defaults TAG to "dev"; override it so the pushed
           # tag is the release version, not the placeholder.
           TAG: ${{ needs.quality-gate.outputs.version }}

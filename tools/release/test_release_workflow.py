@@ -85,6 +85,15 @@ class TestReleaseWorkflow(unittest.TestCase):
         # The advertised dry_run dispatch must not push to the registry.
         self.assertRegex(self.raw, r"push:\s*\$\{\{\s*github\.event_name == 'push'")
 
+    def test_bake_registry_includes_owner(self):
+        # The workflow-level env REGISTRY=ghcr.io overrides the identically named
+        # docker-bake.hcl variable, so the bake step must re-add the owner or
+        # every push is rejected with 400 (ghcr.io/amazonerp-* has no namespace).
+        self.assertRegex(
+            self.raw,
+            r"(?m)^\s*REGISTRY:\s*\$\{\{\s*env\.REGISTRY\s*\}\}/\$\{\{\s*github\.repository_owner\s*\}\}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
