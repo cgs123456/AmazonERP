@@ -38,7 +38,10 @@ variable "BUILD_DATE" {
 target "common" {
   context   = "."
   dockerfile = "Dockerfile"
-  platforms = ["linux/amd64", "linux/arm64"]
+  # amd64-only for now: each target runs a full in-container Maven build, and
+  # arm64 under QEMU made the 17-target release exceed practical runner limits.
+  # Re-enable linux/arm64 after moving the jar build out of the image.
+  platforms = ["linux/amd64"]
   labels = {
     "org.opencontainers.image.source"   = "https://github.com/cgs123456/AmazonERP"
     "org.opencontainers.image.version"  = "${TAG}"
