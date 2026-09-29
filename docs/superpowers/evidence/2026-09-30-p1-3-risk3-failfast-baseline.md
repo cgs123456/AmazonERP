@@ -5,7 +5,8 @@
 > （fail-fast），不再出现「先 baseline@v1、再重放 V2..Vn 撞 Duplicate key、留下半迁移库 + 一条失败 history 行」。
 > 生产空库路径**不受影响**（14/14 实测照常执行 V1..Vn）。
 > 本轮共改 22 个文件；契约测试 8/8 绿、两个 Flyway IT 双绿、`AdMigrationMySqlIT` 绿、spapi 全模块 622 测试绿。
-> **风险 #1（ad/V7 迁移内删+改写数据）、#2（order/V4 不可重入 DROP INDEX）、#4（init-sql-legacy 31 个脚本）仍 OPEN，等决策。**
+> **风险 #1（ad/V7 迁移内删+改写数据）、#2（order/V4 不可重入 DROP INDEX）仍 OPEN，等决策。**
+> **风险 #4（init-sql-legacy）已于 2026-09-30 闭环：实测 9/31 脚本在 MySQL 8.0.46 上不可执行、确认不在初始化路径、已有门禁 + 新增冻结门禁，文件保留未删 —— 见 `2026-09-30-p1-3-risk4-init-sql-legacy.md`。**
 
 ## 1. 为什么必须改：原注释与事实相反
 
@@ -94,7 +95,7 @@ naive baseline@1 在 ad / order / spapi 三模块必炸，原始报错已留存�
 |----|------|------|
 | **#1** | `amz-service-ad` V7 在迁移内做删除 + 改写数据，无备份 / 无 preflight | 上线前必须备份 + preflight 校验；本轮未动 |
 | **#2** | `amz-service-order` V4 是全仓唯一不带 `IF EXISTS` 的 `DROP INDEX`，不可重入 | 若要修，必须**新增 V6**，不得改已发布的 V4（会破坏 checksum） |
-| **#4** | `docker/init-sql-legacy/` 31 个脚本含 MySQL 8 不支持的语法，且不在初始化路径 | 建议删除或移出，并加门禁防止回潮 |
+| **#4** | `docker/init-sql-legacy/` 31 个脚本：实测 **9/31** 在 MySQL 8.0.46 上不可执行，不在初始化路径 | **已闭环**：保留不删（删会丢 17 条 seed 语句），已有门禁 + 新增 `LegacyInitSqlArchiveContractTest`。见 `2026-09-30-p1-3-risk4-init-sql-legacy.md` |
 | 治理 | `master` 分支保护 API 仍 404；`production` environment 仍单用户自审 | 需用户决策，不在本轮范围 |
 
 ## 6. 本轮顺带发现、未修的数字不一致（独立缺口）
