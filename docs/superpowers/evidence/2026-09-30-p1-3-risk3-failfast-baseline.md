@@ -8,7 +8,7 @@
 > **风险 #1（ad/V7 迁移内删+改写数据）仍 OPEN，但已交付可执行预检**：`tools/db-migration/ad_v7_preflight.py`
 > 只读、命中 STOP 即退出非 0；单测 15/15、真实 MySQL 8.0.46 上 rc=0/2/1 三类退出码均实测兑现。
 > **它不替代备份、维护窗、审批与恢复演练**（Runbook §4/§5），因此 #1 仍未闭环 —— 见
-> `2026-09-30-p1-3-risk1-ad-v7-preflight.md`。风险 #2（order/V4 不可重入 DROP INDEX）仍 OPEN，等决策。
+> `2026-09-30-p1-3-risk1-ad-v7-preflight.md`。风险 #2（order/V4 不可重入 DROP INDEX）已决策处置：不改 V4、不新增 V6，改为修复手册 + 契约测试冻结，实测证据见 `2026-09-30-p1-3-risk2-order-v4-drop-index.md`（大表 ALTER 耗时未测，独立缺口）。
 > **风险 #4（init-sql-legacy）已于 2026-09-30 闭环：实测 9/31 脚本在 MySQL 8.0.46 上不可执行、确认不在初始化路径、已有门禁 + 新增冻结门禁，文件保留未删 —— 见 `2026-09-30-p1-3-risk4-init-sql-legacy.md`。**
 
 ## 1. 为什么必须改：原注释与事实相反
@@ -97,7 +97,7 @@ naive baseline@1 在 ad / order / spapi 三模块必炸，原始报错已留存�
 | 项 | 内容 | 建议 |
 |----|------|------|
 | **#1** | `amz-service-ad` V7 在迁移内做删除 + 改写数据 | **部分**：已交付可执行预检 `tools/db-migration/ad_v7_preflight.py`（只读，STOP 即 rc=2；15/15 单测 + MySQL 8.0.46 上 rc=0/2/1 实测）。**仍缺**：生产/预发真实预检、§4 备份与恢复验证、维护窗、审批签字、接入 CI —— 见 `2026-09-30-p1-3-risk1-ad-v7-preflight.md` |
-| **#2** | `amz-service-order` V4 是全仓唯一不带 `IF EXISTS` 的 `DROP INDEX`，不可重入 | 若要修，必须**新增 V6**，不得改已发布的 V4（会破坏 checksum） |
+| **#2** | `amz-service-order` V4 是不可重入的 `DROP INDEX`（全仓唯一） | **已决策并落地处置**：不改 V4（改则已迁移库 checksum 校验失败）、不新增 V6（排在 V4 之后救不了 V4，且 MySQL 8 无 `DROP INDEX IF EXISTS`）。改为 `docs/superpowers/runbooks/order-v4-drop-index-repair.md`（1091/1061 处置 + 手工补 history 用真实 checksum `-1483237947`）+ 契约测试 `OrderV4IndexMigrationContractTest` 冻结。实测：正常 rc=0、重跑 1091、半迁移 1061 且原子 DDL 回滚。**仍缺**：大表 ALTER 耗时/锁未测 |
 | **#4** | `docker/init-sql-legacy/` 31 个脚本：实测 **9/31** 在 MySQL 8.0.46 上不可执行，不在初始化路径 | **已闭环**：保留不删（删会丢 17 条 seed 语句），已有门禁 + 新增 `LegacyInitSqlArchiveContractTest`。见 `2026-09-30-p1-3-risk4-init-sql-legacy.md` |
 | 治理 | `master` 分支保护 API 仍 404；`production` environment 仍单用户自审 | 需用户决策，不在本轮范围 |
 
