@@ -68,9 +68,11 @@
         <aws.sdk.version>2.55.6</aws.sdk.version>
         <httpclient5.version>5.6.4</httpclient5.version>
         <httpcore5.version>5.4.3</httpcore5.version>
-        <!-- CVE 覆盖：Spring Boot 3.3.x 的 BOM 仍管理 Jackson 2.17 / 无 BouncyCastle 条目，
-             Grype 的修复线分别是 2.18.8 与 1.85。这两个属性名与 spring-boot-dependencies
-             使用的属性一致，可直接顶掉父 BOM 的取值。 -->
+        <!-- Jackson 2.x：Spring Boot 3.5.16 的 BOM 当前解析为 2.21.4，
+             落在 GHSA-q4xh-88c3-wmh7（>=2.19.0,<2.21.6）区间内。
+             覆盖 jackson-bom.version，确保 Jackson 各模块统一升级到修复版。 -->
+        <jackson-bom.version>2.21.6</jackson-bom.version>
+        <!-- BouncyCastle 不在 spring-boot-dependencies 中管理，需显式钉住；1.85 为 Grype 修复线。 -->
         <bouncycastle.version>1.85</bouncycastle.version>
         <!-- Seata 2.0.0 传递引入 com.alibaba:fastjson:1.2.83（Critical RCE，1.x 无修复版本）。
              2.0.65 是官方 v1 兼容包（同 groupId/artifactId，包名仍为 com.alibaba.fastjson），
