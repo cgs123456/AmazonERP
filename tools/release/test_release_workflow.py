@@ -110,10 +110,15 @@ class TestReleaseWorkflow(unittest.TestCase):
     def test_release_assets(self):
         for asset in ["manifest", "sbom", "checksums"]:
             self.assertIn(asset, self.raw.lower())
+
     def test_release_assets_use_generated_sbom_directory(self):
         self.assertNotIn('sbom-gateway.spdx.json', self.raw)
-        self.assertIn('sha256sum release-manifest.json sboms/*.spdx.json', self.raw)
-        self.assertGreaterEqual(self.raw.count('sboms/*.spdx.json'), 3)
+        self.assertIn('sboms/${name}.spdx.json', self.raw)
+        self.assertIn('cp sboms/*.spdx.json release-assets/', self.raw)
+        self.assertIn('cd release-assets', self.raw)
+        self.assertIn('sha256sum release-manifest.json *.spdx.json > checksums.sha256', self.raw)
+        self.assertNotIn('sha256sum release-manifest.json sboms/*.spdx.json', self.raw)
+        self.assertGreaterEqual(self.raw.count('release-assets/*'), 2)
 
 
     # --- cross-artifact contracts (added after the first real release dry run) ---
