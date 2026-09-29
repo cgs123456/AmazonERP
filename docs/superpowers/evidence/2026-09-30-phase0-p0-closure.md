@@ -208,6 +208,17 @@ GET https://ghcr.io/v2/cgs123456/<svc>/tags/list   (Authorization: Bearer <anony
 
 > 残留风险已消除至此：GHCR 上现存镜像全部可追溯到 `v0.1.2` / `v0.1.3` 的 keyless 签名。
 > 代价是 v0.1.0 / v0.1.1 的候选镜像不再可直接拉取（需从 `4d644da` / `c87a847` 重建）。
+
+### 收尾：新增的 cleanup workflow 没有破坏既有门禁（远端证据）
+
+本轮为解阻塞新增了 `.github/workflows/ghcr-cleanup.yml`，属于对 CI 的改动，必须回验门禁而不是默认它无害：
+
+- 本地：`tools/release/repository_hygiene.py --root .` → `findings: 0`；
+  `python -m unittest` 7 个模块 → **88 tests OK**。
+- 远端 run `36613010392`（`master` @ `b7cbf7e`）：
+  `checkstyle` / `checkstyle-full` / `test` / `hygiene` / `docker` / `frontend` /
+  `release-manifest` / `mysql-import` / `synthetic-data` **全部 success**。
+
 ## P0-5 Nacos 配置中心接入 — 架构级，已排期，本次不动
 
 - 范围：需引入 Nacos config starter 并调整 32 个 `bootstrap.yml`。
