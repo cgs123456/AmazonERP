@@ -173,20 +173,26 @@ const loadAll = async () => {
   const tasks = [
     {
       fn: () => getKpiData(getCurrentShopId()),
-      onSuccess: (data: KpiItem[]) => { kpiData.value = data },
+      // 形状防御：后端返回非数组时（异常分支或字段变更）不能把渲染打进 TypeError，
+      // 否则 maxSales / v-for 抛错会让骨架屏永不消失、页面等于白屏。这里退到 mock。
+      onSuccess: (data: KpiItem[]) => { kpiData.value = Array.isArray(data) ? data : [...mockKpiData] },
       onFallback: () => { kpiData.value = [...mockKpiData] },
       tag: 'getKpiData'
     },
     {
       // 趋势/分布支持按店铺过滤；未选中店铺时传 undefined（axios 自动省略），后端返回全局聚合
       fn: () => getSalesTrend(7, getCurrentShopId() || undefined),
-      onSuccess: (data: SalesTrendItem[]) => { salesTrend.value = data },
+      // 形状防御：后端返回非数组时（异常分支或字段变更）不能把渲染打进 TypeError，
+      // 否则 maxSales / v-for 抛错会让骨架屏永不消失、页面等于白屏。这里退到 mock。
+      onSuccess: (data: SalesTrendItem[]) => { salesTrend.value = Array.isArray(data) ? data : [...mockSalesTrend] },
       onFallback: () => { salesTrend.value = [...mockSalesTrend] },
       tag: 'getSalesTrend'
     },
     {
       fn: () => getShopDistribution(getCurrentShopId() || undefined),
-      onSuccess: (data: ShopDistItem[]) => { shopDist.value = data },
+      // 形状防御：后端返回非数组时（异常分支或字段变更）不能把渲染打进 TypeError，
+      // 否则 maxSales / v-for 抛错会让骨架屏永不消失、页面等于白屏。这里退到 mock。
+      onSuccess: (data: ShopDistItem[]) => { shopDist.value = Array.isArray(data) ? data : [...mockShopDist] },
       onFallback: () => { shopDist.value = [...mockShopDist] },
       tag: 'getShopDistribution'
     }

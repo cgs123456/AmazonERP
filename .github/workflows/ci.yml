@@ -176,6 +176,15 @@ jobs:
       - name: Production build
         working-directory: amz-frontend
         run: npm run build
+      # E2E 是 hermetic 的：/api/* 全部由 amz-frontend/e2e/support/api-stub.ts 打桩，
+      # 不需要后端服务。此前 test:e2e 从未进过 CI，套件腐烂无人发现（实测基线
+      # 23 passed / 16 failed）。这里补上，让腐烂能被远端拦住。
+      - name: Install Playwright browsers
+        working-directory: amz-frontend
+        run: npx playwright install --with-deps chromium
+      - name: E2E tests (hermetic /api stubs)
+        working-directory: amz-frontend
+        run: npm run test:e2e
 
   # Job 2.6: 模拟数据工具链（DDL 漂移门禁 / 确定性 / 清理产物）
   synthetic-data:

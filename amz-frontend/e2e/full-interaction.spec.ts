@@ -1,8 +1,8 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './support/test'
 import { createHmac } from 'crypto'
 
 /**
- * 前端全交互 E2E（连接本地真实后端栈）
+ * 前端全交互 E2E（hermetic：/api/* 全部由 e2e/support/api-stub.ts 打桩，不依赖真实后端）
  * 覆盖：侧边栏跳转 / 分页按钮 / Tab 切换 / 弹窗开关 / 搜索过滤 / Agent 对话 / 登录弹窗
  */
 
@@ -59,9 +59,16 @@ test.describe('侧边栏导航跳转', () => {
 test.describe('Dashboard 交互', () => {
   test('KPI 卡片与图表区域渲染', async ({ page }) => {
     await page.goto('/')
-    await page.waitForLoadState('networkidle').catch(() => {})
-    await expect(page.locator('.kpi-grid')).toBeVisible({ timeout: 15000 })
-    await expect(page.locator('.chart-card').first()).toBeVisible()
+    // 骨架屏里也有 .kpi-grid / .chart-card，只断言它们存在会在「数据永远加载不出来」
+    // 的情况下仍然通过。所以先断言骨架屏消失，再断言真实 KPI 数值来自打桩响应。
+    await expect(page.locator('.skeleton-zone')).toHaveCount(0, { timeout: 15000 })
+    await expect(page.locator('.kpi-card')).toHaveCount(4)
+    await expect(page.locator('.kpi-grid')).toContainText('$12345.67')
+    await expect(page.locator('.kpi-grid')).toContainText('23')
+    await expect(page.locator('.kpi-grid')).toContainText('12.5%')
+    await expect(page.locator('.kpi-grid')).toContainText('$536.77')
+    // 趋势图条数来自 /report/dashboard/sales-trend 的 7 天数据
+    await expect(page.locator('.bar-chart .bar-item')).toHaveCount(7)
   })
 
   test('Agent 快捷入口点击打开聊天浮窗并可关闭', async ({ page }) => {
@@ -79,10 +86,10 @@ test.describe('Dashboard 交互', () => {
     await page.locator('.agent-card').click()
     await page.locator('.chat-input').fill('最近7天销量如何')
     await page.locator('.send-btn').click()
-    // 后端 AI 使用占位 key 会失败 → dev 模式降级 mock 回复；断言出现 assistant 回复
-    await page.waitForTimeout(3000)
+    // 打桩按 SSE 帧协议返回 final 事件；断言回复内容来自该事件，而不是「非空即可」
     const replies = page.locator('.message.assistant .message-content')
-    await expect(replies.last()).not.toHaveText('')
+    await expect(replies.last()).toContainText('23 笔订单', { timeout: 15000 })
+    await expect(replies.last()).toContainText('$12,345.67')
   })
 })
 

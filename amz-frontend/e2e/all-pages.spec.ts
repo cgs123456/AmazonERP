@@ -14,7 +14,7 @@
  * 10. 路由守卫（未登录 → / 然后跳转登录）
  * 11. 404 页面
  */
-import { test, expect } from '@playwright/test'
+import { test, expect } from './support/test'
 
 // 全局前置：为 fixture page 注入测试登录态（路由守卫只认存在性 + 未过期）。
 // 守卫测试（无 token / 过期 token）使用 browser.newContext() 自建干净上下文，
