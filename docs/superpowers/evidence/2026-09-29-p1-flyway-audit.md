@@ -31,12 +31,13 @@
 ## 3. 测试环境与边界
 
 - 验证分支：`codex/p1-db-migration-audit`。
-- 验证基线：`136cec0`，加本次新增的 `AllModulesUpgradeFlywayMySqlIT.java`；验证时新增测试尚未提交。
+- 验证基线：`136cec0`；功能提交为 `c7a860f`。初次证据采集时新增测试尚未提交，最终集成前已在 `c7a860f` 上复跑整仓 Maven 测试。
 - 数据库：`mysql:8.0`。
-- Maven：`maven:3.9-eclipse-temurin-17`。
+- Maven：`maven:3.9-eclipse-temurin-17`；最终复跑挂载宿主机 `C:\Users\Administrator\.m2`，并使用离线模式（`-o`）。
 - JDBC 主机：容器网络中的 MySQL 服务名；未使用宿主机端口转发地址。
 - 测试库后缀：空库 `_fwit`，baseline `_bsit`，升级 `_upit`；测试自身强制校验后缀，避免触碰业务库。
 - 仅验证 MySQL 8.0；未验证 MySQL 5.7、MariaDB 或其他数据库。
+- 环境偏差：首次使用容器默认 `/root/.m2` 运行 `mvn -B -ntp -o test -fae` 时，依赖下载因 `Remote host terminated the handshake` 失败；改用宿主机 Maven 缓存并离线后成功。这是环境/网络差异，不代表代码差异。
 
 ## 4. 静态审计
 
@@ -211,10 +212,12 @@ ad V2/V7 的删除和全表更新必须按 `docs/superpowers/runbooks/ad-busines
 
 ## 7. 复现说明
 
-整仓 Maven 测试在容器内执行，环境变量指向 MySQL 8.0 测试实例：
+最终集成前在 `c7a860f` 上复跑整仓 Maven 测试，环境变量指向 MySQL 8.0 测试实例。实际使用的命令形态如下（测试密码以占位符替代）：
 
 ```powershell
-docker exec -w /workspace `
+docker run --rm --name amazonerp-p1-maven --network amazonerp-p1-net `
+  -v '<worktree>:/workspace' `
+  -v 'C:\Users\Administrator\.m2:/root/.m2' -w /workspace `
   -e FLYWAY_ALL_IT_URL='jdbc:mysql://<mysql-host>:3306/<database>?allowMultiQueries=true&useSSL=false&allowPublicKeyRetrieval=true' `
   -e FLYWAY_ALL_IT_USER=root `
   -e FLYWAY_ALL_IT_PASSWORD='<test-password>' `
@@ -222,7 +225,9 @@ docker exec -w /workspace `
   -e AD_MYSQL_IT_USER=root `
   -e AD_MYSQL_IT_PASSWORD='<test-password>' `
   -e AD_MYSQL_IT_RESET=true `
-  amazonerp-p1-maven mvn -B -ntp test -fae
+  maven:3.9-eclipse-temurin-17 mvn -B -ntp -o test -fae
 ```
+
+首次未挂载宿主机 Maven 缓存时，依赖下载失败于 `spring-boot-starter:3.5.16` 的 `Remote host terminated the handshake`；上述离线复跑才得到 `BUILD SUCCESS`。因此本文不把首次失败误报为代码失败，也不把联网下载缺失误报为已验证。
 
 静态审计使用一次性 Python 扫描器：剥离注释并保留字符串，按顶层分号切分，按首关键字分类；同时独立匹配 `DROP INDEX` 子句和数据库集合。本文档不提交扫描器临时脚本。
