@@ -266,10 +266,45 @@ jobs:
           name: mysql-import-report
           path: tools/synthetic-data/out/ci/import-report.json
 
+  # Job 2.8: ad/V7 破坏性迁移预检门禁（退出码契约）
+  # ad_v7_preflight.py 是 V7（UPDATE 规范化 + DELETE 旧重复行 + 加唯一键）之前的唯一
+  # 自动闸门。它一旦腐化——STOP 条件失效、退出码写错——发布流程会在最需要它的时候静默
+  # 放行。单测只覆盖 stub 路径，所以这里在真实 MySQL 8.0 上把三类退出码各跑一遍：
+  # rc=0 放行 / rc=2 命中 STOP / rc=1 脚本错误（fail-closed）。
+  # 脚本用 V1-V6 建一次性库并在结束时 DROP，不执行 V7，不触碰任何生产对象。
+  ad-v7-preflight-gate:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install the mysql client
+        run: sudo apt-get update && sudo apt-get install -y mysql-client
+      - name: Assert the rc=0 / rc=2 / rc=1 contract on real MySQL 8
+        env:
+          MYSQL_PWD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_USER: root
+        run: bash tools/db-migration/run_ad_v7_preflight_gate.sh
+
   # Job 3: 构建 Docker 镜像（仅 master 分支）
   docker:
     if: github.ref == 'refs/heads/master'
-    needs: [ checkstyle, hygiene, release-manifest, test, frontend, synthetic-data, mysql-import ]
+    needs: [ checkstyle, hygiene, release-manifest, test, frontend, synthetic-data, mysql-import, ad-v7-preflight-gate ]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
