@@ -1,0 +1,88 @@
+name: GHCR Cleanup
+
+# Manually dispatched cleanup of orphaned / unsigned GHCR container images.
+# Default is DRY-RUN: it only lists what would be deleted. Deletion requires
+# typing DELETE in the `confirm` input. Signed release tags are blocklisted.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Exact container tag to target, e.g. 0.1.0"
+        required: true
+        default: "0.1.0"
+      confirm:
+        description: "Type DELETE to actually delete. Anything else = dry run."
+        required: true
+        default: "DRY-RUN"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard against signed / released tags
+        env:
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          echo "target tag: $TARGET_TAG"
+          if printf '%s' "$TARGET_TAG" | grep -Eq '^(0\.1\.[2-9]|0\.[2-9]|[1-9])'; then
+            echo "::error::refusing to touch signed/released tag family: $TARGET_TAG"
+            exit 1
+          fi
+
+      - name: Resolve matching package versions
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          : > ids.txt
+          for name in ad ai customer finance frontend gateway logistics message multiplatform ops order procurement product report search spapi user; do
+            pkg="amazonerp-$name"
+            raw=$(gh api --paginate "users/cgs123456/packages/container/$pkg/versions?per_page=100" | jq -s 'add // []')
+            matches=$(echo "$raw" | jq -r --arg t "$TARGET_TAG" \
+              '.[] | select((.metadata.container.tags // []) | index($t)) | "\(.id)"')
+            for id in $matches; do
+              echo "$pkg $id" >> ids.txt
+            done
+          done
+          echo "matched versions: $(wc -l < ids.txt)"
+          cat ids.txt
+
+      - name: Delete (or dry run)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM" != "DELETE" ]; then
+            echo "DRY RUN: confirm='$CONFIRM' != DELETE; nothing deleted"
+            exit 0
+          fi
+          while read -r pkg id; do
+            [ -z "$pkg" ] && continue
+            echo "deleting $pkg version $id"
+            gh api -X DELETE "users/cgs123456/packages/container/$pkg/versions/$id" || echo "failed: $pkg/$id"
+          done < ids.txt
+          echo "DELETE pass complete"
+
+      - name: Post-check tag list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          for name in ad ai customer finance frontend gateway logistics message multiplatform ops order procurement product report search spapi user; do
+            pkg="amazonerp-$name"
+            tags=$(curl -s "https://ghcr.io/token?scope=repository:cgs123456/$pkg:pull&service=ghcr.io" \
+              | jq -r .token \
+              | xargs -I{} curl -s -H "Authorization: Bearer {}" "https://ghcr.io/v2/cgs123456/$pkg/tags/list" \
+              | jq -r '.tags // [] | join(",")')
+            echo "$pkg: $tags"
+          done
