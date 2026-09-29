@@ -53,7 +53,7 @@ target "common" {
 target "gateway" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-gateway:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-gateway:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-gateway"
     PORT      = "10010"
@@ -66,7 +66,7 @@ target "gateway" {
 target "ad" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-ad:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-ad:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-ad"
     PORT      = "8097"
@@ -79,7 +79,7 @@ target "ad" {
 target "ai" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-ai:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-ai:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-ai"
     PORT      = "8091"
@@ -92,7 +92,7 @@ target "ai" {
 target "customer" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-customer:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-customer:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-customer"
     PORT      = "8099"
@@ -105,7 +105,7 @@ target "customer" {
 target "finance" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-finance:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-finance:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-finance"
     PORT      = "8103"
@@ -118,7 +118,7 @@ target "finance" {
 target "logistics" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-logistics:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-logistics:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-logistics"
     PORT      = "8100"
@@ -131,7 +131,7 @@ target "logistics" {
 target "message" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-message:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-message:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-message"
     PORT      = "8889"
@@ -144,7 +144,7 @@ target "message" {
 target "multiplatform" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-multiplatform:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-multiplatform:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-multiplatform"
     PORT      = "8104"
@@ -157,7 +157,7 @@ target "multiplatform" {
 target "ops" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-ops:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-ops:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-ops"
     PORT      = "8101"
@@ -170,7 +170,7 @@ target "ops" {
 target "order" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-order:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-order:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-order"
     PORT      = "8105"
@@ -183,7 +183,7 @@ target "order" {
 target "procurement" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-procurement:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-procurement:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-procurement"
     PORT      = "8098"
@@ -196,7 +196,7 @@ target "procurement" {
 target "product" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-product:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-product:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-product"
     PORT      = "8095"
@@ -209,7 +209,7 @@ target "product" {
 target "report" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-report:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-report:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-report"
     PORT      = "8102"
@@ -222,7 +222,7 @@ target "report" {
 target "search" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-search:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-search:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-search"
     PORT      = "8090"
@@ -235,7 +235,7 @@ target "search" {
 target "spapi" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-spapi:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-spapi:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-spapi"
     PORT      = "8096"
@@ -248,7 +248,7 @@ target "spapi" {
 target "user" {
   inherits   = ["common"]
   dockerfile = "Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-user:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-user:${TAG}-${GIT_SHA}"]
   args = {
     MODULE    = "amz-service/amz-service-user"
     PORT      = "8080"
@@ -261,7 +261,7 @@ target "user" {
 target "frontend" {
   inherits   = ["common"]
   dockerfile = "amz-frontend/Dockerfile"
-  tags       = ["${REGISTRY}/amazonerp-frontend:${TAG}"]
+  tags       = ["${REGISTRY}/amazonerp-frontend:${TAG}-${GIT_SHA}"]
   args = {
     VERSION            = "${TAG}"
     VCS_REF            = "${GIT_SHA}"

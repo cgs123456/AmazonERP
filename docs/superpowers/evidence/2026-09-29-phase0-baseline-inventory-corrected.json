@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-29",
+  "status": "corrected",
+  "supersedes": {
+    "path": "docs/superpowers/evidence/2026-09-28-phase0-baseline-inventory.json",
+    "reason": "Original statusEntryCount, statusSha256, and sidecar SHA-256 were not reproducible from the recovery snapshot; the original file is retained unchanged as a historical defect record.",
+    "originalStatusEntryCount": 631,
+    "originalStatusSha256": "17a449171c5aff132e7c2f38f79c1f71cbb053d838d9375d73886549d74cd4f3",
+    "originalSidecarSha256": "7b460be79ad53fe735291c954ea1ad03359fc1883b9df0b4edbe10bc28cdfac5",
+    "originalActualSha256": "a928fe32bab9c8dbb4384f6a263ce0d6129252fc6d07d43c2e0e8565f6579dc4"
+  },
+  "branch": "codex/api-ready-connectors",
+  "head": "3c8f21ed21c2cc77cbf08d1f12ddd4256265ac25",
+  "headSource": "recovery snapshot HEAD.txt / snapshot-metadata.json",
+  "statusSource": "git-status-porcelain-v2.txt",
+  "statusEntryCount": 652,
+  "statusCounts": {
+    "trackedChanged": 325,
+    "untracked": 327
+  },
+  "statusSha256": "3b829fec6aefd249bdf56faf69ac9ebae57ffb906519e77696b24d87410b7145",
+  "statusSha256Basis": "raw bytes of git-status-porcelain-v2.txt",
+  "statusOutputSha256": "08eb4587f47614f52019a89454cc5069928a2fad6e14a7a0357f22f79ed9aed3",
+  "statusOutputSha256Basis": "LF-joined status lines plus one trailing LF",
+  "recoverySnapshot": "C:\\Users\\Administrator\\Desktop\\AmazonERP-recovery-20260928-092159",
+  "recoveryManifest": "changed-files-sha256.csv",
+  "recoveryManifestBytes": 135349,
+  "recoveryManifestSha256": "bbb2e3a7eb2cfb178c3b4cda7b041c1e0efe0051e665e12d076998d9ae36713f",
+  "recoveryHead": "3c8f21ed21c2cc77cbf08d1f12ddd4256265ac25",
+  "recoverySnapshotFiles": {
+    "HEAD.txt": {
+      "bytes": 42,
+      "sha256": "4656216d11e97962bdf645c5cc7297a754a4a80a9323866fb8842f2b9283c347"
+    },
+    "changed-files-sha256.csv": {
+      "bytes": 135349,
+      "sha256": "bbb2e3a7eb2cfb178c3b4cda7b041c1e0efe0051e665e12d076998d9ae36713f"
+    },
+    "git-diff-index-vs-head.patch": {
+      "bytes": 500139,
+      "sha256": "374102029616500c4419e61eb43823d723c340c315d9e7a143962247183467a2"
+    },
+    "git-diff-numstat.txt": {
+      "bytes": 27071,
+      "sha256": "a9710ca957f86b2e4c624a7072daad7ca45aa8fd760ffd13534271b0b7dbd179"
+    },
+    "git-diff-stat.txt": {
+      "bytes": 20800,
+      "sha256": "16ecd63675464529125e9e759c0a29406302f115d7b0e08ff715e1426482486d"
+    },
+    "git-diff-worktree-vs-head.patch": {
+      "bytes": 3548788,
+      "sha256": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae"
+    },
+    "git-diff-worktree-vs-index.patch": {
+      "bytes": 3064602,
+      "sha256": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334"
+    },
+    "git-status-porcelain-v1.txt": {
+      "bytes": 51178,
+      "sha256": "22cf39f0e12490a62011d57f10df866eba2a820ba7f5d2de376efd02e770f41f"
+    },
+    "git-status-porcelain-v2.txt": {
+      "bytes": 86601,
+      "sha256": "3b829fec6aefd249bdf56faf69ac9ebae57ffb906519e77696b24d87410b7145"
+    },
+    "snapshot-metadata.json": {
+      "bytes": 471,
+      "sha256": "a0a1d86b5d90609c453220015b6e24c8c387ab6c0578347df48920615b700645"
+    }
+  },
+  "splitMap": {
+    "path": "docs/superpowers/evidence/2026-09-28-baseline-split-map.json",
+    "sha256": "b71985b668a078726ffb71f04bc3f35688f375860c71e7200775a70c91bf515e",
+    "entryCount": 652
+  },
+  "generatedCommand": "Generated 2026-09-29 from the external recovery snapshot without modifying the original inventory; see Task 0 in docs/superpowers/plans/2026-09-28-production-hardening-phase0.md for the original generation procedure."
+}

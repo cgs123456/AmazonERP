@@ -38,7 +38,21 @@ COPY pom.xml ./
 COPY amz-common/pom.xml ./amz-common/
 COPY amz-gateway/pom.xml ./amz-gateway/
 COPY amz-service/pom.xml ./amz-service/
-COPY amz-service/*/pom.xml ./amz-service/
+COPY amz-service/amz-service-user/pom.xml ./amz-service/amz-service-user/
+COPY amz-service/amz-service-search/pom.xml ./amz-service/amz-service-search/
+COPY amz-service/amz-service-product/pom.xml ./amz-service/amz-service-product/
+COPY amz-service/amz-service-order/pom.xml ./amz-service/amz-service-order/
+COPY amz-service/amz-service-message/pom.xml ./amz-service/amz-service-message/
+COPY amz-service/amz-service-ai/pom.xml ./amz-service/amz-service-ai/
+COPY amz-service/amz-service-spapi/pom.xml ./amz-service/amz-service-spapi/
+COPY amz-service/amz-service-ad/pom.xml ./amz-service/amz-service-ad/
+COPY amz-service/amz-service-procurement/pom.xml ./amz-service/amz-service-procurement/
+COPY amz-service/amz-service-customer/pom.xml ./amz-service/amz-service-customer/
+COPY amz-service/amz-service-logistics/pom.xml ./amz-service/amz-service-logistics/
+COPY amz-service/amz-service-ops/pom.xml ./amz-service/amz-service-ops/
+COPY amz-service/amz-service-report/pom.xml ./amz-service/amz-service-report/
+COPY amz-service/amz-service-finance/pom.xml ./amz-service/amz-service-finance/
+COPY amz-service/amz-service-multiplatform/pom.xml ./amz-service/amz-service-multiplatform/
 
 # 下载依赖（失败不阻断，下次构建会复用 .m2 缓存）
 RUN mvn -B -q dependency:go-offline -Dmaven.test.skip=true || true

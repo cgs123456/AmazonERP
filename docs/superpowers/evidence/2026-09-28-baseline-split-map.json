@@ -1,0 +1,4581 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": {
+    "recoverySnapshot": "C:\\Users\\Administrator\\Desktop\\AmazonERP-recovery-20260928-092159",
+    "manifest": "changed-files-sha256.csv",
+    "manifestSha256": "bbb2e3a7eb2cfb178c3b4cda7b041c1e0efe0051e665e12d076998d9ae36713f",
+    "statusFile": "git-status-porcelain-v2.txt",
+    "statusSha256": "3b829fec6aefd249bdf56faf69ac9ebae57ffb906519e77696b24d87410b7145",
+    "recoveryHead": "3c8f21ed21c2cc77cbf08d1f12ddd4256265ac25",
+    "entryCount": 652
+  },
+  "groupRule": "Longest-prefix mapping: amz-service/amz-service-<domain>/ -> <domain>; amz-common/ -> common; amz-gateway/ -> gateway; amz-frontend/ -> frontend; tools/synthetic-data/ -> synthetic-data; k8s/ -> deploy/k8s; docs/ -> docs; all other paths -> review-required.",
+  "classificationRule": "temporary (root scratch/round/probe artifacts and SP-API _cp_ files) > docs (.md or docs/) > test (src/test, __tests__, *Test.java, *IT.java, test_*.py, *.spec/test.*) > generated (package-lock.json, DDL_SOURCES.json, schema-snapshot.json, /generated/) > config (.yml/.yaml/.properties/.xml/.toml/.ini/.conf/.example, .gitignore, pom.xml, .github/, k8s/, docker/, docker-compose*) > source (.java/.kt/.ts/.tsx/.vue/.js/.jsx/.sql/.py/.sh/.ps1) > generated (.json/.csv/.txt/.log) > config (fallback).",
+  "secretSuspectCount": 0,
+  "entries": [
+    {
+      "path": ".add_flyway.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "3a4a886f16e92e571b6ba67a48528df6e25a676651a37df6642cf355d0d611bc",
+      "classification": "temporary"
+    },
+    {
+      "path": ".add_linkage_test.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "f4bd03765b2f895354e77bb21a907bad02144113a634f11998e3874c83eb3dd7",
+      "classification": "temporary"
+    },
+    {
+      "path": ".cmp_schema.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d22089a5f3a80fadd8b922928e9034254e7c4c2c0ef00730dcde3f1a339b335e",
+      "classification": "temporary"
+    },
+    {
+      "path": ".cmp_seed.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "0f09078174e61308ddb3c17c2cd89de051a3e71c45a196bfad732226b97ad798",
+      "classification": "temporary"
+    },
+    {
+      "path": ".commitmsg.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "dda88c178995073fcc180cbc12bc8b46053836685a780bc28102f0f1557de44c",
+      "classification": "temporary"
+    },
+    {
+      "path": ".commitmsg71.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "3e8b9d7e09805ef088d91fecaade525efe0a9076ade3458a6a7d63efaa268fa7",
+      "classification": "temporary"
+    },
+    {
+      "path": ".cov.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "367e9865e995e4c0d36771f487f5adeb25dcd0b2a1662311d842021ddb3e05a4",
+      "classification": "temporary"
+    },
+    {
+      "path": ".docs57.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "724756bfc0b1feda45a5b9910d1a8fc7e18383940b2108015de184462750e458",
+      "classification": "temporary"
+    },
+    {
+      "path": ".env.demo.example",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "eebd41285de8f9b7dd8da12b6dc89101f65afe5cdd8624e22c777f48290ec3c0",
+      "classification": "config"
+    },
+    {
+      "path": ".env.example",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "e9d78c3aa63c66a01479757b6b1d12343ac0cc68a27e4e393021b8bb740e81a5",
+      "classification": "config"
+    },
+    {
+      "path": ".fix_comments.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "0545cf3b6ae4b5ffab5ed2d2b49aa5e2074d52fc0ab8ca7d92c29e2f78cbc70a",
+      "classification": "temporary"
+    },
+    {
+      "path": ".fix_doc.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "47520ac72449bde6febe5c0672abe0fa340d19d5648295f18a8a4afc21ce6962",
+      "classification": "temporary"
+    },
+    {
+      "path": ".fix_readme.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "e50f31435299abc778e51c709d7df5752ed791aebf3ec452fc62525265f0d2cf",
+      "classification": "temporary"
+    },
+    {
+      "path": ".gen_test.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "be2d3e0f85eeb1d9c9d74acf83c82910ab20cec7347f365a320f8f17e35bb3df",
+      "classification": "temporary"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "2a3372d427fedbcb33d27d869414c55b373ae3add934633ac09ac4efc04a8bd0",
+      "classification": "config"
+    },
+    {
+      "path": ".gitignore",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "f30eb2882a46f6fcbe2dcdc19ad5d17637a5692b82ed399fa911f47cbafaa17c",
+      "classification": "config"
+    },
+    {
+      "path": ".keys.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "ccebce1c12baf6d69114c21ff0a149062824f164b1b092f0f4e37d02811e1936",
+      "classification": "temporary"
+    },
+    {
+      "path": ".mkmsg.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "2aa9442580adb99adb771606da9dec1782df98131c468ae6f40f11b6b5c5d8b6",
+      "classification": "temporary"
+    },
+    {
+      "path": ".mutate.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "c74ce2a676452e71bb29a477c36f14db11ff781e14830dcced73f53aab4f10df",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_710.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "6bab71efa2ef430a0b5a2e3f57e012a224fc828e98f0b07c288a51efcc53d99b",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_79.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "5281ce1152e9081845e7e3076ca3d99d97f8b53bce4e722bc1b12bbd332ff279",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_aws_httpclient5.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "63b7178d252fcc18bd958b49a96f52cec2c27c02e4c164bff0c2463fec39f431",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_doc70.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "2f6726152a2e998e5955145a2bd0b8a5e6464df6e0a8cd3e068b7213ca340d2b",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_doc70b.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "309e826009ce87e6df0fc75cd76c98a7cdc98775c656eb369ce82ec31e1b6f4c",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_doc70c.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "97703acaebd72497dcc4d507995b71c3b4d6610929e2149719cd9a9fc3c9d5e2",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_k8s_schema.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "8c77445c7387d7fdd0bc1309893eced436821a1c4ff0692ed110d0ace535379b",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_layouts.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "11b899c3bdccd5b14c3e2246a058f6465348c93abb40311460ca23e4437b42d2",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_p058.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "6687ef8c2f7a00d7a0038d357509542f2a7d09f6105fc584fd804f4da425715b",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_p058_meta.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "aa0af4df4acf38e8d9c52f73432c6b53b2beb21fb8d0ad47d4dd90bd12c4e870",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_plan_task11.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d74e38e7a662b8e172706c1090978192fbd3123e8823bb3784a60c31c60b5f5d",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_profile.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "22e4d96d362e9a7fc1cb166b58221ffadec29207b311f56205c65ea059b9fc70",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_profile2.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "32d1d9449675fab2cb6307b4bae50fa9db443aedccf6e8f7fe848f7a073abd47",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_rs.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "5ec536b0149b6a4e780889851fb5c303abf4ff92f3d715fcaca373b695cdb0a8",
+      "classification": "temporary"
+    },
+    {
+      "path": ".patch_sqs_test.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "a3a180f45e57b4ca0d85b59bf280860307a1bb1eee9a258e6cf516b9f6fadb48",
+      "classification": "temporary"
+    },
+    {
+      "path": ".probe.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "f667cf2b2e24674abbee336da3799594699783d07be9e06bfb04e170a87ac5df",
+      "classification": "temporary"
+    },
+    {
+      "path": ".restore.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "0a87b43609da37531b6b988270ebe1073459880b319aa38c124da2132638f948",
+      "classification": "temporary"
+    },
+    {
+      "path": ".scan_downgrades.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "b90ff95cde9c772378084845607a75242db3e495fa819e99253eade9b667c586",
+      "classification": "temporary"
+    },
+    {
+      "path": ".scan_flyway.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "bc6cd95c19f4eadb6682aaeedabc5bfd616421ffd6d8b3e8834b506d4ca8a1af",
+      "classification": "temporary"
+    },
+    {
+      "path": ".scan_mock.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "8075659078c6b8f41e7d7bedc0fd69b76bf0774308e23f554f57d90acbdf2881",
+      "classification": "temporary"
+    },
+    {
+      "path": ".scan_profiles.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d6b25d0f0c80542b89d110d513aef5c668584451c20e4c70810d92fba1294017",
+      "classification": "temporary"
+    },
+    {
+      "path": ".scan_tables.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "1badc09bd62d439ee6b26d7ecaba88d5d68ffb59123195f4197c5b40c44fd1d5",
+      "classification": "temporary"
+    },
+    {
+      "path": ".schema_diff.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "202175bf852a1db89105c61c5474c0baeeb028caef5564b24b07d2c721db3af3",
+      "classification": "temporary"
+    },
+    {
+      "path": ".schema_diff2.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "281a37482352761c5458b09537ab8cb64c616c266d1799d4cc307dcb7d0f553d",
+      "classification": "temporary"
+    },
+    {
+      "path": ".tmp_fix_quotes.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "71ea0a5f2cbbf32966c18f720eb1978d67151eaa5422c4995a565f2a1e55eb0f",
+      "classification": "temporary"
+    },
+    {
+      "path": ".tmp_fix_rule.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "e518a9f6d7586cd458d363f6e7dbf29d462221d1176b870ac318b48294892d3c",
+      "classification": "temporary"
+    },
+    {
+      "path": ".tmp_patch_pom.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "a0b16c1affbd37c4ea35f272aeb1e5aae9256eac519634a7cd3a5ee82481d21a",
+      "classification": "temporary"
+    },
+    {
+      "path": ".tmp_patch_props.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "ee717905f3c201bc489739ddda2b17eca77c190d0524ce01557cad94b20286ed",
+      "classification": "temporary"
+    },
+    {
+      "path": ".tmp_patch_yml.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "50e1443a5d1d6dbdde99aa90e6f5d1185fbc864025526109da8afbe822ea2914",
+      "classification": "temporary"
+    },
+    {
+      "path": ".tree-spapi.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "64e49b115555f241671470ac0e782124efb991a655412422c2a31cf7d12cafd9",
+      "classification": "temporary"
+    },
+    {
+      "path": ".tree-verbose.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "26012ec6fc0fc5af1e52630aa19839e8546b2ab926dc0c10a0bb92f57181e14d",
+      "classification": "temporary"
+    },
+    {
+      "path": "ProbeUpdateWrapperTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d2763188708e83b5dc00f09734cac40c38b324d89bb423dc37bc555d263aa385",
+      "classification": "temporary"
+    },
+    {
+      "path": "README.md",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "706591c50647100a271256a187f06290b9db4e784ae57575067238611de66403",
+      "classification": "docs"
+    },
+    {
+      "path": "_cp_spapi.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "4ccc43b2949d25f206a979d6f4577b649193239d2eb1fa6f2629b15599b04d5b",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_edit1.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "3feb971c35c501c3467aa5f90f82525587b115abd0adb06fbbf4a449f1097e3b",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_edit2.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "0d705e108904c95bab1919a83bb9a129660ad5a388acb6da5b0f3a9d0465bc92",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_edit3.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "2c383b8e45295ec6d4f160810e75c52aa4e1a52ca5c771d31561ce26472a7ee4",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_edit4.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "2b2b31368c4cf697cb18d6706211d7188da8a5f7ddb1cd7bcdcc69bdaa54b3ba",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_mint.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "dd7619d658be0c0da41eec400150673522865e0dbc657ea2ade70d7ff243321c",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_t1.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_t2.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d9cde36315d2e32abbd5fc9eb8aa43a763d317628f9a236c79b6d8e735f2c5e9",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_t3.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "adae16875415e2e772597b98606e637a454a9b81cee99faca2d19e8a728a0992",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_t4.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "ba62d39afc3d5ffd416309c1928f51a852a0d7d7e5f66aa1e5999e62c5cfe6a8",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_t5.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r82_tokens.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "956eecc040e5d70160376578f95dcbc8f07ca656f1f387ba2f71e79a11824b46",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r83_edit_plan.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "5c9e4358c8f3a9c3b82da00c5a952f6c7e9d71e27e232c18b9cc983b1a958755",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r83_edit_plan2.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "0ce8788f4dfb76cd307c90ec6d183c5cf732731b906823d374e5e77e7965a431",
+      "classification": "temporary"
+    },
+    {
+      "path": "_r83_edit_spec.py",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "51370d289267599c347eb24aa0b321bf10df5ad9b1d7981cc54e72fb62eeaa25",
+      "classification": "temporary"
+    },
+    {
+      "path": "_sp_args.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "6b1b3d3fcfc7dd36b01862d789513a893f36aa0f8e179d867b6602775bc38704",
+      "classification": "temporary"
+    },
+    {
+      "path": "_sp_args2.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "1c99b7f70096bb1b6025b0f220451edb6f020049705da91c83c1e4e5da8f2fbe",
+      "classification": "temporary"
+    },
+    {
+      "path": "_sp_args3.txt",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "77ef0b24701649ca8980eacf605af9e1e472593ca0d575cd7a4fa4cb00984fc8",
+      "classification": "temporary"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/annotation/InternalServiceAccess.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "3cb630fd7a2242355ce505e4345240f222d1725168d78fa0f3d4242634790a2c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/annotation/ShopScoped.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "b3b684b659b8a82b16692e2f6efe7280c28e139578e8f36c0b41d0d8fce4fcd1",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/aspect/RequireRoleAspect.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "47e99c3e4a9f494773f8cbfcebe6de50d2982438747b10aeedb9ee2c39dbde67",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/aspect/ShopIdGuardAspect.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "9c6f8630f59fd69cb83089fa5833877a98fe4846c9f79d20f80cc5a67c88e354",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/config/DataSourceValidator.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "e9965ef3bede0010f7b7b8d1241c55072f5c2756c252f2009cc2c532d40ff597",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/config/FeignAuthRelayConfig.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "729307f80da421eaee7bd4190c249f47bfabdb74eda27d486ab7e72caee13e79",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/config/GlobalAuthWebMvcConfig.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "aefa538e1013582f7cae305548bc240951c4f25e536a651b730f88359d39bcd2",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/config/ProductionProfileGuard.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "9b94d0aec080b98ac875e71e81e686e11d95c83968338a293efaaada2525fa99",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/context/UserContext.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "285ac27bf125c2f626803589cb0af1684d1fb387c1ee12246b627c6207c6c1ec",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/exception/ConnectorException.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "efeea413ede45fb082ed269c84be61b97b2e0e0ad8bf43e914d72a286ac8e002",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/exception/InvalidParamException.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "548a0944a107b5c4c81df52415a3b58169223872f8dadb5064b44dc99a18a932",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/handle/GlobalExceptionHandler.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "0484115b742649427b1ab185df773aff95e0339b0c8d719f6b8eb40e23b21561",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/http/ResilientHttpClient.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "1fee9c6927ec7cc2ed0ca56d292b2f11e18a45a3894fc7d81230aa22aee3c4f8",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/interceptor/BaseAuthInterceptor.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "a16f5658fa3e684d7dd281286b1cc863994c80f109ca033480503e4d893bc733",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/lock/DistributedJobLock.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "d2053175d8b646b08326217a1ac6c76705866bcb168804e6a4ef4d0dae8ce604",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/result/ApiError.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "acf5db43e3f1994a142b71a83324b26922ecff697f98f74a3862a168363215c0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/result/PageMeta.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "da37e9bb043c1ac741fa1c060c3a28577c77511bdda5622856c64f91d436119a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/result/PageRequest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "1fc373ff90bbfc46713ff91a82f4f19325d113d989f3395e9a5c95911fb74ad4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/result/PageResult.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "70924ce5249392d5857c0d1fb9e0401871a16bdd30b1fd8fba38e4b0f69cd18a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/result/Result.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "293b043f9a3a00626c26b4878a01245d96b4dd0e999a36fe44526d0a23a9b4c3",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/main/java/com/amz/security/InternalServiceTokenService.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "9ac41ef0f4da5e7b042a42efa8ba26bbff3cdd97641e35f0b9d83b87b5e07fc9",
+      "classification": "source"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/aspect/ShopIdGuardAspectAuthenticationContractTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "041e49e463c0b5a17564c91975e063bd175bdd8f8f44ee193241afc85eec47ae",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/config/DataSourceValidatorTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "16c933cc3a2e1bda3955eb17ff7f1e4ccaa00727f8d62d48d56d794a9cc77afe",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "554fcde8030a8b57b903d0c032d72b8d7bbee6ff12a005c91ecec33eb802abd3",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/config/ProductionProfileGuardTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "b5b2164e92e835fd4b988f7770ac237a6a39c7aba830f11f92f03a4f114a9696",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/config/ProfileActivationContractTest.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "f271b4dbf421c345688ae12ed416bdac2834477ea2dea37c48d7375599e8a2ce",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/context/UserContextShopAuthorizationContractTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "d460164109de3763a2cdcf5d79f137ec8bbb9c4c8ebb9fd471adb3e6d598cbeb",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/http/ResilientHttpClientTest.java",
+      "status": "tracked-changed",
+      "group": "common",
+      "sha256": "1d3f3abe2edd6f99a2f63b08528d2562e781871b8f12e8976bb5e9739c2cdc29",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/lock/DistributedJobLockTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "211c6580f27e44159dbcc0389e09cf8ab490c19d71a3fd8bc7a09d8b7289bbb2",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/result/ApiErrorSerializationTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "ea8123590947c90626fede14a91f1ef9171ff0e03cccc61b853a2a50464e4f95",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/result/PagingContractTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "99c3df38ef751ec22ad04ec4317b81b5a4b6a62bb70384399054992cdd482a5b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
+      "status": "untracked",
+      "group": "common",
+      "sha256": "c321bf8ed8811331cecb7d5f17fed69c9458ab99a2b05e6fc3c162afb3e12216",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/AdManager.test.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "2186bbf5d1f28d0729a3a81c48dc5678b53e320284410a1a834005ed9a64158e",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/AgentChat.test.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "5029c85800eb9496362eebe06d9519d0fd7c587c088f24eba78bfe36d20d1b72",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/AppSidebar.test.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "51b8c0db19a495e0854e919f11b8876ec92083440dbbc47a6b0f606fcc12c6de",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/ConnectorCenter.test.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "3674989797866bcc7ffa1f92db2e56db5232dafd1c1f43fec9b05db6d17cbb7c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/Finance.test.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "ba5be6ed609d419639b6ffa55a28acfb60848ee2bb2858b28b1b4c0f9d4ff1b6",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "3c35d1228287550be735cd24806ce891e6b1857b6d7b7ededd44e7e051de97f8",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/Warehouse.test.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "278a721e0f1c3048836c3a44ffc600b94a829a1e4f3e36f11f6ec183aa510e95",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/connectorsApi.test.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "12894198a8777edb5f08cc3e7d316d5afa42fce67c06563323b5405bcd6e47d5",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/router.test.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "3b785006c688fb258bc3ca20948ff30c89ab8ee3cad98776006fdc1314b1dad1",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/__tests__/viteProxy.test.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "f979de4142b3f6ea7a4e2a9cb60f9b1812f2f47d35f7befc2934200549c1eb88",
+      "classification": "test"
+    },
+    {
+      "path": "amz-frontend/src/api/ad-ext.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "ceefa0e0942ddd828ae66f7cf0071bb5a72f2c4d66cf3f07ed4e3fffaea42b4a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/api/connectors.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "1045028a1db5ae4c6ad26698adce70500884453400da11d1efbda4aa6e74d55b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/api/finance.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "ac2e4e543af695d179309030a37cec81dbba1897a9c97bbdd0345c6e99ea78db",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/api/logistics.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "efe4ed819c65f63381c69a38f21d9543aacab6a7fa0a52d1c34b830c9b79accf",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/api/types.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "d78512aba4f633f13c97885bc0c1ad008ed01783bb19ca4d6a34db98c0cdf39a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/api/warehouse.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "9f318e51b316b2a4dc541eaacd4313980b4b40648d24e4edf83ed505a28fc3bc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/components/AgentChat.vue",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "248f34447edbb8c4ec31f9f55cf0e78b45edfe1ff176b9362310fac6d9f6f1bd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/components/AppSidebar.vue",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "87c8b554c4e5b89d8a4a83bf3694f613b9bf01089070fafeeae3ea32220badca",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/router/index.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "ccd2c8437f90869939d276487a80eb32a5f4fb669c081662eb21e53c93312ede",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/utils/viteProxy.ts",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "115ba02331cc2fb5c36cbb042d6dd84883c49fb8352998900e2d4c316fe886f1",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/views/AdManager.vue",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "a62abc1a6e6d23a650b613f9d0b73191a05a0f914f5ff27fca9ee5578fcce1fd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/views/ConnectorCenter.vue",
+      "status": "untracked",
+      "group": "frontend",
+      "sha256": "524c83c4dfdae053f743f2ed30dd5152144d1e664ee606857d975ac3423487e0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/views/Finance.vue",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "86ed42c541626a440490d024f6e09c0fb67db3c0e14a43415765b2664ea92fde",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/views/LogisticsDashboard.vue",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "ccc51c6c756ca5c0b7baed712e9089ae42fa7207a890945b014c2cef379ffea4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/src/views/Warehouse.vue",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "8856432bb290acde4dcfc5b27a0dbddbd67f4a1b8f91008303d746e1a2c5fca8",
+      "classification": "source"
+    },
+    {
+      "path": "amz-frontend/vite.config.ts",
+      "status": "tracked-changed",
+      "group": "frontend",
+      "sha256": "bc6b371c53de93307463963560c408e67f3879f80c95e96097755531be1ff6bd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java",
+      "status": "tracked-changed",
+      "group": "gateway",
+      "sha256": "323596cffbbbde2ce774c585b75f6942751072aadc0890148e7d80920ccef833",
+      "classification": "source"
+    },
+    {
+      "path": "amz-gateway/src/main/resources/application-local.yml",
+      "status": "tracked-changed",
+      "group": "gateway",
+      "sha256": "ca71e9282ac149a1a9f2c20165c9406e9e65bc37bac8d5f74ac53086c14fabd0",
+      "classification": "config"
+    },
+    {
+      "path": "amz-gateway/src/main/resources/application.yml",
+      "status": "tracked-changed",
+      "group": "gateway",
+      "sha256": "60c7307586fd4d65d065533021a6f466cf8bd8e3d53bfb0c31403d262f351ed3",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/analytics/AdPerformanceAnalyzer.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "82d1fa595926d2dabce4ab28574feab09a04f1917ff7600da09b623fd1453a69",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiClient.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "087a8f206eb0b09cd1cb8bf738817ccd69643eb510b96ef7add0ea84e1070383",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiException.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "43f1f3793c53823941e73095d7fe977605fbcac165d119b3073e40d7d8a8afbc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiMockClient.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "43da69a01a3b52a8d966b040fec377d567ca2f93b696921709d72d727e7a8fab",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "1b077fc2065569f7f5a8c6020712694259edf156d67c48ff1883d3d483e7e633",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/controller/AdCampaignExtController.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "e647a73fa2ac643fd505d92cd42293ceeefbe060a026e11b792988e0cd1ff544",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/controller/AdController.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "dd917b51645460bb62544b51af6c633629468fcf9419043944b5aadf177786a3",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/controller/AdCreativeController.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "dc642d5360e11f4a80cb1cf56b288aba56fe18d8a0778fba2b18841cb044edef",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/controller/AdTargetingController.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "dc7e454d4088d02e181420b5af9d8f44d35dc8acb955fbb6478024633ac73ad7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/controller/SearchTermController.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "9f2963832291adecbdc83e8a41f9bbbc35e48d40b69080a10b0d83da5ebe2244",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/credential/AdvertisingCredential.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "756d07415c4c418b9ab428ed275f2728591d8b04ea2f97da6c4682e11fae4b58",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/credential/AdvertisingCredentialProvider.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "47dddb14704f27b87f0638a15c71aad81f9bc57b0d8fad9838d8020449da5ba1",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/credential/ConfiguredAdvertisingCredentialProvider.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "fd192c8613861531ff01aa38a66b82e77edb44b08ac964f3ba00c8bbec4ee343",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/mapper/AdAsinKeywordMapper.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "6c4343b516ac42deaa8b4830c8d0a06a44e8289141a6af3be3516e3cc9ff169c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/mapper/AdCampaignExtMapper.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "597b63321561049816c9fa48fd6a49fe5ad8a64f486fce2941a4798c0afaf693",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/mapper/AdDailyReportMapper.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "02c024b37922cf8fb095be518b26e047550a7bd384beafb9de0c453f9992bf96",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/mapper/AdKeywordMapper.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "5980fe706f5d23f26236344ba4bf5f36afcd63addc24d4ebabf451ebafbc14cf",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/mapper/ConvertingTermMapper.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "e45fdc3e153a8d29e2d05537d5231a15aaef4ed98d6fe0e4c7e173e17729e457",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/model/AdCreative.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "1bb3b4cef3eb5e0a42bac4f7bb23e82bdf8b9410c6e9cb189a23f9dde4a41aea",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/model/AdReport.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "d224ec5b00ed2b9b43ffe3a55faef101586877e522d0858380d89ca4f098a7cc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/model/AdSearchTerm.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "f35194499f1d4344744ea3b4fbedd1a8c8dd6f47d3ed9a6b8e4f84e4086c023a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/model/AdTargeting.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "c18235a6f5aaaa46a2b83ab706da322a75cf36bf7d158644640615aaacf4bd05",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/scheduler/AdReportSyncScheduler.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "f8a0bb87ec257eb74358ea8040c6c4ddd88414e4a6dd1449fd6137db78f4eb51",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/scheduler/BidScheduleExecutor.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "4bb63256702078fcfa0369127609291c81445bbf6d36369a188015184c7c0480",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/AdAutoRuleService.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "d828f87ad2211e8648372fde56a3f0683ef6ab028a51553a74686cb9f7b59fbe",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/AdCampaignExtService.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "5aa1b6ebf1a7ac6228d76e4eb0b2978b4434ecf9b409ec7c6cf39d44d2417224",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/AdCreativeService.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "af887035d60948db9f4a5bc3ee5bfa74f4350c9ca2ab35aa88a214db468a5da0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/AdService.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "a09396912db28474ce3e2ed4ee7b542645a7ea200fdf3d70842fd2d1f671e350",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/AdTargetingService.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "bf82c7c4ad9e7473a669daa61e8bcc8a66bde9196d3b64ab549bb3bf3edbd06e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/SearchTermService.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "0d0832c4d4afd8450d0e35b7e0e0e613440083731efe36fe200a4457f87068fb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/AdAutoRuleServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "11e79506bb720e520f51c7bc893ca8f3cc55a390c1db0a09a52ceaec3fc46091",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/AdCampaignExtServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "8e9b4e06274017bbda66a764dc9667da1106a479e0bbe8e5e568a23ab6b74213",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/AdCreativeServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "c60ea6f3d86402d986bd2dfbacb4a4547397ef3136344b03156fad1d8ff8dc26",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/AdServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "7e91558e423797753c937a6647e9777f820b67cd7653f60f6d6cb045246c6a96",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/AdTargetingServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "72baa731647e39d53294e2fd5003c4acf7a9478bbd8d81be176740e723edcfba",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/AdTenantGuard.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "52e8c30fd642e97f01456a5f35112985d28096102fb3820b801bd2038da747fc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "f0cea0ad43cddb3ab7162766467b0e1a1c68759cee398a1e56f3c975ac846517",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/resources/application.yml",
+      "status": "tracked-changed",
+      "group": "ad",
+      "sha256": "07770cdbc7702dd47c1e0865856b3b6e1df0b65006c16ec13043564e708fb9b1",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V2__campaign_metadata_unique.sql",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "d23c50a77d903a11ba6c20cd5dcda7396f3bc218286fb6ecdb1aba41dc313362",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V3__ad_daily_report_update_time.sql",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "61bff6abc60dfb2f7aaeb6582144c53fcb8d7fb63201ec52685ab4b5e7f1b5be",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V4__search_term_keyword_key_type.sql",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "9b90b99e073b6e9476a573cc84b4310674c5cb0196b4afd3dfaec9bf99c63c0a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V5__ad_resource_tenant_scope.sql",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "c43b9e606aecb6065fa9fcf05f58c5b546cd1636c8903998f0f85ca06555aac0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V6__keyword_base_bid.sql",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "81f3c01f53f13b266225a572dc331dae154d8854c5cd4000e160bcea9889e62e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V7__ad_business_uniqueness.sql",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "12051f9098d80da4250d666c46f414683e5350e1b3ee428c852c49681dda6389",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/analytics/AdPerformanceAnalyzerTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "472e9238d4ce7448f8352c11784f3b898ac5dfb48410309caac7884bab6378c4",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/client/AdvertisingApiRealClientContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "6f7cfd689e7947f512cd090baf123554750fa5d9f01a897620f0bac09b37db3d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/controller/AdAuthorizationWebMvcIntegrationTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "593b18eef5b438e73c6ee16bfb5b1563234e19302ad37cb55390d2336e44f3b5",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/controller/AdControllerContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "1acbfbf4ec07b74cb94bfe49d3b3fd3a5e0a2dfa9270eec6d4b0ccae23185f0f",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/controller/AdTenantControllerContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "6e431872417623949a8b575058065b78ca9786339629a9430a0819dbdd57cdf2",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/controller/AdWriteEndpointAuthorizationContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "0ce85d0571b0a4b7a7e698cc0edae6a5a6468bb564834a891bf9ae86c491e414",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/credential/ConfiguredAdvertisingCredentialProviderTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "fb5ed7fe5b1f16d01be248c7c61df7af7a79f89dbbc442341ce3943cb57759ca",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/mapper/AdDailyReportMapperContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "9bff1845671a2405a53e2d0aa3f6607cc1d6bf6c2a619dc5dd664429ab8b3398",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/mapper/AdKeywordMapperContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "978c9f318eac2f41d9dbbd172c039898b8855f28ac02bd385d819866a555a250",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/mapper/AdSearchTermUpsertMapperContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "f6cb23e913e083851a7c71f6010143f64ad38a5b4379eb1dcc4ccc682c0aba2d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdCampaignMigrationContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "a0be4c2b7ac4f86143caf751f13bebb17009939ce8df67ebe89e6b8edf4f84ea",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdMigrationMySqlIT.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "6da7d886f957f210fc8e71c7c4ba3ca55920bc278ee3b07694f1672467d1839c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdResourceTenantMigrationContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "bd406703214d28575bb1efcbd897f4f62ddbae90907e86664419da7e26afa719",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdUniquenessMigrationContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "24a92129c193a31002decade3fde967a46537d527b718fda3a6dde2a74c4d2f3",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/scheduler/AdReportSyncSchedulerTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "d44131a63efeabe1ca1e31c039b4d398c2771958a845edc53ccf1ff6a9083a52",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/scheduler/BidScheduleExecutorTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "81d3395270cfa8d3f99215f8d8a2e2c932ef8d9ccdc810a9535033462a8d3cd3",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/service/impl/AdAutoRuleServiceImplTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "b88d319203ac9489d3a22645bef70f07c70e8ea5d8d964de718bef0305e7e8ea",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/service/impl/AdPagingContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "3649a519777d126eafe8d579f9019f384d58f9963d461d43e35bfbe71580d07c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/service/impl/AdServiceImplTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "a9ca835327dce99cc535571b4016f6f3441430007759f11b647ea8c82209f5a5",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/service/impl/AdTenantIsolationContractTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "5c466326530adf93ebd2c4bd8a9bb2494f891748ebb41f9a3fcbc17aa3fd782c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/service/impl/SearchTermServiceImplTest.java",
+      "status": "untracked",
+      "group": "ad",
+      "sha256": "ccf273d8afbc5c772e6f8f2d02e653a8238660d065d862f0c85edda88791e2ae",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/agent/AgentChatStreamService.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "1d728a237416ce0a58215c46728f58b6554968721b91143ba236c4239a1a5752",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/agent/ErpToolExecutor.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "dc5229547e52dfc86f5d995e514ad93ccf8b1e14d0d81d8c316172fe2056ae6e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/agent/langchain4j/LangChain4jAgentConfig.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "99d58120dc6d2f33cc13d6b58f9fdab9e49d8759fd6df887803c1bec8e4ce47b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/agent/langchain4j/LangChain4jAgentService.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "5cc0f124aaac3a59bb992640b6964c6ffa6b7e9d98ecab31d0c154c3fe3b3e3c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/agent/review/ReviewAnalysisServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "a8789e87a3eff2edb2f67c18add984e3e27d37aed8390a5dc1aac594fdfdd76b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/agent/selection/SelectionAnalysisServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "886b01b2a26cba8f91207d26cf64505a926fc49660268161983bd0f35a174bb2",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/client/LogisticsServiceClient.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "6760f750be8e9082f2b0397e11d90e5c1396f85707a34a7c4bbd3e4e031bd49d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/client/MessageServiceClient.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "1e5bed23c057ffd12f5b10e2377808697691d6a6676b0597693b14a76e2a5e49",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/client/ProcurementServiceClient.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "06be3e6d16a9a318ce9d08402a4b39c67971916dc7c727307d406a3ff02388bc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/client/fallback/LogisticsServiceClientFallbackFactory.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "1939d3f420f788d0e5650f5302ac9797eded9764a09f929c320b6dd4f73d4ddb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/client/fallback/MessageServiceClientFallbackFactory.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "d482225b5263ab8282ecbcb750f5210f0daebf5587fc66397d9657338231e352",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/client/fallback/ProcurementServiceClientFallbackFactory.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "4e23b5dc8eda5257631cfaf9e20a762feeeb086666988ecba54ef30b4827c4cb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/controller/AgentMemoryController.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "5d840916c06426114596cbbc75f7ad0df39d23fb874f2151e30c569197e43e4e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/controller/AgentSseController.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "18fea0d68085b4eb0806b79f1b3467318219685f5b8c32cfb90dd7b62b5e932e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/java/com/amz/service/impl/AiServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "a0126d41f2084ae7edf8639ba3b25fc0ab8d5044fc91557f2fb4e18f93bf72ee",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/main/resources/application.yml",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "2475cb931f3a89a6b40f2946e97a73f90c327b2e7a4c726b0aef8df0de2d34c2",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/test/java/com/amz/agent/AgentChatStreamServiceTest.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "d5e504e91b8448a69e39c63923f8520c7b5caf184167daebfca0b3085b9a0ce8",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/test/java/com/amz/agent/ErpToolExecutorTest.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "2cbf96b20113aac2b0fbe45eae19288540094421c0380f7f74789de3bae266e5",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/test/java/com/amz/agent/ToolPermissionTest.java",
+      "status": "tracked-changed",
+      "group": "ai",
+      "sha256": "1047fd9069e02747661936300e3764e108828317ec2bef63708f9981891c895d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/test/java/com/amz/agent/langchain4j/DeepSeekAgentConfigurationContractTest.java",
+      "status": "untracked",
+      "group": "ai",
+      "sha256": "602b7922da7d668d3ee913df8d6589b4883119fca81d06db29d6854bf32d7ace",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/test/java/com/amz/controller/AgentMemoryControllerTest.java",
+      "status": "untracked",
+      "group": "ai",
+      "sha256": "be8ebc91117a20b48ce77cb942924ce5ea295af4c6ed5c43ed5450c0bcf9de75",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ai/src/test/java/com/amz/controller/AgentSseControllerTest.java",
+      "status": "untracked",
+      "group": "ai",
+      "sha256": "9a29b1968d50931bd3de6ff1a94abd51cdc55ba90269a2113e7a617fbdac2dec",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/main/java/com/amz/controller/CustomerController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "0a718902f30a17b1e386e5b7c71f6a0821b52fc186bb7519535e7c7d8903a462",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/main/java/com/amz/controller/CustomerEmailController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "8ff55081f80586506070f4f48c3347d8c8129b72594d316999dc99aa215590c8",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/main/java/com/amz/service/CustomerEmailService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "bb38e848c96c86b53083bd24be1b2a4165b1c380550d76db7e3d8599c0961af3",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/main/java/com/amz/service/CustomerService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "262fdec5b3193bb0cfabff522bc86df0b9187cf4b0a52f56ad0e7af3c48df1e7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "03611da646a7274fa37d0e97b0a223b6b59981a4a5ec56158f0ac3a9f7ed678b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "5f9293d5226f83267748d94950a45adcdfae0338b1e71352e727da6eb1491220",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/test/java/com/amz/controller/CustomerPagingControllerContractTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "1b6aca1399a8d4e62e2b00fb21450d3f9b04be8abc83b47f1a1d7949757965fa",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/test/java/com/amz/service/impl/CustomerEmailServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "97f85178633a99ec3e29ed3bca2b9a2b0be907af0ca8afe27007984fe5916073",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-customer/src/test/java/com/amz/service/impl/CustomerPagingContractTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d32225ce5d12ac4b2cf508c0fcb05429392bcef45ec7f8503fd8d6a3512b8f62",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/KingdeeClient.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "2444a82645a9783a454766b5b6f7acb319806d73656beab1ff8192f3811bc929",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/KingdeeMockClient.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "9317be9afc2b6febbf170bb125d78c54368596bf9ecb03273464f74e0077b636",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/KingdeeProperties.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "f98aeed9027f75a664062c04b6184cef9105b7596a90213f9a78fc0d0b87dea7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/KingdeeRealClient.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "5612ca26ca071ac8bd733a5cd0a4d0c6ec9e228fcb9d207abc3e70369cf78f8a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/ProcurementCostClient.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "8cfd058a615887fa707cb8b8d3d6b2fba56a5380bb00547b18f5b8d1eca8011a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/dto/RemoteBatchCostSummary.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "fddc0370fdbc16bea3bfd89f2121446349e3c2c3e355ab19fe69e256d74893d0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/dto/RemoteFinancialEvent.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "43723786295204d217ea8600a9687b4dc95919573316cd4a43c8d6eab7e7ba4c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/dto/RemoteReportInfo.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "1bf05c53801ad74d04f2e3ad1da3d192f3943a26f29bc71c5e063150d2fc5feb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/client/fallback/ProcurementCostClientFallbackFactory.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "39792b5327885601d1d91731176a1b3af77c2ec53419219cbd74b046694f3a02",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/controller/FeeDiscrepancyController.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "cc500db798b17f28cd0237e4e4c5bbd586091701692bda36e4f4db39b7583a14",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/controller/FinanceController.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "110f3a493aa260157052524e510161d2037dcbce9ef7f6d37608159bc38554cb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/controller/PaymentCollectionController.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "c3ff3423d604f07f55ca624da1efa47ff0f5c7d129ae334d34c1211371e1d6f7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/controller/ReimbursementClaimController.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "2efbc5268aac31115152ae9fbee952080e7ee3f4690e049197271cbb2e81c1d8",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/controller/SettlementController.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "8c70a84bacff127c1bb8bf8a50da7b28e9c3b3baaa118131b32afd01f64a9a3f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/controller/VatController.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "8e7c059136ea9ef94db90d0827ebfa24d575023ae5ff34cb56d6ffb8d20d7623",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/dto/KingdeeSyncResult.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "3fb90c8a75b28e69b1220e64e958ba71abce68e3eb50d66c0bef0333e2592233",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/model/AccountingVoucher.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "fc8c3cb2a9896bb740f9bc3822494aca0f368d63f5dc5f2fbfbdac28d493207a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/model/PaymentCollection.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "7fbc826f228b638036a67d90682418aeeb7a51df28985f7a6db40ddf55f73926",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/model/SettlementDetail.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "c2a21ca9ba272e97e561fdfc33d098f68e3ebf98e3807bb4168f7af61c7358c7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/parse/SettlementParser.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "9221d61d78f9f8b29a3ebbe46b5e885412f48ceebe8eeec7b70b87e7a9137810",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/parse/SettlementRow.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "542349def9b5d25d57bc3bb5cef492e643c6f8eb1315832477687a6982e29627",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/FeeDiscrepancyService.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "0f8c0b4aa04c422f8a88d0c4e38263ed15b9d612e3c2ab6de4413f791dffd94f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/FinanceService.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "1d7db07b50ddd6e9e1d7324c57a12567372f560ca5f223cfcb4e04885632be1f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/PaymentCollectionService.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "7cfc61de0f3cdb9e806d5853c4631739527dec6495ad74dfc635e70875bd190c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/ReimbursementClaimService.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "f338c8522d22ddf0459448699ad687824b7e1dffb46e540f8decb6c0adb375c8",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/SettlementService.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "bf8c57d246a4d6dd3a2d274c3721e053196d06d2cd145356f98d231afed109f2",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/FeeDiscrepancyServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "22efa48d0fcbadbcc24763ecce15114688d1deddf57a554257bfcf09d62f7ede",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/FinanceServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "010798546e49d18d701d0fe436887ade270283c89d30b5457d0613324b283470",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/PaymentCollectionServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "f9d20cd0b240e7eb7fbe8e98190096888901d93d0fbbbe37ca8a3dd67b58f3c9",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/ReimbursementClaimServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "1987053006dc7994a0b3e45ee1a4f2d39b56a79e358e1f3a7c55a7a7b7d4c3f4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/SettlementServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "93baadbf49fe3b64fb817e1b605ee53547fd01c139938884bc9a3664d8c4249c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/SkuProfitServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "24e0ce1223436fc8a6cc32766bc07a353146d04ad04ef1e35f53114c531063ea",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/resources/application.yml",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "71cff8ce2754cb8176caf14696e24432c227da563c5b3943be32b51efcaf780b",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/resources/db/migration/V6__kingdee_sync_lease.sql",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "fd1f4e8d06c42d34c3dbe01b771a8c9de4c63b2eb0d9949d464ec05e097dd876",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/main/resources/db/migration/V7__order_number_column_rename.sql",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "887fcded93b4e0be4931f880f879a9e119645eda091ba23eb54fe147832f242e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/client/KingdeeRealClientTest.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "b29d20cde7f22ee7a713f291d130129e541b52adb96547c18fd6dcea8535fe68",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/client/ProcurementCostClientContractTest.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "e9d367768f5bff8cea7db7e1a68c1e7ef79db629144be4e7c497960c2b563e06",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/controller/FinanceControllerGuardTest.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "84fe96fec9f7ecb4cccfe0c5d02270a9d75a9a80020b27a57b1b8c44615a1f5e",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/controller/FinanceControllerTest.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "497968c04803b687e8f1f0318b7bd21848c4365145a7cbb459a55241c3bcc535",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/parse/SettlementParserTest.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "331f0845b1961e1fb74c54af50aacff3e70d1f7d7376d4e21621b83ae9d6488c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/FeeDiscrepancyServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "6d31d704ae6898abd89e579864ddd8f5c968850eb6c3ceb4affa940e0cfc9ed3",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/FinanceListPagingContractTest.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "61993288663f5f37f16d12d81af1611211e591170361efee4c1659bda838c811",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/FinanceServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "10d7b955fd7c9baf10822a04273b030f635e87c0e587b3d8221e261739cbc726",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/PaymentCollectionServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "a2d1b9d0003db85084563607677fa7ce5b261b22ae01f2fd2671a4a54529a357",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/ReimbursementClaimServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "2baab02782d03260f5df3f8953db991cb5e8b19f43b1aefca7105985cb96827b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/SettlementServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "finance",
+      "sha256": "c8671144bf1b253c39b5902a1089c595b48bdb9bf26208f99973218295ebb588",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/SettlementServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "dab63348166c9f7a1861784fcbdde252201efeb3503adc6e692d076c98721d59",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/SkuProfitServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "finance",
+      "sha256": "c4a713fbf3b9c1f1c13080e872a0346ce09099402fbddf4034bf20ff83937575",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/client/LogisticsTrackingClient.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "69d5d0be4e2ce1b97fe76311bbaa0b6063184f7fec18d1cf3d7a15947c6e2b17",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/client/LogisticsTrackingProperties.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "f05b09e14f5db9a591dff73cb7bdaf0b7e4ba7b4d9890021b5939fea44d95d6a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/client/LogisticsTrackingRealClient.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "cea6dd31307e1aaf3695c71f5778efd294da227fed0c96f37da9507bee037ca7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/controller/InboundController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "a0cbcd879ffbb6fe1449dc54b3c883eadacf1434d3b49d5185941c78e7c0492e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/controller/LogisticsController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "7e4ace7d17fa22fb0641211aec61696cb0f733b80f18fdb6b46271e989e25715",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/controller/LogisticsUpgradeController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "b5cf3dbaac089f8bdbf774e4914a456d0cb85b0b2f1325537a0504ac98661393",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/controller/MultiWarehouseController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "55b2fd1eff19a791a6e7d0f3b1bfd3cb00e380b25c16abf5de30cb5e9dee6d80",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/controller/OutboundController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "dead59f83aebe25d182fb68041e463346bf801626fb1a9a0146287ad0c8e9b5d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/controller/WarehouseController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "a11108f5cb119d4f041559e3a1d8a7971e16e079af593d2ece16c44f53f565bd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/dto/IngestOutcome.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "7642103570495429a9e2a42e86c4ec4a29e2adbdf9c19d16208edf5c1d7de7cb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/scheduler/LogisticsTrackingSyncScheduler.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "be8f96b1f75c64385db9d0d78565f5af23bb4eb6599d96afdbe714bc1a38d06d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/InboundService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "b3efe0ee2f1a41dff1466cc6bca512a61e264040067bf1c05c91fff4776bef1c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/LogisticsService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "ebb2635594c651dba562763282253867a30f06e5b33884b3e772fed1d4e665f0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/LogisticsUpgradeService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "b3e9ebcced7a9475bf324e39bfa508193d08d7bb5606f107532563519ba3e0e5",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/MultiWarehouseService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "d47f2938e48f3887bccc484629614c7f286c51cd6d056bf732155c41d488b717",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/OutboundService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "44a82aad5fd11462a7213cebe65aebddf6acd0cfdd29ef8b8e3f41d0562b4c79",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/WarehouseService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "0e48846d6084bccdc7a04589263891f423141911b425665c3e3edbae5c30181f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/InboundServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "c9994a9bc478f555e59a672b483b5e8b64a942ac8960f5fdef6f68e10637052f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsImportServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "2bfa78e1a708af482ee084bdd28ef6705baf236baa47a616216e39418d62a57c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsOpsDashboardServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "91b480f611abbd68d6aab48d5b874d8e6eec79a9a29e8dfc00e7a8d197c894e6",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "6af46f3e016ff458ae5a8b9b4a6a03cbd90722f5ec3bb3eb66123905386d7275",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsUpgradeServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "66b2675c19e13054dbd73bd05249f603f5c5de2bfb9326d2bc7194009a29fc1a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/MultiWarehouseServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "cc675b6da949c2ae72b96d840bc6160f0070134cc74a656928fc91e05f4faf6b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/OutboundServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "47417f3f6e8b15aecf10690840bda8a2e9101f749abec78e63eb9714fc45fc12",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/TrackingIngestServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "04cd0f2437c0eab4f47c6df25b10d80393329e0a693d72bd09411c06bfa0d703",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/WarehouseServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "a979d692b400a844f6bea0beb31c5d7ba1c558759be084fea10fb2edaacb33da",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/resources/application.yml",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "5c72e7f6f026e5621695a6c7af9edf74216f1ac8cd3dd15cc4aca6335d8f52f4",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V1__init.sql",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "05794e2fa15bcea381479ff43fd3c33e3c2434eba583f46e624e13b0d93123ef",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V4__tracking_timeline_index.sql",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "e7a26d38611c0d90f0ab63523318faae17f81bdb1a85238df12c575eca648ef1",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V5__shipment_tracking_lookup_index.sql",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "6e9d4ba4a76fb2b606d17548c7e4adbab87f3f1caf568f5ecec2ce6479d29511",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/client/LogisticsTrackingRealClientTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "2cbdbd2865b47a8fe8cf2fb6bc4a2329debc66e0ce5ec9ace5fe7db6f5724318",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/controller/LogisticsControllerGuardTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "fa660afd72fc52344e2bb8ba28f21d7997fd3785e173bd22e54ea3bc50bdfd7b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/InboundServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "97617e224ec181507a0343c9b90de4a73e7b3665e1b84e92b1f96a0048295c3d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/InboundServiceImplTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "43c9b08da66720cb8a72ec9ff1ab743f8b246fc9efaf223a99054dd1ef34a720",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsOpsDashboardServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "17a6caba13d48fffa996e668d7cd448bdabb046cca982a09b615ef7f5034f9c4",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "23aad9fb95fc37923b17f84e42ca7549208795dcfe663d008f2dba835a2d6287",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsServiceImplTenantTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "5f6b819ad2998adb525a1aadac529f96e283e1b49c557de3d2c068999b88e097",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsUpgradeServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "7cd9c2f7c04b0c2feaef8770d98f184fb51bdee43bea4ce9e17213f545a7409f",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsUpgradeServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "737aaba9efdf5e2803edd600a4b4660ce3d1a2341b586d9793b66bb0d9fa4faa",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/MultiWarehouseServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d0e413c78d3a688390e4ff69b300e463b40e4d96d222814845c15ac275d52428",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/MultiWarehouseServiceImplTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "41b908684b5a17ae8cd4639ccc2f103cc4f851c882a32923839ae0c988cd3813",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/OutboundServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "192f727089e823fd3b8bcffc91f5cf714eed874d8168c334270ed52aa7c6bc96",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/OutboundServiceImplTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "eaf9d49c7efeb77143790b4ab9644fe8065df04ca750e95ffba4e128afbd1114",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/TrackingIngestServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "39ed4ad46711acceeab55dfa71571e4d3ccf339ae35932342ee87bffcd8c8a94",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/WarehouseInventoryPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "a69c5aca43a966bcbeda11c97a20e73ccab55a2304923c4676362849d1eb980d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/WarehouseServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "d0f977c5731fdeb1f1fc257f322c44d4225b9eb8b0f868669aae1e29a9370782",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/WarehouseTenantIsolationTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "a4a2f54c1d921559e7f9f6f50bedd30951573072e3695345c2fd674494f44a1b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-message/src/main/java/com/amz/controller/MessageNotifyController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "3d5a4b0f93a96662c585dc39ea91d628bcc003ef8504a88271630e29a0de4e24",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/client/SheinRealClient.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "b4d68570ca742b24ea43171dc7442818f5a6b7be57902678593556f93f1a3d64",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/client/TemuRealClient.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "d9e426562207e60a64aa896b07d3f2bb3a734a7c477a155fd138616b2670fc66",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/client/TikTokRealClient.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "f13eabd6cc66eccc7e55e0af2b4d8fa1c3b52d57853a7f731f8a4a5cc21d152a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/model/PlatformMessage.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "1b0dacdc1df11cf117edda1bfec9505dd7af9e28df2542f417a5980b45c643a1",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "12367fadc938a420987696ac889e22a7fe82c820405e2cefce42dc796ec7de90",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-multiplatform/src/main/resources/db/migration/V3__platform_message_order_no.sql",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "e09cf572419f78522496450c8b5e287e7df411b3a7e0b9a95ad3732411b33535",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-multiplatform/src/test/java/com/amz/client/ParseOrdersTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "7447afc49fdcf4392224bb62123470934d8f5c9fb135507a089b7a54c8d9c8af",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-ops/src/main/java/com/amz/model/KeywordRankRecord.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "890722f5f5edbc7f4474861f3173070d80c4fac3d23b0e27f5b19f435d5a8d74",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-ops/src/main/resources/db/migration/V1__init.sql",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "9c435f5be72980adc5bb72390e4ffa3f46c0e950e2647f0cb9b0521b002e1bdc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/controller/OrderAuditController.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "17429866d60d44f300ce0a1c58a24d42e3fdec40fb4ad9f7e7a0cb651600cbf0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/mapper/OrderItemMapper.java",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "1fe88b1c37603bd222e4254b20e117c584f9edeedf8ce7683d99fcb747cb877e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/model/ShipmentRouting.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "9088dacf0676b3d7bf33870f935f958f435256bc53fa22efdd8fe1242773e5eb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/model/dto/OrderItemSyncDto.java",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "ba12ac7d77990353535b86cece07ad95c5b4cc2364602ebd4fa88a13e7f9d672",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/model/dto/OrderSyncDto.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "384f3ff7a0a349d161b71e39c43d9eeb401efe805749735df13b6bc2b2df2a0f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/model/pojo/Order.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "705f180c7996c5e9b504dfeeb5378133d4e739e2bb5b8373672a9b840415e12b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/model/pojo/OrderItem.java",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "4eaa40c53dd7d3e4b2721e781005adb381447adfc11df64761d81576adf452c6",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/mq/consumer/OrderConsumer.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "c01812228ad10abb43868f170a2bc8830ee66614ae467c5d384b882bd746dc87",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/service/OrderAuditService.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "3f25e0e902eeb41b186897bedff421d6d4a8cc33011d2e828190af73f8fc46b0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/service/impl/OrderAuditServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "3b4b14095294533ef850a3a14614b7f8c758829856d35a1c0038c6da1b13be07",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/java/com/amz/service/impl/OrderServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "order",
+      "sha256": "5bc158adacff4c0703f9e96f06762facf4bd0b3b8c6444e6df04ba29a4439e00",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/resources/db/migration/V2__order_reference_key_types.sql",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "3a5029701c6d49631e02bc498e5b44c09471f301f98d2fb7772d511739534b51",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/resources/db/migration/V3__order_coupon_key_type.sql",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "95e39a76dfeee3e581bf74dd5462fcb76fce9d186f7827edc9d07011382b00fb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/resources/db/migration/V4__order_shop_scoped_identity.sql",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "e4a12c7110fd586e95793a8ec1bb08dfdcc351cfbd770df46213180ef5f01841",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/main/resources/db/migration/V5__order_item_table.sql",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "f69d723680a6818656718625064d6ffba3d90cfeeb1c5efc356e732d27fa0332",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-order/src/test/java/com/amz/service/impl/OrderItemPersistenceTest.java",
+      "status": "untracked",
+      "group": "order",
+      "sha256": "3e0ddc49dfd4342f7075667c6661276672d54ea5eff2bdd213dcb35582dc6dba",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/client/Alibaba1688RealClient.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "7803e0a5e62ced16bdb6c525fc723a8f3e47ecc58e6f975e76e9f63755b8bc17",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/controller/ProcurementController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "465c74040fa46ed2159a5ccab6719a4b6787b1065bbdbd8c52eb565dbc544ebd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/dto/BatchCostSummary.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "05218df1802af5213820830f266d4a6e5edcfdc1e8ba9bb0a4ae933fbc5d7abd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/mapper/InventoryBatchMapper.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "6e217990d5eebaa6790aa309be8b23aa760cea1eb39a46fb835c7087133ee3cb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/model/InventoryBatch.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "6a313a087d76770c26be5b3da0f7c1096f486a3ab41851a8ab913afbb5d1b623",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/FbaShipmentService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "99a6f079fbed3ad979c549f2c47dd16529ece7c3b02c3e5bb38d662ae903c70d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/ProcurementService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "99045f38928f9762eff529415b27cfad159f8549651524fbb15c9c938fe7ba9d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/PurchasePlanService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "f585678a41fe14eafdb48575f9ebc907398bad715bd114d8634cc6687e143533",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/SupplierService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "63f857f769621531d318044b4e89278bf24e616eb46f2a674b0391f8a1c9f24e",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "92c0fdc8dfce8a223fade60b3f582e436f8ab9e9cc42c7812d0a34498df080aa",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/ProcurementServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "1a8d3f8e3bb18d471d04055c3d5f1adc118f97923fb6a496fc3a6956e7c95af9",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/PurchasePlanServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "f820a3b0ba084439aec7ce125555da0080cba0deb7957e4cac441c075e787c76",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/SupplierServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "cf6d30ddfa0bf0defe066ac627318a93f1db80bbf1dd07bfc2e9133af2c6cf6a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V1__init.sql",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "4a8022ef294580576e9674250a37c4dbf04bf77651aad72efefe328d3eec6e04",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V2__fba_receipt_idempotency.sql",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "7a96dd31d459dc2f68d190705f0df64ca1dff13466b07b098773be7f253f0b39",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/client/Alibaba1688CloseOrderSemanticsTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "846683a94b9be63636f16bd610b607b3ae908c98c9db814a9c94fb1a1d7bcd0a",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/controller/ProcurementControllerGuardTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "ea79dfe533dffb72a60efb3dc8adaa5d004628311dac110d6e978d9aa029b1e4",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/mapper/InventoryBatchMapperContractTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "8065f865f840617d6e248d7c3ba8d24b19aef93f9bf44dcee8daed7fb096685f",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/migration/FbaReceiptIdempotencyMigrationContractTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "610c96af1e68749901ca798bfd9d9bb4907deefaa5e63ea97485ed93adb95d98",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/FbaShipmentFifoAtomicDeductionTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "49b3fb2d6e06395441430835390fed9bbab2dd447cc6a7ca029e3b19a512a728",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/FbaShipmentServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "984755bb65091507c9afa6a0ddfca57548eddbd178841b1c31579b8fe4ff4844",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/FbaShipmentServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "f6e74e632780c96c127fbeebdc1350e4c32c734f2e292096bd605513e470119c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/InventoryBatchCostSummaryServiceTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "ff0e499cf427e99a10d69ab274f12d8b74415a49c6782516670bb3e3d0e9db97",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/ProcurementServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "42c66f585732420f410982304db454ce97b9071b6d6bde38e6a6201469a80176",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/PurchasePlanServiceImplTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "b3bdac00bd241b87268f643c9e9b8a1cdbc296c893373ff8fa6c6449b5e6397f",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/SupplierServiceImplPagingTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "579e95ca59fd399052f25b7c580285fac41d877b1b92f35883dabcfd0d470396",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-procurement/src/test/java/com/amz/service/impl/SupplierServiceImplTest.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "d639342bb876dc9735091f03d1c5035716111fcb74b4453839235716d10c4350",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/client/KeepaClient.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "1f537e933c467a554f1f47aac4ef0c656474d2c12f4f2bf6353be20c88713f86",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/client/ListingsClient.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "44df6db13aef2ce733361890ab6edfd925486188b5482dfedef2e808c78a117b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/client/ListingsMockClient.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "3732dbbe96f9fde800566253991cea50c712cf7853ba9a84b442516b4cb423fb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/client/ListingsRealClient.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "4f97758a77778bd14e08f59aa04e09ed2babdfd79be2a4b0cc0f54547be9dba4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/client/SpapiFeedsClient.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "7da3df3963072fc8de64d6834cccbcbc928dfec88591eea2ef8b373e03e55384",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/client/fallback/SpapiFeedsClientFallbackFactory.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "7b1dde355c625da2a6ed29b045ab5a87a3192428fedcdf89fea86ec5f2890506",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/client/impl/KeepaRealClient.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "f5c9bfe905f9f6e44facaca63e674280a9af0d5b327ec283b9a7b7c38c444bee",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/controller/KeepaController.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "714ff56ed0e1a337fcc8a0c2aa5626b8a3691e89a31759c08e4ee63215451c79",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/controller/ProductController.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "6e3570eb34ec5267ea488fdf64c034da14abb80c1fb9088111a56d60bd67f5f5",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/model/AmzProduct.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "82bc5abcba4498dfee47f863d505c10c455ab7b1a0be0efcf32acdaeef1a1a18",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/model/ListingCopyTask.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "c66c772b752d39075326cb7c6850f58ae337715725cf36e83c0cb6b19d2e96ac",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/scheduler/KeepaCompetitorScheduler.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "d835129553bb60b51dd4ff64b758036cab3453d17600509cdd9864f26468cca8",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/scheduler/ListingCopyPollingScheduler.java",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "3a9ba60984ec2a2108b73e189774fa8aee7a5d63409519bc3e320b0a15e01932",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "4779a27d00718c5385eb0e19cc67ee1fcd2eea75e2e3184650456f209bd73d66",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/service/ProductService.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "ec574fdf69669443cf9bd8e91295f8b39e9fd60961a684a3751a0664a14b05d4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/service/TranslationService.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "91057e620c5190c5d7959881a2bdf4ed3424b72eea1ee1c68b596465fceda880",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/java/com/amz/service/impl/ProductServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "33891f15b1567d05d0b5b4d2621fa71c41123911ecd873b81afccd362ec603b7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/resources/application.yml",
+      "status": "tracked-changed",
+      "group": "product",
+      "sha256": "5c26127399948f7361bdca3828a62b897381f7895c11af67021024718cc5120d",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/resources/db/migration/V2__listing_product_type.sql",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "d5039cae74ba96c75b2a08785284e3c289ffebc17162ce1d728312081daf6bfd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/resources/db/migration/V3__listing_copy_polling.sql",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "2d8cc904160902aa522b2228a2dc0d34c255a4cab352132e7f57668f1bbef80a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/main/resources/db/migration/V4__listing_copy_partial_status.sql",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "d8855de879f332e1703824a8654df0fde3ff6abdcff6bef3c8410609742d7a06",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/test/java/com/amz/client/impl/KeepaRealClientTest.java",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "8df1695c3fb56d790da6081a0f872360c75e081063c6980bc24d6be35a7a0aee",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/test/java/com/amz/controller/ProductControllerContractTest.java",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "877fe81898bcfc2a73958d39819cc951a0561387f2ff5ad9ba6bb0dbd0a1ca16",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/test/java/com/amz/scheduler/KeepaCompetitorSchedulerTest.java",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "407c7d7df64339b450ed0bd0771e252f2ba9ee0d3a065f9f17fd9276614b885e",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/test/java/com/amz/scheduler/ListingCopyPollingSchedulerTest.java",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "9e525fd4c4f4b513874348e41aa850895b5f5c58745c09b9e3e653f7d82e752f",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/test/java/com/amz/service/ListingCopyServiceTest.java",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "88514c0425b7e9ee78dd4ebc069f525b76fa2dc4cb44078cd78a33d19a8b3de1",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-product/src/test/java/com/amz/service/impl/ProductServiceImplSearchPagingTest.java",
+      "status": "untracked",
+      "group": "product",
+      "sha256": "21022289218786dd4bb36daa1cbbdc2727ad9288989c0c34b5fbae4de7898476",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-report/src/main/java/com/amz/controller/RealtimeProfitController.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "4e665b17c4598aec3b344b87b66107d8abbafcf56a41844baea440fdaa2e9e53",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-report/src/main/java/com/amz/service/RealtimeProfitService.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "dc9808582d0557e41a09977553548601fae6ddc38c224271fcc794bbf778b896",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-report/src/main/java/com/amz/service/impl/RealtimeProfitServiceImpl.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "e3d53aaa53caeacad881e31108c30f20138cd955c043d2eb214c31622f45d62b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-report/src/test/java/com/amz/service/impl/RealtimeProfitServiceImplTest.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "770cb03188196ac8b7b7106b25dfced9766eec2af5448ec5ea2f014f23f86890",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/.cp-spapi.txt",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "3ca3d270e2c3fce4af58f2201e7beb9055eae0e7d3377fcea4be755101905ddc",
+      "classification": "temporary"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/_cp_spapi2.txt",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "4ccc43b2949d25f206a979d6f4577b649193239d2eb1fa6f2629b15599b04d5b",
+      "classification": "temporary"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/pom.xml",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "b5a376a6c35ab8c246eeeced170d93e39728c805b20532ca14ea03dcc9c4daaa",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/AmzServiceSpapiApplication.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "7266947aad3f30c0efda0da09f67f9eda1b39fe56f0be187845fd3f645d29073",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/auth/LwaTokenManager.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "772fb9f8f1bc9901edbf03974330a24d1ae085dedcc3790b0afb389da34d5421",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/bootstrap/SpapiCredentialBootstrapImporter.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "1f76124a9caf83cf634067be364192f0bb6f4a95257da8d7244f7beffaa00f86",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/bootstrap/SpapiCredentialBootstrapLoader.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9c7f1abe694f10f4b371584c46dfaf7e6ddbe20ddbe2c10f53915034452fa1e2",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/bootstrap/SpapiCredentialBootstrapRunner.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "c11fa7cfffcff85ca2eeae075ff512abc472119315a0ef03348d18624cc86b89",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/AmazonMessagingRealClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "99beb2f2827d2bf6301495ae9164c8ff59449d71f04532778853852e26951c62",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/AmazonUploadsRealClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "73e90c869f08478774d1af28aea6b14b543df86ed3a38179968b3edbe1ecca29",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/CatalogItemsClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "4d14575d6f9146ad06aee78696b50d7a78544f4637401b94ba2bbd781afc9121",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/FbaInboundClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "e75a1d1e9eace1285d735c8ee3416cf520d0f6438f9feed98ac32a54e7db3587",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/FbaInventoryClient.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "9433829f265d2143d9c0c33ea55fce0e557ddd2390391a424cc8797a0fe4ab9d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "09818b51f1d92aef0e8e3050bb76b5542b7f1f4d05e55a974f906c02e9be7e18",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/FeesRealClient.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "b5c3c1b98d1ed30f55c99fdfc5bd5a834e58c665217d2f3b90afec1c3bff4ae7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/FinancesRealClient.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "7a1b1d6054726f51fcc289bcb09fcb4f740a385e1dd23e8cd0f1162ce2180682",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/ListingsItemsClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "e88c6d9846edd74dc0ab32af96a23f6e2232c39e00423a26065a001ba866b065",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/MessagingAction.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "22978444acc6babd11a5c6b662531bd5a4c75a02915bae3da6656607675a6476",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/MockSpApiOperationClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "31a6e55944a03a98b6d6ab43a556748b1a580b1baf6e70872627e7b486c653a9",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/NotificationsClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "674f3aa8902290c421549e621f22f48eacdadd2c1bc2bd4cbd987cdc077ac67b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/OrdersClient.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "18d9d877d942655f34621ebe0e5a22d718fbaff09d1f8150d829b37869419658",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/ProductPricingClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "d855239925f8b6fc437befb024cbf3a42e5934646af2bd57822d1dbbf85733a8",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/RealSpApiOperationClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "7d7cb35b712d22717c5d85cccb5a1f3e3ec4791b4e0fa0a87689006f36abfc86",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/ReportsRealClient.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "9b8fa361c2bffff98669a7ef98c685fd033866ad78749d1f8588f61c566380f2",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/SellersClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "210547f0969fcfda98776a6cb40dca37d642a7bfcb821dc4e60d030936a3c202",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiGateway.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "7c171e8bd9fcb73b5b39839442dd320521fdf8c74a96bfc2d696497b63b728ee",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiOperationCatalog.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "48e74f63704b36cd5d501e444c6a1141b77b66c8a28efe45dd167ad39448cb9d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiOperationClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "a0ef136251ffc9636c9f710d7691b56fcc96e92461ddf28ccdd3dd729d1ab1a3",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiOperationSpec.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "917c81b9d2dee6c70c2ced84a9677d00158e4bf45e8101344da9ef43bfc209f1",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/TokensClient.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9b85572aa5ba365ec2121832d23c821c62358826614baefa0d086b1664fe5252",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/dto/ReportInfo.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "f4657447dcf5a59edd724ed752257400a6500ad4b23918f6dabd705c83f94c57",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/parse/FinancialEventParser.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "33636942450d5e2591b5a48fe1220933b50d92a2bc37ae0c7f11f98a44368c8b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/config/RestrictedDataProperties.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "564043a39d57d70858db6f1ec7e425955824f21a786f11718ea4b22c3a203825",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/ConnectorEvidencePolicy.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "89c6d0e0be28c27a0fdd276fe408d549c882ede5f580550b1446024be90ac929",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/ConnectorRegistry.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "545c7cd0d0683d102f4b444de9896e5af9385d58854db6e3e95857d8271fd994",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/ErrorSummary.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "d0b863d034bdc1cbaece97925160fe932db851ad9fd9d6db11bfdc5ee45c5715",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/LocalApiException.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "cfb9fb894498a61960114026b919f29b660c8e1b6656cec51692aa768d35aa04",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/LwaTokenException.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "01ad1468aeadc026ef25a77f9b50213c050c5d13a616476002bd9c970d9f0d34",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/RestrictedDataTokenManager.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "0ebe85131f6bf75f0e3ab6fd1a2f783b6e8679fe1529bc5a430e4fbbe76aa285",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/RestrictedResource.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "567750f724602f080aaca580372dcfd2c8c27f2a58c586bffd750d9d43efb2e0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/SpApiCallException.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b542ae89eedb39f3d6d37d1b5b5f29cba3fd4219b1d390ec854305a43d65b7d2",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/SpApiRequestFactory.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "502da1ce6dc8903fee19e717598dd70c818e3a004b7397c2cb9bbf8697c26c70",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/SpApiTokenSource.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "63dda26f9b8d9279ed2c108f6d17c95b6c8871673220a1b70a49c8fe0a8a0f1d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/ConnectorController.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "ef56e1900436d6712e000d8d774b808799a498083e552cb0b84e9a3f868322c5",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/FeedsController.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "6d56aae06b56a894a512ba5b6e8ad35dda71b77dd2f528d5ba5334060c8729f0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/FinancialDataController.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "138901e2efc47a1c5f9cf6ec3ff8b76c538e95e992fda0416c50eda8cc0a5202",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/InventoryController.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "1101af8a82b96021578bb511b6b8199ce30a981c0afefca929765d0a8a0329dc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/MessagingController.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "95bc73db5dceccb9e2d4ed297870880b3b7e919d8cb35e67ec68e6a19d5b6b64",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/PreflightController.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "e92f60f3876d2717d6a03be4045ca88a4970c919f18aea25d3e9766c048710dd",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/ReplenishmentController.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "ef6d5912b3defcad62a9298a71a7d63f859ae7b82cb1fa07c7b45786ebc8d4c7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/SellersController.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b437f46027b1ed70cec34f982e7a37afdd75c4f8fe305a43f32efe0a599b680a",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/ShopCredentialController.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "0e3154f7e8b7a0580df15d24285126d36959e38fff592df878c54ae902a201a7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/SpApiOperationController.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "fd66c8843d33debec191ec508eb80d43cea09e47b89a3ef0b1ac1c6acfccbaf0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/SpapiController.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "4fc48869f97529ccaa0fc592a23ef46d821a8aaf526b13f9a2ef83829a557155",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/controller/UploadsController.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "30780130c291246fe92e75be713130ed6abd9be5039661b83b33b43abd9c80b0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ConnectorStartupCheck.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "deb600950f6d08f080d15d820a296998cc4e571fd580c2a4ec9806ab980464f3",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredential.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "114155bea377978fe562dd93a5a79996fef9644cc8999a399c235611427dfca0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialAdminService.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "e61a6af4db43ebe31aa903af9fb99f68c512c81c88cab43ce9bf487102226516",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialCache.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "3b0da2de27f0d81b96f5f81bc82f50842f76527753faa430f80f7d13ad919550",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialConcurrentUpdateException.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "4167806ecd582d3636218301b2f27c632b19ce4e77ee465a28318fbe7069e1e6",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialDescriptor.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "c3f86008d946604f57a4b128609d7e0790c3fb818e73b5f4218e0cea21362dc9",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialStatus.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "dc794023827138be0ed931040ce613aa0bf4afb2e697851ed3b2067408f4d032",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialStore.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "2fe5e45f4676553e9093df15ddb97908280a930cf45850bfc04e3b33dc46550d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialUpdateRequest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "5da7ced1088dee0655e13b1840b49c80a7b7828331bb7beee698c39faa593599",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialValidator.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b4144437e0cfcbe2a5d078c3d1ced5e369aff29a26ffaea7a1a2629c31293991",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/mapper/FeedResultErrorMapper.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "fa4ff9ea9a4fc2cf09555925bc7ed999ce214955f10624ffd57f174de38dd76f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/mapper/ShopCredentialMapper.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "5f7e65f789cd7c66b6363d66d1d06136efe0a10b83f0e3e4e9b875ad9850ad0c",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/mapper/SpApiCallOutboxMapper.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "27ffc39271b99a0405125f7d79e2cfdca80db282122e987f98f8987a8f7ce0bc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/model/FeedIssue.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "7abe35d28cad74d4ec60383b848bafc52b9402eeba84a1a9f7dc9047222bbd7b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/model/FeedResult.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "c23e83af48320117413d51c3fe330dec130e02e6641d2c7bd23b677efc041c83",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/model/FeedResultErrorEntity.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9648b68bf352c779fe31d0b18fdbd76491c2fb7eafaadee7306d9592171124cb",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/model/ShopCredentialEntity.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "eac0c063434749fb053d79f7ce0d0f4ed9973c002e5fa849e9237182b7d795f6",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/model/SpApiCallOutboxEntity.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "fb5654394ff7e19f637c8fd60853ba7953a53f9eafcae3682706cf997ca4f677",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/notification/NotificationEventSourceConfig.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "ee1db357fc2bddad15e53bb1c131c178dd6eb82999298d267cc59ccca8380dc4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/notification/NotificationSubscriptionRegistry.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "71e8bc10d8d308d576f2371e35fcd78db58b2007485e40e476051bba055e43e0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/notification/SqsNotificationEventSource.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "97506d94776a15f756ba0c6ae45f24a0bad3e6965dc1d56e656bc9dedac4265f",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/outbox/SpApiCallOutboxService.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "7b1fb9a50fa3761d2a370b0cca2b3a32552bec74d10d63e0d72cf968a269f7bc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/outbox/SpApiOutboxReplayExecutor.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b42dd40f43dea6155aeb1cf46d60664913bad86a5fe2201cf65484c3a47222d6",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/ConnectivityProbe.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "e331747ff8f2f1b0d8467e755fc450807be2967c7ccfd0a26d319c6f500bd66d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/PreflightReport.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "69c12b31b69411401a25dd27b3ecc20e3ac51301897a6c97e9c8e2aa52a5b842",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/PreflightStage.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "fbd2f9597fb35282be024861002782be8e6acc0027500a6f23fde448e10b421b",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/PreflightStageStatus.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "b6d3a9ad40a11d81b4c96c35ff1cbfa163ab20a3535d958e88bc4e5a25e7ab54",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/SellersConnectivityProbe.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "d23614751e53c30e624cc875d5ac12be4ce3843b99041345abc67a1aa72b84d4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/preflight/SpApiConnectivityPreflight.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "f41360d5c9b259dcdb10fe8683bf6f6846c7373f45fdb46d36c12cdd8d314770",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "8f7a284dff62e3d898e7f85666999c6f7e78cffb969b57174fd245edc29bcdf6",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/InventorySyncScheduler.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "2ec9c6b0b0870fc873aed9db92dce8c0dd21e5abdaaafa7a038b93566538f1e1",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/NotificationInboxWorkerScheduler.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "78a9a1fa08f81dc24b41a10df2896c413cd225c8f93e15b07de49ea7c1da0b4d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/NotificationIngestionScheduler.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9384997b54b63a110122e58423c6c16c213abfd14084646ac1eee328948adbc4",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/OrderSyncScheduler.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "e8864f42153c2554c2463a7ca84bdcfcea28515a4c11b2a67a7b8df379696931",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/ReplenishmentScheduler.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "7a04e027241fc127df60ca51d8d4f489c892961b785127f03c270b6a436854ef",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/scheduler/SpApiOutboxReplayScheduler.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b2b2d6c3a138e4ed0ec483814308fc64c2577638aa14803ddf51846de1a2bb2d",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/service/FeedResultErrorStore.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "f1cb9e3a3a601ea670f26b1633207d1fee1b1c3b5f2744394032bd083e1137d6",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/application-bootstrap.yml",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "cfadea086b8bf5987d5319a9286ec88ab476651e441d547be66a3b747397864d",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/application-prod.yml",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "af485db387adf44e9fba0882992d3b33b405ae550323a34ac1c762b90ae4635a",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/application.yml",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "493ae58db6d00bf7b5b085e32290942f7f6ab0a2cc9a509d0908727d482d88c2",
+      "classification": "config"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V2__spapi_call_outbox.sql",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b68256b9a52f225121c2e9c4189468057049afb17b0b2fb39a7f2d11407913d7",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V3__spapi_outbox_replay_metadata.sql",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "5e3ddf77bcb8d3382834f29379ac8a4b28a3fa419e81ea44d9f33b53f7953dc2",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V4__feed_result_error.sql",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "c1d1d95b2739bcba50354619dd96405583bd785afa1746fc220c926a074ba4cc",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V5__spapi_outbox_token_source.sql",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "d98109a30627a8c52e3302d54c9c00ae06f6f870c18857cdf9bd06514ab81c57",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V9__spapi_credential_version.sql",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "1c9ea01d796fc383b6f4053d01faba53bcdce3c52297da2df7bc529ddc31ace0",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/schema.sql",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": null,
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/LwaTokenExchangeContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "f5e3f710978163925bb6ec325ffb15552a4f9af08c665f75750a5fc8777a7157",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/auth/LwaTokenManagerGrantlessTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "2e5de0e528ac40a7077e81e760b9dc158f77a4076adf6cb898801f9c5c9ad577",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/bootstrap/BootstrapProfileIsolationContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "c43f8a86c60cb72cb62204cdbb03df90b14be2260e1eef28b6a7b12cbf2e71ed",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/bootstrap/SpapiCredentialBootstrapLoaderTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9fdaf8f4e8b1a3b3fd43c5e41aadac01d697cefc1fa359ffd9dfec419bf37bf7",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/AmazonMessagingRealClientContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "af5dc7cb2cc7cdaced38c80ca14861e385473c10f37de6c36ec9ab66248dc79b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/AmazonUploadsRealClientContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "51980b0d482ce03e262bf08e9f618716c4c65a6f45112e87192919ff8f5ea01f",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/ApiResponseSemanticsContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "8fa7ad20639b1ccaf801f22c6195a95e619c66a08946ba7af4f8284809354798",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/FeedsResultDocumentTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "455254eb70d7a324ce92ad613c83989807b30bdbcf8d378319c4e684e9de4861",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/OrdersClientRestrictedDataTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "f4db51a56ad0a037f8939e37fc69e1b47d8e2723f54768dbdc6f8df4122b46f9",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/RemainingCapabilitiesClientTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9edc0395b6e4506d9c3fd8cdcc05c8e4d4157006007fbcecdfa94f81818f49d8",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/ReportsFieldContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "8f32fa5f560ec70f2cb2a862db0162f85c89dff2ef72b9c1c0df8437d2815a1d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/ReportsRealClientStubTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "9096bc37e9031e11bd8e01869442a2bf64790a1ce1fa2daa35e29adfd1a963bf",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SellersClientContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "ae8a231e7d4015ff5f346e34f055645a1c85bbd8db45c2402fec7dac0e9def8b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiGatewayDownloadErrorTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "bdd7a5d1caa983e43bf9fee6ba9c92a1ad33abde3180e73d6d805db7ee777591",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiGatewayRestrictedDataTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "772e30c2720b5f0f024232775c9934d2297c379634a8f0d0cd99e0108b1ee50b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiGatewayUploadErrorTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "ea930344c0330866ce25497bb463d87ec2c6d486136442ea92ef285416a5d36c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiOperationCatalogContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "c4106a76bb97e5c65a2733027cc2b40fb70c3dabe8e6b8ebcb20a6baf72e96c0",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiOperationClientTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "ccc2a629751709fc5143b1bf2c56f7f5cd6547c6b0371a10a56313ccf8586faf",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/SpApiPathContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "9f45a38392c4c5c9e0edcdd598ec6234c44bd7ad789b19aec869fd6fcf23fc40",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/TokensClientContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b886602619cf35df06ff211eeb177b303bfcd6d4a6b47d49648100eac8c67642",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/parse/FinancialEventParserTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "fd488763cdc48f71e2472e4af9f367d1753c24c4fbea7f5cbc61cef847a6713e",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/ConnectorRegistryTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "37fb4320d90d74a3636d86766462de5b566651dff873e72b65685d249a8fa3cb",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/RestrictedDataTokenManagerTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "4a13e339aab4728aca60b48aff663481a63880092dcffbe7685bbedaa2ebcaff",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/RestrictedResourceTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "d1f956fb87124cc8689540bfe8c05bcf699b6e85664d6a3454f2acce6a1214c7",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/SpApiCallExceptionTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "cb335c528a8a3c274208525485809e04f6f9d3e506cbab32e4e86bbc24217d87",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/SpApiRequestFactoryPresignedHeadersTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "644f17c3de0f70d547e8766aae02f9cf3923f794673bc16497e2613be8ee509b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/ConnectorControllerGuardTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "1b0802dc2047345599d4450e852e96429c3f47252c7bf5417e5fc5248f09f0f7",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/ConnectorControllerOutboxContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "a269715f2a4d4a3f0192885b7df918d5f699187d990b12265256f0b97f233b6d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/ConnectorControllerRateLimitContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "73ac19300d35f8d02d771d2343461c4075a4372f3347f73f8620d4b5ee9ae90e",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/ConnectorControllerShopScopeContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9387c936d06e3abda2fdcf8cf475767fd0ab9f6a765aa93f503e2bf9607cc90c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/ControllerErrorTextContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "1a6ebabaf75add3dd812069e4c11b757ecc109dff7e43bf66eaefaa06279758a",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/ControllerFailureContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "19e1d79f4d5cac4bdcf2669c34efbd156a7a82a1249b635340473471088b0437",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/FeedsControllerShopScopeContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "6d8e252dfd684b9607a8d5653e22f55b84db943d2831758e8bceef37828d7755",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/FinancialDataControllerDualTrustContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "da0b0c95030ebaa5115f5f948f4de15a3cfd6b3fbfd12f3a934149f55625df1b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/MessagingControllerContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "959ea636ff1f24ea7cd21ec6068d18f828fdf572e769bcf6d731dfbc5e7021c0",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/PreflightControllerContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "950911914f8575f8d29652ebd8fab8d241272a9e0f5c234d61aae91007f1f900",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/SellersControllerContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "cd389a8a3e2a80b06dd6b5175f07630e5da6ecbc968e936b276c53054b21e3be",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/ShopCredentialControllerContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "1f6e2d2da8c5cf6180a89b00563169d682c67014684ea8a6b9d8f49e71b06ee1",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/SpApiOperationControllerTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "4c8ddbdfaa65cd1b3cfdeb98ea4b051a13436f43a650f5953fa68646b4817ba9",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/SpapiControllerShopScopeContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "cf6310b8782c41ce093cf43a80f9b12e4c4280f09a64396ee2a08123eb8862a0",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/controller/UploadsControllerContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "91ce984c06dffede4822750c0a5613d6d53d32a8823429b1ef69ae948a192894",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ConnectorStartupCheckTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "a68c06c048be212d562dfa6c42602e87bc03c60d85baee2916219141bd532630",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialAdminServiceTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9c6d56b777e9904fdafb81edc2c55e6228b4bd96ec66031f27f897d29a5b19ef",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialMapperContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "cc2f2c13c3a5ccf62cb745aaf4657a020473ba6cc02c40715a01f0fda6710fa9",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialStoreDescribeContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "828cab37e7d6096b815357348fbf6b179f8e21235996b7f012f5b185ac66c491",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialStoreFailClosedTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "6079885167a3523479153b2521a189c75d28ac44f2940eb0907c8d0de4b833f8",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialStoreLazyLoadingTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "a9a9c3e53c598c2521a4465bf300e2a2167673e52c8d9f8151c8c25ddae0068d",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialValidatorTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "f964b813e48646303f7a89d143de6d7735e3c7582da0acfe2ccba26bf4ba6343",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesFlywayMySqlIT.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "4cdb45c809ea9616cdf29f90764c45407888b481aeeb35173d4ca2332e3f541b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "9f05adb301b5ca6a48955ccd450e2c97cf9d51b101a4e2c906ce9b2278059b0e",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BootstrapDeploymentContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "f8b8aebf2a2d128e2c45387bddf504399b421ac7b17f3faa0d81abd3d7f73677",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/CiWorkflowContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "36e12cab573a216e3e9f6154ea64fed74f9d1f2c456f1f7ce98e69381c4fb6b6",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/CredentialSchemaContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "4536738f948bbebf78d1d1ffea45f033688a24815dd53b23d6c1ada07dd87f6b",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "61983721978fcfd8b017e06cc408b0aeab1ba3cbabe19a2525e1a4863f222e37",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentSchemaBootstrapContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "90c2571833f925533eec4a2a08dfe81b29325af2f20ba6d32ad57b742cfb6b17",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/FlywayBaselineContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "98aff1960687e2711174d18fa94253f91561691dc13ab4db8a8c2860be5a8ca5",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/PlaceholderCoverageContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "f6de00cb219452f9f8fc7cee63289b037fc1772df0d02e9de95a3e9c9700949e",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/SpringConstructorInjectionContractTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "46de09c1c37229c0ecde16b0ae56cf2327bcdfb9b00c44defb342c05aae50659",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/outbox/SpApiCallOutboxServiceTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "b138d8422c0c23c0d9a17ee0bf508f8ec9ece92f95a54ecdf4aa161f64b196b1",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/outbox/SpApiOutboxReplayExecutorTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "dbebc312fbe38d359b33c769b1404e6529c79c00c96cbad3e28fc1070fdbf978",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/preflight/SpApiConnectivityPreflightTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "16f7c7a592e7b7382ae2fb3fa8315ef2d784829b54eb9282cd8d5338553a06b2",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/ratelimit/SpiRateLimiterMetricsContextTest.java",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "30e5e6e7b290014230593c7f2663c6aee039169f226cf50bafe9bafdfe271bad",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/ratelimit/SpiRateLimiterTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "5082e059661cbc33e1ce44c059415a30d4aef475427e3f7e8d9355195283a7c2",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/scheduler/OrderSyncSchedulerContractTest.java",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "22e9482f49ea7a13d0c7f8ffa4e85ccce6ecaa21d093d9f15fbc05b766ea9423",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/README.md",
+      "status": "tracked-changed",
+      "group": "spapi",
+      "sha256": "eb12295968f214f894f9205f3b2b677d62be3282bdb9dcaffdef2f4b9077925f",
+      "classification": "docs"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/catalogItems_2022-04-01.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "1a029b01df1d847d3057740a6e877f89f2ab78104b5b4d8f4b839f8d00f600c2",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/fulfillmentInbound_2024-03-20.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "a4d4cdd08dd3f381f27154d7f9f503d45e0486d416c629598341bbd23c7ff487",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/listingsItems_2021-08-01.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "117617f4c86dbd5c1708913103806a24c0ef0bbcfb6054e415d044d07761faeb",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/messaging.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "16b585e87a3b72c3637ffa0890e08acb4e2090864f1e8b4c1a9271a06700a8a1",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/notifications.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "6a5e945f2a53a91b9b97c27cd4570dc399db3dde2b777f623fc226fbcdc8469a",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/productPricing_2022-05-01.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "db6ffeab130bf1d4ab8fa47e4e83417d30d9cb682b3ce53f74ed51b62f6f817c",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/sellers.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "497862ea32de8040453649986e2cd7c6fcc15b55e8022becc783e4a6d6ffcffd",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/tokens_2021-03-01.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "3cd09ae7f218c83f32536a894cb8c42f2191c94b9c27f6bcf0a164442089b061",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/uploads_2020-11-01.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "202444dd425c24308366a4aaab28680dfb2ec70c25f4d9cd5441ea7d968ec3bd",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-spapi/src/test/resources/feeds/result-sample.json",
+      "status": "untracked",
+      "group": "spapi",
+      "sha256": "86fee9fe5ef9e80cc78d65b4126db9e7a2759ddc10233b3ede538e3b1dcf2f49",
+      "classification": "test"
+    },
+    {
+      "path": "amz-service/amz-service-user/src/main/java/com/amz/model/pojo/User.java",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "8344ed2fa9a9b0a4644cc3dc613a51e3a4f52284c0d0b2d4826f2d81be7e6f39",
+      "classification": "source"
+    },
+    {
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "b81feba4dfec77540f2c36e5fd20cee005224218d999ea903b02cad6408bb143",
+      "classification": "source"
+    },
+    {
+      "path": "docker-compose.bootstrap.yml",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "0d7698688a2f8c1ade6d6c5ca36da93ad9a39d166283b5db2e638c40fbcdfae5",
+      "classification": "config"
+    },
+    {
+      "path": "docker-compose.yml",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "78e584d781753ad894b99de7206d9a32b5d6e78f08247a063658ac3b2d0e2d6d",
+      "classification": "config"
+    },
+    {
+      "path": "docker/init-sql-legacy/19-init-tables-field-permission.sql",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "fe338e4d88b21ad5b4b661d794d63771d31d3ffb2d6a6851749ae54a4509525c",
+      "classification": "config"
+    },
+    {
+      "path": "docker/init-sql-legacy/23-init-tables-procurement-upgrade.sql",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "7c578f13fd63ad1eb6211865e4436c1b394b2c2a4f10beb9391ce88c9b1081aa",
+      "classification": "config"
+    },
+    {
+      "path": "docs/examples/spapi-credentials.example.json",
+      "status": "untracked",
+      "group": "docs",
+      "sha256": "1e3808ef3b7b0dcb2ff66645cba24e9b1e4b98402d659b0087724cb10bf02838",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "1d38ce49dbf720654e6ad38c9735fd4a3fe72075664e26284d900898995c0637",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-26-connector-capability-ledger.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "6a3da77d237683807ad81c1752a1dcbe97f46f35e6b146959ca169648615a8b1",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-26-distributed-job-lock-fail-closed.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "e5e9d6f8c7803a766dd6dfc3b12524f5b21ad5028345396138989d8b167b35fc",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-26-fifo-atomic-deduction.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "50e80509720eba888485fd1230b462f39eb18333475a7921a14a556dc0a1ae46",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-26-spapi-rdt-api-ready.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "4680e11ff722176643029b341212bc526fa29467e3b9d1f9581e3f27f2690b56",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-26-spapi-remaining-capabilities-api-ready.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "5b72ea866dca4dbd7455dbf3ec319eea840b25a9e9c8add34f95e4a2c50e0527",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/runbooks/ad-business-uniqueness-migration.md",
+      "status": "untracked",
+      "group": "docs",
+      "sha256": "cacd554b03e77271e41aa298ab554facc31fd38a18e77044bbf4768cc552adbd",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/runbooks/ad-tenant-backfill-remediation.md",
+      "status": "untracked",
+      "group": "docs",
+      "sha256": "2035cf81cbfa484eb270a318c81a5d604aae80c136168bd8a94cb81eb9199200",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "3dab857a48c75e637175900beca5a752d3f7431b41df8d0fa6a9a20609ce75db",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/runbooks/connector-acceptance-runbook.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "8aa6c9e6373f60c91e52c4d42057488765c90f3d8ab28ca653420969dd9f5a4b",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "827d2c41cec1a09a2158b50a5d7d39b0ce9ef00aa293df336c5712c45ef4ce43",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/runbooks/mock-data-seed-and-cleanup-runbook.md",
+      "status": "untracked",
+      "group": "docs",
+      "sha256": "a8b80d0c6e02f17f93a6240062af8cc336266b98bce23dd89b284751005df755",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/runbooks/reference-key-convergence-rollback.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "f06b84900254e08c4cb2ee759435b4094a5e916ff21553faef8c2efde73c0a86",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "95ad73b1e5959c2eb6ea052c6e6cbc1ef0b0ba8a260ec80d11baad0853c2b168",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-26-performance-and-business-optimization-audit.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "1f658ea2caf44021f8573c7ed7fc5028a8d2632e1577b07a62b92726f4497c3d",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-26-production-upgrade-execution-matrix.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "16588ff172c620913c963f435e38a1cd14ae70898bc1e5f8c3901383279daa30",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-26-spapi-notifications-inbox-design.md",
+      "status": "tracked-changed",
+      "group": "docs",
+      "sha256": "08ee61cccc8b15a63ceb78752d2561b2281045ce1d0b683eba40bf30c339be0a",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-27-production-upgrade-plan-and-mock-data.md",
+      "status": "untracked",
+      "group": "docs",
+      "sha256": "757c81e273db5ea2ac952120cb18b626d365a064b4696991362cb02798c48807",
+      "classification": "docs"
+    },
+    {
+      "path": "docs/superpowers/specs/2026-09-28-full-project-review.md",
+      "status": "untracked",
+      "group": "docs",
+      "sha256": "79cd36aba111df4bf8fac06876c15df4d2763606707867977b2933a0d36601cf",
+      "classification": "docs"
+    },
+    {
+      "path": "k8s/configmap.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "40a2a983c0f90bbe0cf304e7a993e67654712cd6002f1befd53d660024978aac",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/jobs/amz-service-spapi-credential-bootstrap.yaml",
+      "status": "untracked",
+      "group": "deploy/k8s",
+      "sha256": "9457c544955b74839068cefe50e937653d8a014147cd8d5de3bbeba233541dce",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/secret.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "c1703f1c823d0a9f736496694b7d5eed3cfb683d4a33156d6cd27359b0428b12",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-gateway.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "a8d0102d75c05d5644210ab5f1f770b4f17b21221190ddb8fedf9bedb1ddc048",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-ad.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "558df1055f63727ea814f92f3d6d02ccdd06871828e2fdc72cab8823441d0788",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-ai.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "4d08410ac2d556363cc70bc59a1e610ea8834c4ad398a80d13ba799fa2e84c6f",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-customer.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "bd63988622aeb3004f1f5643b3b9d6e0f395ef140edd78a84d3dde67a9c42aa9",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-finance.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "cbb9a7f1db55813cc5156bdef129db57a280f33c88cbd524f59d4e6a314a3eac",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-logistics.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "0c503e39a4102ce03db732e2cfba8a223e1cbba12e3a18c344ce631e6f736c74",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-message.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "0e3e69dfb0e718194970d14f2d261440d0c232c53c301038e1227d26e929a781",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-multiplatform.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "453462ed8024d77795e9df9defc2187c0093b01ebff09b11be63491b978f41e2",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-ops.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "31051d694ea002559c4294ceaee2e833a7b5b8b7ac4c0063eed88335c0cfaa9b",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-procurement.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "9feef454d747446537d802114840476dc525add2041dad66fda293fc61c9805b",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-product.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "8451ebd6006b1700c4dcdb2203c4d773429e7f119251e63e5de249acf3a86894",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-report.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "c79d16d7149a74d631d2c2a520da37c14a333cf96bf1fcba6ff07882456d7f63",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-search.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "7949af08ac6b8fc41662c9d2d54168e368a1bcaafea3b4f9d7edeb8c6eac74c1",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-spapi.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "63d2f24129647eb0d2390139f8f4a267443fd371f5de790b45f2472cd95a5b17",
+      "classification": "config"
+    },
+    {
+      "path": "k8s/services/amz-service-user.yaml",
+      "status": "tracked-changed",
+      "group": "deploy/k8s",
+      "sha256": "a90f6db4590dd2b0aba67c82aaf125b268ca81fae575ed6974c2adbf0092ed56",
+      "classification": "config"
+    },
+    {
+      "path": "pom.xml",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "7d176d9a569546ec3c4ad1fc9690015244f0e0d5adf7b9ce96906a944016bfdf",
+      "classification": "config"
+    },
+    {
+      "path": "round33-cred-delete-ok.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "fdb3033e7e8624c0068457f6f98a7f4585f88451176d3206b03b105208770747",
+      "classification": "temporary"
+    },
+    {
+      "path": "round33-cred-put-after-delete-ok.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "ac7adc2c831cdd0db3ad34a6204862c38dba3bb4468a737c0d3e458848116737",
+      "classification": "temporary"
+    },
+    {
+      "path": "round33-cred-put-blocked-by-corrupt-ciphertext.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "12499f4202627311a5bc8718216014c07d562c12e515622a2eee5313d9860423",
+      "classification": "temporary"
+    },
+    {
+      "path": "round33-cred-status-after-fix.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "1db037afe4b22bd5c0c14daf13b105ca22b25ca8187f555b85207a07ff136eea",
+      "classification": "temporary"
+    },
+    {
+      "path": "round33-cred-status-after-put.json",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "ac7adc2c831cdd0db3ad34a6204862c38dba3bb4468a737c0d3e458848116737",
+      "classification": "temporary"
+    },
+    {
+      "path": "round33-nio-selector-afunix-probe.java",
+      "status": "untracked",
+      "group": "review-required",
+      "sha256": "1fdfb197b2b33f86311ebbdb922b62d021dc1d078311ceff6f034e32cadedc69",
+      "classification": "temporary"
+    },
+    {
+      "path": "tools/connector-acceptance/acceptance_runner.py",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "6eee1eced47c2813f49c70a4b04639581fe9f8332e0503cba7447ea32a80ab4c",
+      "classification": "source"
+    },
+    {
+      "path": "tools/connector-acceptance/fake-service.py",
+      "status": "tracked-changed",
+      "group": "review-required",
+      "sha256": "0da083c4ddbb9deb0db21535c3ec019adc1ca01aea4cbb68373ec19eacbbab0c",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/apply_migrations.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "8809b484a717eecdad4553f62184fb8d5708a37e76ad8ddcf945f9ffa30e63ca",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/ddl_parser.py",
+      "status": "tracked-changed",
+      "group": "synthetic-data",
+      "sha256": "27d18d581b59c01f0b535ef375b4623f1690f9ebaf05879d9d71253f545a2232",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/generate.py",
+      "status": "tracked-changed",
+      "group": "synthetic-data",
+      "sha256": "0c82f6333c76c02f4e119ce0e4c62a6027b807b97280e46562d9e7ba6bed8ca6",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/load.ps1",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "4d1fda85265705d51fb5dcf8e40c3dfaed6cb0809e5311abf0b46962d61f07e5",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/load.sh",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "6f23961040a3cd42541caf1239873b3bc0f25aa55f1618abc69f58c5c2ac5811",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/purge.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "6cfbbef57e442161bd165512164981a5836ddb9e36361c783ebb36338f9ac6af",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/schema/DDL_SOURCES.json",
+      "status": "tracked-changed",
+      "group": "synthetic-data",
+      "sha256": "2e670bd0126db47ef912e95deb195e79d8fe3e3213c3b058830df178cebb2cba",
+      "classification": "generated"
+    },
+    {
+      "path": "tools/synthetic-data/schema/SCHEMA_REPORT.md",
+      "status": "tracked-changed",
+      "group": "synthetic-data",
+      "sha256": "36ddc83b27bc6479f2cdfbc2ad9f2d23b27a7e3f8937533787d6c1f8d0c602eb",
+      "classification": "docs"
+    },
+    {
+      "path": "tools/synthetic-data/schema/schema-snapshot.json",
+      "status": "tracked-changed",
+      "group": "synthetic-data",
+      "sha256": "2d2ea3ee800986e7ea5557529fdfe1aeb5f2d11ee1ea5c4384dd7df95a5a9164",
+      "classification": "generated"
+    },
+    {
+      "path": "tools/synthetic-data/snapshot_schema.py",
+      "status": "tracked-changed",
+      "group": "synthetic-data",
+      "sha256": "ce7c731476df3dee63160d5fa7586afbf9b074dd7fb079f66c3798a0179cee2e",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/test_ddl_parser.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "c9f3f3041605682626e7d3a43e151b8d8ac7b0ae237be72b0bc3fec226eb95d0",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/test_purge.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "d5c8bd088d776daf6aaa8356f8f66edb1d58d6dff99abb696c167cd170c92dcd",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/test_schema_load.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "fdd415832bd50b03d422d3e3cfc3a81d17c1653f67ed4866fec25eff6796d465",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/verify.py",
+      "status": "tracked-changed",
+      "group": "synthetic-data",
+      "sha256": "920a1ba453fab7d7a9dcfea58d2c615aa4d22370fdfb1ffe85e8918ab23573f8",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/verify_cleanup.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "1b8c3ff46928545f41f84ce9fe401083e015eac05dc2105836d6fef61a132c83",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/verify_import.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "f027f5e736e3c3d289aa0578c382339a0fbdfa5332588fe98ad5977cdf967c7e",
+      "classification": "source"
+    },
+    {
+      "path": "tools/synthetic-data/verify_schema_load.py",
+      "status": "untracked",
+      "group": "synthetic-data",
+      "sha256": "698a7a42c3cf5bbbcd7a8fdd45de221371be789b7eaf77623fc669e33e1f93c0",
+      "classification": "source"
+    }
+  ]
+}

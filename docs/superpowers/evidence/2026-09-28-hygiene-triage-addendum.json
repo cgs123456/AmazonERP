@@ -1,0 +1,702 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-29",
+  "sourceSnapshot": "C:\\Users\\Administrator\\Desktop\\AmazonERP-recovery-20260928-092159",
+  "scans": {
+    "snapshotRootWithUntracked": {
+      "findings": 67
+    },
+    "untrackedRoot": {
+      "findings": 21
+    },
+    "currentRepoTrackedTree": {
+      "findings": 0
+    }
+  },
+  "pathPrefixArtifact": "When scanning the recovery snapshot root, untracked files are reported with an \"untracked/\" prefix, so allowlist entries keyed on repository-relative paths cannot match. Re-scanning with the snapshot's untracked/ directory as root removes this artifact: 21 findings remain (15 temporary scripts, 5 round artifacts, 1 EOF-newline hash mismatch).",
+  "classificationCounts": {
+    "temporary-artifact-not-for-git": 15,
+    "allowlisted-placeholder-or-test-fixture": 23,
+    "eof-newline-noise": 1,
+    "aws-official-example-key": 1,
+    "aws-official-model-fixture": 1,
+    "diff-text-noise": 26
+  },
+  "ruleCounts": {
+    "secret-like-assignment": 50,
+    "temporary-script": 15,
+    "aws-access-key": 2
+  },
+  "findings": [
+    {
+      "findingPath": "untracked/.patch_710.py",
+      "path": ".patch_710.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "6bab71efa2ef430a0b5a2e3f57e012a224fc828e98f0b07c288a51efcc53d99b",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_79.py",
+      "path": ".patch_79.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "5281ce1152e9081845e7e3076ca3d99d97f8b53bce4e722bc1b12bbd332ff279",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_aws_httpclient5.py",
+      "path": ".patch_aws_httpclient5.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "432ad4ec19a5bbf1b68c1bdc38f289a37ee14eea3139e8cf35e355a4da5b28c2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_doc70.py",
+      "path": ".patch_doc70.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "2f6726152a2e998e5955145a2bd0b8a5e6464df6e0a8cd3e068b7213ca340d2b",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_doc70b.py",
+      "path": ".patch_doc70b.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "309e826009ce87e6df0fc75cd76c98a7cdc98775c656eb369ce82ec31e1b6f4c",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_doc70c.py",
+      "path": ".patch_doc70c.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "97703acaebd72497dcc4d507995b71c3b4d6610929e2149719cd9a9fc3c9d5e2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_k8s_schema.py",
+      "path": ".patch_k8s_schema.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "a8d689d5a70343b27bfeb2fab0150de8e3d44ff6c256aebbfe6832771bf0691a",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_layouts.py",
+      "path": ".patch_layouts.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "11b899c3bdccd5b14c3e2246a058f6465348c93abb40311460ca23e4437b42d2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_p058.py",
+      "path": ".patch_p058.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "14c41a2c0eb2436ab8238b8e76436736068d69881dc7162a5ee7eaf9f091e111",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_p058_meta.py",
+      "path": ".patch_p058_meta.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "95b6a963e4455c8b06b3fbd9b039ac3cd8d4aafae6288c1960a7a3b534e3a9f9",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_plan_task11.py",
+      "path": ".patch_plan_task11.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "a7a188e1d787b2fa9de9b4e1bf6e4c5fa9bc8a2198c0cc07d97e45430b082191",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_profile.py",
+      "path": ".patch_profile.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "088c9e405d1553d55f91ed0ce425ea44e674963f253d58c67dc235a4445d31a3",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_profile2.py",
+      "path": ".patch_profile2.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "2a608b3b4131d58f948f7abe064a739abb12c77c65a097dbc4e7980de2e6ffd2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_rs.py",
+      "path": ".patch_rs.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "5ec536b0149b6a4e780889851fb5c303abf4ff92f3d715fcaca373b695cdb0a8",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/.patch_sqs_test.py",
+      "path": ".patch_sqs_test.py",
+      "rule": "temporary-script",
+      "detail": "forbidden temporary artefact",
+      "triage": "temporary-artifact-not-for-git",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "f100f7ce04221261e6a91d25f7910fc0bdb8c16878ee18967ef33cedd21d1ee2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 111",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 125",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 138",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 151",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 164",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 176",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 190",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "path": "amz-common/src/test/java/com/amz/config/GlobalAuthWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 97",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotContentSha256LfNormalised": "37b7e0b3de1e2c02c9b29d446b5545d62a99f87e49070d62e4508b9634fccea1",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
+      "path": "amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 44",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "bc7d6cf2647edece59e5f23bb60200ddab4fdb08f1b39a06ee6b956d365c6158",
+      "snapshotContentSha256LfNormalised": "bc7d6cf2647edece59e5f23bb60200ddab4fdb08f1b39a06ee6b956d365c6158",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
+      "path": "amz-common/src/test/java/com/amz/security/InternalServiceAuthContractTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 65",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "bc7d6cf2647edece59e5f23bb60200ddab4fdb08f1b39a06ee6b956d365c6158",
+      "snapshotContentSha256LfNormalised": "bc7d6cf2647edece59e5f23bb60200ddab4fdb08f1b39a06ee6b956d365c6158",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-frontend/src/__tests__/ConnectorCenter.test.ts",
+      "path": "amz-frontend/src/__tests__/ConnectorCenter.test.ts",
+      "rule": "secret-like-assignment",
+      "detail": "line 345",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "3674989797866bcc7ffa1f92db2e56db5232dafd1c1f43fec9b05db6d17cbb7c",
+      "snapshotContentSha256LfNormalised": "3674989797866bcc7ffa1f92db2e56db5232dafd1c1f43fec9b05db6d17cbb7c",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-frontend/src/__tests__/connectorsApi.test.ts",
+      "path": "amz-frontend/src/__tests__/connectorsApi.test.ts",
+      "rule": "secret-like-assignment",
+      "detail": "line 50",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "12894198a8777edb5f08cc3e7d316d5afa42fce67c06563323b5405bcd6e47d5",
+      "snapshotContentSha256LfNormalised": "12894198a8777edb5f08cc3e7d316d5afa42fce67c06563323b5405bcd6e47d5",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-frontend/src/views/ConnectorCenter.vue",
+      "path": "amz-frontend/src/views/ConnectorCenter.vue",
+      "rule": "secret-like-assignment",
+      "detail": "line 538",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "e409671560d039921de9fe4981b1fbdd589dfe2f5c20bd59744aaf35f2f27a92",
+      "snapshotContentSha256LfNormalised": "e409671560d039921de9fe4981b1fbdd589dfe2f5c20bd59744aaf35f2f27a92",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-ad/src/test/java/com/amz/migration/AdMigrationMySqlIT.java",
+      "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdMigrationMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 50",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "6da7d886f957f210fc8e71c7c4ba3ca55920bc278ee3b07694f1672467d1839c",
+      "snapshotContentSha256LfNormalised": "6da7d886f957f210fc8e71c7c4ba3ca55920bc278ee3b07694f1672467d1839c",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/main/java/com/amz/client/TokensClient.java",
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/TokensClient.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 82",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "9b85572aa5ba365ec2121832d23c821c62358826614baefa0d086b1664fe5252",
+      "snapshotContentSha256LfNormalised": "9b85572aa5ba365ec2121832d23c821c62358826614baefa0d086b1664fe5252",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/main/java/com/amz/connector/RestrictedDataTokenManager.java",
+      "path": "amz-service/amz-service-spapi/src/main/java/com/amz/connector/RestrictedDataTokenManager.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 125",
+      "triage": "eof-newline-noise",
+      "allowlistHash": "1be0ed5cecd6a19c929e090fa30e09a5689ed1e5cebd4480c3f3f0f93b0a5b0f",
+      "snapshotContentSha256LfNormalised": "0ebe85131f6bf75f0e3ab6fd1a2f783b6e8679fe1529bc5a430e4fbbe76aa285",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/client/AmazonUploadsRealClientContractTest.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/AmazonUploadsRealClientContractTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 36",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "520ef974e4d7041f102dcdf4b89625847447bca7b5546a724e0a50bf7dd81588",
+      "snapshotContentSha256LfNormalised": "520ef974e4d7041f102dcdf4b89625847447bca7b5546a724e0a50bf7dd81588",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/client/FeedsResultDocumentTest.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/FeedsResultDocumentTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 46",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "455254eb70d7a324ce92ad613c83989807b30bdbcf8d378319c4e684e9de4861",
+      "snapshotContentSha256LfNormalised": "455254eb70d7a324ce92ad613c83989807b30bdbcf8d378319c4e684e9de4861",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/client/TokensClientContractTest.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/client/TokensClientContractTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 70",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "5635e4d357ba2c0c81f739f125e6e8bb58ebe14dee1975cc8a0b1ac49fa6cb2b",
+      "snapshotContentSha256LfNormalised": "5635e4d357ba2c0c81f739f125e6e8bb58ebe14dee1975cc8a0b1ac49fa6cb2b",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialValidatorTest.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/credential/ShopCredentialValidatorTest.java",
+      "rule": "aws-access-key",
+      "detail": "line 87",
+      "triage": "aws-official-example-key",
+      "allowlistHash": "f964b813e48646303f7a89d143de6d7735e3c7582da0acfe2ccba26bf4ba6343",
+      "snapshotContentSha256LfNormalised": "f964b813e48646303f7a89d143de6d7735e3c7582da0acfe2ccba26bf4ba6343",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesFlywayMySqlIT.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesFlywayMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 56",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "4cdb45c809ea9616cdf29f90764c45407888b481aeeb35173d4ca2332e3f541b",
+      "snapshotContentSha256LfNormalised": "4cdb45c809ea9616cdf29f90764c45407888b481aeeb35173d4ca2332e3f541b",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 56",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "7b581eea4a24addd435350dd1c4d4483b11e2162ce52cb6840c0eff1c8e402cc",
+      "snapshotContentSha256LfNormalised": "7b581eea4a24addd435350dd1c4d4483b11e2162ce52cb6840c0eff1c8e402cc",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BootstrapDeploymentContractTest.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BootstrapDeploymentContractTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 88",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "f8b8aebf2a2d128e2c45387bddf504399b421ac7b17f3faa0d81abd3d7f73677",
+      "snapshotContentSha256LfNormalised": "f8b8aebf2a2d128e2c45387bddf504399b421ac7b17f3faa0d81abd3d7f73677",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java",
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java",
+      "rule": "secret-like-assignment",
+      "detail": "line 228",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "e9bcb54c984948a59114a149af59c7fce54701324c4483f20e6382c1fce9efcc",
+      "snapshotContentSha256LfNormalised": "e9bcb54c984948a59114a149af59c7fce54701324c4483f20e6382c1fce9efcc",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/amz-service/amz-service-spapi/src/test/resources/contracts/uploads_2020-11-01.json",
+      "path": "amz-service/amz-service-spapi/src/test/resources/contracts/uploads_2020-11-01.json",
+      "rule": "aws-access-key",
+      "detail": "line 79",
+      "triage": "aws-official-model-fixture",
+      "allowlistHash": "202444dd425c24308366a4aaab28680dfb2ec70c25f4d9cd5441ea7d968ec3bd",
+      "snapshotContentSha256LfNormalised": "202444dd425c24308366a4aaab28680dfb2ec70c25f4d9cd5441ea7d968ec3bd",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-index-vs-head.patch",
+      "path": "git-diff-index-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 2736",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "374102029616500c4419e61eb43823d723c340c315d9e7a143962247183467a2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-index-vs-head.patch",
+      "path": "git-diff-index-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 2739",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "374102029616500c4419e61eb43823d723c340c315d9e7a143962247183467a2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-index-vs-head.patch",
+      "path": "git-diff-index-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 480",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "374102029616500c4419e61eb43823d723c340c315d9e7a143962247183467a2",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 1095",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 1322",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 2533",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 25550",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 29916",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 29919",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 31604",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4061",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4205",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4259",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4366",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4388",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-head.patch",
+      "path": "git-diff-worktree-vs-head.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4518",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "d8d725b211954e1c4d9cdd6c81c01caae0343a47a133bdfaa3467205b6086eae",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 1095",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 1322",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 2533",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 27470",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4061",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4205",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4259",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4366",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4388",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "git-diff-worktree-vs-index.patch",
+      "path": "git-diff-worktree-vs-index.patch",
+      "rule": "secret-like-assignment",
+      "detail": "line 4518",
+      "triage": "diff-text-noise",
+      "allowlistHash": null,
+      "snapshotContentSha256LfNormalised": "20af361ffab0595914ccdf20fd24aec1f68ce0c0dd2d28d9ec1bcd8470000334",
+      "snapshotFileExists": true
+    },
+    {
+      "findingPath": "untracked/k8s/jobs/amz-service-spapi-credential-bootstrap.yaml",
+      "path": "k8s/jobs/amz-service-spapi-credential-bootstrap.yaml",
+      "rule": "secret-like-assignment",
+      "detail": "line 100",
+      "triage": "allowlisted-placeholder-or-test-fixture",
+      "allowlistHash": "9457c544955b74839068cefe50e937653d8a014147cd8d5de3bbeba233541dce",
+      "snapshotContentSha256LfNormalised": "9457c544955b74839068cefe50e937653d8a014147cd8d5de3bbeba233541dce",
+      "snapshotFileExists": true
+    }
+  ]
+}

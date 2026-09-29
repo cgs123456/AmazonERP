@@ -2,11 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Dry run (build but do not push/sign)"
-        required: false
-        default: "false"
   push:
     tags:
       - "v*.*.*"
@@ -17,9 +12,12 @@ permissions:
 env:
   REGISTRY: ghcr.io
   # Must match the target published by docker-bake.hcl
-  # (`${REGISTRY}/amazonerp-gateway:${TAG}`), and the tag below must match the
-  # TAG variable the bake step exports.
+  # (`${REGISTRY}/amazonerp-gateway:${TAG}-${GIT_SHA}`), and the tag below must
+  # match the TAG and GIT_SHA variables the bake step exports.
   IMAGE_NAME: amazonerp-gateway
+  # Single source of truth for the release image list. Contract tests keep it
+  # aligned with docker-bake.hcl; SBOM, scan, and signing loops all use it.
+  RELEASE_IMAGES: "gateway ad ai customer finance logistics message multiplatform ops order procurement product report search spapi user frontend"
 
 jobs:
   quality-gate:
@@ -28,6 +26,7 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,8 +47,18 @@ jobs:
         run: mvn -B -ntp checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml
       - name: Full Maven Test
         run: mvn -B -ntp test -fae
+      - name: Frontend Install
+        working-directory: amz-frontend
+        run: npm ci
+      - name: Frontend Type Check
+        working-directory: amz-frontend
+        run: npx vue-tsc --noEmit
+      - name: Frontend Unit Tests
+        working-directory: amz-frontend
+        run: npm run test:run
       - name: Frontend Build
-        run: cd amz-frontend && npm ci && npm run build
+        working-directory: amz-frontend
+        run: npm run build
       - name: Release tool tests
         run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_verify_clean_clone -v
       - name: Extract version
@@ -57,8 +66,10 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "image_tag=${GITHUB_REF_NAME#v}-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           else
             echo "version=dryrun-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "image_tag=dryrun-${GITHUB_SHA::7}-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
 
   release:
@@ -70,6 +81,10 @@ jobs:
       id-token: write
     # Tag pushes publish; workflow_dispatch is a build-only dry run.
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+    env:
+      IMAGE_TAG: ${{ needs.quality-gate.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,7 +104,8 @@ jobs:
           # strip the owner namespace and make every push fail with 400.
           REGISTRY: ${{ env.REGISTRY }}/${{ github.repository_owner }}
           # docker-bake.hcl defaults TAG to "dev"; override it so the pushed
-          # tag is the release version, not the placeholder.
+          # tag is the release version. The bake file appends GIT_SHA to every
+          # tag, producing the immutable IMAGE_TAG used below.
           TAG: ${{ needs.quality-gate.outputs.version }}
           GIT_SHA: ${{ github.sha }}
         with:
@@ -100,14 +116,24 @@ jobs:
         id: bake-metadata
         if: github.event_name == 'push'
         run: |
-          DIGEST=$(docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ needs.quality-gate.outputs.version }}" --format '{{json .Manifest.Digest}}')
+          DIGEST=$(docker buildx imagetools inspect "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" --format '{{.Manifest.Digest}}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-      - uses: anchore/sbom-action@v0
+      - name: Generate SBOM for every release image
         if: github.event_name == 'push'
-        with:
-          image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ needs.quality-gate.outputs.version }}
-          format: spdx-json
-          artifact-name: sbom-gateway.spdx.json
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          mkdir -p sboms
+          for name in ${RELEASE_IMAGES}; do
+            echo "::group::syft amazonerp-${name}"
+            docker run --rm \
+              -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
+              anchore/syft:latest \
+              "registry:${REGISTRY}/${OWNER}/amazonerp-${name}:${IMAGE_TAG}" \
+              -o spdx-json > "sboms/${name}.spdx.json"
+            echo "::endgroup::"
+          done
       # 17 个镜像全部逐一扫描，并且每一个都要过 cve_gate.py 门禁（HIGH 与 CRITICAL）。
       #
       # 为什么不再用 anchore/scan-action 的 fail-build: true / grype --fail-on high：这两者
@@ -124,20 +150,20 @@ jobs:
         if: github.event_name == 'push'
         env:
           OWNER: ${{ github.repository_owner }}
-          VERSION: ${{ needs.quality-gate.outputs.version }}
+          IMAGE_TAG: ${{ needs.quality-gate.outputs.image_tag }}
         run: |
           set -euo pipefail
           mkdir -p scans /tmp/grype-cache
           # 17 次扫描共用一份漏洞库：GRYPE_DB_CACHE_DIR 挂到宿主机目录，否则每个镜像都会
           # 重新下载一遍 DB。
-          for name in gateway ad ai customer finance logistics message multiplatform ops order procurement product report search spapi user frontend; do
+          for name in ${RELEASE_IMAGES}; do
             echo "::group::grype amazonerp-${name}"
             docker run --rm \
               -e GRYPE_DB_CACHE_DIR=/cache \
               -v "/tmp/grype-cache:/cache" \
               -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" \
               anchore/grype:latest \
-              "registry:${REGISTRY}/${OWNER}/amazonerp-${name}:${VERSION}" \
+              "registry:${REGISTRY}/${OWNER}/amazonerp-${name}:${IMAGE_TAG}" \
               -o json > "scans/${name}.json"
             echo "::endgroup::"
             echo "::group::cve_gate amazonerp-${name}"
@@ -158,9 +184,17 @@ jobs:
           if-no-files-found: error
       - uses: sigstore/cosign-installer@v3
         if: github.event_name == 'push'
-      - name: Cosign sign image digest
+      - name: Cosign sign every image digest
         if: github.event_name == 'push'
-        run: cosign sign --yes "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}@${{ steps.bake-metadata.outputs.digest }}"
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          for name in ${RELEASE_IMAGES}; do
+            REF="${REGISTRY}/${OWNER}/amazonerp-${name}:${IMAGE_TAG}"
+            DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
+            cosign sign --yes "${REF%:*}@${DIGEST}"
+          done
       - name: Generate release manifest
         if: github.event_name == 'push'
         run: |
@@ -168,7 +202,7 @@ jobs:
             --root . \
             --commit "${{ github.sha }}" \
             --version "${{ needs.quality-gate.outputs.version }}" \
-            --image-ref "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}" \
+            --image-ref "${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}" \
             --image-digest "${{ steps.bake-metadata.outputs.digest }}" \
             --output ./release-manifest.json
       - name: Verify release manifest
@@ -177,14 +211,14 @@ jobs:
       - name: Checksums
         if: github.event_name == 'push'
         run: |
-          sha256sum release-manifest.json sbom-gateway.spdx.json > checksums.sha256
+          sha256sum release-manifest.json sboms/*.spdx.json > checksums.sha256
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push'
         with:
           name: release-assets
           path: |
             release-manifest.json
-            sbom-gateway.spdx.json
+            sboms/*.spdx.json
             checksums.sha256
       - name: Create GitHub Release
         if: github.event_name == 'push'
@@ -193,5 +227,5 @@ jobs:
           generate_release_notes: true
           files: |
             release-manifest.json
-            sbom-gateway.spdx.json
+            sboms/*.spdx.json
             checksums.sha256

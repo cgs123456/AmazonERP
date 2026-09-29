@@ -11,6 +11,11 @@ CI_YML = os.path.join(os.path.dirname(RELEASE_YML), "ci.yml")
 _TOOL_TEST = re.compile(r"tools\.release\.test_[a-z0-9_]+")
 
 
+def release_image_names(raw):
+    """Parse the workflow's single release-image list in declaration order."""
+    match = re.search(r'(?m)^\s*RELEASE_IMAGES:\s*"([^"]+)"\s*$', raw)
+    return tuple(match.group(1).split()) if match else ()
+
 def release_tool_test_commands(raw):
     """Every `python -m unittest tools.release.* ...` command in a workflow."""
     return sorted(
@@ -39,12 +44,20 @@ class TestReleaseWorkflow(unittest.TestCase):
         self.assertIn("packages: write", self.raw)
         self.assertIn("id-token: write", self.raw)
 
+    def test_release_job_requires_production_environment(self):
+        release_start = self.raw.index("\n  release:\n")
+        release_block = self.raw[release_start:]
+        self.assertRegex(
+            release_block,
+            r"(?m)^    environment:\s*\n\s+name:\s*production\s*$",
+        )
+
     def test_required_actions(self):
         for action in [
             "docker/setup-buildx-action",
             "docker/login-action",
             "docker/bake-action",
-            "anchore/sbom-action",
+            "anchore/syft:latest",
             # gateway 的扫描从 anchore/scan-action 换成了 grype 镜像 + cve_gate：
             # scan-action 只能对 HIGH/CRITICAL 一律失败，没有豁免机制（见 test_scan_fails_build）。
             "anchore/grype:latest",
@@ -77,8 +90,16 @@ class TestReleaseWorkflow(unittest.TestCase):
     def test_gate_runs_before_signing(self):
         # 只在签名之前拦住才有意义：一旦镜像被 cosign 签名，它就是"已发布"的。
         self.assertLess(self.raw.index("Scan + gate every release image"),
-                        self.raw.index("Cosign sign image digest"))
+                        self.raw.index("Cosign sign every image digest"))
 
+    def test_signs_every_release_image(self):
+        self.assertIn("Cosign sign every image digest", self.raw)
+        self.assertIn("${REF%:*}@${DIGEST}", self.raw)
+        self.assertGreaterEqual(
+            self.raw.count("for name in ${RELEASE_IMAGES}; do"),
+            3,
+            "SBOM, CVE scan, and cosign must each use the single release-image list",
+        )
     def test_uses_bake_digest(self):
         self.assertIn("bake-metadata", self.raw.lower())
 
@@ -89,6 +110,11 @@ class TestReleaseWorkflow(unittest.TestCase):
     def test_release_assets(self):
         for asset in ["manifest", "sbom", "checksums"]:
             self.assertIn(asset, self.raw.lower())
+    def test_release_assets_use_generated_sbom_directory(self):
+        self.assertNotIn('sbom-gateway.spdx.json', self.raw)
+        self.assertIn('sha256sum release-manifest.json sboms/*.spdx.json', self.raw)
+        self.assertGreaterEqual(self.raw.count('sboms/*.spdx.json'), 3)
+
 
     # --- cross-artifact contracts (added after the first real release dry run) ---
     # Presence-only checks above let a workflow ship that could never run: the
@@ -114,6 +140,52 @@ class TestReleaseWorkflow(unittest.TestCase):
             r"(?m)^\s*TAG:\s*\$\{\{\s*needs\.quality-gate\.outputs\.version",
         )
 
+    def test_release_image_list_matches_bake_targets(self):
+        workflow_images = release_image_names(self.raw)
+        self.assertEqual(17, len(workflow_images), "release workflow must list 17 images")
+
+        bake_path = os.path.join(os.path.dirname(RELEASE_YML), "..", "..", "docker-bake.hcl")
+        with open(bake_path, "r", encoding="utf-8") as fh:
+            bake = fh.read()
+
+        bake_images = []
+        current = None
+        for line in bake.splitlines():
+            target_match = re.match(r'\s*target\s+"([^"]+)"\s*\{', line)
+            if target_match:
+                current = target_match.group(1)
+                continue
+            if current and re.match(r'\s*tags\s*=', line):
+                bake_images.append(current)
+                current = None
+
+        self.assertEqual(workflow_images, tuple(bake_images), "release image order must match docker-bake.hcl")
+        self.assertEqual(set(workflow_images), set(bake_images), "release image set must match docker-bake.hcl")
+
+    def test_quality_gate_runs_frontend_typecheck_tests_and_build(self):
+        for command in ("npx vue-tsc --noEmit", "npm run test:run", "npm run build"):
+            self.assertIn(command, self.raw)
+
+    def test_workflow_dispatch_has_no_unused_dry_run_input(self):
+        self.assertIn("workflow_dispatch:", self.raw)
+        self.assertNotIn("dry_run", self.raw)
+    def test_release_tags_include_immutable_commit_sha(self):
+        bake_path = os.path.join(os.path.dirname(RELEASE_YML), "..", "..", "docker-bake.hcl")
+        with open(bake_path, "r", encoding="utf-8") as fh:
+            bake = fh.read()
+        tags = re.findall(r'tags\s*=\s*\["([^"]+)"\]', bake)
+        self.assertEqual(17, len(tags), "expected one tag per release image")
+        for tag in tags:
+            self.assertTrue(
+                tag.endswith(":${TAG}-${GIT_SHA}"),
+                f"release tag must include the immutable commit SHA: {tag}",
+            )
+    def test_workflow_uses_sha_qualified_image_tag(self):
+        self.assertIn("image_tag:", self.raw)
+        self.assertIn("image_tag=", self.raw)
+        self.assertIn("IMAGE_TAG:", self.raw)
+        self.assertNotIn("amazonerp-gateway:${{ needs.quality-gate.outputs.version }}", self.raw)
+        self.assertNotIn("amazonerp-${name}:${VERSION}", self.raw)
     def test_workflow_dispatch_builds_without_pushing(self):
         # The advertised dry_run dispatch must not push to the registry.
         self.assertRegex(self.raw, r"push:\s*\$\{\{\s*github\.event_name == 'push'")
@@ -123,9 +195,8 @@ class TestReleaseWorkflow(unittest.TestCase):
         # one WebFlux image without Tomcat, while the 15 servlet services each
         # carried 28-35 HIGH/CRITICAL findings before remediation.
         self.assertIn("Scan + gate every release image", self.raw)
-        match = re.search(r"for name in ([^;]+);", self.raw)
-        self.assertIsNotNone(match, "release.yml must loop over every release image")
-        scanned = set(match.group(1).split())
+        scanned = set(release_image_names(self.raw))
+        self.assertEqual(17, len(scanned), "release.yml must declare all 17 release images")
         expected = {
             "gateway", "ad", "ai", "customer", "finance", "logistics", "message",
             "multiplatform", "ops", "order", "procurement", "product",
@@ -139,6 +210,15 @@ class TestReleaseWorkflow(unittest.TestCase):
             "cve_gate --image must be derived from the loop variable",
         )
 
+    def test_generates_sbom_for_every_release_image(self):
+        self.assertIn("Generate SBOM for every release image", self.raw)
+        self.assertIn("anchore/syft:latest", self.raw)
+        self.assertIn("sboms/${name}.spdx.json", self.raw)
+        self.assertGreaterEqual(
+            self.raw.count("for name in ${RELEASE_IMAGES}; do"),
+            3,
+            "SBOM, CVE scan, and cosign must each cover the release-image list",
+        )
     def test_bake_registry_includes_owner(self):
         # The workflow-level env REGISTRY=ghcr.io overrides the identically named
         # docker-bake.hcl variable, so the bake step must re-add the owner or
