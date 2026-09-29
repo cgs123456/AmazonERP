@@ -101,15 +101,43 @@ naive baseline@1 在 ad / order / spapi 三模块必炸，原始报错已留存�
 | **#4** | `docker/init-sql-legacy/` 31 个脚本：实测 **9/31** 在 MySQL 8.0.46 上不可执行，不在初始化路径 | **已闭环**：保留不删（删会丢 17 条 seed 语句），已有门禁 + 新增 `LegacyInitSqlArchiveContractTest`。见 `2026-09-30-p1-3-risk4-init-sql-legacy.md` |
 | 治理 | `master` 分支保护 API 仍 404；`production` environment 仍单用户自审 | 需用户决策，不在本轮范围 |
 
-## 6. 本轮顺带发现、未修的数字不一致（独立缺口）
+## 6. 表数量不一致：已裁定（2026-09-30 复核）
 
-同一事实源出现三个互斥数字，本轮**未改数字**，仅记录：
+原记录（保留，不要删）：同一事实源曾出现三个互斥数字 —— `README.md:244` 的 **106**、
+`FlywayBaselineContractTest` 断言的 **113**、plan `2026-09-24-connector-api-ready-phase0.md:694`
+的 **109**（自称「第 71 轮实测修正」）。
 
-- `README.md:244` → **106** 张表
-- `FlywayBaselineContractTest` 断言 → **113** 张（注释写明「112 基线 + V5 `amz_order_item`」）
-- `docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md:694` → **109** 张（自称「第 71 轮实测修正」）
+**先定口径**：本节所说的表数 = 「14 个模块 `src/main/resources/db/migration` 里
+`CREATE TABLE` 表名去重集合」，既不是线上实际存在的表，也不是 legacy 脚本里的定义集合
+（后者是 105，见 `2026-09-30-p1-3-risk4-init-sql-legacy.md`，别混用）。
 
-契约测试的 113 是有断言守着的当前真值；README 的 106 与 plan 的 109 至少有一个是过期的。
-修数字前必须先确认口径（「迁移文件里出现的 `CREATE TABLE` 名去重集合」≠「线上实际存在的表」），
-否则是在掩盖而不是修缺口。此外该 plan 文档 §18 / §512 / §524 / §541 / §545 / §694 / §715 仍写 `baseline-on-migrate: true`，
+**三个互相独立的算法给出同一个数：113**
+
+| 算法 | 结果 |
+|------|------|
+| 直接扫 49 份迁移文件的 `CREATE TABLE` 名去重 | **113**（且 0 个表名被两个文件重复定义） |
+| `FlywayBaselineContractTest` 断言 | **113**（有断言守着） |
+| `python tools/synthetic-data/snapshot_schema.py --check` | `OK: snapshot matches repository DDL (113 tables, 14 databases)` |
+
+分库明细（`CREATE TABLE` 归属）：ad 12、ai 6、customer 7、finance 5、logistics 12、
+multiplatform 8、ops 5、order 10、procurement 10、product 12、report 6、search 1、
+spapi 13、user 6 = **113**。
+
+**处置**：`README.md:244` 的 106 已改为 113（README 是活文档，且 plan 自己也写过
+「106 已随 V2/V3/V4 过期」）。plan 的 109 是 2026-09-24 的历史计划文本，**不改写历史记录**，
+在此留痕：它同样已过期（第 71 轮之后又新增了 V5/V6-V8 的表）。
+
+**线上口径另行说明，不与 113 比较**：demo 环境的 `amz-mysql` 只有 **6 个库 / 53 张表**，
+因为只起了 6 个服务（finance/ops/order/report/spapi/user），其余 8 个库还是空的。
+对这 6 个库做 `information_schema` 逐库比对：
+
+- **没有**「线上有、迁移没定义」的业务表；
+- **没有**「迁移定义了、线上缺失」的表；
+- 线上多出来的 3 类对象都不是迁移缺表：`flyway_schema_history`（×5，Flyway 自身的元数据表）、
+  `amz_order.v_profit_summary_by_sku`（V1 里 `CREATE OR REPLACE VIEW`，是 VIEW 不是表，故不计入 113）、
+  `amz_ops.amz_synthetic_dataset_registry`（BASE TABLE，由 `tools/synthetic-data/purge.py` 建立，
+  是「Flyway 是唯一建表事实源」这句话的**唯一已知例外**，README 已注明）。
+
+此外该 plan 文档 §18 / §512 / §524 / §541 / §545 / §694 / §715 仍写 `baseline-on-migrate: true`，
 属于 2026-09-24 的历史计划文本，**本轮未改写历史记录**，但读者需以本文件与代码为准。
+
