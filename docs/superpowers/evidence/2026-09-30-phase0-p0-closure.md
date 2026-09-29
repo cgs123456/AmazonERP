@@ -127,7 +127,7 @@ v0.1.3 的 19 个资产为扁平名称（`release-manifest.json` + 17 `*.spdx.js
    要形成真正独立复核，需加入第二用户/团队并设 `prevent_self_review=true`。
 2. **`master` 分支保护仍为 404**（未启用）。启用会强制 PR 与状态检查，改变当前直接推送工作流。
 3. **v0.1.2 及更早 release 仍 `immutable=false`**，不可追溯加固。
-4. **GHCR 未签名 `0.1.1-*` 镜像（17 个）仍存在**（见 P0-4「新发现」，待决策）。
+4. ~~GHCR 未签名镜像~~ **已清除**：`0.1.0` 与 `0.1.1-*` 均已删除（见 P0-4）；现存镜像全部有 keyless 签名。
 5. 两条 CVE 豁免 owner 仍是占位，`2026-12-31` 到期前需指定具名 owner。
 
 ## P0-4 删除 GHCR 未签名 `0.1.0` package — **已完成（17/17 删除并独立复核）**
@@ -177,19 +177,37 @@ GET https://ghcr.io/v2/cgs123456/<svc>/tags/list   (Authorization: Bearer <anony
 删除后重跑 Cosign（确认签名未被牵连）：`amazonerp-ai` / `amazonerp-gateway` / `amazonerp-frontend`
 均 `exit=0` 且含 `The following checks were performed`，无 `WARNING`。
 
-### 新发现（交接文档未记载，需决策）
+### 新发现（交接文档未记载）— 已一并处理：删除未签名的 `0.1.1-*`
 
 - **`0.1.1-*` 同样是未签名的**：17 个服务各有一个 `0.1.1-c87a847...` tag，
   全库 `.sig` 仅 34 个 = 0.1.2(17) + 0.1.3(17)，**没有 0.1.0 与 0.1.1 的签名**。
-  所以 P0-4 只删 `0.1.0` 并未达成"GHCR 上不存在未签名镜像"这个隐含目标，仍剩 17 个。
+  只删 `0.1.0` 并不能达成"GHCR 上不存在未签名镜像"这个隐含目标。
 - **删除代价已核实为低**：`v0.1.0` 与 `v0.1.1` 只有 git tag，
   `gh api .../releases/tags/v0.1.0`、`v0.1.1` 均 **HTTP 404**（无 GitHub Release），
-  两批镜像都是无主构建产物，删除不会破坏任何 release 资产。
-- **不要考虑"给 0.1.1 补签名"**：事后用新 workflow run 补签会让签名的 provenance 声明
+  两批镜像都是无主构建产物；且 `v0.1.1` 的构建输入仍在 git（`c87a847`）中，可重建。
+- **不采用"给 0.1.1 补签名"**：事后用新 workflow run 补签会让签名的 provenance 声明
   （`githubWorkflowRef` / `githubWorkflowSha`）与原始构建不一致，
-  产出的是**会误导人的"可信"证据**。要么删，要么明确接受该事实并写进风险表。
+  产出的是**会误导人的"可信"证据**——这比留着未签名镜像更糟。
 
-> workflow 已对已签名 tag 族做硬阻断；是否把 `0.1.1` 一起删掉，等用户一句话。
+执行（同一条 workflow，按精确 tag 匹配，已签名 tag 族硬阻断仍然生效）：
+
+| 步骤 | run | 结果 |
+|------|-----|------|
+| dry-run（tag=`0.1.1-c87a847...`, confirm=DRY-RUN） | `36612402894` | success，`matched versions: 17` |
+| 真删（confirm=DELETE） | `36612494740` | success，17 条 `deleting ...`，**无 `failed:` 行** |
+
+删除后复核（匿名 registry token，与删除所用 GITHUB_TOKEN 无关）：
+
+- `0.1.0` 残留 **0/17**，`0.1.1-*` 残留 **0/17**；
+- 每个服务只剩 `0.1.2-*` + `0.1.3-*` + 2 个 `.sig`，**全库已无非签名 tag**；
+- `sha256-*.sig` 共 **34** 个，未误删。
+
+**删除后全量重跑 Cosign（不抽查）**：17/17 `exit=0`，日志内容级断言
+（`The following checks were performed` + digest 逐字符匹配 + `githubWorkflowSha":"136cec0..."` + 无 Error/WARNING）
+**17/17 通过** → 证明清理动作没有牵连任何签名。
+
+> 残留风险已消除至此：GHCR 上现存镜像全部可追溯到 `v0.1.2` / `v0.1.3` 的 keyless 签名。
+> 代价是 v0.1.0 / v0.1.1 的候选镜像不再可直接拉取（需从 `4d644da` / `c87a847` 重建）。
 ## P0-5 Nacos 配置中心接入 — 架构级，已排期，本次不动
 
 - 范围：需引入 Nacos config starter 并调整 32 个 `bootstrap.yml`。
@@ -204,5 +222,6 @@ GET https://ghcr.io/v2/cgs123456/<svc>/tags/list   (Authorization: Bearer <anony
 | Critical Checkstyle | 19 个模块全部 `You have 0 Checkstyle violations.`，`BUILD SUCCESS` |
 | Python release 工具套件 | `Ran 88 tests ... OK` |
 | v0.1.2 → HEAD 变更面 | 仅 `release.yml`、2 个 evidence 文档、cosign 证据目录、plan 文档、`test_release_workflow.py`；**无产品代码、无前端变更** |
+
 
 
