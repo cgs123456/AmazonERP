@@ -121,7 +121,72 @@ SELECT version, success FROM flyway_schema_history WHERE version = '4';      -- 
 
 然后重启服务，确认日志里没有 `Validate failed` / `Migration checksum mismatch`。
 
-## 5. 禁止事项
+## 5. 大表上的耗时与并发影响（5,000,000 行实测，2026-09-30）
+
+> 回答的是「库已经很大时 V4 要占多久、会不会锁住写入」。
+> 数字来自一次性演练库 `amz_order_perf`，**不是生产**，用法限制见 §5.4。
+> 原始 `ddl_log` 见 `docs/superpowers/evidence/2026-09-30-p1-3-risk2-large-table-alter-timing.md`。
+
+**演练环境**：MySQL 8.0.46；`amz_order` 5,000,000 行 / data 1071 MB + index 735 MB = 1806 MB；
+`innodb_buffer_pool_size` **128 MB**（默认，远小于表，属偏保守的 IO 密集场景）；
+`innodb_ddl_threads`=4；`innodb_online_alter_log_max_size`=128 MB；`tmpdir`=`/tmp`。
+
+### 5.1 实测耗时
+
+| 步骤 | 语句 | 耗时 |
+|---|---|---|
+| T1 | `DROP INDEX uk_amazon_order`（单独） | **0.147 s** |
+| T2 | `DROP INDEX idx_shop`（单独） | **0.072 s** |
+| T3 / T10 | `ADD UNIQUE KEY uk_shop_market_order`（单独，两次） | **40.217 s / 43.615 s** |
+| T4 | `ADD INDEX idx_shop_purchase_date`（单独） | **24.618 s** |
+| T6 | **V4 原文（一条 ALTER 四条子句）** | **85.507 s** |
+| T8 | V4 + `ALGORITHM=INPLACE, LOCK=NONE` | **129.521 s**（被接受，rc=0） |
+| T5 / T7 | 回滚到「V4 未跑」态（同一条 SQL 跑两次） | **37.987 s / 86.869 s** |
+| T9b | 半迁移态再跑 V4 | **ERROR 1061，<1 s 返回**，旧索引仍在 |
+
+要点：
+
+1. **`DROP INDEX` 是元数据级操作**（0.07–0.15 s）。V4 的时间几乎全在两个 `ADD` 上——
+   排维护窗按「复合唯一键 ~40 s + 复合索引 ~25 s」这个量级估，5M 行整条 V4 实测 85.5 / 129.5 s。
+2. **失败路径不耗时**：半迁移态撞 `1061` 是在开始构建索引之前被拒绝的，5M 行表上不到 1 秒返回，
+   原子 DDL 把两个 DROP 一起回滚。**不存在「启动卡几十分钟才失败」**。
+
+### 5.2 并发影响：写入没被阻塞
+
+DDL 跑到第 8 秒时，从另一个会话做主键 `SELECT` 与一次 `INSERT`：
+
+| 正在跑的 DDL（总耗时） | `SELECT` | `INSERT` |
+|---|---|---|
+| T4 `ADD INDEX`（24.6 s） | 0.001 s | 0.013 s |
+| T5 回滚（38.0 s） | 0.004 s | 0.014 s |
+| **T6 V4 原文（85.5 s）** | 0.001 s | **0.014 s** |
+| T7 回滚（86.9 s） | 0.001 s | 0.036 s |
+| T8 V4 + `LOCK=NONE`（129.5 s） | 0.001 s | **0.119 s** |
+
+（同时每 20 s 采样 `processlist`，确认这些时刻状态为 `altering table`，即 DDL 确实在跑。）
+
+这是实测而非推断：`ALGORITHM=INPLACE, LOCK=NONE` 那条语句 MySQL 接受并跑完，rc=0；
+不支持在线的话 MySQL 会直接报错。
+
+> 上限提醒：并发 DML 写入 online row log，`innodb_online_alter_log_max_size` 为 **128 MB**。
+> 若迁移期间并发写入超过它，ALTER 会失败（`DB_ONLINE_LOG_TOO_BIG`）。本轮并发量只有几行，未触发。
+
+### 5.3 磁盘
+
+T10 期间每 ~2.5 s 采样 `du -sm /tmp`，全程 **1 MB**，未观测到 tmpdir 溢出。
+这是「没看到溢出」，不是峰值字节数；datadir 内 online row log 未单独测量。
+
+### 5.4 这些数字怎么用、不能怎么用
+
+- **不要用单一数字外推**：同一台机器上同一条回滚 SQL 两次跑出 **37.987 s 与 86.869 s（2.3 倍）**；
+  同语义 V4 85.507 s 与 129.521 s（1.5 倍）。方差比精度重要。
+- **生产行数没有数据来源**：本地 compose 的 `amz_order.amz_order` 是**空表（0 行）**，
+  没有任何库能给出真实行数。5M 行是**自设压力档位，不是预测**；量级约每百万行 17–26 s，
+  只当量级参考，不能当 SLA。
+- **未测**：从库/复制延迟（演练无复制拓扑）、云盘 IO（本地容器磁盘）、
+  buffer pool 更大时的表现、多个服务实例同时启动执行迁移时的相互作用。
+
+## 6. 禁止事项
 
 1. **不要改 V4 文件**让它「可重入」。`uk_amazon_order`/`idx_shop` 的 DROP 是 V4 语义的一部分；
    改文件会改变 Flyway checksum，所有**已迁移**的库下次启动直接 `Migration checksum mismatch` 拒绝启动。
@@ -132,7 +197,7 @@ SELECT version, success FROM flyway_schema_history WHERE version = '4';      -- 
 3. **不要用 `flyway repair` 掩盖问题**：它只删失败记录、校正 checksum，不补 DDL。
    删掉失败行后 V4 会再跑一次——如果旧索引已经不在，你只是把 1091 推迟到服务启动的那一刻。
 
-## 6. 预防
+## 7. 预防
 
 - 任何「手工在库上补 DDL」的动作，必须同步在 `flyway_schema_history` 里留痕（§4.B），否则下次启动就会撞车。
 - 备份恢复演练要连 `flyway_schema_history` 一起恢复，不要只恢复业务表。
