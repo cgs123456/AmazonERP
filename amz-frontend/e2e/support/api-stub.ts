@@ -14,7 +14,8 @@
  */
 import type { Page, Route } from '@playwright/test'
 
-const ok = (data: unknown) => ({ code: 200, data, msg: 'ok' })
+const ok = (data: unknown, page?: PageMeta) =>
+  page ? { code: 200, data, msg: 'ok', _page: page } : { code: 200, data, msg: 'ok' }
 
 /** 列表类接口的空分页兜底。注意：它是「对象」形状，只适用于返回 {list,total,...}
  * 的分页接口；返回数组的接口必须像上面 dashboard 那样显式登记，否则前端遍历时抛异常。 */
@@ -268,6 +269,166 @@ const RECEIPT_BOARD = {
   warnings: []
 }
 
+type PageMeta = {
+  size: number
+  returned: number
+  hasMore: boolean
+  truncated: boolean
+  nextCursor: string | null
+  total: number | null
+}
+
+/**
+ * 第二批显式打桩：广告 / 财务 / 选品 / 海外仓。
+ *
+ * 为什么必须逐个登记而不是让它们落到 EMPTY_PAGE 兜底：
+ * - EMPTY_PAGE 是 {list,total,page,size} 的「对象」形状。Finance / Warehouse 的
+ *   list* 接口后端返回的是**数组**（分页元数据在 Result._page 里，不在 data 里），
+ *   /ad/reports、/ad/trend、/ops/selection/opportunities 同理。落到对象兜底时
+ *   `Array.isArray(res.data)` 为 false，前端静默走空态分支：页面不报错、也不显示
+ *   任何真实数据——这正是「测试绿了但其实什么都没测到」的来源。
+ * - 反过来，若把对象形状塞给期望数组的字段，Vue 的 v-for 会去遍历对象的值，
+ *   渲染出一堆无意义的行。形状必须逐个对齐 src/api/*.ts 的泛型参数。
+ */
+
+// GET /ad/reports -> AdReportRow[]（前端聚合出总览；这里刻意让 花费/销售额 是整数，
+// 这样 ACoS 与 ROAS 的期望值可以手算出来写进断言：500/2500=20.0%，2500/500=5.00x）
+const AD_REPORTS = [
+  { campaignId: 'C-1001', keyword: null, impressions: 12000, clicks: 480, cost: 320, sales: 1600, orders: 64 },
+  { campaignId: 'C-1002', keyword: 'bluetooth speaker', impressions: 8000, clicks: 260, cost: 180, sales: 900, orders: 30 }
+]
+
+// GET /ad/trend -> AcosTrendItem[]
+const AD_TREND = [
+  { day: '9/1', value: 22 },
+  { day: '9/2', value: 24 },
+  { day: '9/3', value: 21 },
+  { day: '9/4', value: 25 },
+  { day: '9/5', value: 23 },
+  { day: '9/6', value: 20 },
+  { day: '9/7', value: 22 }
+]
+
+// GET /ad/campaigns/list/{shopId} -> 活动行数组（AdManager 里映射成 {name,active,...}）
+const AD_CAMPAIGNS = [
+  { id: 11, campaignId: 'C-1001', campaignName: '关键词-蓝牙耳机-US', status: 'ENABLED', budget: 50, spend: 32.5, sales: 158, acos: 20.6 },
+  { id: 12, campaignId: 'C-1002', campaignName: '自动广告-全店铺', status: 'PAUSED', budget: 100, spend: 68.3, sales: 210.5, acos: 32.4 }
+]
+
+// GET /ad/campaigns/summary/type/{shopId} -> Record<adType, AdSummary>（对象，不是数组）
+// 字段名按前端 AdSummary（src/api/ad-ext.ts）给：spend / orders / roas 是前端模板直接读的键。
+// 注意这里不能证明后端真的返回这些键——打桩只保证前端渲染路径被测到。
+const AD_SUMMARY_BY_TYPE = {
+  SP: { impressions: 20000, clicks: 740, spend: 500, sales: 2500, orders: 94, acos: 20, roas: 5 },
+  SB: { impressions: 4000, clicks: 120, spend: 90, sales: 420, orders: 18, acos: 21.4, roas: 4.67 }
+}
+
+// GET /ad/creatives/list/{campaignId}、/ad/targeting/list/{campaignId} -> 数组
+const AD_CREATIVES = [
+  { id: 21, campaignId: 'C-1001', creativeType: 'VIDEO', headline: 'Earbuds Pro 2026', brandName: 'E2E Brand', status: 'PENDING' }
+]
+const AD_TARGETING = [
+  { id: 31, campaignId: 'C-1002', targetingType: 'CONTEXTUAL', targetingValue: 'electronics', bid: 0.85 }
+]
+
+// GET /finance/voucher/list/{shopId} -> AccountingVoucher[]（游标分页，元数据在 _page）
+// 两页不同：第一页 truncated=true 且给 nextCursor，第二页收口。
+// 这样「加载更多」这条路径才真的被测到——单页桩会让按钮永远不出现。
+const VOUCHERS_PAGE1 = [
+  { id: 1, voucherNo: 'V-2026-0001', shopId: 1, bizDate: '2026-09-01', summary: '订单收入', debitAccount: '1122 应收账款', creditAccount: '6001 主营业务收入', originalAmount: 1000, currency: 'USD', exchangeRate: 7.1, cnyAmount: 7100, sourceType: 'ORDER', sourceNo: '114-1234567-8901234', kingdeeSyncStatus: 'PENDING' },
+  { id: 2, voucherNo: 'V-2026-0002', shopId: 1, bizDate: '2026-09-02', summary: '采购成本', debitAccount: '1405 库存商品', creditAccount: '2202 应付账款', originalAmount: 3000, currency: 'CNY', exchangeRate: 1, cnyAmount: 3000, sourceType: 'PROCUREMENT', sourceNo: 'PO-2026-0007', kingdeeSyncStatus: 'SYNCED' },
+  { id: 3, voucherNo: 'V-2026-0003', shopId: 1, bizDate: '2026-09-03', summary: '退款', debitAccount: '6001 主营业务收入', creditAccount: '1122 应收账款', originalAmount: 500, currency: 'CNY', exchangeRate: 1, cnyAmount: 500, sourceType: 'REFUND', sourceNo: '114-7654321-0987654', kingdeeSyncStatus: 'FAILED' }
+]
+const VOUCHERS_PAGE2 = [
+  { id: 4, voucherNo: 'V-2026-0004', shopId: 1, bizDate: '2026-09-04', summary: '平台费用', debitAccount: '6601 销售费用', creditAccount: '1122 应收账款', originalAmount: 120, currency: 'CNY', exchangeRate: 1, cnyAmount: 120, sourceType: 'PLATFORM_FEE', sourceNo: 'FEE-2026-0011', kingdeeSyncStatus: 'PENDING' }
+]
+
+// GET /finance/profit/{shopId} -> number（不是对象）
+const FINANCE_PROFIT = 12345.67
+
+// GET /ops/selection/opportunities -> SelectionOpportunity[]
+const SELECTION_OPPORTUNITIES = [
+  { id: 101, shopId: 1, asin: 'B0SELECT1', title: 'Wireless Earbuds Pro', category: 'Electronics', marketplace: 'US', avgPrice: 39.99, avgReviews: 1200, avgRating: 4.5, searchVolume: 90000, competitorCount: 12, reviewBarrier: 'LOW', opportunityScore: 82, trend30d: 'UP', trend90d: 'UP' },
+  { id: 102, shopId: 1, asin: 'B0SELECT2', title: 'Bluetooth Speaker Mini', category: 'Electronics', marketplace: 'US', avgPrice: 25.5, avgReviews: 340, avgRating: 4.1, searchVolume: 45000, competitorCount: 30, reviewBarrier: 'HIGH', opportunityScore: 46, trend30d: 'FLAT', trend90d: 'DOWN' }
+]
+
+// POST /ops/selection/market -> MarketAnalysisSummary（对象，opportunities 是它的子数组）
+const SELECTION_MARKET = {
+  keyword: 'wireless earbuds',
+  marketplace: 'US',
+  category: 'Electronics',
+  marketSize: 1200000,
+  avgPrice: 32.75,
+  avgReviews: 770,
+  avgRating: 4.3,
+  searchVolume: 135000,
+  competitorCount: 21,
+  reviewBarrier: 'MEDIUM',
+  trend30d: 'UP',
+  trend90d: 'UP',
+  seasonality: 'MODERATE_SEASONAL',
+  opportunities: SELECTION_OPPORTUNITIES
+}
+
+// POST /ops/selection/ai-suggestion/{id} -> SelectionOpportunity（对象）
+const SELECTION_AI = {
+  id: 101,
+  asin: 'B0SELECT1',
+  aiSummary: '需求上升、竞争度低，建议小批量试单验证转化率。',
+  aiSuggestion: '首批 300 件，定价 $34.99，观察 30 天动销。',
+  status: 'SUGGESTED'
+}
+
+// GET /logistics/warehouse/list/{shopId} -> Warehouse[]
+const WAREHOUSES = [
+  { id: 1, shopId: 1, warehouseName: 'US-West-FBA', warehouseCode: 'USW-01', warehouseType: 'FBA', country: 'US', city: 'Chino', capacityCbm: 500, usedCbm: 320, status: 'ACTIVE' },
+  { id: 2, shopId: 1, warehouseName: 'DE-ThirdParty', warehouseCode: 'DEU-02', warehouseType: 'THIRD_PARTY', country: 'DE', city: 'Hamburg', capacityCbm: 200, usedCbm: 40, status: 'INACTIVE' }
+]
+
+// GET /logistics/warehouse/inventory -> WarehouseInventory[]
+const WAREHOUSE_INVENTORY = [
+  { id: 1, warehouseId: 1, shopId: 1, sku: 'SKU-A1', asin: 'B0AAAAA1', quantity: 100, reservedQuantity: 10, availableQuantity: 90, inboundQuantity: 20, locationCode: 'A-01-03', batchNo: 'B2026-09' }
+]
+
+// GET /logistics/inbound/list/{shopId}、/logistics/outbound/list/{shopId} -> 数组
+const INBOUND_ORDERS = [
+  { id: 1, shopId: 1, warehouseId: 1, inboundNo: 'IN-2026-0001', source: 'FBA_TRANSFER', referenceNo: 'FBA16KQ9W2', status: 'IN_TRANSIT', totalItems: 100, receivedItems: 0, expectedArrival: '2026-09-20' }
+]
+const OUTBOUND_ORDERS = [
+  { id: 1, shopId: 1, warehouseId: 1, outboundNo: 'OUT-2026-0001', orderType: 'ORDER', referenceNo: '114-1234567-8901234', status: 'PENDING', carrier: 'DHL', trackingNo: 'TRK0000001', totalItems: 5, shippedItems: 0 }
+]
+
+/**
+ * 凭证列表的游标分页 + 来源类型过滤。
+ *
+ * sourceType 过滤必须在桩里实现（后端是按 sourceType 查库的）：
+ * 桩若忽略该参数，「筛选下拉」用例只会重复渲染同一批数据，看起来绿了其实没测到筛选。
+ */
+const voucherPage = (query: URLSearchParams): { rows: unknown[]; page: PageMeta } => {
+  const sourceType = query.get('sourceType')
+  const pick = (rows: typeof VOUCHERS_PAGE1) =>
+    sourceType ? rows.filter((v) => v.sourceType === sourceType) : rows
+  if (query.get('cursor') === 'cursor-2') {
+    const rows = pick(VOUCHERS_PAGE2)
+    return { rows, page: FULL_PAGE(rows.length) }
+  }
+  const rows = pick(VOUCHERS_PAGE1)
+  return {
+    rows,
+    page: { size: 50, returned: rows.length, hasMore: true, truncated: true, nextCursor: 'cursor-2', total: null }
+  }
+}
+
+// 单页、未截断的 _page：列表就是全量，前端不应显示「加载更多」
+const FULL_PAGE = (returned: number): PageMeta => ({
+  size: 50,
+  returned,
+  hasMore: false,
+  truncated: false,
+  nextCursor: null,
+  total: returned
+})
+
 /**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
@@ -300,8 +461,9 @@ const SSE_STUBS: Array<{ match: RegExp; contentType: string; body: string }> = [
  * 这里的 URL 与 src/api/*.ts 里的实际请求路径一一对应，改后端路径时要同步改这里。
  */
 type StubData = unknown | ((query: URLSearchParams) => unknown)
+type StubPage = PageMeta | ((query: URLSearchParams) => PageMeta)
 
-const STUBS: Array<{ match: RegExp; data: StubData }> = [
+const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   // orderNo 由后端 OrderController#listOrders 做 LIKE 模糊匹配（服务端过滤，不是前端过滤），
   // 桩必须复现这个语义，否则「搜索后行数变化」这条断言测不到任何东西。
   {
@@ -327,6 +489,47 @@ const STUBS: Array<{ match: RegExp; data: StubData }> = [
   { match: /^\/logistics\/dashboard\/freight-cost$/, data: FREIGHT_BOARD },
   { match: /^\/logistics\/dashboard\/receipts$/, data: RECEIPT_BOARD },
   { match: /^\/logistics\/shipment\/list\//, data: SHIPMENTS },
+
+  // ===== 广告 /ads =====
+  { match: /^\/ad\/reports$/, data: AD_REPORTS },
+  { match: /^\/ad\/trend$/, data: AD_TREND },
+  { match: /^\/ad\/campaigns\/list\//, data: AD_CAMPAIGNS },
+  { match: /^\/ad\/campaigns\/summary\/type\//, data: AD_SUMMARY_BY_TYPE },
+  { match: /^\/ad\/creatives\/list\//, data: AD_CREATIVES },
+  { match: /^\/ad\/targeting\/list\//, data: AD_TARGETING },
+
+  // ===== 财务 /finance =====
+  // 游标分页：带 cursor 的请求返回第二页并收口，否则返回第一页且 truncated=true
+  {
+    match: /^\/finance\/voucher\/list\//,
+    data: (query: URLSearchParams) => voucherPage(query).rows,
+    page: (query: URLSearchParams) => voucherPage(query).page
+  },
+  // POST /finance/voucher/{id}/sync -> KingdeeSyncResult。
+  // status 用 MOCK：同步结果必须区分「模拟调用成功」与「真的入账了」，
+  // 前端据此给不同 toast 文案，断言的就是这个区分。
+  {
+    match: /^\/finance\/voucher\/\d+\/sync$/,
+    data: {
+      status: 'MOCK',
+      voucherId: 1,
+      kingdeeNo: null,
+      message: '模拟同步完成，未真实入账（E2E 打桩）'
+    }
+  },
+  { match: /^\/finance\/profit\//, data: FINANCE_PROFIT },
+
+  // ===== 选品 /selection =====
+  { match: /^\/ops\/selection\/opportunities$/, data: SELECTION_OPPORTUNITIES },
+  { match: /^\/ops\/selection\/market$/, data: SELECTION_MARKET },
+  { match: /^\/ops\/selection\/ai-suggestion\//, data: SELECTION_AI },
+
+  // ===== 海外仓 /warehouse =====
+  { match: /^\/logistics\/warehouse\/list\//, data: WAREHOUSES },
+  { match: /^\/logistics\/warehouse\/inventory$/, data: WAREHOUSE_INVENTORY, page: FULL_PAGE(WAREHOUSE_INVENTORY.length) },
+  { match: /^\/logistics\/inbound\/list\//, data: INBOUND_ORDERS, page: FULL_PAGE(INBOUND_ORDERS.length) },
+  { match: /^\/logistics\/outbound\/list\//, data: OUTBOUND_ORDERS, page: FULL_PAGE(OUTBOUND_ORDERS.length) },
+
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]
 
@@ -361,10 +564,11 @@ export async function installApiStub(page: Page): Promise<void> {
     for (const stub of STUBS) {
       if (stub.match.test(apiPath)) {
         const data = typeof stub.data === 'function' ? stub.data(parsed.searchParams) : stub.data
+        const page = typeof stub.page === 'function' ? stub.page(parsed.searchParams) : stub.page
         return route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(ok(data))
+          body: JSON.stringify(ok(data, page))
         })
       }
     }
