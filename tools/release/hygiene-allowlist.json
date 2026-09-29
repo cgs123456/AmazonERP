@@ -4,7 +4,7 @@
     {
       "path": ".start-backend-final.bat",
       "rule": "secret-like-assignment",
-      "sha256": "f165cfd41399a677c2b44caa77c9f453270fc73cece6a6ede9439aafeed427cc"
+      "sha256": "ff48fa94d8a66f2b6c983e996f3907788d506d668d177909510b6efa3d8db22b"
     },
     {
       "path": "amz-common/src/main/java/com/amz/config/FeignAuthRelayConfig.java",
@@ -99,7 +99,7 @@
     {
       "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdMigrationMySqlIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "6da7d886f957f210fc8e71c7c4ba3ca55920bc278ee3b07694f1672467d1839c"
+      "sha256": "59c74dca90414adcada6d303678cc6b59b25a422ffe073cd4d7e0438b1e56d94"
     },
     {
       "path": "amz-service/amz-service-ai/src/main/java/com/amz/ai/knowledge/RerankService.java",
@@ -199,12 +199,12 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesFlywayMySqlIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "4cdb45c809ea9616cdf29f90764c45407888b481aeeb35173d4ca2332e3f541b"
+      "sha256": "16c497695e4ced78a313d604bc4347020e5ce5199b9823b2d7fd215e364f293d"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "7b581eea4a24addd435350dd1c4d4483b11e2162ce52cb6840c0eff1c8e402cc"
+      "sha256": "a9e52f66eb1343f9254ef1fb455637c29947a45cad71e03e6d930a3659299d22"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BootstrapDeploymentContractTest.java",
@@ -295,6 +295,11 @@
       "path": "tools/connector-acceptance/fake-service.py",
       "rule": "secret-like-assignment",
       "sha256": "eff1e3e63a296929a78b95825e1c3f98b67b146342294d7780eac483225619fb"
+    },
+    {
+      "path": "tools/db-migration/ad_v7_preflight.py",
+      "rule": "secret-like-assignment",
+      "sha256": "00f9c5b0970b8b5027c3bd5a8f7df342d5ee8e8d88ac0c66e381ee2bcf8635e0"
     },
     {
       "path": "tools/synthetic-data/ddl_parser.py",
