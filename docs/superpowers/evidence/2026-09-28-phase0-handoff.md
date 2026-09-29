@@ -105,7 +105,8 @@ tools/release/verify_clean_clone.ps1
 ### P1 — Phase 1 主题（真实对接能力）
 
 1. **SP-API 联调**：需要用户提供开发者账号、刷新令牌、LWA 凭证、Marketplace 授权。拿到后先在 sandbox 验证，再按 runbook 走签名发布。
-2. **前端 E2E**：装 npm 后补 Playwright/Vitest E2E，覆盖核心页面（订单、库存、物流、报表）。
+2. **前端 E2E — 已完成（2026-09-30）**：见 §24 与 `2026-09-30-p1-2-frontend-e2e.md`。
+   旧套件 23 passed / 16 failed 且从未进 CI；现为 hermetic 打桩 45 条，本地 + 远端均 45/45，已由 `ci.yml` 守护。
 3. **数据库迁移审计**：Flyway 全量脚本审查 + 迁移在空库与升级库双路径演练。
 
 ### P2 — Phase 2+ 主题
@@ -625,3 +626,29 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - 独立 Cosign 验签：使用官方 `ghcr.io/sigstore/cosign/cosign:v3.1.3`（镜像 digest `sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8`），对 `v0.1.2` 的 17/17 release image digest 逐一执行 `cosign verify`。所有 17 个均 PASS，证书身份为 `https://github.com/cgs123456/AmazonERP/.github/workflows/release.yml@refs/tags/v0.1.2`，OIDC issuer 为 `https://token.actions.githubusercontent.com`，workflow SHA `6de12f7532ae57adb5381f0347f1b7bca7e22796`，ref `refs/tags/v0.1.2`。逐镜像 digest 与命令见 `2026-09-28-phase0-verification.md` Checkpoint 18。
 - 原始证据已持久化到仓库：`docs/superpowers/evidence/2026-09-29-cosign-verify/`（17 个 `*.verify.log` + `summary.json`）。
 - `master` 分支保护 API 仍为 404。未启用，因为强制 PR/状态检查会改变当前直接推送工作流；这是待用户决策的治理缺口，不是本次发布修复的一部分。
+
+
+## 24. 2026-09-30 Checkpoint 19：P1-2 前端 E2E 收口（第一批 + 第二批打桩）
+
+- 现状：**P1-2 已闭环**。证据主体在 `docs/superpowers/evidence/2026-09-30-p1-2-frontend-e2e.md`。
+- 起点不是估计：旧套件实测 **23 passed / 16 failed / 10.3 分钟**，且 `ci.yml` 的 `frontend` job
+  从未执行过 `test:e2e`（这是它能腐烂而不被发现的原因）。所谓「25/25 通过」出自 commit `471ee60`，已过期。
+- 第一批（commit `2fbcd2c` / `4210e08`）：hermetic 打桩 + 四大核心页面用例 + `ci.yml` 守护 +
+  修掉一个真实前端崩溃（`Dashboard` 在 `sales-trend` 返回非数组时白屏）。
+  远端 run `36641126754`：`45 passed (1.6m)`，10/10 job success。
+- 第二批（commit `d27a96d` / `012ac02`，2026-09-30）：补齐广告 / 财务 / 选品 / 海外仓共 16 个端点。
+  动机是 EMPTY_PAGE 对象兜底与这批接口的**数组**返回形状不匹配，前端静默走空态——
+  页面不报错也不显示数据，旧弱断言因此长期假绿。
+  桩内复现了后端语义：财务凭证两页游标分页、`sourceType` 服务端过滤、`sync` 返回 `MOCK`（区分模拟与真入账）。
+- 反向验证（证明新桩承重）：禁用这 16 个端点后 `13 failed / 26 passed`，其中 **11 条是断言失败**
+  （广告 3 / 财务 4 / 选品 2 / 海外仓 2），其余是超时且**隔离复跑全部通过**，属降级运行下的负载假象。
+- 验证：本地 `45 passed`（37.8s / 53.5s 两次）、`vue-tsc` 0、vitest 175/175、hygiene 0、release 88 OK；
+  远端 run `36646986161`（HEAD `012ac02`）frontend job **`45 passed (25.3s)`**，10/10 job success。
+- 诚实边界：
+  1. 打桩 ≠ 后端契约验证。后端改字段而前端未同步时 CI 仍会绿，那是后端集成测试的职责。
+  2. 本地降级跑暴露过超时抖动（整轮 54s → 3.9m，含桩未被禁用的 Orders 用例也超时），
+     远端 run `36646986161` **未复现**（25.3s，比本地快）。单次观察不构成稳定性证明；
+     若 CI 上真出现超时，应调 timeout，不要 skip。
+  3. 通知页无 REST 端点（前端硬编码），只能断言渲染条数。
+- 剩余后续项：full-interaction 中仍残留少量弱断言（"标题非空"之类）未逐条重写；
+  视觉/截图断言受外部域 abort 限制不可用。
