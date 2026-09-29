@@ -123,14 +123,51 @@ case2 的关键两行：
 2. **预检不替代备份**：rc=0 且 `重复组数 > 0` 时，V7 依然会物理删行（脚本会打印「将物理删除约 N 行」）。
    这类情况**不是 STOP**，但仍是破坏性操作 —— Runbook §4 的备份与恢复验证不可省。
 3. **预检不替代审批与维护窗**（Runbook §2.2/§2.6、§5）。
-4. **未接入 CI**：脚本目前是手工命令，没有挂到 GitHub Actions。单测 15/15 是本地 `python -m unittest`
-   的结果，CI 上还没有跑过 —— 若要当门禁，需要先加一个 workflow 步骤。
+4. **已接入 CI，但 CI 只证明「退出码契约」，不证明生产可放行**。预检已挂到
+   `.github/workflows/ci.yml` 的 `ad-v7-preflight-gate` job（§4.4 有远端 run 证据）。
+   那个 job 用的是 `mysql:8.0` service 上的**一次性合成库**（V1-V6 真实 SQL +
+   手工 history fixture），它证明的是「命中 STOP 一定退出非 0、脚本出错也退出非 0」，
+   **不是**「生产库可以执行 V7」。生产判断仍回到第 1 条。
 5. **演练库的 history 是 INSERT 出来的 fixture**：`amz_ad_pf` 的 6 行 `flyway_schema_history` 是手工插入的，
    `checksum` 为 NULL，只用来证明脚本读 history 的逻辑，**不能当作 Flyway 真实执行记录**。
 6. **一个实测发现的语义细节**：`amz_ad_asin_keyword.asin` 在建表时是 `NOT NULL`，所以预检里
    `asin IS NULL` 那一支在 V7 之前恒为 0；而 V7 第 3 节只做 `UPPER(TRIM(asin))`、
    **不像 converting_terms 那样把空白转成 NULL**，因此空白 ASIN 会变成 `''` 并被唯一键归并。
    这正是 `asin-empty` 要报的东西，执行人需要明确接受「多个空白 ASIN 行会被合成一行」。
+
+### 4.4 CI 门禁实跑（GitHub Actions 远端）
+
+`.github/workflows/ci.yml` 新增 `ad-v7-preflight-gate` job（ubuntu-latest + `mysql:8.0` service +
+`mysql-client`），跑 `tools/db-migration/run_ad_v7_preflight_gate.sh`：用 V1-V6 原始 SQL 建一次性库
+（明确**不执行 V7**）+ 手工 `flyway_schema_history` fixture，然后断言三类退出码：
+
+| 用例 | 期望 | 说明 |
+|---|---|---|
+| A 干净态（V1-V6） | rc=0 | 放行 |
+| B 插入 `keyword='   '` | rc=2 且输出含 `keyword-empty` | 命中 STOP |
+| C 库不存在 | rc=1 | fail-closed，同样不得执行 V7 |
+
+三码全对才打印 `GATE OK` 并退出 0；结束后 `DROP DATABASE`。
+
+远端 run 证据：
+
+| run | 结论 | 该 job 耗时 | 关键日志 |
+|---|---|---|---|
+| `36632494935` | job ✓（整 run 因 hygiene 红灯失败） | 1m17s | `Ran 15 tests` → `GATE OK: ad/V7 预检退出码契约兑现（rc=0 放行 / rc=2 STOP / rc=1 脚本错误）` |
+| `36632948323` | **整 run ✓，10/10 job 全绿** | 1m6s | 同上 |
+
+Runner 实况：`ubuntu-24.04` 镜像 `20260920.314.1`，`mysql-client is already the newest version
+(8.0.46-0ubuntu0.24.04.4)` —— 即 ubuntu-latest 自带 mysql 客户端，job 里的 `apt-get install`
+是幂等兜底。
+
+本地容器（drill2，MySQL 8.0.46）同样跑通 `GATE OK`，与远端互相印证。
+
+**顺带发现并修复的既有红灯**：查远端 run 时发现 master CI 从 `28f00a3`（run `36622441862`）起
+连续 5 次失败，失败点是 hygiene job 的 8 条 `secret-like-assignment`。根因不是新密钥，而是
+`hygiene-allowlist.json` 按**文件内容 sha256** 钉死：`28f00a3` 改了 4 个已在 allowlist 里的文件
+使哈希失效，`4ec9cc7` 新增的 `ad_v7_preflight.py` 从未登记。已在 `1769598` 只刷新这 5 个
+条目的 sha256（不改规则、不放宽阈值、不加通配符），本地 `repository_hygiene.py` 0 finding、
+release 工具套件 88/88 PASS，远端 run `36632948323` 的 hygiene 转绿。
 
 ## 6. 复现命令
 
@@ -151,4 +188,4 @@ MYSQL_PWD='<pw>' python ad_v7_preflight.py \
 - [ ] Runbook §4 备份 + 独立临时库恢复验证
 - [ ] 维护窗 + 停止广告同步/搜索词聚合/ASIN 反查写入
 - [ ] 回滚批准人与业务负责人签字
-- [ ] 把预检接进 CI / 发布流程（否则它仍然是一条「想起来才跑」的命令）
+- [x] 把预检接进 CI / 发布流程 —— 已完成：`ci.yml` 新增 `ad-v7-preflight-gate`，远端 run `36632494935`（首绿）/ `36632948323`（整 run 10/10 全绿）均打印 `GATE OK`；本地容器对 MySQL 8.0.46 亦跑通。见 §4.4
