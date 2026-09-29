@@ -756,7 +756,51 @@ This checkpoint supersedes all earlier `NOT VERIFIED` statements about the relea
   - local evidence directory: `C:\Users\Administrator\AppData\Local\Temp\amazonerp-v0.1.2-release-verify-20260929-193811`.
   - run log: `C:\Users\Administrator\AppData\Local\Temp\amazonerp-release-run-36560040245.log`.
 - Remaining P1 release findings:
-  - `checksums.sha256` stores `sboms/<name>.spdx.json` paths while GitHub Release assets are flat; standard `sha256sum -c checksums.sha256` fails without path rewriting.
-  - GitHub Release `isImmutable=false`.
-  - GitHub environment `production` exists but has `protection_rules=[]`; there are no required reviewers. The `master` branch protection API returns 404. The release approval gate is therefore not effective.
-- Independent local `cosign verify` was not performed because `cosign` is not installed locally. The registry `.sig` artifact and run log are the current signature evidence; they do not replace an independent verification.
+  - At Checkpoint 17 time, `checksums.sha256` stored `sboms/<name>.spdx.json` paths while GitHub Release assets are flat; standard `sha256sum -c checksums.sha256` fails without path rewriting. Commit `80ec85e` fixes this for future releases, but the already-published v0.1.2 assets are unchanged and still require path rewriting.
+  - At Checkpoint 17 time, GitHub Release `isImmutable=false`. Repository-level immutability was enabled on 2026-09-29 for future releases; v0.1.2 remains non-immutable.
+  - At Checkpoint 17 time, GitHub environment `production` had `protection_rules=[]`; this is superseded by Checkpoint 18. The `master` branch protection API still returns 404.
+- At Checkpoint 17 time, independent local `cosign verify` had not been performed; this is superseded by Checkpoint 18's 17/17 digest-level verification.
+
+## Checkpoint 18: Post-release governance and independent Cosign verification (2026-09-29)
+
+- Release immutability was enabled for the repository through the official REST endpoint `PUT /repos/cgs123456/AmazonERP/immutable-releases`; readback was `{"enabled":true,"enforced_by_owner":false}`. This applies only to future releases. `v0.1.2` remains `immutable=false` and cannot be made immutable retroactively.
+- The `production` environment has one required reviewer, user `cgs123456` (`prevent_self_review=false`, `wait_timer=0`). This creates an approval pause, but it is not independent four-eyes review because the repository currently has only that one admin/user. Add a second reviewer and set `prevent_self_review=true` to obtain independent review.
+- Commit `80ec85e` fixes the checksum path contract by staging `release-manifest.json` and flat `*.spdx.json` files under `release-assets/` and generating `checksums.sha256` there. Artifact upload and GitHub Release upload both consume `release-assets/*`. The local release suite is 88/88 PASS, including 25/25 workflow tests, and `git diff --check` passes. This is source-level verification only: no new remote tag run has executed the fix, and the published v0.1.2 assets still contain the old `sboms/<name>.spdx.json` paths.
+- Independent Cosign verification used `ghcr.io/sigstore/cosign/cosign:v3.1.3`, image digest `sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8`.
+  - Certificate identity: `https://github.com/cgs123456/AmazonERP/.github/workflows/release.yml@refs/tags/v0.1.2`
+  - OIDC issuer: `https://token.actions.githubusercontent.com`
+  - Workflow claims: `GitHub Workflow SHA: 6de12f7532ae57adb5381f0347f1b7bca7e22796`; `GitHub Workflow Ref: refs/tags/v0.1.2`; `GitHub Workflow Name: Release`; repository `cgs123456/AmazonERP`.
+  - Command template:
+    ```powershell
+    $ref = "ghcr.io/cgs123456/amazonerp-<name>:0.1.2-6de12f7532ae57adb5381f0347f1b7bca7e22796"
+    $digest = docker buildx imagetools inspect $ref --format '{{.Manifest.Digest}}'
+    docker run --rm ghcr.io/sigstore/cosign/cosign:v3.1.3 verify --output text `
+      --certificate-identity "https://github.com/cgs123456/AmazonERP/.github/workflows/release.yml@refs/tags/v0.1.2" `
+      --certificate-oidc-issuer "https://token.actions.githubusercontent.com" `
+      "ghcr.io/cgs123456/amazonerp-<name>@${digest}"
+    ```
+  - Result: 17/17 PASS. Each verification log reports that cosign claims were validated, existence in the transparency log was verified offline, and the code-signing certificate was verified against trusted CA certificates.
+  - Digest-level results:
+
+| Image | Digest | Result |
+|-------|--------|--------|
+| gateway | `sha256:80025d2f4be5b81b2e350dd71100995a1f56c77393432084b1ab89fce0f4193c` | PASS |
+| ad | `sha256:33ad595a005ace3fe0543c23b0a0ad1fd0513088ac9c22deaff2de641158a423` | PASS |
+| ai | `sha256:07cb1352ad430d962ed7b8df57b2fc5d7ea0d9c901c52d05281e8c078e7c6af0` | PASS |
+| customer | `sha256:45d2ced18dbd0d0b1d2ca82c559372bb8d7a96aabafc123468d5ed31ee9d1f2c` | PASS |
+| finance | `sha256:8369fe26386eb45be697ae95f2a507bddac9bec6f544371cdb470f7ef463c560` | PASS |
+| logistics | `sha256:2e112b2b3d7e022c98ed671315d1e0dbf47a1aa40eff587fac7c8894102f7cc6` | PASS |
+| message | `sha256:a07ef92b2f3520b9b652736d035fd828da9dd875fdaa54864f1f89c442681c7e` | PASS |
+| multiplatform | `sha256:dd28be440c7617e3ec53db9b86f74ed4405c7552e8fbf332b42404ec2914c71b` | PASS |
+| ops | `sha256:c70657bfd0922379f496cc1599eb656a38e0f34499d89dd1a1b13dd09deb4c1d` | PASS |
+| order | `sha256:dc1ded9056a63692790f334dbd37f61873524a8835037637dbab4f4f59e42930` | PASS |
+| procurement | `sha256:30d459eac5478ca3bd2ef32a550923c7fa918a142bd38655e677b40613f18160` | PASS |
+| product | `sha256:4e46c803a5e488ef082373ab6c9de74de19cbf1e06abfae6bda91fd5abd8d082` | PASS |
+| report | `sha256:e9d9fb453ae23ffd3055ba84a31716c5344e07cd0b3c3e8a36d9011db44ebb34` | PASS |
+| search | `sha256:63ba7b95e538c78e0b9feba147bc542a01f91b39c831bfe6f9f747ec8aa7f52d` | PASS |
+| spapi | `sha256:be9a2252ac86ab30d0f444c4d57595239c10b858cacdfd0a80b43c2042ef2a1c` | PASS |
+| user | `sha256:a1e72bfdb0c8394d12a75e1bd787ef4b175a8c2fad8837f7e24049339edda9f1` | PASS |
+| frontend | `sha256:80895f2ec6196a43c26ba4c78fd54bb46f96683e89d0fc17364f7f6c41555150` | PASS |
+
+  - Raw logs are committed at `docs/superpowers/evidence/2026-09-29-cosign-verify/` (17 `*.verify.log` files plus `summary.json`).
+- `master` branch protection still returns HTTP 404. It was not enabled in this checkpoint because requiring PRs/status checks would change the current direct-push workflow and needs a separate user decision.

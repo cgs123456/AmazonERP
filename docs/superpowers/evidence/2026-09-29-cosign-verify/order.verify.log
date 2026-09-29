@@ -1,0 +1,14 @@
+{"critical":{"identity":{"docker-reference":"ghcr.io/cgs123456/amazonerp-order"},"image":{"docker-manifest-digest":"sha256:dc1ded9056a63692790f334dbd37f61873524a8835037637dbab4f4f59e42930"},"type":"cosign container image signature"},"optional":null}
+
+Verification for ghcr.io/cgs123456/amazonerp-order@sha256:dc1ded9056a63692790f334dbd37f61873524a8835037637dbab4f4f59e42930 --
+The following checks were performed on each of these signatures:
+  - The cosign claims were validated
+  - Existence of the claims in the transparency log was verified offline
+  - The code-signing certificate was verified using trusted certificate authority certificates
+Certificate subject: https://github.com/cgs123456/AmazonERP/.github/workflows/release.yml@refs/tags/v0.1.2
+Certificate issuer URL: https://token.actions.githubusercontent.com
+GitHub Workflow Trigger: push
+GitHub Workflow SHA: 6de12f7532ae57adb5381f0347f1b7bca7e22796
+GitHub Workflow Name: Release
+GitHub Workflow Repository: cgs123456/AmazonERP
+GitHub Workflow Ref: refs/tags/v0.1.2

@@ -1,0 +1,14 @@
+{"critical":{"identity":{"docker-reference":"ghcr.io/cgs123456/amazonerp-spapi"},"image":{"docker-manifest-digest":"sha256:be9a2252ac86ab30d0f444c4d57595239c10b858cacdfd0a80b43c2042ef2a1c"},"type":"cosign container image signature"},"optional":null}
+
+Verification for ghcr.io/cgs123456/amazonerp-spapi@sha256:be9a2252ac86ab30d0f444c4d57595239c10b858cacdfd0a80b43c2042ef2a1c --
+The following checks were performed on each of these signatures:
+  - The cosign claims were validated
+  - Existence of the claims in the transparency log was verified offline
+  - The code-signing certificate was verified using trusted certificate authority certificates
+Certificate subject: https://github.com/cgs123456/AmazonERP/.github/workflows/release.yml@refs/tags/v0.1.2
+Certificate issuer URL: https://token.actions.githubusercontent.com
+GitHub Workflow Trigger: push
+GitHub Workflow SHA: 6de12f7532ae57adb5381f0347f1b7bca7e22796
+GitHub Workflow Name: Release
+GitHub Workflow Repository: cgs123456/AmazonERP
+GitHub Workflow Ref: refs/tags/v0.1.2

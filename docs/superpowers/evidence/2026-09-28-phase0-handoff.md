@@ -1,7 +1,7 @@
 # Phase 0 交接文档（2026-09-28）
 
 > 目标读者：接手 AmazonERP 生产化升级的下一任工程师 / Agent。
-> 结论先行：**Task 1–7（可发布基线）已完成并验证；Task 0 原 inventory 有缺陷，但已由 `2026-09-29-phase0-baseline-inventory-corrected.json` 修正版证据链满足；Task 8 已采用“split map + review-required 清单”替代路径完成，但 per-subsystem 拆分未做。Phase 0 本地退出条件已全部满足；release commit `6de12f7` / tag `v0.1.2` 的 `release.yml` 已在远端真实执行并通过（run `36560040245`，17/17 镜像 CVE 门禁通过并完成 Cosign 签名），GitHub Release `v0.1.2` 已发布；连接器状态仍为 API-Ready（未联调）。当前仓库状态以 §22 为准；新增 P1 发布缺口见 §22。**
+> 结论先行：**Task 1–7（可发布基线）已完成并验证；Task 0 原 inventory 有缺陷，但已由 `2026-09-29-phase0-baseline-inventory-corrected.json` 修正版证据链满足；Task 8 已采用“split map + review-required 清单”替代路径完成，但 per-subsystem 拆分未做。Phase 0 本地退出条件已全部满足；release commit `6de12f7` / tag `v0.1.2` 的 `release.yml` 已在远端真实执行并通过（run `36560040245`，17/17 镜像 CVE 门禁通过并完成 Cosign 签名），GitHub Release `v0.1.2` 已发布；连接器状态仍为 API-Ready（未联调）。当前仓库状态以 §23 为准；v0.1.2 发布时的 P1 缺口见 §22，后续修复与独立验证见 §23。**
 
 ## 1. 项目当前状态（2026-09-28 历史快照）
 
@@ -128,8 +128,8 @@ tools/release/verify_clean_clone.ps1
 |------|------|------|
 | Task 0 原 inventory 证据不一致 | 原文件仍是历史缺陷，但已由修正版 inventory 证据链覆盖；不覆盖原文件 | 保留原文件不改；以修正版 inventory + 652 条 split map 为权威 |
 | Task 8 per-subsystem 拆分未做 | 无法按子系统审查/回滚；退出条件第 9 条已用“或列出 review-required”分支满足 | 保留 split map + 182 条 review-required；若要拆分需用户批准历史重写或 revert + re-split |
-| `checksums.sha256` 路径与 GitHub Release 扁平资产不一致 | 标准 `sha256sum -c checksums.sha256` 在下载目录失败；供应链校验不可直接复用 | 修 release workflow 的 checksum 生成/上传路径，或保留 `sboms/` 目录结构 |
-| GitHub Release 未 immutable，且发布审批门禁未生效 | Release 发布后可被替换；`environment: production` 当前无 required reviewers，`master` 无分支保护 | 配置 environment protection + branch protection；评估 immutable release |
+| `checksums.sha256` 路径与 GitHub Release 扁平资产不一致（v0.1.2 历史资产） | v0.1.2 下载资产仍不能直接 `sha256sum -c`；供应链校验需手工映射 basename | commit `80ec85e` 已修 workflow 为扁平 staging；本地 88/88 release tests PASS，但尚未由新的远端 tag run 验证，修复只对未来发布生效 |
+| v0.1.2 不可追溯为 immutable；审批允许自审；`master` 无分支保护 | v0.1.2 发布资产仍可替换；单用户自审不构成独立 four-eyes；直接推送仍无强制 PR | Release immutability 已于 2026-09-29 启用（仅未来发布）；`production` 已要求 reviewer，但需第二用户并设 `prevent_self_review=true` 才能独立复核；branch protection 待用户决策 |
 | 前端瘦身远端构建/Grype — 已由 v0.1.2 release run 覆盖 | 无剩余阻断；远端 17/17 镜像均过门禁 | 保留 release run 日志作为证据 |
 | 两条 CVE 豁免 owner 仍是占位 | 2026-12-31 到期前若无人接手会阻断续期 | 指定具名 owner，到期前复核 |
 | 无真实 Amazon 凭证 | SP-API 层全部是 mock/契约测试 | Phase 1 需用户主动提供凭证，先 sandbox |
@@ -613,6 +613,15 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - 新增 P1 缺口：
   - `checksums.sha256` 记录的是 `sboms/<name>.spdx.json`，而 GitHub Release assets 是扁平文件名；标准 `sha256sum -c checksums.sha256` 不能直接通过，需修发布路径或上传结构。
   - GitHub Release `isImmutable=false`，发布后仍可被替换。
-  - GitHub environment `production` 已存在，但 `protection_rules=[]`，没有 required reviewers；`master` 分支保护 API 返回 404。`environment: production` 目前仍只是形式声明，审批门禁未生效。
-- 本地未安装 `cosign`，因此未做独立的本地 `cosign verify`；当前签名证据为 registry `.sig` artifact 与 release run 日志，不等同于独立验签。
+  - GitHub environment `production` 已存在，但 §22 记录时 `protection_rules=[]`，没有 required reviewers；`master` 分支保护 API 返回 404。审批门禁已于 §23 启用，但仍是单用户自审；`master` 分支保护仍为 404。
+- §22 记录时本地未安装 `cosign`，因此未做独立验签；该缺口已由 §23 的 17/17 digest 级独立验签关闭。
 - 本次 checkpoint 只记录已经发生的远端发布事实；产品代码和 workflow 未在本 checkpoint 修改。
+
+## 23. 2026-09-29 Checkpoint 18：checksum 修复、审批门禁、immutable release 与独立验签
+
+- `checksums.sha256` 路径不一致已修复：commit `80ec85e` 把 release assets 先 stage 到 `release-assets/` 扁平目录，再在该目录生成 checksums；artifact upload 与 GitHub Release upload 均使用 `release-assets/*`。本地 release suite 88/88 PASS，`test_release_workflow.py` 25/25 PASS，`git diff --check` PASS。**边界：尚未由新的远端 tag run 验证；`v0.1.2` 发布资产仍保留旧路径。**
+- `production` environment 已配置 required reviewer `cgs123456`，`wait_timer=0`，`prevent_self_review=false`。因此审批暂停已生效，但仓库只有单一管理员，仍是自审，不构成独立四眼复核。要形成独立复核，需要增加第二用户/团队并设置 `prevent_self_review=true`。
+- GitHub Release immutability 已于 2026-09-29 通过官方 REST `PUT /repos/cgs123456/AmazonERP/immutable-releases` 启用；回读 `{"enabled":true,"enforced_by_owner":false}`。该设置只对未来发布生效，`v0.1.2` 仍为 `immutable=false`，不能追溯。`softprops/action-gh-release@v2` 当前实现是先创建 draft、上传 assets、再 finalize，因此与新设置兼容；首个未来 tag 发布仍是远端验证。
+- 独立 Cosign 验签：使用官方 `ghcr.io/sigstore/cosign/cosign:v3.1.3`（镜像 digest `sha256:9e5c2f2edc34351160407ca3416c61855bdf9403c3c5936e0f0be7fc261611b8`），对 `v0.1.2` 的 17/17 release image digest 逐一执行 `cosign verify`。所有 17 个均 PASS，证书身份为 `https://github.com/cgs123456/AmazonERP/.github/workflows/release.yml@refs/tags/v0.1.2`，OIDC issuer 为 `https://token.actions.githubusercontent.com`，workflow SHA `6de12f7532ae57adb5381f0347f1b7bca7e22796`，ref `refs/tags/v0.1.2`。逐镜像 digest 与命令见 `2026-09-28-phase0-verification.md` Checkpoint 18。
+- 原始证据已持久化到仓库：`docs/superpowers/evidence/2026-09-29-cosign-verify/`（17 个 `*.verify.log` + `summary.json`）。
+- `master` 分支保护 API 仍为 404。未启用，因为强制 PR/状态检查会改变当前直接推送工作流；这是待用户决策的治理缺口，不是本次发布修复的一部分。
