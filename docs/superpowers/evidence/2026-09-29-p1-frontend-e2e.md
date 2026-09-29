@@ -70,3 +70,11 @@ npx playwright test e2e/full-interaction.spec.ts -g "物流看板"
 - `e2e/full-interaction.spec.ts` 的完整交互断言依赖本地真实后端栈；本次只单独执行并验证了新增的物流侧边栏跳转用例，未宣称完整交互套件已在无后端环境通过。
 - 未执行远端 CI，也未进行生产环境或真实 Amazon SP-API 数据联调。
 - 本证据不改变“连接器状态上限为 API-Ready”的结论。
+
+## 生产构建
+
+```powershell
+npm run build
+```
+
+结果：`vue-tsc` 与 `vite build` 均成功，161 个模块完成转换，退出码 `0`。
