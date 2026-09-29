@@ -47,8 +47,9 @@ class FlywayBaselineContractTest {
             assertTrue(Files.isRegularFile(yml), "缺少 application.yml：" + yml);
             String text = Files.readString(yml, StandardCharsets.UTF_8);
             assertTrue(text.contains("  flyway:"), module + " 缺少 spring.flyway 配置");
-            assertTrue(text.contains("baseline-on-migrate: true"),
-                    module + " 必须显式开启 Flyway baseline");
+            assertTrue(text.contains("baseline-on-migrate: false"),
+                    module + " 必须显式关闭 baseline-on-migrate：存量库无 flyway_schema_history 时"
+                            + " 必须在执行任何 DDL 之前 fail-fast，而不是 baseline@v1 后重放 V2..Vn");
             assertTrue(text.contains("baseline-version: 1"),
                     module + " 必须显式固定 baseline-version");
             assertTrue(text.contains("locations: classpath:db/migration"),

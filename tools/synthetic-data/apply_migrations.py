@@ -13,15 +13,18 @@ Flyway baseline (important)
 --------------------------
 The migrations here are applied with the ``mysql`` client, i.e. *without* Flyway.
 That leaves a fully populated schema with no ``flyway_schema_history`` table, and
-every service runs with ``baseline-on-migrate: true`` + ``baseline-version: 1``.
-On such a database Flyway baselines at v1 and then replays V2..Vn on top of tables
-that already exist, which fails with ``Duplicate key name`` and aborts service
-startup (reproduced 2026-09-28: amz_ad V2, SQL State 42000). To keep the synthetic
-database startable, this script writes one baseline row at the module highest
-version, which is Flyway's documented way of adopting a pre-existing schema.
-Production deployments should instead start from the 14 *empty* databases created
-by ``docker/init-sql`` and let Flyway apply everything (that path is covered by
-``AllModulesFlywayMySqlIT``).
+every service runs with ``baseline-on-migrate: false`` + ``baseline-version: 1``.
+On such a database Flyway refuses to start *before running any DDL*: "Found
+non-empty schema(s) ... but no schema history table". Before 2026-09-30 the flag was
+``true``, which was strictly worse -- Flyway baselined at v1 and then replayed
+V2..Vn on top of tables that already exist, failing with ``Duplicate key name`` and
+leaving a half-migrated schema plus a failed history row (MySQL DDL is not
+transactional; reproduced 2026-09-28: amz_ad V2, SQL State 42000). Either way the
+synthetic database is not startable until this script writes one baseline row at the
+module highest version, which is Flyway's documented way of adopting a pre-existing
+schema. Production deployments should instead start from the 14 *empty* databases
+created by ``docker/init-sql`` and let Flyway apply everything (that path is covered
+by ``AllModulesFlywayMySqlIT``).
 
 Usage
 -----
@@ -102,10 +105,11 @@ def ensure_flyway_baseline(mysql, database, max_version):
     """Tell Flyway that every migration up to ``max_version`` is already applied.
 
     The migrations were applied with raw SQL, so Flyway has no history table. Left
-    alone, the next service start would baseline at ``baseline-version: 1`` and then
-    replay V2..Vn against tables that already exist -> "Duplicate key name" -> the
-    service refuses to start. Inserting a baseline row at the module's highest
-    version is the documented way to adopt a pre-existing schema.
+    alone, the next service start sees "non-empty schema + no schema history table"
+    and refuses to start before running any DDL (``baseline-on-migrate: false``).
+    Inserting a baseline row at the module's highest version is the documented way
+    to adopt a pre-existing schema, and makes Flyway accept the database cleanly
+    with nothing left to replay.
 
     Returns ``(created, error_or_None)``. ``created`` is False when a history table
     already exists (the services have genuinely run there), in which case nothing

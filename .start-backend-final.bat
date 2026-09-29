@@ -6,7 +6,7 @@ set LOGDIR=D:\Desktop\amazon-erp\.service-logs
 if not exist "%LOGDIR%" mkdir "%LOGDIR%"
 
 set COMMON=-Xms256m -Xmx512m -Dspring.cloud.nacos.discovery.enabled=false -Dspring.cloud.nacos.config.enabled=false -DSEATA_ENABLED=false
-set JWT=--spring.flyway.baseline-on-migrate=true --crypto.key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY= --jwt.secret-key=local-e2e-secret-key-0123456789abcdef
+set JWT=--crypto.key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY= --jwt.secret-key=local-e2e-secret-key-0123456789abcdef
 set CRYPTO=--AMZ_CRYPTO_KEY=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
 set INFRA=--spring.redis.host=127.0.0.1 --spring.redis.port=6379 --spring.redis.password=amzpassamzpass --spring.data.redis.host=127.0.0.1 --spring.data.redis.port=6379 --spring.data.redis.password=amzpass --spring.rabbitmq.host=127.0.0.1
 

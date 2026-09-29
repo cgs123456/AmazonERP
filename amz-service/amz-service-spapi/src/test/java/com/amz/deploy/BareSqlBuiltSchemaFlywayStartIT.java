@@ -30,10 +30,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>背景（2026-09-28 实测缺陷）：{@code tools/synthetic-data/apply_migrations.py} 用 mysql
  * 客户端依次执行每个 {@code V*.sql}，这条路不经过 Flyway，因此建出来的库里没有
- * {@code flyway_schema_history}。而 14 个服务都配了 {@code baseline-on-migrate: true} +
- * {@code baseline-version: 1}：服务首次启动时 Flyway 看到「非空库 + 无历史表」就在 v1 打基线，
- * 然后把 V2..Vn 重放一遍 —— V2 立刻撞上已存在的对象报 Duplicate key name（amz_ad 实测
- * SQL State 42000），服务启动失败。
+ * {@code flyway_schema_history}。而 14 个服务都配了 {@code baseline-on-migrate: false} +
+ * {@code baseline-version: 1}：服务首次启动时 Flyway 看到「非空库 + 无历史表」就在执行任何
+ * DDL 之前直接拒绝启动（{@code Found non-empty schema(s) ... but no schema history table}）。
+ * 2026-09-30 之前这里是 {@code true}，后果更坏：先在 v1 打基线再把 V2..Vn 重放一遍，V2 立刻
+ * 撞上已存在的对象报 Duplicate key name（amz_ad 实测 SQL State 42000），而 MySQL DDL 非事务，
+ * 会留下半迁移状态 + 失败的 history 行。改成 false 后同样的库仍起不来，但报错明确、零副作用。
  *
  * <p>修复：裸 SQL 建完库后补一条 baseline 行，版本打到该模块的<b>最大</b>版本，等于告诉 Flyway
  * 「这些迁移都已经应用过了」。本 IT 复现这条路径并断言 Flyway 能干净启动（applied=0）。
@@ -121,7 +123,9 @@ class BareSqlBuiltSchemaFlywayStartIT {
             MigrateResult result = Flyway.configure()
                     .dataSource(urlFor(schema), USER, PASSWORD)
                     .locations("filesystem:" + module.migrationDir().toString().replace("\\", "/"))
-                    .baselineOnMigrate(true)
+                    // 与 14 个服务 application.yml 一致：baseline 行已存在时 true/false 等价，
+                // 但 IT 必须跑生产配置，否则服务侧翻转后这里检测不到回归。
+                .baselineOnMigrate(false)
                     .baselineVersion("1")
                     .cleanDisabled(true)
                     .load()

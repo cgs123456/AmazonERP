@@ -241,7 +241,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **调度防重** | `DistributedJobLock` Redis 分布式锁默认 fail-closed；仅显式幂等/只读任务可选择降级，并记录抢锁、跳过、降级和释放失败指标 |
 | **SQL 注入防护** | 全 MyBatis `#{}` |
 | **全局异常处理器** | 统一 `@ControllerAdvice` 覆盖 16 服务 |
-| **数据库迁移** | Flyway 10.20.0 是 14 个 MySQL 服务的唯一建表事实源（106 张表；显式 baseline-on-migrate 兼容存量库）；Compose/k8s 只建 14 个空库 |
+| **数据库迁移** | Flyway 10.20.0 是 14 个 MySQL 服务的唯一建表事实源（106 张表；baseline-on-migrate: false —— 存量库无 flyway_schema_history 时 fail-fast 拒绝启动，不自动打基线重放 V2..Vn）；Compose/k8s 只建 14 个空库 |
 | **Docker 健康探针** | 16 服务 Actuator health/liveness/readiness |
 
 ## ⚠️ 已知限制

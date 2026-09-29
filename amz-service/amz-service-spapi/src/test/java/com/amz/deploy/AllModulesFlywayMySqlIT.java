@@ -76,14 +76,17 @@ class AllModulesFlywayMySqlIT {
         for (ModuleMigration module : modules) {
             String schema = module.database() + SCHEMA_SUFFIX;
             assertTrue(schema.endsWith(SCHEMA_SUFFIX), "只允许操作 IT 专用库：" + schema);
-            assertTrue(module.applicationYml().contains("baseline-on-migrate: true"),
-                    module.name() + " 必须显式开启 Flyway baseline（P0-58）");
+            assertTrue(module.applicationYml().contains("baseline-on-migrate: false"),
+                    module.name() + " 必须显式关闭 baseline-on-migrate（P0-58）：存量库"
+                            + " 无 flyway_schema_history 时必须 fail-fast，不能被自动打基线后重放");
 
             recreateSchema(schema);
             MigrateResult result = Flyway.configure()
                     .dataSource(urlFor(schema), USER, PASSWORD)
                     .locations("filesystem:" + module.migrationDir().toString().replace("\\", "/"))
-                    .baselineOnMigrate(true)
+                    // 与 14 个服务 application.yml 保持同一套配置：空库路径两者等价，
+                    // 但 IT 必须复现生产的 fail-fast 语义，否则配置漂移检测不到。
+                    .baselineOnMigrate(false)
                     .baselineVersion("1")
                     .cleanDisabled(true)
                     .load()

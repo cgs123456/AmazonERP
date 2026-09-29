@@ -34,10 +34,13 @@ spring:
   # 当 MYSQL_SLAVE_HOST 未配置时回退到 master，避免单机环境启动失败。
   # ====== Flyway 基线（P0-58）======
   # 表结构的唯一事实源是 classpath:db/migration；Compose 与 k8s 只负责建空库。
-  # baseline-on-migrate=true 是必需的：Flyway 10 默认为 false，非空库且无 flyway_schema_history 时
-  # 会直接抛错并让应用拒绝启动（历史环境 14 个服务会同时起不来）。空库仍照常执行 V1。
+  # baseline-on-migrate=false（P0-58 / 2026-09-30 修正）：非空库且无 flyway_schema_history 时，
+  # Flyway 会在执行任何 DDL 之前就拒绝启动（fail-fast，报错指明用 baseline() 纳管），
+  # 而不是像 true 那样先在 v1 打基线、再重放 V2..Vn 撞 Duplicate key，留下半迁移状态
+  # （MySQL DDL 非事务，ad/order/spapi 2026-09-28 实测必炸）。空库路径照常执行 V1..Vn。
+  # 纳管存量库请显式 baseline：tools/synthetic-data/apply_migrations.py 已代写基线行。
   flyway:
-    baseline-on-migrate: true
+    baseline-on-migrate: false
     baseline-version: 1
     locations: classpath:db/migration
   datasource:

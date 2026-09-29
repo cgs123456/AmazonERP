@@ -216,9 +216,12 @@ python verify_import.py --tier ci --host 127.0.0.1 --port 3399 --user amz `
 ### 8.1 `apply_migrations.py` 现在会补 Flyway baseline（重要，2026-09-28 起）
 
 `apply_migrations.py` 用 mysql 客户端裸跑每个 `V*.sql`，这条路径**绕过 Flyway**，建出来的库里没有
-`flyway_schema_history`。而 14 个服务配的是 `baseline-on-migrate: true` + `baseline-version: 1`，
-服务首次启动会在 v1 打基线后重放 V2..Vn，撞上已存在的对象就起不来 —— 实测 `amz_ad` 报
-`SQL State 42000 / Error 1061 Duplicate key name 'uk_shop_campaign'`。
+`flyway_schema_history`。而 14 个服务配的是 `baseline-on-migrate: false` + `baseline-version: 1`
+（2026-09-30 由 `true` 改为 `false`）：服务首次启动会在执行**任何** DDL 之前直接拒绝启动，报错
+`Found non-empty schema(s) ... but no schema history table`。改成 `false` 之前的 `true` 更危险 ——
+先在 v1 打基线再重放 V2..Vn，撞上已存在的对象才失败，实测 `amz_ad` 报
+`SQL State 42000 / Error 1061 Duplicate key name 'uk_shop_campaign'`，且 MySQL DDL 非事务，
+会留下半迁移的库 + 一条失败的 `flyway_schema_history` 行。两条路都起不来，区别是 `false` 零副作用。
 
 因此脚本在裸 SQL 之后会调用 `ensure_flyway_baseline()`，补一条 `type='BASELINE'` 的历史行，
 版本打到**该模块最大版本**（ad=7、spapi=9 …），并打印 `flyway_schema_history baselined @ vN`。

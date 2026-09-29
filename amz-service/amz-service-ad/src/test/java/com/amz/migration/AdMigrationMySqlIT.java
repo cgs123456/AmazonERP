@@ -469,7 +469,9 @@ class AdMigrationMySqlIT {
         return Flyway.configure()
                 .dataSource(URL, USER, PASSWORD)
                 .locations("classpath:db/migration")
-                .baselineOnMigrate(true)
+                // 与 amz-service-ad 的 application.yml 一致：本 IT 先 DROP+CREATE 库，
+                // 走的是生产空库路径，因此 false 与 true 结果相同（V1..V7 全部执行）。
+                .baselineOnMigrate(false)
                 .baselineVersion("1")
                 .target(target)
                 .cleanDisabled(true)
