@@ -133,19 +133,21 @@ tools/release/verify_clean_clone.ps1
 | 前端 `default.conf` 构建期未校验 | 配置错误要到容器启动才暴露 | 后续在写入后加 `nginx -t`（需可解析 upstream） |
 | Nacos 未接入 | 配置中心能力缺失 | 架构级另行排期 |
 
-## 7. 2026-09-29 状态更新（后补，覆盖本文档的过期状态）
+## 7. 2026-09-29 状态更新（截至 PR #6 合并的历史核验快照）
 
 本文档 §1 的状态表（`codex/api-ready-connectors` / HEAD `5ca0fdd`）已被后续工作取代，
 **不要按它判断当前仓库位置**：
 
 | 项 | 2026-09-29 核验快照 |
 |----|---------------------|
-| 默认分支 `origin/master` | `034e4da`（PR #5 merge commit） |
-| 已合并 PR | #1 `8d6100f`、#2 `c055060`、#3 `af1ef0c`、#4 `dae84b4`、#5 `034e4da`，全部已合并 |
-| 工作区 | 干净；截至核验时无未 push 提交 |
-| 本更新分支 | `codex/phase0-handoff-sync`（从 `034e4da` 新建；仅修改本交接文档） |
+| 默认分支 `origin/master` | `2e1be56`（PR #6 merge commit） |
+| 已合并 PR | #1 `8d6100f`、#2 `c055060`、#3 `af1ef0c`、#4 `dae84b4`、#5 `034e4da`、#6 `2e1be56`，全部已合并 |
+| 工作区 | 核验时干净；本文更新仅修改本交接文档 |
+| 本次文档更新分支（历史） | `codex/phase0-handoff-followup`（从 `2e1be56` 新建；仅修改本交接文档） |
 
-远端 CI 核验：master `034e4da` run `36499305682` = 9/9 SUCCESS（含 `docker`）；PR #5 分支 run `36498964740` = 8/8 SUCCESS，`docker` skipped；master `dae84b4` run `36498842360` = 9/9 SUCCESS。以上是 `ci.yml`，不是 `release.yml`。
+上表是截至 PR #6 合并后的核验快照；后续 `master` 前进属于预期，判断当前仓库位置应重新执行 `git log` / 查看 GitHub，不应把本表当作实时状态。
+
+远端 CI 核验（均为 `ci.yml`，不是 `release.yml`）：master `034e4da` run `36499305682` = 9/9 SUCCESS（含 `docker`）；PR #6 分支 run `36499965363` = 8/8 SUCCESS，`docker` skipped；master `2e1be56` run `36500303341` = 9/9 SUCCESS（含 `docker`）。
 
 ### P0 三项的进展（本文档写作时的缺口）
 
