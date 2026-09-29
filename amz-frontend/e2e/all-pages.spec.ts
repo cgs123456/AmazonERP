@@ -10,9 +10,10 @@
  * 6. 财务管理 /finance
  * 7. 选品分析 /selection
  * 8. 仓库管理 /warehouse
- * 9. 消息通知 /notifications
- * 10. 路由守卫（未登录 → / 然后跳转登录）
+ * 9. 物流看板 /logistics
+ * 10. 消息通知 /notifications
  * 11. 404 页面
+ * 12. 路由守卫（未登录 → / 然后跳转登录）
  */
 import { test, expect } from '@playwright/test'
 
@@ -135,7 +136,17 @@ test.describe('Warehouse', () => {
   })
 })
 
-// ═══ 9. 消息通知 ═══
+// ═══ 9. 物流看板 ═══
+test.describe('Logistics', () => {
+  test('应渲染物流看板页面', async ({ page }) => {
+    await page.goto('/logistics')
+    await page.waitForTimeout(2000)
+    await expect(page.locator('.logistics-page')).toBeVisible()
+    await expect(page.locator('.hero-title')).toContainText('物流看板')
+  })
+})
+
+// ═══ 10. 消息通知 ═══
 test.describe('Notifications', () => {
   test('应渲染通知页面', async ({ page }) => {
     await page.goto('/notifications')
@@ -145,7 +156,7 @@ test.describe('Notifications', () => {
   })
 })
 
-// ═══ 10. 404 页面 ═══
+// ═══ 11. 404 页面 ═══
 test.describe('404', () => {
   test('访问不存在路径应显示 404 页面', async ({ page }) => {
     // 先注入有效 token 避免路由守卫拦截
@@ -162,7 +173,7 @@ test.describe('404', () => {
   })
 })
 
-// ═══ 11. 路由守卫 ═══
+// ═══ 12. 路由守卫 ═══
 test.describe('Route Guard', () => {
   test('受保护路由在无 token 时应重定向到首页', async ({ browser }) => {
     // 自建干净上下文确保无 token
