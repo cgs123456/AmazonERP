@@ -1,7 +1,7 @@
 # Phase 0 交接文档（2026-09-28）
 
 > 目标读者：接手 AmazonERP 生产化升级的下一任工程师 / Agent。
-> 结论先行：**Task 1–7（可发布基线）已完成并验证；Task 0 原 inventory 有缺陷，但已由 `2026-09-29-phase0-baseline-inventory-corrected.json` 修正版证据链满足；Task 8 已采用“split map + review-required 清单”替代路径完成，但 per-subsystem 拆分未做。Phase 0 本地退出条件已全部满足；当前 HEAD 的 `release.yml` 仍未在远端验证（旧 `v0.1.0` tag 已有两次远端执行且均失败，见 §7 的远端 release 审计），连接器状态仍为 API-Ready（未联调）。当前仓库状态以 §20 为准。**
+> 结论先行：**Task 1–7（可发布基线）已完成并验证；Task 0 原 inventory 有缺陷，但已由 `2026-09-29-phase0-baseline-inventory-corrected.json` 修正版证据链满足；Task 8 已采用“split map + review-required 清单”替代路径完成，但 per-subsystem 拆分未做。Phase 0 本地退出条件已全部满足；release commit `6de12f7` / tag `v0.1.2` 的 `release.yml` 已在远端真实执行并通过（run `36560040245`，17/17 镜像 CVE 门禁通过并完成 Cosign 签名），GitHub Release `v0.1.2` 已发布；连接器状态仍为 API-Ready（未联调）。当前仓库状态以 §22 为准；新增 P1 发布缺口见 §22。**
 
 ## 1. 项目当前状态（2026-09-28 历史快照）
 
@@ -29,7 +29,7 @@ Phase 0 的目标不是修业务，而是让"提交、构建、镜像、迁移�
 | 2 确定性发布清单 | `8c8f60f` | `tools/release/release_manifest.py`：同一输入生成逐字节相同的 JSON（无时间戳、无随机 UUID、无绝对路径、集合有序） |
 | 3 OCI 多服务构建元数据 | `a85d541` | 可复现的多服务镜像构建配置（Docker Buildx/Bake），OCI 标签含 commit/digest/前端输入/Flyway 输入 |
 | 4 CI 硬门禁 | `fc07f6b` | `.github/workflows/`：Maven 测试 + Critical Checkstyle + Python release 测试全部为强制门禁 |
-| 5 签名供应链工作流 | `365ac05` | GHCR 推送 + SBOM（Syft）+ 漏洞扫描（Grype）+ 签名（Cosign）的 release workflow（旧 `v0.1.0` 两次远端执行均失败；当前 HEAD revision 远端执行通过后才能标 VERIFIED） |
+| 5 签名供应链工作流 | `365ac05` | GHCR 推送 + SBOM（Syft）+ 漏洞扫描（Grype）+ 签名（Cosign）的 release workflow；旧 `v0.1.0` 两次远端执行失败，release commit `6de12f7` / `v0.1.2` 已由 run `36560040245` 远端验证通过，17/17 镜像 CVE 门禁通过并完成 Cosign 签名 |
 | 6 安全回滚演练 | `a8f6b55` | `tools/release/rollback_drill.py`：dry-run 默认，验证回滚步骤可执行 |
 | 7 Clean Clone 复验 | `d2b7619`/`7d933f2`/`f01738c` | 把散落文件补齐进 Git，`tools/release/verify_clean_clone.ps1` 可从干净 clone 一键复验 |
 
@@ -96,9 +96,9 @@ tools/release/verify_clean_clone.ps1
 
 ### P0 — Phase 0 未完成项与发布动作
 
-1. **Task 0 inventory 证据修复 — 本地已完成，待提交/采纳**：原 inventory 不覆盖；已生成 `2026-09-29-phase0-baseline-inventory-corrected.json` + sidecar，并与 652 条 split map 对齐。退出条件第 1 条已由修正版证据链满足；提交前仍需用户批准。
+1. **Task 0 inventory 证据修复 — 已完成并提交**：原 inventory 不覆盖；已生成 `2026-09-29-phase0-baseline-inventory-corrected.json` + sidecar，并与 652 条 split map 对齐。修正版证据链已纳入 v0.1.1 候选提交 `c87a847`，并保留在 v0.1.2；退出条件第 1 条已满足。
 2. **Task 8 per-subsystem 拆分 — 需用户决策（替代路径已完成）**：`split map + review-required` 已满足退出条件第 9 条“或”分支；若还要按子系统提交序列，需批准历史重写/force-push（不推荐）或 revert + re-split（重）。否则保持“替代完成、per-subsystem 未做”的表述。
-3. **当前 HEAD 的 `release.yml` 远端真实执行 — 需用户批准**：推 tag 会触发 GHCR push、17 次 Grype、`cve_gate` 和 Cosign；旧 `v0.1.0` 两次远端执行均失败，当前 revision 仍未验证。`ci.yml` 的 9/9 绿不能替代。
+3. **v0.1.2 远端发布 — 已完成（2026-09-29）**：tag `v0.1.2` 指向 `6de12f7`；run `36560040245` 的 `quality-gate` 与 `release` 均 success，17/17 镜像通过 `cve_gate` 并完成 Cosign 签名，GitHub Release 已发布 19 个 assets。旧 `v0.1.0` 的失败保留为历史；新增发布可用性缺口见 §22。
 4. **删除 GHCR 上未签名的 `0.1.0` package — blocked-on-user**：当前 token 无 `packages:delete` 权限，只能在 GitHub UI 手动删除。
 5. **Nacos 配置中心接入 — 架构级，另行排期**：需要引入 Nacos config starter 并调整 32 个 `bootstrap.yml`。
 
@@ -128,14 +128,17 @@ tools/release/verify_clean_clone.ps1
 |------|------|------|
 | Task 0 原 inventory 证据不一致 | 原文件仍是历史缺陷，但已由修正版 inventory 证据链覆盖；不覆盖原文件 | 保留原文件不改；以修正版 inventory + 652 条 split map 为权威 |
 | Task 8 per-subsystem 拆分未做 | 无法按子系统审查/回滚；退出条件第 9 条已用“或列出 review-required”分支满足 | 保留 split map + 182 条 review-required；若要拆分需用户批准历史重写或 revert + re-split |
-| 当前 HEAD 的 `release.yml` 未在远端验证（旧 `v0.1.0` 两次远端执行均失败） | 平台差异可能在真实 runner 暴露；供应链产物未验证 | 经用户批准后按当前 revision 真实执行 |
-| 前端瘦身只有本地证据 | 本地 build/scan 不能替代 release runner 的 bake + Grype | 后续 `release.yml` 远端执行时覆盖 17 镜像 |
+| `checksums.sha256` 路径与 GitHub Release 扁平资产不一致 | 标准 `sha256sum -c checksums.sha256` 在下载目录失败；供应链校验不可直接复用 | 修 release workflow 的 checksum 生成/上传路径，或保留 `sboms/` 目录结构 |
+| GitHub Release 未 immutable，且发布审批门禁未生效 | Release 发布后可被替换；`environment: production` 当前无 required reviewers，`master` 无分支保护 | 配置 environment protection + branch protection；评估 immutable release |
+| 前端瘦身远端构建/Grype — 已由 v0.1.2 release run 覆盖 | 无剩余阻断；远端 17/17 镜像均过门禁 | 保留 release run 日志作为证据 |
 | 两条 CVE 豁免 owner 仍是占位 | 2026-12-31 到期前若无人接手会阻断续期 | 指定具名 owner，到期前复核 |
 | 无真实 Amazon 凭证 | SP-API 层全部是 mock/契约测试 | Phase 1 需用户主动提供凭证，先 sandbox |
 | 前端 `default.conf` 构建期未校验 | 配置错误要到容器启动才暴露 | 后续在写入后加 `nginx -t`（需可解析 upstream） |
 | Nacos 未接入 | 配置中心能力缺失 | 架构级另行排期 |
 
 ## 7. 2026-09-29 状态更新（截至 PR #6 合并的历史核验快照）
+
+> 本节及其后至 §21 均为历史 checkpoint；其中“当前 HEAD `release.yml` 未验证”的结论已被 §22 的 v0.1.2 远端验证取代。
 
 本文档 §1 的状态表（`codex/api-ready-connectors` / HEAD `5ca0fdd`）已被后续工作取代，
 **不要按它判断当前仓库位置**：
@@ -162,7 +165,7 @@ tools/release/verify_clean_clone.ps1
 
 当前 `v0.1.0` 指向 annotated tag `3b6385d`，其 peeled commit 为 `4d644da`；第一次 run 的 head SHA 是 `30f5e7a`，说明 tag 在两次 run 之间发生过更新/移动，但本次审计未证明具体操作方式。
 
-当前 HEAD `95397b6` 的 workflow 已不再使用 `anchore/scan-action@v4`，改为 `anchore/grype:latest` + `tools/release/cve_gate.py` 对 17 个镜像逐一扫描；`git diff v0.1.0..HEAD -- .github/workflows/release.yml` 可复核。正确结论是：**旧 `v0.1.0` 的远端 release 已执行且失败；当前 HEAD 的 release 仍未被远端验证。** 旧失败不能证明当前代码仍有相同问题，也不能当作当前 workflow 已验证。
+当时 HEAD `95397b6` 的 workflow 已不再使用 `anchore/scan-action@v4`，改为 `anchore/grype:latest` + `tools/release/cve_gate.py` 对 17 个镜像逐一扫描；`git diff v0.1.0..HEAD -- .github/workflows/release.yml` 可复核。正确结论是：**旧 `v0.1.0` 的远端 release 已执行且失败；当时 HEAD 的 release 仍未被远端验证。该历史结论已被 §22 取代：`6de12f7` / `v0.1.2` 的 release run `36560040245` 已通过。** 旧失败不能证明当前代码仍有相同问题，也不应再作为当前状态引用。
 
 ### P0 三项的进展（本文档写作时的缺口）
 
@@ -192,11 +195,11 @@ tools/release/verify_clean_clone.ps1
 OS 包）。真实全镜像口径：**16 个 Java 镜像 x 15 = 240 + frontend 1 = 241**（frontend
 瘦身前为 244）。该文档已加更正与 §13；**接手者不要引用旧的 19 / 447 -> 0。**
 
-### 仍 NOT VERIFIED / 未做
+### 仍 NOT VERIFIED / 未做（历史快照；release 项已由 §22 取代）
 
-- 当前 HEAD 的 `release.yml` 远端真实执行（GHCR push + SBOM + 17 次 grype + 门禁 + Cosign 签名）
-  — 旧 `v0.1.0` tag 已触发两次远端 run 且均失败；当前 revision 仍未验证，本地与静态校验均不能替代。详见上节远端 release 审计。
-- `cfa6149` 前端瘦身的远端构建/Grype — §13.9 已补本地证据，但 `release.yml` 仍未真实执行。
+- `v0.1.2` 发布前的历史状态：当时 HEAD 的 `release.yml` 尚未远端验证；该结论已被 run `36560040245` 取代。
+- `cfa6149` 前端瘦身的远端构建/Grype — 已由 `v0.1.2` release run 覆盖（17/17 镜像，含 frontend）。
+- 当前仍未解决：checksums 路径与扁平资产不一致、GitHub Release `isImmutable=false`、production environment 无审批规则、`master` 无分支保护。详见 §22。
 - Task 0：原 inventory 的 `statusEntryCount=631`、不可复现 `statusSha256`、sidecar 不匹配保留为历史缺陷；修正版 `2026-09-29-phase0-baseline-inventory-corrected.json` + sidecar 已自检通过，并与 652 条 `baseline-split-map.json` 的 head/status/manifest 一致。退出条件第 1 条按修正版判定满足；原 inventory 不再作为权威。
 - Task 8：per-subsystem 拆分未做；替代路径（split map + 182 条 review-required）已完成，Phase 0 退出条件第 9 条“或”分支已满足。
 - 删除 GHCR 上未签名的 `0.1.0` 镜像/package — 当前 token **无 `packages:delete`** 权限，只能手动。
@@ -272,7 +275,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 ### 8.5 仍未做 / 未批准
 
 - per-subsystem 拆分提交（历史重写 / force-push / revert + re-split）：**未获批准，未执行**。
-- 当前 HEAD 的 `release.yml` 远端真实执行（tag 触发）：仍未验证；旧 `v0.1.0` 两次远端执行均失败（见 §7 远端 release 审计）。
+- 当前 HEAD 的 `release.yml` 远端真实执行（tag 触发）：历史口径为未验证；已被 §22 的 v0.1.2 run `36560040245` 取代。旧 `v0.1.0` 两次远端执行均失败（见 §7 远端 release 审计）。
 
 ## 9. 2026-09-29 Checkpoint 4：交接口径修正与本地复验
 
@@ -306,7 +309,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - Task 0 inventory 修正版证据链已生成并通过本地自检；是否纳入提交仍需用户批准。
 - Task 8 是否追加真正的 per-subsystem 提交拆分；若要做，需要批准历史重写/force-push 或
   revert + re-split。
-- 当前 HEAD 的 `release.yml` 远端真实执行仍需要用户批准推 tag；在此之前保持 `NOT VERIFIED`（旧 `v0.1.0` 两次失败不等同于当前 revision 已验证）。
+- 当时 HEAD 的 `release.yml` 远端真实执行需要用户批准推 tag；后经用户批准并以 `v0.1.2` tag 触发，run `36560040245` 已通过（见 §22）。旧 `v0.1.0` 两次失败不等同于当前 revision 已验证。
 
 ## 10. 2026-09-29 Checkpoint 5：Task 0 修正版证据链
 
@@ -325,9 +328,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
   hash 全部一致；恢复快照 10 个文件的字节数与 SHA-256 也逐项一致。
 - 原 `2026-09-28-phase0-baseline-inventory.json` 及原 sidecar 保持不变，仅作为历史缺陷记录。
 
-结论：Phase 0 退出条件第 1 条已由修正版证据链满足；本地退出条件全部满足。仍 **NOT VERIFIED**：
-当前 HEAD 的 `release.yml` 远端真实执行（旧 `v0.1.0` 两次远端 run 均失败，见 §7 远端 release 审计）。per-subsystem 拆分仍未做，按退出条件第 9 条“或”分支以 182 条
-`review-required` 清单满足。
+结论：Phase 0 退出条件第 1 条已由修正版证据链满足；本地退出条件全部满足。当时仍 **NOT VERIFIED** 的当时 HEAD `release.yml` 远端执行，后来已由 v0.1.2 run `36560040245` 验证通过（见 §22）。per-subsystem 拆分仍未做，按退出条件第 9 条“或”分支以 182 条 `review-required` 清单满足。
 
 ## 11. 2026-09-29 Checkpoint 6：未提交候选工作树干净副本复验
 
@@ -354,7 +355,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - 证据文本已写入 `docs/superpowers/evidence/2026-09-28-phase0-verification.md` 的 Checkpoint 6；
   最终文档哈希、候选补丁哈希和 12 路径复合摘要以外部 final evidence JSON 为准，不在本文内自引用。
 - 注意：候选副本是按候选补丁物化后的 dirty tree，不是已提交修订的 clean checkout；
-  当前 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（旧 `v0.1.0` 两次远端 run 均失败）。`npm audit` 另有 2 个 moderate
+  当时 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（历史口径，已被 §22 的 v0.1.2 run `36560040245` 取代）（旧 `v0.1.0` 两次远端 run 均失败）。`npm audit` 另有 2 个 moderate
   的 dev-only `vitest` / `@vitest/mocker` 问题，未在本轮升级。
 - 本轮仍未 commit、未 push、未 tag、未改写历史。是否显式 `git add` 这 12 个路径并提交/
   推送，仍需用户明确批准。
@@ -402,7 +403,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - final9 外部机器可读证据：`C:\Users\Administrator\AppData\Local\Temp\amazonerp-phase0-current-20260929-01\current-worktree-evidence-final9.json`；独立验证日志为同目录 `independent-final9-verification.log`。
 - Python release 工具套件该检查点当时为 **78 tests OK**；Checkpoint 4/6/7 中的 68 tests 是更早的历史数值。
 - final9 本地复验使用当前 PATH 工具链：Maven `3.9.16`、Temurin JDK `21.0.12.1`；旧文档中的 Maven 3.9.11 固定路径只作历史记录。
-- 本地复验范围仍为 dirty candidate copy，不是已提交 clean checkout；当前 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**。actionlint 1.7.12 静态通过不能替代远端执行。
+- 本地复验范围仍为 dirty candidate copy，不是已提交 clean checkout；当时 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（历史口径，已被 §22 的 v0.1.2 run `36560040245` 取代）。actionlint 1.7.12 静态通过不能替代远端执行。
 - 本轮仍未 commit、未 push、未 tag、未改写历史；是否提交、推送或发布仍需用户明确批准。
 
 > **已知限制（2026-09-29 final11）：** `release_manifest.py` 当前为 schema v1，只记录 gateway 单镜像的 `image.ref` / `image.digest`；`release.yml` 也只把 gateway digest 传入 manifest。SBOM、Grype 扫描和 Cosign 签名各自覆盖 Docker Bake 的 17 个镜像，但 release manifest 不覆盖这 17 个 digest。若未来需要以 manifest 作为多镜像发布真值，必须升级 schema 并同步 rollback drill/tests；本轮按 limitation 记录，不宣称已实现。
@@ -419,7 +420,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - Clean Clone 复验（HEAD）为 **18/18 checks VERIFIED**，required failures 0、not verified 0；actionlint **1.7.12** 对 `ci.yml` + `release.yml` exit 0，但仍是 static-only，不替代远端执行。
 - Release manifest 本地两次生成 byte-identical、`verify` PASS；按 §2.2 的限制，schema v1 只覆盖 gateway 单镜像 digest，不覆盖全部 17 镜像。
 - 发布 workflow 加固已纳入候选：SBOM、Grype+CVE gate、Cosign 三处 17 镜像循环统一引用 workflow `RELEASE_IMAGES`，契约测试同时核对清单顺序与集合和 `docker-bake.hcl` 一致；quality-gate 现显式执行前端 typecheck、单元测试和生产 build。
-- 本地复验范围仍为 dirty candidate copy，不是已提交 clean checkout；当前 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当前 revision 已通过。
+- 本地复验范围仍为 dirty candidate copy，不是已提交 clean checkout；当时 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（历史口径，已被 §22 的 v0.1.2 run `36560040245` 取代）。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当时 revision 已通过。
 - 本轮仍未 commit、未 push、未 tag、未改写历史；是否提交、推送或发布仍需用户明确批准。
 
 ## 15. 2026-09-29 Checkpoint 10：final12 17 路径候选复验
@@ -539,7 +540,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - 候选级本地复验：Python release 工具套件 **88 tests OK**（其中 `test_release_workflow.py` **25/25**）；Maven **19/19 reactor modules SUCCESS**；前端 **22 files / 175 tests PASS**，typecheck/build exit 0；Docker Bake **17 targets**；actionlint **1.7.12** 对 `ci.yml` + `release.yml` exit 0；release manifest 两次生成 byte-identical 且 `verify` PASS；`npm audit` 为 **2 moderate / 0 high / 0 critical**（dev-only vitest 链，未在本轮升级）。
 - `release.yml` 的 `environment: production` 仍只是工作流定义和契约测试；2026-09-29 远端 GitHub API 已证实 `environments = []`、无 required reviewers、`master` 无分支保护，且默认 workflow 权限为 `read`，发布审批门禁尚未配置。
 - Clean Clone 复验（HEAD，非 dirty candidate）为 **18/18 checks VERIFIED**，required failures 0、not verified 0。
-- 当前 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当前 revision 已通过。
+- 当时 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（历史口径，已被 §22 的 v0.1.2 run `36560040245` 取代）。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当时 revision 已通过。
 - 本轮仍未 commit、未 push、未 tag、未改写历史；是否提交、推送或发布仍需用户明确批准。
 
 ## 19. 2026-09-29 Checkpoint 14：final16 17 路径候选复验（历史）
@@ -556,7 +557,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - 候选级本地复验：Python release 工具套件 **88 tests OK**（其中 `test_release_workflow.py` **25/25**）；Maven **19/19 reactor modules SUCCESS**；前端 **22 files / 175 tests PASS**，typecheck/build exit 0；Docker Bake **17 targets**；actionlint **1.7.12** 对 `ci.yml` + `release.yml` exit 0；release manifest 两次生成 byte-identical 且 `verify` PASS；`npm audit` 为 **2 moderate / 0 high / 0 critical**（dev-only vitest 链，未在本轮升级）。
 - `release.yml` 的 `environment: production` 仍只是工作流定义和契约测试；2026-09-29 远端 GitHub API 已证实 `environments = []`、无 required reviewers、`master` 无分支保护，且默认 workflow 权限为 `read`，发布审批门禁尚未配置。
 - Clean Clone 复验（HEAD，非 dirty candidate）为 **18/18 checks VERIFIED**，required failures 0、not verified 0。
-- 当前 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当前 revision 已通过。
+- 当时 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（历史口径，已被 §22 的 v0.1.2 run `36560040245` 取代）。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当时 revision 已通过。
 - 本轮仍未 commit、未 push、未 tag、未改写历史；是否提交、推送或发布仍需用户明确批准。
 
 ## 20. 2026-09-29 Checkpoint 15：final17 18 路径候选复验（历史）
@@ -573,7 +574,7 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - 重建断言 **24/24 True**；独立复验 **48/48 checks True**、**24/24 computed assertions True**，最终 `ALL_CHECKS=True`，且 full-index 补丁可在 clone 中反向应用。
 - 候选级本地复验：Python release 工具套件 **88 tests OK**（其中 `test_release_workflow.py` **25/25**）；Maven **19/19 reactor modules SUCCESS**；前端 **22 files / 175 tests PASS**，typecheck/build exit 0；Docker Bake **17 targets**；actionlint **1.7.12** 对 `ci.yml` + `release.yml` exit 0；release manifest 两次生成 byte-identical 且 `verify` PASS；`npm audit` 为 **2 moderate / 0 high / 0 critical**（dev-only vitest 链，未在本轮升级）。
 - Clean Clone 复验（HEAD，非 dirty candidate）为 **18/18 checks VERIFIED**，required failures 0、not verified 0。
-- final16 的 patch/evidence 哈希因 Dockerfile 变更已作废，不得复用。当前 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当前 revision 已通过。
+- final16 的 patch/evidence 哈希因 Dockerfile 变更已作废，不得复用。当时 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（历史口径，已被 §22 的 v0.1.2 run `36560040245` 取代）。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当时 revision 已通过。
 - 本轮仍未 commit、未 push、未 tag、未改写历史；是否提交、推送或发布仍需用户明确批准。
 
 ## 21. 2026-09-29 Checkpoint 16：final18 18 路径文档修正与 builder 复验
@@ -589,5 +590,29 @@ PR #4/#5 已把以下本地实测写入 `2026-09-28-container-cve-remediation.md
 - 重建断言 **24/24 True**；独立复验 **48/48 checks True**、**24/24 computed assertions True**，最终 `ALL_CHECKS=True`，且 full-index 补丁可在 clone 中反向应用。
 - 候选级本地复验：Python release 工具套件 **88 tests OK**（其中 `test_release_workflow.py` **25/25**）；Maven **19/19 reactor modules SUCCESS**；前端 **22 files / 175 tests PASS**，typecheck/build exit 0；Docker Bake **17 targets**；actionlint **1.7.12** 对 `ci.yml` + `release.yml` exit 0；release manifest 两次生成 byte-identical 且 `verify` PASS；`npm audit` 为 **2 moderate / 0 high / 0 critical**（dev-only vitest 链，未在本轮升级）。
 - Clean Clone 复验（HEAD，非 dirty candidate）为 **18/18 checks VERIFIED**，required failures 0、not verified 0。
-- final17 的 patch/evidence 哈希因文档修正已作废，不得复用。当前 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当前 revision 已通过。
+- final17 的 patch/evidence 哈希因文档修正已作废，不得复用。当时 HEAD 的 `release.yml` 远端真实执行仍为 **NOT VERIFIED**（历史口径，已被 §22 的 v0.1.2 run `36560040245` 取代）。旧 `v0.1.0` 两次远端 run 均失败，不能据此宣称当时 revision 已通过。
 - 本轮仍未 commit、未 push、未 tag、未改写历史；是否提交、推送或发布仍需用户明确批准。
+
+## 22. 2026-09-29 Checkpoint 17：v0.1.2 远端发布全链路验证
+
+- tag `v0.1.2` 指向 `6de12f7532ae57adb5381f0347f1b7bca7e22796`（release commit；后续文档提交不改变该 tag）。
+- GitHub Actions run `36560040245` 已完成且 `conclusion=success`：
+  - `quality-gate`: success（2026-09-29T11:09:59Z → 11:13:51Z）
+  - `release`: success（2026-09-29T11:13:54Z → 11:36:28Z）
+  - URL: https://github.com/cgs123456/AmazonERP/actions/runs/36560040245
+- 17/17 release images 通过 `cve_gate`，run log 中 `0 violations, 0 stale` 出现 17 次。
+- 17/17 images 完成 Cosign 签名，run log 中 `Pushing signature to: ghcr.io/...` 与 `tlog entry created with index:` 各出现 17 次。
+- GitHub Release `v0.1.2` 已发布（`isDraft=false`、`isPrerelease=false`），共 19 个 assets：`release-manifest.json`、`checksums.sha256` 和 17 个 `*.spdx.json`。
+- 下载产物核验：
+  - `checksums.sha256` 共 18 行；按 basename 映射后 18/18 哈希匹配。
+  - 18 个 JSON 文件全部可解析，0 失败。
+  - `python tools/release/release_manifest.py verify --manifest <downloaded>\release-manifest.json --root .` → PASS。
+  - gateway 镜像 digest 与 manifest 一致：`sha256:80025d2f4be5b81b2e350dd71100995a1f56c77393432084b1ab89fce0f4193c`。
+  - 本地证据目录：`C:\Users\Administrator\AppData\Local\Temp\amazonerp-v0.1.2-release-verify-20260929-193811`。
+  - run log：`C:\Users\Administrator\AppData\Local\Temp\amazonerp-release-run-36560040245.log`。
+- 新增 P1 缺口：
+  - `checksums.sha256` 记录的是 `sboms/<name>.spdx.json`，而 GitHub Release assets 是扁平文件名；标准 `sha256sum -c checksums.sha256` 不能直接通过，需修发布路径或上传结构。
+  - GitHub Release `isImmutable=false`，发布后仍可被替换。
+  - GitHub environment `production` 已存在，但 `protection_rules=[]`，没有 required reviewers；`master` 分支保护 API 返回 404。`environment: production` 目前仍只是形式声明，审批门禁未生效。
+- 本地未安装 `cosign`，因此未做独立的本地 `cosign verify`；当前签名证据为 registry `.sig` artifact 与 release run 日志，不等同于独立验签。
+- 本次 checkpoint 只记录已经发生的远端发布事实；产品代码和 workflow 未在本 checkpoint 修改。

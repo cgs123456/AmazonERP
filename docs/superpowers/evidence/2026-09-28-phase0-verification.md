@@ -17,6 +17,7 @@
 | 6b | Clean Clone Verify (HEAD) | `tools/release/verify_clean_clone.ps1` | 0 (18/18) | VERIFIED | 2026-09-29 (final16 historical) |
 | 6c | Clean Clone Verify (HEAD) | `tools/release/verify_clean_clone.ps1` | 0 (18/18) | VERIFIED | 2026-09-29 (final17 current) |
 | 7 | Frontend Build | `npm ci && npm run build` | 0 | VERIFIED | 2026-09-28 (Node v22.22.2 / npm 10.9.7) |
+| 7b | Remote Release Workflow (v0.1.2) | `gh run view 36560040245 --repo cgs123456/AmazonERP --json status,conclusion,headSha,url,jobs` | 0 | VERIFIED (quality-gate + release success) | 2026-09-29 |
 
 ## Clean Clone Evidence (2026-09-28)
 
@@ -87,8 +88,8 @@ All jobs ran with `continue-on-error` absent except the informational `checkstyl
 
 ### Verification Status and Remaining Limits
 
-- **NOT VERIFIED** — Current HEAD's `release.yml` (GHCR push + Syft SBOM + Grype scan + Cosign signing): tag-triggered.
-  The old `v0.1.0` tag triggered two failed runs (see the audit below); the current HEAD revision remains unverified and requires a deliberate release action.
+- **VERIFIED** — Release commit `6de12f7` / tag `v0.1.2` `release.yml` (GHCR push + Syft SBOM + Grype scan + Cosign signing): remote run `36560040245` completed successfully on 2026-09-29; GitHub Release `v0.1.2` published with 19 assets. See Checkpoint 17 at the end.
+  The old `v0.1.0` tag triggered two failed runs (see the audit below); the `v0.1.2` release commit is verified, while subsequent documentation-only commits are not part of that release.
 - **VERIFIED (static only)** — `actionlint` static check of `release.yml`: **已完成 2026-09-29（重跑）** — actionlint 1.7.12，`ci.yml` / `release.yml` exit 0、无诊断输出；发布 ZIP SHA-256 `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`，日志 `C:\Users\Administrator\AppData\Local\Temp\amazonerp-phase0-actionlint-20260929\actionlint-ci-release.log`（空输出 SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`）。（不能替代远端执行。）
 
 ## Remote CI Evidence (2026-09-29)
@@ -105,7 +106,9 @@ Scope caveat: ci.yml's `docker` job runs only `docker build -t amazon-erp:latest
 slim (`cfa6149`), and it runs no grype scan.
 
 
-## Remote release.yml Evidence Audit (2026-09-29)
+## Remote release.yml Evidence Audit (historical v0.1.0, 2026-09-29)
+
+> 本节只记录旧 `v0.1.0` 的失败审计；当前 `6de12f7` / `v0.1.2` 的成功审计见文末 Checkpoint 17。
 
 `gh run list --workflow release.yml --limit 20` found two runs, both failures, both from tag `v0.1.0`:
 
@@ -116,7 +119,7 @@ slim (`cfa6149`), and it runs no grype scan.
 
 The current `v0.1.0` tag object is `3b6385d3372048d01d2abd9a483daee687566da0` and peels to `4d644da40931a99c65a20675454c3151d779155f`. The first run's head SHA is `30f5e7a...`, so the tag was moved/updated between the runs; the exact update mechanism was not established in this audit.
 
-Current HEAD `95397b66be945656f965abe8587fe3de0129114e` differs from the old tag: it removed `anchore/scan-action@v4` and now runs `anchore/grype:latest` plus `tools/release/cve_gate.py` against all 17 release images. This current revision has **not** been run remotely. Therefore the old failures are evidence that the old tag's release path executed and failed; they are not evidence that the current workflow fails or passes.
+At the time of this audit, HEAD `95397b66be945656f965abe8587fe3de0129114e` differed from the old tag: it removed `anchore/scan-action@v4` and now runs `anchore/grype:latest` plus `tools/release/cve_gate.py` against all 17 release images. That revision had **not** been run remotely. The historical conclusion was later superseded: `6de12f7` / `v0.1.2` passed run `36560040245` (see Checkpoint 17). Therefore the old failures prove only that the old tag's release path executed and failed; they are not evidence that the current workflow fails.
 
 ## Task 0 Baseline Inventory Evidence Defect (2026-09-29 addendum)
 
@@ -394,7 +397,7 @@ root-tree hash in this manifest.
 - The main worktree's `--include-untracked` scan still reports 48 findings from untracked
   runtime logs. Those logs were not deleted; the clean-copy scan is the evidence that the
   candidate's tracked plus candidate-evidence files are clean.
-- Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**; the old `v0.1.0` tag has two failed remote runs (see the audit above).
+- At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17); the old `v0.1.0` tag has two failed remote runs (see the audit above).
 - `npm audit --json` reports 2 moderate vulnerabilities from the dev-only `vitest` /
   `@vitest/mocker` chain (`GHSA-82fw-gwwq-j7x9`, CVSS 5.9). The fix requires upgrading
   `vitest` to 5.0.2 (a major upgrade); no production `dist` dependency is implicated and no
@@ -464,7 +467,7 @@ historical; Checkpoint 9 supersedes it for the current final11 candidate.
 - final9 uses the current PATH toolchain: Maven `3.9.16` and Temurin JDK `21.0.12.1`. The
   Maven 3.9.11 fixed path in the historical plan is not the toolchain used for this rerun.
 - The clone is intentionally a dirty candidate tree after materialisation, not a committed
-  clean checkout. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**;
+  clean checkout. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17);
   actionlint 1.7.12 is static-only and does not replace a remote run.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
@@ -505,7 +508,7 @@ Checkpoint 10. Checkpoint 6-8 remain historical evidence for the earlier final8/
   the release manifest does not. A future multi-image manifest requires a schema upgrade
   and corresponding rollback-drill/test changes.
 - The clone is intentionally a dirty candidate tree after materialisation, not a committed
-  clean checkout. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**;
+  clean checkout. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17);
   the old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
@@ -553,7 +556,7 @@ historical evidence for the earlier final8, final9, and final11 snapshots.
   or to enforce `core.autocrlf=false` before checkout and document that requirement. Until one
   is adopted and re-verified, do not claim strict fresh-clone byte reproducibility.
 - The clone is intentionally a dirty candidate tree after materialisation, not a committed
-  clean checkout. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**; the
+  clean checkout. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17); the
   old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
@@ -600,7 +603,7 @@ historical evidence for the earlier final8, final9, final11, and final12 snapsho
   `core.autocrlf=true` may still convert line endings. This is explicit execution-contract
   hardening, not repository-wide attribute hardening.
 - The clone is intentionally a dirty candidate tree after materialisation, not a committed
-  clean checkout. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**;
+  clean checkout. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17);
   the old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
@@ -651,7 +654,7 @@ historical evidence for the earlier final8, final9, final11, final12, and final1
   `core.autocrlf=true` may still convert line endings. This is explicit execution-contract
   hardening, not repository-wide attribute hardening.
 - The clone is intentionally a dirty candidate tree after materialisation, not a committed
-  clean checkout. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**;
+  clean checkout. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17);
   the old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
@@ -674,7 +677,7 @@ This checkpoint superseded Checkpoint 12 for the then-current candidate and is r
 - Candidate-level tests are **88 tests OK** for the Python release suite, including **25/25** in `test_release_workflow.py`. Maven is **19/19 reactor modules SUCCESS**. Frontend is **22 files / 175 tests PASS**, with typecheck and production build exit 0. Docker Bake exposes **17 targets**; actionlint **1.7.12** exits 0 for `ci.yml` and `release.yml`. `npm audit` reports **2 moderate / 0 high / 0 critical** in the dev-only Vitest chain and remains an expected non-zero audit exit, not an acceptance failure.
 - The release manifest is byte-identical across two runs and `verify` passes. The clean-clone orchestration check (HEAD, not the dirty candidate) is **18/18 checks VERIFIED**, with 0 required failures and 0 not-verified checks.
 - **Known limitation:** `.gitattributes` still does not pin `*.py` or `*.hcl` to `eol=lf`. The verified strict byte materialisation therefore depends on the explicit `--config core.autocrlf=false --config core.eol=lf` clone arguments in `verify_clean_clone.ps1`; a clone without those arguments on a Windows host whose effective `core.autocrlf=true` may still convert line endings.
-- The clone is intentionally a dirty candidate tree after materialisation, not a committed clean checkout. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**; the old `v0.1.0` runs failed and do not prove the current revision.
+- The clone is intentionally a dirty candidate tree after materialisation, not a committed clean checkout. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17); the old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
 The authoritative per-path status/bytes/SHA-256 records, canonical inventory digest, tracked-diff-only patch bytes/hash, and verification-log hashes are maintained in the external final15 evidence JSON. They are intentionally not embedded in this document to avoid a self-referential candidate digest.
@@ -693,7 +696,7 @@ This checkpoint superseded Checkpoint 13 for the then-current candidate and is r
 - Candidate-level tests are **88 tests OK** for the Python release suite, including **25/25** in `test_release_workflow.py`. Maven is **19/19 reactor modules SUCCESS**. Frontend is **22 files / 175 tests PASS**, with typecheck and production build exit 0. Docker Bake exposes **17 targets**; actionlint **1.7.12** exits 0 for `ci.yml` and `release.yml`. `npm audit` reports **2 moderate / 0 high / 0 critical** in the dev-only Vitest chain and remains an expected non-zero audit exit, not an acceptance failure.
 - The release manifest is byte-identical across two runs and `verify` passes. The clean-clone orchestration check (HEAD, not the dirty candidate) is **18/18 checks VERIFIED**, with 0 required failures and 0 not-verified checks.
 - **Known limitation:** `.gitattributes` still does not pin `*.py` or `*.hcl` to `eol=lf`. The verified strict byte materialisation therefore depends on the explicit `--config core.autocrlf=false --config core.eol=lf` clone arguments in `verify_clean_clone.ps1`; a clone without those arguments on a Windows host whose effective `core.autocrlf=true` may still convert line endings.
-- The clone is intentionally a dirty candidate tree after materialisation, not a committed clean checkout. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**; the old `v0.1.0` runs failed and do not prove the current revision.
+- The clone is intentionally a dirty candidate tree after materialisation, not a committed clean checkout. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17); the old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
 The authoritative per-path status/bytes/SHA-256 records, canonical inventory digest, tracked-diff-only patch bytes/hash, and verification-log hashes are maintained in the external final16 evidence JSON. They are intentionally not embedded in this document to avoid a self-referential candidate digest.
@@ -712,7 +715,7 @@ This checkpoint superseded Checkpoint 14 for the then-current candidate and is r
 - Rebuild assertions are **24/24 True**. Independent verification is **48/48 checks True** and **24/24 computed assertions True**, ending in `ALL_CHECKS=True`; the full-index patch reverse-applies cleanly in the clone.
 - Candidate-level tests are **88 tests OK** for the Python release suite, including **25/25** in `test_release_workflow.py`. Maven is **19/19 reactor modules SUCCESS**. Frontend is **22 files / 175 tests PASS**, with typecheck and production build exit 0. Docker Bake exposes **17 targets**; actionlint **1.7.12** exits 0 for `ci.yml` and `release.yml`. `npm audit` reports **2 moderate / 0 high / 0 critical** in the dev-only Vitest chain and remains an expected non-zero audit exit, not an acceptance failure.
 - The release manifest is byte-identical across two runs and `verify` passes. The clean-clone orchestration check (HEAD, not the dirty candidate) is **18/18 checks VERIFIED**, with 0 required failures and 0 not-verified checks.
-- final16 patch/evidence hashes are invalidated by the Dockerfile change and must not be reused. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**; the old `v0.1.0` runs failed and do not prove the current revision.
+- final16 patch/evidence hashes are invalidated by the Dockerfile change and must not be reused. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17); the old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
 The authoritative per-path status/bytes/SHA-256 records, canonical inventory digest, tracked-diff-only patch bytes/hash, and verification-log hashes are maintained in the external final17 evidence JSON. They are intentionally not embedded in this document to avoid a self-referential candidate digest.
@@ -730,7 +733,30 @@ This checkpoint supersedes Checkpoint 15 for the current candidate. Checkpoints 
 - Rebuild assertions are **24/24 True**. Independent verification is **48/48 checks True** and **24/24 computed assertions True**, ending in `ALL_CHECKS=True`; the full-index patch reverse-applies cleanly in the clone.
 - Candidate-level tests are **88 tests OK** for the Python release suite, including **25/25** in `test_release_workflow.py`. Maven is **19/19 reactor modules SUCCESS**. Frontend is **22 files / 175 tests PASS**, with typecheck and production build exit 0. Docker Bake exposes **17 targets**; actionlint **1.7.12** exits 0 for `ci.yml` and `release.yml`. `npm audit` reports **2 moderate / 0 high / 0 critical** in the dev-only Vitest chain and remains an expected non-zero audit exit, not an acceptance failure.
 - The release manifest is byte-identical across two runs and `verify` passes. The clean-clone orchestration check (HEAD, not the dirty candidate) is **18/18 checks VERIFIED**, with 0 required failures and 0 not-verified checks.
-- final17 patch/evidence hashes are invalidated by the documentation correction and must not be reused. Current HEAD's remote `release.yml` execution remains **NOT VERIFIED**; the old `v0.1.0` runs failed and do not prove the current revision.
+- final17 patch/evidence hashes are invalidated by the documentation correction and must not be reused. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED** (historical; superseded by Checkpoint 17); the old `v0.1.0` runs failed and do not prove the current revision.
 - No commit, push, tag, or history rewrite was performed for this checkpoint.
 
 The authoritative per-path status/bytes/SHA-256 records, canonical inventory digest, tracked-diff-only patch bytes/hash, and verification-log hashes are maintained in the external final18 evidence JSON. They are intentionally not embedded in this document to avoid a self-referential candidate digest.
+
+## Checkpoint 17: v0.1.2 Remote Release Verification (2026-09-29)
+
+This checkpoint supersedes all earlier `NOT VERIFIED` statements about the release commit's remote `release.yml` execution.
+
+- Tag `v0.1.2` points at `6de12f7532ae57adb5381f0347f1b7bca7e22796`; workflow run `36560040245` completed with `conclusion=success`.
+  - `quality-gate`: success, 2026-09-29T11:09:59Z → 11:13:51Z.
+  - `release`: success, 2026-09-29T11:13:54Z → 11:36:28Z.
+  - URL: https://github.com/cgs123456/AmazonERP/actions/runs/36560040245
+- The run log contains 17 `0 violations, 0 stale` results, 17 `Pushing signature to: ghcr.io/...` lines, and 17 `tlog entry created with index:` lines. This covers 17/17 release images for the CVE gate and Cosign signing.
+- GitHub Release `v0.1.2` is published (`isDraft=false`, `isPrerelease=false`) with 19 assets: `release-manifest.json`, `checksums.sha256`, and 17 `*.spdx.json` files.
+- Downloaded release assets were independently checked:
+  - `checksums.sha256` has 18 lines; all 18 hashes match when mapped by basename.
+  - all 18 JSON files parse.
+  - `python tools/release/release_manifest.py verify --manifest <downloaded>\release-manifest.json --root .` returns PASS.
+  - gateway image digest matches the manifest: `sha256:80025d2f4be5b81b2e350dd71100995a1f56c77393432084b1ab89fce0f4193c`.
+  - local evidence directory: `C:\Users\Administrator\AppData\Local\Temp\amazonerp-v0.1.2-release-verify-20260929-193811`.
+  - run log: `C:\Users\Administrator\AppData\Local\Temp\amazonerp-release-run-36560040245.log`.
+- Remaining P1 release findings:
+  - `checksums.sha256` stores `sboms/<name>.spdx.json` paths while GitHub Release assets are flat; standard `sha256sum -c checksums.sha256` fails without path rewriting.
+  - GitHub Release `isImmutable=false`.
+  - GitHub environment `production` exists but has `protection_rules=[]`; there are no required reviewers. The `master` branch protection API returns 404. The release approval gate is therefore not effective.
+- Independent local `cosign verify` was not performed because `cosign` is not installed locally. The registry `.sig` artifact and run log are the current signature evidence; they do not replace an independent verification.

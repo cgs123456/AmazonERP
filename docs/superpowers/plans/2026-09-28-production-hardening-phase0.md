@@ -30,22 +30,22 @@
 - 远端 CI：master run `36385434376` 首次 9/9 通过（暴露并修复 hygiene 行尾敏感、
   schema snapshot 内嵌绝对路径两个本地无法发现的缺陷）；`36450964636`（PR #2 合并后）再次 9/9 全绿。
 - `actionlint` 静态校验已于 2026-09-29 重跑完成（1.7.12，ci.yml / release.yml exit 0、无诊断输出；发布 ZIP SHA-256 `6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9`），不再是 NOT VERIFIED；仍不能替代远端执行。
-- **final12 历史复验口径（2026-09-29 Checkpoint 10，已由 final14/final15/final16/final17 取代）**：当时候选为 **17 个路径**（9 modified tracked + 8 untracked）；final9 的 14 路径只作历史。Python release 工具套件当时 **86 tests OK**（其中发布 workflow 契约 **24/24**）；Maven 19/19；前端 22 files / 175 tests PASS；Docker Bake 17 targets。当时 PATH 的 Maven 为 `C:\tools\apache-maven-3.9.16\bin\mvn.cmd`，运行时为 Temurin JDK `21.0.12.1`；本计划 Global Constraints 中的 Maven 3.9.11 固定路径是历史命令，不代表 final12 复验工具链。该 HEAD 的 `release.yml` 远端执行仍为 **NOT VERIFIED**，actionlint 静态通过不能替代远端执行。
-- 仍 NOT VERIFIED：当前 HEAD 的 `release.yml` 远端执行（旧 `v0.1.0` tag 已有两次远端 run，均失败；当前 revision 未验证）；`cfa6149` 前端镜像瘦身的远端构建
-  （ci 的 docker job 只有 `docker build -t amazon-erp:latest .`，构建根目录 Java Dockerfile，
-  不跑 bake 的 17 target、不构建 frontend、不跑 grype）。见
-  `2026-09-28-container-cve-remediation.md` §13.7 / §13.8。
+- **final12 历史复验口径（2026-09-29 Checkpoint 10，已由 final14/final15/final16/final17 取代）**：当时候选为 **17 个路径**（9 modified tracked + 8 untracked）；final9 的 14 路径只作历史。Python release 工具套件当时 **86 tests OK**（其中发布 workflow 契约 **24/24**）；Maven 19/19；前端 22 files / 175 tests PASS；Docker Bake 17 targets。当时 PATH 的 Maven 为 `C:\tools\apache-maven-3.9.16\bin\mvn.cmd`，运行时为 Temurin JDK `21.0.12.1`；本计划 Global Constraints 中的 Maven 3.9.11 固定路径是历史命令，不代表 final12 复验工具链。该 HEAD 的 `release.yml` 远端执行当时为 **NOT VERIFIED**；后续 v0.1.2 run `36560040245` 已远端验证通过（见 Final19），actionlint 静态通过不能替代远端执行。
+- 已由 v0.1.2 远端发布解决：release commit `6de12f7` / tag `v0.1.2` 的 `release.yml` run `36560040245` 已通过；17/17 镜像（含 frontend）通过 CVE 门禁并完成 Cosign 签名。
+- 仍待处理（P1）：`checksums.sha256` 路径与 GitHub Release 扁平资产不一致；GitHub Release `isImmutable=false`；`production` environment 无 required reviewers、`master` 无分支保护。
+- 历史说明：旧 `v0.1.0` tag 的两次远端 run 均失败；`cfa6149` 前端瘦身在当次 run 前只有本地证据。见 `2026-09-28-container-cve-remediation.md` §13.7 / §13.8。
 
 ## Global Constraints
 
 - 当前基线：分支 `codex/api-ready-connectors`、HEAD `3c8f21ed21c2cc77cbf08d1f12ddd4256265ac25`；工作区高度 dirty 是事实，不得用 `git reset --hard`、`git clean`、批量删除恢复“干净”。
+- **2026-09-29 发布基线**：release commit `6de12f7532ae57adb5381f0347f1b7bca7e22796`，tag `v0.1.2`；其 release run `36560040245` 已通过。上述 `3c8f21e` 是本计划最初基线，不是本次 release commit。
 - 恢复快照必须保留在仓库外；若快照缺失或 manifest 不匹配，停止后续清理/拆分。
 - 所有本计划新增或修改的文件必须用独立临时 Git index 提交，避免把既有 23 个 staged 文件或 307 个 unstaged 文件混入 Phase 0 提交。
 - PowerShell 是唯一 shell；禁止 `bash`/WSL。Maven 命令使用 `C:\Users\Administrator\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd`，并设 `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=C:\Windows\Temp`。
 - 本机没有 `npm`/`npx`；前端验证使用 `node.exe node_modules\vue-tsc\bin\vue-tsc.js --noEmit`、`node.exe node_modules\vitest\vitest.mjs run`、`node.exe node_modules\vite\bin\vite.js build`。
 - 发布清单不得含当前时间、随机 UUID、绝对路径或未排序集合；同一 commit、镜像 digest、前端输入和 Flyway 输入必须得到逐字节相同的 JSON。
 - 仓库卫生扫描默认只扫描 Git tracked 文件；本地冻结模式用 `--include-untracked`。允许示例占位符，但禁止真实私钥、云访问密钥、GitHub token、非占位密码和高置信度 Secret。
-- `.github/workflows/release.yml` 的远端执行、GHCR push、SBOM、扫描、签名和 rollback drill 在未实际运行前只能标记 `NOT VERIFIED`。
+- `.github/workflows/release.yml` 的远端执行、GHCR push、SBOM、扫描、签名和 rollback drill 在未实际运行前只能标记 `NOT VERIFIED`；v0.1.2 run `36560040245` 已实际运行并通过（见 Final19）。
 - 未获得真实 Amazon 授权和沙箱/生产证据前，连接器状态最高仍为 API-Ready（未联调）；Phase 0 完成不等于生产就绪。
 - 每个 Task 必须先写失败测试、验证 RED、写最小实现、验证 GREEN，再提交；提交只包含该 Task 的路径。
 
@@ -292,7 +292,7 @@ Remove-Item -LiteralPath $idx
 
 ### Task 3: OCI 多服务构建元数据
 
-**核对 (2026-09-29)：** `docker-bake.hcl` 实测 17 个 target（gateway + 15 service + frontend）+ `services.json` + 测试齐备；远端旧 `v0.1.0` 两次 run 中，`4d644da` 的 `Bake images` 已成功，`30f5e7a` 的 `Bake images` 失败（GHCR 400）；当前 HEAD 的 bake 仍未验证。
+**核对 (2026-09-29)：** `docker-bake.hcl` 实测 17 个 target（gateway + 15 service + frontend）+ `services.json` + 测试齐备；远端旧 `v0.1.0` 两次 run 中，`4d644da` 的 `Bake images` 已成功，`30f5e7a` 的 `Bake images` 失败（GHCR 400）；当时 HEAD 的 bake 仍未验证；后续 v0.1.2 release run 已远端覆盖 17 targets（见 Final19）。
 
 **Files:**
 - Create: `tools/release/services.json`
@@ -450,7 +450,7 @@ Remove-Item -LiteralPath $idx
 
 ### Task 5: GHCR、SBOM、漏洞扫描与签名发布工作流
 
-**核对 (2026-09-29)：** release.yml 实测含 REGISTRY=ghcr.io、Syft SBOM、17 次 grype、cve_gate、cosign sign、manifest build/verify；旧 `v0.1.0` tag 两次远端 run 均失败，**当前 HEAD revision 仍未远端验证**，保持 NOT VERIFIED。
+**核对 (2026-09-29)：** release.yml 实测含 REGISTRY=ghcr.io、Syft SBOM、17 次 grype、cve_gate、cosign sign、manifest build/verify；旧 `v0.1.0` tag 两次远端 run 均失败；当时 HEAD revision 未远端验证。后续 v0.1.2 run `36560040245` 已远端验证通过（见 Final19）。
 
 **已知限制 (final12)：** manifest build 仍只接收 gateway 单镜像 digest；SBOM/Grype/Cosign 覆盖 17 个镜像，但 manifest 不覆盖全部镜像。
 
@@ -706,16 +706,15 @@ This is still local/static evidence only. On 2026-09-29 the remote GitHub API co
 required reviewers, HTTP 404 for `branches/master/protection`, and
 `default_workflow_permissions: read`. The `environment: production` YAML declaration is
 therefore only a contract and currently provides no approval gate; repository settings
-must be configured separately. The current HEAD's remote `release.yml` execution remains
-**NOT VERIFIED**.
+must be configured separately. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED**. Historical note: this statement is superseded by Final19.
 
 ## Known Limitations (2026-09-29 final18)
 
 - `release_manifest.py` schema v1 records only the gateway image `image.ref` / `image.digest`; the release workflow passes only the gateway digest into it. SBOM, Grype, and Cosign cover the 17 Docker Bake targets, but the manifest does not. If release admission requires all 17 image digests in the manifest, Phase 0 is not yet sufficient under that stricter definition.
 - The main worktree's untracked-inclusive hygiene scan still finds historical ignored runtime logs (48 findings, including `_r83_spapi_final_out.log`). Those logs are intentionally preserved outside the clean candidate tree and were not deleted or allowlisted away.
-- The current HEAD's remote `release.yml` execution remains NOT VERIFIED; actionlint and local tests are static/local evidence only.
+- At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained NOT VERIFIED; actionlint and local tests are static/local evidence only. Historical note: this statement is superseded by Final19.
 - `.gitattributes` does not pin `*.py`, `*.hcl`, or `Dockerfile` to `eol=lf`. The Dockerfile and `docker-bake.hcl` are currently LF-only in the candidate, but the strict byte-identical materialisation contract still explicitly requires `git clone --config core.autocrlf=false --config core.eol=lf`; a clone without those arguments on Windows with an effective `core.autocrlf=true` may still rewrite line endings. A later hardening step could add repository-wide EOL attributes, but that would create another candidate path and require another full re-verification.
-- The `environment: production` workflow declaration is only a contract. Remote GitHub API evidence on 2026-09-29 confirms `environments = []`, no required reviewers, no `master` branch protection, and default workflow permissions `read`; the release approval gate is therefore not currently configured. This is a repository-settings gap, not a local code defect.
+- At the time of final18, the `environment: production` workflow declaration was only a contract. Remote GitHub API evidence then confirmed `environments = []`, no required reviewers, no `master` branch protection, and default workflow permissions `read`; the release approval gate was not configured. Later API evidence (2026-09-29) shows `production` exists but still has no protection rules; this remains a repository-settings gap, not a local code defect.
 
 ## Final15 status addendum (historical, 2026-09-29)
 
@@ -725,20 +724,41 @@ This checkpoint removed a stale documentation label and recorded the final15 che
 
 This checkpoint corrects the final15 documentation description and records the final16 verification. Relative to final14, the final15/final16 documentation changes mark the final12 section as historical and add the final15/final16 checkpoint/status sections to the plan, handoff, and verification documents; no product code, build configuration, or test logic changed. The uncommitted candidate remains **17 paths** = **9 modified tracked files + 8 untracked files**. The Python release suite is **88 tests OK**, including **25/25** workflow-contract tests. Maven is **19/19 reactor modules SUCCESS**; frontend is **22 files / 175 tests PASS** with typecheck/build exit 0; Docker Bake exposes **17 targets**; actionlint 1.7.12 passes `ci.yml` and `release.yml` with exit 0. A fresh clone using the explicit LF settings materialises all 17 paths byte-identically; rebuild assertions are **24/24**, independent checks **48/48**, computed assertions **24/24**, ending in `ALL_CHECKS=True`.
 
-The authoritative final16 hashes are maintained in the external final16 evidence JSON; they are not embedded here to avoid a self-referential candidate digest. The current HEAD's remote `release.yml` execution remains **NOT VERIFIED**, and no commit, push, tag, or history rewrite was performed.
+The authoritative final16 hashes are maintained in the external final16 evidence JSON; they are not embedded here to avoid a self-referential candidate digest. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED**, and no commit, push, tag, or history rewrite was performed. Historical note: this statement is superseded by Final19.
 
 ## Final17 status addendum (historical, 2026-09-29)
 
 This checkpoint records the Dockerfile cache-correctness fix and the final17 candidate verification. The uncommitted candidate is now **18 paths** = **10 modified tracked files + 8 untracked files**. The Dockerfile now copies each `amz-service/*/pom.xml` into its own module directory; the previous wildcard copy flattened all child POMs into `amz-service/`, overwriting the parent POM and invalidating the Maven dependency-cache layer. The Dockerfile is LF-only. This does not fix the old remote `Bake images` GHCR `400 Bad Request`; that remains a historical remote failure.
 
-Remote GitHub API evidence on 2026-09-29 confirms `environments = {"total_count":0,"environments":[]}`, no `production` environment or required reviewers, HTTP 404 for `branches/master/protection`, and `default_workflow_permissions: read`. The `environment: production` workflow declaration is therefore a contract only; the release approval gate is not currently configured.
+Remote GitHub API evidence at that time confirmed `environments = {"total_count":0,"environments":[]}`, no `production` environment or required reviewers, HTTP 404 for `branches/master/protection`, and `default_workflow_permissions: read`. The `environment: production` workflow declaration was therefore a contract only; the release approval gate was not configured. Later API evidence (2026-09-29) shows `production` exists but still has no protection rules; see Final19.
 
-Local final17 verification: Python release suite **88 tests OK** including **25/25** workflow-contract tests; Maven **19/19 reactor modules SUCCESS**; frontend **22 files / 175 tests PASS** with typecheck/build exit 0; Docker Bake **17 targets**; actionlint 1.7.12 exits 0 for `ci.yml` and `release.yml`; clean-clone orchestration **18/18 checks VERIFIED**; fresh-clone materialisation **18/18 byte-identical**; rebuild assertions **24/24**, independent checks **48/48**, computed assertions **24/24**, ending in `ALL_CHECKS=True`. The current HEAD's remote `release.yml` execution remains **NOT VERIFIED**, and no commit, push, tag, or history rewrite was performed.
+Local final17 verification: Python release suite **88 tests OK** including **25/25** workflow-contract tests; Maven **19/19 reactor modules SUCCESS**; frontend **22 files / 175 tests PASS** with typecheck/build exit 0; Docker Bake **17 targets**; actionlint 1.7.12 exits 0 for `ci.yml` and `release.yml`; clean-clone orchestration **18/18 checks VERIFIED**; fresh-clone materialisation **18/18 byte-identical**; rebuild assertions **24/24**, independent checks **48/48**, computed assertions **24/24**, ending in `ALL_CHECKS=True`. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED**, and no commit, push, tag, or history rewrite was performed. Historical note: this statement is superseded by Final19.
 
-## Final18 status addendum (2026-09-29)
+## Final18 status addendum (historical, 2026-09-29)
 
 This checkpoint is a documentation-only correction. It removes the duplicate `Final16 status addendum` heading in this plan, marks the retained Final16 and Final17 sections as historical, and records the builder-stage evidence status for the unchanged build configuration. The uncommitted candidate remains **18 paths** = **10 modified tracked files + 8 untracked files**; no product code, build configuration, or test logic changed relative to final17.
 
 The final18 builder command `docker build --target builder --build-arg MODULE=amz-service/amz-service-spapi -t amazonerp-phase0-builder-test:final18 .` was executed in the materialised final18 clone and exited 0. The final18 log records the actual disposition of the `dependency:go-offline` layer; because the Dockerfile and all POM inputs are byte-identical to final17, the authoritative executed-layer evidence remains the final17 builder log, where that layer logged a non-blocking Maven Central SSL handshake failure (the Dockerfile intentionally uses `|| true`) and the subsequent `mvn -B -q clean package -DskipTests -pl amz-service/amz-service-spapi -am` completed successfully and the builder image exported. This inherits validation of the corrected POM copy layout for the default SPAPI builder path; it does not validate the runtime image, all 17 service build args, or the remote release workflow.
 
-Local final18 verification: Python release suite **88 tests OK** including **25/25** workflow-contract tests; Maven **19/19 reactor modules SUCCESS**; frontend **22 files / 175 tests PASS** with typecheck/build exit 0; Docker Bake **17 targets**; actionlint 1.7.12 exits 0 for `ci.yml` and `release.yml`; clean-clone orchestration **18/18 checks VERIFIED**; fresh-clone materialisation **18/18 byte-identical**; rebuild assertions **24/24**, independent checks **48/48**, computed assertions **24/24**, ending in `ALL_CHECKS=True`. The current HEAD's remote `release.yml` execution remains **NOT VERIFIED**, and no commit, push, tag, or history rewrite was performed.
+Local final18 verification: Python release suite **88 tests OK** including **25/25** workflow-contract tests; Maven **19/19 reactor modules SUCCESS**; frontend **22 files / 175 tests PASS** with typecheck/build exit 0; Docker Bake **17 targets**; actionlint 1.7.12 exits 0 for `ci.yml` and `release.yml`; clean-clone orchestration **18/18 checks VERIFIED**; fresh-clone materialisation **18/18 byte-identical**; rebuild assertions **24/24**, independent checks **48/48**, computed assertions **24/24**, ending in `ALL_CHECKS=True`. At the time of this checkpoint, the then-current HEAD's remote `release.yml` execution remained **NOT VERIFIED**, and no commit, push, tag, or history rewrite was performed. Historical note: this statement is superseded by Final19.
+
+## Final19 status addendum (2026-09-29)
+
+This addendum records the first successful remote release of the current Phase 0 baseline and supersedes all earlier statements that the release commit's `release.yml` remained `NOT VERIFIED`.
+
+- Release commit `6de12f7532ae57adb5381f0347f1b7bca7e22796` is tagged `v0.1.2`.
+- GitHub Actions run `36560040245` completed successfully:
+  - `quality-gate`: success, 2026-09-29T11:09:59Z → 11:13:51Z.
+  - `release`: success, 2026-09-29T11:13:54Z → 11:36:28Z.
+  - URL: https://github.com/cgs123456/AmazonERP/actions/runs/36560040245
+- 17/17 release images passed the CVE gate with `0 violations, 0 stale`; 17/17 images were signed by Cosign (17 signature-push lines and 17 tlog entries).
+- GitHub Release `v0.1.2` is published with 19 assets: `release-manifest.json`, `checksums.sha256`, and 17 SPDX JSON files.
+- Downloaded-asset checks: 18/18 checksum entries match by basename; all 18 JSON files parse; `release_manifest.py verify` passes; the gateway digest matches the manifest (`sha256:80025d2f4be5b81b2e350dd71100995a1f56c77393432084b1ab89fce0f4193c`).
+- Evidence paths:
+  - local release verification: `C:\Users\Administrator\AppData\Local\Temp\amazonerp-v0.1.2-release-verify-20260929-193811`
+  - run log: `C:\Users\Administrator\AppData\Local\Temp\amazonerp-release-run-36560040245.log`
+- Remaining P1 findings:
+  - `checksums.sha256` stores `sboms/<name>.spdx.json` paths while GitHub Release assets are flat; standard `sha256sum -c` fails without path rewriting.
+  - GitHub Release `isImmutable=false`.
+  - `production` environment exists but has no protection rules or required reviewers; `master` branch protection returns 404. The release approval gate is not effective.
+- Independent local `cosign verify` was not performed because `cosign` is not installed locally; registry `.sig` presence and run logs are the current evidence.
