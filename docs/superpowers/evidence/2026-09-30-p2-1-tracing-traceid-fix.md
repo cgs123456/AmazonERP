@@ -4,6 +4,12 @@
 分支：master
 基线：0e8cfff（P2-1 指标暴露面契约修复）
 
+> **⚠ 本文件的 traceId 结论已被实测推翻，保留原文不删改。** `TraceIdConverter` 在
+> `apm-toolkit-logback-1.x:9.7.0` 中不存在，装配时产生 logback ERROR status，Spring Boot 3.5
+> 随即抛 `IllegalStateException` —— 该提交的实际效果是 **16 个服务启动即失败**，不是"traceId 可用"。
+> 且真正根因在部署层：`-javaagent` 只写在 `ENV JAVA_OPTS` 里，被 compose/k8s 整体覆盖，agent 从未挂载。
+> 更正与实测证据见 `2026-09-30-p2-1-traceid-real-fix.md`。本文件的 `%wEx`（异常堆栈）修复仍然有效。
+
 ## 问题
 
 1. **死 traceId 占位符**：所有 16 个模块的 `logging.pattern.console` 包含 `%X{traceId}`（注释声称"与 Skywalking 链路追踪关联"），
