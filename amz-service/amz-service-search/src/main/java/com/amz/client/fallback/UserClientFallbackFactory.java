@@ -13,7 +13,7 @@ public class UserClientFallbackFactory implements FallbackFactory<UserClient> {
 
     @Override
     public UserClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-user degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-user degraded", cause);
         return new UserClient() {
             @Override
             public Result<User> getUserById(Integer userId) {

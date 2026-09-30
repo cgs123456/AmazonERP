@@ -15,7 +15,7 @@ public class ProcurementServiceClientFallbackFactory implements FallbackFactory<
 
     @Override
     public ProcurementServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-procurement degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-procurement degraded", cause);
         return new ProcurementServiceClient() {
             private String failMsg() { return "procurement service degraded: " + cause.getMessage(); }
 

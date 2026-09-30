@@ -25,7 +25,7 @@ public class SpApiFinanceClientFallbackFactory implements FallbackFactory<SpApiF
 
     @Override
     public SpApiFinanceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-spapi (finance) degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-spapi (finance) degraded", cause);
         String reason = "spapi finance service degraded: " + cause.getMessage();
         return new SpApiFinanceClient() {
             @Override

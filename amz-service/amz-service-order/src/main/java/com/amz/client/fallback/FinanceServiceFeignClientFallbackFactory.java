@@ -19,7 +19,7 @@ public class FinanceServiceFeignClientFallbackFactory implements FallbackFactory
 
     @Override
     public FinanceServiceFeignClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-finance (order) degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-finance (order) degraded", cause);
         return new FinanceServiceFeignClient() {
             @Override
             public void generateOrderVoucher(Long shopId, String orderNo, BigDecimal amount, String currency) {

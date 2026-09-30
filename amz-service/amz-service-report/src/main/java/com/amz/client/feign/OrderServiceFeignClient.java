@@ -3,7 +3,6 @@ package com.amz.client.feign;
 import com.amz.client.feign.fallback.OrderServiceFeignClientFallbackFactory;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.Map;
@@ -13,6 +12,10 @@ import java.util.Map;
  * <p>
  * 通过 Nacos 服务名 {@code amz-service-order} 调用，用于报表聚合。
  * 返回类型使用 {@code Map} 避免跨服务 DTO 依赖。
+ * <p>
+ * <b>注意返回的是整个 {@code Result} 信封</b>（{@code {"code":..,"message":..,"data":..}}），
+ * 业务负载在 {@code data} 里，取值必须经 {@code RealReportServiceImpl#extractData} 这一类
+ * 拆信封的入口，不能直接把返回 Map 当 payload 读字段。
  */
 @FeignClient(name = "amz-service-order", contextId = "orderFeignClient", fallbackFactory = OrderServiceFeignClientFallbackFactory.class)
 public interface OrderServiceFeignClient {
@@ -23,16 +26,6 @@ public interface OrderServiceFeignClient {
      */
     @GetMapping("/order/getOrderList")
     Map<String, Object> getOrderList();
-
-    /**
-     * 获取店铺月度利润汇总（含销售额、订单数等）。
-     * 对应 GET /order/profit/summary/{shopId}
-     * <p>
-     * 注：ProfitController 原类级映射为 {@code /profit}，因网关仅路由 {@code /order/**}
-     * 导致该端点外部不可达，已统一为 {@code /order/profit}，此处同步对齐。
-     */
-    @GetMapping("/order/profit/summary/{shopId}")
-    Map<String, Object> getProfitSummary(@PathVariable("shopId") Long shopId);
 
     /**
      * 查询指定店铺利润报告（按日期范围聚合，含每日 revenue/net_profit 等明细）。

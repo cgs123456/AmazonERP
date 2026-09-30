@@ -13,7 +13,7 @@ public class ProductClientFallbackFactory implements FallbackFactory<ProductClie
 
     @Override
     public ProductClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-product (order) degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-product (order) degraded", cause);
         return new ProductClient() {
             @Override
             public Result<Product> getProductById(Integer productId) {

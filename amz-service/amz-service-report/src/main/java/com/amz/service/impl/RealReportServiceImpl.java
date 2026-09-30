@@ -28,7 +28,7 @@ import java.util.TreeMap;
  * <p>
  * 通过 Feign 调用 order / product / ad / finance 微服务聚合数据：
  * <ul>
- *   <li>{@link OrderServiceFeignClient}：订单列表、月度利润汇总、利润报告（含每日 revenue）</li>
+ *   <li>{@link OrderServiceFeignClient}：订单列表（含订单总数）、利润报告（含每日 revenue）</li>
  *   <li>{@link AdServiceFeignClient}：广告汇总（花费、ACoS）</li>
  *   <li>{@link FinanceServiceFeignClient}：店铺利润（CNY）</li>
  * </ul>
@@ -69,8 +69,8 @@ public class RealReportServiceImpl implements ReportService {
         BigDecimal totalSales = fetchTotalSales(shopId, days);
         report.setTotalSales(totalSales);
 
-        // 2. 订单服务：获取订单数
-        Integer totalOrders = fetchTotalOrders(shopId);
+        // 2. 订单服务：获取订单数（与 totalSales 同窗口）
+        Integer totalOrders = fetchTotalOrders(shopId, days);
         report.setTotalOrders(totalOrders);
         if (totalOrders != null && totalOrders > 0) {
             report.setAvgOrderValue(totalSales.divide(BigDecimal.valueOf(totalOrders), 2, RoundingMode.HALF_UP));
@@ -187,12 +187,40 @@ public class RealReportServiceImpl implements ReportService {
 
     /**
      * 通过 Feign 调用 order 服务获取订单数。
+     * <p>
+     * 取 {@code /order/list} 的 {@code data.total}——它是同一时间窗内订单表的分页总数，
+     * 与 {@code fetchTotalSales} 的窗口口径一致。此前用的是
+     * {@code /order/profit/summary/{shopId}} 的**返回行数**，而该接口按 (sku, 月份) 分组：
+     * 行数不是订单数，也不随 dateRange 变化，导致 totalOrders 与
+     * avgOrderValue = totalSales / totalOrders 同时失真。
      * 服务不可用时降级为 0。
      */
-    private Integer fetchTotalOrders(Long shopId) {
+    private Integer fetchTotalOrders(Long shopId, int days) {
         try {
-            Map<String, Object> resp = orderFeignClient.getProfitSummary(shopId);
-            return extractInt(resp);
+            Map<String, Object> resp = orderFeignClient.listOrders(shopId, days);
+            if (resp == null || resp.isEmpty()) {
+                // fallback 工厂返回 Collections.emptyMap()：没有信封，只有降级才会走到这里
+                log.warn("order 服务无响应体（fallback 兜底），订单数按 0 处理：shopId={} days={}", shopId, days);
+                return 0;
+            }
+            Object code = resp.get("code");
+            if (code instanceof Number && ((Number) code).intValue() != 200) {
+                log.warn("order 服务返回非 200 业务码，订单数按 0 处理：shopId={} code={} message={}",
+                        shopId, code, resp.get("message"));
+                return 0;
+            }
+            Object data = extractData(resp);
+            if (data instanceof Map) {
+                Object total = ((Map<?, ?>) data).get("total");
+                if (total instanceof Number) {
+                    return ((Number) total).intValue();
+                }
+                log.warn("order 服务的 data 里没有可用的 total 字段，订单数按 0 处理：shopId={} data.keys={}",
+                        shopId, ((Map<?, ?>) data).keySet());
+                return 0;
+            }
+            log.warn("order 服务的 data 不是对象，订单数按 0 处理：shopId={} data={}", shopId, data);
+            return 0;
         } catch (Exception e) {
             log.warn("调用 order 服务获取订单数失败，降级为 0：shopId={}", shopId, e);
             return 0;
@@ -360,31 +388,6 @@ public class RealReportServiceImpl implements ReportService {
     private BigDecimal extractBigDecimal(Map<String, Object> resp) {
         Object data = extractData(resp);
         return toBigDecimal(data);
-    }
-
-    private Integer extractInt(Map<String, Object> resp) {
-        Object data = extractData(resp);
-        if (data == null) {
-            return 0;
-        }
-        if (data instanceof Number) {
-            return ((Number) data).intValue();
-        }
-        if (data instanceof List) {
-            return ((List<?>) data).size();
-        }
-        // 月度利润汇总返回 List&lt;Map&gt;：以 SKU 数量近似订单数
-        if (data instanceof Map) {
-            Object summary = ((Map<String, Object>) data).get("summary");
-            if (summary instanceof Number) {
-                return ((Number) summary).intValue();
-            }
-        }
-        try {
-            return Integer.parseInt(data.toString());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
     }
 
     private BigDecimal toBigDecimal(Object value) {

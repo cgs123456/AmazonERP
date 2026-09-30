@@ -15,7 +15,7 @@ public class ReportServiceClientFallbackFactory implements FallbackFactory<Repor
 
     @Override
     public ReportServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-report degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-report degraded", cause);
         return new ReportServiceClient() {
             @Override
             public Result<List<Map<String, Object>>> getSalesTrend(Long shopId, Integer days) {

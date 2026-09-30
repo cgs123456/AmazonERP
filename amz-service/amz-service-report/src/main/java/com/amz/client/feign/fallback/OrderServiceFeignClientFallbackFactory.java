@@ -14,15 +14,10 @@ public class OrderServiceFeignClientFallbackFactory implements FallbackFactory<O
 
     @Override
     public OrderServiceFeignClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-order (report) degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-order (report) degraded", cause);
         return new OrderServiceFeignClient() {
             @Override
             public Map<String, Object> getOrderList() {
-                return Collections.emptyMap();
-            }
-
-            @Override
-            public Map<String, Object> getProfitSummary(Long shopId) {
                 return Collections.emptyMap();
             }
 

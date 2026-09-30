@@ -14,7 +14,7 @@ public class OrderServiceClientFallbackFactory implements FallbackFactory<OrderS
 
     @Override
     public OrderServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-order degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-order degraded", cause);
         return new OrderServiceClient() {
             @Override
             public Result<Map<String, Object>> getOrderList(Long shopId, Integer days) {

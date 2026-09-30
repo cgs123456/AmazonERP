@@ -14,7 +14,7 @@ public class SpapiFeedsClientFallbackFactory implements FallbackFactory<SpapiFee
 
     @Override
     public SpapiFeedsClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-spapi (feeds) degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-spapi (feeds) degraded", cause);
         return new SpapiFeedsClient() {
             @Override
             public Result<String> submitFeed(SpapiFeedsClient.FeedSubmitRequest request) {

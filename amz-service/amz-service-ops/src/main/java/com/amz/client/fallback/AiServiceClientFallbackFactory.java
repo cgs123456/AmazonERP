@@ -14,7 +14,7 @@ public class AiServiceClientFallbackFactory implements FallbackFactory<AiService
 
     @Override
     public AiServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-ai degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-ai degraded", cause);
         return new AiServiceClient() {
             @Override
             public Result<Map<String, Object>> analyzeSelection(Map<String, Object> opportunity) {

@@ -15,7 +15,7 @@ public class InventoryServiceClientFallbackFactory implements FallbackFactory<In
 
     @Override
     public InventoryServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-spapi degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-spapi degraded", cause);
         return new InventoryServiceClient() {
             @Override
             public Result<List<Map<String, Object>>> getInventory(Long shopId) {

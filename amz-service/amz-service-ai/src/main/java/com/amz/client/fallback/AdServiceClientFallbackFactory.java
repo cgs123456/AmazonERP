@@ -15,7 +15,7 @@ public class AdServiceClientFallbackFactory implements FallbackFactory<AdService
 
     @Override
     public AdServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-ad degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-ad degraded", cause);
         return new AdServiceClient() {
             @Override
             public Result<List<Map<String, Object>>> getReports(Long shopId) {

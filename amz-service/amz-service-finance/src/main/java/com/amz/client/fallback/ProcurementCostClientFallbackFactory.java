@@ -22,7 +22,7 @@ public class ProcurementCostClientFallbackFactory implements FallbackFactory<Pro
 
     @Override
     public ProcurementCostClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-procurement (cost) degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-procurement (cost) degraded", cause);
         return (shopId, sku) -> Result.failure("procurement service degraded: " + cause.getMessage());
     }
 }

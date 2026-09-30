@@ -15,7 +15,7 @@ public class ProductServiceClientFallbackFactory implements FallbackFactory<Prod
 
     @Override
     public ProductServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-product degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-product degraded", cause);
         return new ProductServiceClient() {
             @Override
             public Result<Map<String, Object>> copyListing(Map<String, Object> request) {

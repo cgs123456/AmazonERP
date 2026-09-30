@@ -14,7 +14,7 @@ public class MessageServiceClientFallbackFactory implements FallbackFactory<Mess
 
     @Override
     public MessageServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-message degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-message degraded", cause);
         return request -> Result.failure("message service degraded: " + cause.getMessage());
     }
 }

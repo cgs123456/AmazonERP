@@ -15,7 +15,7 @@ public class LogisticsServiceClientFallbackFactory implements FallbackFactory<Lo
 
     @Override
     public LogisticsServiceClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-logistics degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-logistics degraded", cause);
         return new LogisticsServiceClient() {
             private String failMsg() { return "logistics service degraded: " + cause.getMessage(); }
 

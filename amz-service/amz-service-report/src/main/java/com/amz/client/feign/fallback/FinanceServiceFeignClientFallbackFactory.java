@@ -14,7 +14,7 @@ public class FinanceServiceFeignClientFallbackFactory implements FallbackFactory
 
     @Override
     public FinanceServiceFeignClient create(Throwable cause) {
-        log.warn("Feign call to amz-service-finance degraded: cause={}", cause.getMessage());
+        log.warn("Feign call to amz-service-finance degraded", cause);
         return new FinanceServiceFeignClient() {
             @Override
             public Map<String, Object> calculateProfit(Long shopId, String startDate, String endDate) {
