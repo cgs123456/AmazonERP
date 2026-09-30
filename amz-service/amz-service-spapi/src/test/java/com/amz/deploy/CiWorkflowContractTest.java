@@ -117,6 +117,14 @@ class CiWorkflowContractTest {
                         + "否则它可能退化成 grep 而失去意义。实际步骤：" + runs);
         assertTrue(runs.stream().anyMatch(run -> run.contains("tools.ci.test_runtime_smoke")),
                 "runtime-smoke job 必须先跑判定逻辑的单测：闸门自身要证明它会咬人");
+        String allRuns = String.join("\n", runs);
+        long smokeInvocations = allRuns.lines().filter(line -> line.contains("runtime_smoke.py")).count();
+        assertTrue(allRuns.contains("amz-service-message-1.0-SNAPSHOT.jar")
+                        && allRuns.contains("amz-gateway-1.0-SNAPSHOT.jar") && smokeInvocations >= 2,
+                "启动冒烟必须至少覆盖 message 与 gateway 两条腿：2026-09-30 的 crypto.key 少配"
+                        + "实际炸的是 gateway，而只起 message 的冒烟对此完全无感——"
+                        + "多一条腿就多覆盖一类「公共组件被装配、部署面少配一个变量」的故障。实际步骤：" + runs);
+
         for (String run : runs) {
             assertFalse(run.contains("|| true") || run.contains("|| exit 0") || run.contains("-fae"),
                     "runtime-smoke 不得吞掉失败：" + run);

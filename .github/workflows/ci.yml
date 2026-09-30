@@ -173,22 +173,30 @@ jobs:
           python-version: '3.11'
       - name: Smoke classifier tests (the gate must bite on a real crash log)
         run: python -m unittest tools.ci.test_runtime_smoke -v
-      # 只打最轻的可部署模块（无 datasource/flyway），且 package 阶段不跑测试，
+      # 只打无 datasource/flyway 的轻模块（message 与 gateway），且 package 阶段不跑测试，
       # 因此这一步不属于"测试调用"，不受清单完整性与禁跳过开关的约束。
-      - name: Package the lightest deployable module
-        run: mvn -B -pl amz-service/amz-service-message -am package -DskipTests
-      - name: Boot it with no middleware reachable and require a clean start
+      - name: Package the boot-smoke targets
+        run: mvn -B -pl amz-service/amz-service-message,amz-gateway -am package -DskipTests
+      - name: Boot each with no middleware reachable and require a clean start
         run: |
           python tools/ci/runtime_smoke.py \
             --jar amz-service/amz-service-message/target/amz-service-message-1.0-SNAPSHOT.jar \
             --timeout 150 \
-            --dump-log "$RUNNER_TEMP/runtime-smoke.log"
-      - name: Upload boot log on failure
+            --dump-log "$RUNNER_TEMP/runtime-smoke-message.log"
+          # gateway 这条腿是 2026-09-30 补的：crypto.key 供给缺失实际炸的就是它
+          # （HEAD 镜像 exited(1)：crypto.key 未配置，拒绝启动），而只起 message 的冒烟看不见这类
+          # "公共组件 @Component + 部署面少配一个变量"的故障。它同样无库依赖，
+          # 本地实测能起来：Started AmzGatewayApplication，日志 100 行含 49 行 [TID: N/A]，致命签名 0。
+          python tools/ci/runtime_smoke.py \
+            --jar amz-gateway/target/amz-gateway-1.0-SNAPSHOT.jar \
+            --timeout 150 \
+            --dump-log "$RUNNER_TEMP/runtime-smoke-gateway.log"
+      - name: Upload boot logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: runtime-smoke-log
-          path: ${{ runner.temp }}/runtime-smoke.log
+          path: ${{ runner.temp }}/runtime-smoke-*.log
 
   # Job 2.5: 前端类型检查 + 单元测试 + 构建
   frontend:
