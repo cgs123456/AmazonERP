@@ -8,6 +8,7 @@ import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.PaymentCollection;
 import com.amz.model.SettlementDetail;
 import com.amz.service.PaymentCollectionService;
+import com.amz.util.MapArgUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -67,7 +68,7 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
         }
 
         Map<String, PaymentCollection> existing = new LinkedHashMap<>();
-        for (PaymentCollection pc : loadAllPaymentCollections(shopId, null)) {
+        for (PaymentCollection pc : loadAllPaymentCollections(shopId)) {
             existing.put(pc.getAmazonOrderId(), pc);
         }
 
@@ -118,49 +119,47 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
 
     @Override
     public PaymentCollectionSummary summary(Long shopId) {
-        List<PaymentCollection> rows = loadAllPaymentCollections(shopId, null);
+        // 聚合下沉到 SQL：只取回「每个币种一行」，不再把整店台账物化进内存。
+        // 口径见 PaymentCollectionMapper#aggregateSummaryByCurrency；状态字面量与 STATUS_* 常量
+        // 的一致性由 PaymentCollectionSummarySqlContractTest 锁住。
+        List<Map<String, Object>> groups = paymentCollectionMapper.aggregateSummaryByCurrency(shopId);
         PaymentCollectionSummary summary = new PaymentCollectionSummary();
         summary.setShopId(shopId);
-        summary.setTotalOrders(rows.size());
 
         Set<String> currencies = new LinkedHashSet<>();
-        boolean shortfallCalculated = false;
-        for (PaymentCollection row : rows) {
-            BigDecimal net = nz(row.getNetReceived());
-            summary.setReceivableTotal(summary.getReceivableTotal().add(nz(row.getReceivable())));
-            summary.setNetReceivedTotal(summary.getNetReceivedTotal().add(net));
-            if (row.getCurrency() != null && !row.getCurrency().isBlank()) {
-                currencies.add(row.getCurrency());
+        long shortfallKnownRows = 0;
+        for (Map<String, Object> group : groups) {
+            if (group == null) {
+                continue;
             }
-            if (row.getShortfall() != null) {
-                shortfallCalculated = true;
+            String currency = MapArgUtils.toStr(group, "currency");
+            if (currency != null && !currency.isBlank()) {
+                currencies.add(currency);
             }
-            String status = row.getStatus() == null ? "" : row.getStatus();
-            switch (status) {
-                case PaymentCollection.STATUS_PENDING:
-                    summary.setPendingOrders(summary.getPendingOrders() + 1);
-                    break;
-                case PaymentCollection.STATUS_IN_TRANSIT:
-                    summary.setInTransitOrders(summary.getInTransitOrders() + 1);
-                    // 在途未回：已结算但尚未到账的钱
-                    summary.setInTransitAmount(summary.getInTransitAmount().add(net));
-                    break;
-                case PaymentCollection.STATUS_SETTLED:
-                    summary.setSettledOrders(summary.getSettledOrders() + 1);
-                    summary.setSettledAmount(summary.getSettledAmount().add(net));
-                    break;
-                case PaymentCollection.STATUS_REFUNDED:
-                    summary.setRefundedOrders(summary.getRefundedOrders() + 1);
-                    break;
-                case PaymentCollection.STATUS_SHORTFALL:
-                    summary.setShortfallOrders(summary.getShortfallOrders() + 1);
-                    summary.setShortfallAmount(summary.getShortfallAmount().add(nz(row.getShortfall())));
-                    break;
-                default:
-                    break;
-            }
+            summary.setTotalOrders(summary.getTotalOrders() + MapArgUtils.toInt(group, "orderCount", 0));
+            summary.setPendingOrders(summary.getPendingOrders() + MapArgUtils.toInt(group, "pendingOrders", 0));
+            summary.setInTransitOrders(
+                    summary.getInTransitOrders() + MapArgUtils.toInt(group, "inTransitOrders", 0));
+            summary.setSettledOrders(summary.getSettledOrders() + MapArgUtils.toInt(group, "settledOrders", 0));
+            summary.setRefundedOrders(
+                    summary.getRefundedOrders() + MapArgUtils.toInt(group, "refundedOrders", 0));
+            summary.setShortfallOrders(
+                    summary.getShortfallOrders() + MapArgUtils.toInt(group, "shortfallOrders", 0));
+            summary.setReceivableTotal(summary.getReceivableTotal()
+                    .add(MapArgUtils.toBigDecimal(group, "receivableTotal", BigDecimal.ZERO)));
+            summary.setNetReceivedTotal(summary.getNetReceivedTotal()
+                    .add(MapArgUtils.toBigDecimal(group, "netReceivedTotal", BigDecimal.ZERO)));
+            summary.setInTransitAmount(summary.getInTransitAmount()
+                    .add(MapArgUtils.toBigDecimal(group, "inTransitAmount", BigDecimal.ZERO)));
+            summary.setSettledAmount(summary.getSettledAmount()
+                    .add(MapArgUtils.toBigDecimal(group, "settledAmount", BigDecimal.ZERO)));
+            summary.setShortfallAmount(summary.getShortfallAmount()
+                    .add(MapArgUtils.toBigDecimal(group, "shortfallAmount", BigDecimal.ZERO)));
+            Long knownRows = MapArgUtils.toLong(group, "shortfallKnownRows", 0L);
+            shortfallKnownRows += knownRows;
         }
         summary.setCurrencies(currencies);
+        boolean shortfallCalculated = shortfallKnownRows > 0;
         if (currencies.size() > 1) {
             summary.addWarning("涉及多币种（" + String.join(", ", currencies)
                     + "），合计金额不可跨币种相加，请按币种分别解读");
@@ -180,15 +179,12 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
      * 内部汇总必须遍历全部页，不能把第一页误当成全量财务事实。
      * 仍以固定批次读取，避免单次 selectList 随历史数据无限增长。
      */
-    private List<PaymentCollection> loadAllPaymentCollections(Long shopId, String status) {
+    private List<PaymentCollection> loadAllPaymentCollections(Long shopId) {
         List<PaymentCollection> all = new ArrayList<>();
         PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
         while (true) {
             LambdaQueryWrapper<PaymentCollection> qw = new LambdaQueryWrapper<PaymentCollection>()
                     .eq(PaymentCollection::getShopId, shopId);
-            if (status != null && !status.isBlank()) {
-                qw.eq(PaymentCollection::getStatus, status.toUpperCase());
-            }
             Long cursorId = page.cursorId();
             if (cursorId != null) {
                 qw.lt(PaymentCollection::getId, cursorId);

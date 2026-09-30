@@ -16,7 +16,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -283,37 +285,41 @@ class PaymentCollectionServiceImplTest {
     @Test
     @DisplayName("概览：在途未回与已回短款分别累计，不互相抵消")
     void summaryKeepsTwoAmountsSeparate() {
-        List<PaymentCollection> rows = new ArrayList<>();
-        rows.add(pc("ORD-1", PaymentCollection.STATUS_SETTLED, "29.99", "20.46", null));
-        rows.add(pc("ORD-2", PaymentCollection.STATUS_IN_TRANSIT, "49.99", "42.49", null));
-        rows.add(pc("ORD-3", PaymentCollection.STATUS_REFUNDED, "19.99", "0.00", null));
-        rows.add(pc("ORD-4", PaymentCollection.STATUS_SHORTFALL, "15.00", "12.75", "1.10"));
-        when(paymentCollectionMapper.selectList(any())).thenReturn(rows);
+        // 分组行取自 MySQL 8.4 对同一份 fixture 的真实聚合结果（见 docs/evidence 记录）
+        when(paymentCollectionMapper.aggregateSummaryByCurrency(SHOP_ID)).thenReturn(List.of(
+                group("USD", 7, "131.97", "83.70", 1, 1, "42.49", 2, "20.46", 1, 2, "1.10", 2),
+                group("EUR", 1, "19.99", "15.00", 0, 0, "0.00", 1, "15.00", 0, 0, "0.00", 0),
+                group(null, 1, "5.00", "4.00", 0, 0, "0.00", 1, "4.00", 0, 0, "0.00", 0)));
 
         PaymentCollectionSummary summary = paymentCollectionService.summary(SHOP_ID);
 
-        assertEquals(4, summary.getTotalOrders());
-        assertEquals(1, summary.getSettledOrders());
+        assertEquals(9, summary.getTotalOrders());
+        assertEquals(4, summary.getSettledOrders());
         assertEquals(1, summary.getInTransitOrders());
         assertEquals(1, summary.getRefundedOrders());
-        assertEquals(1, summary.getShortfallOrders());
-        assertEquals(0, summary.getPendingOrders());
+        assertEquals(2, summary.getShortfallOrders());
+        assertEquals(1, summary.getPendingOrders());
 
         assertEquals(0, new BigDecimal("42.49").compareTo(summary.getInTransitAmount()),
                 "在途未回 = 在途订单实收");
-        assertEquals(0, new BigDecimal("20.46").compareTo(summary.getSettledAmount()));
+        assertEquals(0, new BigDecimal("39.46").compareTo(summary.getSettledAmount()));
         assertEquals(0, new BigDecimal("1.10").compareTo(summary.getShortfallAmount()),
                 "已回短款不能被在途金额抵消");
-        assertEquals(1, summary.getCurrencies().size());
+        assertEquals(0, new BigDecimal("156.96").compareTo(summary.getReceivableTotal()));
+        assertEquals(0, new BigDecimal("102.70").compareTo(summary.getNetReceivedTotal()));
+        assertEquals(2, summary.getCurrencies().size());
         assertTrue(summary.getCurrencies().contains("USD"));
+        assertTrue(summary.getCurrencies().contains("EUR"),
+                "无币种分组只参与合计，不能当成一个币种列示：" + summary.getCurrencies());
+        // 概览不得再把整店台账读进内存
+        verify(paymentCollectionMapper, never()).selectList(any());
     }
 
     @Test
     @DisplayName("概览：无短款数据来源时显式警告（0 不等于没有短款）")
     void summaryWarnsWhenShortfallUnknown() {
-        List<PaymentCollection> rows = new ArrayList<>();
-        rows.add(pc("ORD-1", PaymentCollection.STATUS_SETTLED, "29.99", "20.46", null));
-        when(paymentCollectionMapper.selectList(any())).thenReturn(rows);
+        when(paymentCollectionMapper.aggregateSummaryByCurrency(SHOP_ID)).thenReturn(List.of(
+                group("USD", 1, "29.99", "20.46", 0, 0, "0.00", 1, "20.46", 0, 0, "0.00", 0)));
 
         PaymentCollectionSummary summary = paymentCollectionService.summary(SHOP_ID);
 
@@ -324,20 +330,35 @@ class PaymentCollectionServiceImplTest {
     }
 
     @Test
-    @DisplayName("概览：多币种时给出不可跨币种相加的提示")
+    @DisplayName("概览：多币种时给出不可跨币种相加的提示，单币种不给")
     void summaryMultiCurrencyWarning() {
-        List<PaymentCollection> rows = new ArrayList<>();
-        rows.add(pc("ORD-1", PaymentCollection.STATUS_SETTLED, "29.99", "20.46", null));
-        PaymentCollection eur = pc("ORD-2", PaymentCollection.STATUS_SETTLED, "19.99", "15.00", null);
-        eur.setCurrency("EUR");
-        rows.add(eur);
-        when(paymentCollectionMapper.selectList(any())).thenReturn(rows);
+        when(paymentCollectionMapper.aggregateSummaryByCurrency(SHOP_ID)).thenReturn(List.of(
+                group("USD", 1, "29.99", "20.46", 0, 0, "0.00", 1, "20.46", 0, 0, "0.00", 1),
+                group("EUR", 1, "19.99", "15.00", 0, 0, "0.00", 1, "15.00", 0, 0, "0.00", 0)));
+
+        PaymentCollectionSummary multi = paymentCollectionService.summary(SHOP_ID);
+        assertEquals(2, multi.getCurrencies().size());
+        assertTrue(multi.getWarnings().stream().anyMatch(w -> w.contains("多币种")),
+                multi.getWarnings().toString());
+
+        when(paymentCollectionMapper.aggregateSummaryByCurrency(SHOP_ID)).thenReturn(List.of(
+                group("USD", 1, "29.99", "20.46", 0, 0, "0.00", 1, "20.46", 0, 0, "0.00", 1)));
+        PaymentCollectionSummary single = paymentCollectionService.summary(SHOP_ID);
+        assertFalse(single.getWarnings().stream().anyMatch(w -> w.contains("多币种")),
+                "单币种不应出现多币种提示：" + single.getWarnings());
+    }
+
+    @Test
+    @DisplayName("概览：无台账行时全为 0 且仍给出两条口径警告")
+    void summaryWithoutRows() {
+        when(paymentCollectionMapper.aggregateSummaryByCurrency(SHOP_ID)).thenReturn(List.of());
 
         PaymentCollectionSummary summary = paymentCollectionService.summary(SHOP_ID);
 
-        assertEquals(2, summary.getCurrencies().size());
-        assertTrue(summary.getWarnings().stream().anyMatch(w -> w.contains("多币种")),
-                summary.getWarnings().toString());
+        assertEquals(0, summary.getTotalOrders());
+        assertEquals(0, BigDecimal.ZERO.compareTo(summary.getNetReceivedTotal()));
+        assertTrue(summary.getCurrencies().isEmpty());
+        assertEquals(2, summary.getWarnings().size(), summary.getWarnings().toString());
     }
 
     @Test
@@ -364,6 +385,38 @@ class PaymentCollectionServiceImplTest {
             pc.setShortfall(new BigDecimal(shortfall));
         }
         return pc;
+    }
+
+    /**
+     * 构造一行「按币种聚合」的返回：列名与别名与 PaymentCollectionMapper#aggregateSummaryByCurrency 一致，
+     * 金额用 BigDecimal、计数用 Long —— 与 MySQL 8.4 驱动实际回传的类型一致（SUM(DECIMAL) 是 DECIMAL，
+     * COUNT 是 BIGINT，SUM(CASE...1...0) 也是 DECIMAL）。
+     */
+    private static Map<String, Object> group(String currency, long orderCount, String receivable,
+                                             String netReceived, int pending, int inTransit,
+                                             String inTransitAmount, int settled, String settledAmount,
+                                             int refunded, int shortfallOrders, String shortfallAmount,
+                                             long shortfallKnownRows) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("currency", currency);
+        row.put("orderCount", orderCount);
+        row.put("receivableTotal", new BigDecimal(receivable));
+        row.put("netReceivedTotal", new BigDecimal(netReceived));
+        row.put("pendingOrders", decimalCount(pending));
+        row.put("inTransitOrders", decimalCount(inTransit));
+        row.put("inTransitAmount", new BigDecimal(inTransitAmount));
+        row.put("settledOrders", decimalCount(settled));
+        row.put("settledAmount", new BigDecimal(settledAmount));
+        row.put("refundedOrders", decimalCount(refunded));
+        row.put("shortfallOrders", decimalCount(shortfallOrders));
+        row.put("shortfallAmount", new BigDecimal(shortfallAmount));
+        row.put("shortfallKnownRows", decimalCount((int) shortfallKnownRows));
+        return row;
+    }
+
+    /** SUM(CASE ... THEN 1 ELSE 0 END) 在 MySQL 里返回 DECIMAL，不是整数。 */
+    private static BigDecimal decimalCount(int value) {
+        return new BigDecimal(value);
     }
 
     private static PaymentCollection find(List<PaymentCollection> rows, String amazonOrderId) {
