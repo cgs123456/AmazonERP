@@ -85,6 +85,44 @@ class CiWorkflowContractTest {
                         + invocations.narrowing);
     }
 
+    /**
+     * 启动冒烟 job 必须存在且不能被削弱。
+     * <p>
+     * 动因：契约测试全部只断言配置文本，logback conversionRule 指向不存在的类导致 16 个服务
+     * 启动即崩时它们仍然全绿（见 evidence/2026-09-30-p2-1-traceid-real-fix.md）。
+     * runtime-smoke 是唯一真把进程跑起来的闸，因此"它存在"本身也要被守住，
+     * 否则一次静默删改就能让这道闸消失而不留红灯。
+     */
+    @Test
+    void runtimeSmokeGateExistsAndCannotBeWeakened() throws IOException {
+        Map<String, Object> jobs = castMap(loadYaml(CI_WORKFLOW).get("jobs"));
+        Map<String, Object> smoke = castMap(jobs.get("runtime-smoke"));
+        assertFalse(smoke.isEmpty(),
+                "CI 缺少 runtime-smoke job：全仓只有配置文本级契约测试，"
+                        + "无法发现「编译与测试全绿但服务起不来」这类故障");
+        assertFalse(Boolean.TRUE.equals(smoke.get("continue-on-error")),
+                "runtime-smoke 不得设置 continue-on-error，否则启动崩溃不再阻断合并");
+
+        List<String> runs = new ArrayList<>();
+        for (Object stepValue : castList(smoke.get("steps"))) {
+            Map<String, Object> step = castMap(stepValue);
+            if (step.get("run") != null) {
+                runs.add(String.valueOf(step.get("run")));
+            }
+            assertFalse(Boolean.TRUE.equals(step.get("continue-on-error")),
+                    "runtime-smoke 的 step 不得单独设置 continue-on-error");
+        }
+        assertTrue(runs.stream().anyMatch(run -> run.contains("tools/ci/runtime_smoke.py") && run.contains("--jar")),
+                "runtime-smoke 必须真的调用冒烟脚本并指向一个 fat jar，"
+                        + "否则它可能退化成 grep 而失去意义。实际步骤：" + runs);
+        assertTrue(runs.stream().anyMatch(run -> run.contains("tools.ci.test_runtime_smoke")),
+                "runtime-smoke job 必须先跑判定逻辑的单测：闸门自身要证明它会咬人");
+        for (String run : runs) {
+            assertFalse(run.contains("|| true") || run.contains("|| exit 0") || run.contains("-fae"),
+                    "runtime-smoke 不得吞掉失败：" + run);
+        }
+    }
+
     // ------------------------------------------------------------------
     // CI 工作流解析
     // ------------------------------------------------------------------
