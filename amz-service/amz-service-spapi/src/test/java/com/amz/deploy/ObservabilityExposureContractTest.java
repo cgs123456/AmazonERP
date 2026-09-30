@@ -239,6 +239,42 @@ class ObservabilityExposureContractTest {
                 "JSON_CONSOLE 必须只在 log-json 分支内挂载");
     }
 
+    /**
+     * 生产端与消费端的文本 pattern 必须对齐：logstash 的 grok 一旦与应用 {@code %d{...}} 的
+     * 日期形状不符，每一行都会带 {@code _grokparsefailure} 落库，字段全丢且无人报错。
+     * 本轮之前正是这种状态（grok 用 TIMESTAMP_ISO8601 要求 "T" 分隔，应用打的是空格），
+     * 实测旧表达式对 41 条真实日志匹配数为 0，新表达式 41/41。
+     */
+    @Test
+    void logstashConsumerStillMatchesTheAppTextPattern() throws IOException {
+        String conf = logstashRules(Files.readString(
+                ROOT.resolve("logstash/logstash.conf"), StandardCharsets.UTF_8));
+        String gatewayPattern = Files.readString(
+                ROOT.resolve("amz-gateway/src/main/resources/application.yml"), StandardCharsets.UTF_8);
+
+        assertFalse(conf.contains("TIMESTAMP_ISO8601"),
+                "grok 又用回 TIMESTAMP_ISO8601：它要求日期与时间之间有 T，"
+                        + "而应用 pattern 是 %d{yyyy-MM-dd HH:mm:ss.SSS} 空格分隔，会导致全量解析失败");
+
+        String appDateFormat = "%d{yyyy-MM-dd HH:mm:ss.SSS}";
+        assertTrue(gatewayPattern.contains(appDateFormat),
+                "gateway 的日期格式已变成别的形状（本测试取样值 " + appDateFormat + "），必须同步核对 grok");
+        // 应用打的是空格分隔的日期时间；grok 的入口条件必须接受同一形状
+        assertTrue(conf.contains("\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}"),
+                "grok 的日期入口必须匹配 \"yyyy-MM-dd HH:mm:ss\"（可同时容忍 T 分隔的 ISO 形式）。"
+                        + "实测旧写法用 TIMESTAMP_ISO8601 时对 41 条真实日志匹配数为 0，新写法 41/41");
+
+        assertTrue(conf.contains("\\[%{DATA:traceId}\\]"),
+                "grok 必须继续从第二个方括号槽位提取 traceId");
+        assertTrue(conf.contains("\\[%{DATA:thread}\\]") && conf.contains("%{LOGLEVEL:level}"),
+                "grok 的 thread/level 字段不得丢失，否则既有看板与告警按字段查询会落空");
+        assertTrue(conf.contains("gsub"),
+                "必须剥掉 SkyWalking 渲染的 \"TID:\" 前缀，否则 traceId 字段无法与 JSON 路径或 UI 检索对齐");
+        assertTrue(conf.contains("json {"),
+                "log-json 分支经 beats 到达时 message 是 JSON 字符串，缺少 json 解析会让结构化日志整行落进 msg");
+        assertTrue(conf.contains("TID"), "必须把 provider 固定的 TID 字段统一映射为 traceId");
+    }
+
     @Test
     void rootPomManagesLogstashEncoderVersion() throws IOException {
         String pom = Files.readString(ROOT.resolve("pom.xml"), StandardCharsets.UTF_8);
@@ -268,6 +304,13 @@ class ObservabilityExposureContractTest {
                 "k8s 集中配置的默认 profile 必须是 prod 文本日志");
         assertFalse(configMap.contains("prod,log-json"),
                 "k8s 默认 profile 不得打开 log-json，理由同 compose：采集端未确认支持 JSON 前不改日志形态");
+    }
+
+    /** 去掉 logstash 配置里的注释行：注释会解释历史缺陷，留在判定文本里会让断言误伤自己。 */
+    private static String logstashRules(String raw) {
+        return raw.lines()
+                .filter(line -> !line.stripLeading().startsWith("#"))
+                .collect(java.util.stream.Collectors.joining(" "));
     }
 
     private static Map<String, Path> moduleApplicationFiles() {
