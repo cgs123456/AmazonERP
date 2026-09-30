@@ -226,6 +226,32 @@ tar xzf agent-9.7.0.tgz && find skywalking-agent -name '._*' -delete
 | 反向验证 | grpc 端口改 11999 → 1 红；某服务地址改成短名 `skywalking-oap:11800` → 1 红；还原 → 32/32 绿（identity 6 + placeholder 2 + deployment 10 + observability 14） |
 | **证明级别** | 仅静态 YAML 解析 + 契约测试。**未在真实集群 apply 过**；且容器侧代理失效导致 `apache/skywalking-oap-server:10.1.0` / `skywalking-ui` / ES 镜像能否拉取、OAP 能否启动、ES 存储是否被接受均**未证**。操作前置：ES StatefulSet 必须先于 OAP 就绪 |
 
+### 10.6 后续项5：清理与小项处置
+
+| 子项 | 处置 | 证据 |
+|---|---|---|
+| 删除误导文件 `skywalking/agent/config/agent.config` | 已 `git rm`（历史可恢复）。它从未被 `Dockerfile` COPY，且内部写的 `${SW_COLLECTOR:...}` 正是诱导 §4 那条死变量的来源 | 全仓 grep 引用为 0；`Dockerfile` 的 COPY 清单只含 pom/src/jar/agent |
+| `logstash/logstash.conf` 消费端修复 | ① grok 日期改用与应用 pattern 一致的空格分隔形状（原 `TIMESTAMP_ISO8601` 要求 `T`）② `gsub` 剥掉 `TID:` 前缀 ③ beats 路径补 `json {}` 解析并把 provider 固定的 `TID` 映射为统一字段 `traceId`，无值时落 `N/A` | 正则仿真：真实文本行 **41/41 匹配**，旧写法 **0/41**；`final-json.txt` 39 行确认无 agent 时 `TID` 缺省 → 走 `N/A` 分支。**注意：本机无 Logstash 且镜像拉不到，未做真机跑通**，仿真是代理证据 |
+| 新契约 `logstashConsumerStillMatchesTheAppTextPattern` | 把生产端 pattern 与消费端 grok 绑成一条断言，并只比对非注释行（第一版把自己的解释注释也判定成违规，自伤过一次） | 反向验证三项各 1 红：grok 退回 ISO8601 / 删掉 gsub / 去掉 json 分支；还原后 15/15 绿 |
+| deploy 测试公共 helper 抽取 | **本轮不做**。`findRepoRoot` 在 `com.amz.deploy` 已有 14 份副本，是仓库既有约定；跨 14 文件的纯重构不改行为，却会与并行修改同一棵树的 agent 高概率冲突。仅在自己的新类内部做了收敛（`mainContainerEnv` / `k8sDeployments`），避免再造一份行为分叉的解析逻辑 | 见 `SkyWalkingIdentityContractTest` |
+
+### 10.7 后续项3 决策（已由用户确认，本轮不落代码）
+
+| 决策 | 选择 | 落地 |
+|---|---|---|
+| OAP 不可达时 agent 不建 context，是否把 OAP 纳入 compose 默认启动链或全局开 `keep_tracing` | **只写运维前置条件** | 新增 `docs/superpowers/runbooks/observability-trace-id-prerequisites.md`：三态判读表（`TID: N/A` 未挂 agent / `TID:Ignored_Trace` 通道断 / `TID:<id>` 健康）、agent 挂载核查命令、compose 与 k8s 的启动顺序、`keep_tracing` 的代价与"仅按环境显式开启"的约定 |
+| 两侧 `%tid` 不逐字相同导致原验收不成立，是否补 MDC 注入层 | **等 OAP 真跑通后再定** | runbook §5 记录当前边界与 `TID` 的正确用法；logstash 侧已把两条路径统一到 `traceId` |
+
+### 10.8 后续项完成状态
+
+| 计划项 | 状态 |
+|---|---|
+| 1 跨服务串联 | 传播已实测成立；**验收标准本身被证伪并改写**（§10.3）；OAP 侧关联链待集群/镜像可用 |
+| 2 镜像重建冒烟 | 完整重建受容器代理阻塞；已用派生镜像覆盖 ENTRYPOINT/去重/exec/日志目录语义（§10.2） |
+| 3 OAP 与 keep_tracing | 决策=只写运维前置条件，runbook 已交付（§10.7） |
+| 4 k8s 采集端 | 清单 + 16 处回填 + 跨文件契约已落，静态级验证（§10.5） |
+| 5 清理 | 误导文件已删；logstash 消费端已修并加契约；helper 抽取经评估不做（§10.6） |
+
 ## 11. 验证命令（接手者可直接复跑）
 
 ```powershell
