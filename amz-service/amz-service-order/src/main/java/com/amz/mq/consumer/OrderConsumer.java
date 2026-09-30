@@ -9,6 +9,7 @@ import com.amz.model.dto.OrderItemSyncDto;
 import com.amz.model.dto.OrderSyncDto;
 import com.amz.model.pojo.CustomAttribute;
 import com.amz.service.OrderService;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rabbitmq.client.Channel;
@@ -133,6 +134,11 @@ public class OrderConsumer {
             // 连续失败达上限的毒消息：nack requeue=false，经 DLX 路由到死信队列，
             // 阻断无限重投（修复：旧实现恒 requeue=true 导致 DLX 配置形同虚设）
             log.error("消息处理重试耗尽，转入死信队列：messageId={}, 错误: {}", amqpMessageId, e.getMessage());
+            sendToDlq(channel, deliveryTag);
+        } catch (JsonProcessingException e) {
+            // 消息体本身不是合法 JSON：重投多少次都不会变好。
+            // 这类失败发生在 processOrderMessage 的失败计数之前，若走通用 requeue 分支会无限重投刷满 CPU
+            log.error("消息体解析失败，转死信队列：messageId={}, 错误: {}", amqpMessageId, e.getOriginalMessage());
             sendToDlq(channel, deliveryTag);
         } catch (Exception e) {
             log.error("处理订单消息异常，消息将重新入队：messageId={}", amqpMessageId, e);

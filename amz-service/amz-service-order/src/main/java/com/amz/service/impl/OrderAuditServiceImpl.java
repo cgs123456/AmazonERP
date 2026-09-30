@@ -220,13 +220,13 @@ public class OrderAuditServiceImpl implements OrderAuditService {
 
         switch (op) {
             case "EQ":
-                return valuePresent(rule, expected)
+                return expected != null
                         ? Outcome.evaluated(fieldValue.equalsIgnoreCase(expected)) : missingConditionValue(rule);
             case "NEQ":
-                return valuePresent(rule, expected)
+                return expected != null
                         ? Outcome.evaluated(!fieldValue.equalsIgnoreCase(expected)) : missingConditionValue(rule);
             case "CONTAINS":
-                return valuePresent(rule, expected)
+                return expected != null
                         ? Outcome.evaluated(fieldValue.toUpperCase().contains(expected.toUpperCase()))
                         : missingConditionValue(rule);
             case "GT":
@@ -239,10 +239,6 @@ public class OrderAuditServiceImpl implements OrderAuditService {
             default:
                 return Outcome.unevaluable("未知操作符 " + op);
         }
-    }
-
-    private static boolean valuePresent(OrderAuditRule rule, String expected) {
-        return expected != null;
     }
 
     private static Outcome missingConditionValue(OrderAuditRule rule) {

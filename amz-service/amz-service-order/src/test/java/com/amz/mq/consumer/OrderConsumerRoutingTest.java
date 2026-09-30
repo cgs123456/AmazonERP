@@ -114,13 +114,27 @@ class OrderConsumerRoutingTest {
         verify(channel, never()).basicNack(anyLong(), anyBoolean(), anyBoolean());
     }
 
+    @Test
+    @DisplayName("消息体不是合法 JSON：转死信，不能进通用 requeue 分支无限重投")
+    void malformedBodyGoesToDlqNotInfiniteRequeue() throws Exception {
+        // 解析失败发生在 processOrderMessage 的失败计数之前：
+        // 若按通用 Exception 分支 requeue=true，这条消息会永远回到队首刷满 CPU
+        consumeBody("这不是 JSON{{{");
+
+        verify(channel).basicNack(TAG, false, false);
+        verify(channel, never()).basicAck(anyLong(), anyBoolean());
+        verify(channel, never()).basicNack(TAG, false, true);
+    }
+
     private void consume() {
+        consumeBody("{\"userId\":7,\"productId\":11,\"price\":9.90,\"shopId\":3}");
+    }
+
+    private void consumeBody(String body) {
         MessageProperties properties = new MessageProperties();
         properties.setMessageId("msg-001");
         // 带 userId、不带 amazonOrderId：走 processOrderMessage 分支（而非 SP-API 同步分支）
-        Message message = new Message(
-                "{\"userId\":7,\"productId\":11,\"price\":9.90,\"shopId\":3}".getBytes(StandardCharsets.UTF_8),
-                properties);
+        Message message = new Message(body.getBytes(StandardCharsets.UTF_8), properties);
         consumer.onMessage(message, channel, TAG);
     }
 }
