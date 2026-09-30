@@ -3,11 +3,24 @@ package com.amz.result;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.List;
 import java.util.Objects;
 
+/**
+ * 统一响应体。
+ * <p>
+ * {@code @NoArgsConstructor} 不是便利性的加法，而是服务间调用的硬要求：本类有两个带参构造器
+ * 且都未标注 {@code @JsonCreator}，Jackson 无法在多个候选之间选定 creator，又没有默认构造器兜底，
+ * 于是 {@code Result} 作为响应体可以被写出、却不能被读回
+ * （InvalidDefinitionException: no Creators, like default constructor, exist）。
+ * 17 个 Feign 客户端里 38 个返回 {@code Result<...>} 的方法因此全部解码失败，
+ * 被各自的 fallbackFactory 静默降级。删除该注解会立刻重现故障，
+ * 由 {@code ResultJsonDecodeContractTest} 守这条读方向。
+ */
 @Data
+@NoArgsConstructor
 public class Result<T> {
 
     /**
