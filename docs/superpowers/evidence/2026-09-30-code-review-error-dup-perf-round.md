@@ -12,7 +12,7 @@
 3. 按 High→Medium→Low 排序逐项修；每修一处跑该模块测试；每个新守卫做变异验证。
 4. 最后对自己的改动做双轴自审（见 §5）。
 
-## 2. 已修 High（7 项，逐项带证据与变异验证）
+## 2. 已修 High（8 项，逐项带证据与变异验证）
 
 | # | 缺陷（复核后的事实） | 影响 | 提交 |
 |---|---|---|---|
@@ -30,7 +30,17 @@
 `SpApiRetryParityContractTest`(3)、`InventoryQuantityUnknownTest`(4)。
 逐个注入对应历史故障后红条数分别为 1 / 1 / 5 / 1(2 处分支各 1) / 2 / 1 / 1(两处独立分支各 1)，还原后全绿。
 
-## 3. 复核后降级或推翻的判断
+## 3. 已修 Medium（本轮已落地的两项）
+
+| # | 缺陷 | 影响 | 提交 |
+|---|---|---|---|
+| M1 | `FbaShipmentServiceImpl.allocateCosts` 用 `mapToInt(FbaShipmentItem::getQuantity)`，且 `totalQty>0` 只校验总量 | 任一行数量为 null → 拆箱 NPE；单行为 0 → 末尾除零 `ArithmeticException`；两者让整个 `@Transactional` 分摊回滚，一条脏明细挡住整单成本入账（同文件 :115/:335 早就按 null 处理，唯独这里漏） | `f5e86ef` |
+| M2 | `RealtimeProfitServiceImpl` 分摊 JSON 解析失败只 `log.debug` | 生产级别下等于瞒报：该条头程成本被丢掉，SKU 利润系统性高估；同方法上方对"明细截断"已是 WARN，级别不一致 | `f5e86ef` |
+
+守卫：`FbaShipmentCostAllocationTest`（1 用例）。变异验证：拿掉单行数量守卫 → 用例直接复现当年那条
+`NullPointerException: Cannot invoke "Integer.intValue()"`；还原 → 绿。
+
+## 4. 复核后降级或推翻的判断
 
 - 调查通道报"MQ 里 ISE 都是基础设施异常，属静默丢单"，我逐点核对后细化：
   6 个 ISE 抛出点里**只有 2 个**是真正的幂等/参数跳过，其余 3 个（商品服务不可用、凭证发送失败、
@@ -42,7 +52,7 @@
 - "report 裸 Map 把信封当 payload"这条我上一轮的 review 判断，实测不成立（`extractData` 一直正确拆封），
   已在上一份文档更正。
 
-## 4. 未修清单（仍然按严重度排序，保持原范围）
+## 5. 未修清单（仍然按严重度排序，保持原范围）
 
 High（性能，需要各自的度量与影子库，不与本轮小修混做）：
 - **P1** `ReplenishmentScheduler`：店铺 × SKU × ~6 次查询；`seasonal_index` / `promotion_calendar`
@@ -65,7 +75,7 @@ Low：AI 侧金额用 `double` 累加后展示（同文件另一处又用 BigDec
 `NumberUtil` 注释承诺"并发不重复"但同毫秒 1/9000 碰撞；请求路径 `Pattern.compile` / `new ObjectMapper`；
 ~12 处循环单行 insert 应批量；4 份字节相同的 `RedisConfig`。
 
-## 5. 自审（双轴）
+## 6. 自审（双轴）
 
 **标准轴**：新增代码遵循仓库既有风格（契约测试为源码级断言、失败消息写"为什么"而不是复述"什么"）；
 未引入新抽象层；删掉了因此变成死代码的 `extractBigDecimal`；
@@ -76,16 +86,16 @@ Low：AI 侧金额用 `double` 累加后展示（同文件另一处又用 BigDec
 
 **规格轴**：目标要求的六步（理解结构 / 查三类问题 / 排序 / 逐项修 High-Medium-Low / 改后跑测试 / 自审）
 中，"逐项修"已完成 High 全量与小部分 Medium，**Medium/Low 与三项性能 High 尚未完成**，
-故本轮不声明达成目标，清单保留在 §4 继续推进。
+故本轮不声明达成目标，清单保留在 §5 继续推进。
 
-## 6. 一个非本轮引入的环境性红灯
+## 7. 一个非本轮引入的环境性红灯
 
 `AdvertisingApiRealClientContractTest.listKeywordsUsesV3ListEnvelope` 在一次全仓 `clean verify` 中报
 `ConnectException`（打到本机 `HttpServer` 桩却 2.4s 连接失败）；单独连跑 2 次均 7/7 绿，
 重跑全仓亦通过。判为负载相关间歇失败，疑点：每个用例新建 `HttpClient`，而 JDK 17 的 HttpClient
 不可关闭（selector/executor 线程留存）。已记录，不当作已修，也不通过改断言让它变绿。
 
-## 7. 复跑
+## 8. 复跑
 
 ```bash
 mvn -o -B -pl amz-service/amz-service-finance -am test           # 熔断装配后的模块自证
