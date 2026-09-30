@@ -216,7 +216,9 @@ swx-order|swx-probe|    Druid/… 与 Mysql/JDBC/…  同 trace 的 DB 子 span
 4. 顺带暴露与日志无关的应用侧缺陷：`product → order` 的 Feign 响应反序列化失败
    `Type definition error: [simple type, class com.amz.result.Result]`，被
    `OrderServiceFeignClientFallbackFactory` 静默降级为 `source=estimated`；但 OAP 里 Exit/Entry span
-   成对存在，说明 HTTP 往返真的发生、只是结果被丢弃。该链路每次都走降级，值得单独立项。
+   成对存在，说明 HTTP 往返真的发生、只是结果被丢弃。**追查后确认是系统性故障**：20 个 @FeignClient 接口里
+   20 个接口里 38 个返回 `Result<...>` 的方法每次都在解码阶段失败，根因是 `Result` 没有任何 Jackson creator。
+   修复、影响面与验证见 `2026-09-30-p1-feign-result-decode-fix.md`。
 
 探针容器、临时 mongo、OAP 进程与含凭证的 env 文件均已清理；在跑的 mock 栈未被改动。
 
