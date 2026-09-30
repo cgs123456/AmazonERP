@@ -77,6 +77,8 @@ spec:
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPRING_PROFILES_ACTIVE } }
             - name: SW_AGENT_NAME
               value: amz-service-spapi
+            - name: SW_AGENT_COLLECTOR_BACKEND_SERVICES
+              value: skywalking-oap.amz-erp.svc.cluster.local:11800
             - name: NACOS_ADDR
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } }
             - name: MYSQL_HOST

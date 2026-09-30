@@ -146,6 +146,50 @@ class SkyWalkingIdentityContractTest {
         assertEquals(EXPECTED_SERVICES, names, "k8s 侧 SkyWalking 服务名集合与部署清单不一致");
     }
 
+    /**
+     * 跨文件一致性：应用侧写死的 collector 地址，必须能在 observability 清单里找到同名的
+     * Service 与 gRPC 端口。否则 agent 连不上 collector，日志 traceId 静默退化为
+     * Ignored_Trace，且服务本身毫无报错——正是本轮反复遇到的"接线看着完好、运行时失效"那一类。
+     */
+    @Test
+    void k8sApplicationsPointAtTheDeclaredOapService() throws IOException {
+        Path infra = ROOT.resolve("k8s").resolve("infra").resolve("skywalking.yaml");
+        assertTrue(Files.isRegularFile(infra),
+                "缺少 " + infra + "：k8s 侧没有采集端，16 个服务的 agent 上报无处可去");
+
+        Map<String, Object> oapService = null;
+        for (Object document : new Yaml().loadAll(read(infra))) {
+            Map<String, Object> doc = castMap(document);
+            if ("Service".equals(doc.get("kind"))
+                    && "skywalking-oap".equals(String.valueOf(castMap(doc.get("metadata")).get("name")))) {
+                oapService = doc;
+            }
+        }
+        assertNotNull(oapService,
+                "skywalking.yaml 未声明名为 skywalking-oap 的 Service，应用侧 collector 地址是悬空主机名");
+
+        String namespace = String.valueOf(castMap(oapService.get("metadata")).get("namespace"));
+        Object ports = castMap(oapService.get("spec")).get("ports");
+        assertTrue(ports instanceof List<?>, "skywalking-oap Service 的 ports 必须是列表");
+        String grpcPort = null;
+        for (Object item : (List<?>) ports) {
+            Map<String, Object> port = castMap(item);
+            if ("grpc".equals(String.valueOf(port.get("name")))) {
+                grpcPort = String.valueOf(port.get("port"));
+            }
+        }
+        assertNotNull(grpcPort, "skywalking-oap Service 缺少名为 grpc 的端口（agent 上报口）");
+        String expected = "skywalking-oap." + namespace + ".svc.cluster.local:" + grpcPort;
+
+        List<Map<String, Object>> deployments = k8sDeployments();
+        assertEquals(16, deployments.size(), "被检查的应用 Deployment 必须是 gateway + 15 个业务服务");
+        for (Map<String, Object> deployment : deployments) {
+            String name = String.valueOf(castMap(deployment.get("metadata")).get("name"));
+            assertEquals(expected, mainContainerEnv(deployment).get("SW_AGENT_COLLECTOR_BACKEND_SERVICES"),
+                    name + " 的 SW_AGENT_COLLECTOR_BACKEND_SERVICES 与 OAP Service 声明不一致");
+        }
+    }
+
     /** compose 与 k8s 两侧声明的全部 SW_AGENT_NAME 值。 */
     private static Set<String> allDeclaredAgentNames() throws IOException {
         Set<String> values = new HashSet<>();
@@ -174,16 +218,41 @@ class SkyWalkingIdentityContractTest {
     }
 
     private static String mainContainerAgentName(Map<String, Object> deployment) {
+        return mainContainerEnv(deployment).get("SW_AGENT_NAME");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> mainContainerEnv(Map<String, Object> deployment) {
         Map<String, Object> template = castMap(castMap(deployment.get("spec")).get("template"));
-        Map<String, Object> spec = castMap(template.get("spec"));
-        List<Object> containers = (List<Object>) spec.get("containers");
-        for (Object container : containers) {
+        Map<String, Object> podSpec = castMap(template.get("spec"));
+        Object containers = podSpec.get("containers");
+        if (!(containers instanceof List<?> list)) {
+            throw new AssertionError("Deployment 缺少 containers 列表：" + deployment.get("metadata"));
+        }
+        for (Object container : list) {
             Map<String, String> env = environmentValues(container);
             if (env.containsKey("SPRING_PROFILES_ACTIVE")) {
-                return env.get("SW_AGENT_NAME");
+                return env;
             }
         }
-        return null;
+        throw new AssertionError("没有主容器声明 SPRING_PROFILES_ACTIVE，无法定位应用容器："
+                + castMap(deployment.get("metadata")).get("name"));
+    }
+
+    /** k8s/services 下的 16 个 Deployment 文档。 */
+    private static List<Map<String, Object>> k8sDeployments() throws IOException {
+        List<Map<String, Object>> result = new ArrayList<>();
+        try (var stream = Files.list(ROOT.resolve("k8s").resolve("services"))) {
+            for (Path manifest : stream.sorted().toList()) {
+                for (Object document : new Yaml().loadAll(read(manifest))) {
+                    Map<String, Object> doc = castMap(document);
+                    if ("Deployment".equals(doc.get("kind"))) {
+                        result.add(doc);
+                    }
+                }
+            }
+        }
+        return result;
     }
 
     /**

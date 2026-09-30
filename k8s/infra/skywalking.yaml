@@ -1,0 +1,141 @@
+# SkyWalking OAP 10.1 —— 链路分析平台（接收 agent gRPC 上报，向 ES 写 Trace/Topology）
+# 端口：11800 (agent gRPC 上报)，12800 (HTTP 查询，供 UI 使用)
+# 存储复用 k8s/infra/elasticsearch-statefulset.yaml 的 elasticsearch 服务。
+#
+# 与业务侧的契约：应用镜像的 SW_AGENT_COLLECTOR_BACKEND_SERVICES 必须指向
+# skywalking-oap.amz-erp.svc.cluster.local:11800，由 SkyWalkingIdentityContractTest 双向核对
+# （清单改名/漏端口会让 agent 静默连不上、日志 traceId 退化为 Ignored_Trace）。
+apiVersion: v1
+kind: Service
+metadata:
+  name: skywalking-oap
+  namespace: amz-erp
+  labels:
+    app: skywalking-oap
+    tier: observability
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 11800
+      targetPort: 11800
+      protocol: TCP
+    - name: rest
+      port: 12800
+      targetPort: 12800
+      protocol: TCP
+  selector:
+    app: skywalking-oap
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skywalking-oap
+  namespace: amz-erp
+  labels:
+    app: skywalking-oap
+    tier: observability
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: skywalking-oap
+  template:
+    metadata:
+      labels:
+        app: skywalking-oap
+        tier: observability
+    spec:
+      containers:
+        - name: oap
+          image: apache/skywalking-oap-server:10.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 11800
+              protocol: TCP
+            - name: rest
+              containerPort: 12800
+              protocol: TCP
+          env:
+            - { name: SW_STORAGE, value: elasticsearch }
+            - { name: SW_STORAGE_ES_CLUSTER_NODES, value: elasticsearch.amz-erp.svc.cluster.local:9200 }
+            - { name: SW_CORE_GRPC_PORT, value: "11800" }
+            - { name: SW_CORE_REST_PORT, value: "12800" }
+            # 默认 4320 分钟保留；单节点验证环境收窄，避免 ES 无界增长
+            - { name: SW_RECORD_DATA_TTL, value: "7" }
+            - { name: SW_METRICS_DATA_TTL, value: "14" }
+            - { name: SW_TRACE_DATA_TTL, value: "7" }
+            - { name: TZ, value: Asia/Shanghai }
+          resources:
+            requests: { cpu: "500m", memory: "1Gi" }
+            limits: { cpu: "1500m", memory: "2Gi" }
+          readinessProbe:
+            tcpSocket: { port: 12800 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket: { port: 12800 }
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skywalking-ui
+  namespace: amz-erp
+  labels:
+    app: skywalking-ui
+    tier: observability
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: skywalking-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skywalking-ui
+  namespace: amz-erp
+  labels:
+    app: skywalking-ui
+    tier: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: skywalking-ui
+  template:
+    metadata:
+      labels:
+        app: skywalking-ui
+        tier: observability
+    spec:
+      containers:
+        - name: ui
+          image: apache/skywalking-ui:10.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - { name: SW_OAP_ADDRESS, value: http://skywalking-oap.amz-erp.svc.cluster.local:12800 }
+            - { name: TZ, value: Asia/Shanghai }
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "500m", memory: "512Mi" }
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3

@@ -36,6 +36,7 @@ spec:
           env:
             - { name: SPRING_PROFILES_ACTIVE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPRING_PROFILES_ACTIVE } } }
             - { name: SW_AGENT_NAME, value: amz-service-message }
+            - { name: SW_AGENT_COLLECTOR_BACKEND_SERVICES, value: skywalking-oap.amz-erp.svc.cluster.local:11800 }
             - { name: NACOS_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } } }
             - { name: RABBITMQ_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_HOST } } }
             - { name: RABBITMQ_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: RABBITMQ_PORT } } }

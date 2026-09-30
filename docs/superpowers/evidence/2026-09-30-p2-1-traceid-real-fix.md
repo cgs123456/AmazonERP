@@ -114,7 +114,7 @@ java -jar amz-service/amz-service-message/target/amz-service-message-1.0-SNAPSHO
 | 跨服务上下文传播 | **已证成立**，但见下行 | §10.3：callee 侧 id 携带 caller 的 agent uuid，而它自己直连 trace 前缀不同 |
 | 两侧 `%tid` 可精确字符串 join | **不成立** | §10.3 判定 2：下游渲染的段号/时间是本地分量。交接的验收写法需在 OAP 侧关联或改用本段 id，另立决策 |
 | 生产 compose 栈真带 agent 起服务 | **已用派生镜像验证 ENTRYPOINT** | §10.2；仓库 Dockerfile 的完整重建仍被容器侧死代理阻塞（§10.1），未覆盖 |
-| k8s 侧 traceId 可用 | **未证且当前不可能** | `k8s/` 无任何 SkyWalking OAP 清单；只声明了服务身份，采集端待接 |
+| k8s 侧 traceId 可用 | **清单与地址已接线，运行时未证** | §10.5：新增 OAP/UI 清单 + 16 个 collector 回填 + 跨文件契约；未在集群 apply，镜像也未拉取过 |
 | hygiene 门禁 | 已回到 rc=0（改动前为 1，触发点 `DeploymentManifestContractTest.java:228`） | `python tools/release/repository_hygiene.py --root .` |
 
 ## 8. 遗留与后续建议
@@ -215,6 +215,16 @@ tar xzf agent-9.7.0.tgz && find skywalking-agent -name '._*' -delete
 # caller 侧指定下游：-Dspring.cloud.discovery.client.simple.instances.amz-service-order[0].uri=http://<callee>:8105
 # 容器内绝对路径命令需 MSYS_NO_PATHCONV=1，否则 /app/... 会被重写成 C:/Program Files/Git/app/...
 ```
+
+### 10.5 后续项4：k8s 采集端清单与 collector 回填
+
+| 内容 | 说明 |
+|---|---|
+| 新增 `k8s/infra/skywalking.yaml` | `skywalking-oap`（Service + Deployment，11800 gRPC / 12800 REST，`SW_STORAGE=elasticsearch` 指向既有 `elasticsearch` 服务，TTL 收窄为 7/14/7 天防单节点 ES 无界增长）＋ `skywalking-ui`（`SW_OAP_ADDRESS` 指向 OAP REST） |
+| 16 个应用 Deployment | 回填字面 `SW_AGENT_COLLECTOR_BACKEND_SERVICES=skywalking-oap.amz-erp.svc.cluster.local:11800`。不放 ConfigMap：`kubernetesReferencesResolveExactlyToDeclaredConfigAndSecretKeys` 要求 configData 与引用双向相等，且逐环境/逐服务的寻址值不该塞进共享配置。compose 侧无需该变量：镜像默认 `skywalking-oap:11800` 已与 compose 服务名一致 |
+| 新契约 `k8sApplicationsPointAtTheDeclaredOapService` | 跨文件核对"应用写死的地址 == OAP Service 声明的名字与 grpc 端口"。这正是本轮反复遇到的失效类型：地址写错时 agent 连不上，日志静默变 `Ignored_Trace`，服务本身毫无报错 |
+| 反向验证 | grpc 端口改 11999 → 1 红；某服务地址改成短名 `skywalking-oap:11800` → 1 红；还原 → 32/32 绿（identity 6 + placeholder 2 + deployment 10 + observability 14） |
+| **证明级别** | 仅静态 YAML 解析 + 契约测试。**未在真实集群 apply 过**；且容器侧代理失效导致 `apache/skywalking-oap-server:10.1.0` / `skywalking-ui` / ES 镜像能否拉取、OAP 能否启动、ES 存储是否被接受均**未证**。操作前置：ES StatefulSet 必须先于 OAP 就绪 |
 
 ## 11. 验证命令（接手者可直接复跑）
 

@@ -60,6 +60,7 @@ spec:
           env:
             - { name: SPRING_PROFILES_ACTIVE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPRING_PROFILES_ACTIVE } } }
             - { name: SW_AGENT_NAME, value: amz-service-finance }
+            - { name: SW_AGENT_COLLECTOR_BACKEND_SERVICES, value: skywalking-oap.amz-erp.svc.cluster.local:11800 }
             - { name: NACOS_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } } }
             - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }
             - { name: MYSQL_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } } }

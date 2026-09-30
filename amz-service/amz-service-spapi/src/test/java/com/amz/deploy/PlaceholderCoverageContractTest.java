@@ -81,6 +81,9 @@ class PlaceholderCoverageContractTest {
             k8sAllowed.add("TZ");
             k8sAllowed.add(module.equals("amz-gateway") ? "JAVA_OPTS_GATEWAY" : "JAVA_OPTS");
             k8sAllowed.add("SW_AGENT_NAME");
+            // collector 地址是 agent 侧变量，代码里不读它；k8s 需要 FQDN 而 compose 用镜像默认的服务名，
+            // 故只加进 k8s 允许集。取值与 OAP Service 的一致性由 SkyWalkingIdentityContractTest 核对。
+            k8sAllowed.add("SW_AGENT_COLLECTOR_BACKEND_SERVICES");
             Set<String> k8sActual = k8sEnvironments.get(module);
             assertTrue(k8sActual != null, "K8s 缺少 Deployment：" + module);
             assertEquals(k8sAllowed, k8sActual,
