@@ -125,7 +125,49 @@ JDK 自带 `HttpServer` 起桩（**不引 WireMock**，离线构建可用、不�
 | 门禁 | `python tools/release/repository_hygiene.py --root .` | rc=0，findings=0 |
 | 换行符 | 26 个改动/新增文件逐字节统计 | CRLF 计数全为 0（`.gitattributes` 要求 `*.java text eol=lf`） |
 
-## 5. 已证 / 未证
+## 5. 费率数据的实测更正（项 10）
+
+上一份文档说"演示库里没有费率行，要拿 `source=real` 得先造数据"。实测两点都不成立：
+
+```
+docker exec amz-mysql mysql amz_order -e "SELECT COUNT(*) FROM amz_fba_fee_table"   → 32
+docker exec amz-mysql mysql amz_order -e "SELECT size_tier, MIN(weight_g), MAX(weight_g) ... GROUP BY size_tier"
+→ 32 行全是 SYN-size-tier-0000NN，weight_g 仅取 0/1/2/5，每行一行一档
+```
+
+即：**行是有的，缺的是真实档名**。所以按 `standard` 查返回 `data:null` 是正当业务空值，
+按现存的夹具档名查就能拿到真实负载。当日实采（只读 GET，未向演示库写任何数据）：
+
+```
+GET :8105/order/fees/lookup?sizeTier=SYN-size-tier-000006&weight=1     HTTP 200
+{"data":{"storageFeePerMonth":1514.57,"sizeTier":"SYN-size-tier-000006","weightG":5,
+ "fulfillmentFee":7306.31,"region":"SYN-region-000006"},
+ "message":"操作成功","code":200,"_hiddenFields":null}
+
+GET :8105/order/fees/lookup?sizeTier=standard&weight=100000            HTTP 200
+{"data":null,"message":"操作成功","code":200,"_hiddenFields":null}
+```
+
+两条都按字节喂给了 §3.3 的桩（信封字段顺序与 `_hiddenFields` 一并保留）。
+这条更正的实际后果：**"看到 `source=real`"不是数据缺口，不需要谁往演示库里插行**；
+真正的缺口是夹具档名与业务档名对不上，属数据规范化范畴（另议）。
+
+## 6. 项 3 的 CI 步骤本地逐条执行
+
+CI 的 `runtime-smoke` job 此前只有它自己的单测跑过（9/9），命令行本身没端到端跑过。
+本轮按 job 里的三步逐条执行（Windows，同 jar、同参数）：
+
+| 步骤 | 命令 | 结果 |
+|---|---|---|
+| 1 | `python -m unittest tools.ci.test_runtime_smoke` | rc=0，Ran 9 tests，OK |
+| 2 | `mvn -B -o -pl amz-service/amz-service-message -am package -DskipTests` | rc=0，BUILD SUCCESS（jar 123MB，由终态 `clean verify` 产出） |
+| 3 | `python tools/ci/runtime_smoke.py --jar ... --timeout 150 --dump-log ...` | rc=0，`RUNTIME_SMOKE PASS` |
+
+dump 出来的启动日志（118 行）里 **48 行带 `[TID: N/A]`**，`Started AmzNettyApplication in ...` 出现，
+`Failed to instantiate` / `Logback configuration error` / `APPLICATION FAILED TO START` 均 0 次——
+即 P0 的修复在"打包产物 + 无中间件"这条 CI 形状上也成立，不只是在 IDE/单测里成立。
+
+## 7. 已证 / 未证
 
 已证：
 - 20/20 工厂改造后全仓编译通过（各模块 test-compile + 单测在 verify 里）。
@@ -146,7 +188,7 @@ JDK 自带 `HttpServer` 起桩（**不引 WireMock**，离线构建可用、不�
   这条链路本轮没有新证明，但它与 `fetchShopSales`/`fetchDailyRevenueFromOrders`
   走的是同一个方法、同一个拦截器，不是新增风险面。
 
-## 6. 环境陷阱（会误导下一个接手者）
+## 8. 环境陷阱（会误导下一个接手者）
 
 `~/.m2/repository/com/amz/amz-common/1.0-SNAPSHOT/amz-common-1.0-SNAPSHOT.jar` 是 **9 月 28 日 19:08**
 装的旧包，里面 `Result.class` 只有两个带参构造器、**没有默认构造器**（`javap` 实测）。
@@ -156,7 +198,7 @@ JDK 自带 `HttpServer` 起桩（**不引 WireMock**，离线构建可用、不�
 `OrderServiceFeignDecodeIT` 全红，报的正是"没修之前的故障"——看起来像修复失效，实际是在测旧字节码。
 带上 `-am` 后 3/3 绿。**接手者请一律加 `-am`**，或先 `mvn -pl amz-common install`。
 
-## 7. 复跑命令
+## 9. 复跑命令
 
 ```bash
 # 跨服务编解码往返（必须 -am，见 §6）

@@ -52,7 +52,16 @@ class OrderServiceFeignDecodeIT {
     private static final AtomicReference<String> LAST_REQUEST = new AtomicReference<>();
     private static OrderServiceFeignClient client;
 
-    /** 桩侧费率表：与 order 侧一致，按 sizeTier 分组，入参 weight 命中 weight_g &gt;= 入参 的最小档。 */
+    /**
+     * 桩侧费率表。
+     * <p>
+     * 载荷字段集合与信封字段顺序取自 2026-09-30 对运行中的 order 服务的实采响应
+     * （{@code GET /order/fees/lookup?sizeTier=SYN-size-tier-000006&weight=1} → HTTP 200）：
+     * {@code {"data":{"storageFeePerMonth":..,"sizeTier":..,"weightG":..,"fulfillmentFee":..,"region":..},
+     * "message":"操作成功","code":200,"_hiddenFields":null}}。
+     * 之所以要按实采形状来写：本类守的正是"真实响应读不读得回来"，
+     * 自己臆造的响应体只能证明我的想象能被解码。
+     */
     private static final Map<String, List<Map<String, Object>>> FEE_TABLES = Map.of(
             "standard", List.of(
                     feeRow("standard", 460, 3.21, 0.55),
@@ -71,11 +80,7 @@ class OrderServiceFeignDecodeIT {
                     .filter(row -> ((Number) row.get("weightG")).intValue() >= weight)
                     .min(Comparator.comparingInt(row -> ((Number) row.get("weightG")).intValue()))
                     .orElse(null);
-            Map<String, Object> envelope = new LinkedHashMap<>();
-            envelope.put("code", 200);
-            envelope.put("message", "操作成功");
-            envelope.put("data", hit);
-            byte[] bytes = json.writeValueAsString(envelope).getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = json.writeValueAsString(envelope(hit)).getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json;charset=UTF-8");
             exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
@@ -115,6 +120,9 @@ class OrderServiceFeignDecodeIT {
         assertNotNull(data, "data 段必须存在，否则调用方会误判为'对端没配费率'并静默降级");
         assertEquals(3.94, ((Number) data.get("fulfillmentFee")).doubleValue(), 1e-9);
         assertEquals(2100, ((Number) data.get("weightG")).intValue());
+        assertEquals(0.87, ((Number) data.get("storageFeePerMonth")).doubleValue(), 1e-9);
+        assertNull(result.getHiddenFields(),
+                "线上响应总带 _hiddenFields（无字段过滤时为 null），必须能读回而不是当成未知字段炸掉");
     }
 
     @Test
@@ -141,14 +149,24 @@ class OrderServiceFeignDecodeIT {
         assertTrue(observed.contains("weight=2100"), "weight 未随查询参数发出：" + observed);
     }
 
+    /** 与实采响应同构的信封：字段顺序与 {@code _hiddenFields} 都按线上字节保留。 */
+    private static Map<String, Object> envelope(Object data) {
+        Map<String, Object> resp = new LinkedHashMap<>();
+        resp.put("data", data);
+        resp.put("message", "操作成功");
+        resp.put("code", 200);
+        resp.put("_hiddenFields", null);
+        return resp;
+    }
+
     private static Map<String, Object> feeRow(String sizeTier, int weightG,
                                               double fulfillmentFee, double storageFeePerMonth) {
         Map<String, Object> row = new LinkedHashMap<>();
+        row.put("storageFeePerMonth", storageFeePerMonth);
         row.put("sizeTier", sizeTier);
         row.put("weightG", weightG);
-        row.put("region", "us");
         row.put("fulfillmentFee", fulfillmentFee);
-        row.put("storageFeePerMonth", storageFeePerMonth);
+        row.put("region", "us");
         return row;
     }
 

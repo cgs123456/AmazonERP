@@ -92,6 +92,13 @@ cannot deserialize from Object value (no delegate- or property-based Creator)
 `{code:200, data:null}`（没有匹配的费率行），这是正当的业务降级，不是本缺陷。要拿 `source=real`
 需要造数据，属另一件事（本轮刻意不向在跑的演示库写数据）。
 
+> **同日晚间更正（见 `2026-09-30-p1-degradation-visibility-and-order-count.md` §3.4）**：
+> 上面这段的成因写错了。实采 `amz_order.amz_fba_fee_table` 共 **32 行**，只是档名全是合成夹具
+> （`SYN-size-tier-0000NN`，weight_g 只有 0/1/2/5），所以用真实档名 `standard` 查必然 `data:null`。
+> 用现存的夹具档名查，当天就拿到了 `source=real` 同形的响应（`{...,"weightG":5,
+> "fulfillmentFee":7306.31,...}`）——**不需要造数据**，需要的是按库里实际存在的档名查询。
+> "本轮不向演示库写数据"这个约束仍然有效，也不该被绕过：真要的是将档名规范化的迁移，而不是塞行。
+
 ## 7. 遗留建议
 
 1. **fallback 把故障藏得太深**：20 个 `fallbackFactory` 都只 `log.warn("…cause={}", cause.getMessage())`，
