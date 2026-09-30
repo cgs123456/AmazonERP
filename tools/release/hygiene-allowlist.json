@@ -14,7 +14,7 @@
     {
       "path": "amz-common/src/main/java/com/amz/interceptor/BaseAuthInterceptor.java",
       "rule": "secret-like-assignment",
-      "sha256": "758a5fcf658a4393c4e62bf03ed5a8cf9d0c06ed278629486e3e3f1b166a494d"
+      "sha256": "84fc8d20ccc0529863a4f0440e26a4ea733b1a7e57c9c01f15052cee83b553e7"
     },
     {
       "path": "amz-common/src/main/java/com/amz/lock/DistributedJobLock.java",
