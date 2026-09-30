@@ -52,6 +52,12 @@ import static org.junit.jupiter.api.Assertions.fail;
  * 本测试在独立的 {@link LoggerContext} 里装配真实配置文件，因此不会污染同 JVM 内其它测试的日志状态：
  * {@code <springProfile>}／{@code <springProperty>} 的 Environment 由构造器注入，
  * {@code <conversionRule>} 注册在 context 作用域的对象表里。
+ * <p>
+ * 本类刻意放在 {@code org.springframework.boot.logging.logback} 包下而不是 com.amz：
+ * {@code SpringBootJoranConfigurator} 是 package-private 的，只有同包才能直接构造它，
+ * 从而在不触碰全局 LoggerContext 的前提下复刻 Boot 的真实装配路径。
+ * 把它移回 com.amz 包会退化成"改用 public 的 LogbackLoggingSystem"，那会重置全局日志上下文，
+ * 影响同 JVM 内本模块其它测试。
  */
 class AmzLogbackConfigContractTest {
 
@@ -110,13 +116,13 @@ class AmzLogbackConfigContractTest {
             layout.start();
             String rendered = layout.doLayout(event(context, Level.INFO, "probe", null));
             layout.stop();
-            assertEquals("[TID: N/A]", rendered,
+            assertEquals("[" + NO_AGENT_TRACE_TEXT + "]", rendered,
                     "%traceId 未解析成 SkyWalking 降级常量。装配出错的 converter 会输出空串，"
                             + "这正是上一次把\"traceId 已修复\"当成事实采信时看不到的信号");
 
             String line = encodeConsole(context, event(context, Level.ERROR, "boom",
                     new IllegalStateException("synthetic")) );
-            assertTrue(line.contains("[TID: N/A]"), "文本控制台缺少降级 traceId：" + line);
+            assertTrue(line.contains("[" + NO_AGENT_TRACE_TEXT + "]"), "文本控制台缺少降级 traceId：" + line);
             assertTrue(line.contains("\tat "), "文本控制台没有打印异常堆栈（%wEx 未生效）：" + line);
             return null;
         });

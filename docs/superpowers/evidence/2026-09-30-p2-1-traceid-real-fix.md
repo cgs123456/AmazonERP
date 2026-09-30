@@ -131,6 +131,7 @@ java -jar amz-service/amz-service-message/target/amz-service-message-1.0-SNAPSHO
 | spapi 套件 | 同上（模块内） | 647 tests，0 失败，4 skipped（MySQL 依赖 IT 缺环境变量自动跳过） |
 | 已知环境性红灯 | `DeepSeekAgentConfigurationContractTest` | **3/3 通过 —— 交接 §4.3 记录的 Windows 红灯在本次未复现**，所以本终态无需豁免任何 pre-existing 失败 |
 | 门禁 | `python tools/release/repository_hygiene.py --root .` | rc=0（本轮改动前为 rc=1） |
+| 发布清单 | `release_manifest.py build` + `verify`（对齐 ci.yml 的占位 digest 形式） | 均 rc=0，输出写在仓库外，工作树保持干净 |
 | 门禁工具自测 | `python -m unittest tools.release.test_*`（7 个模块） | Ran 88 tests，rc=0 |
 | Checkstyle | `checkstyle-critical.xml` / `google_checks.xml` | 均 rc=0 |
 | 文本分支运行时 | mock profile 起 fat jar | 39 行 `[TID: N/A]`，`Failed to instantiate`/`Logback configuration error` 计数 0 |
@@ -139,6 +140,8 @@ java -jar amz-service/amz-service-message/target/amz-service-message-1.0-SNAPSHO
 | ENTRYPOINT 逻辑 | 真实镜像 dash 内用函数替换 `java` 回放同一段脚本 | 三种情形均正确：旧 `.env` 残留 `-javaagent` 被去重（agent 只出现一次）；compose 传空 `JAVA_OPTS` 仍挂 agent；`SW_AGENT_OPTS=` 可干净关闭 |
 | 反向验证（新闸） | 注回历史故障 / provider 类名打错 | `AmzLogbackConfigContractTest`：4/4 绿 → 注回 `TraceIdConverter` **3 红** → provider 打错 **2 红** → 还原 4/4 绿 |
 | 反向验证（身份闸） | 把 `-javaagent` 塞回 `JAVA_OPTS` / 删 gateway 的 `SW_AGENT_NAME` | `SkyWalkingIdentityContractTest`：5/5 绿 → **各 1 红** → 还原 5/5 绿 |
+
+提交后自审修正两处（不影响结论，属质量项）：`NO_AGENT_TRACE_TEXT` 声明后未被引用，已改为在断言中实际使用；测试类刻意位于 `org.springframework.boot.logging.logback` 包（Boot 的 `SpringBootJoranConfigurator` 是 package-private），该理由已补进类 javadoc，防止后来者"顺手搬回 com.amz 包"而退化成重置全局 LoggerContext。
 
 ## 10. 验证命令（接手者可直接复跑）
 
