@@ -259,8 +259,12 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
             throw new CodeErrorException("货件无明细，无法分摊费用");
         }
 
-        // 计算总数量用于按比例分摊
-        int totalQty = items.stream().mapToInt(FbaShipmentItem::getQuantity).sum();
+        // 计算总数量用于按比例分摊。
+        // quantity 允许为 null（同文件 :115 与 :335 都已按 null 处理过），mapToInt 直接拆箱会 NPE，
+        // 一条脏明细就会让整个 allocateCosts 事务回滚。
+        int totalQty = items.stream()
+                .mapToInt(item -> item.getQuantity() == null ? 0 : item.getQuantity())
+                .sum();
         if (totalQty <= 0) {
             throw new CodeErrorException("货件总数量为0，无法分摊费用");
         }
@@ -274,6 +278,12 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
         List<Map<String, Object>> allocationDetails = new ArrayList<>();
 
         for (FbaShipmentItem item : items) {
+            // 数量缺失或非正的明细行不参与分摊：ratio 会变成 0，unitCost 那一步会除以 0 抛
+            // ArithmeticException（totalQty>0 时这一行仍然进得来），整批分摊一起回滚。
+            if (item.getQuantity() == null || item.getQuantity() <= 0) {
+                log.warn("货件明细数量缺失或非正，跳过费用分摊：sku={} quantity={}", item.getSku(), item.getQuantity());
+                continue;
+            }
             BigDecimal ratio = BigDecimal.valueOf(item.getQuantity())
                     .divide(BigDecimal.valueOf(totalQty), 6, RoundingMode.HALF_UP);
 

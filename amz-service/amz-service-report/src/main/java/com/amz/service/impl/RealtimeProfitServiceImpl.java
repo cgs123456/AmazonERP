@@ -499,7 +499,10 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
                         total = total.add(new BigDecimal(val.toString()));
                     }
                 } catch (Exception e) {
-                    log.debug("解析成本分摊详情失败：shopId={} sku={} error={}", shopId, sku, e.getMessage());
+                    // 用 debug 等于瞒报：这一行的头程成本被静默丢掉，SKU 利润被系统性高估，
+                    // 而生产默认日志级别下没人看得见。同方法上方对"明细被截断"已经是 WARN，此处对齐。
+                    log.warn("解析成本分摊详情失败，该条分摊金额未计入：shopId={} sku={} error={}",
+                            shopId, sku, e.toString());
                 }
             }
         }
