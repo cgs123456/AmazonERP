@@ -212,11 +212,6 @@
       "sha256": "f8b8aebf2a2d128e2c45387bddf504399b421ac7b17f3faa0d81abd3d7f73677"
     },
     {
-      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/DeploymentManifestContractTest.java",
-      "rule": "secret-like-assignment",
-      "sha256": "e9bcb54c984948a59114a149af59c7fce54701324c4483f20e6382c1fce9efcc"
-    },
-    {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/integration/SpApiIntegrationTest.java",
       "rule": "secret-like-assignment",
       "sha256": "d46ad0f1b33728f3585ebdeab3abc370c768f223da2c9e313c161173b73ca045"

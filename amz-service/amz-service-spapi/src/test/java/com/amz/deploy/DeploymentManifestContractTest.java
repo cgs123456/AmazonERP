@@ -61,6 +61,8 @@ class DeploymentManifestContractTest {
         Map<String, String> prod = envValues(ROOT.resolve(".env.example"));
         Map<String, String> demo = envValues(ROOT.resolve(".env.demo.example"));
         assertEquals("prod", prod.get("SPRING_PROFILES_ACTIVE"));
+        assertFalse(prod.get("SPRING_PROFILES_ACTIVE").contains("log-json"),
+                ".env.example 默认 profile 不得内置 log-json：结构化日志只能是显式 opt-in");
         assertEquals("mock", demo.get("SPRING_PROFILES_ACTIVE"));
         assertEquals("true", prod.get("SPAPI_REQUIRE_CREDENTIALS"));
         assertEquals("false", demo.get("SPAPI_REQUIRE_CREDENTIALS"));
@@ -225,19 +227,19 @@ class DeploymentManifestContractTest {
 
     @Test
     void deploymentSecretsAreStructurallyValidPlaceholders() throws IOException {
-        Map<String, String> secret = yamlData(ROOT.resolve("k8s/secret.yaml"));
-        byte[] cryptoKey = Base64.getDecoder().decode(secret.get("AMZ_CRYPTO_KEY"));
-        byte[] jwtKey = Base64.getDecoder().decode(secret.get("JWT_SECRET_KEY"));
+        Map<String, String> secretDocument = yamlData(ROOT.resolve("k8s/secret.yaml"));
+        byte[] cryptoKey = Base64.getDecoder().decode(secretDocument.get("AMZ_CRYPTO_KEY"));
+        byte[] jwtKey = Base64.getDecoder().decode(secretDocument.get("JWT_SECRET_KEY"));
         assertEquals(32, cryptoKey.length, "AMZ_CRYPTO_KEY base64 解码后必须恰好 32 字节");
         assertTrue(jwtKey.length >= 32, "JWT_SECRET_KEY 解码后至少 32 字节");
         for (String key : MANDATORY_SECRET_PLACEHOLDERS) {
-            byte[] value = Base64.getDecoder().decode(secret.get(key));
+            byte[] value = Base64.getDecoder().decode(secretDocument.get(key));
             assertTrue(new String(value, StandardCharsets.UTF_8).startsWith("CHANGE_ME_"),
                     key + " 必须保持不可直接用于生产的 CHANGE_ME_ 占位");
         }
-        assertTrue(secret.containsKey("AWS_ACCESS_KEY"));
-        assertTrue(secret.containsKey("DEEPSEEK_API_KEY"));
-        assertTrue(secret.containsKey("KEEPA_API_KEY"));
+        assertTrue(secretDocument.containsKey("AWS_ACCESS_KEY"));
+        assertTrue(secretDocument.containsKey("DEEPSEEK_API_KEY"));
+        assertTrue(secretDocument.containsKey("KEEPA_API_KEY"));
     }
 
     @Test
@@ -263,8 +265,9 @@ class DeploymentManifestContractTest {
             Map<String, Object> body = castMap(value);
             Map<String, String> env = environmentValues(body.get("environment"));
             if (env.containsKey("SPRING_PROFILES_ACTIVE")) {
-                assertTrue(env.get("SPRING_PROFILES_ACTIVE").contains("prod"),
-                        "Compose 业务服务的 profile 必须显式落到 prod");
+                assertEquals("${SPRING_PROFILES_ACTIVE:-prod}", env.get("SPRING_PROFILES_ACTIVE"),
+                        "Compose 业务服务的默认 profile 必须是纯 prod（文本日志）；"
+                                + "log-json 会整体改变 16 个服务的 stdout 形态，只能显式 opt-in");
                 checked++;
             }
         }
