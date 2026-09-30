@@ -72,8 +72,15 @@ Medium：`RealtimeProfitServiceImpl` 分摊解析失败仅 `log.debug` 跳过（
 6 处前置通配 `LIKE '%x%'`。
 
 Low：AI 侧金额用 `double` 累加后展示（同文件另一处又用 BigDecimal，口径不一）；
-`NumberUtil` 注释承诺"并发不重复"但同毫秒 1/9000 碰撞；请求路径 `Pattern.compile` / `new ObjectMapper`；
-~12 处循环单行 insert 应批量；4 份字节相同的 `RedisConfig`。
+请求路径 `Pattern.compile` —— **`SearchTermServiceImpl.extractRoots` 已提为静态常量**，
+但调查通道并列的 `OrderAuditServiceImpl` 那处**复核后不成立**：它编译的是店铺管理员
+写在规则里的正则（每次的 pattern 值不同），无法提取为常量，只能考虑加缓存（未做，见下）；
+~12 处循环单行 insert 应批量；4 份字节相同的 `RedisConfig`；
+`NumberUtil.getNumber` 注释承诺"保证并发不重复"—— 已按实测改掉（同毫秒约 1/9000 碰撞，
+且**全仓零调用方**，是否删类请所有者定）。
+
+未做而有理由的：`Pattern` 缓存（无界增长风险，需配 LRU 与失效策略，单独评估）、
+`new ObjectMapper()` 5 处（应由 Spring 注入统一实例，牵扯多个类的构造改动，与性能三项一起排）。
 
 ## 6. 自审（双轴）
 

@@ -53,6 +53,10 @@ public class SearchTermServiceImpl implements SearchTermService {
     private static final BigDecimal LOW_CR = new BigDecimal("3");
     private static final long WASTE_IMPRESSION_THRESHOLD = 1000;
 
+    /** 词根提取的固定模式：提到常量，避免每次分析都重新编译（一词一行地在循环里调用本方法）。 */
+    private static final java.util.regex.Pattern WORD_ROOT_PATTERN =
+            java.util.regex.Pattern.compile("[a-zA-Z]{3,}");
+
     /** 单次数据库扫描/写入块大小，与列表分页硬上限保持一致。 */
     private static final int BATCH_SIZE = PageRequest.MAX_SIZE;
 
@@ -518,8 +522,7 @@ public class SearchTermServiceImpl implements SearchTermService {
         if (searchTerm == null || searchTerm.isBlank()) {
             return Collections.emptyList();
         }
-        Pattern pattern = Pattern.compile("[a-zA-Z]{3,}");
-        Matcher matcher = pattern.matcher(searchTerm.toLowerCase());
+        Matcher matcher = WORD_ROOT_PATTERN.matcher(searchTerm.toLowerCase());
         List<String> roots = new ArrayList<>();
         while (matcher.find()) {
             roots.add(matcher.group());
