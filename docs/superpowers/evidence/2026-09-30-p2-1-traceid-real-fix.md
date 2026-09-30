@@ -4,7 +4,9 @@
 > 本文推翻两份既有结论：`2026-09-30-p2-1-tracing-traceid-fix.md` 的"traceId 修复可用"，以及
 > `2026-09-30-p2-1-json-log-handoff.md` §4.2 的"JSON 运行时冒烟可输出、服务在跑"。
 > 本轮把 traceId 修到真实可用（含部署层 agent 挂载），并补上能抓住这类故障的 hermetic 契约测试与反向验证。
-> **P2-1 仍未完成**：跨服务同 id 未证，k8s 侧还没有 OAP。见 §7。
+> **P2-1 仍不能标完成**，但未证项已收敛为两条：① 跨服务**关联链复核需要 OAP**（传播本身已在 §10.3 实测成立）；
+> ② 实测发现两侧 `%tid` 不逐字相同，交接文档"两服务取到相同 traceId"这条验收写法在 agent 9.7.0 下不成立，需修正。
+> 另外 k8s 侧仍无采集端；仓库 Dockerfile 的完整重建受容器侧死代理阻塞（§10.1），ENTRYPOINT 语义已用派生镜像验证（§10.2）。
 
 ## 1. P0 定级证据（RED 基线）
 
@@ -109,8 +111,9 @@ java -jar amz-service/amz-service-message/target/amz-service-message-1.0-SNAPSHO
 | `log-json` 分支输出可解析 JSON 且带 `service` | **已证** | 39/39 行解析成功，`service` = 应用名 |
 | fat jar 嵌套类加载器下 agent 增强生效 | **已证** | §3 的 in-span 真实 id（`amazonerp-user:verify` 镜像内 agent + 新 jar，`SW_AGENT_KEEP_TRACING=true`） |
 | M1/M2/M3 的降级值与 key 形状 | **已证** | §3 表 + 字节码 |
-| **跨服务同一请求取到相同 traceId** | **未证** | 本轮按决策只跑单服务、不起 OAP/ES；未做两服务链路串联 |
-| 生产 compose 栈真带 agent 起服务 | **未证** | 未重建镜像（决策：不动在跑的 mock 栈）；`ENTRYPOINT`/去重/`SW_LOGGING_DIR` 仅有静态契约保护 |
+| 跨服务上下文传播 | **已证成立**，但见下行 | §10.3：callee 侧 id 携带 caller 的 agent uuid，而它自己直连 trace 前缀不同 |
+| 两侧 `%tid` 可精确字符串 join | **不成立** | §10.3 判定 2：下游渲染的段号/时间是本地分量。交接的验收写法需在 OAP 侧关联或改用本段 id，另立决策 |
+| 生产 compose 栈真带 agent 起服务 | **已用派生镜像验证 ENTRYPOINT** | §10.2；仓库 Dockerfile 的完整重建仍被容器侧死代理阻塞（§10.1），未覆盖 |
 | k8s 侧 traceId 可用 | **未证且当前不可能** | `k8s/` 无任何 SkyWalking OAP 清单；只声明了服务身份，采集端待接 |
 | hygiene 门禁 | 已回到 rc=0（改动前为 1，触发点 `DeploymentManifestContractTest.java:228`） | `python tools/release/repository_hygiene.py --root .` |
 
@@ -143,7 +146,77 @@ java -jar amz-service/amz-service-message/target/amz-service-message-1.0-SNAPSHO
 
 提交后自审修正两处（不影响结论，属质量项）：`NO_AGENT_TRACE_TEXT` 声明后未被引用，已改为在断言中实际使用；测试类刻意位于 `org.springframework.boot.logging.logback` 包（Boot 的 `SpringBootJoranConfigurator` 是 package-private），该理由已补进类 javadoc，防止后来者"顺手搬回 com.amz 包"而退化成重置全局 LoggerContext。
 
-## 10. 验证命令（接手者可直接复跑）
+## 10. 后续项实测（同日续）
+
+### 10.1 环境约束：Docker 侧网络被死代理挡住
+
+Docker Desktop 被配置为走系统 HTTPS 代理 `127.0.0.1:7897`，而该代理当前未运行：
+`docker pull` 与构建期 `ADD https://archive.apache.org/...` 均报
+`connectex: No connection could be made because the target machine actively refused it`。
+宿主机自身直连正常（`curl` 取 archive.apache.org 返回 200）。后果与处置：
+
+- 仓库 `Dockerfile` 的**完整重建本轮不可验证**（`apt-get`、基础镜像 pull、agent `ADD` 都要网络）。
+- 权威 agent 9.7.0 改由宿主机下载：45,958,841 字节，sha256 前缀 `b5de2f7e`，解出 202 个 jar。
+  顺带证实官方 tgz **自带 macOS AppleDouble `._*` 条目**，agent 会对每个 `._*.jar` 报
+  `jar file can't be resolved`——属上游分发包内容，不是本机提取失误。
+  （若要消掉这列噪声，可在 `Dockerfile` 解包后 `find /skywalking-agent -name '._*' -delete`。）
+
+### 10.2 后续项2：派生镜像验证新 ENTRYPOINT
+
+离线做法：以本地含 agent 的镜像为基座，只复刻本轮改动的 `ENV`/`ENTRYPOINT` 语义，
+挂当前修复后的 fat jar 运行。
+
+| 检查 | 结果 |
+|---|---|
+| 传一个**残留 `-javaagent` 的旧式 `JAVA_OPTS`** | PID 1 命令行里 `javaagent` 计数 = **1**（去重生效） |
+| `exec` 语义 | `PID 1 = java`（SIGTERM 可直达 JVM，不再等 grace period 被 SIGKILL） |
+| agent 挂载来源 | 由 `SW_AGENT_OPTS` 提供，与被覆盖的 `JAVA_OPTS` 无关 |
+| 服务启动 | `Started AmzServiceUserApplication in 50.219 seconds`，logback ERROR 计数 0 |
+| traceId 活跃 | 请求行 `[TID:1f16f52d….70.…]`，无 span 行 `[TID:N/A]`（增强后的无空格形态） |
+| `SW_LOGGING_DIR` | `/app/logs/sw-agent` 属主 `appuser:appuser`，运行用户可写 |
+
+探针容器与派生镜像已全部删除，在跑的 mock 栈（19 个容器）未被改动。
+
+### 10.3 后续项1：跨服务传播实测（并修正一条验收标准）
+
+拓扑：`product`（文本日志）→ Feign → `order`（`log-json`），两侧各挂 9.7.0 权威 agent，
+**均关闭 nacos 服务注册**以免抢占在跑栈的流量；collector 不可达，靠 `SW_AGENT_KEEP_TRACING=true`
+让 agent 在断连时仍建 trace（否则整条链路退化为 `Ignored_Trace`，见 §4）。
+
+| 观测 | 值 |
+|---|---|
+| product 侧（caller，root） | `[TID:68ba3402….128.17907473346960001]` |
+| order 侧（callee，同请求入站） | `"TID":"68ba3402….144.17907473347050001"` |
+| order 侧**直连**请求（无上游） | `"TID":"a2eed589….128…"` ← uuid 段不同 |
+
+判定：
+
+1. **跨进程上下文传播成立。** order 自己发起的 trace 前缀恒为 `a2eed589…`；而经 product 转发的请求，
+   order 打出的 id 前缀变成 product 的 `68ba3402…`，尾段与 product 时序相邻。
+   本地新生成的 id 不可能携带上游 uuid，故 `sw8` 注入/解析链路有效。
+2. **但两侧打印串不逐字相同。** `DistributedTraceId.toString()` 原样返回其 `id`，而下游渲染的
+   中间段与尾段是本地分量（`.128` vs `.144`）。⇒ **不能用 `%tid`/`TID` 做跨服务精确字符串 join**。
+   交接文档 §10.4 第 3 条"两条服务日志都能取到相同非空 traceId"这一写法在 agent 9.7.0 上不成立，
+   应改为：跨服务关联以 OAP 侧 segment refs 为准，日志侧 `TID` 作为**本段可检索 id** 使用。
+   本轮未起 OAP，UI 侧关联链尚未复核（属下一步，不是已完成）。
+3. 顺带暴露一个**与日志无关的应用侧缺陷**：`product → order` 的 Feign 响应反序列化失败
+   `Type definition error: [simple type, class com.amz.result.Result]`，被
+   `OrderServiceFeignClientFallbackFactory` 静默降级为 `source=estimated`——该链路每次都在走降级路径，
+   值得单独立项。
+
+### 10.4 复跑要点
+
+```bash
+# 权威 agent（宿主机可直连，容器内不行）
+curl -o agent-9.7.0.tgz https://archive.apache.org/dist/skywalking/java-agent/9.7.0/apache-skywalking-java-agent-9.7.0.tgz
+tar xzf agent-9.7.0.tgz && find skywalking-agent -name '._*' -delete
+# 探针必须：SPRING_CLOUD_NACOS_DISCOVERY_REGISTER_ENABLED=false（不抢流量）
+#          SW_AGENT_KEEP_TRACING=true（collector 不在时才有真 id）
+# caller 侧指定下游：-Dspring.cloud.discovery.client.simple.instances.amz-service-order[0].uri=http://<callee>:8105
+# 容器内绝对路径命令需 MSYS_NO_PATHCONV=1，否则 /app/... 会被重写成 C:/Program Files/Git/app/...
+```
+
+## 11. 验证命令（接手者可直接复跑）
 
 ```powershell
 # 门禁（改动前 rc=1）
