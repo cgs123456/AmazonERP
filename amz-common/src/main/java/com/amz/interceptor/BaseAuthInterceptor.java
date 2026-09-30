@@ -27,10 +27,15 @@ import java.util.List;
 @Slf4j
 public class BaseAuthInterceptor implements HandlerInterceptor {
 
-    /** 免鉴权路径白名单（与网关保持一致） */
+    /** 免鉴权路径白名单（与网关保持一致，由 AuthWhitelistParityContractTest 逐字核对） */
     private static final List<String> WHITE_LIST = List.of(
             "/user/send",
             "/user/verify",
+            // 刷新端点自身只认 refresh token（controller 内 verifyRefreshToken），
+            // 而调用它时手上的 access token 正是已过期的；若这里再要求有效 access token，
+            // 前端就永远换不到新 token，只能重新短信登录。网关侧同样放行此项。
+            // 实测（2026-09-30，直连运行中的 user 服务）：加入前 POST /user/refresh 无 token → 401。
+            "/user/refresh",
             // /actuator/** 为 k8s 存活/就绪探针端点（kubelet 请求不携带 JWT），
             // 必须放行，否则探针恒返回 401 导致 Pod 永远 NotReady。
             // 该端点仅在集群内 ClusterIP 暴露，网关未配置对应路由，不对外暴露。
