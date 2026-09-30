@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 背景（实测）：product 通过 Feign 调 order 的 {@code /order/fees/lookup}，HTTP 往返与对端应答都正常
  * （OAP 里 Exit/Entry span 成对存在），但调用侧解码失败，被 fallback 静默降级成硬编码估算值，
  * 日志只剩一句 {@code Type definition error: [simple type, class com.amz.result.Result]}。
- * 全仓 17 个 Feign 客户端里 38 个方法返回 {@code Result<...>}，全部走同一条解码路径。
+ * 全仓 20 个 @FeignClient 接口里 38 个方法返回 {@code Result<...>}，全部走同一条解码路径。
  * <p>
  * 既有的 {@link ApiErrorSerializationTest} 只断言写方向（{@code writeValueAsString}），
  * 写方向不需要 creator，所以序列化契约全绿而解码一直是坏的——这里补的正是读方向。

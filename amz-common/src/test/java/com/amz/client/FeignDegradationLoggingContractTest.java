@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.fail;
  *   <li>message 可能为 null（NPE 类），日志退化成 {@code cause=null}；</li>
  *   <li>没有栈，定位不到是哪一个 Feign 方法、哪一行解码失败。</li>
  * </ul>
- * 正是这三条叠加，让 {@code Result} 反序列化失败在 17 个客户端 38 个方法上<b>全量</b>发生，
+ * 正是这三条叠加，让 {@code Result} 反序列化失败在 20 个客户端 38 个方法上<b>全量</b>发生，
  * 却在日志里表现为"对端返回空数据"，两周无人察觉（见
  * {@code docs/superpowers/evidence/2026-09-30-p1-feign-result-decode-fix.md}）。
  * <p>
