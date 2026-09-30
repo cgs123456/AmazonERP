@@ -51,6 +51,12 @@
             <artifactId>apm-toolkit-logback-1.x</artifactId>
         </dependency>
 
+        <!-- log-json profile 的结构化控制台日志编码器；版本由根 pom dependencyManagement 统一钉住 -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+        </dependency>
+
         <!-- OpenFeign：供 FeignAuthRelayConfig 编译使用（透传 token/shopId 请求头）。
              optional 避免强制传递给不使用 Feign 的模块（如网关）；
              运行时由引用方自身声明的 spring-cloud-starter-openfeign 提供，

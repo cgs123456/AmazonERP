@@ -83,6 +83,8 @@
         <aliyun.sdk.core.version>4.7.10</aliyun.sdk.core.version>
         <!-- SkyWalking Java Agent toolkit (与 Dockerfile agent 9.7.0 对齐) -->
         <skywalking.version>9.7.0</skywalking.version>
+        <!-- logstash-logback-encoder 8.0 兼容 Logback 1.5.x / Boot 3.5，用于 log-json 结构化输出 -->
+        <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
     </properties>
 
     <build>
@@ -311,6 +313,11 @@
                 <groupId>org.apache.skywalking</groupId>
                 <artifactId>apm-toolkit-logback-1.x</artifactId>
                 <version>${skywalking.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.logstash.logback</groupId>
+                <artifactId>logstash-logback-encoder</artifactId>
+                <version>${logstash-logback-encoder.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

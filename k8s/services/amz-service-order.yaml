@@ -60,6 +60,7 @@ spec:
             - { name: http, containerPort: 8105, protocol: TCP }
           env:
             - { name: SPRING_PROFILES_ACTIVE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPRING_PROFILES_ACTIVE } } }
+            - { name: SW_AGENT_NAME, value: amz-service-order }
             - { name: NACOS_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } } }
             - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }
             - { name: MYSQL_SLAVE_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_SLAVE_HOST } } }

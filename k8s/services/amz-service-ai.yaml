@@ -74,6 +74,8 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPRING_PROFILES_ACTIVE } }
+            - name: SW_AGENT_NAME
+              value: amz-service-ai
             - name: NACOS_ADDR
               valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } }
             - name: MYSQL_HOST

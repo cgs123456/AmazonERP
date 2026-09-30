@@ -256,6 +256,7 @@ services:
       - "10010:10010"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-gateway
       # 通过 compose 网络内服务名访问基础设施
       - NACOS_ADDR=nacos:8848
       - SENTINEL_DASHBOARD=${SENTINEL_DASHBOARD:-sentinel-dashboard:8858}
@@ -281,6 +282,7 @@ services:
       - "8096:8096"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-spapi
       - NACOS_ADDR=nacos:8848
       # 读写分离：主库写、从库读
       - MYSQL_HOST=mysql
@@ -363,6 +365,7 @@ services:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-user
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -398,6 +401,7 @@ services:
       - "8095:8095"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-product
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -446,6 +450,7 @@ services:
       - "8105:8105"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-order
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_SLAVE_HOST=mysql-slave
@@ -479,6 +484,7 @@ services:
       - "8090:8090"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-search
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -512,6 +518,7 @@ services:
       - "8091:8091"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-ai
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -547,6 +554,7 @@ services:
       - "8097:8097"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-ad
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -581,6 +589,7 @@ services:
       - "8098:8098"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-procurement
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -611,6 +620,7 @@ services:
       - "8099:8099"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-customer
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -638,6 +648,7 @@ services:
       - "8100:8100"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-logistics
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -682,6 +693,7 @@ services:
       - "8101:8101"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-ops
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -709,6 +721,7 @@ services:
       - "8102:8102"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-report
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -733,6 +746,7 @@ services:
       - "8103:8103"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-finance
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -777,6 +791,7 @@ services:
       - "8104:8104"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-multiplatform
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -806,6 +821,7 @@ services:
       - "8888:8888"
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
+      - SW_AGENT_NAME=amz-service-message
       - NACOS_ADDR=nacos:8848
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672

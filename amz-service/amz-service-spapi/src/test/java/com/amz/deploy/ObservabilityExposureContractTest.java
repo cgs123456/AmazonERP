@@ -132,6 +132,10 @@ class ObservabilityExposureContractTest {
             assertFalse(content.contains("%X{traceId}"),
                     entry.getKey() + " 日志 pattern 仍在使用 %X{traceId}："
                             + "全仓无代码调用 MDC.put(\"traceId\",...)，该占位符永远输出空");
+            assertFalse(content.contains("%X{tid}"),
+                    entry.getKey() + " 日志 pattern 使用了 %X{tid}：SkyWalking 只增强自己的 "
+                            + "mdc.LogbackMDCPatternConverter，且需要 TraceIdMDCPatternLogbackLayout 注册转换词；"
+                            + "直接 %X{tid} 同样是读空 MDC（已实测输出为空）");
             assertTrue(content.contains("%wEx"),
                     entry.getKey() + " 日志 pattern 缺少 %wEx（异常输出转换词）："
                             + "自定义 pattern 覆盖 Spring Boot 默认后异常堆栈不会打印");
@@ -145,8 +149,14 @@ class ObservabilityExposureContractTest {
         assertTrue(logback.contains("conversionWord=\"traceId\""),
                 "logback-spring.xml 必须注册 conversionWord=traceId，"
                         + "否则 %traceId 在运行时会报 conversionWord 未定义");
-        assertTrue(logback.contains("org.apache.skywalking.apm.toolkit.log.logback.v1.x.TraceIdConverter"),
-                "logback-spring.xml 必须引用 SkyWalking TraceIdConverter 类");
+        assertTrue(logback.contains("org.apache.skywalking.apm.toolkit.log.logback.v1.x.LogbackPatternConverter"),
+                "logback-spring.xml 必须把 %traceId 绑定到 toolkit 里真实存在的 LogbackPatternConverter"
+                        + "（该类的常量返回值 TID: N/A 是无 agent 时的降级值，有 agent 时由 "
+                        + "apm-toolkit-logback-1.x-activation 字节码增强为真值）");
+        assertFalse(logback.contains("TraceIdConverter"),
+                "logback-spring.xml 引用了 TraceIdConverter：该类不存在于 apm-toolkit-logback-1.x:9.7.0。"
+                        + "logback 会记录 ERROR status，Spring Boot 3.5 随即抛 "
+                        + "IllegalStateException(\"Logback configuration error detected\") 导致 16 个服务启动失败");
     }
 
     @Test
@@ -196,6 +206,68 @@ class ObservabilityExposureContractTest {
                 "");
         assertFalse(exposureInclude(managementOf(withoutPrometheus)).contains("prometheus"),
                 "解析器必须能区分缺少 prometheus 的配置，否则本套件会永远通过");
+    }
+
+    @Test
+    void structuredJsonLoggingProfileIsComplete() throws IOException {
+        String logback = Files.readString(
+                ROOT.resolve("amz-common/src/main/resources/logback-spring.xml"), StandardCharsets.UTF_8);
+
+        assertTrue(logback.contains("<springProfile name=\"!log-json\">"),
+                "缺少 !log-json 分支：未启用 log-json 时服务会失去文本控制台日志");
+        assertTrue(logback.contains("<springProfile name=\"log-json\">"),
+                "缺少 log-json 分支：无法通过 profile 开启结构化 JSON 日志");
+        assertTrue(logback.contains("<appender name=\"JSON_CONSOLE\""),
+                "log-json 分支必须定义 JSON_CONSOLE 控制台 appender");
+        assertTrue(logback.contains("net.logstash.logback.encoder.LogstashEncoder"),
+                "JSON_CONSOLE 必须使用 logstash-logback-encoder 的 LogstashEncoder");
+        assertTrue(logback.contains("org.apache.skywalking.apm.toolkit.log.logback.v1.x.logstash.TraceIdJsonProvider"),
+                "JSON 日志必须用 SkyWalking 官方 TraceIdJsonProvider 注入 traceId："
+                        + "它输出的值不带 TID: 前缀，可直接拿去 SkyWalking UI 查这条 trace");
+        assertTrue(logback.contains("<fieldName>TID</fieldName>"),
+                "必须显式声明 <fieldName>TID</fieldName>：provider 的构造器不设置字段名，"
+                        + "一旦 encoder 未通过 FieldNamesAware 回写，字段会被静默丢弃（无 agent 时已实测为整字段缺失）");
+        assertFalse(logback.contains("\"traceId\":\"%traceId\""),
+                "JSON 分支不要用 pattern provider 输出 traceId：agent 增强后的 LogbackPatternConverter "
+                        + "返回带 \"TID:\" 前缀的值，会让 traceId 字段无法直接用于检索");
+        assertTrue(logback.contains("<springProperty name=\"serviceName\" source=\"spring.application.name\""),
+                "JSON 日志必须通过 springProperty 注入 spring.application.name，否则无法识别来源服务");
+        assertTrue(logback.contains("<appender-ref ref=\"JSON_CONSOLE\"/>"),
+                "log-json 分支的 root logger 必须挂载 JSON_CONSOLE");
+        assertTrue(logback.indexOf("<springProfile name=\"log-json\">")
+                        < logback.indexOf("<appender-ref ref=\"JSON_CONSOLE\"/>"),
+                "JSON_CONSOLE 必须只在 log-json 分支内挂载");
+    }
+
+    @Test
+    void rootPomManagesLogstashEncoderVersion() throws IOException {
+        String pom = Files.readString(ROOT.resolve("pom.xml"), StandardCharsets.UTF_8);
+        assertTrue(pom.contains("<logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>"),
+                "根 pom 必须显式钉住 logstash-logback-encoder 版本，避免跟随传递依赖漂移");
+        assertTrue(pom.contains("<artifactId>logstash-logback-encoder</artifactId>"),
+                "根 pom 的 dependencyManagement 必须管理 logstash-logback-encoder");
+    }
+
+    @Test
+    void composeDefaultsKeepTextLoggingWithJsonAsOptIn() throws IOException {
+        String compose = Files.readString(ROOT.resolve("docker-compose.yml"), StandardCharsets.UTF_8);
+        long matches = compose.lines()
+                .filter(line -> line.contains("${SPRING_PROFILES_ACTIVE:-prod}"))
+                .count();
+        assertEquals(16, matches,
+                "docker-compose 应有 16 个应用服务默认 prod 文本日志（gateway + 15 个业务服务）");
+        assertFalse(compose.contains(":-prod,log-json}"),
+                "compose 默认 profile 不得打开 log-json：logstash/logstash.conf 的 grok 消费者按文本 pattern 解析，"
+                        + "整体切成 JSON 会让现网采集与告警立刻断链；JSON 必须由部署侧显式 opt-in");
+    }
+
+    @Test
+    void kubernetesDefaultProfileKeepsTextLogging() throws IOException {
+        String configMap = Files.readString(ROOT.resolve("k8s/configmap.yaml"), StandardCharsets.UTF_8);
+        assertTrue(configMap.contains("SPRING_PROFILES_ACTIVE: prod"),
+                "k8s 集中配置的默认 profile 必须是 prod 文本日志");
+        assertFalse(configMap.contains("prod,log-json"),
+                "k8s 默认 profile 不得打开 log-json，理由同 compose：采集端未确认支持 JSON 前不改日志形态");
     }
 
     private static Map<String, Path> moduleApplicationFiles() {

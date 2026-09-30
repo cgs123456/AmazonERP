@@ -1,14 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-    <!-- 引入 Spring Boot 默认日志配置（日志级别、彩色控制台等） -->
+    <!-- %traceId 的值由 SkyWalking java agent 在运行时字节码增强注入；未挂 agent 时输出常量 TID: N/A。
+         类名写错会让 logback 产生 ERROR status，Boot 随即抛 IllegalStateException 导致服务启动失败。 -->
     <conversionRule conversionWord="traceId"
-                    converterClass="org.apache.skywalking.apm.toolkit.log.logback.v1.x.TraceIdConverter"/>
+                    class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.LogbackPatternConverter"/>
 
     <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
 
-    <!-- ==================== 控制台输出（保留默认行为） ==================== -->
-    <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+    <!-- 服务名进入 JSON 顶层字段，便于聚合系统按服务过滤 -->
+    <springProperty name="serviceName" source="spring.application.name" scope="context"/>
+
+    <!-- ==================== 控制台输出：默认文本 / log-json 结构化 ==================== -->
+    <springProfile name="!log-json">
+        <include resource="org/springframework/boot/logging/logback/console-appender.xml"/>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="log-json">
+        <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+                <customFields>{"service":"${serviceName}"}</customFields>
+                <!-- SkyWalking 官方 provider：JSON 字段名固定为 TID（encoder 会用 FieldNamesAware 回写，
+                     显式声明只是防止某个路径没有回写时字段被静默丢弃），值为不带前缀的 trace id。 -->
+                <provider class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.logstash.TraceIdJsonProvider">
+                    <fieldName>TID</fieldName>
+                </provider>
+            </encoder>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="JSON_CONSOLE"/>
+        </root>
+    </springProfile>
 
     <!-- ==================== 操作日志独立文件 appender ==================== -->
     <!-- 通过 logger name="oper-log" 路由，仅写入 oper-log.log，不污染业务日志 -->
@@ -31,9 +58,5 @@
     <logger name="oper-log" level="INFO" additivity="false">
         <appender-ref ref="oper-log"/>
     </logger>
-
-    <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </root>
 
 </configuration>

@@ -113,8 +113,9 @@ ARG PORT=8096
 # MODULE 形如 amz-service/amz-service-spapi 或 amz-gateway，jar 位于 /build/${MODULE}/target/*.jar
 COPY --from=builder --chown=appuser:appuser /build/${MODULE}/target/*.jar /app/app.jar
 
-# 创建日志目录并赋权（logback oper-log appender 写入 logs/oper-log.log）
-RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs
+# 创建日志目录并赋权（logback oper-log appender 写入 logs/oper-log.log，
+# agent 日志写 logs/sw-agent —— 默认目标 /skywalking-agent/logs 属主是 root，非 root 用户写不进去）
+RUN mkdir -p /app/logs /app/logs/sw-agent && chown -R appuser:appuser /app/logs
 
 # 时区
 ENV TZ=Asia/Shanghai
@@ -123,12 +124,16 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # 将 PORT 固化为环境变量，供 HEALTHCHECK 在 shell 形式下展开
 ENV SERVER_PORT=${PORT}
 
-# JVM 参数（容器环境优化，含 Skywalking Java Agent）
-# 通过环境变量 SW_AGENT_NAME 控制 Skywalking 上报的服务名（默认 amz-service）
-# JAVA_OPTS 运行时可覆盖：docker run -e JAVA_OPTS="..."
-ENV SW_AGENT_NAME=amz-service
-ENV SW_COLLECTOR=skywalking-oap:11800
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom -javaagent:/skywalking-agent/skywalking-agent.jar"
+# JVM 调参与 agent 挂载分成两个变量：JAVA_OPTS 可被部署侧整体覆盖，SW_AGENT_OPTS 只负责挂载。
+# 历史缺陷：-javaagent 原本只写在 JAVA_OPTS 默认值里，而 docker-compose 传 JAVA_OPTS=${JAVA_OPTS:-}、
+# k8s ConfigMap 也自带 JAVA_OPTS，两条部署路径的整体覆盖都会把 agent 一起摘掉。
+# agent 真实读取的变量名（见镜像内 config/agent.config）；旧 SW_COLLECTOR 从未被引用，是死变量。
+# 镜像不再给 SW_AGENT_NAME 默认值：服务名必须由部署侧逐服务显式声明，否则 16 个服务会塌缩成同一个名字。
+ENV SW_AGENT_COLLECTOR_BACKEND_SERVICES=skywalking-oap:11800
+ENV SW_AGENT_NAMESPACE=amz-erp
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+HeapDumpOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+ENV SW_AGENT_OPTS="-javaagent:/skywalking-agent/skywalking-agent.jar"
+ENV SW_LOGGING_DIR=/app/logs/sw-agent
 
 # 服务端口（与目标模块 application.yml 一致）
 EXPOSE ${PORT}
@@ -141,4 +146,6 @@ USER appuser
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD curl -s -o /dev/null http://localhost:${SERVER_PORT}/ || exit 1
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+# exec 让 JVM 成为 PID 1，SIGTERM 才能直达进程（否则滚动更新要等到 grace period 被 SIGKILL）。
+# 拼命令前先从 JAVA_OPTS 里去掉 -javaagent，避免运维沿用旧 .env 时同一个 agent 被挂载两次。
+ENTRYPOINT ["sh", "-c", "JAVA_OPTS=$(printf '%s' \"$JAVA_OPTS\" | sed -e 's#-javaagent:/skywalking-agent/skywalking-agent.jar##g'); exec java ${SW_AGENT_OPTS} ${JAVA_OPTS} -jar /app/app.jar"]

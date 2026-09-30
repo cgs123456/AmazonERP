@@ -51,6 +51,14 @@ class ProfileActivationContractTest {
 
     private static final String VAR = "SPRING_PROFILES_ACTIVE";
 
+    /**
+     * 部署默认必须是 prod 文本日志：logstash/logstash.conf 的 grok 消费者按文本 pattern 解析，
+     * 默认整体切 JSON 会断现网采集。log-json 分支保留，但只能由部署侧显式 opt-in。
+     * mock 永远不允许作为默认值。
+     */
+    private static final String DEFAULT_ACTIVE = "prod";
+    private static final String JSON_OPT_IN_PROFILE = "log-json";
+
     private static final Pattern MOCK_PROFILE = Pattern.compile("@Profile\\(\"mock\"\\)");
     private static final Pattern ACTIVE_LINE = Pattern.compile("(?m)^\\s*active:\\s*(\\S+)\\s*$");
 
@@ -96,8 +104,10 @@ class ProfileActivationContractTest {
             if (!trimmed.startsWith("- " + VAR + "=")) {
                 continue;
             }
-            assertTrue(trimmed.contains("${" + VAR + ":-prod}"),
-                    "compose entry must default to prod: " + trimmed);
+            assertTrue(trimmed.contains("${" + VAR + ":-" + DEFAULT_ACTIVE + "}"),
+                    "compose entry must default to " + DEFAULT_ACTIVE + ": " + trimmed);
+            assertFalse(trimmed.contains(JSON_OPT_IN_PROFILE),
+                    "compose 默认 profile 不得内置 " + JSON_OPT_IN_PROFILE + "，结构化日志只能是显式 opt-in: " + trimmed);
             assertFalse(trimmed.contains("mock"), "compose entry mentions mock: " + trimmed);
         }
     }
@@ -118,8 +128,11 @@ class ProfileActivationContractTest {
         }
         String configMap = read(repoRoot().resolve("k8s").resolve("configmap.yaml"));
         assertTrue(configMap.lines().anyMatch(line ->
-                        line.trim().matches(VAR + ":\\s*(\"prod\"|prod)")),
-                "ConfigMap must define " + VAR + " as prod (quoted or plain YAML scalar)");
+                        line.trim().matches(VAR + ":\\s*(\"" + DEFAULT_ACTIVE + "\"|" + DEFAULT_ACTIVE + ")")),
+                "ConfigMap must define " + VAR + " as " + DEFAULT_ACTIVE
+                        + " (quoted or plain YAML scalar)");
+        assertFalse(configMap.contains(JSON_OPT_IN_PROFILE),
+                "ConfigMap 默认 profile 不得内置 " + JSON_OPT_IN_PROFILE + "：结构化日志只能是显式 opt-in");
     }
 
     @Test
@@ -128,8 +141,13 @@ class ProfileActivationContractTest {
         Path env = repoRoot().resolve(".env.example");
         assertTrue(Files.exists(env), "missing .env.example");
         String text = read(env);
-        assertTrue(text.contains(VAR + "=prod"),
-                ".env.example lacks " + VAR + "=prod");
+        assertTrue(text.contains(VAR + "=" + DEFAULT_ACTIVE + "\n")
+                        || text.contains(VAR + "=" + DEFAULT_ACTIVE + "\r\n"),
+                ".env.example must set " + VAR + " to exactly " + DEFAULT_ACTIVE
+                        + " (结构化日志只能是显式 opt-in，不写进模板默认值)");
+        assertTrue(text.contains(JSON_OPT_IN_PROFILE),
+                ".env.example 必须文档化 " + JSON_OPT_IN_PROFILE + " 这个可选 profile 的存在，"
+                        + "否则后来者会以为 JSON 日志分支不存在而把它删掉");
     }
 
     @Test

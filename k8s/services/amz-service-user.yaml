@@ -77,6 +77,8 @@ spec:
                 configMapKeyRef:
                   name: amz-erp-config
                   key: SPRING_PROFILES_ACTIVE
+            - name: SW_AGENT_NAME
+              value: amz-service-user
             - name: NACOS_ADDR
               valueFrom:
                 configMapKeyRef:

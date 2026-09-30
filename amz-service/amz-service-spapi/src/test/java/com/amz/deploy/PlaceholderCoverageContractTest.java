@@ -65,6 +65,10 @@ class PlaceholderCoverageContractTest {
             composeAllowed.add("SPRING_PROFILES_ACTIVE");
             composeAllowed.add("TZ");
             composeAllowed.add("JAVA_OPTS");
+            // SkyWalking 服务名只被 java agent 读取，代码里不存在 ${SW_AGENT_NAME} 占位符，
+            // 因此它不会出现在 sourcePlaceholders 的推导集里。取值正确性由
+            // SkyWalkingIdentityContractTest 逐服务约束，这里只声明"允许注入"。
+            composeAllowed.add("SW_AGENT_NAME");
             Set<String> composeActual = composeEnvironments.get(module);
             assertTrue(composeActual != null, "Compose 缺少服务段：" + module);
             assertEquals(composeAllowed, composeActual,
@@ -76,6 +80,7 @@ class PlaceholderCoverageContractTest {
             k8sAllowed.add("SPRING_PROFILES_ACTIVE");
             k8sAllowed.add("TZ");
             k8sAllowed.add(module.equals("amz-gateway") ? "JAVA_OPTS_GATEWAY" : "JAVA_OPTS");
+            k8sAllowed.add("SW_AGENT_NAME");
             Set<String> k8sActual = k8sEnvironments.get(module);
             assertTrue(k8sActual != null, "K8s 缺少 Deployment：" + module);
             assertEquals(k8sAllowed, k8sActual,
