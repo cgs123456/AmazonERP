@@ -17,8 +17,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -64,20 +66,22 @@ public class RealReportServiceImpl implements ReportService {
         log.info("聚合生成仪表盘报表：shopId={} days={}", shopId, days);
 
         DashboardReport report = new DashboardReport();
+        // 每次调用独立收集降级来源：@Service 是单例，用实例字段会让并发请求互相污染
+        Set<String> degraded = new LinkedHashSet<>();
 
         // 1. 财务服务：获取店铺利润（CNY 销售额）
-        BigDecimal totalSales = fetchTotalSales(shopId, days);
+        BigDecimal totalSales = fetchTotalSales(shopId, days, degraded);
         report.setTotalSales(totalSales);
 
         // 2. 订单服务：获取订单数（与 totalSales 同窗口）
-        Integer totalOrders = fetchTotalOrders(shopId, days);
+        Integer totalOrders = fetchTotalOrders(shopId, days, degraded);
         report.setTotalOrders(totalOrders);
         if (totalOrders != null && totalOrders > 0) {
             report.setAvgOrderValue(totalSales.divide(BigDecimal.valueOf(totalOrders), 2, RoundingMode.HALF_UP));
         }
 
         // 3. 广告服务：获取广告数据（用于 PPC 占比等，当前仅占位）
-        Map<String, Object> adSummary = fetchAdSummary(shopId);
+        Map<String, Object> adSummary = fetchAdSummary(shopId, degraded);
 
         // 4. 多维趋势：销售额按日聚合（直接复用 sales-trend 逻辑）
         Map<String, BigDecimal> salesTrendMap = new LinkedHashMap<>();
@@ -96,6 +100,12 @@ public class RealReportServiceImpl implements ReportService {
         report.setTrafficSource(new LinkedHashMap<>());
         report.setCategorySales(new LinkedHashMap<>());
         report.setTopProducts(Collections.emptyList());
+
+        report.setDegradedSources(new ArrayList<>(degraded));
+        if (!degraded.isEmpty()) {
+            log.warn("仪表盘存在兜底指标，这些数值不代表业务事实：shopId={} degraded={} totalSales={} totalOrders={}",
+                    shopId, degraded, totalSales, totalOrders);
+        }
 
         log.info("仪表盘报表聚合完成 shopId={} totalSales={} totalOrders={} adSummaryKeys={} salesTrendDays={}",
                 shopId, totalSales, totalOrders,
@@ -169,17 +179,70 @@ public class RealReportServiceImpl implements ReportService {
 
     // ===== Feign 聚合方法（含降级） =====
 
+    /** 降级来源标识，写进 {@code DashboardReport.degradedSources}。 */
+    private static final String SOURCE_FINANCE = "finance";
+    private static final String SOURCE_ORDER = "order";
+    private static final String SOURCE_AD = "ad";
+
+    /**
+     * 把"下游没取到数"的来源记进降级集合。
+     * <p>
+     * 必须存在：本模块三个 Feign 客户端的 fallbackFactory 返回 {@code Collections.emptyMap()}，
+     * 而熔断装配是开着的 —— 下游不可用时<b>不会抛异常</b>，调用方的 catch 根本不触发，
+     * 于是 totalSales=0、totalOrders=0 与"这个周期确实没卖"在响应里完全同形。
+     * 看板拿假零做经营决策比直接报错更糟。
+     */
+    private void markDegraded(Set<String> degraded, String source, Map<String, Object> resp, String outcome) {
+        degraded.add(source);
+        if (resp == null || resp.isEmpty()) {
+            log.warn("{} 服务无响应体（fallback 兜底），{}：不是业务事实", source, outcome);
+            return;
+        }
+        Object code = resp.get("code");
+        if (code instanceof Number && ((Number) code).intValue() != 200) {
+            log.warn("{} 服务返回非 200 业务码 code={} message={}，{}", source, code, resp.get("message"), outcome);
+            return;
+        }
+        log.warn("{} 服务响应不合契约 keys={}，{}", source, resp.keySet(), outcome);
+    }
+
+    /** 取响应信封的 code；不是数字或没有则返回 null（裸 Map 直出同样视为不合契约）。 */
+    private static Integer codeOf(Map<String, Object> resp) {
+        Object code = resp == null ? null : resp.get("code");
+        return code instanceof Number ? ((Number) code).intValue() : null;
+    }
+
+    /**
+     * 响应是否属于"没取到数"而不是"取到了空值"。
+     * <p>
+     * {@code code=200} 且 data 为空是<b>合法业务空值</b>（该周期确实没有记录），不计降级；
+     * 空信封（fallback 的 {@code emptyMap()}）、非 200、或压根没有 Result 信封才算降级。
+     */
+    private static boolean degradedEnvelope(Map<String, Object> resp) {
+        if (resp == null || resp.isEmpty()) {
+            return true;
+        }
+        Integer code = codeOf(resp);
+        return code == null || code != 200;
+    }
+
     /**
      * 通过 Feign 调用 finance 服务获取销售额（CNY）。
      * 服务不可用时降级为 0。
      */
-    private BigDecimal fetchTotalSales(Long shopId, int days) {
+    private BigDecimal fetchTotalSales(Long shopId, int days, Set<String> degraded) {
         try {
             LocalDate end = LocalDate.now();
             LocalDate start = end.minusDays(days);
             Map<String, Object> resp = financeFeignClient.calculateProfit(shopId, start.format(FMT), end.format(FMT));
-            return extractBigDecimal(resp);
+            if (degradedEnvelope(resp)) {
+                // 空信封 / 非 200 / 无 Result 信封：0 是兜底值，不是"这个周期没有销售"
+                markDegraded(degraded, SOURCE_FINANCE, resp, "销售额按 0 处理");
+                return BigDecimal.ZERO;
+            }
+            return toBigDecimal(extractData(resp));
         } catch (Exception e) {
+            degraded.add(SOURCE_FINANCE);
             log.warn("调用 finance 服务获取销售额失败，降级为 0：shopId={}", shopId, e);
             return BigDecimal.ZERO;
         }
@@ -195,18 +258,11 @@ public class RealReportServiceImpl implements ReportService {
      * avgOrderValue = totalSales / totalOrders 同时失真。
      * 服务不可用时降级为 0。
      */
-    private Integer fetchTotalOrders(Long shopId, int days) {
+    private Integer fetchTotalOrders(Long shopId, int days, Set<String> degraded) {
         try {
             Map<String, Object> resp = orderFeignClient.listOrders(shopId, days);
-            if (resp == null || resp.isEmpty()) {
-                // fallback 工厂返回 Collections.emptyMap()：没有信封，只有降级才会走到这里
-                log.warn("order 服务无响应体（fallback 兜底），订单数按 0 处理：shopId={} days={}", shopId, days);
-                return 0;
-            }
-            Object code = resp.get("code");
-            if (code instanceof Number && ((Number) code).intValue() != 200) {
-                log.warn("order 服务返回非 200 业务码，订单数按 0 处理：shopId={} code={} message={}",
-                        shopId, code, resp.get("message"));
+            if (degradedEnvelope(resp)) {
+                markDegraded(degraded, SOURCE_ORDER, resp, "订单数按 0 处理：shopId=" + shopId + " days=" + days);
                 return 0;
             }
             Object data = extractData(resp);
@@ -215,13 +271,18 @@ public class RealReportServiceImpl implements ReportService {
                 if (total instanceof Number) {
                     return ((Number) total).intValue();
                 }
+                degraded.add(SOURCE_ORDER);
                 log.warn("order 服务的 data 里没有可用的 total 字段，订单数按 0 处理：shopId={} data.keys={}",
                         shopId, ((Map<?, ?>) data).keySet());
                 return 0;
             }
-            log.warn("order 服务的 data 不是对象，订单数按 0 处理：shopId={} data={}", shopId, data);
+            if (data != null) {
+                degraded.add(SOURCE_ORDER);
+                log.warn("order 服务的 data 不是对象，订单数按 0 处理：shopId={} data={}", shopId, data);
+            }
             return 0;
         } catch (Exception e) {
+            degraded.add(SOURCE_ORDER);
             log.warn("调用 order 服务获取订单数失败，降级为 0：shopId={}", shopId, e);
             return 0;
         }
@@ -231,10 +292,16 @@ public class RealReportServiceImpl implements ReportService {
      * 通过 Feign 调用 ad 服务获取广告汇总。
      * 服务不可用时返回 null。
      */
-    private Map<String, Object> fetchAdSummary(Long shopId) {
+    private Map<String, Object> fetchAdSummary(Long shopId, Set<String> degraded) {
         try {
-            return adFeignClient.getShopSummary(shopId);
+            Map<String, Object> resp = adFeignClient.getShopSummary(shopId);
+            if (degradedEnvelope(resp)) {
+                markDegraded(degraded, SOURCE_AD, resp, "广告指标留空");
+                return null;
+            }
+            return resp;
         } catch (Exception e) {
+            degraded.add(SOURCE_AD);
             log.warn("调用 ad 服务获取广告汇总失败，跳过：shopId={}", shopId, e);
             return null;
         }
@@ -383,11 +450,6 @@ public class RealReportServiceImpl implements ReportService {
             }
         }
         return null;
-    }
-
-    private BigDecimal extractBigDecimal(Map<String, Object> resp) {
-        Object data = extractData(resp);
-        return toBigDecimal(data);
     }
 
     private BigDecimal toBigDecimal(Object value) {

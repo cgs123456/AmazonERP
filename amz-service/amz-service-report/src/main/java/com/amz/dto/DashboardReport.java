@@ -3,6 +3,7 @@ package com.amz.dto;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -45,6 +46,15 @@ public class DashboardReport {
 
     /** Top 10 畅销商品 */
     private List<TopProduct> topProducts;
+
+    /**
+     * 本次聚合里<b>没能真正取到数</b>的下游来源（如 {@code finance} / {@code order} / {@code ad}）。
+     * <p>
+     * 存在的意义：这些下游不可用时，指标仍会返回 0 / 空——那是 fallback 的兜底值，
+     * 与"这个周期确实没有销售"在 JSON 里长得一模一样，经营决策会拿假零当真。
+     * 空数组 = 所有来源都真实取到过数据；非空 = 对应指标是兜底值，不代表业务事实。
+     */
+    private List<String> degradedSources = new ArrayList<>();
 
     /**
      * 畅销商品明细。
