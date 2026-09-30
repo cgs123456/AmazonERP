@@ -60,6 +60,8 @@ spec:
           env:
             - { name: SPRING_PROFILES_ACTIVE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPRING_PROFILES_ACTIVE } } }
             - { name: SW_AGENT_NAME, value: amz-service-ad }
+            # 与 compose 同名：CRYPTO_KEY 经宽松绑定落到 crypto.key；值复用 amz-erp-secret 里已有的 AMZ_CRYPTO_KEY。
+            - { name: CRYPTO_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AMZ_CRYPTO_KEY } } }
             - { name: SW_AGENT_COLLECTOR_BACKEND_SERVICES, value: skywalking-oap.amz-erp.svc.cluster.local:11800 }
             - { name: NACOS_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } } }
             - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }

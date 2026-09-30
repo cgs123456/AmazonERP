@@ -69,6 +69,11 @@ class PlaceholderCoverageContractTest {
             // 因此它不会出现在 sourcePlaceholders 的推导集里。取值正确性由
             // SkyWalkingIdentityContractTest 逐服务约束，这里只声明"允许注入"。
             composeAllowed.add("SW_AGENT_NAME");
+            // CRYPTO_KEY 也不以 ${CRYPTO_KEY} 形式出现在代码里：CryptoUtil 用
+            // @Value("${crypto.key:}") 查属性，Spring 宽松绑定把环境变量 CRYPTO_KEY 落到该属性。
+            // 只有 spapi/user 的 application.yml 显式写了 crypto.key: ${AMZ_CRYPTO_KEY:}，
+            // 其余 14 个服务全靠这个名字；缺它会启动即拒（见 CryptoKeyProvisioningContractTest 的 A/B 实测）。
+            composeAllowed.add("CRYPTO_KEY");
             Set<String> composeActual = composeEnvironments.get(module);
             assertTrue(composeActual != null, "Compose 缺少服务段：" + module);
             assertEquals(composeAllowed, composeActual,
@@ -84,6 +89,10 @@ class PlaceholderCoverageContractTest {
             // collector 地址是 agent 侧变量，代码里不读它；k8s 需要 FQDN 而 compose 用镜像默认的服务名，
             // 故只加进 k8s 允许集。取值与 OAP Service 的一致性由 SkyWalkingIdentityContractTest 核对。
             k8sAllowed.add("SW_AGENT_COLLECTOR_BACKEND_SERVICES");
+            // 同 compose：CRYPTO_KEY 是 crypto.key 的宽松绑定别名，代码里没有同名占位符；
+            // 值从既有 secret 键 AMZ_CRYPTO_KEY 取，不新增一份密钥。
+            // 逐服务是否真的供给到由 CryptoKeyProvisioningContractTest 负责。
+            k8sAllowed.add("CRYPTO_KEY");
             Set<String> k8sActual = k8sEnvironments.get(module);
             assertTrue(k8sActual != null, "K8s 缺少 Deployment：" + module);
             assertEquals(k8sAllowed, k8sActual,

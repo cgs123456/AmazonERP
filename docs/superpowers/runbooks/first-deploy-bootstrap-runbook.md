@@ -121,6 +121,12 @@ docker compose logs --tail=100 amz-service-spapi
 
 `prod` 启动自检会从 DB 逐条读取凭证并调用结构校验器。任一条缺少 LWA 必需字段或路由字段时，实例拒绝启动，日志只报告 `shopId` 和字段名。
 
+任何服务启动前还需注意 `AMZ_CRYPTO_KEY`：`docker-compose.yml` 对 16 个可部署服务都硬性要求它
+（`${AMZ_CRYPTO_KEY:?...}`），并以环境变量名 `CRYPTO_KEY` 注入——`CryptoUtil` 查的属性是
+`crypto.key`，只有这个名字会经宽松绑定落上去（`AMZ_CRYPTO_KEY` 只对 spapi/user 有效，
+因为它们在自己的 `application.yml` 里显式映射过）。没设该变量时 `docker compose up` 会当场报缺变量，
+而不是让 Pod 起来后 CrashLoopBackOff；逐服务是否供给由 `CryptoKeyProvisioningContractTest` 守。
+
 ## 6. Kubernetes 首次部署路径
 
 以下命令假设命名空间、ConfigMap、Secret、MySQL StatefulSet 和镜像仓库已经按仓库清单准备。

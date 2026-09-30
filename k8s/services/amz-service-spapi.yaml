@@ -111,6 +111,8 @@ spec:
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: JWT_SECRET_KEY } }
             - name: AMZ_CRYPTO_KEY
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AMZ_CRYPTO_KEY } }
+            # 与其它清单同名：CRYPTO_KEY 经宽松绑定落到 crypto.key；值复用已有的 AMZ_CRYPTO_KEY 键。
+            - { name: CRYPTO_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AMZ_CRYPTO_KEY } } }
             - name: AWS_ACCESS_KEY
               valueFrom: { secretKeyRef: { name: amz-erp-secret, key: AWS_ACCESS_KEY } }
             - name: AWS_SECRET_KEY

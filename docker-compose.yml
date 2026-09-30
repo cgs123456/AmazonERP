@@ -257,6 +257,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-gateway
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       # 通过 compose 网络内服务名访问基础设施
       - NACOS_ADDR=nacos:8848
       - SENTINEL_DASHBOARD=${SENTINEL_DASHBOARD:-sentinel-dashboard:8858}
@@ -283,6 +286,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-spapi
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       # 读写分离：主库写、从库读
       - MYSQL_HOST=mysql
@@ -366,6 +372,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-user
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -402,6 +411,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-product
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -451,6 +463,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-order
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_SLAVE_HOST=mysql-slave
@@ -485,6 +500,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-search
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -519,6 +537,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-ai
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -555,6 +576,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-ad
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -590,6 +614,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-procurement
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -621,6 +648,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-customer
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -649,6 +679,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-logistics
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -694,6 +727,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-ops
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -722,6 +758,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-report
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -747,6 +786,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-finance
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -792,6 +834,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-multiplatform
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
@@ -822,6 +867,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-message
+      # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
+      # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
+      - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
       - NACOS_ADDR=nacos:8848
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_PORT=5672

@@ -123,7 +123,79 @@ unable to recognize "k8s/infra/skywalking.yaml": the server has asked for the cl
    且降级日志改动会让"每次降级多打一条全栈"进入热路径。合并 master 之后必须重测，
    否则基线数字解释的是另一套代码。
 
-## 8. 复跑命令
+## 8. 阻塞① 已解（更正：不是"环境缺配"，是 master 少供给 14 个服务）
+
+我上一版把它写成"这套环境没给 gateway 配 crypto.key"。**方向错了**：真实情况是
+master 自己少配了 14 个服务，换任何一个环境都一样起不来。
+
+实测链（同机同网络，只差环境变量）：
+
+| 镜像 | 结果 |
+|---|---|
+| `amazon-erp/amz-gateway:latest`（旧码） | `running exit=0`，同一处 Seata `vgroupMapping` 报错但被容忍 |
+| `amazon-erp/amz-gateway:p2fix-ca561a4`（HEAD 码） | `exited exit=1`：`IllegalStateException: crypto.key 未配置，拒绝启动`（`CryptoUtil.init:53`） |
+| 同上 + 只加一个 `CRYPTO_KEY` 环境变量 | `running exit=0`，`Started AmzGatewayApplication in 16.294 seconds`，日志 trace 槽 `[TID:N/A]` 是活的，`JAVA_OPTS=`（空）下 agent 仍挂载 |
+
+成因：`CryptoUtil` 是 amz-common 的 `@Component`，`@Value("${crypto.key:}")` 空值即拒；
+而仓库只在 **spapi 与 user** 两处给了供给路径（`application.yml` 里
+`crypto.key: ${AMZ_CRYPTO_KEY:}` + compose 传 `AMZ_CRYPTO_KEY`）。
+其余 14 个可部署服务两个都没有。另外注意环境变量名必须是 `CRYPTO_KEY`
+（Spring 宽松绑定落到 `crypto.key`），而异常文案却叫运维去设 `AMZ_CRYPTO_KEY`——
+照文案设值照样起不来。
+
+修法（只动部署面，不动代码）：
+
+- `docker-compose.yml`：16 个可部署服务段各加一行
+  `CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}`（值仍来自部署方已有的那一个密钥，不落两处）；
+- `k8s/services/*.yaml`：缺的 14 份各加
+  `CRYPTO_KEY` ← `secretKeyRef{amz-erp-secret, AMZ_CRYPTO_KEY}`；spapi/user 原本就走 `AMZ_CRYPTO_KEY` + yml 映射，保持不动；
+- 新增 `CryptoKeyProvisioningContractTest`（4 个用例）守住这条：compose 覆盖、k8s 覆盖（且禁止明文字面量）、
+  代码侧属性名仍是 `crypto.key`、gateway 单点必须用 `CRYPTO_KEY`；
+- `PlaceholderCoverageContractTest` 的"注入集必须等于占位符集"允许集加上 `CRYPTO_KEY` 并写明别名理由。
+
+变异验证：只摘 gateway 的 compose 注入行 → **恰 2 红**，报错直接点名
+`这些服务会带着空 crypto.key 启动并当场拒绝 ==> expected: <[]> but was: <[amz-gateway]>`；
+同时摘掉 order 的 k8s 注入行 → **3 红**；还原 → 4/4 绿（compose/k8s diff 回到纯插入 48/2 行）。
+
+## 9. 交给做 CryptoUtil 的那位 agent 的一条反证
+
+`AmazonERP-p2-performance` 工作树里有未提交改动：`@ConditionalOnProperty(name = "crypto.key")` 加在 `CryptoUtil` 上。
+方向能理解（别让没用加密的服务因为缺密钥而起不来），但它会把**启动期故障挪成运行期故障**：
+`amz-common/config/CryptoTypeHandler` 是**静态**取 `CryptoUtil.getInstance()` 的
+（`CryptoUtil.java:73`，`INSTANCE == null` 时抛），属性没供给的服务容器能起来、
+一到加解密列才炸；`amz-service-multiplatform` 正是这种情形——它的主代码用 `CryptoUtil`，
+但 `application.yml` 里没有 `crypto:` 块。
+
+本次的部署侧供给与该改动不冲突：属性供给齐之后，`@ConditionalOnProperty` 处处成立，
+行为回到今天之前；而 §8 的契约测试会一直要求"供给齐"，所以两条路都指向同一个前提。
+建议它落地时一并断言 multiplatform 有供给路径（否则条件化会把这条静默掉）。
+
+## 10. CI 冒烟矩阵补上 gateway 这条腿（项 3 的加固）
+
+今天的阻塞恰好是 CI 现有冒烟的盲区：`runtime-smoke` 只起 `amz-service-message` 一个模块，
+而实际炸的是 gateway——故障形状是"amz-common 里的 `@Component` + 部署面少配一个变量"，
+跟被起的那个模块是不是受害者无关。
+
+改动：`.github/workflows/ci.yml` 的冒烟 job 现在起**两个**模块（都与中间件无关、无 datasource/flyway）：
+
+```
+mvn -B -pl amz-service/amz-service-message,amz-gateway -am package -DskipTests
+runtime_smoke.py --jar .../amz-service-message-1.0-SNAPSHOT.jar   → $RUNNER_TEMP/runtime-smoke-message.log
+runtime_smoke.py --jar amz-gateway/target/amz-gateway-1.0-SNAPSHOT.jar → $RUNNER_TEMP/runtime-smoke-gateway.log
+```
+
+本地实测 gateway 这条腿可过（无 nacos、无库、隔离环境变量）：
+
+```
+RUNTIME_SMOKE PASS jar=amz-gateway-1.0-SNAPSHOT.jar
+日志 100 行，Started AmzGatewayApplication，其中 49 行带 [TID: N/A]，致命签名 0 次
+```
+
+元契约同步加固：`CiWorkflowContractTest` 现在要求 `runtime_smoke.py` 调用 ≥2 次且两条腿的 jar 都在，
+否则红灯。变异验证：**删掉 gateway 的 `--jar` 行 → 3 用例中恰 1 红**（还原前那次"绿"是假的——
+我的 python 断言先抛异常、文件根本没被改，mvn 测的还是原文件；这条也记在这里当反面教材）。
+
+## 11. 复跑命令
 
 ```bash
 # 离线派生镜像（脚本在主机上，不入库）
@@ -135,4 +207,25 @@ docker run --rm --user appuser --entrypoint sh amazon-erp/amz-gateway:p2fix-ca56
 
 # 为什么干净重建失败（看这一行就够）
 grep -A3 "skywalking-downloader" /tmp/build_order.txt   # 若日志已清，重跑一次 docker build 即可复现
+
+# crypto.key 供给契约（compose 16 段 + k8s 16 份 + 代码侧属性名 + gateway 单点）
+mvn -o -B -pl amz-service/amz-service-spapi -am test \
+  -Dtest='CryptoKeyProvisioningContractTest,PlaceholderCoverageContractTest'
+
+# gateway 这条冒烟腿（本机无需 nacos/库）
+mvn -o -B -pl amz-gateway -am package -DskipTests
+python tools/ci/runtime_smoke.py --jar amz-gateway/target/amz-gateway-1.0-SNAPSHOT.jar \
+  --timeout 150 --dump-log /tmp/ci-smoke/gateway.log
+
+# compose 渲染检查（用一次性假值，证明 16 段都拿到了变量）
+python - <<'PY'
+import re, subprocess, os
+from pathlib import Path
+txt = Path('docker-compose.yml').read_text(encoding='utf-8')
+env = dict(os.environ)
+for v in sorted(set(re.findall(r'\$\{([A-Z0-9_]+):[?]', txt))):
+    env[v] = 'probe-dummy'
+r = subprocess.run(['docker', 'compose', 'config'], capture_output=True, text=True, env=env)
+print('rc=', r.returncode, '| CRYPTO_KEY 出现次数:', r.stdout.count('CRYPTO_KEY'))
+PY
 ```
