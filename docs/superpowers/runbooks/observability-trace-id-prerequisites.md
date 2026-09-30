@@ -68,16 +68,31 @@ kubectl -n amz-erp rollout status deployment/skywalking-oap
 当前**默认保持 SkyWalking 语义（false）**：通道断开时不建 trace，日志显示 `TID:Ignored_Trace`。
 若某环境需要"OAP 挂了也要能按 id 串日志"，在该环境的部署清单里显式加这个变量，不要全局改。
 
-## 5. 已知边界：跨服务精确 join
+## 5. 已知边界：跨服务关联走 OAP，不要拿日志 id 做精确 join
 
-实测（agent 9.7.0，`product` → Feign → `order`）：下游日志里的 id 会携带**上游 agent 的 uuid 段**，
-但段号与时间是本地渲染，两侧字符串**不逐字相同**。因此：
+实测（agent 9.7.0 + OAP 10.1.0，`product` → Feign → `order`，单次请求）：
 
-- 不能把 `TID` 当成跨服务精确 join 的键；跨服务关联以 OAP 侧 segment refs 为准（UI 里按 trace 展开）。
-- 日志侧 `TID` 的可靠用法是"定位本服务本次请求的所有行"，以及把其中的 uuid 段贴进 UI 检索起点。
-- 若确实需要两侧完全一致的字符串，需要额外引入 MDC 注入层（属新功能，待 OAP 跑通后评估）。
+| 侧 | 日志里打印的 id | 在 OAP 里查该 id |
+|---|---|---|
+| 调用方 product | `c77efd1d….131.17907511…` | **查不到** |
+| 被调方 order | `c77efd1d….143.17907511…` | 返回 9 个 span，**同时含 product 与 order** |
 
-`logstash/logstash.conf` 已把文本槽位（剥掉 `TID:` 前缀）与 JSON 的 `TID` 字段统一到 `traceId`。
+OAP 里 order 的 Entry span 带 `refs.type = CROSS_PROCESS` 且 `parentSegmentId` 指向 product 的
+segment，`serviceCode` 分别是 `swx-product|<namespace>|` 与 `swx-order|<namespace>|` ——
+即**跨服务串联是成立的，只是不靠两侧字符串相等**。
+
+用法约定：
+
+- 跨服务看整条链路：用 OAP UI 或 GraphQL，检索键取**被调方日志里的 id**。
+  ```bash
+  curl -s -X POST http://<oap>:12800/graphql -H 'Content-Type: application/json' \
+    -d '{"query":"{ queryTrace(traceId: \"<被调方日志里的 id>\") { spans { serviceCode endpointName type refs { parentSegmentId type } } } }"}'
+  ```
+- 日志平台里：`traceId` 只用于"取同一服务本次请求的全部行"，**不要**拿它做跨服务精确 join。
+- `logstash/logstash.conf` 已把文本槽位（剥掉 `TID:` 前缀）与 JSON 的 `TID` 字段统一到 `traceId`，
+  并映射 `service` 字段标识来源服务。
+- 若将来确实需要两侧打印完全一致的字符串，需要额外引入 MDC 注入层（属新功能，需先写 spec）。
+
 
 ## 6. 相关契约测试（改配置前先跑）
 

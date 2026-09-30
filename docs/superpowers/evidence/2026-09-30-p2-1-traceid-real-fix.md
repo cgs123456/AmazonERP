@@ -4,8 +4,8 @@
 > 本文推翻两份既有结论：`2026-09-30-p2-1-tracing-traceid-fix.md` 的"traceId 修复可用"，以及
 > `2026-09-30-p2-1-json-log-handoff.md` §4.2 的"JSON 运行时冒烟可输出、服务在跑"。
 > 本轮把 traceId 修到真实可用（含部署层 agent 挂载），并补上能抓住这类故障的 hermetic 契约测试与反向验证。
-> **P2-1 仍不能标完成**，但未证项已收敛为两条：① 跨服务**关联链复核需要 OAP**（传播本身已在 §10.3 实测成立）；
-> ② 实测发现两侧 `%tid` 不逐字相同，交接文档"两服务取到相同 traceId"这条验收写法在 agent 9.7.0 下不成立，需修正。
+> **P2-1 的可观测性主链路已实测跑通**：agent 挂载、逐服务身份、跨进程传播、OAP 侧组装成一条 trace 均已复核（§10.3）。
+> 仍**不能宣告 P2-1 完成**的原因换成两条更小的：仓库 Dockerfile 的完整镜像重建受容器侧死代理阻塞（§10.1，已用派生镜像覆盖语义）；以及实测证伪了交接文档"两服务取到相同 traceId"这条验收写法（§10.3 判定 2）。
 > 另外 k8s 侧仍无采集端；仓库 Dockerfile 的完整重建受容器侧死代理阻塞（§10.1），ENTRYPOINT 语义已用派生镜像验证（§10.2）。
 
 ## 1. P0 定级证据（RED 基线）
@@ -111,15 +111,15 @@ java -jar amz-service/amz-service-message/target/amz-service-message-1.0-SNAPSHO
 | `log-json` 分支输出可解析 JSON 且带 `service` | **已证** | 39/39 行解析成功，`service` = 应用名 |
 | fat jar 嵌套类加载器下 agent 增强生效 | **已证** | §3 的 in-span 真实 id（`amazonerp-user:verify` 镜像内 agent + 新 jar，`SW_AGENT_KEEP_TRACING=true`） |
 | M1/M2/M3 的降级值与 key 形状 | **已证** | §3 表 + 字节码 |
-| 跨服务上下文传播 | **已证成立**，但见下行 | §10.3：callee 侧 id 携带 caller 的 agent uuid，而它自己直连 trace 前缀不同 |
-| 两侧 `%tid` 可精确字符串 join | **不成立** | §10.3 判定 2：下游渲染的段号/时间是本地分量。交接的验收写法需在 OAP 侧关联或改用本段 id，另立决策 |
+| 跨服务串联 | **已证（OAP 复核）** | §10.3：一次请求在 OAP 组装成一条 trace，callee 的 Entry span 带 `CROSS_PROCESS` ref 指向 caller 的 parentSegmentId；serviceCode 逐服务可辨 |
+| 两侧 `%tid` 逐字相同且都可检索 | **不成立** | §10.3 判定 2：caller 打印的是自身 segment id，OAP 查不到；callee 打印值才是 OAP 的 traceId。关联必须走 OAP，runbook §5 已按此写 |
 | 生产 compose 栈真带 agent 起服务 | **已用派生镜像验证 ENTRYPOINT** | §10.2；仓库 Dockerfile 的完整重建仍被容器侧死代理阻塞（§10.1），未覆盖 |
 | k8s 侧 traceId 可用 | **清单与地址已接线，运行时未证** | §10.5：新增 OAP/UI 清单 + 16 个 collector 回填 + 跨文件契约；未在集群 apply，镜像也未拉取过 |
 | hygiene 门禁 | 已回到 rc=0（改动前为 1，触发点 `DeploymentManifestContractTest.java:228`） | `python tools/release/repository_hygiene.py --root .` |
 
 ## 8. 遗留与后续建议
 
-1. 跨服务串联验证：起 `skywalking-oap` + `elasticsearch`，用同一 `SW_AGENT_NAMESPACE` 打通 gateway→一个业务服务，比对两侧日志的 `TID` 值一致；同时验证 `log-json` 分支在同一请求里取到同值。
+1. 下一步（可观测性）：在真实集群或有网络的机器上 `docker compose up -d elasticsearch skywalking-oap skywalking-ui` 复跑一次同样的双服务串联，并对 `k8s/infra/skywalking.yaml` 做真实 apply 校验（本轮只有静态解析与契约级证据）。
 2. k8s 部署补齐 OAP（或明确该环境不接 trace），并给 `SW_AGENT_COLLECTOR_BACKEND_SERVICES` 指到集群内地址。
 3. `logstash/logstash.conf` 的 grok 期望 `TIMESTAMP_ISO8601` 而 pattern 是空格分隔日期，文本模式下本就应持续 `_grokparsefailure`；若要真正落 ES，需要一并处理"字段名 `TID` → `traceId`"与前缀剥离。本轮不动该文件。
 4. 清理惰性文件 `skywalking/agent/config/agent.config`（见 §4 说明）。
@@ -177,32 +177,49 @@ Docker Desktop 被配置为走系统 HTTPS 代理 `127.0.0.1:7897`，而该代�
 
 探针容器与派生镜像已全部删除，在跑的 mock 栈（19 个容器）未被改动。
 
-### 10.3 后续项1：跨服务传播实测（并修正一条验收标准）
+### 10.3 后续项1：跨服务传播实测（OAP 侧已复核，并修正一条验收标准）
 
 拓扑：`product`（文本日志）→ Feign → `order`（`log-json`），两侧各挂 9.7.0 权威 agent，
-**均关闭 nacos 服务注册**以免抢占在跑栈的流量；collector 不可达，靠 `SW_AGENT_KEEP_TRACING=true`
-让 agent 在断连时仍建 trace（否则整条链路退化为 `Ignored_Trace`，见 §4）。
+**均关闭 nacos 服务注册**以免抢占在跑栈的流量。第一轮 collector 不可达、靠
+`SW_AGENT_KEEP_TRACING=true` 才拿到 id；随后在**宿主机直接跑起 OAP 10.1.0**（默认 H2 存储，
+`java -cp "config;oap-libs/*" org.apache.skywalking.oap.server.starter.OAPServerStartUp`；
+容器侧 `SW_AGENT_COLLECTOR_BACKEND_SERVICES=host.docker.internal:11800`），
+在通道连通且不设 keep_tracing 的**生产真实路径**下复测同一链路。
 
-| 观测 | 值 |
-|---|---|
-| product 侧（caller，root） | `[TID:68ba3402….128.17907473346960001]` |
-| order 侧（callee，同请求入站） | `"TID":"68ba3402….144.17907473347050001"` |
-| order 侧**直连**请求（无上游） | `"TID":"a2eed589….128…"` ← uuid 段不同 |
+单次请求、日志窗口内只出现一个 id 的干净取样：
 
-判定：
+| 侧 | 日志打印的 id | OAP `queryTrace` 结果 |
+|---|---|---|
+| caller（product） | `c77efd1d….131.17907511809970001` | **查不到该 traceId** |
+| callee（order） | `c77efd1d….143.17907511810290001` | **返回 9 个 span，横跨两个服务** |
 
-1. **跨进程上下文传播成立。** order 自己发起的 trace 前缀恒为 `a2eed589…`；而经 product 转发的请求，
-   order 打出的 id 前缀变成 product 的 `68ba3402…`，尾段与 product 时序相邻。
-   本地新生成的 id 不可能携带上游 uuid，故 `sw8` 注入/解析链路有效。
-2. **但两侧打印串不逐字相同。** `DistributedTraceId.toString()` 原样返回其 `id`，而下游渲染的
-   中间段与尾段是本地分量（`.128` vs `.144`）。⇒ **不能用 `%tid`/`TID` 做跨服务精确字符串 join**。
-   交接文档 §10.4 第 3 条"两条服务日志都能取到相同非空 traceId"这一写法在 agent 9.7.0 上不成立，
-   应改为：跨服务关联以 OAP 侧 segment refs 为准，日志侧 `TID` 作为**本段可检索 id** 使用。
-   本轮未起 OAP，UI 侧关联链尚未复核（属下一步，不是已完成）。
-3. 顺带暴露一个**与日志无关的应用侧缺陷**：`product → order` 的 Feign 响应反序列化失败
+OAP 按 callee id 返回的关键结构：
+
+```
+swx-product|swx-probe|  /order/fees/lookup      type=Exit   refs=[]
+swx-order|swx-probe|    GET:/order/fees/lookup  type=Entry  refs=[{type: CROSS_PROCESS,
+                                        parentSegmentId: c77efd1d….143.17907511810290000}]
+swx-order|swx-probe|    Druid/… 与 Mysql/JDBC/…  同 trace 的 DB 子 span
+```
+
+判定（OAP 复核，不再是推断）：
+
+1. **跨服务串联成立。** 一次请求在 OAP 里组装成**一条 trace**：order 的 Entry span 带
+   `refs.type = CROSS_PROCESS` 且 `parentSegmentId` 指向 product 的 segment；`serviceCode`
+   分别为 `swx-product|swx-probe|` 与 `swx-order|swx-probe|` ⇒ agent 挂载、逐服务身份、
+   跨进程传播三者同时生效。
+2. **两侧日志 id 不逐字相同，且只有 callee 那个可作为检索键。** caller 打印的是自己 segment 的 id，
+   在 OAP 里查不到；callee 打印的值才是 OAP 当作 traceId 的那个。⇒ 交接文档 §10.4 第 3 条
+   "两条服务日志都能取到相同非空 traceId"这一验收写法在 agent 9.7.0 下不成立。
+3. 正确用法：跨服务关联以 OAP（UI / GraphQL `queryTrace`）为准；日志 id 用于"取本服务本次请求的全部行"，
+   其中被调侧的 id 可直接贴进 UI 检索，调用方的不能。runbook §5 已按此改写。
+4. 顺带暴露与日志无关的应用侧缺陷：`product → order` 的 Feign 响应反序列化失败
    `Type definition error: [simple type, class com.amz.result.Result]`，被
-   `OrderServiceFeignClientFallbackFactory` 静默降级为 `source=estimated`——该链路每次都在走降级路径，
-   值得单独立项。
+   `OrderServiceFeignClientFallbackFactory` 静默降级为 `source=estimated`；但 OAP 里 Exit/Entry span
+   成对存在，说明 HTTP 往返真的发生、只是结果被丢弃。该链路每次都走降级，值得单独立项。
+
+探针容器、临时 mongo、OAP 进程与含凭证的 env 文件均已清理；在跑的 mock 栈未被改动。
+
 
 ### 10.4 复跑要点
 
@@ -240,13 +257,13 @@ tar xzf agent-9.7.0.tgz && find skywalking-agent -name '._*' -delete
 | 决策 | 选择 | 落地 |
 |---|---|---|
 | OAP 不可达时 agent 不建 context，是否把 OAP 纳入 compose 默认启动链或全局开 `keep_tracing` | **只写运维前置条件** | 新增 `docs/superpowers/runbooks/observability-trace-id-prerequisites.md`：三态判读表（`TID: N/A` 未挂 agent / `TID:Ignored_Trace` 通道断 / `TID:<id>` 健康）、agent 挂载核查命令、compose 与 k8s 的启动顺序、`keep_tracing` 的代价与"仅按环境显式开启"的约定 |
-| 两侧 `%tid` 不逐字相同导致原验收不成立，是否补 MDC 注入层 | **等 OAP 真跑通后再定** | runbook §5 记录当前边界与 `TID` 的正确用法；logstash 侧已把两条路径统一到 `traceId` |
+| 两侧 `%tid` 不逐字相同导致原验收不成立，是否补 MDC 注入层 | **OAP 跑通后定案：不补** | §10.3 判定 2/3：跨服务关联走 OAP 即满足排障需要；日志侧由 logstash 统一映射为 `traceId`。若将来确需两侧字符串完全一致，再按新功能立 spec |
 
 ### 10.8 后续项完成状态
 
 | 计划项 | 状态 |
 |---|---|
-| 1 跨服务串联 | 传播已实测成立；**验收标准本身被证伪并改写**（§10.3）；OAP 侧关联链待集群/镜像可用 |
+| 1 跨服务串联 | **已完成并经 OAP 复核**（宿主机 OAP 10.1.0 + H2，未动在跑栈）；原验收写法被证伪并改写（§10.3） |
 | 2 镜像重建冒烟 | 完整重建受容器代理阻塞；已用派生镜像覆盖 ENTRYPOINT/去重/exec/日志目录语义（§10.2） |
 | 3 OAP 与 keep_tracing | 决策=只写运维前置条件，runbook 已交付（§10.7） |
 | 4 k8s 采集端 | 清单 + 16 处回填 + 跨文件契约已落，静态级验证（§10.5） |
