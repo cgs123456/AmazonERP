@@ -149,10 +149,14 @@ logging:
 # 需显式开启 probes（非 k8s 环境不会自动启用）。
 # exposure 仅暴露 health/info，show-details=never 避免泄露数据源等内部细节。
 management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       probes:

@@ -75,3 +75,27 @@ springdoc:
     path: /swagger-ui.html
     enabled: true
   show-actuator: false
+
+# ====== Actuator / observability contract (P2-1) ======
+# Boot 3 default web exposure is health only; /actuator/prometheus would 404.
+# probes.enabled must be explicit for non-k8s (compose/local) environments.
+# show-details=never prevents leaking datasource details via /actuator/health.
+management:
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true

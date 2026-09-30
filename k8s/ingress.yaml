@@ -35,14 +35,7 @@ spec:
                 name: amz-gateway
                 port:
                   number: 10010
-          # 网关 actuator / 路由管理
-          - path: /actuator
-            pathType: Prefix
-            backend:
-              service:
-                name: amz-gateway
-                port:
-                  number: 10010
+
           # 前端静态资源
           - path: /
             pathType: Prefix

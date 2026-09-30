@@ -19,8 +19,8 @@ scrape_configs:
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets:
-        - 'amz-service-user:8086'
-        - 'amz-service-product:8087'
+        - 'amz-service-user:8080'
+        - 'amz-service-product:8095'
         - 'amz-service-order:8105'
         - 'amz-service-search:8090'
         - 'amz-service-ai:8091'
