@@ -2,6 +2,8 @@ package com.amz.mq.consumer;
 
 import com.amz.constant.MqConstant;
 import com.amz.exception.MessageProcessLimitExceededException;
+import com.amz.exception.OrderMessageDuplicateException;
+import com.amz.exception.OrderMessageRejectedException;
 import com.amz.model.dto.OrderDto;
 import com.amz.model.dto.OrderItemSyncDto;
 import com.amz.model.dto.OrderSyncDto;
@@ -115,10 +117,18 @@ public class OrderConsumer {
 
             ack(channel, deliveryTag);
             log.info("消息已确认，订单处理成功，messageId={}", messageId);
-        } catch (IllegalStateException e) {
-            // 幂等性跳过或参数校验失败：直接 ack，不重新入队
-            log.warn("跳过消息处理（幂等或参数校验）：messageId={}, 错误: {}", amqpMessageId, e.getMessage());
+        } catch (OrderMessageDuplicateException e) {
+            // 只有"这条已经处理过"才允许直接 ack。
+            // 旧实现用 catch (IllegalStateException) 当 ack 判据，而 order 侧的 IllegalStateException
+            // 同时表达可重试故障（"商品不存在或商品服务不可用"正是 product Feign 降级/超时的快速失败，
+            // 且 saveOrderInternal 的注释写明要"由 MQ 机制稍后重试"）——
+            // 结果这些订单消息被 ack 后永久消失。
+            log.info("消息已处理过，幂等跳过：messageId={}, 原因: {}", amqpMessageId, e.getMessage());
             ack(channel, deliveryTag);
+        } catch (OrderMessageRejectedException e) {
+            // 消息本身不合法（重投也不会变好）：转死信队列留痕，不 ack 丢弃也不无限重投
+            log.error("消息不合法，转死信队列：messageId={}, 原因: {}", amqpMessageId, e.getMessage());
+            sendToDlq(channel, deliveryTag);
         } catch (MessageProcessLimitExceededException e) {
             // 连续失败达上限的毒消息：nack requeue=false，经 DLX 路由到死信队列，
             // 阻断无限重投（修复：旧实现恒 requeue=true 导致 DLX 配置形同虚设）

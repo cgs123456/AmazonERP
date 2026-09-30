@@ -6,6 +6,8 @@ import com.amz.client.ProductClient;
 import com.amz.constant.MqConstant;
 import com.amz.enums.OrderStatusEnum;
 import com.amz.exception.MessageProcessLimitExceededException;
+import com.amz.exception.OrderMessageDuplicateException;
+import com.amz.exception.OrderMessageRejectedException;
 import com.amz.mapper.OrderAttributeMapper;
 import com.amz.mapper.OrderItemMapper;
 import com.amz.mapper.OrderMapper;
@@ -141,7 +143,8 @@ public class OrderServiceImpl implements OrderService {
     public void processOrderMessage(OrderDto orderDto) {
         Integer userId = orderDto.getUserId();
         if (userId == null) {
-            throw new IllegalStateException("用户ID不能为空");
+            // 永久不合法：重投也不会有 userId，交 Consumer 直接转死信，别 ack 丢单也别无限重投
+            throw new OrderMessageRejectedException("用户ID不能为空");
         }
 
         // 幂等性检查：使用消息ID（由 Consumer 设置：优先 amazonOrderId+shopId，其次 AMQP messageId）
@@ -158,7 +161,7 @@ public class OrderServiceImpl implements OrderService {
         if (Boolean.FALSE.equals(isNew)) {
             // key 已存在，说明消息已处理成功过（失败时会释放占位），跳过重复处理
             log.warn("消息已处理过或正在处理中，跳过处理，messageId: {}", messageId);
-            throw new IllegalStateException("消息已处理过，messageId: " + messageId);
+            throw new OrderMessageDuplicateException("消息已处理过，messageId: " + messageId);
         }
 
         try {
