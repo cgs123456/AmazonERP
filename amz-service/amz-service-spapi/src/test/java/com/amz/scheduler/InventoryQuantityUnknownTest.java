@@ -95,7 +95,9 @@ class InventoryQuantityUnknownTest {
         ReplenishmentEngine engine = mock(ReplenishmentEngine.class);
         ReplenishmentSuggestionMapper suggestionMapper = mock(ReplenishmentSuggestionMapper.class);
         when(inventoryMapper.selectList(any())).thenReturn(List.of(unknown, emptyStock));
-        when(engine.generateSuggestion(any(), any(), any(), any(), anyInt(), anyInt()))
+        when(engine.getSeasonalIndex(any(), anyInt())).thenReturn(java.math.BigDecimal.ONE);
+        when(engine.getActivePromotionMultiplier(any())).thenReturn(java.math.BigDecimal.ONE);
+        when(engine.generateSuggestion(any(), any(), any(), any(), anyInt(), anyInt(), any(), any()))
                 .thenReturn(new ReplenishmentSuggestion());
         when(suggestionMapper.selectOne(any())).thenReturn(null);
 
@@ -106,8 +108,10 @@ class InventoryQuantityUnknownTest {
 
         int generated = replenishment.calcShopReplenishment(7L);
 
-        verify(engine, never()).generateSuggestion(any(), eq("S-unknown"), any(), any(), anyInt(), anyInt());
-        verify(engine).generateSuggestion(eq(7L), eq("S-empty"), any(), any(), eq(0), anyInt());
+        verify(engine, never())
+                .generateSuggestion(any(), eq("S-unknown"), any(), any(), anyInt(), anyInt(), any(), any());
+        verify(engine)
+                .generateSuggestion(eq(7L), eq("S-empty"), any(), any(), eq(0), anyInt(), any(), any());
         assertEquals(1, generated,
                 "只有真实取到库存的 SKU 才该产出建议；未知的那条不能算进去");
     }

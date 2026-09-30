@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -73,6 +74,9 @@ public class HybridReplenishmentEngine extends ReplenishmentEngine {
      * 生成单个 SKU 的混合补货建议。
      * <p>
      * 先执行规则引擎，再根据 CV 和模型状态决定是否叠加 ML 预测。
+     * <p>
+     * 覆写<b>批量入口</b>（8 参）：父类 6 参重载会把取好的季节指数/促销乘数传进来，
+     * 因此覆写这一层才能同时覆盖单条与批量两条调用路径。
      *
      * @param shopId            店铺 ID
      * @param sku               卖家 SKU
@@ -80,22 +84,30 @@ public class HybridReplenishmentEngine extends ReplenishmentEngine {
      * @param category          类目
      * @param currentTotalStock 当前总库存
      * @param leadTimeDays      采购周期（天）
+     * @param seasonalIndex     季节性指数（调用方每轮取一次）
+     * @param promotionMultiplier 促销乘数（调用方每轮取一次）
      * @return 补货建议实体（含 ML 混合信息）
      */
     @Override
     public ReplenishmentSuggestion generateSuggestion(Long shopId, String sku, String asin,
                                                       String category, int currentTotalStock,
-                                                      int leadTimeDays) {
-        // 1. 先调规则引擎得到规则结果
-        ReplenishmentSuggestion suggestion = super.generateSuggestion(
-                shopId, sku, asin, category, currentTotalStock, leadTimeDays);
-
-        // 2. 查询销量数据，计算 CV 和特征（复用父类零填充口径，保证与规则路径 CV 一致）
+                                                      int leadTimeDays,
+                                                      BigDecimal seasonalIndex,
+                                                      BigDecimal promotionMultiplier) {
+        // 1. 一次查询 30 天历史，同时喂给规则引擎与后续的 CV / ML 特征
+        //    （旧实现在 super 里又查一次同一份数据，每个 SKU 多一条 SQL）
         List<SalesHistory> histories = queryLast30DaysSalesHistory(shopId, sku);
+
+        // 2. 规则引擎结果
+        ReplenishmentSuggestion suggestion = super.buildSuggestion(
+                shopId, sku, asin, currentTotalStock, leadTimeDays,
+                seasonalIndex, promotionMultiplier, histories);
+
+        // 3. 计算 CV（复用父类零填充口径，保证与规则路径 CV 一致）
         List<Integer> dailySales = extractDailyQuantities(histories);
         double cv = calculateCV(dailySales);
 
-        // 3. 判断是否使用 ML（模型未加载或 CV 未达阈值 → 纯规则）
+        // 4. 判断是否使用 ML（模型未加载或 CV 未达阈值 → 纯规则）
         if (!predictor.isModelLoaded() || cv <= ML_CV_THRESHOLD) {
             suggestion.setBlendStrategy(STRATEGY_RULE_ONLY);
             log.debug("混合补货 → 纯规则路径: shopId={} sku={} cv={} modelLoaded={}",
@@ -103,32 +115,30 @@ public class HybridReplenishmentEngine extends ReplenishmentEngine {
             return suggestion;
         }
 
-        // 4. 构建 ML 特征
+        // 5. 构建 ML 特征
         LocalDate today = LocalDate.now();
         double dailyAvg7 = computeDailyAvg(histories, 7);
         double dailyAvg30 = computeDailyAvg(histories, 30);
         double trendSlope = computeTrendSlope(dailySales);
-        double seasonalIndex = suggestion.getSeasonalIndex() != null
-                ? suggestion.getSeasonalIndex().doubleValue() : 1.0;
-        double promotionMultiplier = suggestion.getPromotionMultiplier() != null
-                ? suggestion.getPromotionMultiplier().doubleValue() : 1.0;
+        double mlSeasonalIndex = seasonalIndex != null ? seasonalIndex.doubleValue() : 1.0;
+        double mlPromotionMultiplier = promotionMultiplier != null ? promotionMultiplier.doubleValue() : 1.0;
 
         ReplenishmentFeatures features = ReplenishmentFeatures.builder()
                 .dailyAvg7(dailyAvg7)
                 .dailyAvg30(dailyAvg30)
                 .cv(cv)
                 .trendSlope(trendSlope)
-                .seasonalIndex(seasonalIndex)
-                .promotionMultiplier(promotionMultiplier)
+                .seasonalIndex(mlSeasonalIndex)
+                .promotionMultiplier(mlPromotionMultiplier)
                 .currentStock(currentTotalStock)
                 .leadTimeDays(leadTimeDays)
                 .month(today.getMonthValue())
                 .build();
 
-        // 5. ML 预测
+        // 6. ML 预测
         MlPrediction mlPrediction = predictor.predict(features);
 
-        // 6. 混合：ML 70% + 规则 30%（仅对 suggestedReplenishQty）
+        // 7. 混合：ML 70% + 规则 30%（仅对 suggestedReplenishQty）
         int ruleQty = suggestion.getSuggestedReplenishQty() != null
                 ? suggestion.getSuggestedReplenishQty() : 0;
         double blendedQty = ML_WEIGHT * mlPrediction.getPredictedDemand()

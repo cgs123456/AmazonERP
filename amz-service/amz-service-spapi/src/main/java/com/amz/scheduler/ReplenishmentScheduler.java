@@ -15,6 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
@@ -103,6 +104,12 @@ public class ReplenishmentScheduler {
             log.warn("calcShopReplenishment shopId={}: no inventory records", shopId);
             return 0;
         }
+        // 季节性指数与促销乘数只跟 (category, 当天) 有关，而本店铺所有 SKU 共用 DEFAULT_CATEGORY：
+        // 每轮取一次，避免在 SKU 循环里重复查询配置表（旧实现为 店铺 × SKU × 2 次）。
+        // 取的是本轮开始时刻的快照，跨月运行时本轮仍沿用同一指数，保证一店一次运行口径一致。
+        BigDecimal seasonalIndex = replenishmentEngine.getSeasonalIndex(
+                DEFAULT_CATEGORY, LocalDate.now().getMonthValue());
+        BigDecimal promotionMultiplier = replenishmentEngine.getActivePromotionMultiplier(DEFAULT_CATEGORY);
         int count = 0;
         int unknownStock = 0;
         for (FbaInventory inv : inventories) {
@@ -120,7 +127,7 @@ public class ReplenishmentScheduler {
 
                 ReplenishmentSuggestion suggestion = replenishmentEngine.generateSuggestion(
                         shopId, inv.getSku(), inv.getAsin(), DEFAULT_CATEGORY,
-                        currentTotalStock, DEFAULT_LEAD_TIME_DAYS);
+                        currentTotalStock, DEFAULT_LEAD_TIME_DAYS, seasonalIndex, promotionMultiplier);
                 upsert(suggestion);
                 count++;
             } catch (Exception e) {

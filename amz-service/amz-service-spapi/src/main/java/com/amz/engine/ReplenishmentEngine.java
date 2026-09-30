@@ -117,15 +117,47 @@ public class ReplenishmentEngine {
                                                       String category, int currentTotalStock,
                                                       int leadTimeDays) {
         LocalDate today = LocalDate.now();
+        return generateSuggestion(shopId, sku, asin, category, currentTotalStock, leadTimeDays,
+                getSeasonalIndex(category, today.getMonthValue()), getActivePromotionMultiplier(category));
+    }
+
+    /**
+     * 批量入口：季节指数与促销乘数由调用方<b>每轮取一次</b>传进来。
+     * <p>
+     * 存在动因：这两个值只跟 (category, 当天) 有关，而调度器对同一店铺的所有 SKU 用的是
+     * 同一个 {@code DEFAULT_CATEGORY}——旧代码在每个 SKU 的循环里各查一次，
+     * 其中促销日历查询还不带 category 条件（每次结果完全相同）。
+     * 店铺数 × SKU 数 × 2 次重复查询在 100 店 × 2000 SKU 下就是 40 万次无意义扫描。
+     * 单条调用仍可用上面的 6 参重载，行为不变。
+     */
+    public ReplenishmentSuggestion generateSuggestion(Long shopId, String sku, String asin,
+                                                      String category, int currentTotalStock,
+                                                      int leadTimeDays,
+                                                      BigDecimal seasonalIndex,
+                                                      BigDecimal promotionMultiplier) {
+        return buildSuggestion(shopId, sku, asin, currentTotalStock, leadTimeDays,
+                seasonalIndex, promotionMultiplier, queryLast30DaysHistory(shopId, sku));
+    }
+
+    /**
+     * 计算主体：销量历史由调用方提供。
+     * <p>
+     * 存在动因：混合引擎需要同一份 30 天历史算 CV 与 ML 特征，若各自查询则每个 SKU 多一条
+     * 完全相同（仅排序不同）的 SQL。基线与 CV 都不依赖返回顺序，故子类带 {@code ORDER BY}
+     * 的那份可直接复用。
+     */
+    protected ReplenishmentSuggestion buildSuggestion(Long shopId, String sku, String asin,
+                                                      int currentTotalStock, int leadTimeDays,
+                                                      BigDecimal seasonalIndex,
+                                                      BigDecimal promotionMultiplier,
+                                                      List<SalesHistory> histories) {
+        LocalDate today = LocalDate.now();
         ReplenishmentSuggestion suggestion = new ReplenishmentSuggestion();
         suggestion.setShopId(shopId);
         suggestion.setSku(sku);
         suggestion.setAsin(asin);
         suggestion.setStatDate(today);
         suggestion.setCurrentTotalStock(currentTotalStock);
-
-        // 1+2. 单次查询 30 天销量历史：同一份数据同时用于基线与 CV 计算（避免同数据重复 SQL）
-        List<SalesHistory> histories = queryLast30DaysHistory(shopId, sku);
 
         // 1. 基线需求 = 7天日均 × 0.7 + 30天日均 × 0.3
         BigDecimal baseline = computeBaseline(histories);
@@ -137,12 +169,10 @@ public class ReplenishmentEngine {
         BigDecimal safetyFactor = getSafetyFactor(cv);
         suggestion.setSafetyFactor(safetyFactor);
 
-        // 3. 季节性指数
-        BigDecimal seasonalIndex = getSeasonalIndex(category, today.getMonthValue());
+        // 3. 季节性指数（批量路径由调用方传入，单条路径在 6 参重载里取）
         suggestion.setSeasonalIndex(seasonalIndex);
 
         // 4. 促销乘数
-        BigDecimal promotionMultiplier = getActivePromotionMultiplier(category);
         suggestion.setPromotionMultiplier(promotionMultiplier);
 
         // 5. 调整后需求 = baseline × 安全系数 × 季节性 × 促销
@@ -261,12 +291,14 @@ public class ReplenishmentEngine {
 
     /**
      * 查询最近 30 天的销量历史（供基线与 CV 共用，避免同数据重复 SQL）。
+     * <p>
+     * 子类若需要带排序的同一份数据，应改为把结果传入 {@link #buildSuggestion}，而不是再查一次。
      *
      * @param shopId 店铺 ID
      * @param sku    卖家 SKU
      * @return 销量历史列表（可能为空）
      */
-    private List<SalesHistory> queryLast30DaysHistory(Long shopId, String sku) {
+    protected List<SalesHistory> queryLast30DaysHistory(Long shopId, String sku) {
         LocalDate today = LocalDate.now();
         LocalDate start30 = today.minusDays(30);
         return salesHistoryMapper.selectList(
