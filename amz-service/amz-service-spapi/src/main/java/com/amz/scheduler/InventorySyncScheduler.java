@@ -176,7 +176,8 @@ public class InventorySyncScheduler {
      * 解析结构：{marketplaceId, asin, fnSku, sellerSku, productName, lastUpdatedTime,
      * inventoryDetails.{fulfillable, unfulfillable, inboundWorking, inboundShipped}}
      */
-    private FbaInventory parseInventory(JsonObject item, Long shopId, String marketplaceId) {
+    // 包级可见：解析语义（"字段缺失" ≠ "库存为 0"）由同包测试直接覆盖，无需起 HTTP 或连库
+    FbaInventory parseInventory(JsonObject item, Long shopId, String marketplaceId) {
         FbaInventory inv = new FbaInventory();
         inv.setShopId(shopId);
         // marketplaceId 优先取响应内字段，缺失时回退到查询参数
@@ -189,9 +190,9 @@ public class InventorySyncScheduler {
 
         JsonObject details = item.has("inventoryDetails") && item.get("inventoryDetails").isJsonObject()
                 ? item.getAsJsonObject("inventoryDetails") : new JsonObject();
-        inv.setAvailableQuantity(getInt(details, "fulfillable", 0));
-        inv.setInboundWorking(getInt(details, "inboundWorking", 0));
-        inv.setInboundShipped(getInt(details, "inboundShipped", 0));
+        inv.setAvailableQuantity(getIntOrNull(details, "fulfillable"));
+        inv.setInboundWorking(getIntOrNull(details, "inboundWorking"));
+        inv.setInboundShipped(getIntOrNull(details, "inboundShipped"));
         // unfulfillable 在 SP-API 中可能是对象 {totalUnfulfillable: N}，也可能是数字
         inv.setUnfulfillableQuantity(extractUnfulfillable(details));
 
@@ -201,27 +202,27 @@ public class InventorySyncScheduler {
 
     /**
      * 提取 unfulfillable 数量：优先取对象内的 totalUnfulfillable，否则取原始数值。
+     * 返回 {@code null} 表示"对端没给这个字段"，与"给了 0"必须可区分。
      */
-    private int extractUnfulfillable(JsonObject details) {
+    private Integer extractUnfulfillable(JsonObject details) {
         if (!details.has("unfulfillable")) {
-            return 0;
+            return null;
         }
         JsonElement elem = details.get("unfulfillable");
         if (elem == null || elem.isJsonNull()) {
-            return 0;
+            return null;
         }
         if (elem.isJsonObject()) {
-            JsonObject obj = elem.getAsJsonObject();
-            return getInt(obj, "totalUnfulfillable", 0);
+            return getIntOrNull(elem.getAsJsonObject(), "totalUnfulfillable");
         }
         if (elem.isJsonPrimitive()) {
             try {
                 return elem.getAsInt();
             } catch (Exception e) {
-                return 0;
+                return null;
             }
         }
-        return 0;
+        return null;
     }
 
     /**
@@ -275,14 +276,22 @@ public class InventorySyncScheduler {
         return obj.get(key).getAsString();
     }
 
-    private int getInt(JsonObject obj, String key, int defaultValue) {
+    /**
+     * 读取整数字段，缺失/为 null/不可解析时返回 {@code null}。
+     * <p>
+     * 旧实现是 {@code getInt(obj, key, 0)}：SP-API 少给一个字段（或结构变了）就等于
+     * "可售库存 0"，随后 upsert 把这个假零写进 {@code amz_fba_inventory.available_quantity}，
+     * 与真实缺货无法区分，还会驱动补货建议。列本身可空、实体是 Integer，
+     * 因此用 null 表达"未知"不需要改表；下游按 null 自行决定保守策略。
+     */
+    private Integer getIntOrNull(JsonObject obj, String key) {
         if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) {
-            return defaultValue;
+            return null;
         }
         try {
             return obj.get(key).getAsInt();
         } catch (Exception e) {
-            return defaultValue;
+            return null;
         }
     }
 

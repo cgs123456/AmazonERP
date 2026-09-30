@@ -104,9 +104,16 @@ public class ReplenishmentScheduler {
             return 0;
         }
         int count = 0;
+        int unknownStock = 0;
         for (FbaInventory inv : inventories) {
             try {
-                int available = inv.getAvailableQuantity() == null ? 0 : inv.getAvailableQuantity();
+                if (inv.getAvailableQuantity() == null) {
+                    // 可售库存未知 ≠ 0：按 0 参与计算会凭空造出补货建议（多下单就是真金白银）
+                    unknownStock++;
+                    log.warn("calcShopReplenishment 跳过库存未知的 SKU：shopId={} sku={}", shopId, inv.getSku());
+                    continue;
+                }
+                int available = inv.getAvailableQuantity();
                 int inboundWorking = inv.getInboundWorking() == null ? 0 : inv.getInboundWorking();
                 int inboundShipped = inv.getInboundShipped() == null ? 0 : inv.getInboundShipped();
                 int currentTotalStock = available + inboundWorking + inboundShipped;
@@ -119,6 +126,11 @@ public class ReplenishmentScheduler {
             } catch (Exception e) {
                 log.error("calcShopReplenishment failed shopId={} sku={}", shopId, inv.getSku(), e);
             }
+        }
+        if (unknownStock > 0) {
+            log.warn("calcShopReplenishment shopId={}: {} 条建议已生成，{} 个 SKU 因可售库存未知被跳过"
+                            + "（需检查 SP-API 返回结构，未知不等于缺货）",
+                    shopId, count, unknownStock);
         }
         return count;
     }
