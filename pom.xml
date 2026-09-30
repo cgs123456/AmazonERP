@@ -81,6 +81,8 @@
         <!-- 阿里云 OSS SDK 传递引入 aliyun-java-sdk-core 4.5.10 -> org.ini4j:ini4j:0.5.4
              （High，无修复版本）。core 4.7.10 已移除 ini4j 依赖。 -->
         <aliyun.sdk.core.version>4.7.10</aliyun.sdk.core.version>
+        <!-- SkyWalking Java Agent toolkit (与 Dockerfile agent 9.7.0 对齐) -->
+        <skywalking.version>9.7.0</skywalking.version>
     </properties>
 
     <build>
@@ -301,6 +303,14 @@
                 <groupId>org.apache.httpcomponents.core5</groupId>
                 <artifactId>httpcore5-h2</artifactId>
                 <version>${httpcore5.version}</version>
+            </dependency>
+
+            <!-- SkyWalking logback toolkit：%traceId 转换器（对接 Dockerfile 里的 -javaagent）。
+                 无 agent 时 TraceContext.traceId() 返回 IGNORED，不会抛异常。 -->
+            <dependency>
+                <groupId>org.apache.skywalking</groupId>
+                <artifactId>apm-toolkit-logback-1.x</artifactId>
+                <version>${skywalking.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -121,6 +121,45 @@ class ObservabilityExposureContractTest {
     }
 
     @Test
+    void everyModuleUsesSkyWalkingTraceIdConverter() throws IOException {
+        Map<String, Path> modules = moduleApplicationFiles();
+        for (Map.Entry<String, Path> entry : modules.entrySet()) {
+            String content = Files.readString(entry.getValue(), StandardCharsets.UTF_8);
+            assertTrue(content.contains("[%traceId]"),
+                    entry.getKey() + " 日志 pattern 必须使用 %traceId（SkyWalking 转换器），"
+                            + "而不是 %X{traceId}（MDC 直读，无任何代码向 MDC 写入，"
+                            + "永远输出空字符串）");
+            assertFalse(content.contains("%X{traceId}"),
+                    entry.getKey() + " 日志 pattern 仍在使用 %X{traceId}："
+                            + "全仓无代码调用 MDC.put(\"traceId\",...)，该占位符永远输出空");
+            assertTrue(content.contains("%wEx"),
+                    entry.getKey() + " 日志 pattern 缺少 %wEx（异常输出转换词）："
+                            + "自定义 pattern 覆盖 Spring Boot 默认后异常堆栈不会打印");
+        }
+    }
+
+    @Test
+    void logbackSpringRegistersTraceIdConversionRule() throws IOException {
+        String logback = Files.readString(
+                ROOT.resolve("amz-common/src/main/resources/logback-spring.xml"), StandardCharsets.UTF_8);
+        assertTrue(logback.contains("conversionWord=\"traceId\""),
+                "logback-spring.xml 必须注册 conversionWord=traceId，"
+                        + "否则 %traceId 在运行时会报 conversionWord 未定义");
+        assertTrue(logback.contains("org.apache.skywalking.apm.toolkit.log.logback.v1.x.TraceIdConverter"),
+                "logback-spring.xml 必须引用 SkyWalking TraceIdConverter 类");
+    }
+
+    @Test
+    void rootPomManagesSkyWalkingToolkitVersion() throws IOException {
+        String pom = Files.readString(ROOT.resolve("pom.xml"), StandardCharsets.UTF_8);
+        assertTrue(pom.contains("<artifactId>apm-toolkit-logback-1.x</artifactId>"),
+                "根 pom 的 dependencyManagement 必须管理 apm-toolkit-logback-1.x 版本，"
+                        + "否则各模块声明时无版本可用");
+        assertTrue(pom.contains("<skywalking.version>9.7.0</skywalking.version>"),
+                "根 pom 必须声明 skywalking.version，且与 Dockerfile agent 9.7.0 对齐");
+    }
+
+    @Test
     void yamlExtractionIsTrustworthy() {
         String withPrometheus = String.join("\n",
                 "server:",

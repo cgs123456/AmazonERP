@@ -44,6 +44,13 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- SkyWalking logback toolkit：%traceId 转换器，无 agent 时返回 IGNORED。
+             与 logback-spring.xml 的 conversionRule 配合，将 SkyWalking trace ID 注入日志。 -->
+        <dependency>
+            <groupId>org.apache.skywalking</groupId>
+            <artifactId>apm-toolkit-logback-1.x</artifactId>
+        </dependency>
+
         <!-- OpenFeign：供 FeignAuthRelayConfig 编译使用（透传 token/shopId 请求头）。
              optional 避免强制传递给不使用 Feign 的模块（如网关）；
              运行时由引用方自身声明的 spring-cloud-starter-openfeign 提供，

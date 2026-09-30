@@ -104,7 +104,7 @@ amz:
 # Logging — traceId 注入（与 Skywalking 链路追踪关联）
 logging:
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId}] %-5level %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%traceId] %-5level %logger{36} - %msg%n%wEx"
 springdoc:
   api-docs:
     path: /v3/api-docs
