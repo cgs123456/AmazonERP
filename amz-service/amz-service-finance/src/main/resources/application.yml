@@ -11,6 +11,12 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_ADDR:localhost:8848}
+    # fallbackFactory 只有在装好熔断实现并显式打开后才会被 Feign 装配；本模块此前两
+    # 个客户端都声明了 fallbackFactory 却没开这个开关，兜底是死代码（异常直接抛给调用方）。
+    # 口径与 ops / order / product / report / search 一致。
+    openfeign:
+      circuitbreaker:
+        enabled: true
   # ====== Flyway 基线（P0-58）======
   # 表结构的唯一事实源是 classpath:db/migration；Compose 与 k8s 只负责建空库。
   # baseline-on-migrate=false（P0-58 / 2026-09-30 修正）：非空库且无 flyway_schema_history 时，
@@ -108,6 +114,16 @@ springdoc:
     path: /swagger-ui.html
     enabled: true
   show-actuator: false
+
+# ====== Feign 超时（与其余 6 个有 Feign 客户端的模块同口径）======
+# 缺省是 connect 10s / read 60s：下游卡住时 finance 的请求线程会被占住 60s，
+# 而兄弟模块统一是 3s/10s。数字不一致本身就是漂移，由 FeignFallbackWiringContractTest 守。
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 10000
 
 # ====== Actuator / observability contract (P2-1) ======
 # Boot 3 default web exposure is health only; /actuator/prometheus would 404.
