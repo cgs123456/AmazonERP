@@ -205,6 +205,15 @@ public class FbaInventoryClient {
                 sleep(backoff);
                 continue;
             }
+            // 5xx 与 429 同属可重试：SP-API 的 503 抖动很常见。
+            // 此前只有 OrdersClient 有这条分支，同一次同步里订单侧自愈、库存侧直接把 5xx 当终态返回。
+            int status = response.statusCode();
+            if (status >= 500 && status < 600) {
+                long serverErrorBackoff = (1L << attempt) * 1000L;
+                log.warn("Server error {} retrying after {}ms attempt={}", status, serverErrorBackoff, attempt);
+                sleep(serverErrorBackoff);
+                continue;
+            }
             return response;
         }
         return response;

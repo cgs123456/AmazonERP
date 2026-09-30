@@ -660,6 +660,15 @@ public class SpApiGateway {
                 sleep(backoff);
                 continue;
             }
+            // 5xx 同 429 一样可重试；缺这条分支时网关路径会把 503 当终态返回
+            int status = response.statusCode();
+            if (status >= 500 && status < 600) {
+                long serverErrorBackoff = (1L << attempt) * 1000L;
+                log.warn("Server error {} retrying after {}ms attempt={} operation={}",
+                        status, serverErrorBackoff, attempt, operationId);
+                sleep(serverErrorBackoff);
+                continue;
+            }
             return response;
         }
         return response;

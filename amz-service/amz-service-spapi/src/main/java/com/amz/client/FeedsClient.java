@@ -455,6 +455,14 @@ public class FeedsClient {
                 sleep(backoff);
                 continue;
             }
+            // 与 429 同样可重试；此前缺这条分支，Feeds 侧遇到 5xx 直接把错误响应当终态返回
+            int status = response.statusCode();
+            if (status >= 500 && status < 600) {
+                long serverErrorBackoff = (1L << attempt) * 1000L;
+                log.warn("Server error {} retrying after {}ms attempt={}", status, serverErrorBackoff, attempt);
+                sleep(serverErrorBackoff);
+                continue;
+            }
             return response;
         }
         return response;
