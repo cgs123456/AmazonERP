@@ -153,6 +153,11 @@ jobs:
           SETTLEMENT_BATCH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
           SETTLEMENT_BATCH_IT_USER: root
           SETTLEMENT_BATCH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # LISTING_HEALTH_IT_*：健康度汇总下沉 SQL 后，severity 的大小写敏感只能由真库证明
+          # （mock 不走 collation）。同一 *_it 命名空间规则，详见该 IT 的类注释。
+          LISTING_HEALTH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          LISTING_HEALTH_IT_USER: root
+          LISTING_HEALTH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
         run: mvn -B test -fae
       - name: Verify clean checkout
         if: always()

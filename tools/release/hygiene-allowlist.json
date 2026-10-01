@@ -127,6 +127,11 @@
       "sha256": "cdd4346535034c9de6358dc1ed3112274033e331b5a83c239a971eb54d98a48e"
     },
     {
+      "path": "amz-service/amz-service-product/src/test/java/com/amz/mapper/ListingHealthSummaryMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "sha256": "53f3933482ed445e6ed8b84a6f51040ad2aa7ffe990b92d1f67f59ffcd63ab45"
+    },
+    {
       "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/TokensClient.java",
       "rule": "secret-like-assignment",
       "sha256": "9b85572aa5ba365ec2121832d23c821c62358826614baefa0d086b1664fe5252"

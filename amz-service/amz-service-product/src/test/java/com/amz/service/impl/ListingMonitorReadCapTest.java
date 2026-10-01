@@ -27,7 +27,9 @@ import org.mockito.ArgumentCaptor;
 import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntFunction;
@@ -37,7 +39,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -183,29 +188,37 @@ class ListingMonitorReadCapTest {
     }
 
     @Test
-    @DisplayName("汇总仍是整店口径：total / avgScore 不受列表单读上限影响")
-    void healthSummaryStillAggregatesEverything() {
-        // 关键：mock 必须按 wrapper 里有没有 LIMIT 分别应答，否则"汇总也走了截断"这种
-        // 缺陷会被"mock 无论如何都给这么多行"掩盖（本用例第一版就是这么假绿的）。
-        final int beyondCap = CAP + 100;
+    @DisplayName("汇总口径独立于列表上限：整店计数走聚合，不再整店读入")
+    void summaryDoesNotDependOnTheListCap() {
+        // 列表读仍然带 LIMIT 并会被截断；汇总则走 aggregateHealthSummary，
+        // 两条路分开之后，"为了汇总不截断只能全量扫"这个代价就没有存在的理由了。
         when(healthMapper.selectList(any())).thenAnswer(invocation -> {
             LambdaQueryWrapper<?> wrapper = invocation.getArgument(0);
-            boolean capped = wrapper.getSqlSegment().contains("LIMIT ");
-            List<ListingHealth> rows = healthRows(capped ? Math.min(beyondCap, CAP + 1) : beyondCap);
-            for (int i = 0; i < rows.size(); i++) {
-                rows.get(i).setHealthScore(i % 2 == 0 ? 100 : 0);
-            }
-            return rows;
+            assertTrue(wrapper.getSqlSegment().contains("LIMIT "),
+                    "列表读必须把上限交给数据库，实际：" + wrapper.getSqlSegment());
+            return healthRows(CAP + 1);
         });
+        when(healthMapper.aggregateHealthSummary(1L)).thenReturn(summaryRow(600, 300));
+        when(healthMapper.selectWorstListings(eq(1L), anyInt())).thenReturn(List.of());
+
+        assertEquals(CAP, service.listHealth(1L, null).size(), "列表读仍受上限约束");
 
         Map<String, Object> summary = service.healthSummary(1L);
+        assertEquals(600L, ((Number) summary.get("total")).longValue(),
+                "汇总必须是整店 600 行，而不是被截断后的 500 行");
+        assertEquals(50.0, ((Number) summary.get("healthRate")).doubleValue(), 0.01);
+        verify(healthMapper, times(1)).selectList(any());
+    }
 
-        assertEquals(beyondCap, ((Number) summary.get("total")).longValue(),
-                "汇总一旦被截断，healthRate 就成了抽样结果");
-        assertEquals(50.0, ((Number) summary.get("avgScore")).doubleValue(), 0.01);
-
-        // 同一份数据下，列表读仍然必须被截断
-        assertEquals(CAP, service.listHealth(1L, null).size());
+    private static Map<String, Object> summaryRow(long total, long ok) {
+        Map<String, Object> row = new HashMap<>();
+        row.put("total", total);
+        row.put("okCount", ok);
+        row.put("warningCount", total - ok);
+        row.put("criticalCount", 0L);
+        row.put("scoreSum", BigDecimal.valueOf(total * 60L));
+        row.put("scoreCount", total);
+        return row;
     }
 
     private static List<ListingHealth> healthRows(int count) {

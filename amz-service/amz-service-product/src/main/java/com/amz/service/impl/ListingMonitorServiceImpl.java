@@ -13,6 +13,7 @@ import com.amz.model.ListingChangeLog;
 import com.amz.model.ListingHealth;
 import com.amz.result.PageRequest;
 import com.amz.service.ListingMonitorService;
+import com.amz.util.MapArgUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +47,9 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
      * 它们把全部快照读进内存只为"每个 ASIN 取最新一条"，返回几十行却读了几年数据。
      */
     private static final int LIST_READ_LIMIT = PageRequest.MAX_SIZE;
+
+    /** 健康度汇总里"最差 N 条"的展示条数（原先是整店读入后 {@code limit(5)}）。 */
+    private static final int WORST_LIST_LIMIT = 5;
 
     /**
      * 按单读上限截断一次读取，并让截断这件事在日志里可见。
@@ -162,52 +166,81 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
 
     @Override
     public List<ListingHealth> listHealth(Long shopId, String severity) {
-        return capRead(loadHealth(shopId, severity, true), "Listing 健康度");
+        return capRead(loadHealth(shopId, severity), "Listing 健康度");
     }
 
     /**
-     * @param cap true=列表读，受 {@link #LIST_READ_LIMIT} 约束；
-     *            false=整店口径聚合用，不能被截断 —— 否则 total / avgScore / healthRate 就成了抽样值
+     * @param severity 可选过滤
      */
-    private List<ListingHealth> loadHealth(Long shopId, String severity, boolean cap) {
+    private List<ListingHealth> loadHealth(Long shopId, String severity) {
         LambdaQueryWrapper<ListingHealth> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ListingHealth::getShopId, shopId);
         if (severity != null && !severity.isBlank()) {
             wrapper.eq(ListingHealth::getSeverity, severity);
         }
-        wrapper.orderByAsc(ListingHealth::getHealthScore);
-        if (cap) {
-            wrapper.last(limitClause());
-        }
+        wrapper.orderByAsc(ListingHealth::getHealthScore).last(limitClause());
         return listingHealthMapper.selectList(wrapper);
     }
 
     @Override
     public Map<String, Object> healthSummary(Long shopId) {
-        // 汇总刻意不走带单读上限的 listHealth：total/avgScore/healthRate 是整店口径的数，
-        // 截断后这几个数会变。把汇总下沉到 SQL 聚合才是真正的解法（已记入待办）。
-        List<ListingHealth> all = loadHealth(shopId, null, false);
-        if (all.size() > LIST_READ_LIMIT) {
-            log.warn("Listing 健康度汇总仍需整店扫描：{} 行", all.size());
-        }
-        long ok = all.stream().filter(h -> "OK".equals(h.getSeverity())).count();
-        long warning = all.stream().filter(h -> "WARNING".equals(h.getSeverity())).count();
-        long critical = all.stream().filter(h -> "CRITICAL".equals(h.getSeverity())).count();
-        double avgScore = all.stream().mapToInt(ListingHealth::getHealthScore).average().orElse(0);
+        // 汇总口径仍是整店，但不再为此把整店读进内存：计数与求和交给 SQL（见 mapper 注释，
+        // 其中 severity 的大小写敏感比较是保持原口径的关键）。
+        Map<String, Object> row = listingHealthMapper.aggregateHealthSummary(shopId);
+        long total = longColumn(row, "total");
+        long ok = longColumn(row, "okCount");
+        long warning = longColumn(row, "warningCount");
+        long critical = longColumn(row, "criticalCount");
+        long scoreCount = longColumn(row, "scoreCount");
+        BigDecimal scoreSum = decimalColumn(row, "scoreSum");
+        // 换算留在 Java：与原先 IntStream.average() 的 double 除法逐步一致，
+        // 换成 SQL 的 AVG 会拿 DECIMAL 标度，四舍五入边界上可能给出不同的展示值。
+        double avgScore = scoreCount == 0 ? 0 : scoreSum.doubleValue() / scoreCount;
 
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("total", all.size());
+        result.put("total", total);
         result.put("ok", ok);
         result.put("warning", warning);
         result.put("critical", critical);
         result.put("avgScore", Math.round(avgScore * 10) / 10.0);
-        result.put("healthRate", all.size() > 0 ? Math.round((double) ok / all.size() * 1000) / 10.0 : 0);
-        // Top5 低分
-        result.put("worstListings", all.stream().limit(5)
-                .map(h -> Map.of("asin", h.getAsin(), "score", h.getHealthScore(), "severity", h.getSeverity(),
-                        "reason", h.getSuppressedReason() != null ? h.getSuppressedReason() : ""))
-                .collect(Collectors.toList()));
+        result.put("healthRate", total > 0 ? Math.round((double) ok / total * 1000) / 10.0 : 0);
+        result.put("worstListings", worstListings(shopId));
         return result;
+    }
+
+    /** 分数最低的 N 条 Listing；只读展示所需四列，不再整店读入后截五行。 */
+    private List<Map<String, Object>> worstListings(Long shopId) {
+        List<Map<String, Object>> rows = listingHealthMapper.selectWorstListings(shopId, WORST_LIST_LIMIT);
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("asin", MapArgUtils.toStr(r, "asin"));
+            item.put("score", MapArgUtils.toInt(r, "healthScore"));
+            item.put("severity", MapArgUtils.toStr(r, "severity"));
+            String reason = MapArgUtils.toStr(r, "suppressedReason");
+            item.put("reason", reason != null ? reason : "");
+            out.add(item);
+        }
+        return out;
+    }
+
+    /** 列缺失=契约坏了（改了别名或换了查询），必须吵；值为 NULL 才是空表的正常形态。 */
+    private static long longColumn(Map<String, Object> row, String key) {
+        if (row == null || !row.containsKey(key)) {
+            throw new IllegalStateException("健康度聚合结果缺少列 " + key + "，实际列："
+                    + (row == null ? null : row.keySet()));
+        }
+        Long value = MapArgUtils.toLong(row.get(key));
+        return value == null ? 0L : value;
+    }
+
+    private static BigDecimal decimalColumn(Map<String, Object> row, String key) {
+        if (row == null || !row.containsKey(key)) {
+            throw new IllegalStateException("健康度聚合结果缺少列 " + key + "，实际列："
+                    + (row == null ? null : row.keySet()));
+        }
+        BigDecimal value = MapArgUtils.toBigDecimal(row.get(key));
+        return value == null ? BigDecimal.ZERO : value;
     }
 
     // ==================== 变更日志 ====================
