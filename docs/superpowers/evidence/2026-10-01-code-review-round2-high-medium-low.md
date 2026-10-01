@@ -72,9 +72,9 @@ C4 fixture 另含同订单同 ASIN 重复行与跨年份行，分组值与日期
 
 | 项 | 为什么不做 | 恢复条件 |
 |---|---|---|
-| L2 约 12 处循环单条 insert | 逐条 insert 现在承担了两件事：行级错误归属（`rowErrors`）与自增主键回填。批量插入会把"哪几行失败"糊成一团，结算/台账这类写入路径上这是净损失 | 先给每个写入点定义批量失败语义（整批回滚 or 逐批降级重试），再改 |
+| L2 循环单条 insert | 逐个复核 15 处后分成两半，两边都不值得在本轮动：**安全的那些**（`OpsServiceImpl` 随机造数、`FeedResultErrorStore` 逐条 issue）行数本就几十条，收益接近 0；**真正热的路径**（结算明细、订单/订单行、回款台账、物流轨迹、平台商品）都有逐行错误归属、幂等跳过或主键回填，而 MP 的批量插入要么给每个 mapper 加 `foreach` XML，要么引入 `IService` 层 —— 两种都是为一个新的失败语义买单。 | 先定批量失败语义（整批回滚 or 分块降级重试），再按路径逐个改；改完必须在真实 MySQL 上核对 affected rows 与 id 回填 |
+| L5 审单正则重复编译 | 已落地：`compiledPattern` 走访问序 LRU（上限 64）。规则正则由**店铺管理员输入**，无界缓存等于给一条内存放大通道，所以同时钉住"有界""失败不进缓存"。 | 见 `AuditPatternCacheTest`；把上限改回无界后对应用例变红（实测 200 vs 64） |
 | L3 4 份 `RedisConfig` 合并 | 合并 = 改变 16 个服务的 Bean 装配顺序，本机无法逐个启动验证（Nacos/MySQL 属另一套在跑的栈，不应写入）。用未验证的装配变更换一个 Low 的整洁不值 | 能跑通 4 个服务的启动冒烟后上收为 amz-common 自动配置，并删除 `RedisConfigDuplicationGateTest`；过渡期该门禁保证不会出现"改漏一份"的静默分叉 |
-| L5 正则 Pattern 有界缓存 | 审单正则是**管理员输入**，无界缓存等于给它一个内存放大通道；有界缓存要引入淘汰策略，复杂度超过一个 Low 的收益 | 出现真实 GC/耗时证据再做 |
 | `healthSummary` / `PaymentCollectionServiceImpl.rebuild` 下沉 SQL | 前者是整店口径聚合（同 C2 的同类问题，但改法要新增 mapper 方法与契约测试），后者要按交易类型在 SQL 里做 CASE 归类，而 MySQL 字符串比较的大小写敏感性依赖列 collation —— 换引擎/换排序规则就可能悄悄改变归类结果 | 需要一次带真实 collation 前提的等价性验证，单独排期 |
 | 报表 `orderCount` / `totalOrders` 其实是明细行数 | `amz_profit_detail` 没有 (shop_id, amazon_order_id, asin) 唯一键，`COUNT(1)` ≠ 订单数（fixture 实测 3 行 / 2 个订单）。本轮 C4 只搬位置不改口径，因为改这个数会同时改掉报表数字 | 需要产品侧确认字段含义后，连同前端文案一起改 |
 
@@ -94,7 +94,7 @@ M8 里 `healthSummary` 为了"保持全量口径"改成调用私有 `loadHealth(
 `docs/superpowers/evidence/`（第一次写到了 `docs/evidence/`）。
 
 规格轴：本轮 spec 即 §1/§2 清单 —— High 5/5、Medium 7/7（M6 按"错误/重复"处理，
-M7 与 M8 修正了清单原述），Low 4 项处理（M8/L3 落地，L2/L5 带理由延后，L1/L4 经核查不成立）。
+M7 与 M8 修正了清单原述），Low 5 项处理（L3 门禁 + L5 有界缓存落地，L2 拆成"安全但不值得改 / 值得改但需先定失败语义"两半并记录，L1/L4 经核查不成立）。
 无遗漏项，无越界新增功能。
 
 ## 7. 提交清单

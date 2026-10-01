@@ -264,6 +264,34 @@ public class OrderAuditServiceImpl implements OrderAuditService {
     }
 
     /**
+     * 编译结果缓存上限。规则正则由店铺管理员提供，无界缓存等于给他们开一条
+     * 内存放大通道（每条规则一串 Pattern），因此用访问序 LRU 封顶。
+     */
+    private static final int PATTERN_CACHE_MAX = 64;
+
+    private static final Map<String, Pattern> PATTERN_CACHE = java.util.Collections.synchronizedMap(
+            new java.util.LinkedHashMap<String, Pattern>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Pattern> eldest) {
+                    return size() > PATTERN_CACHE_MAX;
+                }
+            });
+
+    /**
+     * 同一批订单会反复用同一组规则正则；{@code Pattern.compile} 每次都要重新解析
+     * 并构建字符类/节点数组，属于纯粹的重复工作。语法错误不在这里吞：
+     * 失败的编译不会进缓存，下一次仍然抛出，由调用方按"无法判定"处理。
+     */
+    static Pattern compiledPattern(String pattern) {
+        return PATTERN_CACHE.computeIfAbsent(pattern, Pattern::compile);
+    }
+
+    /** 仅供测试与排障查看缓存规模。 */
+    static int patternCacheSize() {
+        return PATTERN_CACHE.size();
+    }
+
+    /**
      * 正则匹配专用线程池：与 ForkJoinPool.commonPool 隔离。
      * 旧实现跑在 commonPool 上，超时仅放弃等待并不取消任务，
      * ReDoS 回溯线程会持续占用 JVM 公共池，殃及并行流等其他组件。
@@ -295,7 +323,7 @@ public class OrderAuditServiceImpl implements OrderAuditService {
         }
         Future<Boolean> future = null;
         try {
-            Pattern compiled = Pattern.compile(pattern);
+            Pattern compiled = compiledPattern(pattern);
             future = REGEX_EXECUTOR.submit(() -> compiled.matcher(fieldValue).find());
             return Outcome.evaluated(future.get(500, TimeUnit.MILLISECONDS));
         } catch (TimeoutException e) {
