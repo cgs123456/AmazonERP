@@ -9,6 +9,7 @@ import com.amz.model.InventoryTurnover;
 import com.amz.model.ProfitDetail;
 import com.amz.model.SalesDaily;
 import com.amz.service.ReportUpgradeService;
+import com.amz.util.MapArgUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,11 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class ReportUpgradeServiceImpl implements ReportUpgradeService {
+
+    /**
+     * 利润率换算用的百分数。
+     */
+    private static final BigDecimal HUNDRED = new BigDecimal("100");
 
     @Autowired
     private ProfitDetailMapper profitDetailMapper;
@@ -80,58 +86,44 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
 
     @Override
     public Map<String, Object> profitSummaryByAsin(Long shopId, String startDate, String endDate) {
-        LambdaQueryWrapper<ProfitDetail> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(ProfitDetail::getShopId, shopId);
-        if (startDate != null) {
-            wrapper.ge(ProfitDetail::getReportDate, LocalDate.parse(startDate));
-        }
-        if (endDate != null) {
-            wrapper.le(ProfitDetail::getReportDate, LocalDate.parse(endDate));
-        }
-        List<ProfitDetail> details = profitDetailMapper.selectList(wrapper);
-
-        // 按 ASIN 聚合
-        Map<String, List<ProfitDetail>> byAsin = details.stream()
-                .collect(Collectors.groupingBy(ProfitDetail::getAsin));
+        // 聚合下沉到 SQL：只取回「每个 ASIN 一行」，不再把整段明细读进 Java。
+        // 口径（含 rowCount 的历史含义）见 ProfitDetailMapper#sumByAsin。
+        LocalDate from = startDate != null ? LocalDate.parse(startDate) : null;
+        LocalDate to = endDate != null ? LocalDate.parse(endDate) : null;
+        List<Map<String, Object>> groups = profitDetailMapper.sumByAsin(shopId, from, to);
 
         List<Map<String, Object>> asinSummaries = new ArrayList<>();
         BigDecimal totalSales = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
         BigDecimal totalNetProfit = BigDecimal.ZERO;
+        long totalRows = 0;
 
-        for (Map.Entry<String, List<ProfitDetail>> entry : byAsin.entrySet()) {
-            List<ProfitDetail> group = entry.getValue();
-            BigDecimal sales = group.stream().map(ProfitDetail::getProductSales).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal cost = group.stream().map(ProfitDetail::getProductCost).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal adCost = group.stream().map(ProfitDetail::getAdvertisingCost).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal fees = group.stream().map(d -> {
-                BigDecimal f = BigDecimal.ZERO;
-                if (d.getFbaFees() != null) f = f.add(d.getFbaFees());
-                if (d.getReferralFee() != null) f = f.add(d.getReferralFee());
-                if (d.getVariableClosingFee() != null) f = f.add(d.getVariableClosingFee());
-                if (d.getStorageFee() != null) f = f.add(d.getStorageFee());
-                return f;
-            }).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal grossProfit = group.stream().map(ProfitDetail::getGrossProfit).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal netProfit = group.stream().map(ProfitDetail::getNetProfit).filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (Map<String, Object> group : groups) {
+            if (group == null) {
+                continue;
+            }
+            BigDecimal sales = decimalOf(group, "totalSales");
+            BigDecimal netProfit = decimalOf(group, "netProfit");
+            long rowCount = MapArgUtils.toLong(group, "rowCount", 0L);
 
             Map<String, Object> summary = new LinkedHashMap<>();
-            summary.put("asin", entry.getKey());
-            summary.put("orderCount", group.size());
+            summary.put("asin", MapArgUtils.toStr(group, "asin"));
+            summary.put("orderCount", rowCount);
             summary.put("totalSales", sales);
-            summary.put("totalCost", cost);
-            summary.put("totalAdSpend", adCost);
-            summary.put("totalFees", fees);
-            summary.put("grossProfit", grossProfit);
+            summary.put("totalCost", decimalOf(group, "totalCost"));
+            summary.put("totalAdSpend", decimalOf(group, "totalAdSpend"));
+            summary.put("totalFees", decimalOf(group, "totalFees"));
+            summary.put("grossProfit", decimalOf(group, "grossProfit"));
             summary.put("netProfit", netProfit);
             summary.put("margin", sales.compareTo(BigDecimal.ZERO) > 0
-                    ? netProfit.multiply(new BigDecimal("100")).divide(sales, 2, RoundingMode.HALF_UP)
+                    ? netProfit.multiply(HUNDRED).divide(sales, 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO);
 
             asinSummaries.add(summary);
             totalSales = totalSales.add(sales);
-            totalCost = totalCost.add(cost);
+            totalCost = totalCost.add(decimalOf(group, "totalCost"));
             totalNetProfit = totalNetProfit.add(netProfit);
+            totalRows += rowCount;
         }
 
         // 按净利润降序
@@ -139,15 +131,24 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
-        result.put("totalOrders", details.size());
+        result.put("totalOrders", totalRows);
         result.put("totalSales", totalSales);
         result.put("totalCost", totalCost);
         result.put("totalNetProfit", totalNetProfit);
         result.put("overallMargin", totalSales.compareTo(BigDecimal.ZERO) > 0
-                ? totalNetProfit.multiply(new BigDecimal("100")).divide(totalSales, 2, RoundingMode.HALF_UP)
+                ? totalNetProfit.multiply(HUNDRED).divide(totalSales, 2, RoundingMode.HALF_UP)
                 : BigDecimal.ZERO);
         result.put("asinSummaries", asinSummaries);
         return result;
+    }
+
+    /** SUM(DECIMAL) 在 MySQL 返回 DECIMAL；空分组不会出现，但仍不把 null 当成 0 静默通过。 */
+    private static BigDecimal decimalOf(Map<String, Object> group, String key) {
+        BigDecimal value = MapArgUtils.toBigDecimal(group, key, null);
+        if (value == null) {
+            throw new IllegalStateException("利润聚合缺少列 " + key + "：" + group);
+        }
+        return value;
     }
 
     // ==================== 库存周转 ====================
