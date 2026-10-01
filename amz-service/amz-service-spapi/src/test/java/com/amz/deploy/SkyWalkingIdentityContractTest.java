@@ -80,6 +80,11 @@ class SkyWalkingIdentityContractTest {
 
         assertTrue(dockerfile.contains("rm -rf /skywalking-agent/optional-reporter-plugins"),
                 "可选 reporter 插件带着无修复版本的 CVE 依赖，不得拷回镜像");
+
+        // 实测：官方 9.7.0 包里混了 211 个 AppleDouble 文件（._*.jar），agent 把它们当插件解析，
+        // 干净构建的镜像每次启动打 163 条 "jar file can't be resolved" ERROR。
+        assertTrue(dockerfile.contains("-name '._*' -delete"),
+                "必须清掉 agent 包里的 AppleDouble 元数据文件，否则启动日志长期带着 163 条假错误");
     }
 
     @Test

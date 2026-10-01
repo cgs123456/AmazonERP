@@ -7,11 +7,11 @@
 
 | 项 | 结论 |
 |---|---|
-| 2 重建并滚动镜像 | **镜像可以在本机离线造出来并已验到镜像层**（agent 挂载、非 root、日志目录、HEAD 的 ENV/ENTRYPOINT）；**滚动不能做**：在跑的这套栈属于另一个 worktree，且 HEAD 的 gateway 在该环境下会拒绝启动（缺 `crypto.key`），A/B 已证 |
-| 6 代理依赖的重建 + k8s 验证 | 干净重建确实做不了，但原因和我上一轮说的不同（见 §2）；k8s 侧本机**没有集群也没有 context**，`kubectl apply --dry-run=client` 仍要连服务器取 API group，无法离线验 |
+| 2 重建并滚动镜像 | **镜像可以在本机离线造出来并已验到镜像层**（agent 挂载、非 root、日志目录、HEAD 的 ENV/ENTRYPOINT）；**滚动不能做**：在跑的这套栈属于另一个 worktree，且 HEAD 的 gateway 在该环境下会拒绝启动（缺 `crypto.key`），A/B 已证。（2026-10-01 更新：crypto 前置已在 §8 补上，且**干净重建已经真做过**，见 §12；滚动仍受本 worktree 之外的栈阻塞） |
+| 6 代理依赖的重建 + k8s 验证 | ~~干净重建确实做不了~~ → **2026-10-01 已做通**：系统代理端口自己就改到了 `127.0.0.1:7900`（7897 现已无监听），`--no-cache-filter skywalking-downloader` 真重下成功，见 §12。k8s 侧本机**没有集群也没有 context**，`kubectl apply --dry-run=client` 仍要连服务器取 API group，无法离线验（未变） |
 | 7 P1-3 生产前演练 | **另一 agent 正在做**（worktree `codex/p1-db-migration-audit` + `amz-p13-*` 四个容器已跑 12–14 小时 + risk1–4 文档今天 04:31/05:31 已提交）。我不重复占同一批演练资源 |
 | 8 分支保护 / 第二人复核 | `gh auth status` = 未登录，服务端规则下发不了；且开启 master 保护会直接挡住另外 4 个 worktree 的直推，属需要你先定的策略问题 |
-| 9 P2-2 性能基线 | **另一 agent 正在做**（worktree `codex/p2-performance-baseline`，跑着的就是它那套栈）。但它测的是**不含今天修复的代码**（§4），数值合完 master 后要重测 |
+| 9 P2-2 性能基线 | **另一 agent 正在做**（worktree `codex/p2-performance-baseline`，跑着的就是它那套栈）。但它测的是**不含今天修复的代码**（§4），数值合完 master 后要重测。2026-10-01 量化：该分支落后 master **82 个提交**，不含 `9fc2fb3`/`060497c`/`ca561a4`，也不含 Feign 熔断装配修复 `273d7c3`（见 §12.4） |
 
 ## 2. 更正我上一轮的代理判断（两次都错了，按实测收敛）
 
@@ -228,4 +228,120 @@ for v in sorted(set(re.findall(r'\$\{([A-Z0-9_]+):[?]', txt))):
 r = subprocess.run(['docker', 'compose', 'config'], capture_output=True, text=True, env=env)
 print('rc=', r.returncode, '| CRYPTO_KEY 出现次数:', r.stdout.count('CRYPTO_KEY'))
 PY
+```
+
+## 12. 2026-10-01 复测：阻塞① 自己消失了，干净重建真做一次，并顺手抓出一个镜像层缺陷
+
+### 12.1 代理阻塞已不存在（不是我改的，是环境变了）
+
+§2 记录的结论是"BuildKit 取 `ADD` 用的是 Windows 系统代理，注册表指向 7897，而 Clash 听 7900，
+所以要改主机设置才能干净重建"。今天按同一命令复测：
+
+```
+ProxyEnable = 0x1     ProxyServer = 127.0.0.1:7900
+7897 dead     7900 ALIVE
+```
+
+端口已经是 7900，我没有动过任何主机或 Docker 配置。于是"干净重建做不了"这个结论过期了，
+必须用真构建来确认，而不是靠端口活着就宣称可行。
+
+### 12.2 干净重建（从当前 master，不覆盖在跑栈用的 `:latest`）
+
+标签一律用 `r3-*` / `r3b-*`，因为 `amazon-erp/amz-gateway:latest` 正被另一 agent 的容器引用，
+retag `:latest` 等于改动别人在用的东西。
+
+| 构建 | 结果 | 关键证据 |
+|---|---|---|
+| gateway `r3-842605d`（常规构建） | exit 0，753MB | `[builder 2x/26] mvn clean package -pl amz-gateway -am` 真跑（源码层已变更），不是复用旧 jar |
+| gateway `r3b-842605d`（`--no-cache-filter skywalking-downloader`） | exit 0 | `ADD https://archive.apache.org/...` 这一步是执行态而非 `CACHED` —— **这就是 §2 说做不到的那次取源，现在成功了** |
+| order `r3-842605d`（清理前的 Dockerfile） | exit 0，784MB | 同一形态；但它带着 §12.3 那 211 个垃圾文件 |
+| order `r3b` 前两次尝试 | **失败** exit 1 | 各失败在**不同**构件上：第 1 次 `net.bytebuddy:byte-buddy-agent:1.17.8`，第 2 次 `org.apache.httpcomponents.core5:httpcore5:5.4.3` + `spring-boot-configuration-processor` 等多个，均为 `Could not transfer artifact ... Remotely closed` → 判定为构建期网络抖动，不是仓库/代码问题 |
+| order `r3b-842605d`（第三次） | exit 0 | 同一 Dockerfile 重试即通过；镜像 junk=0、真插件 153、agent 在位、ENTRYPOINT 为免疫式 |
+
+顺带记下我自己的一个失误：我本想另测一条"给 `~/.m2` 加 BuildKit cache mount 能否消除上面的抖动"，
+用 python 改 `/tmp/Dockerfile.cm` 时路径被 Windows 解析成 `C:\tmp\...` 而 `FileNotFoundError`，
+但 `cp` 出来的**未修改**副本仍在，`docker build -f` 因此照常跑完并成功——
+那次"实验"实际测的是原 Dockerfile，**没有测到 cache mount**。
+所以本节不对缓存挂载下任何结论；order 的第三次成功恰恰是"未加缓存挂载也能过（重试即可）"的证据。
+`dependency:go-offline` 那句带 `|| true` 会把依赖预取失败咽掉、让错误推迟到 package 步骤以
+另一种形态冒出来，这一条只作为观察记录，未做改动。
+
+镜像层校验（r3b）：`Entrypoint` 仍先把 `JAVA_OPTS` 里的 skywalking agent 剥掉再拼
+`${SW_AGENT_OPTS}`（P2-1 那条免疫性），`User=appuser`，
+`org.opencontainers.image.revision` = 当前 HEAD，`optional-reporter-plugins` 已移除，
+真插件 153 个。
+
+### 12.3 隔离启动探针抓到的缺陷：agent 包里混着 211 个 AppleDouble 文件
+
+在 `--network none` 下起一个一次性容器（碰不到 Nacos/MySQL，也不会注册进服务发现），
+传入一个故意带重复 `-javaagent` 的 `JAVA_OPTS`：
+
+- agent 确实挂上了（`AgentPackagePath` / `SnifferConfigInitializer` 横幅 + 读到
+  `/skywalking-agent/config/agent.config`），说明免疫性不是只在镜像文本层成立；
+- 但每次启动打 **163 条** `AgentClassLoader : ._xxx-plugin-9.7.0.jar jar file can't be resolved`
+  （`ZipException: zip END header not found`）。
+
+清点后确认是 Apache 官方 9.7.0 包里带的 macOS AppleDouble 元数据：`/skywalking-agent` 下
+`._*` 共 **211 个**、每个 163 字节，连 `._skywalking-agent.jar`、`._plugins` 都在。
+agent 按 `*.jar` 扫插件目录就会逐个尝试解析它们。这不是我这次改动引入的，
+但干净构建同样带着它，而且它每次重启都往启动日志灌 163 行假错误——正是本会话在收敛的那类噪声。
+
+修法（`Dockerfile`，紧挨着已有的 `rm -rf optional-reporter-plugins`）：
+
+```
+RUN find /skywalking-agent -name '._*' -delete
+```
+
+A/B 实测（同一 `--network none` 条件）：
+
+| 镜像 | agent 横幅 | `can't be resolved` ERROR | 真插件数 |
+|---|---|---|---|
+| gateway `r3-842605d`（未清理） | 3 | **163** | 153 |
+| gateway `r3b-842605d`（Dockerfile 清理后真构建） | 3 | **0** | 153 |
+| gateway `r3-derived`（先用来验机制的派生镜像） | 3 | 0 | 153 |
+| order `r3b-842605d`（清理后真构建） | 3 | **0** | 153 |
+
+四个探针容器都在 `--network none` 下起（取不到 Nacos/MySQL，也不会注册进服务发现），
+并传入一个故意重复带 `-javaagent` 的 `JAVA_OPTS`：横幅照旧出现，说明清理垃圾文件
+没有伤到 agent 挂载，也再次印证 P2-1 那条"agent 免疫于 JAVA_OPTS 覆盖"在真运行时成立。
+`r3-derived` 只用来先验机制，验完即删。
+
+契约测试 `SkyWalkingIdentityContractTest` 加了一条钉住这行清理；把该行删掉后该用例变红
+（`agentUsesRealConfigVariableNames`，实测 6 例里 1 红），还原后全绿。
+
+### 12.4 仍然不能滚动的原因（今天复测，没有变松）
+
+1. 那套栈仍在跑（`amz-gateway`/`amz-service-order`/`amz-service-report`/`finance`/`spapi`/`user`
+   `Up 22 hours`），compose 文件与网络属 `AmazonERP-p2-performance` worktree；
+2. 该 worktree `git status --short` 仍是 **17 个未提交文件**，最近一次提交停在
+   `2026-09-29 20:34 136cec0 docs(release): record checkpoint 18 verification` —— 说明它还在写；
+3. 它的分支落后 master **82 个提交**，且不含 `9fc2fb3` / `060497c` / `ca561a4` 三个关键提交
+   （也不含 Feign 熔断装配修复 `273d7c3`）。也就是说它当前测的是"跨服务解码全失败走降级"的旧行为，
+   合并 master 后必须重测——这条同时是 §1 第 9 行的量化版。
+
+滚动的前置条件因此是外部事件，不是我这边能补的：那个 agent 收工（容器释放 + 未提交文件落地），
+并且由你确认可以换容器。届时用 `r3b` 这两个 tag 或直接从 master 重建即可，
+命令见 §11，只是必须显式指定 tag，别让 `:latest` 覆盖别人的运行镜像。
+
+### 12.5 项 8 的现状
+
+`gh auth status` 今天复测仍为未登录 → 服务端分支保护下发不了。开启后 5 个 worktree 的直推都会被挡，
+这个策略得你先定（见 §1）。我没有替你登录或改保护规则。
+
+### 12.6 复跑（本次用到的两条）
+
+```
+# 强制重新取源的那次干净构建
+DOCKER_BUILDKIT=1 docker build --no-cache-filter skywalking-downloader \
+  --build-arg MODULE=amz-gateway --build-arg PORT=10010 \
+  --build-arg VERSION=r3b-$(git rev-parse --short HEAD) \
+  --build-arg VCS_REF=$(git rev-parse HEAD) \
+  -t amazon-erp/amz-gateway:r3b-$(git rev-parse --short HEAD) .
+
+# 隔离启动探针 + 噪声计数（--network none：碰不到在跑的 Nacos/MySQL）
+docker run -d --network none --name probe -e NACOS_ADDR=127.0.0.1:1 \
+  -e JAVA_OPTS="-Xmx128m -javaagent:/skywalking-agent/skywalking-agent.jar" \
+  amazon-erp/amz-gateway:r3b-<sha>
+sleep 40 && docker logs probe | grep -c "can't be resolved"   # 期望 0
+docker rm -f probe
 ```

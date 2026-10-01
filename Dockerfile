@@ -102,6 +102,13 @@ COPY --from=skywalking-downloader /skywalking-agent /skywalking-agent
 # 必须同时引入修复版依赖，不能直接把它拷回 plugins/。
 RUN rm -rf /skywalking-agent/optional-reporter-plugins
 
+# 官方 9.7.0 agent 包内混有 AppleDouble 元数据文件（._*.jar，实测 211 个、各 163 字节，
+# 连 ._skywalking-agent.jar 都在）。agent 的插件加载器会按 *.jar 一并解析，
+# 干净构建出来的镜像每次启动实测产生 163 条
+# "AgentClassLoader : ._xxx-plugin-9.7.0.jar jar file can't be resolved" ERROR：
+# 那是纯噪声，但它淹在启动日志里，且每次重启都重来一遍。删掉元数据文件本身无副作用。
+RUN find /skywalking-agent -name '._*' -delete
+
 # 创建非 root 运行用户，避免容器内以 root 身份运行 JVM（安全加固）
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
 
