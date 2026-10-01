@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 重复 RedisConfig 的漂移门禁。
  * <p>
- * <b>实测发现（2026-10-01 审查轮 Low）</b>：4 个服务各持有一份<b>字节完全相同</b>的
+ * <b>实测发现</b>：4 个服务各持有一份<b>字节完全相同</b>的
  * {@code com.amz.config.RedisConfig}。
  * <p>
  * 为什么不是"合并成一份公共 @Configuration"：amz-common 位于扫描根包 {@code com.amz} 下，

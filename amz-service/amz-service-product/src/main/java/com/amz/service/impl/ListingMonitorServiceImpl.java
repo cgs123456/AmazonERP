@@ -11,6 +11,7 @@ import com.amz.model.CompetitorMonitor;
 import com.amz.model.KeywordRanking;
 import com.amz.model.ListingChangeLog;
 import com.amz.model.ListingHealth;
+import com.amz.result.PageRequest;
 import com.amz.service.ListingMonitorService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -44,7 +45,7 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
      * 监控历史（每天每 ASIN 一条快照）线性累积；竞品/BuyBox 两个接口更隐蔽 ——
      * 它们把全部快照读进内存只为"每个 ASIN 取最新一条"，返回几十行却读了几年数据。
      */
-    private static final int LIST_READ_LIMIT = com.amz.result.PageRequest.MAX_SIZE;
+    private static final int LIST_READ_LIMIT = PageRequest.MAX_SIZE;
 
     /**
      * 按单读上限截断一次读取，并让截断这件事在日志里可见。

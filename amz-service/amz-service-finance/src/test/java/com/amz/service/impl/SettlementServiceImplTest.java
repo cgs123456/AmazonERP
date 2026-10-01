@@ -302,7 +302,7 @@ class SettlementServiceImplTest {
     }
 
     @Test
-    @DisplayName("落库异常：真实 DB 错误计入 failed 并进行级错误，不中断整批")
+    @DisplayName("落库异常：真实 DB 错误计入 failed 并留下行级错误，不中断整批")
     void insertFailureCounted() {
         String twoRows = HEADER + "\n"
                 + row("USD", "Order", "111-1", "SKU-A", "Principal", "29.99") + "\n"

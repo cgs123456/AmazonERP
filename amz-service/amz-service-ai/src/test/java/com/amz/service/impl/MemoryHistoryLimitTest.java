@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 /**
  * 对话记忆查询的 limit 边界。
  * <p>
- * <b>实测发现的缺陷（2026-10-01 审查轮 Medium）</b>：{@code GET /agent/memory/history/{userId}?limit=}
+ * <b>实测发现的缺陷</b>：{@code GET /agent/memory/history/{userId}?limit=}
  * 把调用方给的整数直接拼进 {@code LIMIT}，此前只有 {@code Math.max(1, limit)} 这一层下限保护，
  * 没有上限 —— {@code ?limit=1000000000} 就是让该会话的全部历史行进入内存并整体序列化返回。
  * 同仓库里 {@code PageRequest} 的既定口径是"越界即参数错误，不静默收敛"，这里沿用同一口径。

@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 店铺越权校验去重后的行为与防再复制门禁。
  * <p>
- * <b>实测发现（2026-10-01 审查轮 Medium）</b>：物流模块 6 个 Service 各有一份私有
+ * <b>实测发现</b>：物流模块 6 个 Service 各有一份私有
  * {@code requireShopAllowed}，其中 5 份只抛错不留日志 —— 「有人越权访问别家店铺」
  * 这个安全事件在 6 个入口里有 5 个查不到，且口径调整必须同步改 6 份。
  * 现收敛为 {@link LogisticsShopGuard} 单一实现，行为沿用原共同部分 + 那份唯一的 warn。
@@ -62,8 +62,10 @@ class LogisticsShopGuardTest {
                     .toList();
             assertEquals(1, warns.size(), "越权拒绝必须可归因（含业务对象、用户、目标店铺）：" + warns);
             String message = warns.get(0).getFormattedMessage();
-            assertTrue(message.contains("42") && message.contains("2")
-                            && message.contains("OPERATOR") && message.contains("[1]"),
+            // 逐字段按 "键=值" 断言：只查 contains("2") 是假绿 —— userId=42 里就带 2，
+            // 把「目标店铺=2」整段删掉这条断言照样过。
+            assertTrue(message.contains("userId=42") && message.contains("role=OPERATOR")
+                            && message.contains("授权店铺=[1]") && message.contains("目标店铺=2"),
                     "日志要能一眼定位是谁、什么角色、授权了哪些店、碰了哪个店：" + message);
         } finally {
             logger.detachAppender(appender);

@@ -92,6 +92,10 @@ class ProfitSummarySqlContractTest {
                 "聚合必须绑定 shop_id，否则跨店利润会被合计进同一个报表");
         assertTrue(sql.contains("report_date &gt;=") || sql.contains("report_date >="),
                 "起始日期必须落在 report_date 上");
+        // 上下界都要钉住：只查下界时，把 endDate 绑到别的列（或干脆漏掉）也能全绿，
+        // 而"指定一个月却聚合全店历史"正是这次下沉最容易犯的口径错误。
+        assertTrue(sql.contains("report_date &lt;=") || sql.contains("report_date <="),
+                "结束日期必须落在 report_date 上，否则区间上限形同不存在");
         assertTrue(sql.contains("GROUP BY asin"), "必须按 ASIN 分组");
         assertFalse(sql.toUpperCase().contains("SELECT *"), "聚合不得回传整行");
     }

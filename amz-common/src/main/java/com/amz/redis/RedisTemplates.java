@@ -13,8 +13,8 @@ import org.springframework.data.redis.serializer.RedisSerializer;
  * {@code @Configuration} 都会被<b>全部</b> 16 个服务扫到——包括现在并没有这个 bean 的
  * 网关（WebFlux）和明确沿用 Boot 默认模板序列化器的 procurement / spapi。
  * 那已经不是去重，而是跨服务改 Bean 拓扑：换 value 序列化器会让既有缓存读不出来。
- * 所以这里只做纯工厂，谁需要 {@code redisTemplate} 谁在自己的 {@code RedisConfig} 里调用，
- * Bean 名、类型、生效范围与改动前逐字节一致。
+ * 所以这里只做纯工厂，谁需要 {@code redisTemplate} 谁在自己的 {@code RedisConfig} 里调用：
+ * Bean 名、返回类型、生效范围都不变，变的只是"配方从四份拷贝改成调用一次"。
  */
 public final class RedisTemplates {
 

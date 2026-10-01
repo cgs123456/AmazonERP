@@ -340,7 +340,8 @@ class PaymentCollectionServiceImplTest {
     @Test
     @DisplayName("概览：在途未回与已回短款分别累计，不互相抵消")
     void summaryKeepsTwoAmountsSeparate() {
-        // 分组行取自 MySQL 8.4 对同一份 fixture 的真实聚合结果（见 docs/evidence 记录）
+        // 分组行取自 MySQL 8.4 对同一份 fixture 的真实聚合结果
+        // （见 docs/superpowers/evidence/2026-10-01-code-review-round2-high-medium-low.md §3）
         when(paymentCollectionMapper.aggregateSummaryByCurrency(SHOP_ID)).thenReturn(List.of(
                 group("USD", 7, "131.97", "83.70", 1, 1, "42.49", 2, "20.46", 1, 2, "1.10", 2),
                 group("EUR", 1, "19.99", "15.00", 0, 0, "0.00", 1, "15.00", 0, 0, "0.00", 0),

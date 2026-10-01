@@ -97,7 +97,7 @@ class ProfitSummaryByAsinTest {
         Map<String, Object> result = service.profitSummaryByAsin(
                 SHOP_ID, "2026-09-01", "2026-09-30");
 
-        assertEquals(3L, result.get("totalOrders"), "2026-01-01 那行应被日期区间排除");
+        assertEquals(3L, result.get("totalOrders"), "总单数就是各 ASIN 聚合行的合计（2 + 1）");
         verify(mapper, never()).selectList(any());
     }
 

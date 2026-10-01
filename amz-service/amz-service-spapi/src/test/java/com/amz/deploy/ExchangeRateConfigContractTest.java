@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 汇率兜底表的跨模块一致性。
  * <p>
- * <b>实测发现的缺陷（2026-10-01 审查轮 Medium）</b>：三套重复汇率实现合并为
+ * <b>实测发现的缺陷</b>：三套重复汇率实现合并为
  * {@code GlobalExchangeRateService} 后，multiplatform 的 application.yml 里仍留着
  * 一整段<b>已无人读取</b>的 {@code platform.exchange-rates}，而且它的 JPY 是 0.045，
  * 与在用的 {@code amz.exchange-rates}（0.046）不一致 —— 合并前两模块兜底值就不一致，

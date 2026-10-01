@@ -99,9 +99,6 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
         long totalRows = 0;
 
         for (Map<String, Object> group : groups) {
-            if (group == null) {
-                continue;
-            }
             BigDecimal sales = decimalOf(group, "totalSales");
             BigDecimal netProfit = decimalOf(group, "netProfit");
             long rowCount = MapArgUtils.toLong(group, "rowCount", 0L);

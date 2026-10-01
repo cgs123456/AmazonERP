@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -165,7 +166,7 @@ public class MemoryServiceImpl implements MemoryService {
         // 时间正序返回（ oldest first 便于拼装到 messages）
         List<ConversationMemory> list = conversationMemoryMapper.selectList(wrapper);
         // 倒序复制而不是原地 reverse：不依赖 mapper 返回的是可变列表
-        List<ConversationMemory> oldestFirst = new java.util.ArrayList<>(list.size());
+        List<ConversationMemory> oldestFirst = new ArrayList<>(list.size());
         for (int i = list.size() - 1; i >= 0; i--) {
             oldestFirst.add(list.get(i));
         }

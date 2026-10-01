@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 宽松店铺校验（{@code isShopAllowed}）的「无列表即放行」分支必须可观测。
  * <p>
- * <b>实测发现的口径分裂（2026-10-01 审查轮 Medium）</b>：同一语义在 ad 模块走
+ * <b>实测发现的口径分裂</b>：同一语义在 ad 模块走
  * {@code isShopAllowedStrict}（fail-closed），在 customer / finance / logistics / ai 走
  * {@code isShopAllowed}（无身份 + 无店铺列表 → 放行）。定时任务依赖后者，所以行为不能改；
  * 但"因为没有上下文所以放行"这件事此前完全无声，越权面扩大时没有任何信号。
