@@ -223,6 +223,38 @@ class SettlementServiceImplTest {
     }
 
     @Test
+    @DisplayName("挂钟上限：查询本身很慢时按时间截断，而不是把剩余次数跑完")
+    void wallClockDeadlineEndsWaitSoonerThanAttemptCap() {
+        // 假时钟：每次取样前进 6s，模拟单次 spapi 查询就耗掉一整个读超时窗口
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(0);
+        SettlementServiceImpl slow = new SettlementServiceImpl() {
+            @Override
+            protected long nanoTime() {
+                return clock.getAndAdd(6_000_000_000L);
+            }
+        };
+        ReflectionTestUtils.setField(slow, "spApiFinanceClient", spApiFinanceClient);
+        ReflectionTestUtils.setField(slow, "maxPollAttempts", 10);
+        ReflectionTestUtils.setField(slow, "pollIntervalMs", 2_000L);
+        ReflectionTestUtils.setField(slow, "pollDeadlineMs", 5_000L);
+
+        when(spApiFinanceClient.requestReport(eq(SHOP_ID), eq(MARKETPLACE), anyString(), any(), any()))
+                .thenReturn(Result.success("RPT-4"));
+        RemoteReportInfo running = new RemoteReportInfo();
+        running.setReportId("RPT-4");
+        running.setProcessingStatus("IN_QUEUE");
+        when(spApiFinanceClient.getReport("RPT-4", SHOP_ID)).thenReturn(Result.success(running));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> slow.sync(SHOP_ID, MARKETPLACE, null, null));
+        assertTrue(ex.getMessage().contains("轮询超时"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("5000ms"),
+                "错误信息要说明是挂钟上限起的作用：" + ex.getMessage());
+        // 次数上限还剩 9 次，必须由挂钟把等待截断，否则调用方早已超时、线程还在空转
+        verify(spApiFinanceClient, times(1)).getReport("RPT-4", SHOP_ID);
+    }
+
+    @Test
     @DisplayName("空报表：不报错但给出「可能确实没有结算」提示")
     void emptyReportWarns() {
         stubHappyReportPath(HEADER + "\n");

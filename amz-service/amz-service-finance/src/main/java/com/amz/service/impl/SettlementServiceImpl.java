@@ -52,6 +52,17 @@ public class SettlementServiceImpl implements SettlementService {
     @Value("${amz.finance.settlement.poll-interval-ms:2000}")
     private long pollIntervalMs = 2000L;
 
+    /**
+     * 报表轮询的<b>挂钟</b>上限（毫秒）。
+     * <p>
+     * 只有次数上限是不够的：每次 {@code getReport} 都可能耗到 spapi 读超时（10s），
+     * 15 次的实际等待是 28s 睡眠 + 最慢 150s 网络 ≈ 3 分钟，而网关 30s 就丢弃响应了。
+     * 结果是调用方早已看到超时、用户重点一次按钮，服务端却还压着一个 Tomcat 工作线程在轮询。
+     * 挂钟上限把这件事划上句号；比次数上限更贴近真实风险。
+     */
+    @Value("${amz.finance.settlement.poll-deadline-ms:90000}")
+    private long pollDeadlineMs = 90_000L;
+
     /** 单批写入条数（结算报表可能上千行）。 */
     @Value("${amz.finance.settlement.batch-size:200}")
     private int batchSize = 200;
@@ -199,10 +210,15 @@ public class SettlementServiceImpl implements SettlementService {
     /**
      * 轮询报表状态直至终态。超时抛异常而非返回空 ——
      * 「报表还没好」与「本期没有结算」是两件事，静默当成后者会让利润凭空归零。
+     * <p>
+     * 双重上限：次数（避免无限轮）+ 挂钟（避免网络慢时把等待拉长到调用方早已放弃之后）。
      */
     private RemoteReportInfo awaitReportDone(Long shopId, String reportId) {
+        long startedAt = nanoTime();
         RemoteReportInfo last = null;
+        int attempts = 0;
         for (int attempt = 1; attempt <= maxPollAttempts; attempt++) {
+            attempts = attempt;
             last = requireSuccess(spApiFinanceClient.getReport(reportId, shopId), "查询结算报表状态失败");
             if (last == null) {
                 throw new IllegalStateException("结算报表状态返回为空，reportId=" + reportId);
@@ -215,12 +231,29 @@ public class SettlementServiceImpl implements SettlementService {
                         + " status=" + last.getProcessingStatus());
             }
             if (attempt < maxPollAttempts) {
-                sleep(pollIntervalMs);
+                long remainingMs = pollDeadlineMs - elapsedMs(startedAt);
+                if (remainingMs <= 0) {
+                    break;
+                }
+                // 最后一次等待不越过挂钟上限
+                sleep(Math.min(pollIntervalMs, remainingMs));
             }
         }
-        throw new IllegalStateException("结算报表轮询超时（" + maxPollAttempts + " 次 × "
-                + pollIntervalMs + "ms），reportId=" + reportId
-                + " 最后状态=" + (last == null ? "?" : last.getProcessingStatus()));
+        throw new IllegalStateException("结算报表轮询超时（上限 " + maxPollAttempts + " 次 / "
+                + pollDeadlineMs + "ms，实际 " + attempts + " 次 / " + elapsedMs(startedAt) + "ms），reportId="
+                + reportId + " 最后状态=" + (last == null ? "?" : last.getProcessingStatus()));
+    }
+
+    /**
+     * 挂钟取样。单独开一个可覆写的缝，是为了让"挂钟到点就停"这条规则能被测试真正跑到，
+     * 而不是必须真的等 90 秒。
+     */
+    protected long nanoTime() {
+        return System.nanoTime();
+    }
+
+    private long elapsedMs(long startedAtNanos) {
+        return (nanoTime() - startedAtNanos) / 1_000_000L;
     }
 
     /**
