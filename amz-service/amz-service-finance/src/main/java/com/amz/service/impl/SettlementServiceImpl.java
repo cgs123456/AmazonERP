@@ -1,5 +1,6 @@
 package com.amz.service.impl;
 
+import com.amz.batch.BatchInserts;
 import com.amz.client.SpApiFinanceClient;
 import com.amz.client.dto.RemoteReportInfo;
 import com.amz.dto.SettlementIngestReport;
@@ -147,39 +148,102 @@ public class SettlementServiceImpl implements SettlementService {
         }
 
         int duplicates = 0;
-        int failed = 0;
+        List<SettlementDetail> pending = new ArrayList<>(unique.size());
         for (Map.Entry<String, SettlementRow> entry : unique.entrySet()) {
             if (existing.contains(entry.getKey())) {
                 duplicates++;
                 continue;
             }
-            try {
-                SettlementDetail detail = toDetail(entry.getValue());
-                settlementDetailMapper.insert(detail);
-                report.setInserted(report.getInserted() + 1);
-                report.setSumAmount(report.getSumAmount()
-                        .add(detail.getAmount() == null ? BigDecimal.ZERO : detail.getAmount()));
-                if (detail.getCurrency() != null && !detail.getCurrency().isBlank()) {
-                    report.getCurrencies().add(detail.getCurrency());
-                }
-            } catch (Exception e) {
-                failed++;
-                log.warn("settlement row insert failed shopId={} rowKey={} reason={}",
-                        shopId, entry.getKey(), e.getMessage());
-                if (report.getRowErrors().size() < maxRowErrors) {
-                    report.getRowErrors().add(SettlementParser.rowError(0,
-                            "落库失败：" + e.getMessage(), String.valueOf(entry.getKey())));
-                }
-            }
+            pending.add(toDetail(entry.getValue()));
         }
-        report.setSkipped(report.getSkipped() + duplicates);
-        report.setFailed(report.getFailed() + failed);
+
+        // 分块批量写 + 失败块退回逐条（保留"哪几行没进去"的归属）
+        BatchInserts.Result batched = BatchInserts.saveChunks(
+                pending, batchSize,
+                block -> writeBatch(shopId, report, block),
+                detail -> writeOne(shopId, report, detail),
+                SettlementDetail::getRowKey, 0);
+
+        report.setSkipped(report.getSkipped() + duplicates + batched.getSkipped());
+        report.setFailed(report.getFailed() + batched.getFailed());
         report.setSumAmount(report.getSumAmount().setScale(2, RoundingMode.HALF_UP));
+        if (batched.getFallbackChunks() > 0) {
+            log.warn("结算落库有 {} 个块从批量退回到逐条：shopId={} 块大小={}",
+                    batched.getFallbackChunks(), shopId, batchSize);
+        }
 
         if (report.getCurrencies().size() > 1) {
             report.addWarning("本批涉及多币种（" + String.join(", ", report.getCurrencies())
                     + "），金额合计不可跨币种求和，请按币种分别解读");
         }
+    }
+
+    /**
+     * 真正的批量写入出口。单独开一个可替换的缝：
+     * 单测里没有 Spring 上下文，{@code Db.saveBatch} 拿不到 SqlSessionFactory，
+     * 不给替换点就只能测到"退回逐条"这条兜底路径，批量那条路永远是黑的。
+     */
+    java.util.function.Consumer<java.util.Collection<SettlementDetail>> batchWriter =
+            com.baomidou.mybatisplus.extension.toolkit.Db::saveBatch;
+
+    /** 整块批量写成功后才累计金额/币种，避免与逐条重试重复计。 */
+    private void writeBatch(Long shopId, SettlementIngestReport report, List<SettlementDetail> block) {
+        batchWriter.accept(block);
+        for (SettlementDetail detail : block) {
+            report.setInserted(report.getInserted() + 1);
+            accumulate(report, detail);
+        }
+    }
+
+    /**
+     * 逐条兜底。三种结果：写入成功 / 唯一键冲突（说明批量那一半已经把它写进去了，算跳过且仍要累计）
+     * / 其它异常（计入失败并保留 rowKey 归属）。
+     */
+    private BatchInserts.RowOutcome writeOne(Long shopId, SettlementIngestReport report, SettlementDetail detail) {
+        try {
+            settlementDetailMapper.insert(detail);
+            report.setInserted(report.getInserted() + 1);
+            accumulate(report, detail);
+            return BatchInserts.RowOutcome.INSERTED;
+        } catch (Exception e) {
+            if (isDuplicateKey(e)) {
+                // 批量执行器可能已把块内前几行提交掉（autocommit 形状），重试必然撞唯一键
+                accumulate(report, detail);
+                return BatchInserts.RowOutcome.SKIPPED;
+            }
+            log.warn("settlement row insert failed shopId={} rowKey={} reason={}",
+                    shopId, detail.getRowKey(), e.getMessage());
+            if (report.getRowErrors().size() < maxRowErrors) {
+                report.getRowErrors().add(SettlementParser.rowError(0,
+                        "落库失败：" + e.getMessage(), String.valueOf(detail.getRowKey())));
+            }
+            return BatchInserts.RowOutcome.FAILED;
+        }
+    }
+
+    private static void accumulate(SettlementIngestReport report, SettlementDetail detail) {
+        report.setSumAmount(report.getSumAmount()
+                .add(detail.getAmount() == null ? BigDecimal.ZERO : detail.getAmount()));
+        if (detail.getCurrency() != null && !detail.getCurrency().isBlank()) {
+            report.getCurrencies().add(detail.getCurrency());
+        }
+    }
+
+    /** 唯一键冲突的识别要看整条因果链：驱动抛的类型会被 MyBatis/Spring 逐层包装。 */
+    private static boolean isDuplicateKey(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof java.sql.SQLIntegrityConstraintViolationException) {
+                return true;
+            }
+            String message = t.getMessage();
+            if (message != null && message.contains("Duplicate entry")) {
+                return true;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return false;
     }
 
     @Override

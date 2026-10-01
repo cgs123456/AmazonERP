@@ -302,7 +302,7 @@ class SettlementServiceImplTest {
     }
 
     @Test
-    @DisplayName("落库异常：计入 failed 并进入行级错误，不中断整批")
+    @DisplayName("落库异常：真实 DB 错误计入 failed 并进行级错误，不中断整批")
     void insertFailureCounted() {
         String twoRows = HEADER + "\n"
                 + row("USD", "Order", "111-1", "SKU-A", "Principal", "29.99") + "\n"
@@ -310,7 +310,7 @@ class SettlementServiceImplTest {
         stubHappyReportPath(twoRows);
         when(settlementDetailMapper.selectExistingRowKeys(anyList())).thenReturn(new ArrayList<>());
         when(settlementDetailMapper.insert(any(SettlementDetail.class)))
-                .thenThrow(new RuntimeException("Duplicate entry"))
+                .thenThrow(new RuntimeException("Data too long for column 'sku'"))
                 .thenReturn(1);
 
         SettlementIngestReport report = settlementService.sync(SHOP_ID, MARKETPLACE, null, null);
@@ -318,6 +318,33 @@ class SettlementServiceImplTest {
         assertEquals(1, report.getInserted());
         assertEquals(1, report.getFailed());
         assertEquals(1, report.getRowErrors().size());
+    }
+
+    @Test
+    @DisplayName("唯一键冲突改判为「跳过」而不是「失败」：那行确实已在库里")
+    void duplicateKeyCountsAsSkipNotFailure() {
+        // 语义变更（本轮批量落库引入并刻意保留）：row_key 上有唯一键，插入撞冲突只可能
+        // 意味着另一路 ingest 已写过这行 —— 记成 failed 会让运维去查一个并不存在的故障，
+        // 记成 skipped 才对得上"这行数据在库里的状态"。真实 DB 错误仍然算 failed。
+        String twoRows = HEADER + "\n"
+                + row("USD", "Order", "111-1", "SKU-A", "Principal", "29.99") + "\n"
+                + row("USD", "Order", "111-2", "SKU-B", "Principal", "10.00") + "\n";
+        stubHappyReportPath(twoRows);
+        when(settlementDetailMapper.selectExistingRowKeys(anyList())).thenReturn(new ArrayList<>());
+        when(settlementDetailMapper.insert(any(SettlementDetail.class)))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException(
+                        "Statement; SQL; Duplicate entry 'x' for key 'uk_row_key'"))
+                .thenReturn(1);
+
+        SettlementIngestReport report = settlementService.sync(SHOP_ID, MARKETPLACE, null, null);
+
+        assertEquals(1, report.getInserted());
+        assertEquals(0, report.getFailed());
+        assertEquals(1, report.getSkipped());
+        assertTrue(report.getRowErrors().isEmpty(), report.getRowErrors().toString());
+        // 已入库那行的钱仍要算进本批合计，否则报表金额凭空少一笔
+        assertEquals(0, new BigDecimal("39.99").compareTo(report.getSumAmount()),
+                report.getSumAmount().toString());
     }
 
     @Test
