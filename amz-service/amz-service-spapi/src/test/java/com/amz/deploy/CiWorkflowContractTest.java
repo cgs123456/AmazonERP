@@ -131,9 +131,129 @@ class CiWorkflowContractTest {
         }
     }
 
+    /**
+     * env 门控的集成测试必须真的接进 CI，接进去的变量必须真的有人读。
+     * <p>
+     * 存在动因：这类 IT 用 {@code @EnabledIfEnvironmentVariable} 守"没有 MySQL 的开发机整类跳过"，
+     * 代价是<b>只要 CI 少给一个变量，它就永久静默跳过而全仓仍然绿</b>——
+     * 那比没有这道闸更危险，因为它对外表现为"集成测试跑过了"。
+     * 本用例两头都查：变量集合从测试源码里<b>扫出来</b>（不是手抄清单，否则新增 IT 不会被发现），
+     * 每个都要在 CI 某一步的 env 里出现，且那个 job 真的挂了 mysql service；
+     * 反向也查：CI 里给了却没有测试读取的 {@code *_IT_URL} 同样算红。
+     * <p>
+     * 允许"故意不接"，但必须写明理由，且理由指向的变量确实存在——
+     * 否则允许集会变成存放绿灯的地方。
+     */
+    @Test
+    void envGatedIntegrationTestsAreWiredIntoCiOrDeliberatelyExcluded() throws IOException {
+        Map<String, String> ciEnvKeys = ciStepEnvKeysByJob();
+        Map<String, Boolean> jobHasMysql = jobHasMysqlService();
+
+        Set<String> discovered = new LinkedHashSet<>();
+        for (Path file : javaTestFiles()) {
+            String source = Files.readString(file, StandardCharsets.UTF_8);
+            Matcher m = Pattern.compile("EnabledIfEnvironmentVariable\\(\\s*named\\s*=\\s*\"([A-Z0-9_]+)\"")
+                    .matcher(source);
+            while (m.find()) {
+                discovered.add(m.group(1));
+            }
+        }
+        // 空扫描不等于没有门控测试：一旦扫描逻辑或注解写法变了，必须炸而不是全绿
+        assertTrue(discovered.size() >= 6,
+                "只扫到 " + discovered.size() + " 个 env 门控变量，怀疑扫描面变了：" + discovered);
+
+        List<String> unwired = new ArrayList<>();
+        for (String variable : discovered) {
+            if (DELIBERATELY_NOT_IN_CI.containsKey(variable)) {
+                continue;
+            }
+            String job = ciEnvKeys.get(variable);
+            if (job == null) {
+                unwired.add(variable + "（无任何 CI step env 提供）");
+            } else if (variable.endsWith("_URL") && !Boolean.TRUE.equals(jobHasMysql.get(job))) {
+                unwired.add(variable + "（由 job " + job + " 提供，但该 job 没有 mysql service）");
+            }
+        }
+        assertTrue(unwired.isEmpty(),
+                "以下 env 门控集成测试没有真正接进 CI，它们在 CI 里会整类静默跳过：" + unwired);
+
+        for (Map.Entry<String, String> exclusion : DELIBERATELY_NOT_IN_CI.entrySet()) {
+            assertTrue(discovered.contains(exclusion.getKey()),
+                    "允许清单里的 " + exclusion.getKey() + " 在测试源码里已不存在，条目该删掉："
+                            + exclusion.getValue());
+            assertFalse(ciEnvKeys.containsKey(exclusion.getKey()),
+                    "允许清单说 " + exclusion.getKey() + " 故意不接 CI，但 CI 其实给了它："
+                            + "请把条目删掉，让扫描去守它");
+            assertFalse(exclusion.getValue().isBlank(), "故意不接 CI 必须写理由");
+        }
+
+        List<String> orphanCiVars = new ArrayList<>();
+        for (String key : ciEnvKeys.keySet()) {
+            if (key.endsWith("_IT_URL") && !discovered.contains(key)) {
+                orphanCiVars.add(key + "（job：" + ciEnvKeys.get(key) + "）");
+            }
+        }
+        assertTrue(orphanCiVars.isEmpty(),
+                "CI 提供了 *_IT_URL 却没有任何测试源码用它作启用开关——这是假的「集成覆盖」信号："
+                        + orphanCiVars);
+    }
+
+    /** 故意不接 CI 的 env 门控测试及其理由（理由非空 + 变量仍存在，见上面的反向检查）。 */
+    private static final Map<String, String> DELIBERATELY_NOT_IN_CI = Map.of(
+            "RUN_INTEGRATION_TESTS",
+            "SpApiIntegrationTest 要真实的 SP-API 凭证与外部网络，CI 里跑等于把凭据下放进公共 runner；"
+                    + "它由本地按文档手动执行，不作为常驻闸口");
+
     // ------------------------------------------------------------------
     // CI 工作流解析
     // ------------------------------------------------------------------
+
+    private static Map<String, String> ciStepEnvKeysByJob() throws IOException {
+        Map<String, Object> jobs = castMap(loadYaml(CI_WORKFLOW).get("jobs"));
+        Map<String, String> keyToJob = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> jobEntry : jobs.entrySet()) {
+            Map<String, Object> job = castMap(jobEntry.getValue());
+            for (Object stepValue : castList(job.get("steps"))) {
+                Map<String, Object> env = castMap(castMap(stepValue).get("env"));
+                for (String key : env.keySet()) {
+                    keyToJob.putIfAbsent(key, jobEntry.getKey());
+                }
+            }
+        }
+        return keyToJob;
+    }
+
+    private static Map<String, Boolean> jobHasMysqlService() throws IOException {
+        Map<String, Object> jobs = castMap(loadYaml(CI_WORKFLOW).get("jobs"));
+        Map<String, Boolean> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> jobEntry : jobs.entrySet()) {
+            Map<String, Object> services = castMap(castMap(jobEntry.getValue()).get("services"));
+            out.put(jobEntry.getKey(), services.containsKey("mysql"));
+        }
+        return out;
+    }
+
+    private static List<Path> javaTestFiles() throws IOException {
+        List<Path> files = new ArrayList<>();
+        Path serviceDir = ROOT.resolve("amz-service");
+        List<Path> roots = new ArrayList<>(List.of(ROOT.resolve("amz-common"), ROOT.resolve("amz-gateway")));
+        if (Files.isDirectory(serviceDir)) {
+            try (Stream<Path> dirs = Files.list(serviceDir)) {
+                dirs.filter(Files::isDirectory).forEach(roots::add);
+            }
+        }
+        for (Path moduleRoot : roots) {
+            Path testJava = moduleRoot.resolve("src/test/java");
+            if (!Files.isDirectory(testJava)) {
+                continue;
+            }
+            try (Stream<Path> walk = Files.walk(testJava)) {
+                walk.filter(path -> path.toString().endsWith(".java")).forEach(files::add);
+            }
+        }
+        assertFalse(files.isEmpty(), "没有扫到任何测试源文件，扫描面已变");
+        return files;
+    }
 
     private record CiTestInvocations(List<String> runs,
                                      Set<String> moduleSelectors,

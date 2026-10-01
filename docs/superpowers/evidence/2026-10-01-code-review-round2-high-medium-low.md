@@ -326,3 +326,38 @@ procurement / spapi（现在用 Boot 默认模板）会被凭空加上或改掉 
 （注意：本段刻意不写出 `字段 = System.getenv(...)` 的字面形态——文档自己也会被扫描，
 第一版就是这么把绿闸口改红的。）豁免是否仍然有效已实测：
 给被固定内容的文件加一个换行 → findings=1 → 还原 → 0。
+
+## 10. 第四轮：本轮接进 CI 的 IT 变量自身没有守卫（已补）
+
+问的是"我加的这道闸有没有人守着"，不是"它现在是不是绿的"。
+
+复测清单（扫描式得出，不是手抄）：测试源码里 `@EnabledIfEnvironmentVariable(named = …)` 共 7 个开关
+（`AD_MYSQL_IT_URL`、`COLLECTION_UPSERT_IT_URL`、`FLYWAY_ALL_IT_URL`×2 个类、`LISTING_HEALTH_IT_URL`、
+`PROFIT_ORDER_COUNT_IT_URL`、`SETTLEMENT_BATCH_IT_URL`、`RUN_INTEGRATION_TESTS`），
+而 ci.yml 的 test job（该 job 确实挂着 `mysql:8.0` service）提供了其中 6 组 URL/USER/PASSWORD。
+
+**缺口**：`CiWorkflowContractTest` 原本只查「模块有没有被 CI 跑」「测试命令有没有吞失败」
+「runtime-smoke 有没有被削弱」，**一条关于 IT 环境变量的断言都没有**。也就是说
+删掉 `LISTING_HEALTH_IT_URL:` 这一行，那两个真库 IT 会在 CI 里整类静默跳过，
+而全仓仍然 BUILD SUCCESS —— 这正是本文件 §8 ①/§9 反复在收敛的形状：一道看起来存在的闸，
+实际可以随时被删成装饰。
+
+补上的守卫（`envGatedIntegrationTestsAreWiredIntoCiOrDeliberatelyExcluded`）四向都查：
+
+1. 变量集合从测试源码**扫出来**（新增 IT 忘接 CI 会自动进断言），并断言扫到 ≥6 个 —— 空扫描=红灯；
+2. 每个开关必须出现在某个 CI step 的 env 里，且**提供它的那个 job 真的有 mysql service**
+   （只给变量不给库，等于把 IT 指向不存在的主机后静默跳过）；
+3. 允许「故意不接」，但必须写非空理由，且理由指向的变量必须**仍然存在**
+   （`RUN_INTEGRATION_TESTS`：SpApiIntegrationTest 要真实 SP-API 凭证与外网，公共 runner 里跑
+   等于把凭据下放；条目一旦被改成指向不存在的名字，反向检查立即变红）；
+4. 反向也查：CI 里出现 `*_IT_URL` 却没有测试源码拿它当启用开关 → 判红
+   （那是"给了但没人读"的假集成覆盖信号）。
+
+三次变异实测均按预期变红，且各自报错指到具体变量：
+删 `LISTING_HEALTH_IT_URL` → 第 2 条报「没有任何 CI step env 提供」；
+把允许清单条目改成不存在的名字 → 第 2 条报 `RUN_INTEGRATION_TESTS` 未接（因为允许项失配）；
+给 CI 加 `ORPHAN_FAKE_IT_URL` → 第 4 条报「假的『集成覆盖』信号」。
+三次都用 `cp` 备份还原，事后 `git diff --exit-code -- .github/workflows/ci.yml` 确认与 HEAD 一致。
+
+顺带记一条自己的操作风险：变异过程中在仓库根留了一个 `ci.bak`，
+CI 的 "Verify clean checkout" 步骤会对未跟踪文件判红 —— 已删除。
