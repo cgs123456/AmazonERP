@@ -1,5 +1,6 @@
 package com.amz.batch;
 
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -8,9 +9,9 @@ import java.util.function.Function;
 /**
  * 分块批量写入 + 失败退回逐条的通用流程。
  * <p>
- * 存在的理由（2026-10-01 审查轮 Low，用户选定语义）：热写入路径此前逐条 insert，
- * 一个几千行的结算文件就是几千次往返。但直接换成批量会把两件事弄丢：
- * <b>哪几行失败</b>的归属，以及<b>自增主键回填</b>。所以语义定为：
+ * 存在的理由：热写入路径逐条 insert 时，一个几千行的结算文件就是几千次往返。
+ * 但直接换成批量会把两件事弄丢：<b>哪几行失败</b>的归属，以及<b>自增主键回填</b>。
+ * 所以语义定为：
  * <ol>
  *   <li>按块尝试批量写；</li>
  *   <li>某块抛异常 → <b>只把这一块</b>退回逐条，逐条结果按行归类；</li>
@@ -48,6 +49,7 @@ public final class BatchInserts {
         private int failed;
         private int fallbackChunks;
         private final List<String> failures = new ArrayList<>();
+        private final List<String> batchErrors = new ArrayList<>();
 
         public int getInserted() {
             return inserted;
@@ -68,6 +70,15 @@ public final class BatchInserts {
 
         public List<String> getFailures() {
             return failures;
+        }
+
+        /**
+         * 批量那一次尝试的失败原因（根因类名 + 消息），逐块一条，上限同失败清单。
+         * 退回到逐条只是让结果正确，原因本身必须留下：不然"批量永远走不通"这种
+         * 持续性故障（列名改了、{@code <foreach>} 写错）会带着逐条的成功一起消失。
+         */
+        public List<String> getBatchErrors() {
+            return batchErrors;
         }
     }
 
@@ -101,12 +112,49 @@ public final class BatchInserts {
                 result.inserted += block.size();
             } catch (Exception batchError) {
                 result.fallbackChunks++;
+                if (result.batchErrors.size() < maxFailures) {
+                    result.batchErrors.add("块起点 " + from + "（" + block.size() + " 行）："
+                            + rootCauseOf(batchError));
+                }
                 for (T row : block) {
                     applyRow(row, rowOp, labelOf, result, maxFailures);
                 }
             }
         }
         return result;
+    }
+
+    /**
+     * 唯一键冲突的识别要看整条因果链：驱动给出的类型会被 MyBatis / Spring 逐层包装，
+     * 只看最外层就会把"库里已经有这一行"记成失败，报表随之少一笔。
+     * <p>
+     * 放在这里而不是各调用方自己写一遍：{@code rowOp} 的契约要求调用方把唯一键冲突
+     * 翻译成 {@link RowOutcome#SKIPPED}，判定规则只该有一份实现，并且集成测试要能
+     * 直接拿真实异常打到这段代码上（复制一份去测，测的就不是生产用的那个判断）。
+     */
+    public static boolean isDuplicateKey(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof SQLIntegrityConstraintViolationException) {
+                return true;
+            }
+            String message = t.getMessage();
+            if (message != null && message.contains("Duplicate entry")) {
+                return true;
+            }
+            if (t.getCause() == t) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    /** 最深层原因（MyBatis 会把 SQL 错误包两三层，最里面那条才带列名）。 */
+    private static String rootCauseOf(Throwable error) {
+        Throwable deepest = error;
+        while (deepest.getCause() != null && deepest.getCause() != deepest) {
+            deepest = deepest.getCause();
+        }
+        return deepest.getClass().getSimpleName() + ": " + deepest.getMessage();
     }
 
     private static <T> void applyRow(T row, Function<T, RowOutcome> rowOp, Function<T, String> labelOf,

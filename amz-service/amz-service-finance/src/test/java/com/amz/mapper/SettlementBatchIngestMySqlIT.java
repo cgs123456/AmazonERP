@@ -1,5 +1,6 @@
 package com.amz.mapper;
 
+import com.amz.batch.BatchInserts;
 import com.amz.model.SettlementDetail;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
@@ -37,17 +38,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ol>
  *   <li>{@code Db.saveBatch} 在没有 Spring 容器时能否工作、500 行是否真的一条批次落库；</li>
  *   <li>重复 row_key 是否会让整批抛错（决定"退回逐条"这条路会不会被走到）；</li>
- *   <li>抛出来的异常形态能不能被 {@code isDuplicateKey} 认出来 —— 认不出来就会把
+ *   <li>抛出来的异常形态能不能被生产代码用的那一份
+ *       {@link BatchInserts#isDuplicateKey(Throwable)} 认出来 —— 认不出来就会把
  *       "已经在库里"的行记成失败，报表随之少一笔。</li>
  * </ol>
- * 只在 {@code *_fwit} 库上建表；不设环境变量整类跳过。触发方式同
+ * 只在 {@code *_it} 结尾、且明确不是 {@code *_fwit} 的库上建表：后一个是
+ * {@code AllModulesFlywayMySqlIT} 对每个业务库 DROP + CREATE 的命名空间，两边共用
+ * 就会互相删表（本 IT 第一版就踩了这一点）。不设环境变量整类跳过。触发方式同
  * {@code PaymentCollectionUpsertMySqlIT}（换成 SETTLEMENT_BATCH_IT_* 三个变量）。
  */
 @EnabledIfEnvironmentVariable(named = "SETTLEMENT_BATCH_IT_URL", matches = ".+")
 @DisplayName("结算明细批量写：Db.saveBatch 与重复键的真实形态")
 class SettlementBatchIngestMySqlIT {
 
-    private static final String SCHEMA = "amz_finance_fwit";
+    private static final String SCHEMA = "amz_finance_batch_it";
     private static final String BASE_URL = System.getenv("SETTLEMENT_BATCH_IT_URL");
     private static final String USER = System.getenv().getOrDefault("SETTLEMENT_BATCH_IT_USER", "root");
     private static final String PASSWORD = System.getenv().getOrDefault("SETTLEMENT_BATCH_IT_PASSWORD", "");
@@ -57,7 +61,7 @@ class SettlementBatchIngestMySqlIT {
 
     @BeforeAll
     static void bootstrap() throws SQLException {
-        assertTrue(SCHEMA.endsWith("_fwit"), "IT 只允许操作带 _fwit 后缀的库：" + SCHEMA);
+        ItSchemaGuard.assertItSchemaIsolation(SCHEMA, BASE_URL);
         // 不用正则拆 URL：直接按 "?" 切，保留驱动参数，只把库名换成 IT 专用库
         int q = BASE_URL.indexOf('?');
         String head = q < 0 ? BASE_URL : BASE_URL.substring(0, q);
@@ -112,8 +116,8 @@ class SettlementBatchIngestMySqlIT {
         Db.saveBatch(details(3));
         // 同一批行再来一次：唯一键冲突必须让批量抛出，"退回逐条"才有意义
         RuntimeException ex = assertThrows(RuntimeException.class, () -> Db.saveBatch(details(3)));
-        assertTrue(isDuplicateKey(ex),
-                "异常形态不在 isDuplicateKey 的识别范围内，逐条兜底会把「已在库里」误记为失败："
+        assertTrue(BatchInserts.isDuplicateKey(ex),
+                "异常形态不在生产判定的识别范围内，逐条兜底会把「已在库里」误记为失败："
                         + chain(ex));
     }
 
@@ -125,28 +129,11 @@ class SettlementBatchIngestMySqlIT {
         try (SqlSession session = factory.openSession(true)) {
             SettlementDetailMapper mapper = session.getMapper(SettlementDetailMapper.class);
             RuntimeException ex = assertThrows(RuntimeException.class, () -> mapper.insert(again.get(0)));
-            assertTrue(isDuplicateKey(ex), "逐条路径的异常形态无法识别：" + chain(ex));
+            assertTrue(BatchInserts.isDuplicateKey(ex), "逐条路径的异常形态无法识别：" + chain(ex));
             assertTrue(ex.getCause() instanceof SQLIntegrityConstraintViolationException
                             || containsSqlIntegrityCause(ex),
                     "驱动应给出 SQLIntegrityConstraintViolationException，实测因果链：" + chain(ex));
         }
-    }
-
-    /** 与 SettlementServiceImpl#isDuplicateKey 同款的判定，逐条核到真实异常上。 */
-    private static boolean isDuplicateKey(Throwable error) {
-        for (Throwable t = error; t != null; t = t.getCause()) {
-            if (t instanceof SQLIntegrityConstraintViolationException) {
-                return true;
-            }
-            String message = t.getMessage();
-            if (message != null && message.contains("Duplicate entry")) {
-                return true;
-            }
-            if (t.getCause() == t) {
-                break;
-            }
-        }
-        return false;
     }
 
     private static boolean containsSqlIntegrityCause(Throwable error) {

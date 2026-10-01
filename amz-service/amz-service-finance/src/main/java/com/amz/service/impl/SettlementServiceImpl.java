@@ -13,6 +13,7 @@ import com.amz.result.PageResult;
 import com.amz.result.Result;
 import com.amz.service.SettlementService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.toolkit.Db;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,11 +23,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * 结算原表接入实现（T04）。
@@ -160,7 +163,7 @@ public class SettlementServiceImpl implements SettlementService {
         // 分块批量写 + 失败块退回逐条（保留"哪几行没进去"的归属）
         BatchInserts.Result batched = BatchInserts.saveChunks(
                 pending, batchSize,
-                block -> writeBatch(shopId, report, block),
+                block -> writeBatch(report, block),
                 detail -> writeOne(shopId, report, detail),
                 SettlementDetail::getRowKey, 0);
 
@@ -168,8 +171,8 @@ public class SettlementServiceImpl implements SettlementService {
         report.setFailed(report.getFailed() + batched.getFailed());
         report.setSumAmount(report.getSumAmount().setScale(2, RoundingMode.HALF_UP));
         if (batched.getFallbackChunks() > 0) {
-            log.warn("结算落库有 {} 个块从批量退回到逐条：shopId={} 块大小={}",
-                    batched.getFallbackChunks(), shopId, batchSize);
+            log.warn("结算落库有 {} 个块从批量退回到逐条：shopId={} 块大小={} 批量失败原因={}",
+                    batched.getFallbackChunks(), shopId, batchSize, batched.getBatchErrors());
         }
 
         if (report.getCurrencies().size() > 1) {
@@ -183,11 +186,10 @@ public class SettlementServiceImpl implements SettlementService {
      * 单测里没有 Spring 上下文，{@code Db.saveBatch} 拿不到 SqlSessionFactory，
      * 不给替换点就只能测到"退回逐条"这条兜底路径，批量那条路永远是黑的。
      */
-    java.util.function.Consumer<java.util.Collection<SettlementDetail>> batchWriter =
-            com.baomidou.mybatisplus.extension.toolkit.Db::saveBatch;
+    Consumer<Collection<SettlementDetail>> batchWriter = Db::saveBatch;
 
     /** 整块批量写成功后才累计金额/币种，避免与逐条重试重复计。 */
-    private void writeBatch(Long shopId, SettlementIngestReport report, List<SettlementDetail> block) {
+    private void writeBatch(SettlementIngestReport report, List<SettlementDetail> block) {
         batchWriter.accept(block);
         for (SettlementDetail detail : block) {
             report.setInserted(report.getInserted() + 1);
@@ -206,7 +208,7 @@ public class SettlementServiceImpl implements SettlementService {
             accumulate(report, detail);
             return BatchInserts.RowOutcome.INSERTED;
         } catch (Exception e) {
-            if (isDuplicateKey(e)) {
+            if (BatchInserts.isDuplicateKey(e)) {
                 // 批量执行器可能已把块内前几行提交掉（autocommit 形状），重试必然撞唯一键
                 accumulate(report, detail);
                 return BatchInserts.RowOutcome.SKIPPED;
@@ -227,23 +229,6 @@ public class SettlementServiceImpl implements SettlementService {
         if (detail.getCurrency() != null && !detail.getCurrency().isBlank()) {
             report.getCurrencies().add(detail.getCurrency());
         }
-    }
-
-    /** 唯一键冲突的识别要看整条因果链：驱动抛的类型会被 MyBatis/Spring 逐层包装。 */
-    private static boolean isDuplicateKey(Throwable error) {
-        for (Throwable t = error; t != null; t = t.getCause()) {
-            if (t instanceof java.sql.SQLIntegrityConstraintViolationException) {
-                return true;
-            }
-            String message = t.getMessage();
-            if (message != null && message.contains("Duplicate entry")) {
-                return true;
-            }
-            if (t.getCause() == t) {
-                break;
-            }
-        }
-        return false;
     }
 
     @Override

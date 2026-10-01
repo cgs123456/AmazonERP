@@ -84,6 +84,11 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
                 computed, upsertBatchSize, this::upsertBatch, this::upsertOne,
                 PaymentCollection::getAmazonOrderId, 10);
 
+        if (batched.getFallbackChunks() > 0) {
+            // 逐条兜底让结果正确，但"批量这条写路在当前 schema 上走不通"是必须看见的故障
+            log.warn("回款台账批量 upsert 有 {} 块退回逐条：shopId={} 原因={}",
+                    batched.getFallbackChunks(), shopId, batched.getBatchErrors());
+        }
         log.info("rebuild payment collection shopId={} orders={} unattributedSettlementRows={} "
                         + "written={} fallbackChunks={}",
                 shopId, computed.size(), unattributed, batched.getInserted(), batched.getFallbackChunks());
@@ -149,9 +154,6 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
         Set<String> currencies = new LinkedHashSet<>();
         long shortfallKnownRows = 0;
         for (Map<String, Object> group : groups) {
-            if (group == null) {
-                continue;
-            }
             String currency = MapArgUtils.toStr(group, "currency");
             if (currency != null && !currency.isBlank()) {
                 currencies.add(currency);

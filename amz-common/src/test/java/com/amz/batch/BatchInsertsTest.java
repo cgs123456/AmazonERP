@@ -9,8 +9,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -130,7 +132,7 @@ class BatchInsertsTest {
     @Test
     @DisplayName("rowOp 自己抛异常也计入失败，而不是让整批中断")
     void rowOpThrowingIsCountedAsFailureNotPropagated() {
-        java.util.function.Function<String, BatchInserts.RowOutcome> explodingRow = row -> {
+        Function<String, BatchInserts.RowOutcome> explodingRow = row -> {
             throw new IllegalStateException("db down");
         };
         BatchInserts.Result result = BatchInserts.saveChunks(
@@ -144,5 +146,45 @@ class BatchInsertsTest {
         assertEquals(3, result.getFailed());
         assertEquals(0, result.getInserted());
         assertEquals(3, result.getFailures().size());
+    }
+
+    @Test
+    @DisplayName("退回逐条不等于事情翻篇：批量那一次的失败原因必须留在结果里")
+    void batchFailureCauseSurvivesTheFallback() {
+        // 逐条重试会把每一行都写成功，结果数字完全正常；如果批量异常在 catch 里被丢掉，
+        // "批量这条路永远走不通"（列名改了、foreach 写错）就再也没有痕迹。
+        BatchInserts.Result result = BatchInserts.saveChunks(
+                rows(4), 2,
+                block -> {
+                    throw new IllegalStateException("外层包装",
+                            new RuntimeException("Unknown column 'row_ky' in 'field list'"));
+                },
+                row -> BatchInserts.RowOutcome.INSERTED,
+                row -> row, 10);
+
+        assertEquals(4, result.getInserted());
+        assertEquals(2, result.getFallbackChunks());
+        assertEquals(2, result.getBatchErrors().size(),
+                "每个失败的块留一条原因，否则无法定位是哪一段数据触发的：" + result.getBatchErrors());
+        assertTrue(result.getBatchErrors().get(0).contains("Unknown column 'row_ky'"),
+                "要带最里层原因，外层包装的 message 通常不含 SQL 细节：" + result.getBatchErrors());
+        assertTrue(result.getBatchErrors().get(0).contains("2 行"),
+                "要带上块行数与块起点，便于回看是哪一段：" + result.getBatchErrors());
+    }
+
+    @Test
+    @DisplayName("isDuplicateKey 认因果链里的约束异常，也认最外层消息；其它异常不认")
+    void duplicateKeyPredicateRecognisesWrappedAndMessageOnlyShapes() {
+        assertTrue(BatchInserts.isDuplicateKey(
+                        new IllegalStateException("批量执行失败",
+                                new java.sql.SQLIntegrityConstraintViolationException("Duplicate entry"))),
+                "驱动异常被包两层是 MyBatis/Spring 的常态");
+        assertTrue(BatchInserts.isDuplicateKey(
+                        new RuntimeException("... Duplicate entry 'rk-1' for key 'uk_row_key' ...")),
+                "有些执行器只把细节留在消息里");
+        assertFalse(BatchInserts.isDuplicateKey(
+                        new java.sql.SQLSyntaxErrorException("Unknown column 'row_ky'")),
+                "把语法错误认成「库里已有这行」会把真实失败静默记成跳过");
+        assertFalse(BatchInserts.isDuplicateKey(new IllegalStateException("connection reset")));
     }
 }

@@ -109,12 +109,12 @@
     {
       "path": "amz-service/amz-service-finance/src/test/java/com/amz/mapper/PaymentCollectionUpsertMySqlIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "525aeb234e8b8047086ad243ad71a587648eb67c237dea1b761b4fe001a1665f"
+      "sha256": "199d3acf4a6365035dc0afa7390446c952b149955a294425c6ebebab14715e0f"
     },
     {
       "path": "amz-service/amz-service-finance/src/test/java/com/amz/mapper/SettlementBatchIngestMySqlIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "7c8ccb15453b40736be7fb7b0c962d09b2d7111664259d2af06e7f23de96400d"
+      "sha256": "5a5dc1bc2bf35105e3d503f0e556f28a737d6a60b1eea86f01f70e8f8a3a7a03"
     },
     {
       "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/credential/PlatformCredentialService.java",

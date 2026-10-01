@@ -40,8 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 只会静默写错列）。这里直接调用 {@link PaymentCollectionMapper#upsertBatch}，
  * 断言的是数据库里最终的样子。
  * <p>
- * 安全性：只在 {@code *_fwit} 后缀的专用库上建表/清表（沿用仓库既有 IT 约定），
- * 不设环境变量时整类跳过，不影响无 MySQL 的开发机与 CI。
+ * 安全性：只在 {@code *_it} 结尾且明确避开 {@code *_fwit} 的专用库上建表/清表
+ * （库名护栏见 {@link ItSchemaGuard}），不设环境变量时整类跳过，
+ * 不影响无 MySQL 的开发机与 CI。
  *
  * <p>触发：{@code COLLECTION_UPSERT_IT_URL / _USER / _PASSWORD}。
  */
@@ -49,7 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("台账 upsert：经 MyBatis 真实执行的幂等结果")
 class PaymentCollectionUpsertMySqlIT {
 
-    private static final String SCHEMA = "amz_finance_fwit";
+    private static final String SCHEMA = "amz_finance_collection_it";
     private static final String BASE_URL = System.getenv("COLLECTION_UPSERT_IT_URL");
     private static final String USER = System.getenv().getOrDefault("COLLECTION_UPSERT_IT_USER", "root");
     private static final String PASSWORD = System.getenv().getOrDefault("COLLECTION_UPSERT_IT_PASSWORD", "");
@@ -60,7 +61,7 @@ class PaymentCollectionUpsertMySqlIT {
 
     @BeforeAll
     static void createSchema() throws SQLException {
-        assertTrue(SCHEMA.endsWith("_fwit"), "IT 只允许操作带 _fwit 后缀的库：" + SCHEMA);
+        ItSchemaGuard.assertItSchemaIsolation(SCHEMA, BASE_URL);
         // 不用正则拆 URL：直接按 "?" 切，保留驱动参数，只把库名换成 IT 专用库
         int q = BASE_URL.indexOf('?');
         String head = q < 0 ? BASE_URL : BASE_URL.substring(0, q);
