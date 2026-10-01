@@ -142,6 +142,17 @@ jobs:
           FLYWAY_ALL_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
           FLYWAY_ALL_IT_USER: root
           FLYWAY_ALL_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # COLLECTION_UPSERT_IT_* / SETTLEMENT_BATCH_IT_*：台账批量幂等写（ON DUPLICATE KEY UPDATE）
+          # 与结算明细批量写（Db.saveBatch）必须"真的经过 MyBatis 执行一遍"。
+          # 手工把 SQL 模板代进 mysql 客户端只能证明语句对，证明不了 foreach 展开后的
+          # 列名/属性名对应关系，也证明不了重复键抛出来的形态还能被兜底路径认出来。
+          # 两者都只操作 *_fwit 专用库，不设变量则整类跳过。
+          COLLECTION_UPSERT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          COLLECTION_UPSERT_IT_USER: root
+          COLLECTION_UPSERT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          SETTLEMENT_BATCH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          SETTLEMENT_BATCH_IT_USER: root
+          SETTLEMENT_BATCH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
         run: mvn -B test -fae
       - name: Verify clean checkout
         if: always()

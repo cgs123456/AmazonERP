@@ -117,3 +117,20 @@ M7 与 M8 修正了清单原述），Low 5 项处理（L3 门禁 + L5 有界缓�
 测出来像生产丢数据，实际是夹具替 DB 少给了一行；② 抽取 SQL 的脚本 assert 失败后
 没写文件，而 `mysql < 旧文件` 照样执行了上一版内容并报语法错 ——
 凡是"写文件再执行"的验证，先删目标文件或校验字节数，否则验的是旧版本。
+
+### 批量写不只在 MySQL 里跑过 SQL 文本，也真的经过 MyBatis 执行
+补了两个 env 门控 IT（不设变量整类跳过，CI 不受影响），在 MySQL 8.0.46 上真跑：
+- `PaymentCollectionUpsertMySqlIT`（3 例）：用 standalone MyBatis 配置调用 `upsertBatch` 本身，
+  断言库里最终状态 —— 这一步抓的是"模板列名/属性名对不上"这类手工代入 SQL 发现不了的问题。
+- `SettlementBatchIngestMySqlIT`（3 例）：`Db.saveBatch` 500 行确实一条批落库；
+  重复 `row_key` 会让整批抛出（→ "退回逐条"这条路会被走到，不是设计想象）；
+  抛出形态经 `isDuplicateKey` 同款判定能认出 `SQLIntegrityConstraintViolationException`，
+  所以"冲突算跳过"在真实驱动下成立，不会把已在库里的行谎报成失败。
+
+两个 IT 已接进 CI 常驻执行（`.github/workflows/ci.yml` 的 mysql service job 里加了
+`COLLECTION_UPSERT_IT_*` / `SETTLEMENT_BATCH_IT_*`），不是"写完就永久跳过"的装饰性测试：
+本地就用 CI 那个形态的 URL 跑过（指向一个**不存在**的 `amz_ad_it` 库 + 完整驱动参数），
+6 例全绿 —— 建库连接走 server-only URL，业务连接才带库名，这一条也是那次跑出来的。
+
+过程中被编译器抓到两处：Java 字符串里写正则 `\?` 被 python 生成成了 `\?`→`\?`（非法转义），
+以及消息串里嵌 ASCII 引号（本轮第三次踩）。最后改成按 `?` 直接切串，不用正则。
