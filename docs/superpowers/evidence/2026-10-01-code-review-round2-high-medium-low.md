@@ -134,3 +134,20 @@ M7 与 M8 修正了清单原述），Low 5 项处理（L3 门禁 + L5 有界缓�
 
 过程中被编译器抓到两处：Java 字符串里写正则 `\?` 被 python 生成成了 `\?`→`\?`（非法转义），
 以及消息串里嵌 ASCII 引号（本轮第三次踩）。最后改成按 `?` 直接切串，不用正则。
+
+## 追加（同一轮）：RedisConfig 那 4 份副本
+"合并成一份 amz-common 自动配置"这条路量过之后**主动放弃**：amz-common 就在扫描根包
+`com.amz` 下，公共 `@Configuration` 会被 16 个服务全部扫到 —— 网关（WebFlux）与
+procurement / spapi（现在用 Boot 默认模板）会被凭空加上或改掉 `redisTemplate` bean，
+换掉 value 序列化器还会让既有缓存读不出来。那不是去重，是跨服务改 bean 拓扑，
+而本环境无法逐个启动验证。
+
+改做行为等价的另一半：**把重复的配方收进 `com.amz.redis.RedisTemplates`（唯一实现）**，
+`@Bean redisTemplate` 仍留在 4 个服务里，bean 名/类型/生效范围逐字节不变。
+门禁随之升级：副本里不得重新实现序列化配方（改成 JdkSerialization 后实测变红）、
+副本之间不得分叉；`RedisTemplatesTest` 4 例钉住 key=String、value=JSON 且带类型往返。
+
+两个新 IT 触发了 `secret-like-assignment`（`PASSWORD = System.getenv()...` 空默认值），
+与既有 2 个 MySQL IT 同形，走仓库既定的内容固定 allowlist 入口，而不是为了绕开扫描器改字段名：
+少一个豁免项不是安全改进，扫描器读不懂的变量名才是债。豁免是否仍然有效已实测：
+给被固定内容的文件加一个换行 → findings=1 → 还原 → 0。

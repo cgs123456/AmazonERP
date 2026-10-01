@@ -107,6 +107,16 @@
       "sha256": "19b4e09fb0a3d8fc69f3e428cc485c2dc784dacce4b162b5efcea29c4a8d0446"
     },
     {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/mapper/PaymentCollectionUpsertMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "sha256": "525aeb234e8b8047086ad243ad71a587648eb67c237dea1b761b4fe001a1665f"
+    },
+    {
+      "path": "amz-service/amz-service-finance/src/test/java/com/amz/mapper/SettlementBatchIngestMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "sha256": "7c8ccb15453b40736be7fb7b0c962d09b2d7111664259d2af06e7f23de96400d"
+    },
+    {
       "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/credential/PlatformCredentialService.java",
       "rule": "secret-like-assignment",
       "sha256": "af2b2a250a633aa5021771c29d80afbbd318aec7ee279026f08aee3ebc3090c7"
