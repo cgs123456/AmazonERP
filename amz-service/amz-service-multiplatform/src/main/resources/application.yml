@@ -43,14 +43,9 @@ mybatis-plus:
 # 各平台 API 配置
 # 说明：平台凭证（appKey/appSecret/accessToken）已改为按 (shopId, platform)
 # 从 amz_platform_account 表读取（多租户），不再以全局 @Value 注入；密钥不落仓库。
-# 汇率兜底见下方 amz.exchange-rates（已与 finance 模块对齐）。
-platform:
-  # 汇率：币种代码 → CNY（兜底；实时由 amz-common GlobalExchangeRateService 拉取）
-  exchange-rates:
-    USD: 7.25
-    EUR: 7.85
-    GBP: 9.20
-    JPY: 0.045
+# 原先的 platform.* 全局段（含 platform.exchange-rates）随该改造一并移除：
+# 已无任何 @Value / @ConfigurationProperties 读取它，且它的 JPY 兜底值 0.045
+# 与在用的 amz.exchange-rates（0.046）不一致——留着就是同一笔日元两处折算不同的隐患。
 
 # 共享汇率服务兜底（amz-common GlobalExchangeRateService；离线时兜底，实时由 exchangerate.host 拉取）
 # 注：JPY 由 0.045 校正为 0.046，与 finance 模块对齐 —— 合并前两模块兜底值不一致，
