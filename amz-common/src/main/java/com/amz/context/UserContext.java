@@ -1,10 +1,15 @@
 package com.amz.context;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 用户线程变量（多店铺 shopId + 角色 role + 授权店铺列表 shops + 可信服务身份）。
  */
+@Slf4j
 public class UserContext {
     public static final ThreadLocal<Integer> userThreadLocal = new ThreadLocal<>();
     public static final ThreadLocal<Long> shopThreadLocal = new ThreadLocal<>();
@@ -14,6 +19,9 @@ public class UserContext {
     public static final ThreadLocal<List<Long>> shopsThreadLocal = new ThreadLocal<>();
     /** 当前可信服务身份，仅在服务令牌校验通过并命中 @InternalServiceAccess 白名单后写入。 */
     public static final ThreadLocal<String> internalServiceThreadLocal = new ThreadLocal<>();
+
+    /** 「无店铺列表即放行」分支的命中计数，键为来源标识（见 recordNoListGrant）。 */
+    private static final Map<String, Long> NO_LIST_GRANT_HITS = new ConcurrentHashMap<>();
 
     public static void setUserId(Integer userId) {
         userThreadLocal.set(userId);
@@ -84,9 +92,37 @@ public class UserContext {
         }
         List<Long> shops = getShops();
         if (shops == null || shops.isEmpty()) {
+            recordNoListGrant();
             return true;
         }
         return shopId != null && shops.contains(shopId);
+    }
+
+    /**
+     * 「因为没有店铺限制，所以放行」这一分支的计数与首次告警。
+     * <p>
+     * 存在动因：该分支同时被定时任务、白名单内部调用和"上下文没建起来"三种情况命中，
+     * 而三者的安全含义完全不同。行为不能改（改了就是让定时任务大面积 403），
+     * 但静默放行必须先变得可见，否则越权面扩大时没有任何信号。
+     * 键区分"带内部服务身份"与"完全无身份"，各告警一次，计数可用
+     * {@link #noListGrantHits(String)} 查询。
+     */
+    private static void recordNoListGrant() {
+        String service = getInternalService();
+        String key = service != null ? "internal-service:" + service : "no-identity";
+        long hits = NO_LIST_GRANT_HITS.merge(key, 1L, Long::sum);
+        if (hits == 1L) {
+            log.warn("店铺授权校验走「无店铺列表即放行」分支：来源={} 命中次数=1"
+                    + "（定时任务属预期；若为公网请求上下文缺失，说明鉴权链路有洞）", key);
+        }
+    }
+
+    /**
+     * 「无店铺列表即放行」分支的累计命中次数；key 见 {@link #recordNoListGrant()}。
+     */
+    public static long noListGrantHits(String key) {
+        Long hits = NO_LIST_GRANT_HITS.get(key);
+        return hits == null ? 0L : hits;
     }
 
     /**
