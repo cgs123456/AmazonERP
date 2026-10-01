@@ -13,12 +13,14 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,6 +29,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -100,15 +104,12 @@ class PaymentCollectionServiceImplTest {
     @DisplayName("重算：4 个订单聚合正确，恒等式成立，状态分类符合优先级")
     void rebuildAggregatesOrders() {
         when(settlementDetailMapper.selectList(any())).thenReturn(fourOrderSettlement());
-        when(paymentCollectionMapper.selectList(any())).thenReturn(new ArrayList<>());
-        when(paymentCollectionMapper.insert(any(PaymentCollection.class))).thenReturn(1);
+        when(paymentCollectionMapper.upsertBatch(anyList())).thenReturn(4);
 
         int orders = paymentCollectionService.rebuild(SHOP_ID);
         assertEquals(4, orders, "无订单号的调整行不应产生订单台账");
 
-        ArgumentCaptor<PaymentCollection> captor = ArgumentCaptor.forClass(PaymentCollection.class);
-        verify(paymentCollectionMapper, times(4)).insert(captor.capture());
-        List<PaymentCollection> saved = captor.getAllValues();
+        List<PaymentCollection> saved = captureUpserted();
 
         PaymentCollection ord1 = find(saved, "ORD-1");
         assertEquals(new BigDecimal("29.99"), ord1.getReceivable());
@@ -140,67 +141,116 @@ class PaymentCollectionServiceImplTest {
     }
 
     @Test
-    @DisplayName("重算：保留既有短款并让状态回到「有差额」（不清零）")
-    void rebuildPreservesExistingShortfall() {
+    @DisplayName("重算不再预读整店台账：幂等交给 upsertBatch 那一条语句")
+    void rebuildDoesNotPreloadLedger() {
         when(settlementDetailMapper.selectList(any())).thenReturn(fourOrderSettlement());
-        PaymentCollection existing = new PaymentCollection();
-        existing.setId(99L);
-        existing.setShopId(SHOP_ID);
-        existing.setAmazonOrderId("ORD-4");
-        existing.setShortfall(new BigDecimal("1.10"));
-        existing.setStatus(PaymentCollection.STATUS_SHORTFALL);
-        when(paymentCollectionMapper.selectList(any())).thenReturn(new ArrayList<>(List.of(existing)));
-        when(paymentCollectionMapper.updateById(any(PaymentCollection.class))).thenReturn(1);
+        when(paymentCollectionMapper.upsertBatch(anyList())).thenReturn(4);
 
-        paymentCollectionService.rebuild(SHOP_ID);
+        assertEquals(4, paymentCollectionService.rebuild(SHOP_ID));
 
-        ArgumentCaptor<PaymentCollection> captor = ArgumentCaptor.forClass(PaymentCollection.class);
-        verify(paymentCollectionMapper).updateById(captor.capture());
-        PaymentCollection updated = captor.getValue();
-        assertEquals(99L, updated.getId(), "更新必须复用既有主键");
-        assertEquals(new BigDecimal("1.10"), updated.getShortfall());
-        assertEquals(PaymentCollection.STATUS_SHORTFALL, updated.getStatus());
+        // 旧实现把整店台账全部读进内存建 id 索引，再逐单 select + insert/updateById
+        verify(paymentCollectionMapper, never()).selectList(any());
+        verify(paymentCollectionMapper, never()).insert(any(PaymentCollection.class));
+        verify(paymentCollectionMapper, never()).updateById(any(PaymentCollection.class));
     }
 
     @Test
-    @DisplayName("重算必须遍历结算明细和既有台账的全部页，不能只处理前 500 行")
-    void rebuildTraversesAllSettlementAndExistingPages() {
+    @DisplayName("重算必须遍历结算明细的全部页，不能只处理前 500 行")
+    void rebuildTraversesAllSettlementPages() {
         List<SettlementDetail> firstDetailPage = new ArrayList<>();
         for (int i = 0; i < 501; i++) {
             SettlementDetail row = detail("ORD-1", "Order", "Principal", "10.00", DEPOSIT_PAST);
             row.setId(1000L - i);
             firstDetailPage.add(row);
         }
+        // 第二页必须把第一页"探边界多读的那一行"（id=500）也带回来：
+        // keyset 分页靠 cursor=id<501 把它留给下一页，替真实 DB 少给一行就等于测试自己把数据弄丢
+        SettlementDetail carriedOverRow = detail("ORD-1", "Order", "Principal", "10.00", DEPOSIT_PAST);
+        carriedOverRow.setId(500L);
         SettlementDetail secondPageDetail = detail("ORD-2", "Order", "Principal", "20.00", DEPOSIT_PAST);
         secondPageDetail.setId(499L);
 
-        List<PaymentCollection> firstExistingPage = new ArrayList<>();
-        for (int i = 0; i < 501; i++) {
-            PaymentCollection row = pc("ORD-1", PaymentCollection.STATUS_SETTLED, "10.00", "10.00", null);
-            row.setId(2000L - i);
-            firstExistingPage.add(row);
-        }
-        PaymentCollection secondPageExisting = pc("ORD-2", PaymentCollection.STATUS_SETTLED,
-                "20.00", "20.00", null);
-        secondPageExisting.setId(1499L);
-
         when(settlementDetailMapper.selectList(any()))
-                .thenReturn(firstDetailPage, new ArrayList<>(List.of(secondPageDetail)));
-        when(paymentCollectionMapper.selectList(any()))
-                .thenReturn(firstExistingPage, new ArrayList<>(List.of(secondPageExisting)));
-        when(paymentCollectionMapper.updateById(any(PaymentCollection.class))).thenReturn(1);
+                .thenReturn(firstDetailPage, new ArrayList<>(List.of(carriedOverRow, secondPageDetail)));
+        when(paymentCollectionMapper.upsertBatch(anyList())).thenReturn(2);
 
         int orders = paymentCollectionService.rebuild(SHOP_ID);
 
         assertEquals(2, orders);
-        ArgumentCaptor<PaymentCollection> captor = ArgumentCaptor.forClass(PaymentCollection.class);
-        verify(paymentCollectionMapper, times(2)).updateById(captor.capture());
-        verify(paymentCollectionMapper, never()).insert(any(PaymentCollection.class));
-        PaymentCollection secondPageUpdated = find(captor.getAllValues(), "ORD-2");
-        assertEquals(1499L, secondPageUpdated.getId(),
-                "第二页既有台账必须被加载并复用主键，而不是当成新订单插入");
+        List<PaymentCollection> saved = captureUpserted();
+        PaymentCollection secondPageOrder = find(saved, "ORD-2");
+        assertEquals(0, new BigDecimal("20.00").compareTo(secondPageOrder.getReceivable()),
+                "第二页的订单也必须进台账，否则整页被静默丢掉；实际=" + secondPageOrder.getReceivable());
+        assertEquals(0, new BigDecimal("5010.00").compareTo(find(saved, "ORD-1").getReceivable()),
+                "第一页 501 行同订单：被分页截断后应收应为前 500 行之和；实际="
+                        + find(saved, "ORD-1").getReceivable());
         verify(settlementDetailMapper, times(2)).selectList(any());
-        verify(paymentCollectionMapper, times(2)).selectList(any());
+    }
+
+    @Test
+    @DisplayName("450 个订单 / 块 200 → 恰好 3 条 upsert 语句")
+    void rebuildUpsertsInChunks() {
+        List<SettlementDetail> details = new ArrayList<>();
+        for (int i = 0; i < 450; i++) {
+            details.add(detail("ORD-" + i, "Order", "Principal", "10.00", DEPOSIT_PAST));
+        }
+        when(settlementDetailMapper.selectList(any())).thenReturn(details);
+        List<Integer> blockSizes = new ArrayList<>();
+        when(paymentCollectionMapper.upsertBatch(anyList())).thenAnswer(invocation -> {
+            List<PaymentCollection> block = invocation.getArgument(0);
+            blockSizes.add(block.size());
+            return block.size();
+        });
+
+        assertEquals(450, paymentCollectionService.rebuild(SHOP_ID));
+        assertEquals(List.of(200, 200, 50), blockSizes);
+    }
+
+    @Test
+    @DisplayName("某块 upsert 失败：该块退回逐单，全部成功则不报错")
+    void failingChunkFallsBackToPerOrder() {
+        List<SettlementDetail> details = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            details.add(detail("ORD-" + i, "Order", "Principal", "10.00", DEPOSIT_PAST));
+        }
+        when(settlementDetailMapper.selectList(any())).thenReturn(details);
+        List<Integer> shapes = new ArrayList<>();
+        when(paymentCollectionMapper.upsertBatch(anyList())).thenAnswer(invocation -> {
+            List<PaymentCollection> block = invocation.getArgument(0);
+            shapes.add(block.size());
+            if (block.size() > 1) {
+                throw new RuntimeException("deadlock found");
+            }
+            return 1;
+        });
+        ReflectionTestUtils.setField(paymentCollectionService, "upsertBatchSize", 2);
+
+        assertEquals(3, paymentCollectionService.rebuild(SHOP_ID));
+        // 块 1（2 单）批量失败 → 退回逐单 2 次；块 2 只有 1 单 → 直接逐单 1 次
+        assertEquals(List.of(2, 1, 1, 1), shapes, "先看到块的形状，再谈退回是否发生");
+        verify(paymentCollectionMapper, times(4)).upsertBatch(anyList());
+    }
+
+    @Test
+    @DisplayName("逐单仍失败：抛错并带上成功/失败计数，不静默返回「重建完成」")
+    void partialFailureIsLoud() {
+        List<SettlementDetail> details = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            details.add(detail("ORD-" + i, "Order", "Principal", "10.00", DEPOSIT_PAST));
+        }
+        when(settlementDetailMapper.selectList(any())).thenReturn(details);
+        when(paymentCollectionMapper.upsertBatch(anyList())).thenAnswer(invocation -> {
+            List<PaymentCollection> block = invocation.getArgument(0);
+            if (block.stream().anyMatch(r -> "ORD-1".equals(r.getAmazonOrderId()))) {
+                throw new RuntimeException("data too long for column");
+            }
+            return 1;
+        });
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> paymentCollectionService.rebuild(SHOP_ID));
+        assertTrue(ex.getMessage().contains("1 个订单落库失败"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("已写入 1 个"), ex.getMessage());
     }
 
     @Test
@@ -219,18 +269,23 @@ class PaymentCollectionServiceImplTest {
         rows.add(detail("ORD-BROKEN", "Order", "Principal", "10.00", "not-a-date"));
         rows.add(detail("ORD-MISSING", "Order", "Principal", "10.00", null));
         when(settlementDetailMapper.selectList(any())).thenReturn(rows);
-        when(paymentCollectionMapper.selectList(any())).thenReturn(new ArrayList<>());
-        when(paymentCollectionMapper.insert(any(PaymentCollection.class))).thenReturn(1);
+        when(paymentCollectionMapper.upsertBatch(anyList())).thenReturn(3);
 
         paymentCollectionService.rebuild(SHOP_ID);
 
-        ArgumentCaptor<PaymentCollection> captor = ArgumentCaptor.forClass(PaymentCollection.class);
-        verify(paymentCollectionMapper, times(3)).insert(captor.capture());
-        List<PaymentCollection> saved = captor.getAllValues();
+        List<PaymentCollection> saved = captureUpserted();
         assertEquals(PaymentCollection.STATUS_SETTLED, find(saved, "ORD-PLAIN").getStatus());
         assertEquals(PaymentCollection.STATUS_IN_TRANSIT, find(saved, "ORD-BROKEN").getStatus(),
                 "无法解析的存款日不能当作已回账");
         assertEquals(PaymentCollection.STATUS_IN_TRANSIT, find(saved, "ORD-MISSING").getStatus());
+    }
+
+    /** 取出所有经由批量 upsert 写出的行（分块后不再是一行一次调用）。 */
+    @SuppressWarnings("unchecked")
+    private List<PaymentCollection> captureUpserted() {
+        ArgumentCaptor<List<PaymentCollection>> captor = ArgumentCaptor.forClass(List.class);
+        verify(paymentCollectionMapper, atLeastOnce()).upsertBatch(captor.capture());
+        return captor.getAllValues().stream().flatMap(List::stream).collect(Collectors.toList());
     }
 
     @Test

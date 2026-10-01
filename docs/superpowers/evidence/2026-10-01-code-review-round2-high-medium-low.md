@@ -72,7 +72,7 @@ C4 fixture 另含同订单同 ASIN 重复行与跨年份行，分组值与日期
 
 | 项 | 为什么不做 | 恢复条件 |
 |---|---|---|
-| L2 循环单条 insert | 语义已按用户选定实现（分块批量 + 失败块退回逐条），并先落到最大的一条路径：结算明细落库 `SettlementServiceImpl.ingestParsedRows`。逐点核查其余 14 处的量级后判定不动：物流轨迹是"每货件几十条事件"且已按指纹去重，批量省的是十几次往返；订单/回款/平台商品三类要么是 upsert（要的是 `ON DUPLICATE KEY UPDATE` 而不是多值 insert），要么已经有自己的幂等层。剩下真正值得做的只有 `PaymentCollectionServiceImpl.rebuild`，它需要新的 SQL 形状，单独排期。 | 见 `BatchInsertsTest` + `SettlementBatchIngestTest`；rebuild 的批量 upsert 待做 |
+| L2 循环单条 insert | 语义已按用户选定实现（分块批量 + 失败块退回逐条），并先落到最大的一条路径：结算明细落库 `SettlementServiceImpl.ingestParsedRows`。逐点核查其余 14 处的量级后判定不动：物流轨迹是"每货件几十条事件"且已按指纹去重，批量省的是十几次往返；订单/回款/平台商品三类要么是 upsert（要的是 `ON DUPLICATE KEY UPDATE` 而不是多值 insert），要么已经有自己的幂等层。`PaymentCollectionServiceImpl.rebuild` 同轮一并做完：整店台账预读 + 逐单 select/insert/update 换成一条 ODKU 批量幂等写（短款不进更新列表、状态用旧行短款判定），见 §3 末。 | 见 `BatchInsertsTest` + `SettlementBatchIngestTest`；rebuild 的批量 upsert 待做 |
 | L5 审单正则重复编译 | 已落地：`compiledPattern` 走访问序 LRU（上限 64）。规则正则由**店铺管理员输入**，无界缓存等于给一条内存放大通道，所以同时钉住"有界""失败不进缓存"。 | 见 `AuditPatternCacheTest`；把上限改回无界后对应用例变红（实测 200 vs 64） |
 | L3 4 份 `RedisConfig` 合并 | 合并 = 改变 16 个服务的 Bean 装配顺序，本机无法逐个启动验证（Nacos/MySQL 属另一套在跑的栈，不应写入）。用未验证的装配变更换一个 Low 的整洁不值 | 能跑通 4 个服务的启动冒烟后上收为 amz-common 自动配置，并删除 `RedisConfigDuplicationGateTest`；过渡期该门禁保证不会出现"改漏一份"的静默分叉 |
 | `healthSummary` / `PaymentCollectionServiceImpl.rebuild` 下沉 SQL | 前者是整店口径聚合（同 C2 的同类问题，但改法要新增 mapper 方法与契约测试），后者要按交易类型在 SQL 里做 CASE 归类，而 MySQL 字符串比较的大小写敏感性依赖列 collation —— 换引擎/换排序规则就可能悄悄改变归类结果 | 需要一次带真实 collation 前提的等价性验证，单独排期 |
@@ -102,3 +102,18 @@ M7 与 M8 修正了清单原述），Low 5 项处理（L3 门禁 + L5 有界缓�
 `c66f115` C1 补货 · `a07ea08` C2 回款 · `098271c` C4 利润 · `142c599` M1 汇率 ·
 `a051cab` M2 轮询 · `8a1a1f2` M3 守卫 · `bc86569` M5 宽松放行 · `0797e8e` M4 死配置 ·
 `88bcc59` M7 limit · `c161ed3` M8 读上限 · `42107a3` M6 toBigDecimal · `ee6d21d` L3 门禁
+
+### rebuild 的批量幂等写（同轮补做）
+`upsertBatch` 的语句不是手写副本，而是**从 mapper 源码里把模板逐列代入**渲染出来，
+再丢进隔离 MySQL 8.0.46 实跑（部署用的就是这个 major）；同一脚本在 8.4 上跑过一遍，
+两边逐字段一致。三种情形：
+`ORD-4` 有正短款 → 金额更新、`shortfall=1.10` 保留、状态仍 `SHORTFALL`；
+`ORD-5` 短款为 0 → 保留 0、状态跟随新基础值变 `IN_TRANSIT`；
+`ORD-8` 库里没有 → 插入且 `shortfall` 为 NULL。
+两条不可退让的规则另有静态契约守着（更新列表里不得出现 `shortfall = new.shortfall`、
+必须保留 `IF(shortfall IS NOT NULL AND shortfall > 0, 'SHORTFALL', new.status)`）。
+
+踩到的两个坑一并记下：① 分页夹具第二页没把"探边界多读的那一行"带回来，
+测出来像生产丢数据，实际是夹具替 DB 少给了一行；② 抽取 SQL 的脚本 assert 失败后
+没写文件，而 `mysql < 旧文件` 照样执行了上一版内容并报语法错 ——
+凡是"写文件再执行"的验证，先删目标文件或校验字节数，否则验的是旧版本。

@@ -2,6 +2,7 @@ package com.amz.service.impl;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 
+import com.amz.batch.BatchInserts;
 import com.amz.dto.PaymentCollectionSummary;
 import com.amz.mapper.PaymentCollectionMapper;
 import com.amz.mapper.SettlementDetailMapper;
@@ -12,6 +13,7 @@ import com.amz.util.MapArgUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -45,6 +47,10 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
     @Autowired
     private PaymentCollectionMapper paymentCollectionMapper;
 
+    /** 一次 upsert 语句带多少个订单（每条语句的占位符数量 = 订单数 × 列数）。 */
+    @Value("${amz.finance.collection.upsert-batch-size:200}")
+    private int upsertBatchSize = 200;
+
     @Override
     public int rebuild(Long shopId) {
         if (shopId == null) {
@@ -67,29 +73,43 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
             byOrder.computeIfAbsent(d.getAmazonOrderId(), k -> new ArrayList<>()).add(d);
         }
 
-        Map<String, PaymentCollection> existing = new LinkedHashMap<>();
-        for (PaymentCollection pc : loadAllPaymentCollections(shopId)) {
-            existing.put(pc.getAmazonOrderId(), pc);
+        // 幂等交给数据库：不再先把整店台账读进内存建 id 索引，也不逐单 select + insert/update。
+        // 短款保留与"有短款则状态仍为 SHORTFALL"两条规则都写在 upsertBatch 的 ODKU 子句里。
+        List<PaymentCollection> computed = new ArrayList<>(byOrder.size());
+        for (Map.Entry<String, List<SettlementDetail>> entry : byOrder.entrySet()) {
+            computed.add(aggregate(entry.getKey(), entry.getValue()));
         }
 
-        int count = 0;
-        for (Map.Entry<String, List<SettlementDetail>> entry : byOrder.entrySet()) {
-            PaymentCollection computed = aggregate(entry.getKey(), entry.getValue());
-            PaymentCollection old = existing.get(entry.getKey());
-            if (old == null) {
-                paymentCollectionMapper.insert(computed);
-            } else {
-                // 保留既有短款（由费用比对写入），避免重算把它清零
-                computed.setId(old.getId());
-                computed.setShortfall(old.getShortfall());
-                applyStatusByShortfall(computed);
-                paymentCollectionMapper.updateById(computed);
-            }
-            count++;
+        BatchInserts.Result batched = BatchInserts.saveChunks(
+                computed, upsertBatchSize, this::upsertBatch, this::upsertOne,
+                PaymentCollection::getAmazonOrderId, 10);
+
+        log.info("rebuild payment collection shopId={} orders={} unattributedSettlementRows={} "
+                        + "written={} fallbackChunks={}",
+                shopId, computed.size(), unattributed, batched.getInserted(), batched.getFallbackChunks());
+        if (batched.getFailed() > 0) {
+            // 部分成功必须吵：静默返回"重建完成"会让缺数的台账被当成完整事实用于对账
+            throw new IllegalStateException("回款台账重建有 " + batched.getFailed()
+                    + " 个订单落库失败（已写入 " + batched.getInserted() + " 个）："
+                    + batched.getFailures());
         }
-        log.info("rebuild payment collection shopId={} orders={} unattributedSettlementRows={}",
-                shopId, count, unattributed);
-        return count;
+        return computed.size();
+    }
+
+    /** 一块一次语句；抛错则由 BatchInserts 只把这一块退回逐条。 */
+    private void upsertBatch(List<PaymentCollection> block) {
+        paymentCollectionMapper.upsertBatch(block);
+    }
+
+    private BatchInserts.RowOutcome upsertOne(PaymentCollection row) {
+        try {
+            paymentCollectionMapper.upsertBatch(List.of(row));
+            return BatchInserts.RowOutcome.INSERTED;
+        } catch (Exception e) {
+            log.warn("回款台账逐条重写仍失败：shopId={} amazonOrderId={} reason={}",
+                    row.getShopId(), row.getAmazonOrderId(), e.getMessage());
+            return BatchInserts.RowOutcome.FAILED;
+        }
     }
 
     @Override
@@ -173,37 +193,6 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
                     + "因此「未回」订单无法枚举（需接入订单域数据）");
         }
         return summary;
-    }
-
-    /**
-     * 内部汇总必须遍历全部页，不能把第一页误当成全量财务事实。
-     * 仍以固定批次读取，避免单次 selectList 随历史数据无限增长。
-     */
-    private List<PaymentCollection> loadAllPaymentCollections(Long shopId) {
-        List<PaymentCollection> all = new ArrayList<>();
-        PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
-        while (true) {
-            LambdaQueryWrapper<PaymentCollection> qw = new LambdaQueryWrapper<PaymentCollection>()
-                    .eq(PaymentCollection::getShopId, shopId);
-            Long cursorId = page.cursorId();
-            if (cursorId != null) {
-                qw.lt(PaymentCollection::getId, cursorId);
-            }
-            qw.orderByDesc(PaymentCollection::getId)
-                    .last("LIMIT " + page.probeSize());
-            List<PaymentCollection> rows = paymentCollectionMapper.selectList(qw);
-            if (rows == null || rows.isEmpty()) {
-                break;
-            }
-            int visible = Math.min(rows.size(), page.size());
-            all.addAll(rows.subList(0, visible));
-            if (rows.size() <= page.size()) {
-                break;
-            }
-            page = PageRequest.of(page.size(),
-                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
-        }
-        return all;
     }
 
     private List<SettlementDetail> loadAllSettlementDetails(Long shopId) {
