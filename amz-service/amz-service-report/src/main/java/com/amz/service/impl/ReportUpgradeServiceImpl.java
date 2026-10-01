@@ -87,7 +87,7 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
     @Override
     public Map<String, Object> profitSummaryByAsin(Long shopId, String startDate, String endDate) {
         // 聚合下沉到 SQL：只取回「每个 ASIN 一行」，不再把整段明细读进 Java。
-        // 口径（含 rowCount 的历史含义）见 ProfitDetailMapper#sumByAsin。
+        // 订单数口径（去重，且总数另查）见 ProfitDetailMapper#sumByAsin。
         LocalDate from = startDate != null ? LocalDate.parse(startDate) : null;
         LocalDate to = endDate != null ? LocalDate.parse(endDate) : null;
         List<Map<String, Object>> groups = profitDetailMapper.sumByAsin(shopId, from, to);
@@ -96,16 +96,15 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
         BigDecimal totalSales = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
         BigDecimal totalNetProfit = BigDecimal.ZERO;
-        long totalRows = 0;
 
         for (Map<String, Object> group : groups) {
             BigDecimal sales = decimalOf(group, "totalSales");
             BigDecimal netProfit = decimalOf(group, "netProfit");
-            long rowCount = MapArgUtils.toLong(group, "rowCount", 0L);
+            long orderCount = MapArgUtils.toLong(group, "orderCount", 0L);
 
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("asin", MapArgUtils.toStr(group, "asin"));
-            summary.put("orderCount", rowCount);
+            summary.put("orderCount", orderCount);
             summary.put("totalSales", sales);
             summary.put("totalCost", decimalOf(group, "totalCost"));
             summary.put("totalAdSpend", decimalOf(group, "totalAdSpend"));
@@ -120,7 +119,6 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
             totalSales = totalSales.add(sales);
             totalCost = totalCost.add(decimalOf(group, "totalCost"));
             totalNetProfit = totalNetProfit.add(netProfit);
-            totalRows += rowCount;
         }
 
         // 按净利润降序
@@ -128,7 +126,10 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
-        result.put("totalOrders", totalRows);
+        // 全店订单数走单独一条去重查询：把各 ASIN 的 orderCount 相加会把
+        // "一单跨多 ASIN"数两次（实测相加 5，真实去重 4）。
+        Long distinctOrders = profitDetailMapper.countDistinctOrders(shopId, from, to);
+        result.put("totalOrders", distinctOrders == null ? 0L : distinctOrders);
         result.put("totalSales", totalSales);
         result.put("totalCost", totalCost);
         result.put("totalNetProfit", totalNetProfit);

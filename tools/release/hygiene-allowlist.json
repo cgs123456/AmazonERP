@@ -132,6 +132,11 @@
       "sha256": "53f3933482ed445e6ed8b84a6f51040ad2aa7ffe990b92d1f67f59ffcd63ab45"
     },
     {
+      "path": "amz-service/amz-service-report/src/test/java/com/amz/mapper/ProfitOrderCountMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "sha256": "3b2ca210dc13587c017736a7fcf46929d208a4701854ecca729e4639190db4df"
+    },
+    {
       "path": "amz-service/amz-service-spapi/src/main/java/com/amz/client/TokensClient.java",
       "rule": "secret-like-assignment",
       "sha256": "9b85572aa5ba365ec2121832d23c821c62358826614baefa0d086b1664fe5252"

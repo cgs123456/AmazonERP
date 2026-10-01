@@ -45,8 +45,9 @@ class ProfitSummarySqlContractTest {
             "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql");
 
     private static final List<String> USED_COLUMNS = List.of(
-            "shop_id", "asin", "report_date", "product_sales", "product_cost", "advertising_cost",
-            "fba_fees", "referral_fee", "variable_closing_fee", "storage_fee", "gross_profit", "net_profit");
+            "shop_id", "asin", "amazon_order_id", "report_date", "product_sales", "product_cost",
+            "advertising_cost", "fba_fees", "referral_fee", "variable_closing_fee", "storage_fee",
+            "gross_profit", "net_profit");
 
     @Test
     @DisplayName("SQL 别名与服务读取键双向一致")
@@ -109,18 +110,59 @@ class ProfitSummarySqlContractTest {
                 "amz_profit_detail 上没有 (shop_id, report_date) 索引，整店聚合会退化成全表扫描：" + ddl);
     }
 
-    /** 取出 sumByAsin 上 @Select 的 SQL（拼接各字符串片段，去掉 <script> 包装）。 */
-    private static String summarySql() {
+    /** 取出指定 mapper 方法上 @Select 的 SQL（拼接各字符串片段，去掉 {@code <script>} 包装）。 */
+    private static String annotationSqlFor(String methodName) {
         String source = read(MAPPER);
-        int methodAt = source.indexOf("sumByAsin(");
-        assertTrue(methodAt > 0, "mapper 里找不到 sumByAsin");
+        int methodAt = source.indexOf(methodName + "(");
+        assertTrue(methodAt > 0, "mapper 里找不到 " + methodName);
         int selectAt = source.lastIndexOf("@Select", methodAt);
-        assertTrue(selectAt > 0, "sumByAsin 上没有 @Select");
+        assertTrue(selectAt > 0, methodName + " 上没有 @Select");
         return Pattern.compile("\"([^\"]*)\"")
                 .matcher(source.substring(selectAt, methodAt)).results()
                 .map(r -> r.group(1))
                 .collect(Collectors.joining())
                 .replaceAll("</?script>", "");
+    }
+
+    private static String summarySql() {
+        return annotationSqlFor("sumByAsin");
+    }
+
+    @Test
+    @DisplayName("订单数必须是去重订单数，不得退回行数口径")
+    void orderCountIsDistinctOrdersNotRowCount() {
+        String sql = summarySql();
+        assertTrue(sql.contains("COUNT(DISTINCT amazon_order_id) AS orderCount"),
+                "分组列的订单数没按 amazon_order_id 去重（表上没有 (shop, order, asin) 唯一键，"
+                        + "COUNT(1) 会把同单多行数成多笔订单）：" + sql);
+        assertFalse(sql.contains("COUNT(1)"),
+                "分组查询里又出现了 COUNT(1) 计订单：" + sql);
+        assertFalse(sql.contains("rowCount"),
+                "rowCount 这个历史别名不该再回来（它就是行数冒充订单数的那个字段）：" + sql);
+    }
+
+    @Test
+    @DisplayName("全店订单数另有一条去重查询，且与分组查询同 shop 同日期口径")
+    void shopWideOrderCountIsItsOwnQuery() {
+        String sql = annotationSqlFor("countDistinctOrders");
+        assertTrue(sql.contains("COUNT(DISTINCT amazon_order_id)"),
+                "总数查询没去重：" + sql);
+        assertTrue(Pattern.compile("WHERE\\s+shop_id\\s*=\\s*#\\{shopId\\}").matcher(sql).find(),
+                "总数查询必须绑店铺：" + sql);
+        assertTrue(sql.contains("report_date &gt;="), "总数查询必须带起始日期口径：" + sql);
+        assertTrue(sql.contains("report_date &lt;="), "总数查询必须带结束日期口径：" + sql);
+        assertFalse(sql.contains("GROUP BY"),
+                "全店总数不能再按 ASIN 分组——一分组就得回服务里相加，而跨 ASIN 的订单会被数两次：" + sql);
+
+        // 服务侧必须真的用它当总数，而不是把分组列累加
+        String service = read(SERVICE);
+        int totalAt = service.indexOf("put(\"totalOrders\"");
+        assertTrue(totalAt > 0, "服务没有输出 totalOrders");
+        String around = service.substring(Math.max(0, totalAt - 600), totalAt);
+        assertTrue(around.contains("countDistinctOrders"),
+                "totalOrders 不是来自全店去重查询（把各 ASIN 相加会重复计跨 ASIN 的订单）");
+        assertFalse(around.contains("totalRows"),
+                "旧的行数累加变量还挂在这条路上：" + around);
     }
 
     /** 从建表脚本里截出指定表的 CREATE TABLE 语句块。 */

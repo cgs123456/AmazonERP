@@ -158,6 +158,11 @@ jobs:
           LISTING_HEALTH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
           LISTING_HEALTH_IT_USER: root
           LISTING_HEALTH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # PROFIT_ORDER_COUNT_IT_*：报表订单数改去重口径后，"相加≠全店"（一单跨多 ASIN）
+          # 与 <if> 日期边界只有在真 MyBatis 上执行才验得到。
+          PROFIT_ORDER_COUNT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          PROFIT_ORDER_COUNT_IT_USER: root
+          PROFIT_ORDER_COUNT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
         run: mvn -B test -fae
       - name: Verify clean checkout
         if: always()
