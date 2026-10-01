@@ -37,6 +37,36 @@ import java.util.stream.Collectors;
 @Service
 public class ListingMonitorServiceImpl implements ListingMonitorService {
 
+    /**
+     * 整店列表的单读上限。
+     * <p>
+     * 存在动因：本类 5 个 {@code list*} 都是 {@code selectList} 无上限读取，行数随
+     * 监控历史（每天每 ASIN 一条快照）线性累积；竞品/BuyBox 两个接口更隐蔽 ——
+     * 它们把全部快照读进内存只为"每个 ASIN 取最新一条"，返回几十行却读了几年数据。
+     */
+    private static final int LIST_READ_LIMIT = com.amz.result.PageRequest.MAX_SIZE;
+
+    /**
+     * 按单读上限截断一次读取，并让截断这件事在日志里可见。
+     * <p>
+     * 各 {@code list*} 的 ORDER BY 都是"最相关在前"（健康分升序 / 时间降序），
+     * 所以被截掉的是尾部旧快照；不静默丢弃 —— 静默会让调用方以为自己拿到了全量。
+     * 需要更全的清单时应加过滤条件（asin / keyword / severity）或走分页接口。
+     */
+    private static <T> List<T> capRead(List<T> rows, String what) {
+        if (rows == null || rows.size() <= LIST_READ_LIMIT) {
+            return rows == null ? List.of() : rows;
+        }
+        log.warn("{} 整店读取命中单读上限 {}（实际取回 {} 行），尾部已截断；"
+                + "需要更全的清单请加过滤条件或改用分页接口", what, LIST_READ_LIMIT, rows.size());
+        return new ArrayList<>(rows.subList(0, LIST_READ_LIMIT));
+    }
+
+    /** 探边界多读一行：只有真读到上限+1 行才知道被截断了。 */
+    private static String limitClause() {
+        return "LIMIT " + (LIST_READ_LIMIT + 1);
+    }
+
     @Autowired
     private ListingHealthMapper listingHealthMapper;
     @Autowired
@@ -131,18 +161,27 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
 
     @Override
     public List<ListingHealth> listHealth(Long shopId, String severity) {
+        return capRead(loadHealth(shopId, severity), "Listing 健康度");
+    }
+
+    private List<ListingHealth> loadHealth(Long shopId, String severity) {
         LambdaQueryWrapper<ListingHealth> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ListingHealth::getShopId, shopId);
         if (severity != null && !severity.isBlank()) {
             wrapper.eq(ListingHealth::getSeverity, severity);
         }
-        wrapper.orderByAsc(ListingHealth::getHealthScore);
+        wrapper.orderByAsc(ListingHealth::getHealthScore).last(limitClause());
         return listingHealthMapper.selectList(wrapper);
     }
 
     @Override
     public Map<String, Object> healthSummary(Long shopId) {
-        List<ListingHealth> all = listHealth(shopId, null);
+        // 汇总刻意不走带单读上限的 listHealth：total/avgScore/healthRate 是整店口径的数，
+        // 截断后这几个数会变。把汇总下沉到 SQL 聚合才是真正的解法（已记入待办）。
+        List<ListingHealth> all = loadHealth(shopId, null);
+        if (all.size() > LIST_READ_LIMIT) {
+            log.warn("Listing 健康度汇总仍需整店扫描：{} 行", all.size());
+        }
         long ok = all.stream().filter(h -> "OK".equals(h.getSeverity())).count();
         long warning = all.stream().filter(h -> "WARNING".equals(h.getSeverity())).count();
         long critical = all.stream().filter(h -> "CRITICAL".equals(h.getSeverity())).count();
@@ -187,8 +226,8 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         wrapper.eq(ListingChangeLog::getShopId, shopId);
         if (asin != null && !asin.isBlank()) wrapper.eq(ListingChangeLog::getAsin, asin);
         if (fieldName != null && !fieldName.isBlank()) wrapper.eq(ListingChangeLog::getFieldName, fieldName);
-        wrapper.orderByDesc(ListingChangeLog::getChangeTime);
-        return listingChangeLogMapper.selectList(wrapper);
+        wrapper.orderByDesc(ListingChangeLog::getChangeTime).last(limitClause());
+        return capRead(listingChangeLogMapper.selectList(wrapper), "Listing 变更日志");
     }
 
     // ==================== 关键词排名 ====================
@@ -208,8 +247,8 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         wrapper.eq(KeywordRanking::getShopId, shopId);
         if (asin != null && !asin.isBlank()) wrapper.eq(KeywordRanking::getAsin, asin);
         if (keyword != null && !keyword.isBlank()) wrapper.like(KeywordRanking::getKeyword, keyword);
-        wrapper.orderByDesc(KeywordRanking::getRankDate);
-        return keywordRankingMapper.selectList(wrapper);
+        wrapper.orderByDesc(KeywordRanking::getRankDate).last(limitClause());
+        return capRead(keywordRankingMapper.selectList(wrapper), "关键词排名");
     }
 
     @Override
@@ -271,9 +310,11 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         wrapper.eq(CompetitorMonitor::getShopId, shopId);
         if (competitorAsin != null && !competitorAsin.isBlank())
             wrapper.eq(CompetitorMonitor::getCompetitorAsin, competitorAsin);
-        wrapper.orderByDesc(CompetitorMonitor::getSnapshotDate);
+        wrapper.orderByDesc(CompetitorMonitor::getSnapshotDate).last(limitClause());
 
-        List<CompetitorMonitor> all = competitorMonitorMapper.selectList(wrapper);
+        // 截断发生在"每个竞品取最新快照"之前：命中上限时，可能整个竞品被漏掉而非只丢旧快照，
+        // 因此这里必须留痕（capRead 内的 warn），而不是让调用方以为看到的是全部竞品。
+        List<CompetitorMonitor> all = capRead(competitorMonitorMapper.selectList(wrapper), "竞品快照");
         // 去重保留最新
         return new ArrayList<>(all.stream()
                 .collect(Collectors.toMap(CompetitorMonitor::getCompetitorAsin, c -> c, (a, b) -> a, LinkedHashMap::new))
@@ -333,8 +374,9 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         LambdaQueryWrapper<BuyBox> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(BuyBox::getShopId, shopId);
         if (asin != null && !asin.isBlank()) wrapper.eq(BuyBox::getAsin, asin);
-        wrapper.orderByDesc(BuyBox::getSnapshotTime);
-        List<BuyBox> all = buyBoxMapper.selectList(wrapper);
+        wrapper.orderByDesc(BuyBox::getSnapshotTime).last(limitClause());
+        // 同竞品：截断在"每个 ASIN 取最新快照"之前，命中上限会留 warn
+        List<BuyBox> all = capRead(buyBoxMapper.selectList(wrapper), "BuyBox 快照");
         return new ArrayList<>(all.stream()
                 .collect(Collectors.toMap(BuyBox::getAsin, b -> b, (a, b) -> a, LinkedHashMap::new))
                 .values());
