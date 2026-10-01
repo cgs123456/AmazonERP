@@ -361,3 +361,34 @@ procurement / spapi（现在用 Boot 默认模板）会被凭空加上或改掉 
 
 顺带记一条自己的操作风险：变异过程中在仓库根留了一个 `ci.bak`，
 CI 的 "Verify clean checkout" 步骤会对未跟踪文件判红 —— 已删除。
+
+## 11. CI 对等复跑（MySQL 8.0）与一次"红/红/绿"的判定
+
+本轮新接进 CI 的 IT 之前只在 **8.4.11** 上验过，而 ci.yml 的 mysql service 用的是 **8.0**。
+补一次同构复跑：`mysql:8.0` 隔离容器（实测 8.0.46，`@@collation_server=utf8mb4_0900_ai_ci`
+与 8.4 一致），六个 IT 变量按 CI 的 URL 形态全给上，跑整仓 `clean verify -fae`。
+
+**四个 SQL 下沉 IT 在 8.0 上各 3 例全绿**（`PaymentCollectionUpsertMySqlIT`、
+`SettlementBatchIngestMySqlIT`、`ListingHealthSummaryMySqlIT`、`ProfitOrderCountMySqlIT`）——
+包括 `ON DUPLICATE KEY UPDATE ... AS new` 行别名（需 8.0.19+）与 `COLLATE utf8mb4_bin`
+的大小写敏感比较，跨 minor 行为一致。
+
+同一次运行里两个既有 Flyway IT 报 `Communications link failure`：
+`AllModulesFlywayMySqlIT` 跑到第 9 个模块（`amz_procurement_fwit` 的验证连接）红，
+单独重跑时改成第 1 个模块（`amz_ad_fwit` 取连接）红，第三次单独重跑 **26.26s 全绿**。
+判定依据（都是实测）：
+
+| 观察 | 值 | 含义 |
+|---|---|---|
+| `SHOW STATUS Aborted_connects` | 0 | 服务器没有拒绝过任何握手 → 客户端没打到 mysqld |
+| `Max_used_connections` | 2 | 远未触及 `max_connections=151`，不是连接数耗尽 |
+| 裸 TCP + 握手探测 40 次（绕开 Java） | 40/40 成功 | 端口本身不抖，抖动出现在密集短连接的瞬时 |
+| 同代码同环境三次结果 | 红（模块 9）/ 红（模块 1）/ 绿 | 位置漂移 = 非确定性，排除 8.0 不兼容与代码缺陷 |
+
+失败点全部在"取得连接"这一步（Flyway 建连与 `DriverManager.getConnection`），
+不在迁移语义上。**因此没有给 IT 加重试**：这个 IT 的存在意义之一就是复现生产的
+fail-fast 语义（`baseline-on-migrate: false`，存量库无 history 必须炸），
+在取连接处悄悄重试一次，正好会把"库连不上/没就绪"这类真故障也咽掉——
+那与本轮一直在清的那类假绿是同一件事。记为观察项：本机（Windows + Docker Desktop 端口代理）
+在密集短连接下会给 MySQL JDBC 造成瞬时 link failure，CI 里 mysql 与 job 同网络命名空间，
+路径不同；若 CI 出现同样红灯，应按环境故障处理而不是改断言。
