@@ -13,6 +13,7 @@ import java.math.RoundingMode;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 共享汇率服务（amz-common 单一真相源）。
@@ -60,6 +61,9 @@ public class GlobalExchangeRateService {
     /** 当前生效汇率缓存（volatile 引用 swap 保证可见性与原子性） */
     private volatile Map<String, BigDecimal> exchangeRates;
 
+    /** 未知币种被 1:1 兜底命中的累计次数，键为大写币种；只增不减，币种数量天然有界。 */
+    private final Map<String, Long> unknownCurrencyHitCounts = new ConcurrentHashMap<>();
+
     /**
      * 统一出站 HTTP 通道（超时 + 重试 + 熔断 + 指标）。
      * 单元测试可传 null 并 override {@link #fetchRates()} 以避免真实网络调用。
@@ -102,31 +106,65 @@ public class GlobalExchangeRateService {
         if ("CNY".equalsIgnoreCase(currency)) {
             return originalAmount.setScale(2, RoundingMode.HALF_UP);
         }
-        BigDecimal rate = exchangeRates.get(currency.toUpperCase());
-        if (rate == null) {
-            if (strictUnknownCurrency) {
-                throw new IllegalArgumentException(
-                        "币种 " + currency + " 无汇率配置（amz.exchange.strict-unknown=true 拒绝 1:1 兜底），"
-                                + "请补充 amz.exchange-rates 配置");
-            }
-            log.warn("币种 {} 无汇率配置，按 1:1 兜底折算，金额可能失真，请补充 amz.exchange-rates 配置", currency);
-            return originalAmount.setScale(2, RoundingMode.HALF_UP);
-        }
+        BigDecimal rate = rateOrPolicy(currency);
         return originalAmount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**
-     * 获取某币种当前汇率（1 原币 = X CNY）。未知币种返回 1。
+     * 获取某币种当前汇率（1 原币 = X CNY）。未知币种按 {@code amz.exchange.strict-unknown} 处理：
+     * 严格模式抛错，宽松模式记一次 warn 后按 1:1 返回。
      */
     public BigDecimal getRate(String currency) {
         if (currency == null || "CNY".equalsIgnoreCase(currency)) {
             return BigDecimal.ONE;
         }
-        return exchangeRates.getOrDefault(currency.toUpperCase(), BigDecimal.ONE);
+        return rateOrPolicy(currency);
     }
 
     /**
-     * 计算 from→to 的交叉汇率（经 CNY 中转）。任一缺失返回 1（与旧 product.ExchangeRateService 行为一致）。
+     * 未知币种的唯一出口：{@code toCny} 与 {@code getRate} 都走这里。
+     * <p>
+     * 存在动因：1:1 兜底会把 JPY 当 CNY 记账，而 {@code getRate} 原先既不看严格开关、
+     * 也不留任何日志，调用方（如 finance 折算成本）拿到 1 时完全无法察觉。
+     * 每个币种只 warn 一次：整店循环里同一未知币种可能命中上万次，逐次 warn 会把日志
+     * 冲爆；命中次数累计在 {@link #unknownCurrencyHits(String)} 里供排查与告警读取。
+     *
+     * @return 已知币种返回其汇率；未知币种在宽松模式返回 1，严格模式抛错
+     */
+    private BigDecimal rateOrPolicy(String currency) {
+        BigDecimal rate = exchangeRates.get(currency.toUpperCase());
+        if (rate != null) {
+            return rate;
+        }
+        String key = currency.toUpperCase();
+        long hits = unknownCurrencyHitCounts.merge(key, 1L, Long::sum);
+        if (strictUnknownCurrency) {
+            throw new IllegalArgumentException(
+                    "币种 " + currency + " 无汇率配置（amz.exchange.strict-unknown=true 拒绝 1:1 兜底），"
+                            + "请补充 amz.exchange-rates 配置");
+        }
+        if (hits == 1L) {
+            log.warn("币种 {} 无汇率配置，按 1:1 兜底折算，金额可能失真，请补充 amz.exchange-rates 配置"
+                    + "（同一币种后续命中不再重复告警，可查 unknownCurrencyHits 计数）", currency);
+        }
+        return BigDecimal.ONE;
+    }
+
+    /**
+     * 某未知币种被 1:1 兜底命中过的次数；0 表示从未命中。
+     */
+    public long unknownCurrencyHits(String currency) {
+        if (currency == null) {
+            return 0L;
+        }
+        Long hits = unknownCurrencyHitCounts.get(currency.toUpperCase());
+        return hits == null ? 0L : hits;
+    }
+
+    /**
+     * 计算 from→to 的交叉汇率（经 CNY 中转）。
+     * 宽松模式下任一币种缺汇率都按 1 处理（与旧 product.ExchangeRateService 行为一致）；
+     * 严格模式（{@code amz.exchange.strict-unknown=true}）下未知币种会抛错，与本类其他入口同口径。
      */
     public BigDecimal getRate(String fromCurrency, String toCurrency) {
         if (fromCurrency == null || toCurrency == null) {

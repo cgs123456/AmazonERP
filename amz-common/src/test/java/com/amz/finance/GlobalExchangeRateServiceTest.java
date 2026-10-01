@@ -1,7 +1,13 @@
 package com.amz.finance;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -12,6 +18,7 @@ import java.util.function.Supplier;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * 共享汇率服务单元测试（纯 JUnit 5，不依赖 Spring 容器与网络）。
@@ -122,9 +129,54 @@ class GlobalExchangeRateServiceTest {
     }
 
     @Test
-    @DisplayName("getRate：未知币种降级为 1")
+    @DisplayName("getRate：未知币种降级为 1，但命中次数必须可查（不再是无迹可循的静默 1:1）")
     void getRateUnknownFallback() {
-        assertEquals(BigDecimal.ONE, build(defaultRates()).getRate("XYZ"));
+        GlobalExchangeRateService s = build(defaultRates());
+        assertEquals(BigDecimal.ONE, s.getRate("XYZ"));
+        assertEquals(1L, s.unknownCurrencyHits("XYZ"),
+                "修复前 getRate 既不看严格开关也不留任何痕迹");
+        assertEquals(new BigDecimal("7.25"), s.getRate("USD"));
+        assertEquals(0L, s.unknownCurrencyHits("USD"), "已知币种不应被计入未知命中");
+    }
+
+    @Test
+    @DisplayName("strict-unknown=true：toCny / getRate / 交叉汇率三条路口径一致地拒绝 1:1")
+    void strictModeRejectsUnknownOnAllPaths() {
+        GlobalExchangeRateService s = build(defaultRates());
+        ReflectionTestUtils.setField(s, "strictUnknownCurrency", true);
+
+        assertThrows(IllegalArgumentException.class, () -> s.toCny(new BigDecimal("100"), "XYZ"));
+        assertThrows(IllegalArgumentException.class, () -> s.getRate("XYZ"));
+        assertThrows(IllegalArgumentException.class, () -> s.getRate("USD", "XYZ"));
+        // 已知币种不受开关影响
+        assertEquals(new BigDecimal("7.25"), s.getRate("USD"));
+        assertEquals(new BigDecimal("725.00"), s.toCny(new BigDecimal("100"), "USD"));
+    }
+
+    @Test
+    @DisplayName("宽松模式：未知币种首次命中留 warn，之后只累计次数不刷日志")
+    void lenientModeWarnsOnceAndCountsHits() {
+        Logger logger = (Logger) LoggerFactory.getLogger(GlobalExchangeRateService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            GlobalExchangeRateService s = build(defaultRates());
+            assertEquals(new BigDecimal("100.00"), s.toCny(new BigDecimal("100"), "XYZ"));
+            assertEquals(BigDecimal.ONE, s.getRate("XYZ"));
+            assertEquals(BigDecimal.ONE, s.getRate("xyz"), "大小写应视为同一币种");
+
+            long warns = appender.list.stream()
+                    .filter(e -> e.getLevel() == Level.WARN)
+                    .filter(e -> e.getFormattedMessage().contains("XYZ"))
+                    .count();
+            assertEquals(1, warns, "同一未知币种只告警一次，避免整店循环把日志冲爆："
+                    + appender.list);
+            assertEquals(3L, s.unknownCurrencyHits("xyz"),
+                    "告警收敛了，但命中次数仍要能查出来");
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test
