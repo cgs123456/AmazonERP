@@ -4,11 +4,12 @@
 → 失败则定位修复 → 最后自审」。所有结论以下列命令的实际输出为准，不采信推断。
 
 闸口（第三轮后最新一次，见 §9）：`mvn -o -B clean verify -fae` → BUILD SUCCESS，
-reactor 19/19 模块 SUCCESS，**1693 tests / 0 failures / 0 errors / 5 skipped**
-（模块汇总行与 271 条分类行各自累加得同一组数字，磁盘上 surefire XML 也是 271 份）；5 条 skip 全是我这次没给环境变量的
+reactor 19/19 模块 SUCCESS，**1701 tests / 0 failures / 0 errors / 5 skipped**
+（模块汇总行与 272 条分类行各自累加得同一组数字，磁盘上 surefire XML 也是 272 份）；5 条 skip 全是我这次没给环境变量的
 env 门控 IT（Flyway 全模块 / AD 迁移 / SP-API 连通性），不是被无声跳过的装饰。
-三个真库 IT 各自实跑 3 例全绿，且各自只建自己的 `*_it` 库：
-`amz_finance_collection_it` / `amz_finance_batch_it` / `amz_product_health_it`。
+四个真库 IT 各 3 例全绿，且各自只建自己的 `*_it` 库：
+`amz_finance_collection_it` / `amz_finance_batch_it` / `amz_product_health_it` /
+`amz_report_profit_it`（MySQL 8.4.11 隔离容器，`--rm`、不挂卷、跑完即删）。
 `python tools/release/repository_hygiene.py --root .` → findings=0；
 `python -m unittest discover -s tools/release -t .` → OK。
 （更早一轮的数字是 1682 tests / 11 skipped；顶栏一度还是假的——文档自己触发了扫描规则，
@@ -88,7 +89,7 @@ C4 fixture 另含同订单同 ASIN 重复行与跨年份行，分组值与日期
 | L5 审单正则重复编译 | **已落地**：`compiledPattern` 走访问序 LRU（上限 64）。规则正则由**店铺管理员输入**，无界缓存等于给一条内存放大通道，所以同时钉住"有界""失败不进缓存""淘汰按访问序"。 | `AuditPatternCacheTest`：上限改回无界、或把淘汰改成插入序（FIFO），对应用例分别变红 |
 | L3 4 份 `RedisConfig` 合并 | **刻意未做**（配方已收成一份，见文末追加）：合并 = 改变 16 个服务的 Bean 装配顺序，本机无法逐个启动验证（Nacos/MySQL 属另一套在跑的栈，不应写入）。用未验证的装配变更换一个 Low 的整洁不值 | 能跑通 4 个服务的启动冒烟后上收为 amz-common 自动配置，并删除 `RedisConfigDuplicationGateTest`；过渡期该门禁保证不会出现"改漏一份"的静默分叉 |
 | `healthSummary` / `PaymentCollectionServiceImpl.rebuild` 下沉 SQL | ~~刻意未做~~ → **healthSummary 已做**（见 §9），rebuild 经实测判定**不做**：分类结果取决于列 collation（同一份数据 Java=60.00、`utf8mb4_0900_ai_ci`=60.00、`utf8mb4_unicode_ci`=170.00），把固定规则交给 DDL 不是收敛而是换口径 | 见 §9.2 的数字与结论 |
-| 报表 `orderCount` / `totalOrders` 其实是明细行数 | `amz_profit_detail` 没有 (shop_id, amazon_order_id, asin) 唯一键，`COUNT(1)` ≠ 订单数（fixture 实测 3 行 / 2 个订单）。本轮 C4 只搬位置不改口径，因为改这个数会同时改掉报表数字 | 需要产品侧确认字段含义后，连同前端文案一起改 |
+| 报表 `orderCount` / `totalOrders` 其实是明细行数 | ~~需要产品侧确认字段含义后~~ → **已确认并改完**（提交 `f0dbed5`）：口径改为 `COUNT(DISTINCT amazon_order_id)`，全店总数另查一条（相加会把跨 ASIN 的订单数两次，实测 5 vs 4） | 见 §9.3 的实测表与影响面核对 |
 
 ## 6. 自审（双轴）
 
@@ -279,20 +280,33 @@ CI 的 hygiene job 会直接红。这条恰好是本仓反复踩的形状：**�
 结论：保持 Java 归类，把上面这组数字留在本节；真要推翻，前置条件是先给这些列钉住显式
 COLLATE（或全部改二进制比较），而不是直接搬 SQL。
 
-### 9.3 报表 `orderCount` / `totalOrders`：差异已量化，等口径决策
+### 9.3 报表 `orderCount` / `totalOrders`：口径已按业务确认改为去重订单数
 
-按 `amz_profit_detail` 真实列建表，插入含重复的 6 行 fixture 实跑：
+业务决定（2026-10-01）：报表里的「订单数」按 `COUNT(DISTINCT amazon_order_id)` 计，
+不再用明细行数。落地时先量出一件不看数字就会做错的事 —— **各 ASIN 的去重数不能相加**：
 
-| asin | 现口径 `COUNT(1)` | `COUNT(DISTINCT amazon_order_id)` | 销售额 |
-|---|---|---|---|
-| B1 | 3 | 2 | 35.00 |
-| B2 | 3 | 1 | 45.00 |
-| 全店 | 6 | 3 | — |
+| 实测（MySQL 8.4，按 V1 真实列建表，7 行 / 4 个订单的 9 月 fixture） | 值 |
+|---|---|
+| 明细行数 `COUNT(1)`（旧口径） | **7** |
+| B1 去重订单数 | 3 |
+| B2 去重订单数 | 2 |
+| 3 + 2 相加 | **5** |
+| 全店 `COUNT(DISTINCT amazon_order_id)` | **4** |
 
-即现字段是"明细行数"，在有多次入账/同单多行的真实数据里最高可虚高到 3 倍。
-本轮 C4 只搬位置不改口径是刻意的：改这个数会同时改掉报表展示，且前端文案（"订单数"）
-要一起改。缺的不是实测而是口径决定，因此把上表连同两种定义的差异一并交给人拍板，
-不在代码里替产品做这个选择。
+`111-3` 这一单同时买了 B1 和 B2，所以按 ASIN 分组再去重相加会把它数两次。
+结论是总数必须**另查一条**（`ProfitDetailMapper#countDistinctOrders`），
+并且它的 `shop_id` 与日期边界必须与分组查询同形 —— 否则明细表和总数对不上。
+新 SQL 首次由 MyBatis 真执行（`ProfitOrderCountMySqlIT` 3 例）：除上表外还验了
+`<if>` 的日期边界真的参与过滤（查 8 月得 0、不限日期得 5，含跨月不含跨店）。
+
+改口径的影响面（逐条查过，不是推断）：
+- `GET /report/profit/summary/{shopId}` 的 `orderCount` / `totalOrders` 字段名不变、数值变小；
+- 内部 `businessDashboard` 把同一份结果整体放进响应的 **`profitSummary30d`**（第 386 行），
+  所以这两个数在 dashboard 响应里也会出现一次 —— 第一版我把这条写成"不受影响"是错的；
+- 但 dashboard 自己的 KPI `totalOrders7d` 取自 `BusinessOverview` 的列，与这条无关；
+- 前端 `amz-frontend/src` 里 `totalOrders` 只出现在 `api/dashboard.ts` 的 KPI 适配
+  （走 `/report/dashboard/kpi` → `RealReportServiceImpl.fetchTotalOrders` → 订单服务），
+  全仓 grep 没有任何前端读取 `profitSummary30d` 的这两个字段，故 UI 展示不会跟着变。
 
 ## 追加（同一轮）：RedisConfig 那 4 份副本
 "合并成一份 amz-common 自动配置"这条路量过之后**主动放弃**：amz-common 就在扫描根包
