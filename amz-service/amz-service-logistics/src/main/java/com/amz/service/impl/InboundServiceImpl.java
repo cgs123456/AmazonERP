@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import static com.amz.service.impl.LogisticsShopGuard.requireShopAllowed;
 
 /**
  * 入库流程服务实现。
@@ -140,12 +141,4 @@ public class InboundServiceImpl implements InboundService {
         return order;
     }
 
-    private void requireShopAllowed(Long shopId, String what) {
-        if (shopId == null) {
-            throw new CodeErrorException(what + "缺少店铺 ID");
-        }
-        if (!UserContext.isShopAllowed(shopId)) {
-            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
-        }
-    }
 }

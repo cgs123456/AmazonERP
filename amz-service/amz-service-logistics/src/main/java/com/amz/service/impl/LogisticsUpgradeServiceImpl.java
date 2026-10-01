@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import static com.amz.service.impl.LogisticsShopGuard.requireShopAllowed;
 
 /**
  * 物流升级服务实现。
@@ -794,15 +795,6 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
         }
     }
 
-    private void requireShopAllowed(Long shopId, String what) {
-        if (shopId == null) {
-            throw new CodeErrorException(what + "缺少店铺 ID");
-        }
-        if (!UserContext.isShopAllowed(shopId)) {
-            log.warn("{}写入越权拦截：userId={} 目标店铺={}", what, UserContext.getUserId(), shopId);
-            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
-        }
-    }
 
     /**
      * 按 ID 取调拨单并校验归属。

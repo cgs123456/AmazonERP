@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import static com.amz.service.impl.LogisticsShopGuard.requireShopAllowed;
 
 /**
  * 多仓库存管理服务实现。
@@ -401,12 +402,4 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
         }
     }
 
-    private void requireShopAllowed(Long shopId, String what) {
-        if (shopId == null) {
-            throw new CodeErrorException(what + "缺少店铺 ID");
-        }
-        if (!UserContext.isShopAllowed(shopId)) {
-            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
-        }
-    }
 }

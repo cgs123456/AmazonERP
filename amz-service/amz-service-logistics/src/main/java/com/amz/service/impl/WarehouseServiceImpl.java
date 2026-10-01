@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import static com.amz.service.impl.LogisticsShopGuard.requireShopAllowed;
 
 /**
  * 海外仓服务实现。
@@ -181,12 +182,4 @@ public class WarehouseServiceImpl implements WarehouseService {
         return inventoryMapper.selectById(inv.getId());
     }
 
-    private void requireShopAllowed(Long shopId, String what) {
-        if (shopId == null) {
-            throw new CodeErrorException(what + "缺少店铺 ID");
-        }
-        if (!UserContext.isShopAllowed(shopId)) {
-            throw new CodeErrorException(what + "不属于当前账号可操作的店铺");
-        }
-    }
 }
