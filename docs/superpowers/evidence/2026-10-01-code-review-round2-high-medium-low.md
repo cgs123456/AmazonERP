@@ -3,13 +3,16 @@
 范围：本轮目标为「检查错误、重复代码和明显性能问题 → 按严重程度排序 → 逐项修复 → 跑相关测试
 → 失败则定位修复 → 最后自审」。所有结论以下列命令的实际输出为准，不采信推断。
 
-闸口（第二轮自审后重跑，见 §8）：`mvn -o -B clean verify -fae` → BUILD SUCCESS，
-reactor 19/19 模块 SUCCESS（FAILURE/SKIPPED 计数 0），
-**1682 tests / 0 failures / 0 errors / 11 skipped**（模块汇总行与 268 条分类行各自累加得同一组数字，
-两种解析一致才敢引这个数）；`python tools/release/repository_hygiene.py --root .` → findings=0；
+闸口（第三轮后最新一次，见 §9）：`mvn -o -B clean verify -fae` → BUILD SUCCESS，
+reactor 19/19 模块 SUCCESS，**1693 tests / 0 failures / 0 errors / 5 skipped**
+（模块汇总行与 271 条分类行各自累加得同一组数字，磁盘上 surefire XML 也是 271 份）；5 条 skip 全是我这次没给环境变量的
+env 门控 IT（Flyway 全模块 / AD 迁移 / SP-API 连通性），不是被无声跳过的装饰。
+三个真库 IT 各自实跑 3 例全绿，且各自只建自己的 `*_it` 库：
+`amz_finance_collection_it` / `amz_finance_batch_it` / `amz_product_health_it`。
+`python tools/release/repository_hygiene.py --root .` → findings=0；
 `python -m unittest discover -s tools/release -t .` → OK。
-两个 MySQL IT 另在隔离容器（MySQL 8.4.11，`--rm`、不挂卷、独立端口 3399）实跑 6 例全绿。
-（本文件顶栏此前一度是假的：文档自己触发了扫描规则，findings 从 0 变 1 —— 见 §8 ①。）
+（更早一轮的数字是 1682 tests / 11 skipped；顶栏一度还是假的——文档自己触发了扫描规则，
+findings 从 0 变 1 —— 见 §8 ①。）
 
 ---
 
@@ -84,7 +87,7 @@ C4 fixture 另含同订单同 ASIN 重复行与跨年份行，分组值与日期
 | L2 循环单条 insert | **已落地两处热路径**：通用流程 `BatchInserts`（分块批量 + 失败块退回逐条）落到结算明细落库 `SettlementServiceImpl.ingestParsedRows`，以及 `PaymentCollectionServiceImpl.rebuild`（整店台账预读 + 逐单 select/insert/update 换成一条 ODKU 批量幂等写；短款不进更新列表、状态用旧行短款判定）。其余 13 处逐点核过量级后判定不动：物流轨迹是"每货件几十条事件"且已按指纹去重，批量省的是十几次往返；订单/回款/平台商品要么是 upsert 语义、要么已有自己的幂等层。 | `BatchInsertsTest` + `SettlementBatchIngestTest` + `PaymentCollectionServiceImplTest`；MySQL 侧由两个 IT 常驻 CI（见 §7 末） |
 | L5 审单正则重复编译 | **已落地**：`compiledPattern` 走访问序 LRU（上限 64）。规则正则由**店铺管理员输入**，无界缓存等于给一条内存放大通道，所以同时钉住"有界""失败不进缓存""淘汰按访问序"。 | `AuditPatternCacheTest`：上限改回无界、或把淘汰改成插入序（FIFO），对应用例分别变红 |
 | L3 4 份 `RedisConfig` 合并 | **刻意未做**（配方已收成一份，见文末追加）：合并 = 改变 16 个服务的 Bean 装配顺序，本机无法逐个启动验证（Nacos/MySQL 属另一套在跑的栈，不应写入）。用未验证的装配变更换一个 Low 的整洁不值 | 能跑通 4 个服务的启动冒烟后上收为 amz-common 自动配置，并删除 `RedisConfigDuplicationGateTest`；过渡期该门禁保证不会出现"改漏一份"的静默分叉 |
-| `healthSummary` / `PaymentCollectionServiceImpl.rebuild` 下沉 SQL | 前者是整店口径聚合（同 C2 的同类问题，但改法要新增 mapper 方法与契约测试），后者要按交易类型在 SQL 里做 CASE 归类，而 MySQL 字符串比较的大小写敏感性依赖列 collation —— 换引擎/换排序规则就可能悄悄改变归类结果 | 需要一次带真实 collation 前提的等价性验证，单独排期 |
+| `healthSummary` / `PaymentCollectionServiceImpl.rebuild` 下沉 SQL | ~~刻意未做~~ → **healthSummary 已做**（见 §9），rebuild 经实测判定**不做**：分类结果取决于列 collation（同一份数据 Java=60.00、`utf8mb4_0900_ai_ci`=60.00、`utf8mb4_unicode_ci`=170.00），把固定规则交给 DDL 不是收敛而是换口径 | 见 §9.2 的数字与结论 |
 | 报表 `orderCount` / `totalOrders` 其实是明细行数 | `amz_profit_detail` 没有 (shop_id, amazon_order_id, asin) 唯一键，`COUNT(1)` ≠ 订单数（fixture 实测 3 行 / 2 个订单）。本轮 C4 只搬位置不改口径，因为改这个数会同时改掉报表数字 | 需要产品侧确认字段含义后，连同前端文案一起改 |
 
 ## 6. 自审（双轴）
@@ -227,6 +230,69 @@ CI 的 hygiene job 会直接红。这条恰好是本仓反复踩的形状：**�
 
 顺带说一句诚实的：`amz-service-logistics` 那轮 BUILD FAILURE 就是我自己漏还原一处注入造成的，
 被上一行的用例抓住 —— 这条记录里的"还原"不是凭记忆说的，是靠重跑闸口证明的。
+
+## 9. 第三轮：把 §5 的三个待办推到能结论的地方
+
+前置同一次隔离实跑：MySQL 8.4.11 容器（`--rm`、独立端口、不挂卷、跑完即删），
+表结构按各自模块的 Flyway DDL 建（含列的 COLLATE）。
+
+### 9.1 `healthSummary` 已下沉（提交 `9f72039`）
+
+原实现为了"汇总口径不被单读上限截断"只能把整店 `amz_listing_health` 读进内存数一遍。
+下沉时踩到两个 mock 结构上测不出来的东西，都是真库 IT 直接报红的：
+
+1. **大小写。** 本表 DDL 是 `COLLATE=utf8mb4_unicode_ci`，同一份 7 行 fixture
+   （'OK'/'WARNING'/'CRITICAL'/'ok'/'Ok'/NULL + 一条跨店行）实跑：
+   `severity = 'OK'` → **3**，`severity COLLATE utf8mb4_bin = 'OK'` → **1**，
+   原 Java 侧 `"OK".equals(severity)` → 1。所以聚合必须显式按二进制比较，
+   否则 `healthRate` 从 1/7 静默变 3/7，而所有单测仍全绿。
+2. **列标签就是 Map 的键。** `List<Map<String,Object>>` 返回时
+   `map-underscore-to-camel-case` 不参与（它只作用于 POJO 映射），
+   没写 `health_score AS healthScore` 时服务读到的是 null —— IT 第一次跑就是 NPE。
+   这条现在有离线契约兜着，IT 被跳过也不会漏。
+
+另外两个口径决定：分数用 `SUM/COUNT` 回传、换算留在 Java（SQL 的 `AVG` 是 DECIMAL 标度，
+四舍五入边界可能与 `IntStream.average()` 给不同值）；`health_score` 为 NULL 的行不进分母 —— 
+原实现这里会 NPE 让整个汇总接口 500，属于顺手修掉的崩溃路径。
+验证：4 例静态契约 + 4 例行为 + 3 例真库 IT；变异两处（去掉 COLLATE、去掉别名）均实测变红。
+
+### 9.2 `rebuild` 的按交易类型归类：实测判定不做
+
+同一份 6 行 fixture（`amount` 依次 10/20/30/40/50/60，`transaction_type` 与 `amount_type`
+分别取规范值、纯大小写变体、带变音符、带尾空格）实测应收金额：
+
+| 判定方 | 结果 |
+|---|---|
+| Java `equalsIgnoreCase`（现实现） | **60.00** |
+| SQL，表默认列序 `utf8mb4_0900_ai_ci`（NO PAD） | 60.00 |
+| SQL，`utf8mb4_unicode_ci`（PAD SPACE） | **170.00** |
+
+分歧来自尾空格：`'Order '` 与 `'Principal '` 在 PAD SPACE 排序规则下算相等，于是两行
+（50 + 60）从"扣费"挪进"应收"，6 行 fixture 上差 110.00。也就是说 SQL 化的归类
+**口径由列的排序规则决定**，而现在的口径由 Java 代码决定 —— 换引擎、换 collation、
+或有人给列补一句 `ALTER ... COLLATE`，账就变了而没人会看见。
+加上另外两条各自独立的不划算：`currency` 取"按行序首个非空"没有干净的聚合写法；
+`deposit_date` 取最大虽然实测两边一致（SQL `MAX` 与 Java `compareTo` 都给出那条 21 字符的
+带尾空格值，HEX 尾为 `20`），但同样是 collation 敏感项。
+收益侧也变了：写路径已批量（L2），读本来就是一次分页扫描（每 500 行一条 SELECT），
+分类是内存算术而非往返 —— 现在下沉 SQL 省不到往返，只是少materialize几行实体。
+结论：保持 Java 归类，把上面这组数字留在本节；真要推翻，前置条件是先给这些列钉住显式
+COLLATE（或全部改二进制比较），而不是直接搬 SQL。
+
+### 9.3 报表 `orderCount` / `totalOrders`：差异已量化，等口径决策
+
+按 `amz_profit_detail` 真实列建表，插入含重复的 6 行 fixture 实跑：
+
+| asin | 现口径 `COUNT(1)` | `COUNT(DISTINCT amazon_order_id)` | 销售额 |
+|---|---|---|---|
+| B1 | 3 | 2 | 35.00 |
+| B2 | 3 | 1 | 45.00 |
+| 全店 | 6 | 3 | — |
+
+即现字段是"明细行数"，在有多次入账/同单多行的真实数据里最高可虚高到 3 倍。
+本轮 C4 只搬位置不改口径是刻意的：改这个数会同时改掉报表展示，且前端文案（"订单数"）
+要一起改。缺的不是实测而是口径决定，因此把上表连同两种定义的差异一并交给人拍板，
+不在代码里替产品做这个选择。
 
 ## 追加（同一轮）：RedisConfig 那 4 份副本
 "合并成一份 amz-common 自动配置"这条路量过之后**主动放弃**：amz-common 就在扫描根包
