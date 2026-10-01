@@ -7,6 +7,7 @@ import com.amz.finance.CurrencyConverter;
 import com.amz.mapper.AccountingVoucherMapper;
 import com.amz.model.AccountingVoucher;
 import com.amz.service.FinanceService;
+import com.amz.util.MapArgUtils;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -280,17 +281,7 @@ public class FinanceServiceImpl implements FinanceService {
      * 聚合值为 null 安全转 BigDecimal（SUM 全 NULL 时 JDBC 返回 null；数字类型直接转换）。
      */
     private static BigDecimal toBigDecimal(Object value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
-        }
-        if (value instanceof BigDecimal) {
-            return (BigDecimal) value;
-        }
-        try {
-            return new BigDecimal(value.toString());
-        } catch (NumberFormatException e) {
-            return BigDecimal.ZERO;
-        }
+        return MapArgUtils.toBigDecimal(value, BigDecimal.ZERO);
     }
 
     /**

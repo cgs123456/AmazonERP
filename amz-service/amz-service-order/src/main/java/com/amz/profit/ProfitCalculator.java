@@ -4,6 +4,7 @@ import com.amz.client.AdServiceClient;
 import com.amz.mapper.CategoryFeeRateMapper;
 import com.amz.mapper.FbaFeeTableMapper;
 import com.amz.mapper.OrderMapper;
+import com.amz.util.MapArgUtils;
 import com.amz.mapper.ProductCostMapper;
 import com.amz.model.CategoryFeeRate;
 import com.amz.model.FbaFeeTable;
@@ -305,20 +306,8 @@ public class ProfitCalculator {
         }
     }
 
+    /** 本类要的是"拿不到数就是 null"这一档语义，不是 0 —— 见 MapArgUtilsBigDecimalTest。 */
     private BigDecimal toBigDecimal(Object o) {
-        if (o == null) {
-            return null;
-        }
-        if (o instanceof BigDecimal) {
-            return (BigDecimal) o;
-        }
-        if (o instanceof Number) {
-            return new BigDecimal(((Number) o).toString());
-        }
-        try {
-            return new BigDecimal(o.toString());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return MapArgUtils.toBigDecimal(o);
     }
 }

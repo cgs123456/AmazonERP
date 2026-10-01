@@ -7,6 +7,7 @@ import com.amz.mapper.ProfitSnapshotMapper;
 import com.amz.model.CostAllocation;
 import com.amz.model.ProfitDetail;
 import com.amz.model.ProfitSnapshot;
+import com.amz.util.MapArgUtils;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 import com.amz.service.RealtimeProfitService;
@@ -399,17 +400,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
      * 聚合值为 null 安全转 BigDecimal（SUM 全 NULL 时 JDBC 返回 null）。
      */
     private static BigDecimal toBigDecimal(Object value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
-        }
-        if (value instanceof BigDecimal) {
-            return (BigDecimal) value;
-        }
-        try {
-            return new BigDecimal(value.toString());
-        } catch (NumberFormatException e) {
-            return BigDecimal.ZERO;
-        }
+        return MapArgUtils.toBigDecimal(value, BigDecimal.ZERO);
     }
 
     private List<ProfitDetail> getProfitDetailsInRange(Long shopId, String sku, String startTime, String endTime) {

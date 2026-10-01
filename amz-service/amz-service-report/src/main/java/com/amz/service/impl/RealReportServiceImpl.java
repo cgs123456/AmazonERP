@@ -5,6 +5,7 @@ import com.amz.client.feign.FinanceServiceFeignClient;
 import com.amz.client.feign.OrderServiceFeignClient;
 import com.amz.dto.DashboardReport;
 import com.amz.service.ReportService;
+import com.amz.util.MapArgUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
@@ -452,18 +453,13 @@ public class RealReportServiceImpl implements ReportService {
         return null;
     }
 
+    /**
+     * 金额一律经 {@code new BigDecimal(String)} 解析，不得走 double 中转
+     * （0.1 会变成 0.1000000000000000055511...）；精度口径与缺失值语义由 MapArgUtils 统一，
+     * 见 MapArgUtilsBigDecimalTest。
+     */
     private BigDecimal toBigDecimal(Object value) {
-        if (value == null) {
-            return BigDecimal.ZERO;
-        }
-        try {
-            // 禁止经 double 中转（如 0.1 → 0.1000000000000000055511）：Double.toString
-            // 给出最短往返表示，new BigDecimal(String) 可保留金额精度；
-            // BigDecimal/Integer/Long 的 toString 本就是精确表示，同路径处理。
-            return new BigDecimal(value.toString());
-        } catch (NumberFormatException e) {
-            return BigDecimal.ZERO;
-        }
+        return MapArgUtils.toBigDecimal(value, BigDecimal.ZERO);
     }
 
     private Long toLong(Object value) {

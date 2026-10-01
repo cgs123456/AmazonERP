@@ -1,5 +1,6 @@
 package com.amz.finance;
 
+import com.amz.util.MapArgUtils;
 import com.amz.http.ResilientHttpClient;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -263,20 +264,8 @@ public class GlobalExchangeRateService {
         return resp;
     }
 
+    /** 对端给的不是数字就当作"这一档缺失"（返回 null 由调用方跳过该币种），不静默折算成 0。 */
     private BigDecimal toBigDecimal(Object o) {
-        if (o == null) {
-            return null;
-        }
-        if (o instanceof BigDecimal) {
-            return (BigDecimal) o;
-        }
-        if (o instanceof Number) {
-            return new BigDecimal(((Number) o).toString());
-        }
-        try {
-            return new BigDecimal(o.toString());
-        } catch (NumberFormatException e) {
-            return null;
-        }
+        return MapArgUtils.toBigDecimal(o);
     }
 }
