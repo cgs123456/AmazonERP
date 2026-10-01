@@ -129,6 +129,9 @@ public class ReplenishmentEngine {
      * 其中促销日历查询还不带 category 条件（每次结果完全相同）。
      * 店铺数 × SKU 数 × 2 次重复查询在 100 店 × 2000 SKU 下就是 40 万次无意义扫描。
      * 单条调用仍可用上面的 6 参重载，行为不变。
+     * <p>
+     * 调用方契约：{@code seasonalIndex} 与 {@code promotionMultiplier} 必须是<b>按本方法的
+     * {@code category} 取出来的值</b>—— 本方法不再自查，传错类目不会有任何报错，只会静默算错补货量。
      */
     public ReplenishmentSuggestion generateSuggestion(Long shopId, String sku, String asin,
                                                       String category, int currentTotalStock,

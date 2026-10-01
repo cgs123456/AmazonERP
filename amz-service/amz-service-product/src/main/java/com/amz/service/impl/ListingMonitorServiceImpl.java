@@ -161,16 +161,23 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
 
     @Override
     public List<ListingHealth> listHealth(Long shopId, String severity) {
-        return capRead(loadHealth(shopId, severity), "Listing 健康度");
+        return capRead(loadHealth(shopId, severity, true), "Listing 健康度");
     }
 
-    private List<ListingHealth> loadHealth(Long shopId, String severity) {
+    /**
+     * @param cap true=列表读，受 {@link #LIST_READ_LIMIT} 约束；
+     *            false=整店口径聚合用，不能被截断 —— 否则 total / avgScore / healthRate 就成了抽样值
+     */
+    private List<ListingHealth> loadHealth(Long shopId, String severity, boolean cap) {
         LambdaQueryWrapper<ListingHealth> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ListingHealth::getShopId, shopId);
         if (severity != null && !severity.isBlank()) {
             wrapper.eq(ListingHealth::getSeverity, severity);
         }
-        wrapper.orderByAsc(ListingHealth::getHealthScore).last(limitClause());
+        wrapper.orderByAsc(ListingHealth::getHealthScore);
+        if (cap) {
+            wrapper.last(limitClause());
+        }
         return listingHealthMapper.selectList(wrapper);
     }
 
@@ -178,7 +185,7 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
     public Map<String, Object> healthSummary(Long shopId) {
         // 汇总刻意不走带单读上限的 listHealth：total/avgScore/healthRate 是整店口径的数，
         // 截断后这几个数会变。把汇总下沉到 SQL 聚合才是真正的解法（已记入待办）。
-        List<ListingHealth> all = loadHealth(shopId, null);
+        List<ListingHealth> all = loadHealth(shopId, null, false);
         if (all.size() > LIST_READ_LIMIT) {
             log.warn("Listing 健康度汇总仍需整店扫描：{} 行", all.size());
         }

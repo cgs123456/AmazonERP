@@ -97,18 +97,29 @@ class ListingMonitorReadCapTest {
     }
 
     @Test
-    @DisplayName("汇总仍是整店口径：total / avgScore 不受列表上限影响")
+    @DisplayName("汇总仍是整店口径：total / avgScore 不受列表单读上限影响")
     void healthSummaryStillAggregatesEverything() {
-        List<ListingHealth> beyondCap = rows(CAP + 1);
-        for (int i = 0; i < beyondCap.size(); i++) {
-            beyondCap.get(i).setHealthScore(i % 2 == 0 ? 100 : 0);
-        }
-        when(healthMapper.selectList(any())).thenReturn(beyondCap);
+        // 关键：mock 必须按 wrapper 里有没有 LIMIT 分别应答，否则"汇总也走了截断"这种
+        // 缺陷会被"mock 无论如何都给这么多行"掩盖（本用例第一版就是这么假绿的）。
+        final int beyondCap = CAP + 100;
+        when(healthMapper.selectList(any())).thenAnswer(invocation -> {
+            LambdaQueryWrapper<?> wrapper = invocation.getArgument(0);
+            boolean capped = wrapper.getSqlSegment().contains("LIMIT ");
+            List<ListingHealth> rows = rows(capped ? Math.min(beyondCap, CAP + 1) : beyondCap);
+            for (int i = 0; i < rows.size(); i++) {
+                rows.get(i).setHealthScore(i % 2 == 0 ? 100 : 0);
+            }
+            return rows;
+        });
 
         Map<String, Object> summary = service.healthSummary(1L);
 
-        assertEquals((long) CAP + 1, ((Number) summary.get("total")).longValue(),
-                "汇总数字一旦被截断，健康率就成了抽样结果");
+        assertEquals(beyondCap, ((Number) summary.get("total")).longValue(),
+                "汇总一旦被截断，healthRate 就成了抽样结果");
+        assertEquals(50.0, ((Number) summary.get("avgScore")).doubleValue(), 0.01);
+
+        // 同一份数据下，列表读仍然必须被截断
+        assertEquals(CAP, service.listHealth(1L, null).size());
     }
 
     private static List<ListingHealth> rows(int count) {
