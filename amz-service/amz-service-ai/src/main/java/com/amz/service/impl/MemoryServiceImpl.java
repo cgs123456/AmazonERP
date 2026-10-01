@@ -1,10 +1,12 @@
 package com.amz.service.impl;
 
+import com.amz.exception.InvalidParamException;
 import com.amz.mapper.ConversationMemoryMapper;
 import com.amz.mapper.UserPreferenceMapper;
 import com.amz.model.ConversationMemory;
 import com.amz.model.LanguageEnum;
 import com.amz.model.UserPreference;
+import com.amz.result.PageRequest;
 import com.amz.service.MemoryService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -150,14 +152,24 @@ public class MemoryServiceImpl implements MemoryService {
 
     @Override
     public List<ConversationMemory> listRecentMemories(String sessionId, int limit) {
+        // limit 直接来自 HTTP（?limit=），不设上限就等于让调用方要求多宽的多宽地全表读；
+        // 与 PageRequest 同口径：越界即参数错误，不静默收敛（静默会让调用方以为拿到了它要的条数）。
+        if (limit < 1 || limit > PageRequest.MAX_SIZE) {
+            throw new InvalidParamException("limit 必须在 1.." + PageRequest.MAX_SIZE
+                    + " 之间，实际 " + limit);
+        }
         LambdaQueryWrapper<ConversationMemory> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ConversationMemory::getSessionId, sessionId)
                .orderByDesc(ConversationMemory::getId)
-               .last("LIMIT " + Math.max(1, limit));
+               .last("LIMIT " + limit);
         // 时间正序返回（ oldest first 便于拼装到 messages）
         List<ConversationMemory> list = conversationMemoryMapper.selectList(wrapper);
-        java.util.Collections.reverse(list);
-        return list;
+        // 倒序复制而不是原地 reverse：不依赖 mapper 返回的是可变列表
+        List<ConversationMemory> oldestFirst = new java.util.ArrayList<>(list.size());
+        for (int i = list.size() - 1; i >= 0; i--) {
+            oldestFirst.add(list.get(i));
+        }
+        return oldestFirst;
     }
 
     @Override
