@@ -3,7 +3,8 @@
 范围：本轮目标为「检查错误、重复代码和明显性能问题 → 按严重程度排序 → 逐项修复 → 跑相关测试
 → 失败则定位修复 → 最后自审」。所有结论以下列命令的实际输出为准，不采信推断。
 
-闸口（第二轮自审后重跑，见 §8）：`mvn -o -B clean verify -fae` → BUILD SUCCESS，18 个模块全过，
+闸口（第二轮自审后重跑，见 §8）：`mvn -o -B clean verify -fae` → BUILD SUCCESS，
+reactor 19/19 模块 SUCCESS（FAILURE/SKIPPED 计数 0），
 **1682 tests / 0 failures / 0 errors / 11 skipped**（模块汇总行与 268 条分类行各自累加得同一组数字，
 两种解析一致才敢引这个数）；`python tools/release/repository_hygiene.py --root .` → findings=0；
 `python -m unittest discover -s tools/release -t .` → OK。
@@ -117,7 +118,10 @@ M7 与 M8 修正了清单原述），Low 5 项处理（L3 门禁 + L5 有界缓�
 `48c6ac9` Redis 配方收成一份
 
 A1 / B3 两条 High 属上一轮提交（`a92c8b9` / `24ccfe1`，已在 origin/master 上），本轮只复核不改。
-按用户决定，这 19 个提交暂不推送。
+第二轮整体自审（§8）另加提交：`5a4ed0a` 批量原因可见 + IT 库名隔离 · `325f3cc` 兜底计数 +
+FIFO 判别用例 · `77e5a88` 断言补强 + Low 级清理，以及紧随其后、只改本文件的修订提交
+（不在此处预写自己的 sha，改完 `git log` 里可查）。
+合计 `origin/master..HEAD` = 23+ 个提交，按用户决定暂不推送。
 
 ### rebuild 的批量幂等写（同轮补做）
 `upsertBatch` 的语句不是手写副本，而是**从 mapper 源码里把模板逐列代入**渲染出来，
