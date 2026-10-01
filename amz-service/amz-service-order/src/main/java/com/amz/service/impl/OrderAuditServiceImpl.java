@@ -18,9 +18,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -269,8 +272,8 @@ public class OrderAuditServiceImpl implements OrderAuditService {
      */
     private static final int PATTERN_CACHE_MAX = 64;
 
-    private static final Map<String, Pattern> PATTERN_CACHE = java.util.Collections.synchronizedMap(
-            new java.util.LinkedHashMap<String, Pattern>(16, 0.75f, true) {
+    private static final Map<String, Pattern> PATTERN_CACHE = Collections.synchronizedMap(
+            new LinkedHashMap<String, Pattern>(16, 0.75f, true) {
                 @Override
                 protected boolean removeEldestEntry(Map.Entry<String, Pattern> eldest) {
                     return size() > PATTERN_CACHE_MAX;
@@ -291,17 +294,21 @@ public class OrderAuditServiceImpl implements OrderAuditService {
         return PATTERN_CACHE.size();
     }
 
+    /** 仅供测试读取上限，避免用例里再抄一份 64。 */
+    static int patternCacheMax() {
+        return PATTERN_CACHE_MAX;
+    }
+
     /**
      * 正则匹配专用线程池：与 ForkJoinPool.commonPool 隔离。
      * 旧实现跑在 commonPool 上，超时仅放弃等待并不取消任务，
      * ReDoS 回溯线程会持续占用 JVM 公共池，殃及并行流等其他组件。
      */
-    private static final java.util.concurrent.ExecutorService REGEX_EXECUTOR =
-            java.util.concurrent.Executors.newFixedThreadPool(2, r -> {
-                Thread t = new Thread(r, "order-audit-regex");
-                t.setDaemon(true);
-                return t;
-            });
+    private static final ExecutorService REGEX_EXECUTOR = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "order-audit-regex");
+        t.setDaemon(true);
+        return t;
+    });
 
     /**
      * 安全执行正则匹配，防御店铺管理员可控正则带来的灾难性回溯（ReDoS）拒绝服务：

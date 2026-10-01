@@ -138,12 +138,14 @@ public class GlobalExchangeRateService {
             return rate;
         }
         String key = currency.toUpperCase();
-        long hits = unknownCurrencyHitCounts.merge(key, 1L, Long::sum);
         if (strictUnknownCurrency) {
             throw new IllegalArgumentException(
                     "币种 " + currency + " 无汇率配置（amz.exchange.strict-unknown=true 拒绝 1:1 兜底），"
                             + "请补充 amz.exchange-rates 配置");
         }
+        // 计数只在真的按 1:1 折算时增加：严格模式拒绝的币种没有产生任何失真金额，
+        // 把它算进「被兜底命中过」会让这个指标失去"有没有钱算错了"的含义。
+        long hits = unknownCurrencyHitCounts.merge(key, 1L, Long::sum);
         if (hits == 1L) {
             log.warn("币种 {} 无汇率配置，按 1:1 兜底折算，金额可能失真，请补充 amz.exchange-rates 配置"
                     + "（同一币种后续命中不再重复告警，可查 unknownCurrencyHits 计数）", currency);

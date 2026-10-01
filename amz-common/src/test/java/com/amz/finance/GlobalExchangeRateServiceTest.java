@@ -151,6 +151,10 @@ class GlobalExchangeRateServiceTest {
         // 已知币种不受开关影响
         assertEquals(new BigDecimal("7.25"), s.getRate("USD"));
         assertEquals(new BigDecimal("725.00"), s.toCny(new BigDecimal("100"), "USD"));
+        // 严格模式一毛钱都没按 1:1 折算过，所以「被兜底命中」计数必须仍是 0：
+        // 这个指标的含义是"有多少金额可能被算错"，把拒绝的查询也计进去就查不出真问了。
+        assertEquals(0L, s.unknownCurrencyHits("XYZ"),
+                "严格模式拒绝掉的币种不该算进 1:1 兜底命中");
     }
 
     @Test
