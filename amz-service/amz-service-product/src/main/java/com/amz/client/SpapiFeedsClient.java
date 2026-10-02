@@ -7,7 +7,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 
 import java.util.Map;
 
@@ -19,8 +18,8 @@ import java.util.Map;
  * 服务不可用时由 {@link SpapiFeedsClientFallbackFactory} 返回失败而非伪造结果，避免「假成功」。
  */
 @FeignClient(name = "amz-service-spapi", contextId = "spapiFeedsClient",
+        path = "/spapi/feeds",
         fallbackFactory = SpapiFeedsClientFallbackFactory.class)
-@RequestMapping("/spapi/feeds")
 public interface SpapiFeedsClient {
 
     /**

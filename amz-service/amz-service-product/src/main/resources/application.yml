@@ -45,7 +45,11 @@ spring:
       port: 27017
       database: amz
       username: ${MONGO_USERNAME:root}
-      password: ${MONGO_PASSWORD:}
+      # 不能写 ${MONGO_PASSWORD:}：Boot 的 spring.data.mongodb.password 是 char[]，
+      # 空默认值会在属性绑定阶段抛 NPE（实测：Cannot invoke Collection.toArray() because "c" is null），
+      # 服务直接起不来。缺变量时要的是"报错点名 MONGO_PASSWORD"，不是一个 NPE。
+      # 供给方：docker-compose（${MONGO_PASSWORD:?}）、k8s Secret；离线开发用 application-local.yml。
+      password: ${MONGO_PASSWORD}
       authentication-database: admin
 mybatis-plus:
   configuration:

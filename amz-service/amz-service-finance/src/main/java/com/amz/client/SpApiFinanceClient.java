@@ -9,7 +9,6 @@ import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.math.BigDecimal;
@@ -25,8 +24,8 @@ import java.util.List;
  * 财务域静默降级为空数据会让「利润为 0」看起来像真实结论，必须显式失败。
  */
 @FeignClient(name = "amz-service-spapi", contextId = "spApiFinanceClient",
+        path = "/spapi/finance",
         fallbackFactory = SpApiFinanceClientFallbackFactory.class)
-@RequestMapping("/spapi/finance")
 public interface SpApiFinanceClient {
 
     /**

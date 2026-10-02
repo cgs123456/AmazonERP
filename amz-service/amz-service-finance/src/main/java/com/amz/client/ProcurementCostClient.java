@@ -6,7 +6,6 @@ import com.amz.result.Result;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 
@@ -18,8 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * 而批次数据属采购域 —— finance 只消费，不另起一套成本口径。
  */
 @FeignClient(name = "amz-service-procurement", contextId = "procurementCostClient",
+        path = "/procurement",
         fallbackFactory = ProcurementCostClientFallbackFactory.class)
-@RequestMapping("/procurement")
 public interface ProcurementCostClient {
 
     /**
