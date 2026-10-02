@@ -920,6 +920,23 @@ const OPS_TREND = [
 ]
 
 /**
+ * 助手记忆页（/agent-memory）用的真实表结构。
+ * 字段名抄自后端 UserPreference / ConversationMemory；userId 固定 1，
+ * 因为上面的 /user/getInfo 桩把登录用户回成 id=1 —— 页面身份只认这个来源，
+ * 不再读 localStorage 里由 main.ts 兜底写死的 user_id。
+ */
+const AGENT_PREFERENCE = {
+  id: 12, userId: 1, nickname: 'E2E 用户', preferredShopId: 1,
+  preferredShopName: null, preferredCategory: '瑜伽用品', language: 'ZH',
+  lastActiveTime: '2026-10-01T10:00:00', createTime: '2026-09-01T10:00:00', updateTime: '2026-10-01T10:00:00'
+}
+
+const AGENT_HISTORY = [
+  { id: 31, sessionId: 'sess-1', userId: 1, role: 'user', content: '最近7天销量如何？', createTime: '2026-10-01T09:00:00' },
+  { id: 32, sessionId: 'sess-1', userId: 1, role: 'assistant', content: '近 7 天共 12 单。', createTime: '2026-10-01T09:00:05' }
+]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -1151,6 +1168,14 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/ops\/review\/\d+\/handle$/, data: true },
   { match: /^\/ops\/hijack\/list\//, data: OPS_HIJACKS, page: FULL_PAGE(OPS_HIJACKS.length) },
   { match: /^\/ops\/rank\/trend$/, data: OPS_TREND },
+
+  // ===== 助手记忆 /agent-memory（user_preference + conversation_memory 真实表）=====
+  // POST /ai/agent/memory/chat 刻意不登记：它要求真实 deepseek.api-key，页面也没有入口。
+  // POST /ai/agent/memory/reminder/scan 同样不登记：提醒正文是写死示例，非 mock 档后端直接拒绝。
+  { match: /^\/ai\/agent\/memory\/preference\/\d+$/, data: AGENT_PREFERENCE },
+  { match: /^\/ai\/agent\/memory\/preference$/, data: { ...AGENT_PREFERENCE, nickname: 'E2E 改名', preferredCategory: '健身器材' } },
+  { match: /^\/ai\/agent\/memory\/language$/, data: { ...AGENT_PREFERENCE, language: 'EN' } },
+  { match: /^\/ai\/agent\/memory\/history\//, data: AGENT_HISTORY },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

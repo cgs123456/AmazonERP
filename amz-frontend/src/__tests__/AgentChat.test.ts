@@ -116,6 +116,8 @@ describe('AgentChat 组件', () => {
   it('后端返回 Result JSON 时应展示 data 字段内容', async () => {
     // 组件经统一 request 实例调用 POST /ai/erp/agent（拦截器已拆包为 { code, message, data }）
     mockedPost.mockResolvedValue({ code: 200, message: 'success', data: '近 7 天订单共 162 单，销售额 $8,456。' })
+    // 残留的旧版本地身份不得再被上报：后端用它拼 ChatMemory 会话键，上报即允许读写他人上下文
+    localStorage.setItem('user_id', '999')
 
     const wrapper = mount(AgentChat, {
       props: { visible: true },
@@ -126,12 +128,15 @@ describe('AgentChat 组件', () => {
 
     await flushPromises()
 
-    // 应携带 userId 参数并设置 60s 超时
+    // 应设置 60s 超时，且请求里不出现 userId
     expect(mockedPost).toHaveBeenCalledWith(
       '/ai/erp/agent',
       { message: '销量' },
       expect.objectContaining({ timeout: 60000 })
     )
+    const postArgs = mockedPost.mock.calls[0] as unknown as [string, unknown, Record<string, unknown>]
+    expect(JSON.stringify(postArgs)).not.toContain('999')
+    expect(postArgs[2].params).toBeUndefined()
     const assistantMessages = wrapper.findAll('.message.assistant .message-content')
     expect(assistantMessages.length).toBeGreaterThanOrEqual(2)
     const lastReply = assistantMessages[assistantMessages.length - 1].text()

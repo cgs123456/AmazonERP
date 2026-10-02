@@ -54,7 +54,7 @@
     {
       "path": "amz-frontend/src/components/AgentChat.vue",
       "rule": "secret-like-assignment",
-      "sha256": "248f34447edbb8c4ec31f9f55cf0e78b45edfe1ff176b9362310fac6d9f6f1bd"
+      "sha256": "e4f51f2515fe5a266bcac1158e2e684625c3c9252106fdc6eee4e212b64510b3"
     },
     {
       "path": "amz-frontend/src/components/AppHeader.vue",
@@ -74,7 +74,7 @@
     {
       "path": "amz-frontend/src/router/index.ts",
       "rule": "secret-like-assignment",
-      "sha256": "a69b4f8d85bf1169e4591176c5466ac4b86f50f519fc9dfac2abacc4f223afeb"
+      "sha256": "56eded8a3942a12106f876ad3ae25c973f3e1be6366c5e31885ea9f5a231aee1"
     },
     {
       "path": "amz-frontend/src/utils/websocket.ts",

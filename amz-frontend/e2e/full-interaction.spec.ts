@@ -47,7 +47,8 @@ const NAV = [
   { path: '/multiplatform-ops', linkText: '多平台运营台' },
   { path: '/ops-alerts', linkText: '运营预警台' },
   { path: '/notifications', linkText: '消息中心' },
-  { path: '/customer', linkText: '客服中心' }
+  { path: '/customer', linkText: '客服中心' },
+  { path: '/agent-memory', linkText: '助手记忆' }
 ]
 
 /**
@@ -1172,6 +1173,68 @@ test.describe('OpsAlerts 交互（运营预警台）', () => {
     await expect(metrics).toContainText('最新排名')
     await expect(metrics).toContainText('31')
     await expect(page.locator('[data-panel="rank"]')).toContainText('最近 200 个点')
+  })
+})
+
+test.describe('AgentMemory 交互（助手记忆）', () => {
+  test('偏好与对话按真实表渲染，且不给出没有后端的入口', async ({ page }) => {
+    await page.goto('/agent-memory')
+    await expect(page.locator('.skeleton-zone')).toHaveCount(0, { timeout: 20000 })
+
+    // 身份取自 GET /user/getInfo（桩里 id=1），会话键随之为 sess-1
+    await expect(page.locator('.meta-row')).toContainText('用户 ID 1')
+    await expect(page.locator('.filter-row')).toContainText('sess-1')
+    await expect(page.locator('.notice-zone')).toContainText('main.ts')
+
+    const inputs = page.locator('.form-card .field input')
+    await expect(inputs.nth(0)).toHaveValue('E2E 用户')
+    await expect(inputs.nth(1)).toHaveValue('1')
+    await expect(inputs.nth(2)).toHaveValue('瑜伽用品')
+    await expect(page.locator('.lang-row')).toContainText('当前生效 ZH')
+
+    const rows = page.locator('.history-card tbody tr')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.nth(0)).toContainText('最近7天销量如何？')
+    await expect(rows.nth(1)).toContainText('近 7 天共 12 单。')
+
+    // 三个后端存在但没有真实数据源/需要 LLM key 的入口，页面上必须不存在
+    for (const label of ['发起对话', '扫描提醒', '运行评测']) {
+      await expect(page.locator('button', { hasText: label })).toHaveCount(0)
+    }
+  })
+
+  test('保存偏好只带非空字段，语言切换走 /language 便捷端点', async ({ page }) => {
+    const calls: Array<{ path: string; search: string; body: string }> = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      // 只记写入类请求：页面加载本身会打两条 GET（偏好 + 历史），
+      // 把它们算进来会让「点了几个按钮发了几个请求」的断言失去意义。
+      if (u.pathname.startsWith('/api/ai/agent/memory/') && r.method() !== 'GET') {
+        calls.push({ path: u.pathname, search: u.search, body: r.postData() || '' })
+      }
+    })
+
+    await page.goto('/agent-memory')
+    const inputs = page.locator('.form-card .field input')
+    await expect(inputs.nth(0)).toHaveValue('E2E 用户', { timeout: 20000 })
+    await inputs.nth(2).fill('')
+    await page.locator('.form-actions button', { hasText: '保存偏好' }).click()
+    await expect.poll(() => calls.length).toBe(1)
+    expect(calls[0].path).toBe('/api/ai/agent/memory/preference')
+    const sent = JSON.parse(calls[0].body) as Record<string, unknown>
+    // 清空的品类不会被提交：后端按非空字段更新，提交空串也不等于清空，
+    // 所以这里只应看到仍然有值的两个字段。
+    expect(Object.keys(sent).sort()).toEqual(['nickname', 'preferredShopId'])
+    expect(sent.nickname).toBe('E2E 用户')
+    expect(sent.preferredShopId).toBe(1)
+    await expect(page.locator('.form-actions')).toContainText('已保存')
+
+    await page.locator('.lang-row select').selectOption('EN')
+    await page.locator('.lang-row button', { hasText: '仅切换语言' }).click()
+    await expect.poll(() => calls.length).toBe(2)
+    expect(calls[1].path).toBe('/api/ai/agent/memory/language')
+    expect(calls[1].search).toContain('language=EN')
+    await expect(page.locator('.lang-row')).toContainText('当前生效 EN')
   })
 })
 

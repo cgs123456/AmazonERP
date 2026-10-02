@@ -27,10 +27,15 @@ PATH_LITERAL = re.compile(r'(?:value|path)\s*=\s*"([^"]*)"|"([^"]*)"')
 # `(?<!:)` 是为了不吃掉 https:// 这类串里的双斜杠。
 LINE_COMMENT = re.compile(r'(?<!:)//[^\n]*')
 BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
+# 两种注释一次性按位置扫掉。分开两次 sub 会串味：先剥块注释时，行注释里出现的
+# `api/*.ts` 会被当成块注释的起点，一路吞到文件里下一个 `*/`，把真正的调用代码删没
+# ——agentMemory.ts 就是这么被误判成「未接入」的。交替匹配则从左到右消费，
+# 行注释整行先没了，块注释内部再含 `//` 也不会提前收尾。
+COMMENTS = re.compile(r'(?<!:)//[^\n]*|/\*.*?\*/', re.S)
 
 
 def strip_comments(text: str) -> str:
-    return LINE_COMMENT.sub('', BLOCK_COMMENT.sub('', text))
+    return COMMENTS.sub('', text)
 
 frontend_text = "\n".join(
     strip_comments(io.open(p, encoding='utf-8', errors='replace').read())
@@ -39,7 +44,13 @@ frontend_text = "\n".join(
 
 
 def build_matcher(full_path: str) -> str:
-    """把 /a/{id}/b 变成可以匹配前端模板串的正则：参数段允许 ${...} 或任意非斜杠内容。"""
+    """把 /a/{id}/b 变成可以匹配前端模板串的正则：参数段允许 ${...} 或任意非斜杠内容。
+
+    结尾必须钉住：上一版没有右边界，`/ai/chat` 会被 api/ai.ts 里的 `/ai/chat-stream`
+    命中，于是 POST /ai/chat 这个前端根本没调的端点被算成「已接入」——
+    少报缺口比多报缺口更危险，因为它会让清点结果看起来已经收敛。
+    允许的后继字符里没有 `-` 与字母数字，斜杠仍然允许（子路径照常匹配）。
+    """
     out = []
     for seg in full_path.split('/'):
         if not seg:
@@ -48,7 +59,41 @@ def build_matcher(full_path: str) -> str:
             out.append(r"(?:\$\{[^}]*\}|[^/`'\"]+)")
         else:
             out.append(re.escape(seg))
-    return '/'.join(out)
+    return '/'.join(out) + r'(?![\w-])'
+
+
+if '--self-test' in sys.argv:
+    # 三条都是踩过的坑，钉在这里而不是只写注释：任何一条断了，清点结果就不可信。
+    cases = []
+
+    def check(name, got, want):
+        cases.append((name, got == want, got, want))
+
+    line_only = "// 见 api/*.ts 与其余约定\nrequest.get(`/ai/agent/memory/preference/${userId}`)\n"
+    check('行注释里的 api/*.ts 不得吞掉下一行调用代码',
+          bool(re.compile(build_matcher('/ai/agent/memory/preference/{userId}'))
+              .search(strip_comments(line_only))), True)
+
+    block_only = "/** 刻意不接：POST /ops/review/scan、POST /ops/rank/scan */\n"
+    check('块注释里列出的路径不算调用',
+          bool(re.compile(build_matcher('/ops/review/scan')).search(strip_comments(block_only))), False)
+
+    near_miss = "request.get(`/ai/chat-stream`)\n"
+    check('/ai/chat 不得被 /ai/chat-stream 命中',
+          bool(re.compile(build_matcher('/ai/chat')).search(near_miss)), False)
+    check('/ai/chat-stream 本身仍要命中',
+          bool(re.compile(build_matcher('/ai/chat-stream')).search(near_miss)), True)
+
+    nested = "request.get(`/ad/report/${shopId}`)\n"
+    check('子路径式命中仍成立（斜杠后继续写路径不算断点）',
+          bool(re.compile(build_matcher('/ad/report/{shopId}')).search(nested)), True)
+
+    failed = [c for c in cases if not c[1]]
+    for name, ok_flag, got, want in cases:
+        print('%-56s %s (got=%s want=%s)' % (
+            name.encode('ascii', 'replace').decode(), 'PASS' if ok_flag else 'FAIL', got, want))
+    print('SELFTEST %d/%d passed' % (len(cases) - len(failed), len(cases)))
+    sys.exit(1 if failed else 0)
 
 
 # 网关/vite 代理里确实存在的别名：后端前缀 -> 前端书写前缀。

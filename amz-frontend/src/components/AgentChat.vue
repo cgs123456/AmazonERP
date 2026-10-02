@@ -64,7 +64,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
-import request from '../api/auth'
+import { chatStreamUrl, erpAgentChat } from '../api/ai'
 import { getCurrentShopId } from '../utils/shop'
 import { readSseStream } from '../utils/sse'
 
@@ -159,19 +159,11 @@ const sendMessage = async () => {
  */
 const postSend = async (text: string, placeholder: ChatMessage, controller: AbortController) => {
   try {
-    // 对齐后端 AiController：POST /ai/erp/agent?userId=（userId 为 query 参数，body 为 {message}）
-    // 走统一 request 实例：自动注入 token/shopId 头、30s 超时基线，此处覆盖 60s（AI 推理慢）；
-    // 后端返回 Result<String> JSON（非 SSE 流式），拦截器已拆包为 { code, message, data }
-    const savedUserId = localStorage.getItem('user_id')
-    const result = await request.post<void, { code: number; message: string; data: unknown }>(
-      '/ai/erp/agent',
-      { message: text },
-      {
-        params: savedUserId ? { userId: savedUserId } : {},
-        timeout: 60000,
-        signal: controller.signal
-      }
-    )
+    // 契约见 api/ai.ts：POST /ai/erp/agent，body 只有 {message}。
+    // 身份由后端从鉴权上下文取，前端不再上报 userId：
+    // localStorage 里的 user_id 可被篡改，而后端用它拼 ChatMemory 会话键（记忆归属），
+    // 上报等价于允许调用方读写他人的对话上下文。
+    const result = await erpAgentChat(text, controller.signal)
     if (result?.code === 200 && typeof result.data === 'string' && result.data) {
       placeholder.content = result.data
     } else {
@@ -212,9 +204,8 @@ const postSend = async (text: string, placeholder: ChatMessage, controller: Abor
  * 连接级失败且未拿到 final 时回退 postSend（仅一次，不循环）。
  */
 const sseSend = async (text: string, placeholder: ChatMessage) => {
-  const params = new URLSearchParams({ message: text })
-  // request 在单测中可能被 mock 为裸对象，defaults 缺失时回退同源 /api（与旧 EventSource 硬编码一致）
-  const url = `${request.defaults?.baseURL || '/api'}/ai/chat-stream?${params.toString()}`
+  // 基址口径见 api/ai.ts#chatStreamUrl（dev 走 vite /api 代理，生产走网关）
+  const url = chatStreamUrl(text)
   const token = localStorage.getItem('token') || ''
   const shopId = getCurrentShopId()
   const controller = new AbortController()

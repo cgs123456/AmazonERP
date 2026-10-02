@@ -109,6 +109,11 @@ const router = createRouter({
             component: () => import('../views/KnowledgeBase.vue')
         },
         {
+            path: '/agent-memory',
+            name: 'AgentMemory',
+            component: () => import('../views/AgentMemory.vue')
+        },
+        {
             path: '/listings',
             name: 'Listings',
             component: () => import('../views/ListingMonitor.vue')

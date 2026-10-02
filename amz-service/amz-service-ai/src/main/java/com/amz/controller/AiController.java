@@ -5,6 +5,7 @@ import com.amz.agent.eval.AgentEvalResult;
 import com.amz.agent.eval.AgentEvalRunner;
 import com.amz.agent.eval.LlmEvalScorer;
 import com.amz.agent.langchain4j.LangChain4jAgentService;
+import com.amz.context.UserContext;
 import com.amz.mapper.AgentEvalLogMapper;
 import com.amz.model.AgentEvalLog;
 import com.amz.result.Result;
@@ -13,11 +14,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 
@@ -70,17 +73,28 @@ public class AiController {
 
     /**
      * ERP 运营 Agent（LangChain4j AiServices 编排）。
-     * POST /ai/erp/agent?userId=1
+     * POST /ai/erp/agent
      * Body: {"message":"最近7天订单情况如何？"}
+     * <p>
+     * 身份只来自认证上下文：{@code LangChain4jAgentService} 用 userId 拼 ChatMemory
+     * 会话键（"sess-" + userId），会话键即记忆归属。此前它是
+     * {@code @RequestParam(defaultValue="1")}，任何登录用户改 query 就能读写他人上下文，
+     * 未登录则统一落到 userId=1。
      */
     @PostMapping("/erp/agent")
-    public Result<String> erpAgent(
-            @RequestParam(value = "userId", defaultValue = "1") Long userId,
-            @RequestBody ErpAgentRequest request) {
+    public Result<String> erpAgent(@RequestBody ErpAgentRequest request) {
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             return Result.failure("message 不能为空");
         }
-        return langChain4jAgentService.chat(userId, request.getMessage());
+        return langChain4jAgentService.chat(currentUserId(), request.getMessage());
+    }
+
+    private long currentUserId() {
+        Integer userId = UserContext.getUserId();
+        if (userId == null || userId <= 0) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录");
+        }
+        return userId.longValue();
     }
 
     /**

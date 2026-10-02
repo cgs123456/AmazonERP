@@ -276,6 +276,17 @@
         <Icon icon="mdi:database-search-outline" class="nav-icon" width="24" />
         <span class="nav-text">知识库管理</span>
       </div>
+      <div
+        class="nav-item"
+        :class="{ active: isActive('/agent-memory') }"
+        @click="navigateTo('/agent-memory')"
+        role="button"
+        aria-label="助手记忆"
+        tabindex="0"
+      >
+        <Icon icon="mdi:brain" class="nav-icon" width="24" />
+        <span class="nav-text">助手记忆</span>
+      </div>
     </div>
   </aside>
 </template>

@@ -29,8 +29,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -143,6 +145,42 @@ class AgentMemoryControllerTest {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> controller.getPreference(7L));
         assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("非法语言代码必须拒绝，不能静默写成 ZH")
+    void testIllegalLanguageRejected() {
+        // LanguageEnum#fromCode 对无法识别的代码返回 ZH（它是提示词侧的兜底），
+        // 但写用户偏好是持久化操作：静默收敛会让用户以为切成了别的语言。
+        Result<UserPreference> result = controller.switchLanguage("fr");
+
+        assertEquals(400, result.getCode());
+        assertTrue(result.getMessage().contains("ZH"), "错误信息要列出支持的语言：" + result.getMessage());
+        verifyNoInteractions(memoryService);
+    }
+
+    @Test
+    @DisplayName("空语言代码同样拒绝（空白不等于中文）")
+    void testBlankLanguageRejected() {
+        Result<UserPreference> result = controller.switchLanguage("  ");
+
+        assertEquals(400, result.getCode());
+        verifyNoInteractions(memoryService);
+    }
+
+    @Test
+    @DisplayName("小写语言代码仍按大小写不敏感接受")
+    void testLowerCaseLanguageAccepted() {
+        UserPreference pref = new UserPreference();
+        pref.setUserId(7L);
+        pref.setLanguage("ZH");
+        when(memoryService.getOrCreatePreference(7L)).thenReturn(pref);
+        when(memoryService.updatePreference(pref)).thenReturn(pref);
+
+        Result<UserPreference> result = controller.switchLanguage("en");
+
+        assertEquals(200, result.getCode());
+        assertEquals("EN", pref.getLanguage());
     }
 
     private static void assertNoUserIdRequestParam(Method method) {
