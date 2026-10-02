@@ -43,6 +43,7 @@ const NAV = [
   { path: '/connector-queue', linkText: '调用队列' },
   { path: '/ad-search-terms', linkText: '搜索词与规则' },
   { path: '/ad-bid-schedule', linkText: '分时调价' },
+  { path: '/multiplatform', linkText: '多平台订单' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -798,6 +799,59 @@ test.describe('AdBidSchedule 交互（分时调价）', () => {
     await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
     await expect.poll(() => toggles.length).toBe(1)
     expect(decodeURIComponent(toggles[0])).toContain('enabled=false')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+})
+
+test.describe('MultiplatformOrders 交互（多平台订单）', () => {
+  test('订单列表按平台与状态标注，说明区讲清本地表与真实回传', async ({ page }) => {
+    await page.goto('/multiplatform')
+    const panel = page.locator('[data-panel="orders"]')
+    await expect(panel.locator('tbody tr')).toHaveCount(2)
+    await expect(panel).toContainText('TE-9001')
+    await expect(panel).toContainText('TEMU')
+    await expect(panel).toContainText('PAID')
+    await expect(panel).toContainText('186.5')
+    await expect(page.locator('.notice-zone')).toContainText('本地统一订单表')
+    await expect(page.locator('.notice-zone')).toContainText('真实回传给平台')
+    await expect(page.locator('.notice-zone')).toContainText('不提供')
+  })
+
+  test('全平台同步要确认，结果点名失败的平台', async ({ page }) => {
+    const syncs: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/multiplatform/sync/all/1') syncs.push(r.method())
+    })
+    await page.goto('/multiplatform')
+    await page.locator('[data-panel="sync"] button', { hasText: '同步全部平台' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('单个平台失败不会中断另外两个')
+    expect(syncs).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => syncs.length).toBe(1)
+    const result = page.locator('[data-panel="sync"] .sync-result').first()
+    await expect(result).toContainText('尝试 3')
+    await expect(result).toContainText('失败平台：TIKTOK')
+    await expect(result).toContainText('才等于「确实没有新单」')
+  })
+
+  test('发货回传需要运单号，且真的按 POST 发给平台回传端点', async ({ page }) => {
+    const ships: string[] = []
+    page.on('request', (r) => {
+      if (/\/api\/multiplatform\/order\/\d+\/ship/.test(new URL(r.url()).pathname)) ships.push(decodeURIComponent(r.url()))
+    })
+    await page.goto('/multiplatform')
+    const row = page.locator('tbody tr', { hasText: 'TE-9001' }).first()
+    await row.locator('button', { hasText: '发货回传' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('运单号会被提交给该平台')
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    // 空运单号不发请求
+    expect(ships).toEqual([])
+
+    await row.locator('button', { hasText: '发货回传' }).click()
+    await page.locator('.modal input').fill('TRK-NEW-1')
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => ships.length).toBe(1)
+    expect(ships[0]).toContain('trackingNo=TRK-NEW-1')
     await expect(page.locator('.error-zone')).toHaveCount(0)
   })
 })

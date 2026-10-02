@@ -3,10 +3,13 @@ package com.amz.service.impl;
 import com.amz.client.SheinClient;
 import com.amz.client.TemuClient;
 import com.amz.client.TikTokClient;
+import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.finance.PlatformCurrencyConverter;
 import com.amz.mapper.UnifiedOrderMapper;
 import com.amz.model.UnifiedOrder;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +58,23 @@ class MultiplatformServiceImplTest {
 
     @InjectMocks
     private MultiplatformServiceImpl multiplatformService;
+
+    /**
+     * 发货回传是有人代操作的动作，服务侧按严格归属判定，
+     * 所以这里给出一个「已授权店铺 1 的 OPERATOR」上下文；
+     * 越权与空列表分支由 {@code MultiplatformOrderControlTest} 覆盖。
+     */
+    @BeforeEach
+    void authenticate() {
+        UserContext.setUserId(7);
+        UserContext.setRole("OPERATOR");
+        UserContext.setShops(List.of(1L));
+    }
+
+    @AfterEach
+    void clearUserContext() {
+        UserContext.clear();
+    }
 
     @Test
     @DisplayName("按平台同步 - 未知平台 → 抛出异常")
@@ -109,7 +129,7 @@ class MultiplatformServiceImplTest {
     }
 
     @Test
-    @DisplayName("全平台同步 - 单平台异常不影响其他平台（降级返回 0）")
+    @DisplayName("全平台同步 - 单平台异常不影响其他平台，并点名哪个平台失败")
     void testSyncAllPlatformsDegradeOnException() {
         UnifiedOrder tiktokOrder = buildOrder("TIKTOK", "TT-001", new BigDecimal("15.00"), "USD");
         when(temuClient.fetchRecentOrders(1L)).thenThrow(new RuntimeException("Temu API 超时"));
@@ -118,9 +138,13 @@ class MultiplatformServiceImplTest {
         when(unifiedOrderMapper.selectList(any())).thenReturn(Collections.emptyList());
         when(currencyConverter.toCny(any(), eq("USD"))).thenReturn(new BigDecimal("108.00"));
 
-        int result = multiplatformService.syncAllPlatforms(1L);
+        MultiplatformServiceImpl.OrderSyncSummary result = multiplatformService.syncAllPlatforms(1L);
 
-        assertTrue(result >= 1, "Temu 降级为 0，但 TikTok 应同步成功");
+        assertTrue(result.inserted() >= 1, "Temu 失败，但 TikTok 应同步成功");
+        // 旧实现把异常吞成返回值 0，页面上「Temu 全挂」和「没有新单」是同一个数字
+        assertEquals(1, result.failed());
+        assertEquals(List.of("TEMU"), result.failedPlatforms());
+        assertEquals(2, result.succeeded());
         verify(unifiedOrderMapper).insert(tiktokOrder);
     }
 

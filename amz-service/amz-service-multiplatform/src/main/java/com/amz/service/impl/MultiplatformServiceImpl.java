@@ -6,6 +6,7 @@ import com.amz.client.TemuClient;
 import com.amz.client.TikTokClient;
 import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
+import com.amz.exception.CodeErrorException;
 import com.amz.finance.PlatformCurrencyConverter;
 import com.amz.mapper.OauthAppMapper;
 import com.amz.mapper.OauthTokenMapper;
@@ -24,6 +25,8 @@ import com.amz.model.PlatformProduct;
 import com.amz.model.UnifiedOrder;
 import com.amz.model.UnifiedOrderItems;
 import com.amz.model.WebhookEvent;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.MultiplatformService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -628,21 +631,37 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     // 原有方法（Phase 1 保留）
     // ========================================================
 
-    public int syncAllPlatforms(Long shopId) {
-        int temu = syncPlatformSafely(shopId, "TEMU");
-        int tiktok = syncPlatformSafely(shopId, "TIKTOK");
-        int shein = syncPlatformSafely(shopId, "SHEIN");
-        log.info("多平台订单同步完成 shopId={}：Temu={} TikTok={} Shein={}", shopId, temu, tiktok, shein);
-        return temu + tiktok + shein;
+    /**
+     * 全平台订单同步的可见结果。
+     * <p>
+     * 原来这里返回一个 int：{@code syncPlatformSafely} 把每个平台的异常吞成 0，
+     * 于是「三个平台全挂」与「确实没有新单」是同一个数字，页面上只能显示「同步到 0 条」。
+     * 现在把尝试/成功/失败分开报，失败的是哪几个平台也点名，异常仍只记日志不外抛
+     * （单平台故障不该让另外两个平台的同步作废）。
+     */
+    public record OrderSyncSummary(int attempted, int succeeded, int failed,
+                                   int inserted, List<String> failedPlatforms) {
     }
 
-    private int syncPlatformSafely(Long shopId, String platform) {
-        try {
-            return syncByPlatform(shopId, platform);
-        } catch (Exception e) {
-            log.error("多平台同步降级：shopId={} platform={} 同步失败，跳过该平台继续后续同步", shopId, platform, e);
-            return 0;
+    public OrderSyncSummary syncAllPlatforms(Long shopId) {
+        int inserted = 0;
+        int succeeded = 0;
+        List<String> failedPlatforms = new ArrayList<>();
+        for (String platform : List.of("TEMU", "TIKTOK", "SHEIN")) {
+            try {
+                int n = syncByPlatform(shopId, platform);
+                inserted += n;
+                succeeded++;
+            } catch (Exception e) {
+                failedPlatforms.add(platform);
+                log.error("多平台同步降级：shopId={} platform={} 同步失败，跳过该平台继续后续同步",
+                        shopId, platform, e);
+            }
         }
+        log.info("多平台订单同步完成 shopId={}：成功 {} 失败 {} 入库 {}",
+                shopId, succeeded, failedPlatforms.size(), inserted);
+        return new OrderSyncSummary(3, succeeded, failedPlatforms.size(), inserted,
+                List.copyOf(failedPlatforms));
     }
 
     public int syncByPlatform(Long shopId, String platform) {
@@ -692,43 +711,65 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         return platform + "|" + platformOrderNo;
     }
 
-    public List<com.amz.model.UnifiedOrder> listOrders(Long shopId) {
-        LambdaQueryWrapper<com.amz.model.UnifiedOrder> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(com.amz.model.UnifiedOrder::getShopId, shopId).orderByDesc(com.amz.model.UnifiedOrder::getId);
-        List<com.amz.model.UnifiedOrder> orders = unifiedOrderMapper.selectList(wrapper);
-        for (com.amz.model.UnifiedOrder o : orders) {
-            com.amz.model.UnifiedOrderItems.ensureItems(o);
-        }
-        return orders;
+    public PageResult<com.amz.model.UnifiedOrder> listOrders(Long shopId, PageRequest page) {
+        return pageOrders(shopId, null, page);
     }
 
-    public List<com.amz.model.UnifiedOrder> listByPlatform(Long shopId, String platform) {
+    public PageResult<com.amz.model.UnifiedOrder> listByPlatform(Long shopId, String platform, PageRequest page) {
+        return pageOrders(shopId, platform, page);
+    }
+
+    /**
+     * 统一订单分页。
+     * <p>
+     * 以前是 {@code selectList} 不带 LIMIT：一张持续被同步写入的订单表会被整表读进内存，
+     * 而且「确实没有更多」与「被数据库返回量截断」在响应里长得一模一样。
+     * 排序键用 id（同步是按平台顺序批量插入的，id 单调），游标必须在查询之前解析，
+     * 否则一个坏游标会先扫一遍库再报错。
+     */
+    private PageResult<com.amz.model.UnifiedOrder> pageOrders(Long shopId, String platform, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        Long cursorId = req.cursorId();
         LambdaQueryWrapper<com.amz.model.UnifiedOrder> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(com.amz.model.UnifiedOrder::getShopId, shopId)
-               .eq(com.amz.model.UnifiedOrder::getPlatform, platform)
-               .orderByDesc(com.amz.model.UnifiedOrder::getId);
-        List<com.amz.model.UnifiedOrder> orders = unifiedOrderMapper.selectList(wrapper);
-        for (com.amz.model.UnifiedOrder o : orders) {
+        wrapper.eq(com.amz.model.UnifiedOrder::getShopId, shopId);
+        if (platform != null && !platform.isBlank()) {
+            wrapper.eq(com.amz.model.UnifiedOrder::getPlatform, platform);
+        }
+        if (cursorId != null) {
+            wrapper.lt(com.amz.model.UnifiedOrder::getId, cursorId);
+        }
+        wrapper.orderByDesc(com.amz.model.UnifiedOrder::getId)
+               .last("LIMIT " + req.probeSize());
+        List<com.amz.model.UnifiedOrder> rows = unifiedOrderMapper.selectList(wrapper);
+        for (com.amz.model.UnifiedOrder o : rows) {
             com.amz.model.UnifiedOrderItems.ensureItems(o);
         }
-        return orders;
+        return PageResult.of(rows, req.size(), o -> PageRequest.encodeCursor(o.getId()));
     }
 
     public boolean markShipped(Long orderId, String trackingNo) {
+        if (trackingNo == null || trackingNo.isBlank()) {
+            throw new AttrIsNullException("运单号不能为空");
+        }
+        String tracking = trackingNo.trim();
         com.amz.model.UnifiedOrder order = unifiedOrderMapper.selectById(orderId);
         if (order == null) throw new AttrIsNullException("订单不存在：id=" + orderId);
-        if (order.getShopId() == null || !UserContext.isShopAllowed(order.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺订单");
+        // 严格版归属判定：这里会真的把发货回传给平台。isShopAllowed 在「没有任何授权店铺列表」时
+        // 按放行处理，一个 shops 为空的 token 也能把别人的订单标记发货。
+        if (order.getShopId() == null || !UserContext.isShopAllowedStrict(order.getShopId())) {
+            log.warn("多平台发货越权拦截：userId={}, orderId={}, orderShopId={}",
+                    UserContext.getUserId(), orderId, order.getShopId());
+            throw new CodeErrorException("订单不存在或无权操作该店铺订单");
         }
         boolean ok;
-        switch (order.getPlatform()) {
-            case "TEMU": ok = temuClient.markShipped(order.getPlatformOrderNo(), trackingNo); break;
-            case "TIKTOK": ok = tiktokClient.markShipped(order.getPlatformOrderNo(), trackingNo); break;
-            case "SHEIN": ok = sheinClient.markShipped(order.getPlatformOrderNo(), trackingNo); break;
+        switch (order.getPlatform() == null ? "" : order.getPlatform()) {
+            case "TEMU": ok = temuClient.markShipped(order.getPlatformOrderNo(), tracking); break;
+            case "TIKTOK": ok = tiktokClient.markShipped(order.getPlatformOrderNo(), tracking); break;
+            case "SHEIN": ok = sheinClient.markShipped(order.getPlatformOrderNo(), tracking); break;
             default: throw new AttrIsNullException("不支持的平台：" + order.getPlatform());
         }
         if (ok) {
-            order.setTrackingNo(trackingNo);
+            order.setTrackingNo(tracking);
             order.setStatus("SHIPPED");
             unifiedOrderMapper.updateById(order);
         }

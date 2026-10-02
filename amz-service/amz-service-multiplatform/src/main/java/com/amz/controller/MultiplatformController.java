@@ -9,6 +9,7 @@ import com.amz.model.PlatformMessage;
 import com.amz.model.PlatformProduct;
 import com.amz.model.UnifiedOrder;
 import com.amz.model.WebhookEvent;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.impl.MultiplatformServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -204,7 +205,7 @@ public class MultiplatformController {
 
     @ShopScoped
     @PostMapping("/sync/all/{shopId}")
-    public Result<Integer> syncAll(@PathVariable Long shopId) {
+    public Result<MultiplatformServiceImpl.OrderSyncSummary> syncAll(@PathVariable Long shopId) {
         return Result.success(multiplatformService.syncAllPlatforms(shopId));
     }
 
@@ -216,14 +217,18 @@ public class MultiplatformController {
 
     @ShopScoped
     @GetMapping("/order/list/{shopId}")
-    public Result<List<UnifiedOrder>> listOrders(@PathVariable Long shopId) {
-        return Result.success(multiplatformService.listOrders(shopId));
+    public Result<List<UnifiedOrder>> listOrders(@PathVariable Long shopId,
+                                                 @RequestParam(required = false) Integer size,
+                                                 @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listOrders(shopId, PageRequest.of(size, cursor)));
     }
 
     @ShopScoped
     @GetMapping("/order/list/{shopId}/{platform}")
-    public Result<List<UnifiedOrder>> listByPlatform(@PathVariable Long shopId, @PathVariable String platform) {
-        return Result.success(multiplatformService.listByPlatform(shopId, platform));
+    public Result<List<UnifiedOrder>> listByPlatform(@PathVariable Long shopId, @PathVariable String platform,
+                                                     @RequestParam(required = false) Integer size,
+                                                     @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listByPlatform(shopId, platform, PageRequest.of(size, cursor)));
     }
 
     @PostMapping("/order/{orderId}/ship")

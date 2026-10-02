@@ -711,6 +711,22 @@ const AD_BID_SCHEDULES = [
   { id: 93, shopId: 1, campaignId: null, startHour: 7, endHour: 9, multiplier: 1.2, enabled: 1 }
 ]
 
+/** 多平台统一订单：本地表里的行，只有点同步才会去平台拉 */
+const MP_ORDERS = [
+  {
+    id: 61, unifiedOrderNo: 'UO20260930001', platform: 'TEMU', platformOrderNo: 'TE-9001', shopId: 1,
+    buyerNickname: 'Ana', shipCountry: 'US', sku: 'SKU-A', productName: 'Yoga mat', quantity: 2,
+    originalAmount: 25.9, currency: 'USD', cnyAmount: 186.5, status: 'PAID',
+    trackingNo: null, orderCreateTime: '2026-09-30 10:12:00'
+  },
+  {
+    id: 62, unifiedOrderNo: 'UO20260929002', platform: 'SHEIN', platformOrderNo: 'SH-7001', shopId: 1,
+    buyerNickname: 'Kai', shipCountry: 'DE', sku: 'SKU-B', productName: 'Desk lamp', quantity: 1,
+    originalAmount: 12, currency: 'EUR', cnyAmount: 94.2, status: 'SHIPPED',
+    trackingNo: 'TRK-OLD', orderCreateTime: '2026-09-29 18:02:11'
+  }
+]
+
 /**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
@@ -891,6 +907,14 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/ad\/bidSchedule\/\d+\/toggle$/, data: true },
   { match: /^\/ad\/bidSchedule\/\d+$/, data: AD_BID_SCHEDULES[0] },
   { match: /^\/ad\/bidSchedule$/, data: AD_BID_SCHEDULES[0] },
+
+  // ===== 多平台订单 /multiplatform =====
+  // 顺序敏感：按平台的列表要在通用 list/ 之前；ship 要排在 list 之后但不冲突。
+  { match: /^\/multiplatform\/order\/list\/1\/TEMU$/, data: [MP_ORDERS[0]] },
+  { match: /^\/multiplatform\/order\/list\//, data: MP_ORDERS },
+  { match: /^\/multiplatform\/order\/\d+\/ship$/, data: true },
+  { match: /^\/multiplatform\/sync\/all\//, data: { attempted: 3, succeeded: 2, failed: 1, inserted: 2, failedPlatforms: ['TIKTOK'] } },
+  { match: /^\/multiplatform\/sync\/1\/TEMU$/, data: 2 },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

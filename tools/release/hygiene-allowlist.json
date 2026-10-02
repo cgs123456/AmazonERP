@@ -74,7 +74,7 @@
     {
       "path": "amz-frontend/src/router/index.ts",
       "rule": "secret-like-assignment",
-      "sha256": "ae8fd5eacaa8530b6277d6347ac1f6d298c9dbbb2b1576989482aa07d9341921"
+      "sha256": "b0fca3812bd1fa8fdd4c8418b919c288869bec01c9506279cd21aff34a5fb88f"
     },
     {
       "path": "amz-frontend/src/utils/websocket.ts",

@@ -76,4 +76,12 @@ describe('路由守卫鉴权', () => {
     await router.push('/ad-bid-schedule')
     expect(router.currentRoute.value.name).toBe('AdBidSchedule')
   })
+
+  it('多平台订单页有独立路由，且 /multiplatform 不与其它前缀互相吃掉', async () => {
+    localStorage.setItem('token', 'fake-token')
+    await router.push('/multiplatform')
+    expect(router.currentRoute.value.name).toBe('MultiplatformOrders')
+    await router.push('/ad-bid-schedule')
+    expect(router.currentRoute.value.name).toBe('AdBidSchedule')
+  })
 })

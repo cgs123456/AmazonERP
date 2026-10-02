@@ -113,6 +113,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/multiplatform') }"
+        @click="navigateTo('/multiplatform')"
+        role="button"
+        aria-label="多平台订单"
+        tabindex="0"
+      >
+        <Icon icon="mdi:storefront-outline" class="nav-icon" width="24" />
+        <span class="nav-text">多平台订单</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/profit') }"
         @click="navigateTo('/profit')"
         role="button"
