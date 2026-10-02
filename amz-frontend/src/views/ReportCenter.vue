@@ -27,7 +27,7 @@
         </div>
 
         <!-- ==================== 经营概览 ==================== -->
-        <div v-show="tab === 'overview'" class="tab-panel" data-panel="overview">
+        <div v-if="tab === 'overview'" class="tab-panel" data-panel="overview">
           <div v-if="dash" class="kpi-grid">
             <div class="kpi-card">
               <div class="kpi-value">{{ dash.kpi?.totalSales7d ?? '-' }}</div>
@@ -84,7 +84,7 @@
         </div>
 
         <!-- ==================== 利润明细 ==================== -->
-        <div v-show="tab === 'profit'" class="tab-panel" data-panel="profit">
+        <div v-if="tab === 'profit'" class="tab-panel" data-panel="profit">
           <div class="filter-row">
             <label class="filter">ASIN<input v-model="pdAsin" @keyup.enter="loadProfitDetails()" /></label>
             <label class="filter">起<input type="date" v-model="pdStart" /></label>
@@ -180,7 +180,7 @@
         </div>
 
         <!-- ==================== 库存周转与滞销 ==================== -->
-        <div v-show="tab === 'turnover'" class="tab-panel" data-panel="turnover">
+        <div v-if="tab === 'turnover'" class="tab-panel" data-panel="turnover">
           <div class="filter-row">
             <label class="filter">ASIN<input v-model="toAsin" @keyup.enter="loadTurnover" /></label>
             <button class="action-btn" @click="loadTurnover">查询</button>
@@ -252,7 +252,7 @@
         </div>
 
         <!-- ==================== 日销与销售对比 ==================== -->
-        <div v-show="tab === 'sales'" class="tab-panel" data-panel="sales">
+        <div v-if="tab === 'sales'" class="tab-panel" data-panel="sales">
           <div class="filter-row">
             <label class="filter">ASIN<input v-model="sdAsin" @keyup.enter="loadSales" /></label>
             <label class="filter">起<input type="date" v-model="sdStart" /></label>
@@ -304,7 +304,7 @@
         </div>
 
         <!-- ==================== 实时快照与成本分摊 ==================== -->
-        <div v-show="tab === 'snapshot'" class="tab-panel" data-panel="snapshot">
+        <div v-if="tab === 'snapshot'" class="tab-panel" data-panel="snapshot">
           <div class="filter-row">
             <label class="filter">SKU<input v-model="snapSku" @keyup.enter="loadSnapshots()" /></label>
             <label class="filter">起<input type="date" v-model="snapStart" /></label>

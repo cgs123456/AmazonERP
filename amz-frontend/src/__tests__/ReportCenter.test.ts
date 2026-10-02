@@ -257,9 +257,11 @@ describe('ReportCenter 视图（经营报表）', () => {
     await openTab(wrapper, '库存周转与滞销')
     expect(rpt.listTurnover).toHaveBeenCalledWith('900000000000001000', undefined)
     expect(rpt.deadStock).toHaveBeenCalledWith('900000000000001000')
-    expect(wrapper.text()).toContain('滞销 SKU 数')
-    expect(wrapper.text()).toContain('1234.5')
-    expect(wrapper.text()).toContain('800')
+    const panel = wrapper.find('[data-panel="turnover"]')
+    expect(panel.text()).toContain('滞销 SKU 数')
+    // 滞销数字来自专门的 dead-stock 端点，而不是前端从周转表里挑出来的
+    expect(panel.text()).toContain('滞销库存价值')
+    expect(panel.text()).toContain('800')
   })
 
   it('同期对比把上期/本期与增长率并排显示，增长为负时标红', async () => {

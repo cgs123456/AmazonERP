@@ -13,6 +13,11 @@
         请先在右上角选择店铺后再查看财务数据。
       </div>
 
+      <div v-if="errors.length" class="error-zone" role="alert">
+        <Icon icon="mdi:alert-circle-outline" width="16" />
+        <span>{{ errors.join('；') }}</span>
+      </div>
+
       <!-- 维度切换 -->
       <div class="dim-tabs">
         <button v-for="t in TABS" :key="t.key" :class="['dim-tab', { active: tab === t.key }]"
@@ -128,7 +133,7 @@
         </div>
       </div>
       <!-- 回款对账 -->
-      <div v-show="tab === 'collection'" class="tab-panel" data-panel="collection">
+      <div v-if="tab === 'collection'" class="tab-panel" data-panel="collection">
         <div class="filter-bar">
           <select v-model="colStatus" class="filter-select">
             <option value="">全部状态</option>
@@ -136,10 +141,6 @@
           </select>
           <button class="filter-btn" :disabled="col.loading.value" @click="loadCollections(false)">刷新</button>
           <button class="filter-btn" :disabled="busy" @click="confirm(rebuildConfirm)">重算回款</button>
-        </div>
-
-        <div v-if="errors.length" class="truncated-tip" role="alert">
-          {{ errors.join('；') }}
         </div>
 
         <div class="summary-grid">
@@ -198,7 +199,7 @@
       </div>
 
       <!-- 结算原表 -->
-      <div v-show="tab === 'settlement'" class="tab-panel" data-panel="settlement">
+      <div v-if="tab === 'settlement'" class="tab-panel" data-panel="settlement">
         <div class="filter-bar">
           <input v-model="settleOrder" class="filter-date" placeholder="按亚马逊订单号过滤" />
           <button class="filter-btn" :disabled="settle.loading.value" @click="loadSettlements(false)">刷新</button>
@@ -262,7 +263,7 @@
       </div>
 
       <!-- 费用差异 -->
-      <div v-show="tab === 'discrepancy'" class="tab-panel" data-panel="discrepancy">
+      <div v-if="tab === 'discrepancy'" class="tab-panel" data-panel="discrepancy">
         <div class="filter-bar">
           <select v-model="discStatus" class="filter-select">
             <option value="">全部状态</option>
@@ -357,7 +358,7 @@
       </div>
 
       <!-- 亚马逊索赔 -->
-      <div v-show="tab === 'claim'" class="tab-panel" data-panel="claim">
+      <div v-if="tab === 'claim'" class="tab-panel" data-panel="claim">
         <div class="filter-bar">
           <select v-model="claimStatus" class="filter-select">
             <option value="">全部状态</option>
@@ -449,7 +450,7 @@
       </div>
 
       <!-- 单品利润 -->
-      <div v-show="tab === 'skuprofit'" class="tab-panel" data-panel="skuprofit">
+      <div v-if="tab === 'skuprofit'" class="tab-panel" data-panel="skuprofit">
         <div class="filter-bar">
           <input type="date" v-model="spAfter" class="filter-date" />
           <span class="range-sep">至</span>
@@ -518,7 +519,7 @@
       </div>
 
       <!-- VAT 与凭证补数 -->
-      <div v-show="tab === 'tax'" class="tab-panel" data-panel="tax">
+      <div v-if="tab === 'tax'" class="tab-panel" data-panel="tax">
         <div class="table-card">
           <div class="panel-title">VAT 试算</div>
           <div class="filter-bar">
@@ -1295,6 +1296,7 @@ onMounted(() => {
 .profit-negative { color: var(--color-error); font-weight: 600; }
 /* 零利润中性展示，避免误读为亏损 */
 .profit-flat { color: var(--color-muted); font-weight: 600; }
+.error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 .truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
 .profit-note { padding: 0.75rem 1rem; background: var(--color-surface); color: var(--color-muted); border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }
 
