@@ -314,7 +314,7 @@
     {
       "path": "tools/db-migration/ad_v7_preflight.py",
       "rule": "secret-like-assignment",
-      "sha256": "00f9c5b0970b8b5027c3bd5a8f7df342d5ee8e8d88ac0c66e381ee2bcf8635e0"
+      "sha256": "fb90a896461b461909146677da0143cf79309c6b46a61412feaafa53054db4f7"
     },
     {
       "path": "tools/synthetic-data/ddl_parser.py",

@@ -66,7 +66,12 @@ TARGET_VERSION = '7'
 
 # 业务唯一键的规范化表达式，必须与 V7__ad_business_uniqueness.sql 完全一致，
 # 否则预检判定的"重复组"与 V7 真正会归并的组不是同一批。
-KW_KEY = ("shop_id, campaign_id, LOWER(TRIM(keyword)), "
+# 这三组表达式必须与 V7 **第一步**的规范化 UPDATE 逐列一致（由 test_ad_v7_preflight 里
+# 的 test_group_keys_match_v7_step1_normalizations 直接从迁移 SQL 解析比对）：
+# V7 先做规范化再按业务键合并去重，预检若少一个表达式
+# （历史上少的是 TRIM(campaign_id)），就会把被该步折叠掉的重复行漏算，
+# 让"将物理删除约 N 行"变成低估。
+KW_KEY = ("shop_id, TRIM(campaign_id), LOWER(TRIM(keyword)), "
           "UPPER(TRIM(COALESCE(NULLIF(match_type, ''), 'EXACT')))")
 CT_KEY = "shop_id, TRIM(COALESCE(campaign_id, '')), LOWER(TRIM(search_term))"
 AK_KEY = "shop_id, UPPER(TRIM(asin)), LOWER(TRIM(keyword))"
