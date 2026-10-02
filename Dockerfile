@@ -55,7 +55,12 @@ COPY amz-service/amz-service-finance/pom.xml ./amz-service/amz-service-finance/
 COPY amz-service/amz-service-multiplatform/pom.xml ./amz-service/amz-service-multiplatform/
 
 # 下载依赖（失败不阻断，下次构建会复用 .m2 缓存）
-RUN mvn -B -q dependency:go-offline -Dmaven.test.skip=true || true
+# 依赖缓存挂载：镜像构建每次都要把整个依赖树重新下一遍，实测本机（Windows + Docker Desktop）
+# 在密集传输时会把连接切断 —— order 镜像连续两次失败在不同构件上
+# （byte-buddy-agent:1.17.8 → httpcore5:5.4.3，均为 Could not transfer artifact ... Remotely closed），
+# 第三次重试才过。挂 /root/.m2 让同一台构建机上后续构建复用已下载的构件，
+# 把"网络抖一下整个镜像就白跑十几分钟"变成只在首次冷构建时承担风险。
+RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline -Dmaven.test.skip=true || true
 
 # 拷贝源码
 COPY amz-common/src ./amz-common/src
@@ -63,7 +68,7 @@ COPY amz-gateway/src ./amz-gateway/src
 COPY amz-service ./amz-service
 
 # 编译打包目标模块及其依赖（跳过测试，CI 已在 test 阶段执行）
-RUN mvn -B -q clean package -DskipTests -pl ${MODULE} -am
+RUN --mount=type=cache,target=/root/.m2 mvn -B -q clean package -DskipTests -pl ${MODULE} -am
 
 # ---------- Stage 1.5: Skywalking Java Agent 下载 ----------
 # 注：dlcdn 镜像不含旧版 Java Agent，改用 Apache Archive 官方存档

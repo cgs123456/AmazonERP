@@ -392,3 +392,30 @@ fail-fast 语义（`baseline-on-migrate: false`，存量库无 history 必须炸
 那与本轮一直在清的那类假绿是同一件事。记为观察项：本机（Windows + Docker Desktop 端口代理）
 在密集短连接下会给 MySQL JDBC 造成瞬时 link failure，CI 里 mysql 与 job 同网络命名空间，
 路径不同；若 CI 出现同样红灯，应按环境故障处理而不是改断言。
+
+## 13. 镜像构建的依赖传输抖动：加缓存挂载（含冷/热实测）
+
+推送后回到 §11 记下但没动的那条观察：order 镜像**未加挂载时连续两次构建失败**，
+且失败在**不同**构件上（`byte-buddy-agent:1.17.8` → `httpcore5:5.4.3`，都是
+`Could not transfer artifact ... Remotely closed`），第三次重试才通过。根因是每次构建都要
+把 19 个模块的整棵依赖树重新拉一遍，密集传输容易被切断，一次抖动 = 白跑十几分钟。
+
+改法：Dockerfile 两条 Maven 命令都挂 `--mount=type=cache,target=/root/.m2`。
+本机实测（同一台机器、同一个 Docker）：
+
+| 场景 | 结果 |
+|---|---|
+| 冷缓存（挂载为空，首次） | `rc=0`，**734s** |
+| 热缓存，换 MODULE 逼 `package` 步骤重跑 | `rc=0`，**45s**，无 transfer 失败 |
+
+两点如实标注的限制：
+- 命令带 `mvn -q`，日志不会出现下载行，所以判据是耗时与失败次数，**不能拿"下载行数=0"当证据**
+  （我先这么量过一次，数字是 0，但那只是 `-q` 的效果）；
+- GitHub runner 是全新机器、BuildKit 缓存不跨 run 保留，所以**CI 侧永远是冷路径**，
+  这条改动对 CI 只是等价而非加速；真正的收益在本机与任何复用同一 BuildKit 缓存的构建机上。
+  CI 的 docker job 会真跑一次冷构建，作为回归验证。
+
+另外两条防回归：`DockerfileBuildCacheContractTest` 钉住两条 mvn 步骤都带挂载
+（扫到 mvn 步骤数 ≠ 2 直接红，避免"空泛成立"），且钉住挂载只出现在构建阶段、
+不得烘进最终镜像层；实测去掉一处挂载 → 用例点名该行变红。
+镜像内容复核：`._*` 垃圾 0、真插件 153、`app.jar` 在位、最终层里没有 `/root/.m2`。
