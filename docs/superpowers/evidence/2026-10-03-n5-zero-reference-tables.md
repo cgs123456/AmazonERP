@@ -97,3 +97,22 @@ python tools/schema/zero_reference_tables.py --json docs/superpowers/evidence/20
 `vue-tsc` 0 错；前端 30 文件 / 291 测试；build 出 `WarehouseAlerts` 分块；hygiene 0 finding
 （router 重钉 `43fc90cf…`）。变异 4 项：不可判定类型不标注、空 SKU 不再转 null、
 立即检查绕过确认、截断不提示 → 全部抓红后复原核对 sha。
+
+## 追加二：接上连接器队列（outbox / replay / rate-limits）
+
+清点里第二块待接候选：`/spapi/connectors/outbox`、`outbox/{id}/replay`、`rate-limits`——
+「同步失败以后怎么办」的唯一现场此前只能 curl。新增 `/connector-queue`（发件箱 + 限流观测两分区）。
+
+三条写进界面的判读边界：本页不看右上角店铺选择（列表由 token 里的授权店铺过滤，非 ADMIN 且无授权店铺时
+后端直接拒，只有 ADMIN 的空 shops 才当全局）；**自动重放只碰 GET/HEAD，人工点「重放」按记录原方法重发**，
+POST/PUT/PATCH/DELETE 可能有远端副作用，所以二次确认里按方法分成两种措辞并展示原请求的方法与路径；
+outbox 未启用时后端返回失败而不是空列表，因此空态文案明说「这是查询结果，不代表 outbox 未启用」。
+另外重放失败后的列表刷新不能顺手清空错误条，否则「重放未成功」这条信息会一闪而过。
+
+清点重跑（修正后的工具，见下）：**待接候选 94**，另有 8 条经网关别名判定为已接。
+
+清点工具自己也在这一步被证伪第三次：第一版加「去掉首段再比」的网关别名规则时，
+把 `/ad/report/{shopId}` 当成 `/report/{shopId}` 命中了——那是报表服务的同名路径，
+等于工具自己造绿灯。现在只认显式别名表（`/spapi/connectors`→`/connectors`、
+`/spapi/preflight`→`/preflight`、`/spapi/credentials`→`/credentials`，与 vite 代理一致），
+并单独打印「经别名判定为已接」的 8 条供复核，不与直接命中混在一起。

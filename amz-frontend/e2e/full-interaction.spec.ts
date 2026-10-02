@@ -39,6 +39,8 @@ const NAV = [
   { path: '/selection', linkText: '选品分析' },
   { path: '/search', linkText: '商品搜索' },
   { path: '/procurement', linkText: '采购供应链' },
+  { path: '/connectors', linkText: '连接器状态' },
+  { path: '/connector-queue', linkText: '调用队列' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -609,6 +611,53 @@ test.describe('WarehouseAlerts 交互（海外仓库存与预警）', () => {
     await expect(panel).toContainText('SKU-WH-01')
     await expect(panel.locator('.advisory')).toContainText('不是全量')
     expect(checks).toEqual(['GET'])
+  })
+})
+
+test.describe('ConnectorQueue 交互（调用队列与限流）', () => {
+  test('发件箱按状态与方法标注，页面说明人工重放的后果', async ({ page }) => {
+    await page.goto('/connector-queue')
+    const panel = page.locator('.tab-panel[data-panel="outbox"]')
+    await expect(panel.locator('tbody tr')).toHaveCount(3)
+    await expect(panel).toContainText('DLQ')
+    await expect(panel).toContainText('RATE_LIMITED')
+    await expect(panel.locator('tr', { hasText: '/feeds/2021-06-30/documents' })).toContainText('POST')
+    await expect(page.locator('.notice-zone')).toContainText('人工点「重放」会按记录原方法重发')
+    await expect(page.locator('.notice-zone')).toContainText('不看右上角店铺')
+  })
+
+  test('状态筛选真的带到后端，而不是前端过滤', async ({ page }) => {
+    const urls: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/connectors/outbox') urls.push(decodeURIComponent(r.url()))
+    })
+    await page.goto('/connector-queue')
+    await expect(page.locator('.tab-panel[data-panel="outbox"] tbody tr')).toHaveCount(3)
+    await page.locator('.tab-panel[data-panel="outbox"] select').first().selectOption('DLQ')
+    await expect.poll(() => urls.length).toBe(2)
+    expect(urls[1]).toContain('status=DLQ')
+    expect(urls[0]).not.toContain('status=')
+  })
+
+  test('重放要二次确认，确认后才发 POST 并刷新列表', async ({ page }) => {
+    const replays: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/connectors/outbox/901/replay') replays.push(r.method())
+    })
+    await page.goto('/connector-queue')
+    // 表里显示的是方法与路径（operationId 没有列），按路径定位那一行
+    const row = page.locator('tbody tr', { hasText: '/feeds/2021-06-30/documents' }).first()
+    await row.locator('button', { hasText: '重放' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('可能在平台侧产生真实副作用')
+    expect(replays).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    expect(replays).toEqual([])
+
+    await row.locator('button', { hasText: '重放' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => replays.length).toBe(1)
+    expect(replays[0]).toBe('POST')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
   })
 })
 

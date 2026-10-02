@@ -612,6 +612,37 @@ const ALERT_CHECK_REPORT = {
 }
 
 /**
+ * SP-API 发件箱与限流观测（网关别名 /connectors/**）。
+ * 桩里故意放三条不同状态：DLQ 一条（写方法 POST）、FAILED 一条（读方法 GET）、SUCCEEDED 一条，
+ * 用来断言页面把「写方法重放有远端副作用」与「读方法只是再问一次」分开表述。
+ */
+const CONNECTOR_OUTBOX = [
+  {
+    id: 901, shopId: 1, operationId: 'createFeedDocument', httpMethod: 'POST',
+    requestPath: '/feeds/2021-06-30/documents', status: 'DLQ', attemptCount: 5, maxAttempts: 5,
+    responseStatus: 429, marketplaceId: 'ATVPDKIKX0DER', lastErrorCode: 'RATE_LIMITED',
+    lastErrorMessage: 'Too Many Requests', createdAt: '2026-10-01T09:00:00'
+  },
+  {
+    id: 902, shopId: 1, operationId: 'getOrders', httpMethod: 'GET',
+    requestPath: '/orders?CreatedAfter=2026-09-01', status: 'FAILED', attemptCount: 2, maxAttempts: 5,
+    responseStatus: 500, lastErrorCode: null, lastErrorMessage: 'upstream boom',
+    createdAt: '2026-10-01T10:00:00'
+  },
+  {
+    id: 903, shopId: 1, operationId: 'getOrders', httpMethod: 'GET',
+    requestPath: '/orders?CreatedAfter=2026-09-02', status: 'SUCCEEDED', attemptCount: 1, maxAttempts: 5,
+    responseStatus: 200, lastErrorCode: null, lastErrorMessage: null, createdAt: '2026-10-01T11:00:00'
+  }
+]
+const CONNECTOR_RATE_LIMITS = [
+  {
+    shopId: 1, operationId: 'getOrders', variant: 'default', headerValue: '5;rate=0.45;burst=30',
+    observedRatePerSecond: 0.45, effectiveRatePerSecond: 0.4, burst: 30, observedAt: '2026-10-01T12:00:00Z'
+  }
+]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -758,6 +789,11 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/logistics\/warehouse\/alert\/list\//, data: INVENTORY_ALERTS },
   { match: /^\/logistics\/warehouse\/alert\/\d+\/toggle$/, data: true },
   { match: /^\/logistics\/warehouse\/alert$/, data: INVENTORY_ALERTS[0] },
+
+  // ===== 连接器队列 /connectors（outbox + rate-limits） =====
+  { match: /^\/connectors\/outbox\/\d+\/replay$/, data: { success: true, outcome: 'REPLAYED', status: 'SUCCEEDED', message: null } },
+  { match: /^\/connectors\/outbox$/, data: CONNECTOR_OUTBOX },
+  { match: /^\/connectors\/rate-limits$/, data: CONNECTOR_RATE_LIMITS },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

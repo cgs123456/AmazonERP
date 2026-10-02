@@ -190,6 +190,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/connector-queue') }"
+        @click="navigateTo('/connector-queue')"
+        role="button"
+        aria-label="调用队列"
+        tabindex="0"
+      >
+        <Icon icon="mdi:queue-right" class="nav-icon" width="24" />
+        <span class="nav-text">调用队列</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/notifications') }"
         @click="navigateTo('/notifications')"
         role="button"

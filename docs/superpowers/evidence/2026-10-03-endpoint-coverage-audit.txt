@@ -137,12 +137,7 @@ amz                    ReportUpgradeController.java          12
 amz                    HistoryController.java                 2
 amz                    HotController.java                     1
 amz                    SearchController.java                  1
-amz                    ConnectorController.java               5  <-- 5 missing
-        [user-facing-candidate] GET /spapi/connectors/rate-limits
-        [user-facing-candidate] GET /spapi/connectors/outbox
-        [user-facing-candidate] POST /spapi/connectors/outbox/{id}/replay
-        [user-facing-candidate] GET /spapi/connectors/{code}
-        [user-facing-candidate] POST /spapi/connectors/{code}/self-test
+amz                    ConnectorController.java               5
 amz                    FeedsController.java                   3  <-- 3 missing
         [user-facing-candidate] POST /spapi/feeds/submit
         [internal-access] GET /spapi/feeds/status/{shopId}/{feedId}
@@ -159,17 +154,13 @@ amz                    MessagingController.java               3  <-- 3 missing
         [user-facing-candidate] GET /spapi/messaging/actions
         [user-facing-candidate] GET /spapi/messaging/attributes
         [user-facing-candidate] POST /spapi/messaging/send
-amz                    PreflightController.java               1  <-- 1 missing
-        [user-facing-candidate] POST /spapi/preflight/shop/{shopId}
+amz                    PreflightController.java               1
 amz                    ReplenishmentController.java           3  <-- 2 missing
         [user-facing-candidate] POST /spapi/replenish/calc/{shopId}
         [user-facing-candidate] GET /spapi/replenish/urgent/{shopId}
 amz                    SellersController.java                 1  <-- 1 missing
         [user-facing-candidate] GET /spapi/sellers/marketplace-participations
-amz                    ShopCredentialController.java          3  <-- 3 missing
-        [user-facing-candidate] GET /spapi/credentials/shop/{shopId}/status
-        [user-facing-candidate] PUT /spapi/credentials/shop/{shopId}
-        [user-facing-candidate] DELETE /spapi/credentials/shop/{shopId}
+amz                    ShopCredentialController.java          3
 amz                    SpapiController.java                   6  <-- 4 missing
         [user-facing-candidate] GET /spapi/status
         [user-facing-candidate] POST /spapi/credential
@@ -182,7 +173,16 @@ amz                    UserController.java                    4  <-- 3 missing
         [has-feign-caller] GET /user/getUserById/{userId}
         [user-facing-candidate] POST /user/updateImage
         [user-facing-candidate] PUT /user/editInfo
-controllers=59 endpoints_without_a_frontend_name=124 user_facing_candidates=103
+controllers=59 endpoints_without_a_frontend_name=115 user_facing_candidates=94
+matched_via_gateway_alias=8
+   /spapi/connectors/rate-limits  <- 前端写作 /connectors/rate-limits
+   /spapi/connectors/outbox  <- 前端写作 /connectors/outbox
+   /spapi/connectors/outbox/{id}/replay  <- 前端写作 /connectors/outbox/{id}/replay
+   /spapi/connectors/{code}/self-test  <- 前端写作 /connectors/{code}/self-test
+   /spapi/preflight/shop/{shopId}  <- 前端写作 /preflight/shop/{shopId}
+   /spapi/credentials/shop/{shopId}/status  <- 前端写作 /credentials/shop/{shopId}/status
+   /spapi/credentials/shop/{shopId}  <- 前端写作 /credentials/shop/{shopId}
+   /spapi/credentials/shop/{shopId}  <- 前端写作 /credentials/shop/{shopId}
 
 ==== 待接候选（既没有 @InternalServiceAccess，也没有任何 Feign 客户端指向它）====
   amz            AdController.java                  GET /ad/report/{shopId}
@@ -263,11 +263,6 @@ controllers=59 endpoints_without_a_frontend_name=124 user_facing_candidates=103
   amz            ProductController.java             GET /product/getProductList
   amz            ProductController.java             GET /product/getProductsByShop/{productId}
   amz            ProductController.java             POST /product/postProduct
-  amz            ConnectorController.java           GET /spapi/connectors/rate-limits
-  amz            ConnectorController.java           GET /spapi/connectors/outbox
-  amz            ConnectorController.java           POST /spapi/connectors/outbox/{id}/replay
-  amz            ConnectorController.java           GET /spapi/connectors/{code}
-  amz            ConnectorController.java           POST /spapi/connectors/{code}/self-test
   amz            FeedsController.java               POST /spapi/feeds/submit
   amz            FinancialDataController.java       POST /spapi/finance/report/request
   amz            FinancialDataController.java       POST /spapi/finance/fees/estimate
@@ -275,13 +270,9 @@ controllers=59 endpoints_without_a_frontend_name=124 user_facing_candidates=103
   amz            MessagingController.java           GET /spapi/messaging/actions
   amz            MessagingController.java           GET /spapi/messaging/attributes
   amz            MessagingController.java           POST /spapi/messaging/send
-  amz            PreflightController.java           POST /spapi/preflight/shop/{shopId}
   amz            ReplenishmentController.java       POST /spapi/replenish/calc/{shopId}
   amz            ReplenishmentController.java       GET /spapi/replenish/urgent/{shopId}
   amz            SellersController.java             GET /spapi/sellers/marketplace-participations
-  amz            ShopCredentialController.java      GET /spapi/credentials/shop/{shopId}/status
-  amz            ShopCredentialController.java      PUT /spapi/credentials/shop/{shopId}
-  amz            ShopCredentialController.java      DELETE /spapi/credentials/shop/{shopId}
   amz            SpapiController.java               GET /spapi/status
   amz            SpapiController.java               POST /spapi/credential
   amz            SpapiController.java               POST /spapi/sync/orders
