@@ -42,9 +42,12 @@ public class ListingMonitorController {
                                               @RequestParam(required = false) String description,
                                               @RequestParam(required = false) Integer imageCount,
                                               @RequestParam(required = false) String searchTerms,
-                                              @RequestParam(required = false) String status) {
+                                              @RequestParam(required = false) String status,
+                                              @RequestParam(required = false) Boolean aplus) {
+        // 这是「人工登记一次自查」：所有判定项都来自调用方填的内容，服务并没有去读 Listing 本体，
+        // A+ 不给值就记为未知（原先无条件写成正常）。
         return Result.success(listingMonitorService.checkListing(shopId, asin, title, bullets,
-                description, imageCount, searchTerms, status));
+                description, imageCount, searchTerms, status, aplus));
     }
 
     /** 查询 Listing 健康度列表 */

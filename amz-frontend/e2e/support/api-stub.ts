@@ -835,6 +835,60 @@ const MP_SECRET_ISSUE = { appId: 71, appKey: 'ak-issued-e2e', appSecret: 'sk-iss
  * 运营预警台数据。告警行的 create_time 由数据库默认值写入，所以其中一行刻意留 null，
  * 页面必须显示「未记录」而不是补一个看起来像的时间。
  */
+// Listing 监控台：概览是聚合对象、列表是分页数组，趋势/对比是带 null 的视图对象。
+// 排名点里刻意放了 null：页面必须显示 —，补成 0 在排名语义里等于「比第一名还好」。
+const LM_SUMMARY = {
+  total: 2, ok: 1, warning: 0, critical: 1, avgScore: 69.0, healthRate: 50.0,
+  worstListings: [{ asin: 'B000026108', score: 20, severity: 'CRITICAL', reason: '标题长度需80-200字符' }]
+}
+const LM_HEALTH = [
+  {
+    id: 71, shopId: 1, asin: 'B000026108', sku: 'SKU-1108', status: 'ACTIVE',
+    titleOk: false, bulletPointsOk: true, descriptionOk: true, aplusOk: null, imagesOk: true,
+    searchTermsOk: true, suppressedReason: '标题长度需80-200字符; A+内容未检查',
+    healthScore: 20, severity: 'CRITICAL', checkTime: '2026-10-01T10:00:00'
+  },
+  {
+    id: 72, shopId: 1, asin: 'B000026109', sku: 'SKU-1109', status: 'ACTIVE',
+    titleOk: true, bulletPointsOk: true, descriptionOk: true, aplusOk: true, imagesOk: true,
+    searchTermsOk: true, suppressedReason: null, healthScore: 100, severity: 'OK',
+    checkTime: '2026-10-01T10:00:00'
+  }
+]
+const LM_RANKINGS = [
+  { id: 1, shopId: 1, asin: 'B00000000001', keyword: 'yoga mat', organicRank: 7, adRank: 3, searchVolume: 60500, rankDate: '2026-09-30' }
+]
+const LM_COMPETITORS = [
+  { id: 1, shopId: 1, competitorAsin: 'B0COMPET01', competitorTitle: 'Competitor yoga mat', price: 25.99, bsRank: 88, reviewCount: 4120, reviewRating: 4.4, inStock: true, snapshotDate: '2026-10-01' }
+]
+const LM_BUYBOX = [
+  { id: 1, shopId: 1, asin: 'B00000000001', sellerId: 'A2SELLER', isSelf: true, buyboxPrice: 23.5, ourPrice: 23.49, priceGap: -0.01, fulfillmentType: 'FBA', ownershipPct: 62.5, snapshotTime: '2026-10-02T08:30:02' }
+]
+const LM_CHANGELOGS = [
+  { id: 1, shopId: 1, asin: 'B00000000001', field: 'price', oldValue: '25.99', newValue: '23.99', changeTime: '2026-10-01T09:00:00' }
+]
+const LM_MASTERS = [
+  { id: 1, shopId: 1, sku: 'MASTER-1', asin: 'B0MASTER001', marketplaceId: 'ATVPDKIKX0DER', title: '瑜伽垫 6mm', brand: 'Akman', sizeTier: 'SMALL_LIGHT', weightG: 900, status: 'ACTIVE' }
+]
+const LM_TREND = {
+  shopId: 1, asin: 'B00000000001', days: 30, truncated: false,
+  keywords: {
+    'yoga mat': [
+      { date: '2026-09-29', organicRank: null, adRank: 12 },
+      { date: '2026-09-30', organicRank: 7, adRank: null }
+    ]
+  }
+}
+const LM_COMPARE = {
+  shopId: 1, myAsin: 'B0MINE00001', competitorAsin: 'B0COMPET01', days: 30,
+  ownAsinCompared: false, truncated: false,
+  latest: { competitorAsin: 'B0COMPET01', price: 25.99, bsRank: 88, reviewCount: 4120, reviewRating: 4.4, snapshotDate: '2026-10-01' },
+  trendData: [
+    { date: '2026-09-30', price: 25.99, bsRank: 88, reviewCount: 4120, reviewRating: 4.4, inStock: true, hasCoupon: null, hasDeal: false }
+  ]
+}
+const LM_CHECK_RESULT = LM_HEALTH[0]
+
 const OPS_REVIEWS = [
   {
     id: 81, shopId: 1, asin: 'B0REVIEW01', reviewId: 'R1001', rating: 1,
@@ -1059,6 +1113,19 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/multiplatform\/order\/\d+\/ship$/, data: true },
   { match: /^\/multiplatform\/sync\/all\//, data: { attempted: 3, succeeded: 2, failed: 1, inserted: 2, failedPlatforms: ['TIKTOK'] } },
   { match: /^\/multiplatform\/sync\/1\/TEMU$/, data: 2 },
+
+  // ===== Listing 监控台 /listings（读快照 + 人工登记 + 趋势 / 对比）=====
+  // 顺序敏感：trend / compare / check 都要排在各自的通用 list/ 之前。
+  { match: /^\/product\/listing-monitor\/health\/summary\//, data: LM_SUMMARY },
+  { match: /^\/product\/listing-monitor\/health\/check$/, data: LM_CHECK_RESULT },
+  { match: /^\/product\/listing-monitor\/health\/list\//, data: LM_HEALTH, page: FULL_PAGE(LM_HEALTH.length) },
+  { match: /^\/product\/listing-monitor\/ranking\/trend\//, data: LM_TREND },
+  { match: /^\/product\/listing-monitor\/ranking\/list\//, data: LM_RANKINGS, page: FULL_PAGE(LM_RANKINGS.length) },
+  { match: /^\/product\/listing-monitor\/competitor\/compare\//, data: LM_COMPARE },
+  { match: /^\/product\/listing-monitor\/competitor\/list\//, data: LM_COMPETITORS, page: FULL_PAGE(LM_COMPETITORS.length) },
+  { match: /^\/product\/listing-monitor\/buybox\/list\//, data: LM_BUYBOX, page: FULL_PAGE(LM_BUYBOX.length) },
+  { match: /^\/product\/listing-monitor\/change-log\/list\//, data: LM_CHANGELOGS, page: FULL_PAGE(LM_CHANGELOGS.length) },
+  { match: /^\/product\/master\/list\//, data: LM_MASTERS, page: FULL_PAGE(LM_MASTERS.length) },
 
   // ===== 多平台运营台 /multiplatform-ops =====
   // 顺序敏感：oauth app 的 list 要排在 /oauth/app 之前，否则列表会拿到一次性密钥对象；

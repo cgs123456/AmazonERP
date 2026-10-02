@@ -15,13 +15,17 @@ vi.mock('@/api/listing', async () => {
     estimateFees: vi.fn(),
     listMaster: vi.fn(),
     createMaster: vi.fn(),
-    updateMaster: vi.fn()
+    updateMaster: vi.fn(),
+    runListingCheck: vi.fn(),
+    getRankingTrend: vi.fn(),
+    compareCompetitors: vi.fn()
   }
 })
 
 import {
   getListingSummary, getListingHealthList, getRankings, getCompetitors,
-  getBuyBoxList, getChangeLogs, estimateFees, listMaster, createMaster, updateMaster
+  getBuyBoxList, getChangeLogs, estimateFees, listMaster, createMaster, updateMaster,
+  runListingCheck, getRankingTrend, compareCompetitors
 } from '@/api/listing'
 
 const ok = <T,>(data: T) => ({ code: 200, message: '操作成功', data, _hiddenFields: null }) as any
@@ -226,5 +230,158 @@ describe('ListingMonitor 视图（商品与 Listing）', () => {
 
     expect(estimateFees).toHaveBeenCalledWith({ asin: 'B00000000001' })
     expect(wrapper.find('.fee-result').text()).toContain('feeTotal')
+  })
+
+  // ==================== 7i：人工自查 / 趋势 / 竞品对比 ====================
+  const CHECK_RESULT = ok({
+    id: 71, shopId: 900000000000001000, asin: 'B0NEWASIN', sku: null, status: 'ACTIVE',
+    titleOk: false, bulletPointsOk: false, descriptionOk: false, aplusOk: null, imagesOk: false,
+    searchTermsOk: false, suppressedReason: '标题长度需80-200字符; A+内容未检查',
+    healthScore: 20, severity: 'CRITICAL', checkTime: '2026-10-03T10:00:00'
+  })
+
+  const TREND = ok({
+    shopId: 900000000000001000, asin: 'B00000000001', days: 30, truncated: false,
+    keywords: {
+      'yoga mat': [
+        { date: '2026-09-30', organicRank: 7, adRank: null },
+        { date: '2026-09-29', organicRank: null, adRank: 12 }
+      ]
+    }
+  })
+
+  it('人工自查：ASIN 没填不能提交，提交带的是我填的判定项，A+ 未检查要如实显示', async () => {
+    happyPath()
+    vi.mocked(runListingCheck).mockResolvedValue(CHECK_RESULT)
+    const wrapper = mount(ListingMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    const panel = wrapper.find('[data-panel="check"]')
+    expect(panel.text()).toContain('会写入健康度表')
+    expect(panel.find('.action-btn').attributes('disabled')).toBeDefined()
+
+    await panel.find('input').setValue('B0NEWASIN')
+    const inputs = panel.findAll('input')
+    await inputs[1].setValue('8')                      // 图片张数（面板里第一个 number 输入）
+    await inputs[2].setValue('x'.repeat(90))           // 标题原文
+    // 五点必须能带换行：单行 input 会把换行吃掉，后端的「≥5 条」就会误判
+    await panel.find('textarea').setValue('a\nb\nc\nd\ne')
+    const selects = panel.findAll('select')
+    await selects[0].setValue('ACTIVE')               // Listing 状态
+    await selects[1].setValue('')                     // A+ 保持未检查
+    await panel.find('.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(runListingCheck).toHaveBeenCalledWith(
+      '900000000000001000', 'B0NEWASIN',
+      expect.objectContaining({ imageCount: 8, status: 'ACTIVE', aplus: null })
+    )
+    const sent = vi.mocked(runListingCheck).mock.calls[0][2]
+    expect('title' in sent).toBe(true)
+    expect(sent.bullets).toBe('a\nb\nc\nd\ne')
+    // 结果区：分数、严重度、以及「这一项没参与判定」
+    const result = wrapper.find('.check-result').text()
+    expect(result).toContain('20')
+    expect(result).toContain('CRITICAL')
+    expect(result).toContain('未检查')
+    // 写库之后必须重算列表与概览
+    expect(vi.mocked(getListingHealthList).mock.calls.length).toBe(2)
+    expect(vi.mocked(getListingSummary).mock.calls.length).toBe(2)
+  })
+
+  it('自查被后端拒绝时把原因留在错误区，也不刷新成「好像登记过了」', async () => {
+    happyPath()
+    vi.mocked(runListingCheck).mockResolvedValue({ code: 400, message: '无权访问该店铺', data: null } as any)
+    const wrapper = mount(ListingMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    const panel = wrapper.find('[data-panel="check"]')
+    await panel.find('input').setValue('B0NEWASIN')
+    await panel.find('.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.error-zone').text()).toContain('登记自查')
+    expect(wrapper.find('.error-zone').text()).toContain('无权访问该店铺')
+    expect(wrapper.find('.check-result').exists()).toBe(false)
+    expect(vi.mocked(getListingHealthList).mock.calls.length).toBe(1)
+  })
+
+  it('排名趋势：按 asin+keyword+days 查，缺失的排名显示 — 而不是 0', async () => {
+    happyPath()
+    vi.mocked(getRankingTrend).mockResolvedValue(TREND)
+    const wrapper = mount(ListingMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    await wrapper.findAll('.tab')[1].trigger('click')
+    const panel = wrapper.find('[data-panel="trend"]')
+    expect(panel.find('.action-btn').attributes('disabled')).toBeDefined()
+    await panel.findAll('input')[0].setValue('B00000000001')
+    await panel.findAll('input')[1].setValue('yoga mat')
+    await panel.find('.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(getRankingTrend).toHaveBeenCalledWith('900000000000001000', 'B00000000001', 'yoga mat', 30)
+    const text = panel.text()
+    expect(text).toContain('yoga mat · 2 个点')
+    expect(text).not.toContain('命中后端单读上限')
+    // 必须逐格断言：整段文本里「—」会因为另一列也存在而恒真，
+    // 补成 0 的那一格就永远抓不到（第一轮变异就是这样漏掉的）
+    const first = panel.findAll('tbody tr')[0].findAll('td')
+    expect(first[0].text()).toBe('2026-09-30')
+    expect(first[1].text()).toBe('7')
+    expect(first[2].text()).toBe('—')
+    const second = panel.findAll('tbody tr')[1].findAll('td')
+    expect(second[1].text()).toBe('—')
+    expect(second[2].text()).toBe('12')
+  })
+
+  it('趋势：命中上限要说明只是窗口内的点；空关键词组说清是没采集', async () => {
+    happyPath()
+    vi.mocked(getRankingTrend).mockResolvedValue(ok({
+      shopId: 1, asin: 'B00000000009', days: 90, truncated: true, keywords: {}
+    }))
+    const wrapper = mount(ListingMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    await wrapper.findAll('.tab')[1].trigger('click')
+    const panel = wrapper.find('[data-panel="trend"]')
+    await panel.findAll('input')[0].setValue('B00000000009')
+    await panel.find('.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(panel.text()).toContain('没有排名快照')
+    expect(panel.text()).toContain('空不等于「没有排名」')
+    // 关键词留空时不能把 days 之外多塞一个空参数
+    expect(getRankingTrend).toHaveBeenCalledWith('900000000000001000', 'B00000000009', undefined, 30)
+  })
+
+  it('竞品对比：明说只查了竞品一侧，三态列不能把未知画成「否」', async () => {
+    happyPath()
+    vi.mocked(compareCompetitors).mockResolvedValue(ok({
+      shopId: 1, myAsin: 'B0MINE00001', competitorAsin: 'B0COMPET01', days: 30,
+      ownAsinCompared: false, truncated: false,
+      latest: { competitorAsin: 'B0COMPET01', price: 25.99, bsRank: 88, reviewCount: 4120, reviewRating: 4.4, snapshotDate: '2026-10-01' },
+      trendData: [
+        { date: '2026-09-30', price: 25.99, bsRank: 88, reviewCount: 4120, reviewRating: 4.4, inStock: true, hasCoupon: null, hasDeal: false }
+      ]
+    }))
+    const wrapper = mount(ListingMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    await wrapper.findAll('.tab')[2].trigger('click')
+    const panel = wrapper.find('[data-panel="compare"]')
+    await panel.findAll('input')[1].setValue('B0COMPET01')
+    await panel.find('.action-btn').trigger('click')
+    await flushPromises()
+
+    expect(compareCompetitors).toHaveBeenCalledWith('900000000000001000', '-', 'B0COMPET01', 30)
+    const text = panel.text()
+    expect(text).toContain('不是「并排对比」')
+    expect(text).toContain('2026-10-01')
+    const row = panel.findAll('tbody tr')[0].text()
+    expect(row).toContain('是')
+    expect(row).toContain('—')
+    expect(row).toContain('否')
+    expect(wrapper.find('.error-zone').exists()).toBe(false)
   })
 })

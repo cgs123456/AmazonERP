@@ -102,7 +102,66 @@
           </div>
         </div>
 
-        <!-- 关键词排名 -->
+        <!-- 人工登记一次自查：后端不读 Listing 本体，判定项全部来自这里填的内容，
+             而且每次提交都会把结果 upsert 进健康度表（所以标题里就写明会写库） -->
+        <div v-if="tab === 'health'" class="table-card" data-panel="check">
+          <h3 class="card-title">人工登记一次自查（会写入健康度表，同一 ASIN 只留一行）</h3>
+          <div class="filter-row">
+            <label class="filter">ASIN *<input v-model="checkForm.asin" placeholder="B0TRENDFIX" /></label>
+            <label class="filter">Listing 状态
+              <select v-model="checkForm.status">
+                <option value="">未提供</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="INACTIVE">INACTIVE</option>
+                <option value="SUPPRESSED">SUPPRESSED</option>
+              </select>
+            </label>
+            <label class="filter">图片张数<input v-model="checkForm.imageCount" type="number" min="0" /></label>
+            <label class="filter">A+ 内容
+              <select v-model="checkForm.aplus">
+                <option value="">未检查</option>
+                <option value="true">正常</option>
+                <option value="false">缺失</option>
+              </select>
+            </label>
+          </div>
+          <div class="filter-row">
+            <label class="filter wide">标题原文（规则：80–200 字符）
+              <input v-model="checkForm.title" placeholder="原样粘贴，页面不替你判断" />
+            </label>
+          </div>
+          <div class="filter-row">
+            <!-- 必须是 textarea：单行 input 会静默吃掉换行，五点会被压成一条，
+                 然后被后端的「≥5 条」规则判成不合格——那是页面在替用户撒谎 -->
+            <label class="filter wide">五点描述（每行一条，规则：≥5 条）
+              <textarea v-model="checkForm.bullets" rows="5"></textarea>
+            </label>
+          </div>
+          <div class="filter-row">
+            <label class="filter wide">描述原文（规则：≥300 字符）
+              <input v-model="checkForm.description" />
+            </label>
+          </div>
+          <div class="filter-row">
+            <label class="filter wide">后台搜索词（规则：非空）
+              <input v-model="checkForm.searchTerms" />
+            </label>
+            <button class="action-btn" :disabled="checkBusy || !checkReady" @click="submitCheck">登记自查结果</button>
+          </div>
+          <p class="muted form-hint">
+            留空的项按「没做好」扣分——这是后端既有的判定口径，页面不替它改。
+            A+ 选「未检查」时这一项不参与打分，但会被写进问题清单里。
+          </p>
+          <div v-if="checkResult" class="check-result">
+            <span>ASIN <b class="mono">{{ checkResult.asin }}</b></span>
+            <span>健康分 <b :class="scoreClass(checkResult.healthScore)">{{ checkResult.healthScore ?? '-' }}</b></span>
+            <span>严重度 <b class="health-tag" :class="severityClass(checkResult.severity)">{{ checkResult.severity || '未知' }}</b></span>
+            <span>A+ <b>{{ aplusText(checkResult.aplusOk) }}</b></span>
+            <span class="muted">{{ checkResult.suppressedReason || '无问题项' }}</span>
+          </div>
+        </div>
+
+                <!-- 关键词排名 -->
         <div v-if="tab === 'ranking'" class="table-card">
           <table class="data-table">
             <thead><tr><th>ASIN</th><th>关键词</th><th>自然排名</th><th>广告排名</th><th>搜索量</th><th>日期</th></tr></thead>
@@ -120,7 +179,45 @@
           </table>
         </div>
 
-        <!-- 竞品 -->
+        <!-- 单个 ASIN 的排名趋势：列表页只有最新一行，趋势要看历史 -->
+        <div v-if="tab === 'ranking'" class="table-card" data-panel="trend">
+          <h3 class="card-title">排名趋势（按关键词分组，时间升序）</h3>
+          <div class="filter-row">
+            <label class="filter">ASIN *<input v-model="trendQuery.asin" /></label>
+            <label class="filter">关键词（精确匹配，留空=全部关键词）<input v-model="trendQuery.keyword" /></label>
+            <label class="filter">天数
+              <select v-model="trendQuery.days">
+                <option :value="30">30</option>
+                <option :value="90">90</option>
+                <option :value="180">180</option>
+              </select>
+            </label>
+            <button class="action-btn" :disabled="trendBusy || !trendReady" @click="loadTrend">查询趋势</button>
+          </div>
+          <p v-if="trend && trend.truncated" class="muted form-hint">
+            命中后端单读上限：下面只是窗口内最近的快照点，不是这段时间的全部记录。
+          </p>
+          <div v-for="(pts, kw) in (trend ? trend.keywords : {})" :key="kw" class="trend-block">
+            <h4 class="mono">{{ kw || '（关键词为空的历史行）' }} · {{ pts.length }} 个点</h4>
+            <table class="data-table">
+              <thead><tr><th>日期</th><th>自然排名</th><th>广告排名</th></tr></thead>
+              <tbody>
+                <tr v-for="(p, i) in pts" :key="kw + '|' + i">
+                  <td class="mono">{{ p.date || '未记录' }}</td>
+                  <td :class="typeof p.organicRank === 'number' && p.organicRank <= 10 ? 'days-healthy' : ''">
+                    {{ p.organicRank ?? '—' }}
+                  </td>
+                  <td>{{ p.adRank ?? '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-if="trendLoaded && !Object.keys(trend ? trend.keywords : {}).length" class="muted form-hint">
+            这个 ASIN 在所选窗口内没有排名快照。排名要靠录入才有行，空不等于「没有排名」。
+          </p>
+        </div>
+
+                <!-- 竞品 -->
         <div v-if="tab === 'competitor'" class="table-card">
           <table class="data-table">
             <thead><tr><th>竞品 ASIN</th><th>标题</th><th>价格</th><th>BSR</th><th>评分</th><th>评论数</th><th>有货</th><th>快照日期</th></tr></thead>
@@ -140,7 +237,54 @@
           </table>
         </div>
 
-        <!-- Buybox -->
+        <!-- 竞品对比：查的只有竞品 ASIN 的历史快照，myAsin 后端仅回显 -->
+        <div v-if="tab === 'competitor'" class="table-card" data-panel="compare">
+          <h3 class="card-title">竞品历史对比（查的是竞品 ASIN 的快照序列）</h3>
+          <div class="filter-row">
+            <label class="filter">我方 ASIN（仅记录在结果里）<input v-model="compareQuery.myAsin" /></label>
+            <label class="filter">竞品 ASIN *<input v-model="compareQuery.competitorAsin" /></label>
+            <label class="filter">天数
+              <select v-model="compareQuery.days">
+                <option :value="30">30</option>
+                <option :value="90">90</option>
+              </select>
+            </label>
+            <button class="action-btn" :disabled="compareBusy || !compareReady" @click="loadCompare">查询对比</button>
+          </div>
+          <p v-if="compare && compare.ownAsinCompared === false" class="muted form-hint">
+            注意：后端这个接口只读竞品快照，没有取我方 ASIN 的任何数据，
+            所以它不是「并排对比」，只有竞品一侧的序列。
+          </p>
+          <p v-if="compare && compare.truncated" class="muted form-hint">
+            快照行数命中后端上限，下面只是窗口内的最近若干条。
+          </p>
+          <div v-if="compare && compare.latest" class="filter-row compare-latest">
+            <span class="muted">最新一条（{{ compare.latest.snapshotDate || '未记录' }}）：
+              价格 {{ compare.latest.price ?? '—' }} · BSR {{ compare.latest.bsRank ?? '—' }} ·
+              评分 {{ compare.latest.reviewRating ?? '—' }} · 评论 {{ compare.latest.reviewCount ?? '—' }}
+            </span>
+          </div>
+          <table v-if="compare && compare.trendData.length" class="data-table">
+            <thead><tr><th>日期</th><th>价格</th><th>BSR</th><th>评分</th><th>评论数</th><th>有货</th><th>优惠券</th><th>促销</th></tr></thead>
+            <tbody>
+              <tr v-for="(p, i) in compare.trendData" :key="'c' + i">
+                <td class="mono">{{ p.date || '未记录' }}</td>
+                <td>{{ p.price ?? '—' }}</td>
+                <td>{{ p.bsRank ?? '—' }}</td>
+                <td>{{ p.reviewRating ?? '—' }}</td>
+                <td>{{ p.reviewCount ?? '—' }}</td>
+                <td>{{ triText(p.inStock) }}</td>
+                <td>{{ triText(p.hasCoupon) }}</td>
+                <td>{{ triText(p.hasDeal) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else-if="compareLoaded" class="muted form-hint">
+            这个竞品在窗口内没有快照。竞品快照由采集任务写入，空不等于对方没有在卖。
+          </p>
+        </div>
+
+                <!-- Buybox -->
         <div v-if="tab === 'buybox'" class="table-card">
           <table class="data-table">
             <thead><tr><th>ASIN</th><th>Winner</th><th>是否我方</th><th>Buybox 价</th><th>我方价</th><th>价差</th><th>配送</th><th>份额</th></tr></thead>
@@ -251,7 +395,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -260,10 +404,11 @@ import { usePagination } from '@/composables/usePagination'
 import {
   getListingSummary, getListingHealthList, getRankings, getCompetitors,
   getBuyBoxList, getChangeLogs, estimateFees, severityClass, emptySummary,
-  listMaster, createMaster, updateMaster
+  listMaster, createMaster, updateMaster, runListingCheck, getRankingTrend, compareCompetitors
 } from '@/api/listing'
 import type {
-  ListingHealthRow, ListingSummary, KeywordRankingRow, CompetitorRow, BuyBoxRow, MasterRow
+  ListingHealthRow, ListingSummary, KeywordRankingRow, CompetitorRow, BuyBoxRow, MasterRow,
+  ListingCheckForm, RankingTrendResult, CompetitorCompareResult
 } from '@/api/listing'
 
 type TabKey = 'health' | 'ranking' | 'competitor' | 'buybox' | 'changelog' | 'master'
@@ -294,6 +439,34 @@ const masterBusy = ref(false)
 const masterMsg = ref('')
 const masterForm = ref<Partial<MasterRow>>({ marketplaceId: 'ATVPDKIKX0DER' })
 const severity = ref('')
+
+// ===== 人工自查登记 + 趋势 / 对比 =====
+const checkForm = ref({
+  asin: '', title: '', bullets: '', description: '', imageCount: '', searchTerms: '', status: '', aplus: ''
+})
+const checkBusy = ref(false)
+const checkResult = ref<ListingHealthRow | null>(null)
+
+const trendQuery = ref<{ asin: string; keyword: string; days: number }>({ asin: '', keyword: '', days: 30 })
+const trend = ref<RankingTrendResult | null>(null)
+const trendLoaded = ref(false)
+const trendBusy = ref(false)
+
+const compareQuery = ref<{ myAsin: string; competitorAsin: string; days: number }>({ myAsin: '', competitorAsin: '', days: 30 })
+const compare = ref<CompetitorCompareResult | null>(null)
+const compareLoaded = ref(false)
+const compareBusy = ref(false)
+
+const checkReady = computed(() => Boolean(checkForm.value.asin.trim()))
+const trendReady = computed(() => Boolean(trendQuery.value.asin.trim()))
+const compareReady = computed(() => Boolean(compareQuery.value.competitorAsin.trim()))
+
+// null 一律显示成 — ：三态里「没记录」不能画成「否」
+const isYes = (v: unknown) => v === true || v === 1 || v === '1'
+const triText = (v?: boolean | number | string | null) =>
+  (v === null || v === undefined || v === '' ? '—' : isYes(v) ? '是' : '否')
+const aplusText = (v?: boolean | number | string | null) =>
+  (v === null || v === undefined || v === '' ? '未检查' : isYes(v) ? '正常' : '缺失')
 
 const pager = usePagination<ListingHealthRow>(() => healthRows.value, 20)
 const pagedRows = pager.paged
@@ -350,6 +523,76 @@ const reloadHealth = async () => {
 }
 
 const switchTab = (key: TabKey) => { tab.value = key }
+
+const submitCheck = async () => {
+  const shopId = refreshShop()
+  if (!shopId || !checkReady.value) return
+  checkBusy.value = true
+  try {
+    const form: ListingCheckForm = {
+      title: checkForm.value.title || null,
+      bullets: checkForm.value.bullets || null,
+      description: checkForm.value.description || null,
+      imageCount: checkForm.value.imageCount === '' ? null : Number(checkForm.value.imageCount),
+      searchTerms: checkForm.value.searchTerms || null,
+      status: checkForm.value.status || null,
+      aplus: checkForm.value.aplus === '' ? null : checkForm.value.aplus === 'true'
+    }
+    const res: any = await runListingCheck(shopId, checkForm.value.asin.trim(), form)
+    if (res?.code !== 200) {
+      errors.value.push(`登记自查：${res?.message || '接口返回非 200'}`)
+      return
+    }
+    checkResult.value = res.data as ListingHealthRow
+    // 这次写库会改变列表与概览，重算而不是留着旧数字（只刷这两块，不清错误区）
+    await reloadHealth()
+    await zone('健康度概览', () => getListingSummary(shopId), (d: ListingSummary) => { summary.value = d })
+  } catch (e: any) {
+    errors.value.push(`登记自查：${e?.message || '调用失败'}`)
+  } finally {
+    checkBusy.value = false
+  }
+}
+
+const loadTrend = async () => {
+  const shopId = refreshShop()
+  if (!shopId || !trendReady.value) return
+  trendBusy.value = true
+  try {
+    const res: any = await getRankingTrend(shopId, trendQuery.value.asin.trim(),
+      trendQuery.value.keyword.trim() || undefined, trendQuery.value.days)
+    if (res?.code !== 200) {
+      errors.value.push(`排名趋势：${res?.message || '接口返回非 200'}`)
+      return
+    }
+    trend.value = res.data as RankingTrendResult
+    trendLoaded.value = true
+  } catch (e: any) {
+    errors.value.push(`排名趋势：${e?.message || '调用失败'}`)
+  } finally {
+    trendBusy.value = false
+  }
+}
+
+const loadCompare = async () => {
+  const shopId = refreshShop()
+  if (!shopId || !compareReady.value) return
+  compareBusy.value = true
+  try {
+    const res: any = await compareCompetitors(shopId, compareQuery.value.myAsin.trim() || '-',
+      compareQuery.value.competitorAsin.trim(), compareQuery.value.days)
+    if (res?.code !== 200) {
+      errors.value.push(`竞品对比：${res?.message || '接口返回非 200'}`)
+      return
+    }
+    compare.value = res.data as CompetitorCompareResult
+    compareLoaded.value = true
+  } catch (e: any) {
+    errors.value.push(`竞品对比：${e?.message || '调用失败'}`)
+  } finally {
+    compareBusy.value = false
+  }
+}
 
 const reloadMaster = async () => {
   const shopId = refreshShop()
@@ -483,6 +726,18 @@ onMounted(loadAll)
 .days-risk { color: var(--color-warning-dark); font-weight: 600; }
 .days-healthy { color: var(--color-success); font-weight: 600; }
 .cell-clip { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter input { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; min-width: 12rem; }
+.filter.wide { flex: 1 1 24rem; align-items: flex-start; }
+.filter.wide input, .filter.wide textarea { width: 100%; }
+.filter.wide textarea { padding: 0.3rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; font-family: inherit; min-width: 24rem; }
+.card-title { font-size: 0.9375rem; color: var(--color-on-surface); margin: 0.875rem 1rem 0; }
+.form-hint { padding: 0.375rem 1rem 0.75rem; margin: 0; line-height: 1.5; }
+.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.8125rem; }
+.action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.check-result { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 0.5rem 1rem 0.875rem; font-size: 0.8125rem; }
+.trend-block { padding: 0.25rem 1rem 0.5rem; }
+.trend-block h4 { font-size: 0.8125rem; color: var(--color-muted); margin: 0.5rem 0 0.25rem; font-weight: 600; }
+.compare-latest { padding-top: 0.25rem; }
 .table-pager { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; margin-top: 1rem; }
 
 .fee-card { background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 1rem; margin-top: 1rem; }

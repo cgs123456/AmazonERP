@@ -210,3 +210,94 @@ export const updateMaster = (shopId: number | string, id: number, patch: Partial
 /** 同一 ASIN 在我管的各店铺里的登记情况（跨站复制的入口数据）。 */
 export const masterByAsin = (asin: string) =>
   request.get<void, ApiResponse<MasterRow[]>>('/product/master/by-asin', { params: { asin } })
+
+/**
+ * 人工自查登记 + 趋势 / 对比三个只能在这里看到的视图。
+ *
+ * 两条口径必须跟着后端走：
+ * 1. `POST /product/listing-monitor/health/check` 不读 Listing 本体——所有判定项都来自调用方
+ *    填的参数。所以它在页面上是「人工登记一次自查」，不是「系统检查」。它每次都会把结果
+ *    upsert 进 amz_listing_health（同一 (shopId, asin) 只有一行），而健康度汇总读的就是这张表。
+ * 2. A+ 内容后端拿不到就记 null（未知），页面上也不给「已勾选」的默认值；分数不因为它变化，
+ *    但问题清单里会写「A+内容未检查」。
+ */
+export interface ListingCheckForm {
+  title?: string | null
+  bullets?: string | null
+  description?: string | null
+  imageCount?: number | string | null
+  searchTerms?: string | null
+  status?: string | null
+  aplus?: boolean | null
+}
+
+/** 只带填了的参数：null/空串会被 Spring 绑成 null，等于把「未知」当答案提交 */
+const filled = (form: ListingCheckForm) => {
+  const out: Record<string, string | number | boolean> = {}
+  Object.entries(form).forEach(([k, v]) => {
+    if (v !== null && v !== undefined && v !== '') out[k] = v as string | number | boolean
+  })
+  return out
+}
+
+export const runListingCheck = (shopId: number | string, asin: string, form: ListingCheckForm) =>
+  request.post<void, ApiResponse<ListingHealthRow>>('/product/listing-monitor/health/check', undefined, {
+    params: { shopId, asin, ...filled(form) }
+  })
+
+export interface TrendPoint {
+  date: string | null
+  organicRank: number | null
+  adRank: number | null
+}
+
+export interface RankingTrendResult {
+  shopId?: number | string
+  asin: string
+  days: number
+  keywords: Record<string, TrendPoint[]>
+  /** 命中后端单读上限：看到的不是一段完整历史，只是最近 N 个快照 */
+  truncated?: boolean
+}
+
+export interface CompetitorPoint {
+  date: string | null
+  price?: number | string | null
+  bsRank?: number | null
+  reviewCount?: number | null
+  reviewRating?: number | string | null
+  inStock?: boolean | null
+  hasCoupon?: boolean | null
+  hasDeal?: boolean | null
+}
+
+export interface CompetitorCompareResult {
+  shopId?: number | string
+  myAsin: string
+  competitorAsin: string
+  days: number
+  latest: CompetitorRow | null
+  trendData: CompetitorPoint[]
+  /** 后端只在参数里回显 myAsin，并没有查自己 Listing 的快照 */
+  ownAsinCompared?: boolean
+  truncated?: boolean
+}
+
+/** 某个 ASIN 的排名趋势（按关键词分组，时间升序） */
+export const getRankingTrend = (shopId: number | string, asin: string, keyword?: string, days = 30) =>
+  request.get<void, ApiResponse<RankingTrendResult>>(
+    `/product/listing-monitor/ranking/trend/${shopId}`,
+    { params: { asin, ...(keyword ? { keyword } : {}), days } }
+  )
+
+/** 竞品对比：myAsin 只是回显，真正被查的是 competitorAsin */
+export const compareCompetitors = (
+  shopId: number | string,
+  myAsin: string,
+  competitorAsin: string,
+  days = 30
+) =>
+  request.get<void, ApiResponse<CompetitorCompareResult>>(
+    `/product/listing-monitor/competitor/compare/${shopId}`,
+    { params: { myAsin, competitorAsin, days } }
+  )

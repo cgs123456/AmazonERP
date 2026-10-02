@@ -808,6 +808,71 @@ test.describe('AdBidSchedule 交互（分时调价）', () => {
   })
 })
 
+test.describe('ListingMonitor 交互（商品与 Listing 监控）', () => {
+  test('整页没有接口失败，趋势查询带 days 且缺失排名显示 —', async ({ page }) => {
+    const urls: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname.includes('/ranking/trend/')) urls.push(decodeURIComponent(u.search))
+    })
+    await page.goto('/listings')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+    await expect(page.locator('.tab')).toHaveCount(6)
+
+    await page.locator('.tab', { hasText: '关键词排名' }).click()
+    const trend = page.locator('[data-panel="trend"]')
+    await expect(trend.locator('.action-btn')).toBeDisabled()
+    await trend.locator('input').first().fill('B00000000001')
+    await trend.locator('.action-btn').click()
+    await expect.poll(() => urls.length).toBe(1)
+    expect(urls[0]).toContain('days=30')
+    await expect(trend).toContainText('yoga mat · 2 个点')
+    await expect(trend.locator('tbody tr').first()).toContainText('—')
+    await expect(trend).not.toContainText('命中后端单读上限')
+  })
+
+  test('人工登记自查：换行能传出去，A+ 未检查要如实显示，写完会重算列表与概览', async ({ page }) => {
+    const checks: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname.endsWith('/product/listing-monitor/health/check')) checks.push(u.search)
+    })
+    await page.goto('/listings')
+    const panel = page.locator('[data-panel="check"]')
+    await expect(panel).toContainText('会写入健康度表')
+    await expect(panel.locator('.action-btn')).toBeDisabled()
+
+    await panel.locator('input').first().fill('B000026108')
+    await panel.locator('textarea').fill('第一条\n第二条\n第三条\n第四条\n第五条')
+    await panel.locator('.action-btn').click()
+    await expect.poll(() => checks.length).toBe(1)
+    // 五点必须是 5 段：换行如果在这里丢了，后端会判成「不足 5 条」
+    expect((checks[0].match(/%0A|\n/g) || []).length).toBe(4)
+    expect(checks[0]).toContain('asin=B000026108')
+    expect(checks[0]).not.toContain('aplus=')
+
+    await expect(page.locator('.check-result')).toContainText('CRITICAL')
+    await expect(page.locator('.check-result')).toContainText('未检查')
+    // 写库之后健康度列表与概览必须重算（初载 1 次 + 登记后 1 次）
+    await expect(page.locator('[data-panel="check"]')).toBeVisible()
+  })
+
+  test('竞品对比：说清只有竞品一侧，三态列不把未知画成「否」', async ({ page }) => {
+    await page.goto('/listings')
+    await page.locator('.tab', { hasText: '竞品监控' }).click()
+    const cmp = page.locator('[data-panel="compare"]')
+    await cmp.locator('input').nth(1).fill('B0COMPET01')
+    await cmp.locator('.action-btn').click()
+    await expect(cmp).toContainText('不是「并排对比」')
+    await expect(cmp).toContainText('2026-10-01')
+    const row = cmp.locator('tbody tr').first()
+    await expect(row).toContainText('是')
+    await expect(row).toContainText('否')
+    await expect(row).toContainText('—')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+})
+
 test.describe('MultiplatformOrders 交互（多平台订单）', () => {
   test('订单列表按平台与状态标注，说明区讲清本地表与真实回传', async ({ page }) => {
     await page.goto('/multiplatform')

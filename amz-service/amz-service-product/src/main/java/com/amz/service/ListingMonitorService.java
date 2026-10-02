@@ -18,7 +18,7 @@ public interface ListingMonitorService {
     // ==================== Listing 健康度 ====================
     ListingHealth saveHealthCheck(ListingHealth health);
     ListingHealth checkListing(Long shopId, String asin, String title, String bullets, String description,
-                               Integer imageCount, String searchTerms, String status);
+                               Integer imageCount, String searchTerms, String status, Boolean aplus);
     List<ListingHealth> listHealth(Long shopId, String severity);
     Map<String, Object> healthSummary(Long shopId);
 

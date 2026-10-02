@@ -25,6 +25,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -107,7 +108,8 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
 
     @Override
     public ListingHealth checkListing(Long shopId, String asin, String title, String bullets,
-                                      String description, Integer imageCount, String searchTerms, String status) {
+                                      String description, Integer imageCount, String searchTerms, String status,
+                                      Boolean aplus) {
         int score = 100;
         StringBuilder issues = new StringBuilder();
 
@@ -126,10 +128,16 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         boolean searchOk = searchTerms != null && !searchTerms.isBlank();
         if (!searchOk) { score -= 20; issues.append("后台搜索词为空; "); }
 
-        boolean aplusOk = true; // A+ 需要 SP-API 检查
+        // 原来这里写死 true：A+ 内容要靠 SP-API 才能判定，而调用方根本没给这个信息，
+        // 于是每一条检查过的 Listing 都被记成「A+ 正常」。现在没给就当未知（null），
+        // 并把「未检查」写进问题项，让读的人知道这一项没参与判定。
+        Boolean aplusOk = aplus;
         boolean listingActive = !"SUPPRESSED".equalsIgnoreCase(status) && !"INACTIVE".equalsIgnoreCase(status);
         if (!listingActive) { score -= 20; issues.append("Listing状态异常(").append(status).append("); "); }
 
+        if (aplusOk == null) {
+            issues.append("A+内容未检查; ");
+        }
         String severity;
         if (score >= 90) severity = "OK";
         else if (score >= 60) severity = "WARNING";
@@ -299,26 +307,36 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         LambdaQueryWrapper<KeywordRanking> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KeywordRanking::getShopId, shopId)
                .eq(KeywordRanking::getAsin, asin)
-               .ge(KeywordRanking::getRankDate, since)
-               .orderByAsc(KeywordRanking::getRankDate);
+               .ge(KeywordRanking::getRankDate, since);
         if (keyword != null && !keyword.isBlank()) {
             wrapper.eq(KeywordRanking::getKeyword, keyword);
         }
-        List<KeywordRanking> rankings = keywordRankingMapper.selectList(wrapper);
+        // 只有一个排序方向：先按最新往前取 LIMIT+1，反转后才既「留最近」又「升序返回」。
+        // 之前这里同时挂着 orderByAsc 与 orderByDesc，MySQL 以 ASC 为准，
+        // 于是上限截掉的是最新那批快照——正好是要保住的。
+        wrapper.orderByDesc(KeywordRanking::getRankDate).last(limitClause());
+        List<KeywordRanking> fetched = keywordRankingMapper.selectList(wrapper);
+        boolean rankingCapped = fetched.size() > LIST_READ_LIMIT;
+        List<KeywordRanking> asc = new ArrayList<>(capRead(fetched, "关键词排名趋势"));
+        // 取的是「最近 N 个快照」，返回给调用方要还原成时间升序，折线才不会左右反着画
+        Collections.reverse(asc);
 
-        // 按日期聚合所有关键词排名
+        // 按日期聚合所有关键词排名。用 LinkedHashMap 而不是 Map.of：
+        // 排名没记录时必须还是「没记录」，补 0 在排名语义里等于「自然排名第 1 名」。
         Map<String, List<Map<String, Object>>> byKeyword = new LinkedHashMap<>();
-        for (KeywordRanking r : rankings) {
-            byKeyword.computeIfAbsent(r.getKeyword(), k -> new ArrayList<>())
-                    .add(Map.of("date", r.getRankDate().toString(),
-                            "organicRank", r.getOrganicRank() != null ? r.getOrganicRank() : 0,
-                            "adRank", r.getAdRank() != null ? r.getAdRank() : 0));
+        for (KeywordRanking r : asc) {
+            Map<String, Object> point = new LinkedHashMap<>();
+            point.put("date", r.getRankDate() == null ? null : r.getRankDate().toString());
+            point.put("organicRank", r.getOrganicRank());
+            point.put("adRank", r.getAdRank());
+            byKeyword.computeIfAbsent(r.getKeyword(), k -> new ArrayList<>()).add(point);
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
         result.put("asin", asin);
         result.put("days", days);
         result.put("keywords", byKeyword);
+        result.put("truncated", rankingCapped);
         return result;
     }
 
@@ -371,10 +389,13 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         wrapper.eq(CompetitorMonitor::getShopId, shopId)
                .eq(CompetitorMonitor::getCompetitorAsin, competitorAsin)
                .ge(CompetitorMonitor::getSnapshotDate, since)
-               .orderByAsc(CompetitorMonitor::getSnapshotDate);
-        List<CompetitorMonitor> history = competitorMonitorMapper.selectList(wrapper);
-
-        List<Map<String, Object>> trendData = history.stream().map(h -> {
+               .orderByDesc(CompetitorMonitor::getSnapshotDate)
+               .last(limitClause());
+        List<CompetitorMonitor> fetched = competitorMonitorMapper.selectList(wrapper);
+        boolean compareCapped = fetched.size() > LIST_READ_LIMIT;
+        List<CompetitorMonitor> asc = new ArrayList<>(capRead(fetched, "竞品对比快照"));
+        Collections.reverse(asc);
+        List<Map<String, Object>> trendData = asc.stream().map(h -> {
             Map<String, Object> point = new LinkedHashMap<>();
             point.put("date", h.getSnapshotDate().toString());
             point.put("price", h.getPrice());
@@ -387,7 +408,7 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
             return point;
         }).collect(Collectors.toList());
 
-        CompetitorMonitor latest = history.isEmpty() ? null : history.get(history.size() - 1);
+        CompetitorMonitor latest = asc.isEmpty() ? null : asc.get(asc.size() - 1);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
         result.put("myAsin", myAsin);
@@ -395,6 +416,9 @@ public class ListingMonitorServiceImpl implements ListingMonitorService {
         result.put("days", days);
         result.put("latest", latest);
         result.put("trendData", trendData);
+        // myAsin 只是回显：这里没有查自己 Listing 的快照，页面上不能把它当成对比项
+        result.put("ownAsinCompared", false);
+        result.put("truncated", compareCapped);
         return result;
     }
 
