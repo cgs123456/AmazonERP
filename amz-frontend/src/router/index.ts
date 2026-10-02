@@ -34,6 +34,11 @@ const router = createRouter({
             component: () => import('../views/AdSearchTerms.vue')
         },
         {
+            path: '/ad-bid-schedule',
+            name: 'AdBidSchedule',
+            component: () => import('../views/AdBidSchedule.vue')
+        },
+        {
             path: '/profit',
             name: 'Profit',
             component: () => import('../views/ProfitReport.vue')

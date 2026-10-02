@@ -70,4 +70,10 @@ describe('路由守卫鉴权', () => {
     await router.push('/ads')
     expect(router.currentRoute.value.name).toBe('Ads')
   })
+
+  it('分时调价页有独立路由，改价通道不能没有入口', async () => {
+    localStorage.setItem('token', 'fake-token')
+    await router.push('/ad-bid-schedule')
+    expect(router.currentRoute.value.name).toBe('AdBidSchedule')
+  })
 })

@@ -704,6 +704,13 @@ const AD_EXEC_RESULT = {
   ]
 }
 
+/** 分时调价：V1 迁移预置的三行形态，倍率 >1 是抬价、<1 是压价 */
+const AD_BID_SCHEDULES = [
+  { id: 91, shopId: 1, campaignId: null, startHour: 20, endHour: 23, multiplier: 1.5, enabled: 1 },
+  { id: 92, shopId: 1, campaignId: 'camp-777', startHour: 0, endHour: 6, multiplier: 0.7, enabled: 0 },
+  { id: 93, shopId: 1, campaignId: null, startHour: 7, endHour: 9, multiplier: 1.2, enabled: 1 }
+]
+
 /**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
@@ -874,6 +881,14 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/ad\/search-term\/analyze\//, data: AD_ANALYZE },
   { match: /^\/ad\/search-term\/cluster\//, data: AD_CLUSTERS },
   { match: /^\/ad\/search-term$/, data: AD_SEARCH_TERMS[0] },
+
+  // ===== 分时调价 /ad/bidSchedule（唯一会真实改广告账号竞价的通道）=====
+  // 顺序敏感：toggle 要在 /\d+$/ 之前；店铺列表那条更要在前面，
+  // 否则 GET /ad/bidSchedule/1 会先撞上「单对象」那条，页面拿到非数组只能显示空表。
+  { match: /^\/ad\/bidSchedule\/1$/, data: AD_BID_SCHEDULES, page: FULL_PAGE(AD_BID_SCHEDULES.length) },
+  { match: /^\/ad\/bidSchedule\/\d+\/toggle$/, data: true },
+  { match: /^\/ad\/bidSchedule\/\d+$/, data: AD_BID_SCHEDULES[0] },
+  { match: /^\/ad\/bidSchedule$/, data: AD_BID_SCHEDULES[0] },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

@@ -42,6 +42,7 @@ const NAV = [
   { path: '/connectors', linkText: '连接器状态' },
   { path: '/connector-queue', linkText: '调用队列' },
   { path: '/ad-search-terms', linkText: '搜索词与规则' },
+  { path: '/ad-bid-schedule', linkText: '分时调价' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -714,6 +715,65 @@ test.describe('AdSearchTerms 交互（搜索词分析与广告规则）', () => 
     await page.locator('.tab-panel[data-panel="asin"] input').first().fill('B0ABC12345')
     await page.locator('.tab-panel[data-panel="asin"] button', { hasText: '反查' }).click()
     await expect(page.locator('.tab-panel[data-panel="asin"] tbody tr')).toHaveCount(1)
+  })
+})
+
+test.describe('AdBidSchedule 交互（分时调价）', () => {
+  test('列表解释时段与倍率，并声明本页会真实改价', async ({ page }) => {
+    await page.goto('/ad-bid-schedule')
+    const panel = page.locator('[data-panel="list"]')
+    await expect(panel.locator('tbody tr')).toHaveCount(3)
+    await expect(panel).toContainText('20:00-24:00')
+    await expect(panel).toContainText('全部活动')
+    await expect(panel).toContainText('× 1.5')
+    await expect(panel).toContainText('启用中（会改价）')
+    await expect(page.locator('.notice-zone')).toContainText('真实修改广告账号竞价')
+    await expect(page.locator('.notice-zone')).toContainText('不支持跨零点')
+  })
+
+  test('跨零点的窗口在前端就被拦住，改成合法才允许提交', async ({ page }) => {
+    await page.goto('/ad-bid-schedule')
+    const creates: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/bidSchedule') creates.push(r.method())
+    })
+    await page.locator('button', { hasText: '新建调价规则' }).click()
+    const form = page.locator('.form-card')
+    await form.locator('select').first().selectOption('22')
+    await form.locator('select').nth(1).selectOption('2')
+    const submit = form.locator('.form-actions .page-btn', { hasText: '创建规则' })
+    await expect(form).toContainText('永远不会生效')
+    await expect(submit).toBeDisabled()
+    expect(creates).toEqual([])
+
+    await form.locator('select').nth(1).selectOption('23')
+    await expect(submit).toBeEnabled()
+    await submit.click()
+    await expect(page.locator('.confirm-detail')).toContainText('基准价 × 1.2')
+    expect(creates).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => creates.length).toBe(1)
+    expect(creates[0]).toBe('POST')
+  })
+
+  test('停用要确认，且确认文案承认已改出的价不会回滚', async ({ page }) => {
+    const toggles: string[] = []
+    page.on('request', (r) => {
+      if (/\/api\/ad\/bidSchedule\/\d+\/toggle/.test(new URL(r.url()).pathname)) toggles.push(r.url())
+    })
+    await page.goto('/ad-bid-schedule')
+    const row = page.locator('tbody tr', { hasText: '× 1.5' }).first()
+    await row.locator('button', { hasText: '停用' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('已经按这条规则改过的竞价会留在广告账号上')
+    expect(toggles).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    expect(toggles).toEqual([])
+
+    await row.locator('button', { hasText: '停用' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => toggles.length).toBe(1)
+    expect(decodeURIComponent(toggles[0])).toContain('enabled=false')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
   })
 })
 

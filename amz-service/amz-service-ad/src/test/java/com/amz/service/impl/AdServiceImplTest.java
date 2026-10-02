@@ -189,9 +189,15 @@ class AdServiceImplTest {
         UserContext.setShops(List.of(1L));
         BidSchedule schedule = new BidSchedule();
         schedule.setShopId(1L);
+        // 分时调价会按小时真实改广告账号竞价，所以窗口与倍率是必填项：
+        // 这里给的是 V1 种子里「晚间 1.5 倍」那一行的形状。
+        schedule.setStartHour(20);
+        schedule.setEndHour(23);
+        schedule.setMultiplier(new BigDecimal("1.50"));
 
         service.createBidSchedule(schedule);
 
+        assertEquals(Integer.valueOf(1), schedule.getEnabled());
         verify(bidScheduleMapper).insert(schedule);
     }
     @Test

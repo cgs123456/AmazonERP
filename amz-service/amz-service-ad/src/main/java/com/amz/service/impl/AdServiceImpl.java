@@ -5,6 +5,7 @@ import com.amz.client.AdvertisingApiClient;
 import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
+import com.amz.exception.InvalidParamException;
 import com.amz.mapper.AdDailyReportMapper;
 import com.amz.mapper.AdKeywordMapper;
 import com.amz.mapper.BidScheduleMapper;
@@ -30,6 +31,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 
 /**
@@ -42,6 +44,14 @@ public class AdServiceImpl implements AdService {
 
     /** 活动级报表默认统计窗口，与广告首页近 7 天口径保持一致。 */
     private static final int SHOP_REPORT_LOOKBACK_DAYS = 7;
+
+    /**
+     * 分时调价倍率的允许区间。执行器只兜「绝对价」的上下限（0.02~1000），
+     * 一条 50x 的规则和一条手滑写错的规则在它眼里没有区别，所以这里按业务口径拦一次。
+     * 参考 V1 预置的三条：0.70 / 1.20 / 1.50。
+     */
+    private static final BigDecimal MIN_MULTIPLIER = new BigDecimal("0.10");
+    private static final BigDecimal MAX_MULTIPLIER = new BigDecimal("5.00");
 
     @Autowired
     private AdPerformanceAnalyzer analyzer;
@@ -177,10 +187,102 @@ public class AdServiceImpl implements AdService {
         if (!UserContext.isShopAllowedStrict(schedule.getShopId())) {
             throw new CodeErrorException("店铺不存在或无权访问");
         }
+        requireValidWindow(schedule);
         if (schedule.getEnabled() == null) {
             schedule.setEnabled(1);
         }
         bidScheduleMapper.insert(schedule);
+        log.info("分时调价规则已创建：shopId={} campaignId={} 窗口={}-{} 倍率={}",
+                schedule.getShopId(), schedule.getCampaignId(),
+                schedule.getStartHour(), schedule.getEndHour(), schedule.getMultiplier());
+        return schedule;
+    }
+
+    @Override
+    public BidSchedule updateBidSchedule(BidSchedule schedule) {
+        if (schedule == null || schedule.getId() == null) {
+            throw new AttrIsNullException("规则ID不能为空");
+        }
+        BidSchedule existing = requireScheduleAccess(schedule.getId());
+        if (schedule.getShopId() != null && !Objects.equals(schedule.getShopId(), existing.getShopId())) {
+            throw new CodeErrorException("调价规则所属店铺不可修改");
+        }
+        schedule.setShopId(existing.getShopId());
+        // PUT 允许只带被改的字段，所以校验的是落库后真正生效的形态：
+        // 只把 startHour 从 0 改成 20、endHour 仍是库里的 6，合并后才是那条永不命中的死规则。
+        requireValidWindow(mergeForValidation(existing, schedule));
+        bidScheduleMapper.updateById(schedule);
+        return schedule;
+    }
+
+    @Override
+    public boolean toggleBidSchedule(Long id, boolean enabled) {
+        BidSchedule schedule = requireScheduleAccess(id);
+        schedule.setEnabled(enabled ? 1 : 0);
+        bidScheduleMapper.updateById(schedule);
+        log.info("分时调价规则已{}：id={} shopId={}", enabled ? "启用" : "停用", id, schedule.getShopId());
+        return true;
+    }
+
+    @Override
+    public boolean deleteBidSchedule(Long id) {
+        BidSchedule schedule = requireScheduleAccess(id);
+        bidScheduleMapper.deleteById(id);
+        log.info("分时调价规则已删除：id={} shopId={}", id, schedule.getShopId());
+        return true;
+    }
+
+    /**
+     * 分时调价是唯一会真实改广告账号 bid 的通道，所以「写了但永远不会执行」和
+     * 「写了就立刻按小时改价」都必须拦在落库前。
+     */
+    private static void requireValidWindow(BidSchedule schedule) {
+        Integer start = schedule.getStartHour();
+        Integer end = schedule.getEndHour();
+        if (start == null || end == null) {
+            throw new InvalidParamException("起始小时与结束小时都不能为空");
+        }
+        if (start < 0 || start > 23 || end < 0 || end > 23) {
+            throw new InvalidParamException("小时必须在 0-23 之间，实际 " + start + "-" + end);
+        }
+        if (start > end) {
+            throw new InvalidParamException(
+                    "暂不支持跨零点窗口：调度按 start_hour <= 当前小时 <= end_hour 命中，"
+                            + "写成 " + start + "-" + end + " 的规则永远不会生效");
+        }
+        BigDecimal multiplier = schedule.getMultiplier();
+        if (multiplier == null) {
+            throw new InvalidParamException("竞价倍率不能为空");
+        }
+        if (multiplier.compareTo(MIN_MULTIPLIER) < 0 || multiplier.compareTo(MAX_MULTIPLIER) > 0) {
+            throw new InvalidParamException("竞价倍率必须在 "
+                    + MIN_MULTIPLIER.toPlainString() + "-" + MAX_MULTIPLIER.toPlainString()
+                    + " 之间，实际 " + multiplier.toPlainString()
+                    + "；执行器只兜绝对价上下限，认不出这是不是一次手滑");
+        }
+    }
+
+    private static BidSchedule mergeForValidation(BidSchedule existing, BidSchedule patch) {
+        BidSchedule merged = new BidSchedule();
+        merged.setId(patch.getId());
+        merged.setShopId(existing.getShopId());
+        merged.setCampaignId(patch.getCampaignId() != null ? patch.getCampaignId() : existing.getCampaignId());
+        merged.setStartHour(patch.getStartHour() != null ? patch.getStartHour() : existing.getStartHour());
+        merged.setEndHour(patch.getEndHour() != null ? patch.getEndHour() : existing.getEndHour());
+        merged.setMultiplier(patch.getMultiplier() != null ? patch.getMultiplier() : existing.getMultiplier());
+        merged.setEnabled(patch.getEnabled() != null ? patch.getEnabled() : existing.getEnabled());
+        return merged;
+    }
+
+    private BidSchedule requireScheduleAccess(Long id) {
+        if (id == null) {
+            throw new AttrIsNullException("规则ID不能为空");
+        }
+        BidSchedule schedule = bidScheduleMapper.selectById(id);
+        if (schedule == null || !UserContext.isShopAllowedStrict(schedule.getShopId())) {
+            log.warn("分时调价越权拦截：userId={}, scheduleId={}", UserContext.getUserId(), id);
+            throw new CodeErrorException("调价规则不存在或无权访问");
+        }
         return schedule;
     }
 

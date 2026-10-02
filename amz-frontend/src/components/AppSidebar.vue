@@ -102,6 +102,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/ad-bid-schedule') }"
+        @click="navigateTo('/ad-bid-schedule')"
+        role="button"
+        aria-label="分时调价"
+        tabindex="0"
+      >
+        <Icon icon="mdi:clock-outline" class="nav-icon" width="24" />
+        <span class="nav-text">分时调价</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/profit') }"
         @click="navigateTo('/profit')"
         role="button"

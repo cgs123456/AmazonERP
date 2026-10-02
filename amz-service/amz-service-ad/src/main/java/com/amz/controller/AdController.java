@@ -11,9 +11,11 @@ import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.AdService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -98,6 +100,41 @@ public class AdController {
                                                        @RequestParam(required = false) Integer size,
                                                        @RequestParam(required = false) String cursor) {
         return Result.paged(adService.listBidSchedules(shopId, PageRequest.of(size, cursor)));
+    }
+
+    /**
+     * 修改分时调价规则。
+     * PUT /ad/bidSchedule/{id}
+     * <p>
+     * 路径里没有 shopId，{@code @ShopScoped} 解析不到参数会直接放行，
+     * 归属由 Service 侧按 id 反查后严格校验（与广告规则端点同一套做法）。
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @ShopScoped
+    @PutMapping("/bidSchedule/{id}")
+    public Result<BidSchedule> updateBidSchedule(@PathVariable Long id,
+                                                  @RequestBody BidSchedule schedule) {
+        if (schedule == null) {
+            return Result.failure("请求体不能为空");
+        }
+        schedule.setId(id);
+        return Result.success(adService.updateBidSchedule(schedule));
+    }
+
+    /** 启用/停用分时调价规则：停用后下一个整点起不再改价 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @ShopScoped
+    @PostMapping("/bidSchedule/{id}/toggle")
+    public Result<Boolean> toggleBidSchedule(@PathVariable Long id, @RequestParam boolean enabled) {
+        return Result.success(adService.toggleBidSchedule(id, enabled));
+    }
+
+    /** 删除分时调价规则 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @ShopScoped
+    @DeleteMapping("/bidSchedule/{id}")
+    public Result<Boolean> deleteBidSchedule(@PathVariable Long id) {
+        return Result.success(adService.deleteBidSchedule(id));
     }
 
     /**

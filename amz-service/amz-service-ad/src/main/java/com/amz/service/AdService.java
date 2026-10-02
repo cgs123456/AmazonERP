@@ -50,6 +50,21 @@ public interface AdService {
     BidSchedule createBidSchedule(BidSchedule schedule);
 
     /**
+     * 修改分时调价规则：按 id 反查归属，请求体里的 shopId 不作为放行依据。
+     */
+    BidSchedule updateBidSchedule(BidSchedule schedule);
+
+    /**
+     * 启用/停用分时调价规则。停用后下一个整点起就不再改价。
+     */
+    boolean toggleBidSchedule(Long id, boolean enabled);
+
+    /**
+     * 删除分时调价规则。
+     */
+    boolean deleteBidSchedule(Long id);
+
+    /**
      * 查询店铺的分时调价规则。
      */
     PageResult<BidSchedule> listBidSchedules(Long shopId, PageRequest page);
