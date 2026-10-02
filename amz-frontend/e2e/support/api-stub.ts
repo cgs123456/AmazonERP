@@ -551,6 +551,29 @@ const SEARCH_HOT = [{ key: 'earbuds', score: 12 }, { key: 'anc', score: 5 }]
 const SEARCH_HISTORY = [{ history: 'earbuds', userId: 3 }, { history: 'anc', userId: 3 }]
 
 /**
+ * 采购域（/procurement）：页面挂载即并发拉供应商/计划/采购单/货件四个列表，
+ * 四个都要登记成分页数组，落到 EMPTY_PAGE 对象兜底会让每个 loader 报「没有分页元数据」。
+ * 审批留痕按 planId 区分：计划 12 有两行（一次驳回一次通过），计划 13 一行都没有，
+ * 用来同时验「渲染真实留痕」与「没有留痕时不伪造」。
+ */
+const PROCUREMENT_SUPPLIERS = [
+  { id: 1, shopId: 1, supplierName: '深圳市华强北电子科技有限公司', supplierCode: 'SUP-001',
+    contactName: '张经理', status: 'ACTIVE', rating: 4.5, onTimeDeliveryRate: 95.5 }
+]
+const PROCUREMENT_PLANS = [
+  { id: 12, shopId: 1, planNo: 'PLAN-0012', sku: 'SKU-002', plannedQty: 100, unitPrice: 22.0,
+    totalAmount: 2200.0, urgency: 'NORMAL', source: 'AUTO', status: 'PENDING_APPROVAL' },
+  { id: 13, shopId: 1, planNo: 'PLAN-0013', sku: 'SKU-003', plannedQty: 50, unitPrice: 18.0,
+    totalAmount: 900.0, urgency: 'URGENT', source: 'MANUAL', status: 'APPROVED' }
+]
+const PROCUREMENT_TRAIL_PLAN_12 = [
+  { id: 2, shopId: 1, refType: 'PLAN', refId: 12, action: 'APPROVE', operator: '张经理',
+    comment: '价格已核', createTime: '2026-10-03T10:00:00' },
+  { id: 1, shopId: 1, refType: 'PLAN', refId: 12, action: 'REJECT', operator: '李四',
+    comment: null, createTime: '2026-10-02T09:00:00' }
+]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -680,6 +703,16 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/search\/getHotList$/, data: SEARCH_HOT },
   { match: /^\/search\/getHistoryList$/, data: SEARCH_HISTORY },
   { match: /^\/search\/deleteHistory$/, data: null },
+
+  // ===== 采购 /procurement =====
+  { match: /^\/procurement\/supplier\/list\//, data: PROCUREMENT_SUPPLIERS, page: FULL_PAGE(PROCUREMENT_SUPPLIERS.length) },
+  { match: /^\/procurement\/plan\/list\//, data: PROCUREMENT_PLANS, page: FULL_PAGE(PROCUREMENT_PLANS.length) },
+  { match: /^\/procurement\/order\/list\//, data: [], page: FULL_PAGE(0) },
+  { match: /^\/procurement\/fba\/shipment\/list\//, data: [], page: FULL_PAGE(0) },
+  // 顺序敏感：具体 planId 必须排在通配 \d+ 之前
+  { match: /^\/procurement\/plan\/12\/approvals$/, data: PROCUREMENT_TRAIL_PLAN_12 },
+  { match: /^\/procurement\/plan\/\d+\/approvals$/, data: [] },
+  { match: /^\/procurement\/plan\/\d+\/approve$/, data: PROCUREMENT_PLANS[0] },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

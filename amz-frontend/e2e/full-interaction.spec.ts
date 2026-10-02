@@ -37,6 +37,7 @@ const NAV = [
   { path: '/finance', linkText: '财务管理' },
   { path: '/selection', linkText: '选品分析' },
   { path: '/search', linkText: '商品搜索' },
+  { path: '/procurement', linkText: '采购供应链' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -499,6 +500,64 @@ test.describe('ProductSearch 交互（商品搜索）', () => {
     await expect.poll(() => dels.length).toBe(1)
     expect(dels[0]).toBe('DELETE')
     await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+})
+
+test.describe('Procurement 交互（采购供应链）', () => {
+  test('计划行按状态机给操作，操作人没填时通过/驳回不可点', async ({ page }) => {
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购计划' }).click()
+    const pending = page.locator('tbody tr', { hasText: 'PLAN-0012' }).first()
+    await expect(pending).toContainText('PENDING_APPROVAL')
+    await expect(pending.locator('button', { hasText: '通过' })).toBeDisabled()
+    await expect(pending.locator('button', { hasText: '驳回' })).toBeDisabled()
+    await expect(pending.locator('button', { hasText: '转采购单' })).toHaveCount(0)
+    const approved = page.locator('tbody tr', { hasText: 'PLAN-0013' }).first()
+    await expect(approved.locator('button', { hasText: '转采购单' })).toBeVisible()
+    await expect(approved.locator('button', { hasText: '通过' })).toHaveCount(0)
+  })
+
+  test('审批请求把操作人与意见一起送出去，并打到那条计划上', async ({ page }) => {
+    const reqs: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname.endsWith('/approve')) reqs.push(decodeURIComponent(r.url()))
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购计划' }).click()
+    const pending = page.locator('tbody tr', { hasText: 'PLAN-0012' }).first()
+    await pending.locator('input').first().fill('张经理')
+    await pending.locator('input').nth(1).fill('价格已核')
+    await pending.locator('button', { hasText: '通过' }).click()
+    await expect.poll(() => reqs.length).toBe(1)
+    expect(reqs[0]).toContain('/procurement/plan/12/approve')
+    expect(reqs[0]).toContain('operator=张经理')
+    expect(reqs[0]).toContain('approved=true')
+    expect(reqs[0]).toContain('comment=价格已核')
+  })
+
+  test('审批留痕按计划展开：有留痕渲染真实动作，没有留痕给诚实空态而不是编一行', async ({ page }) => {
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购计划' }).click()
+    const pending = page.locator('tbody tr', { hasText: 'PLAN-0012' }).first()
+    await pending.locator('button', { hasText: '审批留痕' }).click()
+    await expect(page.locator('.trail-row')).toHaveCount(1)
+    await expect(page.locator('.trail-row')).toContainText('APPROVE')
+    await expect(page.locator('.trail-row')).toContainText('张经理')
+    await expect(page.locator('.trail-row')).toContainText('价格已核')
+    await expect(page.locator('.trail-row')).toContainText('（无意见）')
+    await expect(page.locator('.trail-row tbody tr')).toHaveCount(2)
+
+    // 同一行再点一次是收起，不是重新拉取
+    await pending.locator('button', { hasText: '审批留痕' }).click()
+    await expect(page.locator('.trail-row')).toHaveCount(0)
+
+    await page.locator('tbody tr', { hasText: 'PLAN-0013' }).first()
+      .locator('button', { hasText: '审批留痕' }).click()
+    await expect(page.locator('.trail-row')).toContainText('不会伪造')
+    await expect(page.locator('.trail-row tbody tr')).toHaveCount(0)
   })
 })
 

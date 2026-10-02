@@ -43,6 +43,13 @@ python tools/schema/zero_reference_tables.py --json docs/superpowers/evidence/20
 
 重跑清点：`zero_reference=11`。
 
+浏览器侧：采购页此前在 E2E 里一次都没被访问过（连打桩都没有登记），这次一并补上——
+`/procurement` 进侧边栏导航用例，另加 3 条：状态机决定行内可用操作（操作人未填时通过/驳回不可点）、
+审批请求真的把 `operator`/`comment` 打到 `/procurement/plan/12/approve`（监听真实请求，不看打桩）、
+留痕展开与「没有留痕就说不伪造」。采购页四个列表接口也登记了分页数组桩，
+不再落到 `EMPTY_PAGE` 对象兜底（那样每个 loader 都会报「没有分页元数据」）。
+整包 E2E 67 条全绿。
+
 ## 逐张处置
 
 | 表 | 建表出处 | 为什么零引用 | 建议 |
