@@ -279,22 +279,19 @@ test.describe('ProductSelection 交互', () => {
 })
 
 test.describe('Notifications 交互', () => {
-  // 该页没有 REST 端点：数据是前端硬编码 5 条 + WebSocket，断言的是硬编码数据
-  test('点「忽略」后条目减少一条', async ({ page }) => {
+  // 该页没有 REST 端点，也不再有前端示例数据：能验的是空态、Tab 切换与连接状态提示。
+  // 「忽略/查看」按钮要等 WebSocket 真推消息才有对象，桩环境不驱 WS，故不在此断言。
+  test('连接未建立时给出重连提示', async ({ page }) => {
     await page.goto('/notifications')
-    const items = page.locator('.notification-item')
-    await expect(items).toHaveCount(5)
-    await items.first().locator('.action-btn', { hasText: '忽略' }).click()
-    await expect(page.locator('.notification-item')).toHaveCount(4)
+    await expect(page.locator('.connection-status')).toContainText('消息服务未连接')
   })
 
-  test('切到「订单异常」只剩 1 条且 Tab 高亮', async ({ page }) => {
+  test('切到「订单异常」Tab 高亮且列表为空（不伪造行）', async ({ page }) => {
     await page.goto('/notifications')
     const tab = page.locator('.tab-item', { hasText: '订单异常' })
     await tab.click()
     await expect(tab).toHaveClass(/active/)
-    await expect(page.locator('.notification-item')).toHaveCount(1)
-    await expect(page.locator('.notification-item')).toContainText('114-1234567-8901234')
+    await expect(page.locator('.notification-item')).toHaveCount(0)
   })
 })
 

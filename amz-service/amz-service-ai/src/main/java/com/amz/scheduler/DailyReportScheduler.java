@@ -7,6 +7,7 @@ import com.amz.mapper.UserPreferenceMapper;
 import com.amz.model.UserPreference;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -50,6 +51,25 @@ public class DailyReportScheduler {
     @Autowired
     private DistributedJobLock distributedJobLock;
 
+    @Autowired
+    private Environment environment;
+
+    /**
+     * 这两个任务的正文都是写死的示例数字（订单 23、销售额 $1,234.56、SKU B08X4-001…），
+     * 与 shopId、与真实经营数据无关。仓库里同类问题的既有规则是：
+     * 模拟内容只允许在 mock 档产出（见客服索评、多平台同步），
+     * 非 mock 一律显式跳过并说明原因——因为「推给用户的经营报告」一旦被当成真的读，
+     * 损失比不发报告大得多。
+     */
+    private boolean isMockProfile() {
+        for (String p : environment.getActiveProfiles()) {
+            if ("mock".equals(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * 每日昨日运营报告（cron: 0 0 8 * * ?，每天早 8 点）。
      * <p>
@@ -65,6 +85,12 @@ public class DailyReportScheduler {
 
     private void doPushDailyReport() {
         log.info("=== 每日运营报告推送任务启动 ===");
+        if (!isMockProfile()) {
+            log.warn("每日运营报告跳过：报告正文来自 buildReport() 的写死示例（订单数、销售额、ACoS、"
+                    + "补货 SKU、多平台单量均与 shopId 无关）。非 mock 环境不向用户推送伪造经营数据；"
+                    + "要恢复该功能需改为真实聚合查询。");
+            return;
+        }
         LocalDate yesterday = LocalDate.now().minusDays(1);
 
         LambdaQueryWrapper<UserPreference> wrapper = new LambdaQueryWrapper<>();
@@ -126,6 +152,11 @@ public class DailyReportScheduler {
 
     private void doProactiveReminderScan() {
         log.info("=== 主动提醒扫描任务启动 ===");
+        if (!isMockProfile()) {
+            log.warn("主动提醒扫描跳过：ProactiveReminderService 的四类提醒内容同样是写死的 SKU 与件数"
+                    + "（只有活跃用户名单是真的）。非 mock 环境不产出模拟提醒。");
+            return;
+        }
         List<String> reminders = proactiveReminderService.scanAndRemind();
         for (String r : reminders) {
             log.info("主动提醒：{}", r);
@@ -135,6 +166,8 @@ public class DailyReportScheduler {
 
     /**
      * 生成单用户昨日运营报告（模拟）。
+     * <p>
+     * ⚠ 仅在 mock 档被调用：见 {@link #isMockProfile()}。这里没有一行数据来自真实查询。
      * <p>
      * 报告结构：
      * <pre>

@@ -12,7 +12,7 @@
  *
  * 边界（写下来以免后人误读）：
  * - 打桩不证明后端契约；后端改字段名而前端未同步时，这里查不出来。
- * - /notifications 没有 REST 端点：数据是前端硬编码 5 条 + WebSocket，
+ * - /notifications 没有 REST 端点：数据只来自 WebSocket（服务端不落库、前端不摆示例），
  *   因此那里断言的是硬编码数据，不是打桩响应。
  */
 import { test, expect } from './support/test'
@@ -200,16 +200,16 @@ test.describe('Warehouse', () => {
 
 // ═══ 9. 消息通知 ═══
 test.describe('Notifications', () => {
-  test('渲染前端硬编码的 5 条示例通知（该页无 REST 端点）', async ({ page }) => {
+  test('消息中心不再摆硬编码示例：空态 + 不持久化说明（该页无 REST 端点）', async ({ page }) => {
     await page.goto('/notifications')
-    const items = page.locator('.notification-item')
-    await expect(items).toHaveCount(5)
-    await expect(items.first()).toContainText('FBA 库存不足预警')
-    await expect(items.first()).toContainText('库存预警')
-    // Tab 过滤是纯前端过滤：点「订单异常」只剩 1 条
+    // 之前这里断言的是 5 条写死通知，等于把伪造数据固化成契约
+    await expect(page.locator('.notification-item')).toHaveCount(0)
+    await expect(page.locator('.empty-state')).toContainText('本次会话还没有收到推送')
+    await expect(page.locator('.notice-zone')).toContainText('服务端不落库')
+    // Tab 仍可切换，且切过去仍是空而不是造出来的行
     await page.locator('.tab-item', { hasText: '订单异常' }).click()
-    await expect(page.locator('.notification-item')).toHaveCount(1)
-    await expect(page.locator('.notification-item')).toContainText('114-1234567-8901234')
+    await expect(page.locator('.tab-item.active')).toContainText('订单异常')
+    await expect(page.locator('.notification-item')).toHaveCount(0)
   })
 })
 

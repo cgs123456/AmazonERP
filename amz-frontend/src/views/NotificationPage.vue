@@ -23,6 +23,11 @@
             <span>消息服务未连接，正在重连...</span>
           </div>
 
+          <div class="notice-zone" role="note">
+            消息中心只显示本次会话通过 WebSocket 收到的通知：服务端不落库，
+            刷新页面或离线期间的推送都会丢失，也没有可回看的历史消息。
+          </div>
+
           <!-- 标签切换 -->
           <div class="content-tabs">
             <button
@@ -81,7 +86,8 @@
             <!-- 空状态 -->
             <div v-if="filteredNotifications.length === 0" class="empty-state">
               <Icon icon="mdi:bell-off-outline" width="48" />
-              <p>暂无通知</p>
+              <p>本次会话还没有收到推送</p>
+              <p class="empty-hint">消息服务连上后新的告警会实时出现在这里；历史消息不持久化，无法回看。</p>
             </div>
           </div>
         </div>
@@ -129,51 +135,13 @@ const tabs = ref([
 
 const activeTab = ref('all')
 
-// 初始化通知数据（示例数据，生产环境通过 WebSocket / 接口获取）
-const notifications = ref<Notification[]>([
-  {
-    id: '1',
-    type: 'inventory_alert',
-    title: 'FBA 库存不足预警',
-    content: 'SKU「iPhone15-Black-128G」可售天数仅剩 6 天，建议尽快补货。',
-    time: '5 分钟前',
-    shopName: '美国站-主店铺',
-    sku: 'iPhone15-Black-128G'
-  },
-  {
-    id: '2',
-    type: 'order_exception',
-    title: '订单异常告警',
-    content: '订单 114-1234567-8901234 已申请退货，退款金额 $129.99，请及时处理。',
-    time: '23 分钟前',
-    shopName: '美国站-主店铺'
-  },
-  {
-    id: '3',
-    type: 'replenish_suggest',
-    title: '补货建议',
-    content: '基于近 30 天销量预测，建议为 SKU「USB-C-HUB-7in1」补货 500 件。',
-    time: '1 小时前',
-    shopName: '欧洲站-德国店铺',
-    sku: 'USB-C-HUB-7in1'
-  },
-  {
-    id: '4',
-    type: 'negative_review',
-    title: '差评告警',
-    content: '产品 ASIN B0XXXXXXXX 收到 1 星差评：「充电器使用一周后损坏」，请跟进处理。',
-    time: '2 小时前',
-    shopName: '美国站-主店铺'
-  },
-  {
-    id: '5',
-    type: 'price_change',
-    title: '价格异动提醒',
-    content: '竞品 ASIN B0YYYYYYYY 调整价格至 $89.99（下降 $10），建议关注 Buy Box 变化。',
-    time: '4 小时前',
-    shopName: '美国站-主店铺'
-  }
-])
+// 通知列表：只装本次会话经 WebSocket 收到的消息。
+//
+// 这里原先写死 5 条示例（iPhone15 库存预警、订单 114-1234567-8901234 退货…），
+// 它们和登录店铺无关，却以「库存预警」「订单异常」的样式排在列表最前面——
+// 运营会把它们当成待办去处理。服务端（amz-service-message）没有消息表、
+// 也没有 REST 读取接口，所以拿不到历史是事实，编几条顶上是假象。
+const notifications = ref<Notification[]>([])
 
 // 使用 WebSocket
 const { isConnected, onMessage } = useWebSocket()
@@ -290,6 +258,8 @@ const handleDismiss = (notification: Notification) => {
 
 .notification-content { background: var(--color-surface); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-sm); }
 
+.notice-zone { padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
+.empty-hint { font-size: 0.8125rem; color: var(--color-muted); margin-top: 0.25rem; }
 .connection-status { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-primary-light); color: var(--color-primary); border-radius: var(--radius-md); font-size: 0.875rem; border: 1px solid var(--color-border); }
 
 .content-tabs { display: flex; border-bottom: 1px solid var(--color-border); padding: 0 1rem; overflow-x: auto; }
