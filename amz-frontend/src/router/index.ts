@@ -44,6 +44,11 @@ const router = createRouter({
             component: () => import('../views/MultiplatformOrders.vue')
         },
         {
+            path: '/multiplatform-ops',
+            name: 'MultiplatformOps',
+            component: () => import('../views/MultiplatformOps.vue')
+        },
+        {
             path: '/profit',
             name: 'Profit',
             component: () => import('../views/ProfitReport.vue')

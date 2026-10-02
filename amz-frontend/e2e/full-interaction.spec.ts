@@ -44,6 +44,7 @@ const NAV = [
   { path: '/ad-search-terms', linkText: '搜索词与规则' },
   { path: '/ad-bid-schedule', linkText: '分时调价' },
   { path: '/multiplatform', linkText: '多平台订单' },
+  { path: '/multiplatform-ops', linkText: '多平台运营台' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -77,7 +78,10 @@ test.describe('侧边栏导航跳转', () => {
       await waitReady(page)
       const link = page.locator('.sidebar-nav .nav-item', { hasText: nav.linkText }).first()
       await link.click()
-      await expect(page).toHaveURL(new RegExp(nav.path.replace(/\//g, '\\/')))
+      // 超时放宽到 20s：dev server 是按需编译路由 chunk 的，某个页面在本轮里第一次
+      // 被访问时要现场编译（实测冷启动 4.4s，全套跑到第 16 个时能顶过默认 10s），
+      // 这属于测试环境的编译耗时，不是页面不跳转。
+      await expect(page).toHaveURL(new RegExp(nav.path.replace(/\//g, '\\/')), { timeout: 20000 })
     })
   }
 })
@@ -853,6 +857,109 @@ test.describe('MultiplatformOrders 交互（多平台订单）', () => {
     await expect.poll(() => ships.length).toBe(1)
     expect(ships[0]).toContain('trackingNo=TRK-NEW-1')
     await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+})
+
+test.describe('MultiplatformOps 交互（多平台运营台）', () => {
+  test('六个 Tab 各自拉自己的列表，账号行里没有凭证值', async ({ page }) => {
+    const paths: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname
+      if (p.startsWith('/api/multiplatform/')) paths.push(p)
+    })
+    await page.goto('/multiplatform-ops')
+    const accounts = page.locator('[data-panel="accounts"]')
+    await expect(accounts.locator('tbody tr')).toHaveCount(2)
+    await expect(accounts).toContainText('Temu US 旗舰店')
+    await expect(accounts).toContainText('从未')
+    await expect(page.locator('.notice-zone')).toContainText('凭证只写不回显')
+    // 后端有、语义未定的三个入口不能出现在页面上
+    for (const label of ['测试连接', '回复', '同步', '查看密钥']) {
+      await expect(page.locator('.tab-panel button', { hasText: label })).toHaveCount(0)
+    }
+    // 首屏只应请求账号列表，其余五个要等切 Tab
+    expect(paths).toEqual(['/api/multiplatform/account/list/1'])
+
+    await page.locator('.tab', { hasText: '库存' }).click()
+    await expect(page.locator('[data-panel="inventory"]')).toContainText('SKU-A')
+    await page.locator('[data-panel="inventory"] button', { hasText: '按平台+SKU 汇总' }).click()
+    await expect(page.locator('[data-panel="inventory"] .metric-grid')).toContainText('15')
+    await expect(page.locator('[data-panel="inventory"]')).toContainText('不是平台侧库存快照时间')
+
+    await page.locator('.tab', { hasText: 'Webhook 事件' }).click()
+    await expect(page.locator('[data-panel="webhook"]')).toContainText('只写日志，不触发业务动作')
+    expect(paths).toContain('/api/multiplatform/webhook/list/1')
+  })
+
+  test('新增账号要确认才落库，apiKey 留空时请求体里根本不出现这个键', async ({ page }) => {
+    const bodies: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/multiplatform/account' && r.method() === 'POST') {
+        bodies.push(r.postData() || '')
+      }
+    })
+    await page.goto('/multiplatform-ops')
+    await page.locator('[data-panel="accounts"] button', { hasText: '新增平台账号' }).click()
+    await page.locator('.form-card input').first().fill('Temu EU 店')
+    await page.locator('.form-actions button', { hasText: '创建账号' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('状态由后端固定为 ACTIVE')
+    expect(bodies).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => bodies.length).toBe(1)
+    const body = JSON.parse(bodies[0])
+    expect(body.storeName).toBe('Temu EU 店')
+    expect(body.shopId).toBe(1)
+    expect('apiKey' in body).toBe(false)
+    expect('status' in body).toBe(false)
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+
+  test('删除账号说明是物理删除；分配处理人空值不发请求', async ({ page }) => {
+    const assigns: string[] = []
+    page.on('request', (r) => {
+      if (/\/api\/multiplatform\/message\/\d+\/assign/.test(new URL(r.url()).pathname)) {
+        assigns.push(decodeURIComponent(r.url()))
+      }
+    })
+    await page.goto('/multiplatform-ops')
+    await page.locator('[data-panel="accounts"] tbody tr').first()
+      .locator('button', { hasText: '删除' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('物理删除')
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    await expect(page.locator('.modal')).toHaveCount(0)
+
+    await page.locator('.tab', { hasText: '消息' }).click()
+    const msgRow = page.locator('[data-panel="messages"] tbody tr').first()
+    await expect(msgRow).toContainText('未分配')
+    await msgRow.locator('button', { hasText: '分配处理人' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    expect(assigns).toEqual([])
+    await expect(page.locator('.error-zone')).toContainText('处理人不能为空')
+
+    await msgRow.locator('button', { hasText: '分配处理人' }).click()
+    await page.locator('.modal input').fill('客服乙')
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => assigns.length).toBe(1)
+    // 记录时已 decodeURIComponent，所以这里断言解码后的中文，而不是 %E5%AE%A2…
+    expect(assigns[0]).toContain('assignedTo=客服乙')
+  })
+
+  test('轮换密钥后明文只显示一次，关掉就取不回来', async ({ page }) => {
+    await page.goto('/multiplatform-ops')
+    await page.locator('.tab', { hasText: 'ISV 应用' }).click()
+    const appRow = page.locator('[data-panel="apps"] tbody tr').first()
+    await expect(appRow).toContainText('ak-visible-part')
+    await appRow.locator('button', { hasText: '轮换密钥' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('旧密钥立刻失效')
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+
+    const card = page.locator('.secret-card')
+    await expect(card).toContainText('ak-issued-e2e')
+    await expect(card).toContainText('sk-issued-e2e-secret')
+    await card.locator('button', { hasText: '我已保存' }).click()
+    await expect(card).toHaveCount(0)
+    // 关掉之后没有任何端点可以再取回明文：列表行仍然只有可见部分
+    await expect(page.locator('[data-panel="apps"]')).not.toContainText('sk-issued-e2e-secret')
   })
 })
 

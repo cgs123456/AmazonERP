@@ -728,6 +728,90 @@ const MP_ORDERS = [
 ]
 
 /**
+ * 多平台运营台数据。两条刻意保留的形状：
+ * 1. 账号行里没有 apiKey/密文列的真实值——后端读取接口会把它们抹掉，桩必须照这个契约给，
+ *    否则前端「凭证不回显」这条边界在 E2E 里是假绿（页面上本来就没有可泄露的值）。
+ * 2. Webhook 行的 PROCESSED 只代表入库且处理未抛异常，processResult 直接写清这一点。
+ */
+const MP_ACCOUNTS = [
+  {
+    id: 7, shopId: 1, platform: 'TEMU', storeName: 'Temu US 旗舰店',
+    apiEndpoint: 'https://open-api.temu.com', status: 'ACTIVE', apiKey: null,
+    tokenExpiresAt: '2026-11-01 00:00:00', lastSyncTime: null, createTime: '2026-08-01 09:00:00'
+  },
+  {
+    id: 8, shopId: 1, platform: 'SHEIN', storeName: 'SHEIN DE 店',
+    apiEndpoint: null, status: 'ERROR', apiKey: null,
+    tokenExpiresAt: null, lastSyncTime: '2026-09-30 02:00:00', createTime: '2026-08-05 11:00:00'
+  }
+]
+
+const MP_PRODUCTS = [
+  {
+    id: 31, shopId: 1, platform: 'TEMU', platformProductId: 'TP-1001', title: 'Yoga mat',
+    price: 19.9, currency: 'USD', stockQty: 120, status: 'ACTIVE',
+    amazonAsin: 'B0ABC12345', amazonSku: 'AMZ-SKU-1'
+  },
+  {
+    id: 32, shopId: 1, platform: 'TIKTOK', platformProductId: 'TT-2002', title: 'Desk lamp',
+    price: 8, currency: 'EUR', stockQty: 0, status: 'OUT_OF_STOCK', amazonAsin: null, amazonSku: null
+  }
+]
+
+const MP_MESSAGES = [
+  {
+    id: 41, shopId: 1, platform: 'TEMU', platformMessageId: 'PM-1', buyerName: 'Ana',
+    subject: 'When will it ship?', direction: 'IN', status: 'UNREAD', assignedTo: null,
+    receiveTime: '2026-10-01 08:00:00'
+  },
+  {
+    id: 42, shopId: 1, platform: 'SHEIN', platformMessageId: 'PM-2', buyerName: 'Kai',
+    subject: 'Thanks', direction: 'OUT', status: 'REPLIED', assignedTo: '客服甲',
+    receiveTime: '2026-10-01 09:00:00'
+  }
+]
+
+const MP_INVENTORY = [
+  {
+    id: 51, shopId: 1, platform: 'TEMU', platformProductId: 'TP-1001', sku: 'SKU-A',
+    warehouse: 'GZ-01', availableQty: 0, reservedQty: 2, inboundQty: 30, snapshotTime: '2026-09-28 01:00:00'
+  },
+  {
+    id: 52, shopId: 1, platform: 'TIKTOK', platformProductId: 'TT-2002', sku: 'SKU-B',
+    warehouse: null, availableQty: 15, reservedQty: 0, inboundQty: null, snapshotTime: null
+  }
+]
+
+const MP_AGGREGATE = {
+  shopId: 1, grandTotalAvailable: 15,
+  byPlatform: { TEMU: { 'SKU-A': 0 }, TIKTOK: { 'SKU-B': 15 } },
+  bySku: { 'SKU-A': 0, 'SKU-B': 15 },
+  computedAt: '2026-10-02 19:00:00'
+}
+
+const MP_WEBHOOKS = [
+  {
+    id: 61, shopId: 1, platform: 'TEMU', eventType: 'ORDER_CREATED', eventId: 'EV-1',
+    status: 'PROCESSED', processResult: '已记录；当前事件分发只写日志，不触发业务动作',
+    processTime: '2026-10-01 07:00:00', createTime: '2026-10-01 07:00:00'
+  },
+  {
+    id: 62, shopId: 1, platform: 'SHEIN', eventType: 'REFUND_CREATED', eventId: 'EV-2',
+    status: 'FAILED', processResult: 'payload 解析失败', processTime: null, createTime: '2026-10-01 07:30:00'
+  }
+]
+
+const MP_APPS = [
+  {
+    id: 71, appName: 'WMS 对接', appKey: 'ak-visible-part', scopes: 'order.read,inventory.read',
+    redirectUris: 'https://wms.example/cb', rateLimitRpm: 60, status: 'ACTIVE', ownerShopId: 1
+  }
+]
+
+/** 明文密钥只在注册/轮换这一条响应里出现一次，列表接口不会有 */
+const MP_SECRET_ISSUE = { appId: 71, appKey: 'ak-issued-e2e', appSecret: 'sk-issued-e2e-secret' }
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -915,6 +999,23 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/multiplatform\/order\/\d+\/ship$/, data: true },
   { match: /^\/multiplatform\/sync\/all\//, data: { attempted: 3, succeeded: 2, failed: 1, inserted: 2, failedPlatforms: ['TIKTOK'] } },
   { match: /^\/multiplatform\/sync\/1\/TEMU$/, data: 2 },
+
+  // ===== 多平台运营台 /multiplatform-ops =====
+  // 顺序敏感：oauth app 的 list 要排在 /oauth/app 之前，否则列表会拿到一次性密钥对象；
+  // account 的 list 同理要排在 /account/\d+ 之前。
+  { match: /^\/multiplatform\/account\/list\//, data: MP_ACCOUNTS, page: FULL_PAGE(MP_ACCOUNTS.length) },
+  { match: /^\/multiplatform\/account\/\d+$/, data: MP_ACCOUNTS[0] },
+  { match: /^\/multiplatform\/account$/, data: MP_ACCOUNTS[0] },
+  { match: /^\/multiplatform\/product\/\d+\/map$/, data: true },
+  { match: /^\/multiplatform\/product\/list\//, data: MP_PRODUCTS, page: FULL_PAGE(MP_PRODUCTS.length) },
+  { match: /^\/multiplatform\/message\/\d+\/assign$/, data: true },
+  { match: /^\/multiplatform\/message\/list\//, data: MP_MESSAGES, page: FULL_PAGE(MP_MESSAGES.length) },
+  { match: /^\/multiplatform\/inventory\/aggregated\//, data: MP_AGGREGATE },
+  { match: /^\/multiplatform\/inventory\/list\//, data: MP_INVENTORY, page: FULL_PAGE(MP_INVENTORY.length) },
+  { match: /^\/multiplatform\/webhook\/list\//, data: MP_WEBHOOKS, page: FULL_PAGE(MP_WEBHOOKS.length) },
+  { match: /^\/multiplatform\/oauth\/app\/list\//, data: MP_APPS, page: FULL_PAGE(MP_APPS.length) },
+  { match: /^\/multiplatform\/oauth\/app\/\d+\/rotate$/, data: MP_SECRET_ISSUE },
+  { match: /^\/multiplatform\/oauth\/app$/, data: MP_SECRET_ISSUE },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

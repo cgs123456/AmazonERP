@@ -124,6 +124,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/multiplatform-ops') }"
+        @click="navigateTo('/multiplatform-ops')"
+        role="button"
+        aria-label="多平台运营台"
+        tabindex="0"
+      >
+        <Icon icon="mdi:book-open-page-variant-outline" class="nav-icon" width="24" />
+        <span class="nav-text">多平台运营台</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/profit') }"
         @click="navigateTo('/profit')"
         role="button"
