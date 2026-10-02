@@ -105,7 +105,30 @@
                 <td>{{ inv.quantity }}</td>
                 <td>{{ inv.reservedQuantity }}</td>
                 <td>{{ inv.inboundQuantity }}</td>
-                <td>{{ inv.locationCode || '-' }}</td>
+                <td>
+                  <div v-if="editingInventoryId === inv.id" class="loc-edit">
+                    <input
+                      v-model="editLocationCode"
+                      class="loc-input"
+                      :maxlength="LOCATION_MAX"
+                      aria-label="库位码"
+                      @keyup.enter="saveLocation(inv)"
+                    />
+                    <button class="page-btn" :disabled="locating" @click="saveLocation(inv)">保存</button>
+                    <button class="page-btn" :disabled="locating" @click="cancelLocationEdit">取消</button>
+                    <span v-if="locationError" class="loc-error" role="alert">{{ locationError }}</span>
+                  </div>
+                  <div v-else class="loc-view">
+                    <span>{{ inv.locationCode || '-' }}</span>
+                    <button
+                      class="page-btn loc-btn"
+                      :disabled="!inv.id"
+                      :title="inv.id ? '修改库位码（需 OPERATOR 或 ADMIN 角色）' : '该行没有 id，无法定位记录'"
+                      @click="startLocationEdit(inv)"
+                    >改库位</button>
+                    <span v-if="savedLocationId === inv.id" class="loc-saved" role="status">已保存</span>
+                  </div>
+                </td>
                 <td>{{ inv.batchNo || '-' }}</td>
               </tr>
               <tr v-if="!loading && inventoryList.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:package-variant-closed" width="32" class="empty-icon" /><span>暂无库存数据</span></div></td></tr>
@@ -394,6 +417,65 @@ const inventoryNextCursor = ref<string | null>(null)
 const inventoryTruncated = ref(false)
 const inventoryPageMetaMissing = ref(false)
 const inventoryLoadingMore = ref(false)
+
+// ===== 库位码就地编辑（PUT /logistics/warehouse/inventory/{id}/location）=====
+const editingInventoryId = ref<number | null>(null)
+const editLocationCode = ref('')
+const locating = ref(false)
+const locationError = ref('')
+const savedLocationId = ref<number | null>(null)
+
+// 命名空间对象不能直接出现在模板绑定里（Vue 会对 setup 绑定做 ref 解包，
+// 解包时读到的会是 mock 的代理键），所以在脚本里取成普通常量再交给模板。
+const LOCATION_MAX = WH.LOCATION_CODE_MAX_LENGTH
+
+const startLocationEdit = (inv: WarehouseInventory) => {
+  if (!inv.id) return
+  editingInventoryId.value = inv.id
+  editLocationCode.value = inv.locationCode ?? ''
+  locationError.value = ''
+  savedLocationId.value = null
+}
+
+const cancelLocationEdit = () => {
+  editingInventoryId.value = null
+  locationError.value = ''
+}
+
+/**
+ * 保存库位码。空值与超长在前端先挡一次，后端同规则：
+ * ?locationCode= 这种「参数存在但为空」过去会把库位清空，现在一律拒绝。
+ */
+const saveLocation = async (inv: WarehouseInventory) => {
+  if (!inv.id) return
+  const code = editLocationCode.value.trim()
+  if (!code) {
+    locationError.value = '库位码不能为空：本接口不做静默清空'
+    return
+  }
+  if (code.length > LOCATION_MAX) {
+    locationError.value = `库位码最长 ${LOCATION_MAX} 字符，当前 ${code.length}`
+    return
+  }
+  locating.value = true
+  locationError.value = ''
+  try {
+    const res = await WH.updateInventoryLocation(inv.id, code)
+    if (res?.code === 200 && res.data) {
+      const at = inventoryList.value.findIndex((r) => r.id === inv.id)
+      if (at !== -1) inventoryList.value.splice(at, 1, { ...inventoryList.value[at], ...res.data })
+      savedLocationId.value = inv.id
+      editingInventoryId.value = null
+    } else {
+      locationError.value = `保存失败：${res?.message || '后端未返回成功'}`
+    }
+  } catch (e) {
+    // 403（角色不够）与无权访问该店铺都要在格子上看得见，而不是只进 console
+    locationError.value = e instanceof Error && e.message ? `保存失败：${e.message}` : '保存失败'
+  } finally {
+    locating.value = false
+  }
+}
 const inboundOrders = ref<InboundOrder[]>([])
 const inboundNextCursor = ref<string | null>(null)
 const inboundTruncated = ref(false)
@@ -741,6 +823,15 @@ onMounted(async () => {
 /* 页面基础 */
 .warehouse-page { background: var(--color-background); }
 .truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
+
+/* 库位码就地编辑 */
+.loc-view { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
+.loc-btn { padding: 0.1875rem 0.5rem; font-size: 0.75rem; }
+.loc-edit { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
+.loc-input { width: 7.5rem; padding: 0.25rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.loc-input:focus { border-color: var(--color-primary); outline: none; }
+.loc-error { color: var(--color-error); font-size: 0.75rem; max-width: 14rem; }
+.loc-saved { color: var(--color-success); font-size: 0.75rem; }
 
 /* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */
 

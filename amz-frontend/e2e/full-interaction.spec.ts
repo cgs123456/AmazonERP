@@ -1238,6 +1238,67 @@ test.describe('AgentMemory 交互（助手记忆）', () => {
   })
 })
 
+test.describe('库位编辑与补货重算', () => {
+  test('库存列表就地改库位：把新值 PUT 给后端并回显到这一行', async ({ page }) => {
+    const puts: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (r.method() === 'PUT' && u.pathname.startsWith('/api/logistics/warehouse/inventory/')) {
+        puts.push(decodeURIComponent(u.pathname + u.search))
+      }
+    })
+
+    await page.goto('/warehouse')
+    // 库存表在「库存查询」Tab 里，默认 Tab 是仓库列表；不切过去元素在 DOM 里但不可见
+    await page.locator('.tab-item', { hasText: '库存查询' }).click()
+    const first = page.locator('.loc-btn').first()
+    await expect(first).toBeEnabled({ timeout: 20000 })
+    await first.click()
+    await page.locator('.loc-input').fill('B-09-09')
+    await page.locator('.loc-edit button', { hasText: '保存' }).click()
+
+    await expect.poll(() => puts.length).toBe(1)
+    expect(puts[0]).toContain('/logistics/warehouse/inventory/1/location')
+    expect(puts[0]).toContain('locationCode=B-09-09')
+    await expect(page.locator('.loc-view').first()).toContainText('B-09-09')
+    await expect(page.locator('.loc-saved')).toContainText('已保存')
+    await expect(page.locator('.loc-error')).toHaveCount(0)
+  })
+
+  test('空库位不发请求，并说明后端不做静默清空', async ({ page }) => {
+    let puts = 0
+    page.on('request', (r) => { if (r.method() === 'PUT') puts++ })
+
+    await page.goto('/warehouse')
+    await page.locator('.tab-item', { hasText: '库存查询' }).click()
+    await expect(page.locator('.loc-btn').first()).toBeEnabled({ timeout: 20000 })
+    await page.locator('.loc-btn').first().click()
+    await page.locator('.loc-input').fill('   ')
+    await page.locator('.loc-edit button', { hasText: '保存' }).click()
+
+    await expect(page.locator('.loc-error')).toContainText('不能为空')
+    expect(puts).toBe(0)
+  })
+
+  test('库存监控页重算补货建议：POST calc 后展示条数', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname
+      if (r.method() === 'POST' && p.startsWith('/api/spapi/replenish/calc/')) posts.push(p)
+    })
+
+    await page.goto('/inventory')
+    await expect(page.locator('.recalc-btn')).toBeEnabled({ timeout: 20000 })
+    // 说明文案只在还没重算时出现（成功后同一位置换成结果条数），所以点之前先断言
+    await expect(page.locator('.recalc-hint')).toContainText('逐条 upsert')
+    await page.locator('.recalc-btn').click()
+
+    await expect.poll(() => posts.length).toBe(1)
+    expect(posts[0]).toBe('/api/spapi/replenish/calc/1')
+    await expect(page.locator('.recalc-msg')).toContainText('3 条建议')
+  })
+})
+
 test.describe('未登录态', () => {
   test('无 token 时 header 显示登录入口', async ({ browser }) => {
     // 自建干净上下文：无任何 token，也不装 /api 桩（userInfo 取不到 -> v-if="!userInfo" 分支）

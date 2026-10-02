@@ -23,6 +23,9 @@ import static com.amz.service.impl.LogisticsShopGuard.requireShopAllowed;
 @Service
 public class WarehouseServiceImpl implements WarehouseService {
 
+    /** 与 DDL 的 location_code VARCHAR(50) 对齐：超长会被 MySQL 严格模式拒掉，报错比这里难读。 */
+    static final int LOCATION_CODE_MAX_LENGTH = 50;
+
     @Autowired
     private WarehouseMapper warehouseMapper;
 
@@ -109,7 +112,16 @@ public class WarehouseServiceImpl implements WarehouseService {
         if (inv == null || !UserContext.isShopAllowed(inv.getShopId())) {
             throw new CodeErrorException("库存记录不存在或无权访问");
         }
-        inv.setLocationCode(locationCode);
+        // locationCode 是 query 上的裸字符串：?locationCode= 能通过「参数必填」却把库位清空，
+        // 超过 DDL 的 VARCHAR(50) 会在严格模式下变成 500。两者都在写库前挡掉。
+        String trimmed = locationCode == null ? "" : locationCode.trim();
+        if (trimmed.isEmpty()) {
+            throw new CodeErrorException("库位码不能为空（要清空请走专门的解绑操作，本接口不做静默清除）");
+        }
+        if (trimmed.length() > LOCATION_CODE_MAX_LENGTH) {
+            throw new CodeErrorException("库位码最长 " + LOCATION_CODE_MAX_LENGTH + " 字符，实际 " + trimmed.length());
+        }
+        inv.setLocationCode(trimmed);
         inventoryMapper.updateById(inv);
         return inv;
     }

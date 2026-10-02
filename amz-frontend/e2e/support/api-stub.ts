@@ -993,6 +993,13 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/report\/dashboard\/shop-distribution$/, data: DASHBOARD_SHOP_DIST },
   { match: /^\/spapi\/inventory\/health\//, data: INVENTORY_HEALTH },
   { match: /^\/spapi\/replenish\/list\//, data: REPLENISH },
+  // 手动重算：后端 data 是「本次生成的建议条数」，前端要据此重新拉列表
+  { match: /^\/spapi\/replenish\/calc\//, data: 3 },
+  // 库位就地编辑：返回更新后的整行，locationCode 取调用方提交值（等价于后端回显）
+  {
+    match: /^\/logistics\/warehouse\/inventory\/\d+\/location$/,
+    data: (query: URLSearchParams) => ({ ...WAREHOUSE_INVENTORY[0], locationCode: query.get('locationCode') })
+  },
   { match: /^\/logistics\/dashboard\/overview$/, data: LOGISTICS_OVERVIEW },
   { match: /^\/logistics\/dashboard\/trend$/, data: LOGISTICS_TREND },
   { match: /^\/logistics\/dashboard\/carrier-performance$/, data: LOGISTICS_CARRIER },

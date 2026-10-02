@@ -158,6 +158,13 @@ export const getInventoryList = async (shopId: number | string) => {
   return { ...healthRes, data: joinSuggestQty(items, suggestions) }
 }
 
+// 手动重算本店补货建议：POST /spapi/replenish/calc/{shopId}
+// 后端读 amz_fba_inventory + amz_sales_history 现算并 upsert amz_replenishment_suggestion，
+// data 是本次生成的建议条数（不是布尔），所以调用方必须重新拉一次列表才能看到新结果。
+export const recalcReplenishment = (shopId: number | string) => {
+  return request.post<void, ApiResponse<number>>(`/spapi/replenish/calc/${shopId}`)
+}
+
 // 获取库存健康度（由 health 行派生计数，与列表口径一致；与 getInventoryList 共享在途请求）
 export const getInventoryHealth = async (shopId: number | string) => {
   const res = await fetchHealth(shopId)

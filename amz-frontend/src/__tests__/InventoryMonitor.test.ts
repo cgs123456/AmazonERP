@@ -7,10 +7,13 @@ import type { InventoryItem, InventoryHealth } from '@/api/inventory'
 vi.mock('@/api/inventory', () => ({
   getInventoryList: vi.fn(),
   getInventoryHealth: vi.fn(),
-  getReplenishSuggestion: vi.fn()
+  getReplenishSuggestion: vi.fn(),
+  recalcReplenishment: vi.fn()
 }))
 
-import { getInventoryList, getInventoryHealth } from '@/api/inventory'
+import { getInventoryList, getInventoryHealth, recalcReplenishment } from '@/api/inventory'
+
+const mockedRecalc = vi.mocked(recalcReplenishment)
 
 // 生成采购计划走采购域；本用例只关心「假数据不许建计划」这条护栏
 vi.mock('@/api/procurement', () => ({ createPlan: vi.fn() }))
@@ -210,5 +213,84 @@ describe('InventoryMonitor 视图', () => {
     expect(wrapper.find('.plan-btn').exists()).toBe(false)
     // 健康度是另一条独立数据源，接口 200 就照常显示
     expect(wrapper.findAll('.health-count').map(c => c.text())).toEqual(['9', '9', '9', '9'])
+  })
+})
+
+describe('InventoryMonitor 补货重算', () => {
+  const okList = { code: 200, message: 'ok', data: [] as any[] }
+  const okHealth = { code: 200, message: 'ok', data: { urgent: 0, risk: 0, healthy: 0, overstock: 0 } }
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '9')
+    vi.mocked(getInventoryList).mockReset().mockResolvedValue(okList as any)
+    vi.mocked(getInventoryHealth).mockReset().mockResolvedValue(okHealth as any)
+    mockedRecalc.mockReset()
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  const mountPage = async () => {
+    const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('按钮说明这是后端重算并 upsert，不是页面手填建议量', async () => {
+    const wrapper = await mountPage()
+    expect(wrapper.find('.recalc-btn').exists()).toBe(true)
+    expect(wrapper.find('.recalc-row').text()).toContain('逐条 upsert')
+    expect(wrapper.find('.recalc-row').text()).toContain('采购计划草稿不受影响')
+  })
+
+  it('点击后按选中店铺发 POST，成功展示条数并重新拉一次列表', async () => {
+    mockedRecalc.mockResolvedValue({ code: 200, message: 'ok', data: 12 } as any)
+    const wrapper = await mountPage()
+
+    expect(vi.mocked(getInventoryList)).toHaveBeenCalledTimes(1)
+    await wrapper.find('.recalc-btn').trigger('click')
+    await flushPromises()
+
+    expect(mockedRecalc).toHaveBeenCalledTimes(1)
+    expect(mockedRecalc).toHaveBeenCalledWith('9')
+    expect(wrapper.find('.recalc-msg').text()).toContain('12 条建议')
+    expect(vi.mocked(getInventoryList)).toHaveBeenCalledTimes(2)
+  })
+
+  it('后端业务失败时进错误条，且不重新拉列表', async () => {
+    mockedRecalc.mockResolvedValue({ code: 400, message: '店铺无库存快照', data: null } as any)
+    const wrapper = await mountPage()
+
+    await wrapper.find('.recalc-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.error-zone').text()).toContain('店铺无库存快照')
+    expect(wrapper.find('.recalc-msg').exists()).toBe(false)
+    expect(vi.mocked(getInventoryList)).toHaveBeenCalledTimes(1)
+  })
+
+  it('请求异常同样可见，重算按钮不会卡在忙态', async () => {
+    mockedRecalc.mockRejectedValue(new Error('timeout of 30000ms exceeded'))
+    const wrapper = await mountPage()
+
+    await wrapper.find('.recalc-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.error-zone').text()).toContain('timeout of 30000ms exceeded')
+    expect((wrapper.find('.recalc-btn').element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('未选店铺时按钮禁用，点了也不发请求', async () => {
+    localStorage.removeItem('current_shop_id')
+    localStorage.setItem('shops', '[]')
+    const wrapper = await mountPage()
+
+    const btn = wrapper.find('.recalc-btn')
+    expect((btn.element as HTMLButtonElement).disabled).toBe(true)
+    await btn.trigger('click')
+    await flushPromises()
+    expect(mockedRecalc).not.toHaveBeenCalled()
   })
 })

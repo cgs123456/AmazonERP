@@ -95,6 +95,24 @@ export const listInventory = (params: {
   })
 }
 
+/**
+ * 改库位码。PUT /logistics/warehouse/inventory/{inventoryId}/location?locationCode=
+ * <p>
+ * 后端 @RequireRole({"OPERATOR","ADMIN"}) + 按行归属校验（inventoryId 不是 shopId，
+ * 切面管不到，服务里 selectById 后再判权），所以：
+ * - 空串/空白会被后端拒绝，不会静默清空库位；
+ * - 上限 50 字符（与 DDL 的 VARCHAR(50) 对齐），这里也挡一层，避免拿 500 回来。
+ */
+export const LOCATION_CODE_MAX_LENGTH = 50
+
+export const updateInventoryLocation = (inventoryId: number, locationCode: string) => {
+  return request.put<void, ApiResponse<WarehouseInventory>>(
+    `/logistics/warehouse/inventory/${inventoryId}/location`,
+    null,
+    { params: { locationCode } }
+  )
+}
+
 // ===== 入库单 =====
 export const createInboundOrder = (data: InboundOrder) => {
   return request.post<void, ApiResponse<InboundOrder>>('/logistics/inbound', data)

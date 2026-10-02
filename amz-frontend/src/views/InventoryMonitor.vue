@@ -54,6 +54,18 @@
       </div>
       <p v-if="planMsg" class="plan-msg" role="status">{{ planMsg }}</p>
 
+      <!-- 补货重算：建议量是后端算出来的，页面上没有"手填建议量"的入口 -->
+      <div class="recalc-row">
+        <button
+          class="recalc-btn"
+          :disabled="recalcBusy || !currentShopId"
+          :title="currentShopId ? '按当前 FBA 库存与销售历史重算本店补货建议' : '先在右上角选择店铺'"
+          @click="onRecalc"
+        >{{ recalcBusy ? '重算中...' : '重算补货建议' }}</button>
+        <span v-if="recalcMsg" class="recalc-msg" role="status">{{ recalcMsg }}</span>
+        <span v-else class="recalc-hint">重算按当前库存与销售历史逐条 upsert 本店的补货建议；已生成的采购计划草稿不受影响</span>
+      </div>
+
       <!-- 库存列表（客户端分页，避免大店铺全量渲染卡顿） -->
       <div class="table-card">
         <table class="data-table">
@@ -119,7 +131,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import { getInventoryList, getInventoryHealth } from '@/api/inventory'
+import { getInventoryList, getInventoryHealth, recalcReplenishment } from '@/api/inventory'
 import type { InventoryItem, InventoryHealth } from '@/api/inventory'
 import { createPlan } from '@/api/procurement'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -202,7 +214,8 @@ const makePlan = async (item: InventoryItem) => {
   }
 }
 
-onMounted(async () => {
+/** 拉一次本店库存与健康度。onMounted 与「重算补货建议」成功后共用同一条路径。 */
+const reloadData = async () => {
   // 未选择店铺时不发请求，避免网关校验失败
   const shopId = refreshShop()
   if (!shopId) {
@@ -234,7 +247,39 @@ onMounted(async () => {
   }))
 
   loading.value = false
-})
+}
+
+const recalcBusy = ref(false)
+const recalcMsg = ref('')
+
+/**
+ * 让后端按当前 FBA 库存与销售历史重算补货建议。
+ * 返回的是「生成了几条」，列表里的建议量要重新拉才更新，所以成功后必须 reloadData。
+ */
+const onRecalc = async () => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    pushError('重算补货建议：未选择店铺')
+    return
+  }
+  recalcBusy.value = true
+  recalcMsg.value = ''
+  try {
+    const res = await recalcReplenishment(shopId)
+    if (res?.code === 200) {
+      recalcMsg.value = `已重算，本次生成 ${res.data ?? 0} 条建议`
+      await reloadData()
+    } else {
+      pushError(`重算补货建议：${res?.message || '接口未返回成功'}`)
+    }
+  } catch (e) {
+    pushError(`重算补货建议：${e instanceof Error ? e.message : '调用失败'}`)
+  } finally {
+    recalcBusy.value = false
+  }
+}
+
+onMounted(reloadData)
 </script>
 
 <style scoped>
@@ -242,6 +287,12 @@ onMounted(async () => {
 .plan-btn { margin-left: 0.5rem; padding: 0.2rem 0.5rem; border: none; border-radius: var(--radius-sm); background: var(--color-primary-light); color: var(--color-primary); font-size: 0.75rem; cursor: pointer; }
 .plan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .plan-msg { font-size: 0.8125rem; color: var(--color-success); margin: 0 0 0.75rem; }
+.recalc-row { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.recalc-btn { padding: 0.3rem 0.75rem; border: 1px solid var(--color-primary); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-primary); font-size: 0.8125rem; cursor: pointer; }
+.recalc-btn:hover:not(:disabled) { background: var(--color-primary-light); }
+.recalc-btn:disabled { opacity: 0.5; cursor: not-allowed; border-color: var(--color-border); color: var(--color-muted); }
+.recalc-msg { font-size: 0.8125rem; color: var(--color-success); }
+.recalc-hint { font-size: 0.75rem; color: var(--color-muted); }
 .error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 
 .inventory-page { background: var(--color-background); }
