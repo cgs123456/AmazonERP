@@ -1,8 +1,13 @@
-# 2026-10-02 P2-2 基线重测：HTTP 层没能重测（附量化原因），SQL 层重测已完成
+# 2026-10-02 P2-2 基线重测：口径下沉到 SQL 层（用户决定），HTTP 层未重测的原因与代价都留档
 
 范围：本轮"重测 P2-2 性能基线"这一项的实际执行结果。
-**先说结论：HTTP 层基线没有重测，也不该在这台机器上重测（§1 给出实测依据与恢复条件）；
-本轮真正拿到的是 SQL 层重测（§2–§4），它覆盖的正是本轮改动唯一真正触及的那一层。**
+**先说结论：基线口径按用户 2026-10-02 的决定下沉到 SQL 层——本轮交付的是 SQL 层重测（§2–§4），
+它覆盖的正是本轮改动唯一真正触及的那一层；HTTP 层基线没有重测，§1 把它不能重测的实测依据、
+以及日后仍要拿到 HTTP 绝对数所需的条件都留在档，不作为待办追着做。**
+
+这个决定的**代价必须写在明面上**（详见 §5）：下沉后没有覆盖的是 JVM 侧实体物化、
+HTTP/网关/Feign 路径、并发与连接池——§3 的比值因此是**下限**而不是端到端结论，
+且换不了"上线后 p95/p99 是多少"这类问题（那仍只能等机器独占时按 §1 的命令跑一次）。
 
 参考基线：`AmazonERP-p2-performance/docs/superpowers/evidence/2026-09-30-p2-perf-baseline/bench-read-c10-r100.json`
 （**另一 agent 的未提交产物**，c10×r100 三场景，打的是它那套栈的 gateway `127.0.0.1:10010`）。
@@ -39,10 +44,11 @@ override 在 `%TEMP%\amz-erp-p2-compose.override.yml`，网络 `amz-erp-p2-perf_
 它的工作区还有 13 个已改未提交文件 + 未跟踪的 `loadtest/scripts/bench.py`、
 `loadtest/tests/`、基线 JSON —— 重测所需的**工具和基准数字都在那个未提交状态里**。
 
-**恢复条件（满足任一即可重测，成本很低）**：
-- 那套栈收工并 `docker compose down`（或用户确认可以由我接管）；**并且**
-- `codex/p2-performance-baseline` 把 master 合进去、把 `bench.py` + 基线 JSON 提交下来
-  （master 上现在只有 `quick-bench.sh` / JMeter / Gatling，**没有**那个 dependency-free 的 `bench.py`）。
+**若日后仍要 HTTP 绝对数，所需条件（按用户决定本轮不追，留作可执行的交接）**：
+- 先决条件：那套栈收工并 `docker compose down`（或用户明确确认可以由我接管）——
+  **这是停别人正在用的环境，我不会自己决定**；
+- 且 `codex/p2-performance-baseline` 把 master 合进去、把 `bench.py` + 基线 JSON 提交下来
+  （master 上现在只有 `quick-bench.sh` / JMeter / Gatling，**没有**那个 dependency-free 的 `bench.py`）；
 - 届时命令：`python loadtest/scripts/bench.py --base-url http://127.0.0.1:<gateway 端口>
   --concurrency 10 --requests 100`（与参考基线同参数才可比）。
 
@@ -119,6 +125,9 @@ k8s 侧验证按用户指示**继续搁置**（本机无 cluster/context，本�
 
 ## 5. 本轮**没有**量到的（不要把 §3 当成端到端结论）
 
+按 §1 的决定，这一组不是"待办"，而是**下沉口径的固有限制**：以后引用 §3 的数字时，
+这几条要一起带上。
+
 1. **JVM 侧成本完全没进表**：下沉前 Java 还要把 10 万/20 万行映射成实体再遍历，
    这部分只被"减少行数"间接受益，没有实测——所以 §3 的耗时比是**下限**，
    真实端到端收益只会更大，不会更小。
@@ -138,8 +147,11 @@ k8s 侧验证按用户指示**继续搁置**（本机无 cluster/context，本�
 - 复现用的三样东西留在 `.qoder-cn/tmp/shim3/`（`seed.sql` 夹具、`spec.json` 查询对、
   `drv.py` 计时器），里面**不含任何口令**，只是重跑时要另起容器并自备一个 `mysql` 转接；
   它们不在仓库里，随时可能被清掉——真要长期保留就得按 §4 末的口径改成同连接计时再入库。
-- 全程未连接、未读写演示栈的 `amz-mysql`（3307）；docker 侧只新增又删除了这一个一次性容器，
-  `docker system prune` 我**没有执行**（21.4 GB 构建缓存可回收，但那台 VM 上跑着别人的栈，
-  要不要清由用户决定）。
-- 需要人做的仍然只有 §1 恢复条件里那两件事：让 `codex/p2-performance-baseline` 那套栈收工，
-  并把 `bench.py` + 基线 JSON 提交进 master。
+- 全程未连接、未读写演示栈的 `amz-mysql`（3307）；docker 侧只新增又删除了这一个一次性容器。
+- **构建缓存按用户 2026-10-02 的指示执行了 `docker builder prune -f`：实测回收 21.4 GB**
+  （Build Cache 274 项/28.69 GB → 114 项/7.284 GB）。只动了 build cache 这一类：
+  `docker system df` 里 Images 43/16.14 GB、Containers 24/905.2 MB、Local Volumes 35/10.67 GB
+  三项前后完全一致，`docker ps` 仍是 13 个在跑（含那套栈的 11 个 `amz-*`）。
+  代价：Dockerfile 里我加的 `--mount=type=cache,target=/root/.m2` 属于 build cache，
+  下一次干净构建会重新下载一次 Maven 依赖，之后缓存重新填上。
+- 交接上不再有待办项：HTTP 层基线按上面的决定下沉，不再单独追。
