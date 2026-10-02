@@ -21,7 +21,7 @@ import java.util.List;
  *   <li>{@code !mock}：{@link TemuRealClient} 真实 API 对接骨架</li>
  * </ul>
  */
-public interface TemuClient {
+public interface TemuClient extends PlatformDataClient {
 
     /**
      * 拉取 Temu 近 24 小时新订单。

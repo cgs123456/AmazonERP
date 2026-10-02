@@ -2,6 +2,9 @@ package com.amz.client;
 
 import com.amz.credential.PlatformCredential;
 import com.amz.model.UnifiedOrder;
+import com.amz.model.PlatformInventory;
+import com.amz.model.PlatformMessage;
+import com.amz.model.PlatformProduct;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
@@ -166,5 +169,20 @@ public class SheinRealClient extends AbstractPlatformClient implements SheinClie
         }
         log.info("Shein fetchRecentOrders shopId={} count={}", shopId, list.size());
         return list;
+    }
+
+    @Override
+    public List<PlatformProduct> fetchProducts(Long shopId) {
+        throw unimplemented("商品");
+    }
+
+    @Override
+    public List<PlatformMessage> fetchMessages(Long shopId) {
+        throw unimplemented("站内信");
+    }
+
+    @Override
+    public List<PlatformInventory> fetchInventory(Long shopId) {
+        throw unimplemented("库存");
     }
 }

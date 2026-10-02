@@ -21,7 +21,7 @@ import java.util.List;
  *   <li>{@code !mock}：{@link SheinRealClient} 真实 API 对接骨架</li>
  * </ul>
  */
-public interface SheinClient {
+public interface SheinClient extends PlatformDataClient {
 
     /**
      * 拉取 Shein 近 24 小时新订单。

@@ -68,12 +68,25 @@ public class MultiplatformController {
         return Result.success(multiplatformService.testConnection(id));
     }
 
+
+    /**
+     * 平台同步的"能力未接入/平台不支持"要变成前端读得懂的业务失败，
+     * 而不是被全局兜底成 500「服务器内部错误」。真实调用失败（网络/对端）不在此列，
+     * 仍按异常上抛，避免把故障伪装成"功能没开"。
+     */
+    private Result<Integer> guarded(java.util.function.Supplier<Integer> action) {
+        try {
+            return Result.success(action.get());
+        } catch (UnsupportedOperationException | com.amz.exception.AttrIsNullException e) {
+            return Result.failure(e.getMessage());
+        }
+    }
     // ==================== 商品映射 ====================
 
     @ShopScoped
     @PostMapping("/product/sync/{shopId}/{platform}")
     public Result<Integer> syncProducts(@PathVariable Long shopId, @PathVariable String platform) {
-        return Result.success(multiplatformService.syncProducts(shopId, platform));
+        return guarded(() -> multiplatformService.syncProducts(shopId, platform));
     }
 
     @ShopScoped
@@ -96,7 +109,7 @@ public class MultiplatformController {
     @ShopScoped
     @PostMapping("/message/sync/{shopId}/{platform}")
     public Result<Integer> syncMessages(@PathVariable Long shopId, @PathVariable String platform) {
-        return Result.success(multiplatformService.syncMessages(shopId, platform));
+        return guarded(() -> multiplatformService.syncMessages(shopId, platform));
     }
 
     @ShopScoped
@@ -126,7 +139,7 @@ public class MultiplatformController {
     @ShopScoped
     @PostMapping("/inventory/sync/{shopId}/{platform}")
     public Result<Integer> syncInventory(@PathVariable Long shopId, @PathVariable String platform) {
-        return Result.success(multiplatformService.syncInventory(shopId, platform));
+        return guarded(() -> multiplatformService.syncInventory(shopId, platform));
     }
 
     @ShopScoped

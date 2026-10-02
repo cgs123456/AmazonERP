@@ -1,6 +1,7 @@
 package com.amz.service.impl;
 
 import com.amz.client.SheinClient;
+import com.amz.client.PlatformDataClient;
 import com.amz.client.TemuClient;
 import com.amz.client.TikTokClient;
 import com.amz.context.UserContext;
@@ -183,35 +184,29 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     public int syncProducts(Long shopId, String platform) {
+        // 数据来源必须是平台客户端；造数曾直接写在本方法里（与 profile 无关），
+        // 会污染 platform_product 上的平台→ASIN/SKU 映射。
+        PlatformDataClient client = dataClient(platform);
+        List<PlatformProduct> fetched = client.fetchProducts(shopId);
         int count = 0;
-        // 模拟从各平台拉取商品列表并映射
-        for (int i = 1; i <= 5; i++) {
-            PlatformProduct pp = new PlatformProduct();
+        for (PlatformProduct pp : fetched) {
             pp.setShopId(shopId);
             pp.setPlatform(platform);
-            pp.setPlatformProductId(platform + "-PROD-" + shopId + "-" + i);
-            pp.setPlatformProductSku("SKU-" + platform + "-" + i);
-            pp.setTitle("Platform Product " + i + " from " + platform + " shop " + shopId);
-            pp.setPrice(new java.math.BigDecimal((10 + i) + ".99"));
-            pp.setCurrency("USD");
-            pp.setStockQty(100 - i * 10);
-            pp.setStatus("ACTIVE");
-            pp.setCategory("General");
-            pp.setCreateTime(LocalDateTime.now());
-            pp.setUpdateTime(LocalDateTime.now());
-
-            // UPSERT：按 (platform, platformProductId) 唯一键
             LambdaQueryWrapper<PlatformProduct> existQuery = new LambdaQueryWrapper<>();
             existQuery.eq(PlatformProduct::getPlatform, pp.getPlatform())
                       .eq(PlatformProduct::getPlatformProductId, pp.getPlatformProductId());
             PlatformProduct exist = platformProductMapper.selectOne(existQuery);
             if (exist != null) {
                 pp.setId(exist.getId());
+                // 人工建立的映射与首次同步时间不能被同步覆盖
                 pp.setAmazonAsin(exist.getAmazonAsin());
                 pp.setAmazonSku(exist.getAmazonSku());
                 pp.setCreateTime(exist.getCreateTime());
+                pp.setUpdateTime(LocalDateTime.now());
                 platformProductMapper.updateById(pp);
             } else {
+                pp.setCreateTime(LocalDateTime.now());
+                pp.setUpdateTime(LocalDateTime.now());
                 platformProductMapper.insert(pp);
             }
             count++;
@@ -219,6 +214,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         log.info("平台商品同步完成：shopId={} platform={} count={}", shopId, platform, count);
         return count;
     }
+
 
     @Override
     public List<PlatformProduct> listProducts(Long shopId, String platform) {
@@ -249,32 +245,18 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     public int syncMessages(Long shopId, String platform) {
+        PlatformDataClient client = dataClient(platform);
+        List<PlatformMessage> fetched = client.fetchMessages(shopId);
         int count = 0;
-        // 模拟从平台拉取站内信
-        String[] subjects = {"Order Question", "Return Request", "Product Inquiry", "Shipping Delay"};
-        for (int i = 0; i < subjects.length; i++) {
-            PlatformMessage msg = new PlatformMessage();
+        for (PlatformMessage msg : fetched) {
             msg.setShopId(shopId);
             msg.setPlatform(platform);
-            msg.setPlatformMessageId(platform + "-MSG-" + shopId + "-" + System.currentTimeMillis() + "-" + i);
-            msg.setBuyerName("Buyer " + (i + 1));
-            msg.setBuyerEmail("buyer" + (i + 1) + "@example.com");
-            msg.setPlatformOrderNo("ORD-" + shopId + "-" + (1000 + i));
-            msg.setSubject(subjects[i]);
-            msg.setContent("This is a sample message about " + subjects[i] + " from platform " + platform);
-            msg.setDirection("IN");
-            msg.setStatus("UNREAD");
-            msg.setIsUrgent(i == 0);
-            msg.setReceiveTime(LocalDateTime.now().minusMinutes(30 + i * 10L));
-            msg.setCreateTime(LocalDateTime.now());
-            msg.setUpdateTime(LocalDateTime.now());
-
-            // UPSERT by platform + platformMessageId
             LambdaQueryWrapper<PlatformMessage> existQuery = new LambdaQueryWrapper<>();
             existQuery.eq(PlatformMessage::getPlatform, msg.getPlatform())
-                     .eq(PlatformMessage::getPlatformMessageId, msg.getPlatformMessageId());
-            PlatformMessage exist = platformMessageMapper.selectOne(existQuery);
-            if (exist == null) {
+                      .eq(PlatformMessage::getPlatformMessageId, msg.getPlatformMessageId());
+            if (platformMessageMapper.selectOne(existQuery) == null) {
+                msg.setCreateTime(LocalDateTime.now());
+                msg.setUpdateTime(LocalDateTime.now());
                 platformMessageMapper.insert(msg);
                 count++;
             }
@@ -282,6 +264,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         log.info("平台消息同步完成：shopId={} platform={} count={}", shopId, platform, count);
         return count;
     }
+
 
     @Override
     public List<PlatformMessage> listMessages(Long shopId, String platform, Integer status) {
@@ -345,36 +328,30 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     public int syncInventory(Long shopId, String platform) {
-        // 快照语义：先清本轮 (shopId, platform) 旧快照，避免多次同步行数无限膨胀导致聚合翻倍
+        // 顺序很关键：先拉到数据再替换快照。旧实现先 delete 再生成随机假库存，
+        // 拉取失败时既丢了上一轮快照又写入假数。
+        List<PlatformInventory> fetched = dataClient(platform).fetchInventory(shopId);
+        if (fetched == null || fetched.isEmpty()) {
+            log.warn("平台库存同步未取到数据，保留上一轮快照：shopId={} platform={}", shopId, platform);
+            return 0;
+        }
         LambdaQueryWrapper<PlatformInventory> cleanWrapper = new LambdaQueryWrapper<>();
         cleanWrapper.eq(PlatformInventory::getShopId, shopId);
-        if (platform != null) {
-            cleanWrapper.eq(PlatformInventory::getPlatform, platform);
-        }
+        cleanWrapper.eq(PlatformInventory::getPlatform, platform);
         platformInventoryMapper.delete(cleanWrapper);
         int count = 0;
-        String[] skus = {"SKU-A", "SKU-B", "SKU-C", "SKU-D"};
-        String[] warehouses = platform.equals("AMAZON") ? new String[]{"FBA-ON1", "FBA-LAX9"} : new String[]{platform + "-WH1"};
-        for (String sku : skus) {
-            for (String wh : warehouses) {
-                PlatformInventory inv = new PlatformInventory();
-                inv.setShopId(shopId);
-                inv.setPlatform(platform);
-                inv.setPlatformProductId(platform + "-" + sku);
-                inv.setSku(sku);
-                inv.setWarehouse(wh);
-                inv.setAvailableQty(50 + new Random().nextInt(151));
-                inv.setReservedQty(new Random().nextInt(21));
-                inv.setInboundQty(new Random().nextInt(31));
-                inv.setSnapshotTime(LocalDateTime.now());
-                inv.setCreateTime(LocalDateTime.now());
-                platformInventoryMapper.insert(inv);
-                count++;
-            }
+        for (PlatformInventory inv : fetched) {
+            inv.setShopId(shopId);
+            inv.setPlatform(platform);
+            inv.setSnapshotTime(LocalDateTime.now());
+            inv.setCreateTime(LocalDateTime.now());
+            platformInventoryMapper.insert(inv);
+            count++;
         }
         log.info("平台库存同步：shopId={} platform={} count={}", shopId, platform, count);
         return count;
     }
+
 
     @Override
     public List<PlatformInventory> listPlatformInventory(Long shopId, String platform) {
@@ -546,6 +523,23 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         LambdaQueryWrapper<OauthApp> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(OauthApp::getOwnerShopId, ownerShopId);
         return oauthAppMapper.selectList(wrapper);
+    }
+
+    /**
+     * 按平台标识取数据客户端。亚马逊不在本模块拉取（库存/商品由 spapi 侧负责），
+     * 因此不再像旧实现那样为 AMAZON 分支生成两个假 FBA 仓库。
+     */
+    private PlatformDataClient dataClient(String platform) {
+        if (platform == null) {
+            throw new AttrIsNullException("平台标识不能为空");
+        }
+        switch (platform) {
+            case "TEMU": return temuClient;
+            case "TIKTOK": return tiktokClient;
+            case "SHEIN": return sheinClient;
+            default: throw new AttrIsNullException("不支持的平台：" + platform
+                    + "（亚马逊商品与库存请走 spapi 侧同步）");
+        }
     }
 
     @Override

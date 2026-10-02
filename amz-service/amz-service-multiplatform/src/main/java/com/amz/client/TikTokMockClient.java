@@ -1,6 +1,9 @@
 package com.amz.client;
 
 import com.amz.model.UnifiedOrder;
+import com.amz.model.PlatformInventory;
+import com.amz.model.PlatformMessage;
+import com.amz.model.PlatformProduct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -53,5 +56,23 @@ public class TikTokMockClient extends AbstractPlatformClient implements TikTokCl
     public boolean markShipped(String platformOrderNo, String trackingNo) {
         log.info("TikTok Shop 发货回传模拟：orderNo={} trackingNo={}", platformOrderNo, trackingNo);
         return true;
+    }
+
+    @Override
+    public List<PlatformProduct> fetchProducts(Long shopId) {
+        log.warn("[MOCK] {} 商品为离线样例数据，非平台真实数据：shopId={}", getPlatform(), shopId);
+        return PlatformMockSamples.products(getPlatform(), shopId);
+    }
+
+    @Override
+    public List<PlatformMessage> fetchMessages(Long shopId) {
+        log.warn("[MOCK] {} 站内信为离线样例数据，非平台真实数据：shopId={}", getPlatform(), shopId);
+        return PlatformMockSamples.messages(getPlatform(), shopId);
+    }
+
+    @Override
+    public List<PlatformInventory> fetchInventory(Long shopId) {
+        log.warn("[MOCK] {} 库存为离线随机样例数据，非平台真实数据：shopId={}", getPlatform(), shopId);
+        return PlatformMockSamples.inventory(getPlatform(), shopId);
     }
 }

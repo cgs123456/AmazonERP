@@ -21,7 +21,7 @@ import java.util.List;
  *   <li>{@code !mock}：{@link TikTokRealClient} 真实 API 对接骨架</li>
  * </ul>
  */
-public interface TikTokClient {
+public interface TikTokClient extends PlatformDataClient {
 
     /**
      * 拉取 TikTok Shop 近 24 小时新订单。

@@ -102,6 +102,19 @@ public abstract class AbstractPlatformClient {
     }
 
     /**
+     * 真实客户端尚未接入的平台能力：显式失败，绝不返回空集合或样例数据。
+     * <p>
+     * 动因见 {@link PlatformDataClient}。抛 {@link UnsupportedOperationException}
+     * 与仓库既有约定一致（{@code KingdeeRealClient} 对非 CNY 入账同样做法），
+     * 调用方与前端能拿到点名的能力缺失信息。
+     */
+    protected UnsupportedOperationException unimplemented(String capability) {
+        return new UnsupportedOperationException(
+                getPlatform() + " 平台的" + capability + "接口尚未接入（需对应 Open API method 与字段映射），"
+                        + "拒绝返回样例数据；离线演示请设 SPRING_PROFILES_ACTIVE=mock");
+    }
+
+    /**
      * Jackson 文本节点取值：缺失/null/空串一律返回 null（B3：三客户端各存一份私有拷贝，现收敛）。
      */
     protected static String asTextOrNull(JsonNode node) {
