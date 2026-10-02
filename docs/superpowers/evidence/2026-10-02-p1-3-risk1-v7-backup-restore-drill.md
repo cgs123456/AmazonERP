@@ -15,7 +15,7 @@
 | 备份/恢复演练 | **通过**。恢复到**另一个独立实例**后 `CHECKSUM TABLE` 三张表与源库逐项相同，行数相同 |
 | 预检在真实形状数据上的行为 | **rc=2 拒绝执行**，命中 4 条 STOP（含 `campaign-id-mixed`、`keyword-value-conflict`、`asin-last-checked-ambiguous`、`no-flyway-history`） |
 | V7 语义 | 与设计一致：规范化 → 最新快照并入 keeper → 删旧行 → 唯一键；迁移后重复残留 0 |
-| 新增发现（决策相关） | **预检报告的"预计删除行数"是下界**：它按**原始值**分组，V7 按**规范化后**值分组。小样本实测预估计 1 行、实删 2 行 |
+| 新增发现（决策相关） | 预检的删除量估算**曾会低估**，原因已定位并修复：`amz_ad_keyword` 的分组键漏了 V7 第一步的 `TRIM(campaign_id)`。修复后同一夹具预估 = 实删（2 = 2）|
 | 量级耗时（合成 20 万行） | dump 1.10s / 22.9 MB；恢复 9.80s；V7 57.1s |
 | 仍未闭环 | 审批、维护窗、备份文件的加密保存与保留策略、§6.6 应用级验收 —— 见 §5 |
 
@@ -23,6 +23,9 @@
 
 - 两个隔离 MySQL 8.0.46 容器（`--rm`、不挂卷、独立端口 3404 / 3405），
   与在跑的演示栈（`amz-mysql` 3307）完全无关，全程未向后者读写。
+  删除量预估的修复实测（§3 发现 1）另起一个同规格容器（端口 3406）。三个都是 `--rm`，
+  验证完即回收，本机无残留；预估=实删 这一条的可复现证据留在单测
+  `test_deletion_estimate_uses_the_normalized_key` 里。
 - 源库 `amz_ad` 按 `V1..V6` 建模式（逐文件用 mysql 客户端执行），三张目标表：
   `amz_ad_keyword`、`amz_ad_converting_terms`、`amz_ad_asin_keyword`。
 - 夹具覆盖 V7 的每条分支：`campaign_id` 带首尾空格、`keyword` 大小写混排、
@@ -78,13 +81,26 @@ amz_ad_asin_keyword       2    checksum 2118956172
 
 ## 3. 决策相关的新发现
 
-1. **预检的"预计删除行数"是下界，不是等号。** 预检按未规范化的原始值分组统计重复，
-   V7 按 `LOWER(TRIM(...))` / `UPPER(TRIM(COALESCE(NULLIF(match_type,''),'EXACT')))` 之后的值分组。
-   小样本里预检写"重复分组 keyword: 1，粗估会删除约 1 行"，实际删了 **2** 行。
-   量级夹具里更明显：`converting_terms` 因 `campaign_id IS NULL` 被统一成 `''`，
-   一步删掉 **50,001** 行 —— 这类删除的触发条件正是预检的 `campaign-id-mixed` STOP。
-   ⇒ 结论不变但用法要写清：**预检的 STOP 条件必须全绿；行数估计只当下限看，变更单里的"预期删除量"
-   要按规范化后的分组另算**（`GROUP BY LOWER(TRIM(keyword)), UPPER(TRIM(COALESCE(NULLIF(match_type,''),'EXACT')))` …）。
+1. **预检的删除量估算确实低估过，但原因比我第一版的说法窄——而且已修。**
+   第一版写成"预检按未规范化值分组、V7 按规范化值分组"，这话**过宽**：`keyword` / `match_type` /
+   `search_term` / `asin` 的键本来就带了 `LOWER` / `TRIM` / `UPPER` / `COALESCE`；
+   真正漏的只有一处 —— V7 第一步有 `SET campaign_id = TRIM(campaign_id)`，
+   而预检的 `KW_KEY` 按原始 `campaign_id` 分组。所以只有"campaign 带首尾空格"这一类重复被漏算
+   （同一夹具实测：预估 1 行、V7 实删 2 行）。
+   另一处也一并更正：量级夹具里 `converting_terms` 因 `campaign_id IS NULL → ''` 折叠删掉的
+   **50,001** 行**不是**低估案例 —— 那张表的键本来就规范化了 `campaign_id`，预检算得进去，
+   而且这种情况会另外命中 `campaign-id-mixed` 这条 STOP。
+   处置：`KW_KEY` 补 `TRIM(campaign_id)`，新增
+   `test_group_keys_match_v7_step1_normalizations` 从**迁移 SQL 现读** V7 第一步的规范化赋值、
+   逐列与预检键比对（期望值不手抄：手抄的那份改了 SQL 而预检没跟上时，测试会跟着一起绿）。
+   这条测试自己做过变异验证，5 次注错全部翻红：预检少写 `TRIM(campaign_id)`、V7 改了表达式、
+   V7 新增一个键外被规范化的列、解析器正则失配（防空跑）、等价表白名单留了用不上的条目。
+   它由 `tools/db-migration/run_ad_v7_preflight_gate.sh` 第 3 步执行，而该脚本是 CI 的
+   `ad-v7-preflight-gate` job（`.github/workflows/ci.yml:376`）——所以 V7 SQL 与预检键的
+   对应关系每次推送都会被检查，不依赖有人手工去跑这个文件。
+   修后同一活库实测**预估 2 行 = 实删 2 行**。
+   真正还需要人确认的只剩一条：**批量导入的数据里 `MAX(id)` 未必是业务上的最新快照**。
+
 2. **业务键是"规范化后的精确串"，内部空白不折叠。** `'yoga  mat'`（双空格）与 `'yoga mat'`
    在 V7 之后仍是两条不同记录。这不是缺陷（`TRIM` 本来只管首尾），但如果运营以为
    "多余空格会被自动合并"就会得到意外结果，值得在 runbook §6.5 的验收清单里点一句。
