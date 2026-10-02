@@ -81,13 +81,6 @@ export interface BuyBoxRow {
   snapshotTime?: string
 }
 
-export interface KeepaPoint {
-  time?: string
-  date?: string
-  price?: number | string | null
-  rank?: number | string | null
-}
-
 /** severity 由后端按 utf8mb4_bin 精确比较产出，这里只做展示归类，不做大小写猜测。 */
 export const severityClass = (severity?: string | null): 'ok' | 'warning' | 'critical' | 'unknown' => {
   if (severity === 'OK') return 'ok'
@@ -162,12 +155,6 @@ export const getChangeLogs = async (shopId: number | string, asin?: string) => {
     asin ? { params: { asin } } : undefined)
   return { ...res, data: okList<Record<string, unknown>>(res) }
 }
-
-export const getKeepaPrice = (asin: string) =>
-  request.get<void, ApiResponse<KeepaPoint[]>>(`/product/keepa/price/${encodeURIComponent(asin)}`)
-
-export const getKeepaRank = (asin: string) =>
-  request.get<void, ApiResponse<KeepaPoint[]>>(`/product/keepa/rank/${encodeURIComponent(asin)}`)
 
 /** FBA 费用试算：asin 或 price/weight/sizeTier 二选一，后端都可算。 */
 export const estimateFees = (params: { asin?: string; price?: number; weight?: number; sizeTier?: string }) =>
