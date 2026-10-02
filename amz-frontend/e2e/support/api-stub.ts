@@ -430,6 +430,61 @@ const FULL_PAGE = (returned: number): PageMeta => ({
 })
 
 /**
+ * 客服域（/customer）：这些 list 接口后端返回**数组**，分页元数据在 _page，
+ * 所以必须显式登记成数组，绝不能落到 EMPTY_PAGE 对象兜底。
+ * 桩里的 category/sentiment/status 是后端关键词规则与状态机的真实取值，
+ * 前端只展示不自造；matchedOrderId 留 null，因为「匹配订单」在真实环境要抛错。
+ */
+const CUSTOMER_TICKETS = [
+  {
+    id: 1, shopId: 1, amazonOrderId: '114-7712567-000001', buyerName: 'Ana', channel: 'MESSAGE',
+    category: 'LOGISTICS', sentiment: 'NEGATIVE', priority: 'HIGH', status: 'PENDING',
+    content: 'package not received', reply: ''
+  },
+  {
+    id: 2, shopId: 1, amazonOrderId: '114-7712567-000002', buyerId: 'buyer-2', channel: 'RETURN',
+    category: 'REFUND', sentiment: 'NEUTRAL', priority: 'LOW', status: 'RESOLVED',
+    content: 'refund ok', reply: 'done'
+  }
+]
+const CUSTOMER_TEMPLATES = [
+  {
+    id: 11, shopId: 1, templateName: 'Sorry for the delay', templateType: 'AFTERSALE', language: 'en',
+    triggerEvent: 'NEGATIVE_REVIEW', triggerDelayHours: 24, enabled: 1,
+    subject: 'About your order', body: 'Dear buyer,'
+  },
+  {
+    id: 12, shopId: 1, templateName: 'Shipping notice', templateType: 'SHIPPING', language: 'en',
+    triggerEvent: 'SHIPPING_DELAY', triggerDelayHours: 0, enabled: 0,
+    subject: 'Tracking', body: 'Your tracking no is'
+  }
+]
+const CUSTOMER_TASKS = [
+  {
+    id: 21, shopId: 1, amazonOrderId: '114-7712567-000001', asin: 'B0CUST01',
+    buyerEmail: 'ana@example.com', subject: 'About your order', status: 'PENDING',
+    scheduledTime: '2026-10-02T10:00:00', sentTime: null, source: 'MANUAL', failureReason: null
+  }
+]
+const CUSTOMER_REVIEWS = [
+  {
+    id: 31, shopId: 1, asin: 'B0CUST01', reviewerName: 'Ana', reviewRating: 1,
+    reviewTitle: 'Terrible', reviewDate: '2026-09-28', verifiedPurchase: 1, status: 'DETECTED',
+    matchedOrderId: null, contactEmailTaskId: null
+  }
+]
+const CUSTOMER_SOLICITATIONS = [
+  { id: 41, shopId: 1, amazonOrderId: '114-7712567-000009', asin: 'B0CUST01', channel: 'EMAIL', status: 'SENT', failureReason: null }
+]
+const CUSTOMER_RMAS = [
+  {
+    id: 51, shopId: 1, rmaNo: 'RMA-0001', amazonOrderId: '114-7712567-000003', asin: 'B0CUST01',
+    sku: 'SKU-1', returnType: 'REFUND', productCondition: 'OPENED', refundAmount: 12.5,
+    status: 'PENDING', labelUrl: null, trackingNo: null
+  }
+]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -529,6 +584,19 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/logistics\/warehouse\/inventory$/, data: WAREHOUSE_INVENTORY, page: FULL_PAGE(WAREHOUSE_INVENTORY.length) },
   { match: /^\/logistics\/inbound\/list\//, data: INBOUND_ORDERS, page: FULL_PAGE(INBOUND_ORDERS.length) },
   { match: /^\/logistics\/outbound\/list\//, data: OUTBOUND_ORDERS, page: FULL_PAGE(OUTBOUND_ORDERS.length) },
+
+  // ===== 客服 /customer =====
+  { match: /^\/customer\/ticket\/list\//, data: CUSTOMER_TICKETS, page: FULL_PAGE(CUSTOMER_TICKETS.length) },
+  { match: /^\/customer\/email\/template\/list\//, data: CUSTOMER_TEMPLATES, page: FULL_PAGE(CUSTOMER_TEMPLATES.length) },
+  { match: /^\/customer\/email\/task\/list\//, data: CUSTOMER_TASKS, page: FULL_PAGE(CUSTOMER_TASKS.length) },
+  { match: /^\/customer\/email\/negative-review\/list\//, data: CUSTOMER_REVIEWS, page: FULL_PAGE(CUSTOMER_REVIEWS.length) },
+  { match: /^\/customer\/review\/list\//, data: CUSTOMER_SOLICITATIONS, page: FULL_PAGE(CUSTOMER_SOLICITATIONS.length) },
+  { match: /^\/customer\/email\/rma\/list\//, data: CUSTOMER_RMAS, page: FULL_PAGE(CUSTOMER_RMAS.length) },
+  // 通道受限的三个动作：桩返回的是后端真实会返回的形状（处理报告 / 计数 / 匹配结果），
+  // 用来说明「点了确认才会真的发请求」，不证明真的发了信。
+  { match: /^\/customer\/email\/process\//, data: { processed: 1, failed: 0, skipped: 0 } },
+  { match: /^\/customer\/review\/solicit\//, data: 2 },
+  { match: /^\/customer\/email\/negative-review\/\d+\/match$/, data: { reviewId: 31, matchedOrderId: '114-7712567-000001' } },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

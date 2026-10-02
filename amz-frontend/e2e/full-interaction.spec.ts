@@ -35,7 +35,8 @@ const NAV = [
   { path: '/profit', linkText: '利润报表' },
   { path: '/finance', linkText: '财务管理' },
   { path: '/selection', linkText: '选品分析' },
-  { path: '/notifications', linkText: '消息中心' }
+  { path: '/notifications', linkText: '消息中心' },
+  { path: '/customer', linkText: '客服中心' }
 ]
 
 /**
@@ -292,6 +293,71 @@ test.describe('Notifications 交互', () => {
     await tab.click()
     await expect(tab).toHaveClass(/active/)
     await expect(page.locator('.notification-item')).toHaveCount(0)
+  })
+})
+
+test.describe('CustomerService 交互（客服中心）', () => {
+  // 这一组额外锁一条历史缺陷：五个分区曾是 <div class="table-pager"> 用 </table> 收尾，
+  // Vue 解析器把「差评与索评」「RMA」嵌进了「邮件任务」的 v-if 里，那两个分区永远点不出来。
+  // 单测里它表现为 vue-tsc 的 TS2367 类型收窄；这里用真实浏览器再锁一次渲染结果。
+  test('工单分区渲染后端字段，切换分区时旧分区整体消失', async ({ page }) => {
+    await page.goto('/customer')
+    const ticketPanel = page.locator('.tab-panel[data-panel="ticket"]')
+    await expect(ticketPanel).toContainText('114-7712567-000001')
+    await expect(ticketPanel).toContainText('LOGISTICS')
+    await expect(ticketPanel).toContainText('NEGATIVE')
+    await expect(page.locator('.tab-panel')).toHaveCount(1)
+
+    await page.locator('.tab', { hasText: '差评与索评' }).click()
+    await expect(page.locator('.tab-panel[data-panel="review"]')).toContainText('B0CUST01')
+    await expect(page.locator('.tab-panel[data-panel="task"]')).toHaveCount(0)
+    await expect(page.locator('.tab-panel')).toHaveCount(1)
+
+    await page.locator('.tab', { hasText: 'RMA' }).click()
+    await expect(page.locator('.tab-panel[data-panel="rma"]')).toContainText('RMA-0001')
+    await expect(page.locator('.tab-panel')).toHaveCount(1)
+  })
+
+  test('三条通道现状常驻在页面上，不把没接的通道显示成已办', async ({ page }) => {
+    await page.goto('/customer')
+    await expect(page.locator('.notice-zone')).toContainText('邮件发送通道未接入')
+    await expect(page.locator('.notice-zone')).toContainText('SP-API')
+    await expect(page.locator('.notice-zone')).toContainText('关键词规则匹配')
+  })
+
+  test('待发邮件队列要二次确认：取消不执行，确认后才写处理结果', async ({ page }) => {
+    await page.goto('/customer')
+    await page.locator('.tab', { hasText: '邮件任务' }).click()
+    await page.locator('.action-btn', { hasText: '处理待发队列' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('邮件通道目前未接入')
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    await expect(page.locator('.modal-mask')).toHaveCount(0)
+    await expect(page.locator('.tab-panel[data-panel="task"]')).not.toContainText('处理结果')
+
+    await page.locator('.action-btn', { hasText: '处理待发队列' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect(page.locator('.tab-panel[data-panel="task"]')).toContainText('处理结果')
+  })
+
+  test('「按事件触发」的事件项来自启用中模板，不含停用模板的事件', async ({ page }) => {
+    await page.goto('/customer')
+    await page.locator('.tab', { hasText: '邮件任务' }).click()
+    await page.locator('.action-btn', { hasText: '按事件触发' }).click()
+    const options = page.locator('.modal select option')
+    await expect(options).toHaveCount(2)
+    await expect(options.nth(1)).toHaveText('NEGATIVE_REVIEW')
+    await expect(page.locator('.modal')).not.toContainText('SHIPPING_DELAY')
+  })
+
+  test('差评匹配订单同样要确认，确认后关闭弹窗且不报错', async ({ page }) => {
+    await page.goto('/customer')
+    await page.locator('.tab', { hasText: '差评与索评' }).click()
+    await expect(page.locator('.tab-panel[data-panel="review"]')).toContainText('DETECTED')
+    await page.locator('.action-btn', { hasText: '匹配订单' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('SIMULATED-MATCH-*')
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect(page.locator('.modal-mask')).toHaveCount(0)
+    await expect(page.locator('.error-zone')).toHaveCount(0)
   })
 })
 

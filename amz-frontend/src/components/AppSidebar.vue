@@ -135,6 +135,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/customer') }"
+        @click="navigateTo('/customer')"
+        role="button"
+        aria-label="客服中心"
+        tabindex="0"
+      >
+        <Icon icon="mdi:headset-outline" class="nav-icon" width="24" />
+        <span class="nav-text">客服中心</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/connectors') }"
         @click="navigateTo('/connectors')"
         role="button"
