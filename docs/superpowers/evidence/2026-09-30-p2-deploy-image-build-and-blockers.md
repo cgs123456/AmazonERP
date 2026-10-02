@@ -11,7 +11,7 @@
 | 6 代理依赖的重建 + k8s 验证 | ~~干净重建确实做不了~~ → **2026-10-01 已做通**：系统代理端口自己就改到了 `127.0.0.1:7900`（7897 现已无监听），`--no-cache-filter skywalking-downloader` 真重下成功，见 §12。k8s 侧本机**没有集群也没有 context**，`kubectl apply --dry-run=client` 仍要连服务器取 API group，无法离线验（未变） |
 | 7 P1-3 生产前演练 | **另一 agent 正在做**（worktree `codex/p1-db-migration-audit` + `amz-p13-*` 四个容器已跑 12–14 小时 + risk1–4 文档今天 04:31/05:31 已提交）。我不重复占同一批演练资源 |
 | 8 分支保护 / 第二人复核 | `gh auth status` = 未登录，服务端规则下发不了；且开启 master 保护会直接挡住另外 4 个 worktree 的直推，属需要你先定的策略问题 |
-| 9 P2-2 性能基线 | **另一 agent 正在做**（worktree `codex/p2-performance-baseline`，跑着的就是它那套栈）。但它测的是**不含今天修复的代码**（§4），数值合完 master 后要重测。2026-10-01 量化：该分支落后 master **82 个提交**，不含 `9fc2fb3`/`060497c`/`ca561a4`，也不含 Feign 熔断装配修复 `273d7c3`（见 §12.4） |
+| 9 P2-2 性能基线 | **另一 agent 正在做**（worktree `codex/p2-performance-baseline`，跑着的就是它那套栈）。但它测的是**不含今天修复的代码**（§4），数值合完 master 后要重测。2026-10-01 量化：该分支落后 master **82 个提交**，不含 `9fc2fb3`/`060497c`/`ca561a4`，也不含 Feign 熔断装配修复 `273d7c3`（见 §12.4）。2026-10-02 重测处置见 `2026-10-02-p2-2-baseline-recheck.md`：HTTP 层**未重测**（本机 Docker VM 15.57 GiB、它那套栈占 45%，再起一套既抢 12 核使数值不可比、又可能 OOM 掉别人的库），SQL 层**已重测**并给出四组下沉前后的实测对比 |
 
 ## 2. 更正我上一轮的代理判断（两次都错了，按实测收敛）
 
