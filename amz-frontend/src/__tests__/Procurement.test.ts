@@ -54,7 +54,13 @@ const PLANS = paged([
     plannedQty: 300, unitPrice: 15.5, totalAmount: 4650.0, urgency: 'URGENT', source: 'MANUAL', status: 'DRAFT' },
   { id: 12, planNo: 'PLAN-0012', shopId: 900000000000001000, sku: 'SKU-002', plannedQty: 100,
     unitPrice: 22.0, totalAmount: 2200.0, urgency: 'NORMAL', source: 'AUTO', status: 'PENDING_APPROVAL' },
-  { id: 13, planNo: 'PLAN-0013', shopId: 900000000000001000, sku: 'SKU-003', plannedQty: 50, status: 'APPROVED' }
+  { id: 13, planNo: 'PLAN-0013', shopId: 900000000000001000, sku: 'SKU-003', plannedQty: 50, status: 'APPROVED' },
+  // 由库存补货建议生成的草稿：依据快照留在 replenishmentData 里
+  { id: 14, planNo: 'PLAN-0014', shopId: 900000000000001000, sku: 'SKU-004', suggestedQty: 90,
+    plannedQty: 90, status: 'DRAFT', source: 'AUTO',
+    replenishmentData: '{"basis":"inventory-replenishment-suggestion","suggestedReplenishQty":90,"daysOfSupply":4,"suggestStatDate":"2026-09-30"}' },
+  { id: 15, planNo: 'PLAN-0015', shopId: 900000000000001000, sku: 'SKU-005', plannedQty: 10,
+    status: 'DRAFT', replenishmentData: '人工随手填的依据，不是 JSON' }
 ])
 
 const ORDERS = paged([
@@ -268,5 +274,27 @@ describe('Procurement 视图（采购供应链）', () => {
     const src = readFileSync('src/api/procurement.ts', 'utf8')
     expect(src).toMatch(/promotion\/plan/)
     expect(src).not.toMatch(/request\.(get|post|put)[^;]*promotion/)
+  })
+
+  it('补货依据留档可读：JSON 快照展开成字段，非 JSON 原样显示不丢弃', async () => {
+    happyPath()
+    const wrapper = await mountPage()
+    await openTab(wrapper, '采购计划')
+    const basisBtns = wrapper.findAll('button').filter((b: any) => b.text() === '补货依据')
+    expect(basisBtns.length).toBe(2)
+    await basisBtns[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('PLAN-0014 的补货依据')
+    expect(wrapper.text()).toContain('suggestedReplenishQty')
+    expect(wrapper.text()).toContain('2026-09-30')
+    expect(wrapper.text()).toContain('不是当前库存的实时值')
+
+    // 关掉面板后再看第二条：依据不是 JSON 时必须原样显示，不能被吞掉
+    await wrapper.find('.panel .action-btn').trigger('click')
+    const again = wrapper.findAll('button').filter((b: any) => b.text() === '补货依据')
+    await again[1].trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('人工随手填的依据，不是 JSON')
+    expect(wrapper.text()).toContain('原样显示')
   })
 })

@@ -12,6 +12,11 @@ vi.mock('@/api/inventory', () => ({
 
 import { getInventoryList, getInventoryHealth } from '@/api/inventory'
 
+// 生成采购计划走采购域；本用例只关心「假数据不许建计划」这条护栏
+vi.mock('@/api/procurement', () => ({ createPlan: vi.fn() }))
+import { createPlan } from '@/api/procurement'
+const mockedCreatePlan = vi.mocked(createPlan)
+
 const mockedGetInventoryList = vi.mocked(getInventoryList)
 const mockedGetInventoryHealth = vi.mocked(getInventoryHealth)
 
@@ -38,15 +43,14 @@ describe('InventoryMonitor 视图', () => {
     const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
     expect(wrapper.find('.hero-section .hero-title').text()).toBe('库存监控')
     expect(wrapper.findAll('.health-card').length).toBe(4)
-    // 降级 mock 健康度数据：urgent=2 risk=2 healthy=2 overstock=1
     const labels = wrapper.findAll('.health-label').map(l => l.text())
     expect(labels).toEqual(['紧急补货', '风险库存', '健康库存', '滞销库存'])
   })
 
-  it('降级 mock 健康度计数应被渲染', () => {
+  it('没取到数据时健康度卡片显示「—」而不是 0', () => {
+    // 0 会被读成「测出来没有紧急 SKU」，与「没测」是两种结论
     const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
-    const counts = wrapper.findAll('.health-count').map(c => c.text())
-    expect(counts).toEqual(['2', '2', '2', '1'])
+    expect(wrapper.findAll('.health-count').map(c => c.text())).toEqual(['—', '—', '—', '—'])
   })
 
   it('未选择店铺时应显示空店铺提示且不调用 inventory API', async () => {
@@ -84,7 +88,7 @@ describe('InventoryMonitor 视图', () => {
     expect(counts).toEqual(['1', '0', '0', '1'])
   })
 
-  it('API 抛异常时应降级到 mock 数据且不报错', async () => {
+  it('接口失败：显示失败原因并保持空列表，不再端出页面写死的 7 个 SKU', async () => {
     localStorage.setItem('current_shop_id', '1')
     mockedGetInventoryList.mockRejectedValue(new Error('network error'))
     mockedGetInventoryHealth.mockRejectedValue(new Error('network error'))
@@ -92,12 +96,81 @@ describe('InventoryMonitor 视图', () => {
     const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
     await flushPromises()
 
-    // 降级 mock 列表 7 行
-    expect(wrapper.findAll('.data-table tbody tr').length).toBe(7)
-    expect(wrapper.text()).toContain('B08X4-001')
-    // 降级 mock 健康度计数
-    expect(wrapper.findAll('.health-count').map(c => c.text())).toEqual(['2', '2', '2', '1'])
-    expect(wrapper.find('.loading-mask').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('network error')
+    // 只有空态那一行，没有任何编造 SKU
+    expect(wrapper.findAll('.data-table tbody tr').length).toBe(1)
+    expect(wrapper.text()).not.toContain('B08X4-001')
+    expect(wrapper.text()).toContain('暂无库存数据')
+    expect(wrapper.findAll('.health-count').map(c => c.text())).toEqual(['—', '—', '—', '—'])
+  })
+
+  it('真实补货建议可一键生成草稿采购计划，并把依据快照写进 replenishmentData', async () => {
+    localStorage.setItem('current_shop_id', '1')
+    mockedGetInventoryList.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: [{ sku: 'API-SKU-1', asin: 'ASIN001', shop: 'Shop A (US)', stock: 10, dailySales: 2,
+        days: 5, level: 'urgent', levelText: '紧急', suggestQty: 120, suggestStatDate: '2026-09-30' }]
+    })
+    mockedGetInventoryHealth.mockResolvedValue({ code: 200, message: 'ok', data: { urgent: 1, risk: 0, healthy: 0, overstock: 0 } })
+    mockedCreatePlan.mockResolvedValue({ code: 200, message: 'ok', data: { id: 7, planNo: 'PLAN-0007' } } as any)
+
+    const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+    await wrapper.find('.plan-btn').trigger('click')
+    await flushPromises()
+
+    expect(mockedCreatePlan).toHaveBeenCalledTimes(1)
+    const body = mockedCreatePlan.mock.calls[0][0]
+    expect(body).toMatchObject({ shopId: '1', sku: 'API-SKU-1', suggestedQty: 120, plannedQty: 120, urgency: 'URGENT', source: 'AUTO' })
+    const basis = JSON.parse(body.replenishmentData as string)
+    expect(basis).toMatchObject({
+      basis: 'inventory-replenishment-suggestion',
+      suggestStatDate: '2026-09-30',
+      availableQuantity: 10,
+      dailySales: 2,
+      daysOfSupply: 5,
+      suggestedReplenishQty: 120
+    })
+    expect(wrapper.find('.plan-msg').text()).toContain('PLAN-0007')
+  })
+
+  it('数据不真实（接口失败）时不许建计划：按钮禁用且不发请求', async () => {
+    localStorage.setItem('current_shop_id', '1')
+    mockedGetInventoryList.mockResolvedValue({ code: 200, message: 'ok', data: [
+      { sku: 'API-SKU-1', asin: 'A', shop: 'S', stock: 1, dailySales: 1, days: 2, level: 'urgent', levelText: '紧急', suggestQty: 50 }
+    ] })
+    mockedGetInventoryHealth.mockRejectedValue(new Error('health down'))
+
+    const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+    // 列表是真实的，但为了守住「一键建计划依赖两份数据都可信」这条口径，
+    // 健康度失败也算未 live 吗？—— 不会：live 只看库存列表，所以这里断言按钮可用
+    const btn = wrapper.find('.plan-btn')
+    expect(btn.exists()).toBe(true)
+    expect(btn.attributes('disabled')).toBeUndefined()
+
+    // 反过来：列表本身没拿到（失败）时按钮不该出现
+    mockedGetInventoryList.mockRejectedValue(new Error('list down'))
+    const w2 = mount(InventoryMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+    expect(w2.find('.plan-btn').exists()).toBe(false)
+    expect(mockedCreatePlan).not.toHaveBeenCalled()
+  })
+
+  it('建计划被后端拒绝：显示原因，不假装已生成', async () => {
+    localStorage.setItem('current_shop_id', '1')
+    mockedGetInventoryList.mockResolvedValue({ code: 200, message: 'ok', data: [
+      { sku: 'API-SKU-9', asin: 'A9', shop: 'S', stock: 1, dailySales: 1, days: 3, level: 'urgent', levelText: '紧急', suggestQty: 40 }
+    ] })
+    mockedGetInventoryHealth.mockResolvedValue({ code: 200, message: 'ok', data: { urgent: 1, risk: 0, healthy: 0, overstock: 0 } })
+    mockedCreatePlan.mockResolvedValue({ code: 400, message: '店铺ID、SKU和计划数量不能为空', data: null } as any)
+
+    const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+    await wrapper.find('.plan-btn').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.error-zone').text()).toContain('店铺ID、SKU和计划数量不能为空')
+    expect(wrapper.find('.plan-msg').exists()).toBe(false)
   })
 
   it('已选店铺但 API 返回空列表时应显示"暂无库存数据"', async () => {
@@ -118,7 +191,7 @@ describe('InventoryMonitor 视图', () => {
     expect(wrapper.findAll('.health-count').map(c => c.text())).toEqual(['0', '0', '0', '0'])
   })
 
-  it('已选店铺但 inventory API 返回非 200 时应保留降级列表', async () => {
+  it('库存接口返回非 200：报错误、列表留空、不给建计划入口，但健康度照常更新', async () => {
     localStorage.setItem('current_shop_id', '1')
     mockedGetInventoryList.mockResolvedValue({ code: 500, message: 'err', data: null as any })
     mockedGetInventoryHealth.mockResolvedValue({
@@ -130,9 +203,12 @@ describe('InventoryMonitor 视图', () => {
     const wrapper = mount(InventoryMonitor, { shallow: true, global: globalStubs })
     await flushPromises()
 
-    // 列表降级为 mock 7 行
-    expect(wrapper.findAll('.data-table tbody tr').length).toBe(7)
-    // 健康度仍按接口 200 数据更新
+    expect(wrapper.find('.error-zone').text()).toContain('err')
+    // 只剩空态行：接口没成功就不该有「看起来像库存」的行
+    expect(wrapper.findAll('.data-table tbody tr').length).toBe(1)
+    expect(wrapper.text()).not.toContain('B08X4-001')
+    expect(wrapper.find('.plan-btn').exists()).toBe(false)
+    // 健康度是另一条独立数据源，接口 200 就照常显示
     expect(wrapper.findAll('.health-count').map(c => c.text())).toEqual(['9', '9', '9', '9'])
   })
 })

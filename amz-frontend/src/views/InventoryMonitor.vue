@@ -31,22 +31,28 @@
       <template v-if="!loading">
       <div class="health-grid">
         <div class="health-card urgent">
-          <div class="health-count">{{ healthCounts.urgent }}</div>
+          <div class="health-count">{{ hv(healthCounts.urgent) }}</div>
           <div class="health-label">紧急补货</div>
         </div>
         <div class="health-card risk">
-          <div class="health-count">{{ healthCounts.risk }}</div>
+          <div class="health-count">{{ hv(healthCounts.risk) }}</div>
           <div class="health-label">风险库存</div>
         </div>
         <div class="health-card healthy">
-          <div class="health-count">{{ healthCounts.healthy }}</div>
+          <div class="health-count">{{ hv(healthCounts.healthy) }}</div>
           <div class="health-label">健康库存</div>
         </div>
         <div class="health-card overstock">
-          <div class="health-count">{{ healthCounts.overstock }}</div>
+          <div class="health-count">{{ hv(healthCounts.overstock) }}</div>
           <div class="health-label">滞销库存</div>
         </div>
       </div>
+
+      <div v-if="errors.length" class="error-zone" role="alert">
+        <Icon icon="mdi:alert-circle-outline" width="16" />
+        <span>{{ errors.join('；') }}</span>
+      </div>
+      <p v-if="planMsg" class="plan-msg" role="status">{{ planMsg }}</p>
 
       <!-- 库存列表（客户端分页，避免大店铺全量渲染卡顿） -->
       <div class="table-card">
@@ -61,6 +67,7 @@
               <th>可售天数</th>
               <th>健康度</th>
               <th>建议补货</th>
+              <th>补货动作</th>
             </tr>
           </thead>
           <tbody>
@@ -72,10 +79,20 @@
               <td>{{ item.dailySales }}</td>
               <td :class="item.days <= 7 ? 'days-urgent' : item.days <= 14 ? 'days-risk' : ''">{{ item.days }} 天</td>
               <td><span class="health-tag" :class="item.level">{{ item.levelText }}</span></td>
-              <td>{{ item.suggestQty > 0 ? item.suggestQty + ' 件' : '-' }}</td>
+              <td>
+                <template v-if="item.suggestQty > 0">
+                  {{ item.suggestQty }} 件
+                  <button class="plan-btn" :disabled="!dataLive || planBusy === item.sku"
+                          :title="dataLive ? '按这条补货建议生成草稿采购计划' : '当前显示的不是本店铺真实数据，不能据此建计划'"
+                          @click="makePlan(item)">
+                    {{ planBusy === item.sku ? '生成中...' : '生成采购计划' }}
+                  </button>
+                </template>
+                <template v-else>-</template>
+              </td>
             </tr>
             <tr v-if="!loading && pagedInventory.length === 0">
-              <td colspan="8" class="empty-row">
+              <td colspan="9" class="empty-row">
                 <div class="empty-state">
                   <Icon icon="mdi:package-variant-closed-remove" width="32" class="empty-icon" />
                   <span>暂无库存数据</span>
@@ -104,30 +121,27 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getInventoryList, getInventoryHealth } from '@/api/inventory'
 import type { InventoryItem, InventoryHealth } from '@/api/inventory'
+import { createPlan } from '@/api/procurement'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { usePagination } from '@/composables/usePagination'
 
 const loading = ref(false)
+const planBusy = ref('')
+const planMsg = ref('')
+const errors = ref<string[]>([])
+/**
+ * 列表与健康度都拿到真实数据才算 live。
+ * 旧实现在接口失败时直接展示页面里写死的 7 个 SKU——那既不是这家店的库存，
+ * 又长得很像库存。这里改成空列表 + 错误条，并且建计划按钮只在 live 时可点：
+ * 补货建议会落成采购计划草稿，拿假数据建出来的计划没人会去撤销它。
+ */
+const dataLive = ref(false)
+const healthKnown = ref(false)
 
-// 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
 const { currentShopId, refreshShop } = useShopGuard()
+const inventory = ref<InventoryItem[]>([])
+const healthData = ref<InventoryHealth>({ urgent: 0, risk: 0, healthy: 0, overstock: 0 })
 
-// 降级用的 mock 数据
-const mockInventory: InventoryItem[] = [
-  { sku: 'B08X4-001', asin: 'B08X4ABC01', shop: 'Shop A (US)', stock: 32, dailySales: 8, days: 4, level: 'urgent', levelText: '紧急', suggestQty: 200 },
-  { sku: 'B08X4-002', asin: 'B08X4ABC02', shop: 'Shop A (US)', stock: 56, dailySales: 6, days: 9, level: 'risk', levelText: '风险', suggestQty: 150 },
-  { sku: 'B08X4-003', asin: 'B08X4ABC03', shop: 'Shop B (UK)', stock: 180, dailySales: 5, days: 36, level: 'healthy', levelText: '健康', suggestQty: 0 },
-  { sku: 'B08X4-004', asin: 'B08X4ABC04', shop: 'Shop B (UK)', stock: 12, dailySales: 2, days: 6, level: 'urgent', levelText: '紧急', suggestQty: 100 },
-  { sku: 'B08X4-005', asin: 'B08X4ABC05', shop: 'Shop C (DE)', stock: 450, dailySales: 3, days: 150, level: 'overstock', levelText: '滞销', suggestQty: 0 },
-  { sku: 'B08X4-006', asin: 'B08X4ABC06', shop: 'Shop C (DE)', stock: 95, dailySales: 7, days: 14, level: 'risk', levelText: '风险', suggestQty: 80 },
-  { sku: 'B08X4-007', asin: 'B08X4ABC07', shop: 'Shop A (US)', stock: 220, dailySales: 10, days: 22, level: 'healthy', levelText: '健康', suggestQty: 0 }
-]
-const mockHealth: InventoryHealth = { urgent: 2, risk: 2, healthy: 2, overstock: 1 }
-
-const inventory = ref<InventoryItem[]>([...mockInventory])
-const healthData = ref<InventoryHealth>({ ...mockHealth })
-
-// 客户端分页：每页 20 条
 const invPage = usePagination<InventoryItem>(() => inventory.value, 20)
 const pagedInventory = invPage.paged
 const totalInventory = invPage.total
@@ -142,6 +156,52 @@ const healthCounts = computed(() => ({
   overstock: healthData.value.overstock
 }))
 
+/** 健康度未知时显示「—」而不是 0：0 会被读成「测出来没有紧急 SKU」 */
+const hv = (n: number) => (healthKnown.value ? n : '—')
+
+const pushError = (text: string) => {
+  if (!errors.value.includes(text)) errors.value.push(text)
+}
+
+/** 由补货建议生成草稿采购计划；数量、可售天数、建议量与统计日期一起留档到 replenishmentData。 */
+const makePlan = async (item: InventoryItem) => {
+  const shopId = refreshShop()
+  if (!shopId || !dataLive.value) return
+  planBusy.value = item.sku
+  planMsg.value = ''
+  try {
+    const res = await createPlan({
+      shopId,
+      sku: item.sku,
+      asin: item.asin,
+      suggestedQty: item.suggestQty,
+      plannedQty: item.suggestQty,
+      urgency: item.days <= 7 ? 'URGENT' : item.days <= 14 ? 'HIGH' : 'NORMAL',
+      source: 'AUTO',
+      remark: '由库存补货建议生成，待审批',
+      replenishmentData: JSON.stringify({
+        basis: 'inventory-replenishment-suggestion',
+        suggestStatDate: item.suggestStatDate ?? null,
+        suggestUrgency: item.suggestUrgency ?? null,
+        availableQuantity: item.stock,
+        dailySales: item.dailySales,
+        daysOfSupply: item.days,
+        suggestedReplenishQty: item.suggestQty,
+        generatedAt: new Date().toISOString()
+      })
+    })
+    if (res?.code !== 200) {
+      pushError(`生成采购计划：${res?.message || '后端拒绝'}`)
+      return
+    }
+    planMsg.value = `已为 ${item.sku} 生成草稿采购计划 ${res.data?.planNo || res.data?.id}，请到采购供应链页审批`
+  } catch (e) {
+    pushError(`生成采购计划：${e instanceof Error ? e.message : '调用失败'}`)
+  } finally {
+    planBusy.value = ''
+  }
+}
+
 onMounted(async () => {
   // 未选择店铺时不发请求，避免网关校验失败
   const shopId = refreshShop()
@@ -150,37 +210,28 @@ onMounted(async () => {
     return
   }
   loading.value = true
+  errors.value = []
 
-  // 并行请求库存列表与健康度
-  const tasks = [
-    {
-      fn: () => getInventoryList(shopId),
-      onSuccess: (data: InventoryItem[]) => { inventory.value = data },
-      mock: mockInventory,
-      tag: 'getInventoryList'
-    },
-    {
-      fn: () => getInventoryHealth(shopId),
-      onSuccess: (data: InventoryHealth) => { healthData.value = data },
-      mock: mockHealth,
-      tag: 'getInventoryHealth'
-    }
+  const jobs: Array<[string, () => Promise<unknown>, (d: any) => void, (ok: boolean) => void]> = [
+    ['库存列表', () => getInventoryList(shopId), (d) => { inventory.value = d }, (ok) => { if (ok) dataLive.value = true }],
+    ['库存健康度', () => getInventoryHealth(shopId), (d) => { healthData.value = d }, (ok) => { if (ok) healthKnown.value = true }]
   ]
 
-  await Promise.all(
-    tasks.map(async (t) => {
-      try {
-        const res = await t.fn()
-        if (res?.code === 200 && res.data) {
-          t.onSuccess(res.data as any)
-        } else {
-          console.warn(`[InventoryMonitor] ${t.tag} 返回数据异常，使用降级数据`, res)
-        }
-      } catch (e) {
-        console.warn(`[InventoryMonitor] ${t.tag} 调用失败，使用降级数据`, e)
+  await Promise.all(jobs.map(async ([name, fn, apply, mark]) => {
+    try {
+      const res: any = await fn()
+      if (res?.code === 200 && res.data) {
+        apply(res.data)
+        mark(true)
+      } else {
+        mark(false)
+        pushError(`${name}：${(res && res.message) || '接口未返回数据'}`)
       }
-    })
-  )
+    } catch (e) {
+      mark(false)
+      pushError(`${name}：${e instanceof Error ? e.message : '调用失败'}`)
+    }
+  }))
 
   loading.value = false
 })
@@ -188,6 +239,11 @@ onMounted(async () => {
 
 <style scoped>
 /* 页面基础 */
+.plan-btn { margin-left: 0.5rem; padding: 0.2rem 0.5rem; border: none; border-radius: var(--radius-sm); background: var(--color-primary-light); color: var(--color-primary); font-size: 0.75rem; cursor: pointer; }
+.plan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.plan-msg { font-size: 0.8125rem; color: var(--color-success); margin: 0 0 0.75rem; }
+.error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+
 .inventory-page { background: var(--color-background); }
 
 /* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */

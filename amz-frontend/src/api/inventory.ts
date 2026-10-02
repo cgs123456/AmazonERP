@@ -13,6 +13,10 @@ export interface InventoryItem {
   level: 'urgent' | 'risk' | 'healthy' | 'overstock'
   levelText: string
   suggestQty: number
+  /** join 进来的补货建议是哪一天的统计；生成采购计划时作为依据留档 */
+  suggestStatDate?: string
+  /** 建议行自带的紧急度（后端 urgencyLevel），没有则为 undefined */
+  suggestUrgency?: string
 }
 
 // 库存健康度统计
@@ -96,10 +100,15 @@ export const joinSuggestQty = (
       latest.set(s.sku, s)
     }
   }
-  return items.map((item) => ({
-    ...item,
-    suggestQty: Math.max(0, Math.round(toNum(latest.get(item.sku)?.suggestedReplenishQty)))
-  }))
+  return items.map((item) => {
+    const hit = latest.get(item.sku)
+    return {
+      ...item,
+      suggestQty: Math.max(0, Math.round(toNum(hit?.suggestedReplenishQty))),
+      suggestStatDate: hit?.statDate,
+      suggestUrgency: hit?.urgencyLevel
+    }
+  })
 }
 
 // 由展示行派生健康度计数（与 health 端点口径一致）

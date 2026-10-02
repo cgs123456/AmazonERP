@@ -205,6 +205,7 @@
                   </template>
                   <button v-if="p.status === 'APPROVED'" class="action-btn" :disabled="busy" @click="runPlan(p, 'convert')">转采购单</button>
                   <button v-if="canCancelPlan(p.status)" class="action-btn cancel" :disabled="busy" @click="runPlan(p, 'cancel')">取消</button>
+                  <button v-if="p.replenishmentData" class="action-btn" @click="showBasis(p)">补货依据</button>
                 </td>
               </tr>
               <tr v-if="!plans.loading.value && !plans.rows.value.length">
@@ -212,6 +213,21 @@
               </tr>
             </tbody>
           </table>
+          <div v-if="planBasis" class="panel">
+            <div class="panel-head">
+              <span class="panel-title">{{ planBasis.planNo }} 的补货依据</span>
+              <button class="action-btn" @click="planBasis = null">关闭</button>
+            </div>
+            <table class="data-table">
+              <tbody>
+                <tr v-for="row in planBasis.rows" :key="row[0]">
+                  <th class="mono">{{ row[0] }}</th><td class="mono">{{ row[1] }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="panel-note">{{ planBasis.note }}</p>
+          </div>
+
           <div class="table-pager">
             <span class="page-info">{{ pagerText(plans) }}</span>
             <div class="page-actions">
@@ -646,6 +662,27 @@ const { currentShopId, refreshShop } = useShopGuard()
 const tab = ref<TabKey>('supplier')
 
 const truthy = (v: unknown) => v === true || v === 1 || v === '1'
+
+const planBasis = ref<null | { planNo: string; rows: Array<[string, string]>; note: string }>(null)
+
+/**
+ * replenishmentData 是建计划当时留档的补货输入（由库存页「生成采购计划」写入）。
+ * 解析不了就原样显示而不是丢弃：这段文本是「这条计划凭什么定这个量」的唯一凭据。
+ */
+const showBasis = (p: PurchasePlan) => {
+  const raw = p.replenishmentData || ''
+  const label = p.planNo || `计划 #${p.id}`
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    planBasis.value = {
+      planNo: label,
+      rows: Object.entries(parsed).map(([k, v]) => [k, String(v ?? '-')] as [string, string]),
+      note: '这是生成该草稿计划时的补货输入快照（含建议统计日期），不是当前库存的实时值。'
+    }
+  } catch {
+    planBasis.value = { planNo: label, rows: [['原文', raw]], note: '依据文本不是 JSON，原样显示（可能是更早版本或人工填写）。' }
+  }
+}
 
 const pushError = (text: string) => {
   if (!errors.value.includes(text)) errors.value.push(text)
