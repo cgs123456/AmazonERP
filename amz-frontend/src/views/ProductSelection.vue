@@ -21,6 +21,22 @@
         请先在右上角选择店铺后再查看选品机会。
       </div>
 
+      <!-- 数据来源披露：本页的指标不是接来的，是算出来的 -->
+      <div class="notice-zone" role="note">
+        <div class="notice-title">这些数字是模拟的</div>
+        <ul class="notice-list">
+          <li>市场摘要、机会评分与 8 维雷达来自 amz-service-ops 的模拟引擎：以「关键词 + 站点」哈希为种子的
+            Random，再套品类基准值（ProductSelectionServiceImpl#analyzeMarket）。没有接 Helium 10，
+            也没有接 SP-API Brand Analytics，所以同一个关键词每次结果稳定，但不是真实市场读数。</li>
+          <li>点「分析市场」会真实落库：amz_selection_opportunity 写 5 行、amz_keyword_research 写 1 行，
+            归属当前选中店铺。列表里看到的历史机会就是这么来的。</li>
+          <li>没有店铺上下文时后端直接拒绝，不再默认记到 1 号店名下（避免把假结论挂到别人的店上）。</li>
+          <li>后端另有 GET /ops/selection/competitors/{asin} 与 POST /ops/selection/keyword 两条端点，
+            同样是播种数据且已在非 mock 档被拒，因此本页不提供入口。</li>
+          <li>可用于演示和链路联调；要拿它做选品决策，需要先接真实数据源。</li>
+        </ul>
+      </div>
+
       <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
       <div v-if="loading" class="skeleton-zone" role="status" aria-label="内容加载中">
         <div class="table-card sk-table-card">
@@ -57,6 +73,7 @@
           市场分析摘要：{{ summary.keyword }}（{{ summary.marketplace }}）
           <span class="tag">{{ summary.category }}</span>
           <span class="tag season">{{ seasonalityText(summary.seasonality) }}</span>
+          <span class="mock-badge">模拟数据</span>
         </h2>
 
         <!-- 机会评分仪表盘 + 8 维度雷达图 -->
@@ -472,6 +489,11 @@ const seasonalityText = (s?: string) => {
 .selection-page { background: var(--color-background); }
 
 /* 页头/主区/表格等公共样式已收敛至全局 style.css */
+
+/* 数据来源披露（与运营预警台/多平台运营台同形制） */
+.notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; line-height: 1.6; }
+.notice-title { font-weight: 600; margin-bottom: 0.25rem; }
+.notice-list { margin: 0; padding-left: 1.125rem; }
 
 /* 骨架屏 */
 .skeleton-zone { display: flex; flex-direction: column; gap: 1rem; }

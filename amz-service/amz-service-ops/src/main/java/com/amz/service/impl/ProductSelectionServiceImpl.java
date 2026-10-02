@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,33 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
     @Autowired(required = false)
     private AiServiceClient aiServiceClient;
 
+    @Autowired
+    private org.springframework.core.env.Environment environment;
+
+    /**
+     * 模拟内容只允许在 mock 档产出（与日报/主动提醒/客服索评/多平台同步同一条规则）。
+     * 竞品与关键词调研的正文是 asin/keyword 哈希播种出来的随机数，非 mock 档一旦被当成
+     * 真实的竞品价与搜索量来做选品决策，损失比不返回更大。
+     */
+    private boolean isMockProfile() {
+        for (String p : environment.getActiveProfiles()) {
+            if ("mock".equals(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 写入归属必须来自调用方上下文。
+     * 旧实现是「取不到就写 1L」：没有店铺头的调用方（脚本、内部服务、token 未带 shopId）
+     * 会把一批假机会/假调研挂到 1 号店名下，既污染真实数据，又让后来人以为 1 号店真有这些结论。
+     */
+    private Long requireShopId() {
+        Long shopId = UserContext.getShopId();
+        return shopId != null && shopId > 0 ? shopId : null;
+    }
+
     // M13：5 条机会 + 1 条调研同库多 insert，无事务时半失败留孤儿行
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -70,8 +98,10 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         // ThreadLocalRandom#setSeed 恒抛 UnsupportedOperationException，改用可播种的 Random
         Random rand = new Random(seed);
 
-        // 优先从当前用户上下文取 shopId，降级为默认值 1L
-        Long shopId = UserContext.getShopId() != null ? UserContext.getShopId() : 1L;
+        Long shopId = requireShopId();
+        if (shopId == null) {
+            return Result.failure("缺少店铺上下文：请先选择店铺后再分析，机会与调研结果不再写入默认店铺 1");
+        }
         String category = inferCategory(keyword);
 
         // 模拟市场基准值（基于品类）
@@ -158,6 +188,13 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         }
 
         log.info("竞品分析：asin={} marketplace={}", asin, marketplace);
+        if (!isMockProfile()) {
+            log.warn("竞品分析已拒绝：当前 profile {} 非 mock，而竞品明细（价格/评论/BSR/跟卖数）"
+                    + "由 asin 哈希播种的 Random 生成，没有一行来自真实查询。"
+                    + "恢复该能力需接 SP-API 或 Keepa 竞品接口。",
+                    Arrays.toString(environment.getActiveProfiles()));
+            return Result.failure("竞品分析仅在 mock 档可用：竞品明细当前为播种模拟数据，无真实数据源");
+        }
 
         Random rand = new Random((long) asin.hashCode() + marketplace.hashCode());
 
@@ -197,11 +234,20 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         }
 
         log.info("关键词调研：keyword={} marketplace={}", keyword, marketplace);
+        if (!isMockProfile()) {
+            log.warn("关键词调研已拒绝：当前 profile {} 非 mock，搜索量/点击占比/建议出价均为"
+                    + " keyword 哈希播种的模拟值，且每次调用都会往 amz_keyword_research 插一行。"
+                    + "恢复该能力需接 SP-API Brand Analytics。",
+                    Arrays.toString(environment.getActiveProfiles()));
+            return Result.failure("关键词调研仅在 mock 档可用：指标当前为播种模拟数据，且会落库");
+        }
 
         Random rand = new Random((long) keyword.hashCode() + marketplace.hashCode());
 
-        // 优先从当前用户上下文取 shopId，降级为默认值 1L
-        Long shopId = UserContext.getShopId() != null ? UserContext.getShopId() : 1L;
+        Long shopId = requireShopId();
+        if (shopId == null) {
+            return Result.failure("缺少店铺上下文：请先选择店铺后再调研，调研结果不再写入默认店铺 1");
+        }
         int searchVolume = 1000 + rand.nextInt(0, 80000);
         int competitorCount = 30 + rand.nextInt(0, 400);
 
