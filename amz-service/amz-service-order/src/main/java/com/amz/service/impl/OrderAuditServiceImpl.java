@@ -403,19 +403,20 @@ public class OrderAuditServiceImpl implements OrderAuditService {
         routing.setAsin(asin);
         routing.setQuantity(quantity);
 
-        // 默认策略：FBA 覆盖国家用 FBA，否则海外仓
+        // 默认策略：FBA 覆盖国家用 FBA，否则海外仓。这里能判定的只有「仓库类型」：
+        // 仓库主数据 amz_warehouse 属于物流模块，订单模块没有它的 mapper 也没有到物流服务的
+        // Feign 通道，所以拿不到任何真实仓库。旧实现用 country 拼出 "US-FBA-Warehouse"
+        // 这样的字符串并 insert 进 amz_shipment_routing，等于把不存在的仓名写成发货依据。
         boolean isFbaCountry = country != null && (country.equals("US") || country.equals("CA")
                 || country.equals("MX") || country.equals("GB") || country.equals("DE")
                 || country.equals("FR") || country.equals("IT") || country.equals("ES")
                 || country.equals("JP") || country.equals("AU"));
         if (isFbaCountry) {
             routing.setWarehouseType("FBA");
-            routing.setWarehouseName(country + "-FBA-Warehouse");
-            routing.setSelectedReason("FBA主配送国家");
+            routing.setSelectedReason("FBA主配送国家，仅仓库类型建议；具体发货仓未解析，需物流模块确认");
         } else {
             routing.setWarehouseType("OVERSEAS");
-            routing.setWarehouseName(country + "-Overseas-Warehouse");
-            routing.setSelectedReason("非FBA覆盖国家，走海外仓自发货");
+            routing.setSelectedReason("非FBA覆盖国家，走海外仓自发货；具体发货仓未解析，需物流模块确认");
         }
         routing.setRouteTime(LocalDateTime.now());
         shipmentRoutingMapper.insert(routing);
