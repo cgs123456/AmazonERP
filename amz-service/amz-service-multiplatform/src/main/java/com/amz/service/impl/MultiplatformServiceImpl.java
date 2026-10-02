@@ -102,10 +102,8 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     @Transactional
     public PlatformAccount createAccount(PlatformAccount account) {
-        // 请求体 shopId 切面覆盖不到，显式校验归属
-        if (account.getShopId() == null || !UserContext.isShopAllowed(account.getShopId())) {
-            throw new IllegalStateException("无权为该店铺创建账号");
-        }
+        // 请求体里的 shopId 切面覆盖不到，归属只能在这里按行判定
+        requireShopOnRow(account.getShopId(), "多平台账号");
         account.setStatus("ACTIVE");
         account.setCreateTime(LocalDateTime.now());
         account.setUpdateTime(LocalDateTime.now());
@@ -121,9 +119,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         if (existed == null) {
             throw new AttrIsNullException("平台账号不存在 id=" + id);
         }
-        if (existed.getShopId() == null || !UserContext.isShopAllowed(existed.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺账号");
-        }
+        requireShopOnRow(existed.getShopId(), "多平台账号");
         // 锁定归属店铺：禁止借更新把行搬到其他店铺
         account.setId(id);
         account.setShopId(existed.getShopId());
@@ -146,9 +142,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         if (existed == null) {
             return false;
         }
-        if (existed.getShopId() == null || !UserContext.isShopAllowed(existed.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺账号");
-        }
+        requireShopOnRow(existed.getShopId(), "多平台账号");
         return platformAccountMapper.deleteById(id) > 0;
     }
 
@@ -156,9 +150,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean testConnection(Long accountId) {
         PlatformAccount account = platformAccountMapper.selectById(accountId);
         if (account == null) return false;
-        if (account.getShopId() == null || !UserContext.isShopAllowed(account.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺账号");
-        }
+        requireShopOnRow(account.getShopId(), "多平台账号");
         boolean ok = false;
         try {
             ok = isEndpointWellFormed(account.getPlatform(), account.getApiEndpoint(), account.getApiKey());
@@ -234,11 +226,16 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean mapProduct(Long platformProductId, String amazonAsin, String amazonSku) {
         PlatformProduct pp = platformProductMapper.selectById(platformProductId);
         if (pp == null) throw new AttrIsNullException("平台商品不存在 id=" + platformProductId);
-        pp.setAmazonAsin(amazonAsin);
-        pp.setAmazonSku(amazonSku);
+        // 这里以前没有任何归属判定：任何登录用户都能把别人店铺的商品改映射到自己的 ASIN/SKU 上。
+        requireShopOnRow(pp.getShopId(), "平台商品");
+        if (amazonAsin == null || amazonAsin.isBlank()) {
+            throw new AttrIsNullException("ASIN 不能为空");
+        }
+        pp.setAmazonAsin(amazonAsin.trim().toUpperCase(java.util.Locale.ROOT));
+        pp.setAmazonSku(amazonSku == null || amazonSku.isBlank() ? null : amazonSku.trim());
         pp.setUpdateTime(LocalDateTime.now());
         platformProductMapper.updateById(pp);
-        log.info("商品映射：{}:{}/{} → ASIN:{} SKU:{}", pp.getPlatform(), pp.getPlatformProductId(), pp.getTitle(), amazonAsin, amazonSku);
+        log.info("商品映射：{}:{}/{} → ASIN:{} SKU:{}", pp.getPlatform(), pp.getPlatformProductId(), pp.getTitle(), pp.getAmazonAsin(), pp.getAmazonSku());
         return true;
     }
 
@@ -284,9 +281,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean replyMessage(Long messageId, String replyContent) {
         PlatformMessage msg = platformMessageMapper.selectById(messageId);
         if (msg == null) throw new AttrIsNullException("消息不存在 id=" + messageId);
-        if (msg.getShopId() == null || !UserContext.isShopAllowed(msg.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺消息");
-        }
+        requireShopOnRow(msg.getShopId(), "平台消息");
         msg.setStatus("REPLIED");
         msg.setReplyTime(LocalDateTime.now());
         msg.setUpdateTime(LocalDateTime.now());
@@ -316,9 +311,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean assignMessage(Long messageId, String assignedTo) {
         PlatformMessage msg = platformMessageMapper.selectById(messageId);
         if (msg == null) throw new AttrIsNullException("消息不存在 id=" + messageId);
-        if (msg.getShopId() == null || !UserContext.isShopAllowed(msg.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺消息");
-        }
+        requireShopOnRow(msg.getShopId(), "平台消息");
         msg.setAssignedTo(assignedTo);
         msg.setUpdateTime(LocalDateTime.now());
         platformMessageMapper.updateById(msg);
@@ -480,9 +473,11 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     @Transactional
     public Map<String, Object> registerApp(OauthApp app) {
-        if (app.getOwnerShopId() != null && !UserContext.isShopAllowed(app.getOwnerShopId())) {
-            throw new IllegalStateException("无权为该店铺注册应用");
+        // owner_shop_id 在 DDL 里是 NOT NULL：把「没有归属」当成「不用校验」只会绕过判定然后撞库。
+        if (app.getOwnerShopId() == null) {
+            throw new AttrIsNullException("应用必须归属一个店铺");
         }
+        requireShopOnRow(app.getOwnerShopId(), "OAuth 应用");
         app.setAppKey("AK_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
         // 明文密钥仅本次返回，后续只存 SHA-256（无 crypto 依赖，用 JDK 内置实现）
         String plainSecret = "ASK_" + UUID.randomUUID().toString().replace("-", "");
@@ -506,9 +501,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         if (app == null) {
             throw new AttrIsNullException("OAuth App 不存在：id=" + appId);
         }
-        if (app.getOwnerShopId() != null && !UserContext.isShopAllowed(app.getOwnerShopId())) {
-            throw new IllegalStateException("无权操作该应用");
-        }
+        requireShopOnRow(app.getOwnerShopId(), "OAuth 应用");
         String plainSecret = "ASK_" + UUID.randomUUID().toString().replace("-", "");
         app.setAppSecretEncrypted(sha256Hex(plainSecret));
         app.setUpdateTime(LocalDateTime.now());
@@ -754,13 +747,8 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         String tracking = trackingNo.trim();
         com.amz.model.UnifiedOrder order = unifiedOrderMapper.selectById(orderId);
         if (order == null) throw new AttrIsNullException("订单不存在：id=" + orderId);
-        // 严格版归属判定：这里会真的把发货回传给平台。isShopAllowed 在「没有任何授权店铺列表」时
-        // 按放行处理，一个 shops 为空的 token 也能把别人的订单标记发货。
-        if (order.getShopId() == null || !UserContext.isShopAllowedStrict(order.getShopId())) {
-            log.warn("多平台发货越权拦截：userId={}, orderId={}, orderShopId={}",
-                    UserContext.getUserId(), orderId, order.getShopId());
-            throw new CodeErrorException("订单不存在或无权操作该店铺订单");
-        }
+        // 这一句会真的把发货回传给平台，所以归属必须按行严格判定（helper 里写了为什么不能用 lenient）
+        requireShopOnRow(order.getShopId(), "统一订单");
         boolean ok;
         switch (order.getPlatform() == null ? "" : order.getPlatform()) {
             case "TEMU": ok = temuClient.markShipped(order.getPlatformOrderNo(), tracking); break;
@@ -774,5 +762,30 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             unifiedOrderMapper.updateById(order);
         }
         return ok;
+    }
+
+    /**
+     * 按「行上的 shopId」判定归属，用于所有 id 定位的写操作。
+     * <p>
+     * 必须是严格版：{@code isShopAllowed} 在 userId 为空的上下文里会因为「没有授权列表」放行
+     * （定时任务与内部调用要依赖那条分支），而这些方法都是浏览器可直接触发的写入。
+     * 缺 shopId 的行同样按拒绝处理——归属缺失不等于不受限。
+     */
+    private void requireShopOnRow(Long shopId, String what) {
+        if (!UserContext.isShopAllowedStrict(shopId)) {
+            rejectForeign(shopId, what, null);
+        }
+    }
+
+    /**
+     * 统一的越权拒绝：抛业务异常而不是 {@code IllegalStateException}。
+     * 后者会被全局兜底成 500「服务器内部错误」，被拒的一方拿不到结论，
+     * 日志里也混在系统故障里看不出是越权拦截。
+     */
+    private void rejectForeign(Long shopId, String what, String detail) {
+        log.warn("多平台越权拦截：userId={}, role={}, {}ShopId={}, {}",
+                UserContext.getUserId(), UserContext.getRole(), what, shopId,
+                detail == null ? "" : detail);
+        throw new CodeErrorException(what + "不存在或无权访问");
     }
 }
