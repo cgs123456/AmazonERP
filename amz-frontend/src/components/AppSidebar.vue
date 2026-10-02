@@ -157,6 +157,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/search') }"
+        @click="navigateTo('/search')"
+        role="button"
+        aria-label="商品搜索"
+        tabindex="0"
+      >
+        <Icon icon="mdi:magnify" class="nav-icon" width="24" />
+        <span class="nav-text">商品搜索</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/connectors') }"
         @click="navigateTo('/connectors')"
         role="button"

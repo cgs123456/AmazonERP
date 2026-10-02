@@ -532,6 +532,25 @@ const AUDIT_ROUTE = {
 }
 
 /**
+ * 搜索域（/search）：检索结果是 ES 文档，热搜是 Redis ZSET 元组，历史是 amz_history 行。
+ * 三个 list 接口都返回数组，必须显式登记；热搜在 Redis 集合为空时后端返回的是 null，
+ * 「没有计数」与「计数为 0」是两回事，所以另留一组可切换的 null 场景不在这里做。
+ */
+const SEARCH_PRODUCTS = [
+  {
+    id: 1, title: 'Wireless Earbuds Pro', content: 'anc true wireless', summary: '主动降噪耳机',
+    image: 'http://img/1.jpg', price: 39.9, sku: 'SKU-WE-01', shopId: 7, userId: 3,
+    user: { id: 3, nickname: '卖家A', phone: null }
+  },
+  {
+    id: 2, title: 'Earbuds Case', content: 'protective case', summary: null, image: null,
+    price: null, sku: null, shopId: null, userId: null, user: null
+  }
+]
+const SEARCH_HOT = [{ key: 'earbuds', score: 12 }, { key: 'anc', score: 5 }]
+const SEARCH_HISTORY = [{ history: 'earbuds', userId: 3 }, { history: 'anc', userId: 3 }]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -655,6 +674,12 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/order\/audit\/route\//, data: AUDIT_ROUTE },
   { match: /^\/order\/audit\/rule\/\d+$/, data: { id: 1, enabled: false } },
   { match: /^\/order\/audit\/rule$/, data: { id: 4 } },
+
+  // ===== 搜索 /search =====
+  { match: /^\/search\/search\//, data: SEARCH_PRODUCTS },
+  { match: /^\/search\/getHotList$/, data: SEARCH_HOT },
+  { match: /^\/search\/getHistoryList$/, data: SEARCH_HISTORY },
+  { match: /^\/search\/deleteHistory$/, data: null },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

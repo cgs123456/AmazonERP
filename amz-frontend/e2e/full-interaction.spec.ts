@@ -36,6 +36,7 @@ const NAV = [
   { path: '/profit', linkText: '利润报表' },
   { path: '/finance', linkText: '财务管理' },
   { path: '/selection', linkText: '选品分析' },
+  { path: '/search', linkText: '商品搜索' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -444,6 +445,60 @@ test.describe('OrderAudit 交互（订单审单）', () => {
     await page.locator('.tab', { hasText: '拆分日志' }).click()
     await expect(page.locator('.tab-panel[data-panel="split"]'))
       .toContainText('全仓没有 amz_order_split_log 的插入点')
+  })
+})
+
+test.describe('ProductSearch 交互（商品搜索）', () => {
+  test('进入页面即取热搜与历史，且这一页不要求先选店铺', async ({ page }) => {
+    await page.goto('/search')
+    await expect(page.locator('.shop-tip')).toHaveCount(0)
+    await expect(page.locator('.notice-zone')).toContainText('登录用户')
+    const hotRow = page.locator('tbody tr', { hasText: '搜这个词' }).first()
+    await expect(hotRow).toContainText('earbuds')
+    await expect(hotRow).toContainText('12')
+    await expect(page.locator('tbody tr', { hasText: '再搜一次' })).toHaveCount(2)
+  })
+
+  test('关键词搜索渲染 ES 命中的真实字段，空字段显示占位而不是编值', async ({ page }) => {
+    await page.goto('/search')
+    // 页面里有两块 .empty-block（结果区与热搜加载态），必须按文案定位，不能用类名
+    await expect(page.getByText('还没搜索。上方输入关键词后回车即可。')).toBeVisible()
+    await page.locator('input').first().fill('earbuds')
+    await page.getByRole('button', { name: '搜索', exact: true }).click()
+    const rows = page.locator('tbody tr', { hasText: 'SKU-WE-01' })
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText('Wireless Earbuds Pro')
+    await expect(rows.first()).toContainText('39.9')
+    await expect(rows.first()).toContainText('卖家A')
+    await expect(page.locator('tbody tr', { hasText: 'Earbuds Case' }).first()).toContainText('-')
+    await expect(page.getByText('还没搜索。上方输入关键词后回车即可。')).toHaveCount(0)
+  })
+
+  test('点热搜里的词会填进输入框并立刻按这个词检索', async ({ page }) => {
+    await page.goto('/search')
+    await page.locator('button', { hasText: '搜这个词' }).first().click()
+    await expect(page.locator('input').first()).toHaveValue('earbuds')
+    await expect(page.locator('tbody tr', { hasText: 'SKU-WE-01' })).toHaveCount(1)
+  })
+
+  test('清空历史要二次确认：取消时一条 DELETE 都不发', async ({ page }) => {
+    const dels: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/search/deleteHistory') dels.push(r.method())
+    })
+    await page.goto('/search')
+    await page.getByRole('button', { name: '清空历史' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('不可恢复')
+    await expect(page.locator('.confirm-detail')).toContainText('2 条')
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    await expect(page.locator('.modal-mask')).toHaveCount(0)
+    expect(dels).toEqual([])
+
+    await page.getByRole('button', { name: '清空历史' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => dels.length).toBe(1)
+    expect(dels[0]).toBe('DELETE')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
   })
 })
 
