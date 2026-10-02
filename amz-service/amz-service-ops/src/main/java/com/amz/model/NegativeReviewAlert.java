@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
  * 差评监控告警实体。
@@ -42,4 +43,7 @@ public class NegativeReviewAlert implements Serializable {
 
     /** 状态：NEW / HANDLED / IGNORED */
     private String status;
+
+    /** 告警落库时刻，由 create_time DEFAULT CURRENT_TIMESTAMP 写入；实体不提交该列 */
+    private LocalDateTime createTime;
 }

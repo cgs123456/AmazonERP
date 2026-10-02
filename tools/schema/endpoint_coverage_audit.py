@@ -3,6 +3,8 @@
 Coarse on purpose: it maps controller paths against the strings used in
 amz-frontend/src/api/*.ts. A hit means "some frontend code names this path",
 not "the button works". Anything reported as missing must be checked by hand.
+Comments are stripped first, so a path that only appears in an explanatory
+comment is still reported as missing (that is the point).
 """
 import io
 import re
@@ -19,8 +21,20 @@ CLASS_MAP = re.compile(r'@RequestMapping\(\s*(?:value\s*=\s*)?"([^"]+)"')
 MAPPING_LINE = re.compile(r'@(Get|Post|Put|Delete|Patch)Mapping\b[ \t]*([^\n]*)')
 PATH_LITERAL = re.compile(r'(?:value|path)\s*=\s*"([^"]*)"|"([^"]*)"')
 
+# 注释里写出的路径不算「前端调用过」。这一条是踩出来的：opsAlerts.ts 的头注里
+# 列着三个「刻意不接」的扫描端点（为了说明为什么不接），整文件文本匹配因此把它们
+# 判成了已覆盖，OpsController 显示 0 条缺口——而页面上根本没有这三个按钮。
+# `(?<!:)` 是为了不吃掉 https:// 这类串里的双斜杠。
+LINE_COMMENT = re.compile(r'(?<!:)//[^\n]*')
+BLOCK_COMMENT = re.compile(r'/\*.*?\*/', re.S)
+
+
+def strip_comments(text: str) -> str:
+    return LINE_COMMENT.sub('', BLOCK_COMMENT.sub('', text))
+
 frontend_text = "\n".join(
-    io.open(p, encoding='utf-8', errors='replace').read() for p in fe_api.glob('*.ts')
+    strip_comments(io.open(p, encoding='utf-8', errors='replace').read())
+    for p in fe_api.glob('*.ts')
 )
 
 

@@ -7,6 +7,9 @@ import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
 import com.amz.model.NegativeReviewAlert;
 import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.OpsService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +21,8 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -30,6 +35,12 @@ import java.util.concurrent.ThreadLocalRandom;
 public class OpsServiceImpl implements OpsService {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    /**
+     * 关键词趋势一次最多返回多少个点。折线要的是连续序列，所以不翻页，但必须有上限：
+     * 抓取是反复追加的，不设上限时一次趋势查询会随运行时长越来越贵。
+     */
+    static final int MAX_RANK_TREND_POINTS = 200;
 
     @Autowired
     private NegativeReviewAlertMapper reviewAlertMapper;
@@ -77,26 +88,40 @@ public class OpsServiceImpl implements OpsService {
     }
 
     @Override
-    public List<NegativeReviewAlert> listNegativeReviewAlerts(Long shopId, String status) {
+    public PageResult<NegativeReviewAlert> listNegativeReviewAlerts(Long shopId, String status, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        Long cursorId = req.cursorId();
         LambdaQueryWrapper<NegativeReviewAlert> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(NegativeReviewAlert::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(NegativeReviewAlert::getStatus, status);
         }
-        wrapper.orderByDesc(NegativeReviewAlert::getId);
-        return reviewAlertMapper.selectList(wrapper);
+        if (cursorId != null) {
+            wrapper.lt(NegativeReviewAlert::getId, cursorId);
+        }
+        wrapper.orderByDesc(NegativeReviewAlert::getId).last("LIMIT " + req.probeSize());
+        List<NegativeReviewAlert> rows = reviewAlertMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(), a -> PageRequest.encodeCursor(a.getId()));
     }
 
     @Override
     public boolean handleNegativeReviewAlert(Long alertId) {
         NegativeReviewAlert alert = reviewAlertMapper.selectById(alertId);
+        // 不存在与越权同一句文案：这条端点只有 alertId，能区分两者就成了告警 ID 探针。
         if (alert == null) {
-            return false;
+            throw new CodeErrorException("差评告警不存在或无权访问");
         }
-        // 归属校验：有 shopId 的告警必须属于当前用户授权店铺（无 shopId 的历史数据放行，保持兼容）
-        if (alert.getShopId() != null && !UserContext.isShopAllowed(alert.getShopId())) {
-            log.warn("差评告警处理越权拦截：alertId={}, alertShopId={}", alertId, alert.getShopId());
-            return false;
+        // V1 DDL 是 shop_id BIGINT NOT NULL，出现 null 就是脏数据；原来的
+        // 「shopId != null && !isShopAllowed」把脏数据当成免检，等于谁都能改。
+        // 这条端点上也没有 @ShopScoped（alertId 不是 shopId，切面解析不到），
+        // 所以服务内的逐行严格判定是唯一一道防线。
+        if (!UserContext.isShopAllowedStrict(alert.getShopId())) {
+            log.warn("差评告警处理越权拦截：alertId={}, alertShopId={}, 已授权店铺={}",
+                    alertId, alert.getShopId(), UserContext.getShops());
+            throw new CodeErrorException("差评告警不存在或无权访问");
+        }
+        if (!"NEW".equals(alert.getStatus())) {
+            throw new CodeErrorException("该告警已经是 " + alert.getStatus() + "，没有再次处理");
         }
         alert.setStatus("HANDLED");
         reviewAlertMapper.updateById(alert);
@@ -123,14 +148,20 @@ public class OpsServiceImpl implements OpsService {
     }
 
     @Override
-    public List<HijackAlert> listHijackAlerts(Long shopId, String status) {
+    public PageResult<HijackAlert> listHijackAlerts(Long shopId, String status, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        Long cursorId = req.cursorId();
         LambdaQueryWrapper<HijackAlert> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(HijackAlert::getShopId, shopId);
         if (status != null && !status.isBlank()) {
             wrapper.eq(HijackAlert::getStatus, status);
         }
-        wrapper.orderByDesc(HijackAlert::getId);
-        return hijackAlertMapper.selectList(wrapper);
+        if (cursorId != null) {
+            wrapper.lt(HijackAlert::getId, cursorId);
+        }
+        wrapper.orderByDesc(HijackAlert::getId).last("LIMIT " + req.probeSize());
+        List<HijackAlert> rows = hijackAlertMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(), a -> PageRequest.encodeCursor(a.getId()));
     }
 
     @Override
@@ -158,11 +189,18 @@ public class OpsServiceImpl implements OpsService {
 
     @Override
     public List<KeywordRankRecord> getRankTrend(Long shopId, String keyword, String asin) {
+        // capture_time 是 'yyyy-MM-dd HH:mm:ss' 字符串，字典序即时间序，所以可以按它倒着
+        // 取最近的若干个点；返回前再反转成升序，调用方画折线不需要自己猜方向。
         LambdaQueryWrapper<KeywordRankRecord> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(KeywordRankRecord::getShopId, shopId)
                 .eq(KeywordRankRecord::getKeyword, keyword)
                 .eq(KeywordRankRecord::getAsin, asin)
-                .orderByAsc(KeywordRankRecord::getCaptureTime);
-        return rankMapper.selectList(wrapper);
+                .orderByDesc(KeywordRankRecord::getCaptureTime)
+                .orderByDesc(KeywordRankRecord::getId)
+                .last("LIMIT " + MAX_RANK_TREND_POINTS);
+        List<KeywordRankRecord> rows = rankMapper.selectList(wrapper);
+        List<KeywordRankRecord> ascending = new ArrayList<>(rows);
+        Collections.reverse(ascending);
+        return ascending;
     }
 }

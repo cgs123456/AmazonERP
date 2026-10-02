@@ -135,6 +135,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/ops-alerts') }"
+        @click="navigateTo('/ops-alerts')"
+        role="button"
+        aria-label="运营预警台"
+        tabindex="0"
+      >
+        <Icon icon="mdi:shield-alert-outline" class="nav-icon" width="24" />
+        <span class="nav-text">运营预警台</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/profit') }"
         @click="navigateTo('/profit')"
         role="button"

@@ -812,6 +812,40 @@ const MP_APPS = [
 const MP_SECRET_ISSUE = { appId: 71, appKey: 'ak-issued-e2e', appSecret: 'sk-issued-e2e-secret' }
 
 /**
+ * 运营预警台数据。告警行的 create_time 由数据库默认值写入，所以其中一行刻意留 null，
+ * 页面必须显示「未记录」而不是补一个看起来像的时间。
+ */
+const OPS_REVIEWS = [
+  {
+    id: 81, shopId: 1, asin: 'B0REVIEW01', reviewId: 'R1001', rating: 1,
+    title: 'Stopped working after a week', content: 'Very disappointed.',
+    reviewer: 'John D.', status: 'NEW', createTime: '2026-10-01 10:00:00'
+  },
+  {
+    id: 80, shopId: 1, asin: 'B0REVIEW02', reviewId: null, rating: 3,
+    title: 'Zipper broke', reviewer: 'Kim', status: 'HANDLED', createTime: null
+  }
+]
+
+const OPS_HIJACKS = [
+  {
+    id: 91, shopId: 1, asin: 'B0HIJACK01', hijackerSellerId: 'A777',
+    hijackerName: 'Competitor Seller', hijackPrice: 19.99, buyBoxTaken: true,
+    status: 'NEW', createTime: '2026-09-30 08:00:00'
+  },
+  {
+    id: 90, shopId: 1, asin: 'B0HIJACK02', hijackerSellerId: null, hijackerName: null,
+    hijackPrice: null, buyBoxTaken: null, status: 'IGNORED', createTime: null
+  }
+]
+
+const OPS_TREND = [
+  { id: 5, shopId: 1, keyword: 'wireless earbuds', asin: 'B0123456789', rank: 42, marketplace: 'US', captureTime: '2026-10-01 09:00:00' },
+  { id: 6, shopId: 1, keyword: 'wireless earbuds', asin: 'B0123456789', rank: 12, marketplace: 'US', captureTime: '2026-10-02 09:00:00' },
+  { id: 7, shopId: 1, keyword: 'wireless earbuds', asin: 'B0123456789', rank: 31, marketplace: 'US', captureTime: '2026-10-02 18:00:00' }
+]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -1016,6 +1050,14 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/multiplatform\/oauth\/app\/list\//, data: MP_APPS, page: FULL_PAGE(MP_APPS.length) },
   { match: /^\/multiplatform\/oauth\/app\/\d+\/rotate$/, data: MP_SECRET_ISSUE },
   { match: /^\/multiplatform\/oauth\/app$/, data: MP_SECRET_ISSUE },
+
+  // ===== 运营预警台 /ops-alerts（读告警表 + 差评的本地状态迁移）=====
+  // 三个 scan 端点刻意不登记：页面没有按钮，若将来有人加了，请求会落到 EMPTY_PAGE 兜底
+  // 变成「对象而不是数组」，页面会报「后端返回非 200」而不是安静地显示假数据。
+  { match: /^\/ops\/review\/list\//, data: OPS_REVIEWS, page: FULL_PAGE(OPS_REVIEWS.length) },
+  { match: /^\/ops\/review\/\d+\/handle$/, data: true },
+  { match: /^\/ops\/hijack\/list\//, data: OPS_HIJACKS, page: FULL_PAGE(OPS_HIJACKS.length) },
+  { match: /^\/ops\/rank\/trend$/, data: OPS_TREND },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

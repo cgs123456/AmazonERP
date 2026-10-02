@@ -45,6 +45,7 @@ const NAV = [
   { path: '/ad-bid-schedule', linkText: '分时调价' },
   { path: '/multiplatform', linkText: '多平台订单' },
   { path: '/multiplatform-ops', linkText: '多平台运营台' },
+  { path: '/ops-alerts', linkText: '运营预警台' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -960,6 +961,75 @@ test.describe('MultiplatformOps 交互（多平台运营台）', () => {
     await expect(card).toHaveCount(0)
     // 关掉之后没有任何端点可以再取回明文：列表行仍然只有可见部分
     await expect(page.locator('[data-panel="apps"]')).not.toContainText('sk-issued-e2e-secret')
+  })
+})
+
+test.describe('OpsAlerts 交互（运营预警台）', () => {
+  test('差评告警渲染真实列，已处理的行不给按钮，三个扫描入口都不存在', async ({ page }) => {
+    await page.goto('/ops-alerts')
+    const panel = page.locator('[data-panel="reviews"]')
+    await expect(panel.locator('tbody tr')).toHaveCount(2)
+    await expect(panel).toContainText('B0REVIEW01')
+    await expect(panel).toContainText('R1001')
+    await expect(panel).toContainText('未记录')
+    await expect(page.locator('.notice-zone')).toContainText('ThreadLocalRandom')
+    await expect(page.locator('.notice-zone')).toContainText('不会联系买家')
+
+    // 只有 NEW 那行有可用的「标记已处理」
+    const newRow = panel.locator('tbody tr', { hasText: 'B0REVIEW01' })
+    const handledRow = panel.locator('tbody tr', { hasText: 'B0REVIEW02' })
+    await expect(newRow.locator('button', { hasText: '标记已处理' })).toBeEnabled()
+    await expect(handledRow.locator('button', { hasText: '标记已处理' })).toBeDisabled()
+
+    for (const label of ['扫描', '抓取', '忽略']) {
+      await expect(page.locator('.tab-panel button', { hasText: label })).toHaveCount(0)
+    }
+    await page.locator('.tab', { hasText: '跟卖告警' }).click()
+    const hijack = page.locator('[data-panel="hijacks"]')
+    await expect(hijack).toContainText('已被抢走')
+    await expect(hijack).toContainText('本页只读')
+    await expect(hijack.locator('button', { hasText: '标记已处理' })).toHaveCount(0)
+  })
+
+  test('标记已处理要先确认，确认后才发那个 POST', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => {
+      if (/\/api\/ops\/review\/\d+\/handle/.test(new URL(r.url()).pathname)) posts.push(r.method())
+    })
+    await page.goto('/ops-alerts')
+    await page.locator('[data-panel="reviews"] tbody tr', { hasText: 'B0REVIEW01' })
+      .locator('button', { hasText: '标记已处理' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('NEW 改成 HANDLED')
+    expect(posts).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => posts.length).toBe(1)
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+
+  test('排名趋势要两个条件都填，查询按 keyword+ASIN 打给后端', async ({ page }) => {
+    const urls: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url())
+      if (p.pathname === '/api/ops/rank/trend') urls.push(decodeURIComponent(p.search))
+    })
+    await page.goto('/ops-alerts')
+    await page.locator('.tab', { hasText: '关键词排名' }).click()
+    const form = page.locator('[data-panel="rank"] .form-card')
+    await expect(form.locator('button', { hasText: '查询趋势' })).toBeDisabled()
+    await form.locator('input').first().fill('wireless earbuds')
+    await expect(form.locator('button', { hasText: '查询趋势' })).toBeDisabled()
+    expect(urls).toEqual([])
+
+    await form.locator('input').nth(1).fill('B0123456789')
+    await form.locator('button', { hasText: '查询趋势' }).click()
+    await expect.poll(() => urls.length).toBe(1)
+    // 空格编码成 %20 还是 + 由 axios/URLSearchParams 决定，两种都算带上了这个关键词
+    expect(urls[0]).toMatch(/keyword=wireless[+ ]earbuds/)
+    expect(urls[0]).toContain('asin=B0123456789')
+    const metrics = page.locator('[data-panel="rank"] .metric-grid')
+    await expect(metrics).toContainText('最新排名')
+    await expect(metrics).toContainText('31')
+    await expect(page.locator('[data-panel="rank"]')).toContainText('最近 200 个点')
   })
 })
 

@@ -28,7 +28,7 @@ const ACCOUNTS = [
   },
   {
     id: 8, shopId: 1, platform: 'SHEIN', storeName: null, apiEndpoint: null, status: 'ERROR',
-    tokenExpiresAt: null, lastSyncTime: '2026-09-30 02:00:00', apiKey: 'sk-should-never-arrive'
+    tokenExpiresAt: null, lastSyncTime: '2026-09-30 02:00:00', apiKey: 'sk-example-never-echoed'
   }
 ]
 
@@ -186,13 +186,13 @@ describe('多平台运营台', () => {
 
   it('后端抹掉凭证列这件事不能被页面绕过：任何面板都不许渲染出 apiKey 的值', async () => {
     const wrapper = await mountPage()
-    expect(wrapper.text()).not.toContain('sk-should-never-arrive')
+    expect(wrapper.text()).not.toContain('sk-example-never-echoed')
     await openTab(wrapper, '商品映射')
     await openTab(wrapper, '消息')
     await openTab(wrapper, '库存')
     await openTab(wrapper, 'Webhook 事件')
     await openTab(wrapper, 'ISV 应用')
-    expect(wrapper.text()).not.toContain('sk-should-never-arrive')
+    expect(wrapper.text()).not.toContain('sk-example-never-echoed')
   })
 
   it('首屏只加载账号列表，其余五个列表要等切到对应 Tab 才拉', async () => {
@@ -319,10 +319,10 @@ describe('多平台运营台', () => {
     const wrapper = await mountPage()
     await rowBtn(wrapper, 'accounts', 0, '编辑')
     const inputs = wrapper.find('.form-card').findAll('input')
-    await inputs[2].setValue('sk-rotate-me')
+    await inputs[2].setValue('sk-example-rotated')
     await clickBtn(wrapper, '保存修改')
     await clickBtn(wrapper, '确认执行')
-    expect(lastCall(api.updateAccount)[1]).toEqual(expect.objectContaining({ apiKey: 'sk-rotate-me' }))
+    expect(lastCall(api.updateAccount)[1]).toEqual(expect.objectContaining({ apiKey: 'sk-example-rotated' }))
   })
 
   it('删除账号是物理删除：确认文案说明后果，返回 false 时不能装作成功', async () => {

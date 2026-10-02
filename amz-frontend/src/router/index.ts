@@ -49,6 +49,11 @@ const router = createRouter({
             component: () => import('../views/MultiplatformOps.vue')
         },
         {
+            path: '/ops-alerts',
+            name: 'OpsAlerts',
+            component: () => import('../views/OpsAlerts.vue')
+        },
+        {
             path: '/profit',
             name: 'Profit',
             component: () => import('../views/ProfitReport.vue')

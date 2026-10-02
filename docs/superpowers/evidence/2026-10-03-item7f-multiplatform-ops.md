@@ -90,8 +90,11 @@ MU4 的第一版写法没有变红：我把「刷新保留错误」这件事写�
 
 - `mvn -pl amz-service/amz-service-multiplatform test`：**Tests run: 84, Failures: 0**，BUILD SUCCESS
 - `vue-tsc --noEmit`：0 错误；`vitest run`：**35 文件 / 375 例全绿**；`vite build`：成功
-- `repository_hygiene.py`：findings=0（router 改动后重新钉 sha：`b0fca381… → a68a86c3…`，
-  命中项仍是既有的 `const token = localStorage.getItem('token')` 那一行）
+- `repository_hygiene.py`：当时报 findings=0（router 改动后重新钉 sha：`b0fca381… → a68a86c3…`，
+  命中项仍是既有那行从 localStorage 读 token 的守卫代码）。
+  **但这个 0 不能算验收**：那次跑的时候新增文件还没 `git add`，而工具默认只扫已跟踪文件
+  （`--include-untracked` 才带上未跟踪的）；提交后 CI 的 hygiene 就红了，
+  详见 7f-fix 之后的 7g 记录。
 - `endpoint_coverage_audit.py`（快照 v6）：`parsed_method_annotations=359 unparsed=1`，
   无前端命中的端点 78 条，其中用户可见候选 **58**（v5 是 73，本片 −14）；
   `MultiplatformController` 26 条 → **剩 6 条**，就是上面点名不接的那 6 条。

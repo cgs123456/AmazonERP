@@ -572,12 +572,14 @@ const askSubmitAccount = () => {
       ? `会为当前店铺登记一个 ${accountForm.platform} 账号；状态由后端固定为 ACTIVE。`
       : '保存只提交有变化的列：凭证列留空表示保持原值（不回显，也无法确认原值是什么）。',
     run: async () => {
+      const key = String(accountForm.apiKey || '').trim()
       const body: Record<string, any> = {
         platform: accountForm.platform,
         storeName: String(accountForm.storeName || '').trim(),
         apiEndpoint: String(accountForm.apiEndpoint || '').trim() || null
       }
-      if (String(accountForm.apiKey || '').trim()) body.apiKey = String(accountForm.apiKey).trim()
+      // 凭证列只有填了新值才提交：留空表示保持原值（后端读取不回显，页面无从回填）
+      if (key) body.apiKey = key
       if (accountForm.id) {
         body.status = accountForm.status
       } else {

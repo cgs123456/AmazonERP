@@ -7,6 +7,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 跟卖监控告警实体。
@@ -40,4 +41,7 @@ public class HijackAlert implements Serializable {
 
     /** 状态：NEW / HANDLED / IGNORED */
     private String status;
+
+    /** 告警落库时刻，由 create_time DEFAULT CURRENT_TIMESTAMP 写入；跟卖没有处理端点，只读 */
+    private LocalDateTime createTime;
 }

@@ -4,6 +4,7 @@ import com.amz.annotation.ShopScoped;
 import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
 import com.amz.model.NegativeReviewAlert;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.OpsService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,19 +41,25 @@ public class OpsController {
 
     /**
      * 查询差评告警列表。
-     * GET /ops/review/list/{shopId}?status=
+     * GET /ops/review/list/{shopId}?status=&size=&cursor=
      */
     @ShopScoped
     @GetMapping("/review/list/{shopId}")
     public Result<List<NegativeReviewAlert>> listReviewAlerts(
             @PathVariable Long shopId,
-            @RequestParam(required = false) String status) {
-        return Result.success(opsService.listNegativeReviewAlerts(shopId, status));
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor) {
+        return Result.paged(opsService.listNegativeReviewAlerts(shopId, status, PageRequest.of(size, cursor)));
     }
 
     /**
      * 标记差评告警已处理。
      * POST /ops/review/{alertId}/handle
+     *
+     * <p>这里没有 {@code @ShopScoped}：切面只认名为 shopId 的 path/query 参数，而这条端点
+     * 只有 alertId，加上去也不会生效。归属判定在 service 内逐行做（严格档），
+     * 越权与不存在统一文案，避免这条端点变成告警 ID 的存在性探针。
      */
     @PostMapping("/review/{alertId}/handle")
     public Result<Boolean> handleReviewAlert(@PathVariable Long alertId) {
@@ -73,14 +80,18 @@ public class OpsController {
 
     /**
      * 查询跟卖告警列表。
-     * GET /ops/hijack/list/{shopId}?status=
+     * GET /ops/hijack/list/{shopId}?status=&size=&cursor=
+     *
+     * <p>跟卖只有读端点：后端没有 handle/ignore 的写入路径，页面也就不能摆「已处理」按钮。
      */
     @ShopScoped
     @GetMapping("/hijack/list/{shopId}")
     public Result<List<HijackAlert>> listHijackAlerts(
             @PathVariable Long shopId,
-            @RequestParam(required = false) String status) {
-        return Result.success(opsService.listHijackAlerts(shopId, status));
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String cursor) {
+        return Result.paged(opsService.listHijackAlerts(shopId, status, PageRequest.of(size, cursor)));
     }
 
     // ========== 关键词排名追踪 ==========

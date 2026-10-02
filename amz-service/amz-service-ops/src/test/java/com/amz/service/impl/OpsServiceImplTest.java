@@ -6,6 +6,10 @@ import com.amz.mapper.NegativeReviewAlertMapper;
 import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
 import com.amz.model.NegativeReviewAlert;
+import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +21,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
@@ -45,28 +50,38 @@ class OpsServiceImplTest {
     private OpsServiceImpl opsService;
 
     @Test
-    @DisplayName("处理差评告警 - 告警存在 → 状态更新为 HANDLED 并返回 true")
+    @DisplayName("处理差评告警 - 本店铺的新告警 → 状态更新为 HANDLED 并返回 true")
     void testHandleNegativeReviewAlertExists() {
         NegativeReviewAlert alert = new NegativeReviewAlert();
         alert.setId(1L);
+        // 归属列补齐成 V1 DDL 的形状（shop_id NOT NULL），并在 OPERATOR 上下文里跑：
+        // 这条端点原来用「shopId != null 才判」的宽松写法，null 行会绕过判定。
+        alert.setShopId(1L);
         alert.setStatus("NEW");
         when(reviewAlertMapper.selectById(1L)).thenReturn(alert);
 
-        boolean result = opsService.handleNegativeReviewAlert(1L);
+        UserContext.setUserId(7);
+        UserContext.setRole("OPERATOR");
+        UserContext.setShops(List.of(1L));
+        try {
+            boolean result = opsService.handleNegativeReviewAlert(1L);
 
-        assertTrue(result, "告警存在时应返回 true");
-        assertEquals("HANDLED", alert.getStatus(), "状态应更新为 HANDLED");
-        verify(reviewAlertMapper).updateById(alert);
+            assertTrue(result, "告警存在时应返回 true");
+            assertEquals("HANDLED", alert.getStatus(), "状态应更新为 HANDLED");
+            verify(reviewAlertMapper).updateById(alert);
+        } finally {
+            UserContext.clear();
+        }
     }
 
     @Test
-    @DisplayName("处理差评告警 - 告警不存在 → 返回 false")
+    @DisplayName("处理差评告警 - 告警不存在 → 业务错误，而不是一个看不出原因的 false")
     void testHandleNegativeReviewAlertNotFound() {
         when(reviewAlertMapper.selectById(99L)).thenReturn(null);
 
-        boolean result = opsService.handleNegativeReviewAlert(99L);
-
-        assertFalse(result, "告警不存在时应返回 false");
+        CodeErrorException ex = assertThrows(CodeErrorException.class,
+                () -> opsService.handleNegativeReviewAlert(99L));
+        assertEquals("差评告警不存在或无权访问", ex.getMessage());
         verify(reviewAlertMapper, times(0)).updateById(any(NegativeReviewAlert.class));
     }
 
@@ -98,7 +113,7 @@ class OpsServiceImplTest {
     }
 
     @Test
-    @DisplayName("查询差评告警列表 - 按店铺和状态筛选")
+    @DisplayName("查询差评告警列表 - 按店铺和状态筛选，返回一页而不是整表")
     void testListNegativeReviewAlerts() {
         NegativeReviewAlert alert = new NegativeReviewAlert();
         alert.setId(1L);
@@ -106,9 +121,11 @@ class OpsServiceImplTest {
         alert.setStatus("NEW");
         when(reviewAlertMapper.selectList(any())).thenReturn(List.of(alert));
 
-        List<NegativeReviewAlert> result = opsService.listNegativeReviewAlerts(1L, "NEW");
+        PageResult<NegativeReviewAlert> page =
+                opsService.listNegativeReviewAlerts(1L, "NEW", PageRequest.first(20));
 
-        assertEquals(1, result.size());
-        assertEquals(1L, result.get(0).getShopId());
+        assertEquals(1, page.items().size());
+        assertEquals(1L, page.items().get(0).getShopId());
+        assertFalse(page.truncated(), "没有多探测出一行时不该谎报还有下一页");
     }
 }
