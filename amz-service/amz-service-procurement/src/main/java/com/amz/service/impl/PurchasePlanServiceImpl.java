@@ -5,11 +5,13 @@ import com.amz.exception.CodeErrorException;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.exception.AttrIsNullException;
+import com.amz.mapper.PurchaseApprovalMapper;
 import com.amz.mapper.PurchasePlanMapper;
 import com.amz.mapper.PurchaseOrderItemMapper;
 import com.amz.mapper.PurchaseOrderMapper;
 import com.amz.mapper.SupplierMapper;
 import com.amz.mapper.SupplierProductMapper;
+import com.amz.model.PurchaseApproval;
 import com.amz.model.PurchasePlan;
 import com.amz.model.Supplier;
 import com.amz.model.PurchaseOrder;
@@ -43,6 +45,9 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
 
     @Autowired
     private PurchasePlanMapper purchasePlanMapper;
+
+    @Autowired
+    private PurchaseApprovalMapper purchaseApprovalMapper;
 
     @Autowired
     private PurchaseOrderMapper purchaseOrderMapper;
@@ -112,22 +117,53 @@ public class PurchasePlanServiceImpl implements PurchasePlanService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public PurchasePlan approve(Long planId, String operator, boolean approved, String comment) {
+        // 留痕表的 operator 是 NOT NULL：没有操作人就不该留下这条审批记录
+        if (operator == null || operator.trim().isEmpty()) {
+            throw new AttrIsNullException("审批操作人不能为空");
+        }
+        String who = operator.trim();
         PurchasePlan plan = getPlan(planId);
         if (!"PENDING_APPROVAL".equals(plan.getStatus())) {
             throw new CodeErrorException("仅待审批状态可审批，当前状态：" + plan.getStatus());
         }
         if (approved) {
             plan.setStatus("APPROVED");
-            plan.setApprovedBy(operator);
+            plan.setApprovedBy(who);
             plan.setApprovedTime(LocalDateTime.now());
         } else {
             plan.setStatus("REJECTED");
-            plan.setApprovedBy(operator);
+            plan.setApprovedBy(who);
             plan.setApprovedTime(LocalDateTime.now());
             plan.setRemark(comment);
         }
         purchasePlanMapper.updateById(plan);
+
+        PurchaseApproval trail = new PurchaseApproval();
+        trail.setShopId(plan.getShopId());
+        trail.setRefType("PLAN");
+        trail.setRefId(plan.getId());
+        trail.setAction(approved ? "APPROVE" : "REJECT");
+        trail.setOperator(who);
+        trail.setComment(comment == null || comment.trim().isEmpty() ? null : comment.trim());
+        trail.setCreateTime(LocalDateTime.now());
+        // 同一事务里写留痕：写不上就整体回滚，不允许出现「状态已 APPROVED 但过程无痕」
+        if (purchaseApprovalMapper.insert(trail) != 1) {
+            throw new CodeErrorException("审批留痕写入失败，本次审批已回滚：planId=" + planId);
+        }
+        log.info("采购计划审批留痕：planId={}, action={}, operator={}", plan.getId(), trail.getAction(), trail.getOperator());
         return plan;
+    }
+
+    @Override
+    public List<PurchaseApproval> listPlanApprovals(Long planId) {
+        // 归属由 getPlan 兜（按 plan.shopId 校验授权店铺），不在这张表上另起一套判断
+        PurchasePlan plan = getPlan(planId);
+        LambdaQueryWrapper<PurchaseApproval> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PurchaseApproval::getRefType, "PLAN")
+                .eq(PurchaseApproval::getRefId, plan.getId())
+                .orderByDesc(PurchaseApproval::getCreateTime)
+                .orderByDesc(PurchaseApproval::getId);
+        return purchaseApprovalMapper.selectList(wrapper);
     }
 
     @Override

@@ -7,6 +7,7 @@ import com.amz.annotation.ShopScoped;
 import com.amz.model.FbaShipment;
 import com.amz.model.FbaShipmentItem;
 import com.amz.model.InventoryBatch;
+import com.amz.model.PurchaseApproval;
 import com.amz.model.PurchaseOrder;
 import com.amz.model.PurchasePlan;
 import com.amz.model.QualityCheck;
@@ -158,6 +159,13 @@ public class ProcurementController {
                                             @RequestParam boolean approved,
                                             @RequestParam(required = false) String comment) {
         return Result.success(purchasePlanService.approve(planId, operator, approved, comment));
+    }
+
+    /** 采购计划审批留痕：每一次通过/驳回一条，含操作人与意见 */
+    @ShopScoped
+    @GetMapping("/plan/{planId}/approvals")
+    public Result<List<PurchaseApproval>> listPlanApprovals(@PathVariable Long planId) {
+        return Result.success(purchasePlanService.listPlanApprovals(planId));
     }
 
     /** 采购计划转为采购订单 */

@@ -170,8 +170,8 @@
 - **N1 残留**：report 模块整体仍没有 `@RequireRole`——本次补的是「店铺归属」这一层，
   「什么角色能写报表」仍是缺的；改切面或给 5 个端点加注解会波及内部调用与定时任务，
   留作单独一轮再做。
-- **N5**：清点已用脚本固化并可复核（`tools/schema/zero_reference_tables.py`，113 张表里 12 张零引用，
-  与上一版手工结论一致），逐张处置见 `2026-10-03-n5-zero-reference-tables.md`。
-  本轮一张都没删：只有 `amz_logistics_quote` 属真重复可删，而 `amz_purchase_approval` 的正确解法
-  是给审批路径补留痕（status 只存当前状态，operator/comment 无处可存），需要产品决策。
+- **N5**：清点已用脚本固化并可复核（`tools/schema/zero_reference_tables.py`），逐张处置见
+  `2026-10-03-n5-zero-reference-tables.md`。`amz_purchase_approval` 已按「补功能而不是删表」的解法
+  接上审批留痕，零引用从 12 张降到 **11 张**。剩下的只有 `amz_logistics_quote` 属真重复可删，
+  删表需要单独立项（正向 DROP 迁移 + 备份恢复 + 先数行数），本轮仍未动任何表。
 - **N3 残留**：客服邮件通道仍需真实 SMTP/Messaging 客户端；RMA 的订单号不与订单表校验。

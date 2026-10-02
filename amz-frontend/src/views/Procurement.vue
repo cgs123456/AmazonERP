@@ -186,28 +186,52 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="p in plans.rows.value" :key="p.id">
-                <td class="mono">{{ p.planNo || p.id }}</td>
-                <td class="mono">{{ p.sku }}</td>
-                <td>{{ p.suggestedQty ?? '-' }}</td>
-                <td>{{ p.plannedQty }}</td>
-                <td>{{ p.unitPrice ?? '-' }}</td>
-                <td>{{ p.totalAmount ?? '-' }}</td>
-                <td><span class="status-tag" :class="urgencyClass(p.urgency)">{{ p.urgency || '-' }}</span></td>
-                <td>{{ p.source || '-' }}</td>
-                <td><span class="status-tag" :class="planClass(p.status)">{{ p.status }}</span></td>
-                <td class="row-actions">
-                  <button v-if="p.status === 'DRAFT'" class="action-btn" :disabled="busy" @click="runPlan(p, 'submit')">提交审批</button>
-                  <template v-if="p.status === 'PENDING_APPROVAL'">
-                    <label class="approver">审批人<input class="cell-input" v-model="operator" /></label>
-                    <button class="action-btn" :disabled="busy || !operator.trim()" @click="runPlan(p, true)">通过</button>
-                    <button class="action-btn cancel" :disabled="busy || !operator.trim()" @click="runPlan(p, false)">驳回</button>
-                  </template>
-                  <button v-if="p.status === 'APPROVED'" class="action-btn" :disabled="busy" @click="runPlan(p, 'convert')">转采购单</button>
-                  <button v-if="canCancelPlan(p.status)" class="action-btn cancel" :disabled="busy" @click="runPlan(p, 'cancel')">取消</button>
-                  <button v-if="p.replenishmentData" class="action-btn" @click="showBasis(p)">补货依据</button>
-                </td>
-              </tr>
+              <template v-for="p in plans.rows.value" :key="p.id">
+                <tr>
+                  <td class="mono">{{ p.planNo || p.id }}</td>
+                  <td class="mono">{{ p.sku }}</td>
+                  <td>{{ p.suggestedQty ?? '-' }}</td>
+                  <td>{{ p.plannedQty }}</td>
+                  <td>{{ p.unitPrice ?? '-' }}</td>
+                  <td>{{ p.totalAmount ?? '-' }}</td>
+                  <td><span class="status-tag" :class="urgencyClass(p.urgency)">{{ p.urgency || '-' }}</span></td>
+                  <td>{{ p.source || '-' }}</td>
+                  <td><span class="status-tag" :class="planClass(p.status)">{{ p.status }}</span></td>
+                  <td class="row-actions">
+                    <button v-if="p.status === 'DRAFT'" class="action-btn" :disabled="busy" @click="runPlan(p, 'submit')">提交审批</button>
+                    <template v-if="p.status === 'PENDING_APPROVAL'">
+                      <label class="approver">审批人<input class="cell-input" v-model="operator" /></label>
+                      <label class="approver">审批意见<input class="cell-input" v-model="approvalComment" placeholder="可留空" /></label>
+                      <button class="action-btn" :disabled="busy || !operator.trim()" @click="runPlan(p, true)">通过</button>
+                      <button class="action-btn cancel" :disabled="busy || !operator.trim()" @click="runPlan(p, false)">驳回</button>
+                    </template>
+                    <button v-if="p.status === 'APPROVED'" class="action-btn" :disabled="busy" @click="runPlan(p, 'convert')">转采购单</button>
+                    <button v-if="canCancelPlan(p.status)" class="action-btn cancel" :disabled="busy" @click="runPlan(p, 'cancel')">取消</button>
+                    <button v-if="hasTrail(p.status)" class="action-btn" :disabled="busy" @click="toggleTrail(p)">审批留痕</button>
+                    <button v-if="p.replenishmentData" class="action-btn" @click="showBasis(p)">补货依据</button>
+                  </td>
+                </tr>
+                <tr v-if="trailFor === p.id" class="trail-row">
+                  <td colspan="10">
+                    <div class="trail-title">审批留痕（{{ p.planNo || p.id }}）</div>
+                    <div v-if="trailLoading" class="muted">正在读取留痕…</div>
+                    <table v-else-if="trail.length" class="data-table sub-table">
+                      <thead><tr><th>动作</th><th>操作人</th><th>意见</th><th>时间</th></tr></thead>
+                      <tbody>
+                        <tr v-for="t in trail" :key="t.id">
+                          <td><span class="status-tag" :class="t.action === 'APPROVE' ? 'healthy' : 'urgent'">{{ t.action }}</span></td>
+                          <td>{{ t.operator || '-' }}</td>
+                          <td class="cell-clip" :title="t.comment || ''">{{ t.comment || '（无意见）' }}</td>
+                          <td class="mono">{{ t.createTime || '-' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div v-else class="muted">
+                      这张计划没有审批留痕。留痕从 2026-10-03 才开始写入：之前审批过的计划不会补记录，也不会伪造。
+                    </div>
+                  </td>
+                </tr>
+              </template>
               <tr v-if="!plans.loading.value && !plans.rows.value.length">
                 <td colspan="10" class="empty-row">该店铺暂无采购计划</td>
               </tr>
@@ -625,7 +649,8 @@ import type { ApiResponse } from '@/api/types'
 import * as proc from '@/api/procurement'
 import type {
   Supplier, SupplierProduct, PurchasePlan, PurchaseOrder, FbaShipment, FbaShipmentItem,
-  InventoryBatch, BatchCostSummary, PriceCompareRow, SupplierKpi, AllocationResult, ReceiptResult
+  InventoryBatch, BatchCostSummary, PriceCompareRow, SupplierKpi, AllocationResult, ReceiptResult,
+  PurchaseApproval
 } from '@/api/procurement'
 
 type TabKey = 'supplier' | 'plan' | 'order' | 'shipment' | 'batch'
@@ -791,10 +816,32 @@ const supplierClass = (status?: string) =>
 const plans = makeList<PurchasePlan>()
 const planStatus = ref('')
 const operator = ref('')
+const approvalComment = ref('')
+const trailFor = ref<number | null>(null)
+const trail = ref<PurchaseApproval[]>([])
+const trailLoading = ref(false)
+
+const hasTrail = (status?: string) =>
+  ['PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CONVERTED'].includes(status || '')
 
 const loadPlans = (append = false) =>
   fetchPage(plans, cursor => proc.listPlans(shop(), { status: planStatus.value || undefined, cursor }),
     '采购计划', append)
+
+const toggleTrail = async (p: PurchasePlan) => {
+  if (!p.id) return
+  if (trailFor.value === p.id) {
+    trailFor.value = null
+    trail.value = []
+    return
+  }
+  trailFor.value = p.id
+  trail.value = []
+  trailLoading.value = true
+  const rows = await callApi('审批留痕', () => proc.listPlanApprovals(p.id as number))
+  trail.value = Array.isArray(rows) ? rows : []
+  trailLoading.value = false
+}
 
 const runPlan = async (p: PurchasePlan, action: 'submit' | 'convert' | 'cancel' | boolean) => {
   if (!p.id) return
@@ -803,8 +850,13 @@ const runPlan = async (p: PurchasePlan, action: 'submit' | 'convert' | 'cancel' 
   const data = action === 'submit' ? await callApi(label, () => proc.submitPlan(id))
     : action === 'convert' ? await callApi(label, () => proc.convertPlan(id))
       : action === 'cancel' ? await callApi(label, () => proc.cancelPlan(id))
-        : await callApi(label, () => proc.approvePlan(id, operator.value.trim(), action === true))
+        : await callApi(label, () => proc.approvePlan(id, operator.value.trim(), action === true,
+          approvalComment.value.trim() || undefined))
   if (data === null) return
+  // 留痕面板展示的是刚被这次操作改过的数据，收起而不是继续显示旧的
+  trailFor.value = null
+  trail.value = []
+  if (typeof action === 'boolean') approvalComment.value = ''
   if (action === 'convert') {
     const orderNo = (data as Record<string, unknown>)?.orderNo
     msg.value = `已生成采购单：${orderNo ?? '（后端未回传单号，请到采购单页确认）'}`
@@ -1194,4 +1246,10 @@ onMounted(loadTabData)
 
 @media (max-width: 1024px) { .stat-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 768px) { .stat-grid { grid-template-columns: 1fr; } .form-grid { grid-template-columns: 1fr; } }
+
+/* 审批留痕展开行 */
+.trail-row td { background: var(--color-light-gray, var(--color-surface)); padding: 0.5rem 0.75rem; }
+.trail-title { font-size: 0.8125rem; font-weight: 600; color: var(--color-on-surface); margin-bottom: 0.375rem; }
+.sub-table { margin-top: 0.25rem; background: var(--color-surface); }
+.cell-clip { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

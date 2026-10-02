@@ -1,9 +1,11 @@
 package com.amz.service;
 
+import com.amz.model.PurchaseApproval;
 import com.amz.model.PurchasePlan;
 import com.amz.model.PurchaseOrderItem;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -17,8 +19,14 @@ public interface PurchasePlanService {
     /** 提交审批（DRAFT → PENDING_APPROVAL） */
     PurchasePlan submitForApproval(Long planId);
 
-    /** 审批通过/拒绝 */
+    /** 审批通过/拒绝（同事务写一条 amz_purchase_approval 留痕） */
     PurchasePlan approve(Long planId, String operator, boolean approved, String comment);
+
+    /**
+     * 查询某采购计划的审批留痕，按时间倒序。
+     * 归属校验按 plan.shopId，与 approve/convert 走同一条链。
+     */
+    List<PurchaseApproval> listPlanApprovals(Long planId);
 
     /** 将采购计划转为采购订单 */
     Map<String, Object> convertToOrder(Long planId);

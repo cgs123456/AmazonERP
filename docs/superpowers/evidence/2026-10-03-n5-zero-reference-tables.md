@@ -15,7 +15,8 @@
 
 ```
 python tools/schema/zero_reference_tables.py --json docs/superpowers/evidence/2026-10-03-zero-reference-tables.json
-→ tables_total=113 zero_reference=12
+→ tables_total=113 zero_reference=12    （接审批留痕之前）
+→ tables_total=113 zero_reference=11    （接完留痕后重跑，见文末「本轮已消灭一张」）
 ```
 
 结论与上一版一致：113 张 DDL 表里 **12 张零引用**（上一版表格里有 9 行，是因为有 3 行各并了 3 张与 2 张表）。
@@ -23,6 +24,24 @@ python tools/schema/zero_reference_tables.py --json docs/superpowers/evidence/20
 `amz_attention` 判为「零引用，仅 `FlywayBaselineContractTest` 提到」、
 `amz_order`/`amz_purchase_plan`/`amz_carrier_quote` 判为「在用（entity）」、
 `amz_logistics_quote` 三路皆无命中。
+
+## 本轮已消灭一张：amz_purchase_approval 接上审批留痕
+
+不是删表，而是补上它本来该有的功能：`PurchasePlanServiceImpl#approve` 现在在同一事务里写一行留痕
+（`ref_type=PLAN`、`ref_id=计划 id`、`shop_id` 取自计划本行而不是请求参数、`action=APPROVE/REJECT`、
+`operator`、`comment`、`create_time`），并新增 `GET /procurement/plan/{planId}/approvals` 读取；
+采购页每行多一个「审批留痕」展开块。要点：
+
+- **写不上就整体失败**：`insert(...) != 1` 抛错，靠 `@Transactional` 回滚状态变更，
+  不允许出现「状态已 APPROVED 但过程无痕」；
+- `operator` 为空直接拒（该列 NOT NULL），不写一条没有主人的审批；
+- 读取按 `plan.shopId` 走既有的 `getPlan` 归属校验，不在这张表上另起一套判断；
+- 没有留痕的计划显示「留痕从 2026-10-03 才开始写入，之前审批过的计划不会补记录，也不会伪造」，
+  且后端返回非数组时前端不补行；DRAFT 计划不给留痕入口；
+- 已知残留：`operator` 仍是调用方自报的请求参数，JWT 里的可信用户 id 没有对应列——
+  要记就是改表结构，另立项。
+
+重跑清点：`zero_reference=11`。
 
 ## 逐张处置
 
@@ -35,7 +54,7 @@ python tools/schema/zero_reference_tables.py --json docs/superpowers/evidence/20
 | amz_oper_log | `18-init-tables-oper-log.sql` | 没有操作日志拦截器 | 保留；有明确落点（审单/规则/定价写操作都可挂），属于可补的功能 |
 | amz_listing_seo / amz_report_template | `33-init-tables-p2-ai-tools.sql` | 功能未做 | 保留 |
 | amz_logistics_quote | `33-init-tables-p2-ai-tools.sql` | `/logistics/dashboard/quotes` 读的是 `amz_carrier_quote`（实体绑定已核实） | **真重复**，可删 |
-| amz_purchase_approval | procurement `V1__init.sql:220` | 审批走的是 `amz_purchase_plan.status`（DRAFT→PENDING_APPROVAL→APPROVED/REJECTED→CONVERTED），全仓无该表引用 | **不是纯重复**：status 只存「当前状态」，而这张表存的是**留痕**（operator / comment / ref_type+ref_id / 每次 APPROVE-REJECT）。删掉就等于承认审批永远不需要留痕。建议：要么把 `PurchasePlanServiceImpl` 的 approve/reject 路径接上写这张表（推荐，零引用变 0 张），要么明确「本项目不做留痕」再删 |
+| amz_purchase_approval | procurement `V1__init.sql:220` | 原先审批只改 `amz_purchase_plan.status`，全仓无该表引用 | **已接上**（见上文）：status 只存当前状态，这张表存每次 APPROVE/REJECT 的操作人与意见；`approve()` 同事务写留痕，写不上整体回滚 |
 
 ## 为什么本轮一张表都没删
 
@@ -44,11 +63,11 @@ python tools/schema/zero_reference_tables.py --json docs/superpowers/evidence/20
 2. Flyway 已执行的迁移不能改写，删表只能是**新增一条正向 `DROP TABLE` 迁移**，那属于单独的立项
    （V 序号 + 备份恢复 + 回滚说明），和 `docs/superpowers/runbooks/reference-key-convergence-rollback.md`
    同级；
-3. 上表里真正「可删」的只有 `amz_logistics_quote` 一张，另一张 `amz_purchase_approval` 的正确解法是
-   **补功能消灭零引用**而不是删表。
+3. 上表里真正「可删」的只剩 `amz_logistics_quote` 一张；`amz_purchase_approval` 已按推荐解法
+   **补功能消灭零引用**而不是删表，重跑清点为 11 张。
 
 ## 本轮未做的验证
 
-- 没有连任何真实 MySQL 统计这 12 张表的行数；「表里有数据但代码不读」这种情况脚本看不出来，
+- 没有连任何真实 MySQL 统计这些表的行数；「表里有数据但代码不读」这种情况脚本看不出来，
   真要删之前必须先数行（沿用 `tools/db-migration/ad_v7_preflight.py` 的做法）。
 - 脚本按「三路引用」判定，不看反射拼表名的动态 SQL；已核对没有这种写法，但若将来出现需要加第四路。

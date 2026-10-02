@@ -4,6 +4,7 @@ import com.amz.context.UserContext;
 import com.amz.exception.CodeErrorException;
 import com.amz.mapper.PurchaseOrderItemMapper;
 import com.amz.mapper.PurchaseOrderMapper;
+import com.amz.mapper.PurchaseApprovalMapper;
 import com.amz.mapper.PurchasePlanMapper;
 import com.amz.mapper.SupplierMapper;
 import com.amz.mapper.SupplierProductMapper;
@@ -44,6 +45,9 @@ class PurchasePlanServiceImplTest {
 
     @Mock
     private PurchasePlanMapper purchasePlanMapper;
+
+    @Mock
+    private PurchaseApprovalMapper purchaseApprovalMapper;
 
     @Mock
     private PurchaseOrderMapper purchaseOrderMapper;

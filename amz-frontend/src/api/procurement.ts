@@ -309,6 +309,25 @@ export const listPlans = (shopId: number | string, q: ListQuery = {}) =>
 export const cancelPlan = (planId: number) =>
   request.post<void, ApiResponse<boolean>>(`/procurement/plan/${planId}/cancel`)
 
+/**
+ * 审批留痕（amz_purchase_approval）：每一次通过/驳回写一行，含操作人与意见。
+ * 计划上的 status/approvedBy/approvedTime 只存当前值，二次改批会覆盖上一次，
+ * 所以「审批过程」只能从这张表读。留痕从 2026-10-03 开始写，之前审批过的计划没有记录。
+ */
+export interface PurchaseApproval {
+  id?: number
+  shopId?: number | string | null
+  refType?: string
+  refId?: number
+  action?: string
+  operator?: string
+  comment?: string | null
+  createTime?: string
+}
+
+export const listPlanApprovals = (planId: number) =>
+  request.get<void, ApiResponse<PurchaseApproval[]>>(`/procurement/plan/${planId}/approvals`)
+
 /* ==================== 采购单（1688） ==================== */
 
 export const createOrder = (body: Partial<PurchaseOrder>) =>

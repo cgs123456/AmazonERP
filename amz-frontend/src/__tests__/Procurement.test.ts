@@ -19,14 +19,16 @@ vi.mock('@/api/procurement', async () => {
     submitOrderTo1688: vi.fn(),
     cancelOrder: vi.fn(),
     receiveShipment: vi.fn(),
-    createPlan: vi.fn()
+    createPlan: vi.fn(),
+    approvePlan: vi.fn(),
+    listPlanApprovals: vi.fn()
   }
 })
 
 import {
   listSuppliers, listPlans, listOrders, listShipments, listShipmentItems,
   suppliersBySku, compareSuppliers, updateSupplierStatus,
-  submitOrderTo1688, cancelOrder, receiveShipment, createPlan
+  submitOrderTo1688, cancelOrder, receiveShipment, createPlan, approvePlan, listPlanApprovals
 } from '@/api/procurement'
 
 const paged = <T,>(data: T[], truncated = false) =>
@@ -176,6 +178,75 @@ describe('Procurement 视图（采购供应链）', () => {
     // 审批人未填时通过/驳回不可点，避免把空 operator 打到后端
     const approveBtn = rows[1].findAll('button').find((b: any) => b.text() === '通过')
     expect(approveBtn!.attributes('disabled')).toBeDefined()
+  })
+
+  it('审批意见随请求送出，成功后收起留痕并清空意见', async () => {
+    happyPath()
+    vi.mocked(approvePlan).mockResolvedValue(plain({ id: 12, status: 'APPROVED' }))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '采购计划')
+    const row = wrapper.findAll('tbody tr')[1]
+    const inputs = row.findAll('input')
+    expect(inputs.length).toBe(2)
+    await inputs[0].setValue('张经理')
+    await inputs[1].setValue('价格已核')
+    await row.findAll('button').find((b: any) => b.text() === '通过')!.trigger('click')
+    await flushPromises()
+    expect(approvePlan).toHaveBeenCalledWith(12, '张经理', true, '价格已核')
+    // 审批改了状态，留痕面板展示的是刚被这次操作改过的数据，必须收起
+    expect(wrapper.text()).not.toContain('审批留痕（PLAN-0012）')
+  })
+
+  it('审批留痕按计划 id 拉取，动作/操作人/意见/时间都来自后端', async () => {
+    happyPath()
+    vi.mocked(listPlanApprovals).mockResolvedValue(plain([
+      { id: 2, shopId: 900000000000001000, refType: 'PLAN', refId: 12, action: 'APPROVE',
+        operator: '张经理', comment: '价格已核', createTime: '2026-10-03T10:00:00' },
+      { id: 1, shopId: 900000000000001000, refType: 'PLAN', refId: 12, action: 'REJECT',
+        operator: '李四', comment: null, createTime: '2026-10-02T09:00:00' }
+    ]))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '采购计划')
+    const row = wrapper.findAll('tbody tr')[1]
+    await row.findAll('button').find((b: any) => b.text() === '审批留痕')!.trigger('click')
+    await flushPromises()
+    expect(listPlanApprovals).toHaveBeenCalledWith(12)
+    const text = wrapper.text()
+    expect(text).toContain('审批留痕（PLAN-0012）')
+    expect(text).toContain('APPROVE')
+    expect(text).toContain('张经理')
+    expect(text).toContain('价格已核')
+    expect(text).toContain('（无意见）')
+    expect(text).toContain('2026-10-02T09:00:00')
+  })
+
+  it('没有留痕的计划说明留痕才开始写，不伪造历史行；DRAFT 计划不给留痕入口', async () => {
+    happyPath()
+    vi.mocked(listPlanApprovals).mockResolvedValue(plain([]))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '采购计划')
+    expect(wrapper.findAll('tbody tr')[0].text()).not.toContain('审批留痕')
+    const row = wrapper.findAll('tbody tr')[1]
+    await row.findAll('button').find((b: any) => b.text() === '审批留痕')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('不会伪造')
+    expect(wrapper.text()).toContain('2026-10-03')
+    expect(wrapper.findAll('.trail-row tbody tr').length).toBe(0)
+
+    // 异常响应（data 不是数组）也不能被补成一行。
+    // 展开留痕后计划行下面多出一行 DOM，所以只能按 id 找回同一行：
+    // 再点一次是「收起」，第三次才是带新响应重新拉取。
+    const rowOfPlan12 = () => wrapper.findAll('tbody tr')[1]
+    vi.mocked(listPlanApprovals).mockResolvedValue(plain(null))
+    await rowOfPlan12().findAll('button').find((b: any) => b.text() === '审批留痕')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.trail-row').length).toBe(0)
+    await rowOfPlan12().findAll('button').find((b: any) => b.text() === '审批留痕')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.trail-row').length).toBe(1)
+    expect(wrapper.findAll('.trail-row tbody tr').length).toBe(0)
+    expect(wrapper.findAll('.trail-row tbody tr').length).toBe(0)
+    expect(wrapper.text()).toContain('不会伪造')
   })
 
   it('提交 1688 是真实下单，必须经确认弹窗才发出请求', async () => {
