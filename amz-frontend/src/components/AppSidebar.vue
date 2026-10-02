@@ -25,6 +25,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/order-audit') }"
+        @click="navigateTo('/order-audit')"
+        role="button"
+        aria-label="订单审单"
+        tabindex="0"
+      >
+        <Icon icon="mdi:clipboard-check-outline" class="nav-icon" width="24" />
+        <span class="nav-text">订单审单</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/inventory') }"
         @click="navigateTo('/inventory')"
         role="button"

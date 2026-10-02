@@ -100,10 +100,21 @@ const openTab = async (wrapper: any, label: string) => {
   await flushPromises()
 }
 
-const clickBtn = async (wrapper: any, label: string) => {
-  const btn = wrapper.findAll('button').find((b: any) => b.text() === label)
-  expect(btn, `按钮不存在：${label}`).toBeTruthy()
+/** 行内按钮：同名动作每行一个，必须按 (分区, 行号, 标签) 定位，不能靠全局唯一 */
+const rowBtn = async (wrapper: any, panelSelector: string, rowIndex: number, label: string) => {
+  const rows = wrapper.find(panelSelector).findAll('tbody tr')
+  expect(rows.length, `分区 ${panelSelector} 行数不足 ${rowIndex + 1}`).toBeGreaterThan(rowIndex)
+  const btn = rows[rowIndex].findAll('button').find((b: any) => b.text() === label)
+  expect(btn, `第 ${rowIndex + 1} 行没有按钮「${label}」`).toBeTruthy()
   await btn!.trigger('click')
+  await flushPromises()
+}
+
+const clickBtn = async (wrapper: any, label: string) => {
+  // 标签必须唯一：分区名与按钮名同名时，findAll 的第一条命中的是 Tab 而不是动作按钮
+  const matches = wrapper.findAll('button').filter((b: any) => b.text() === label)
+  expect(matches.length, `按钮「${label}」不唯一（命中 ${matches.length} 个）`).toBe(1)
+  await matches[0].trigger('click')
   await flushPromises()
 }
 
@@ -187,6 +198,14 @@ describe('CustomerService 视图（客服中心）', () => {
     expect(panel.text()).not.toContain('114-7712567-000001')
   })
 
+  it('后端返回非数组的异常响应时走空态，不补出示例行', async () => {
+    vi.mocked(cust.listTickets).mockResolvedValue(ok(null))
+    const wrapper = await mountPage()
+    const panel = wrapper.find('[data-panel="ticket"]')
+    expect(panel.find('.empty-row').text()).toContain('该店铺暂无工单')
+    expect(panel.findAll('tbody tr').length).toBe(1)
+  })
+
   it('服务端截断时才给下一页入口，并把 nextCursor 原样回传', async () => {
     vi.mocked(cust.listTickets)
       .mockResolvedValueOnce(ok([TICKETS.data[0]], pageOf('v1:MQ==')))
@@ -227,7 +246,7 @@ describe('CustomerService 视图（客服中心）', () => {
     await clickBtn(wrapper, '确认执行')
     expect(cust.solicitReviews).toHaveBeenCalledWith(SHOP)
 
-    await clickBtn(wrapper, '匹配订单')
+    await rowBtn(wrapper, '[data-panel="review"]', 0, '匹配订单')
     expect(wrapper.find('.confirm-detail').text()).toContain('SIMULATED-MATCH-*')
     expect(cust.matchReviewToOrder).not.toHaveBeenCalled()
     await clickBtn(wrapper, '确认执行')
@@ -254,14 +273,14 @@ describe('CustomerService 视图（客服中心）', () => {
 
   it('回复工单用行 id 调 reply，模板更新走 PUT 且请求体不带 id 与回填对象', async () => {
     const wrapper = await mountPage()
-    await clickBtn(wrapper, '回复')
+    await rowBtn(wrapper, '[data-panel="ticket"]', 0, '回复')
     expect(wrapper.find('.modal h3').text()).toBe('回复工单')
     await wrapper.find('.modal textarea').setValue('thanks a lot')
     await clickBtn(wrapper, '提交')
     expect(cust.replyTicket).toHaveBeenCalledWith(1, 'thanks a lot')
 
     await openTab(wrapper, '邮件模板')
-    await clickBtn(wrapper, '编辑')
+    await rowBtn(wrapper, '[data-panel="template"]', 0, '编辑')
     await wrapper.find('.modal input').setValue('Sorry again')
     await clickBtn(wrapper, '提交')
     expect(cust.updateTemplate).toHaveBeenCalledTimes(1)
@@ -278,7 +297,7 @@ describe('CustomerService 视图（客服中心）', () => {
     const wrapper = await mountPage()
     await openTab(wrapper, '邮件模板')
     expect(vi.mocked(cust.listTemplates).mock.calls[0][0]).toBe(SHOP)
-    await clickBtn(wrapper, '停用')
+    await rowBtn(wrapper, '[data-panel="template"]', 0, '停用')
     expect(cust.toggleTemplate).toHaveBeenCalledWith(11, false)
     expect(cust.listTemplates).toHaveBeenCalledTimes(2)
   })

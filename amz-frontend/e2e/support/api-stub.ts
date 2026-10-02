@@ -485,6 +485,53 @@ const CUSTOMER_RMAS = [
 ]
 
 /**
+ * 审单域（/order/audit/**）：桩数据取自后端真实返回形状。
+ * unevaluatedRules 与 advisoryNote 是重点——E2E 要断言页面把「没判定」和「没风险」分开显示，
+ * 以及路由结果的 warehouseName 为空时显示「未解析」而不是拼一个仓名。
+ */
+const AUDIT_RULES = [
+  {
+    id: 1, shopId: 1, ruleName: 'PO Box地址检测', ruleType: 'ADDRESS_CHECK',
+    conditionField: 'shipping_address', conditionOp: 'CONTAINS', conditionValue: 'PO Box',
+    action: 'FLAG', priority: 1, enabled: true, description: '检测PO Box地址标记高风险', actionParams: null
+  },
+  {
+    id: 2, shopId: 1, ruleName: '同地址合并', ruleType: 'MERGE',
+    conditionField: 'shipping_address', conditionOp: 'EQ', conditionValue: '__SAME_ADDRESS__',
+    action: 'MERGE', priority: 10, enabled: false, description: '同收货地址订单建议合并发货', actionParams: null
+  },
+  {
+    id: 3, shopId: 1, ruleName: '高额拦截', ruleType: 'AMOUNT_CHECK',
+    conditionField: 'final_price', conditionOp: 'GT', conditionValue: '500',
+    action: 'BLOCK', priority: 5, enabled: true, description: '金额>500 拦截', actionParams: null
+  }
+]
+const AUDIT_RESULT_ONE = {
+  orderId: '114-1111111-1111111', shopId: 1, verdict: 'REVIEW',
+  alerts: [{ ruleId: 1, ruleName: 'PO Box地址检测', ruleType: 'ADDRESS_CHECK', action: 'FLAG', description: '检测PO Box地址标记高风险' }],
+  actions: ['FLAG', 'MERGE'], alertCount: 1,
+  unevaluatedRules: [{ ruleId: 2, ruleName: '同地址合并', action: 'MERGE', conditionField: 'shipping_address',
+    conditionOp: 'EQ', reason: '条件字段 shipping_address 取不到值（字段未接入或订单该值为空）' }],
+  unevaluatedCount: 1, advisoryActions: ['MERGE'],
+  advisoryNote: 'MERGE/SPLIT 只是规则建议：本系统没有合并/拆单实现，amz_order_split_log 全仓没有任何插入点，订单数据不会被这条规则改变。',
+  auditTime: '2026-10-02T10:00:00'
+}
+const AUDIT_BATCH = [
+  { orderId: '114-1', shopId: 1, verdict: 'PASS', alerts: [], actions: [], alertCount: 0,
+    unevaluatedRules: [], unevaluatedCount: 0, auditTime: '2026-10-02T10:00:00' },
+  { orderId: '114-2', shopId: 1, verdict: 'BLOCKED',
+    alerts: [{ ruleId: 3, ruleName: '高额拦截', ruleType: 'AMOUNT_CHECK', action: 'BLOCK', description: '金额>500 拦截' }],
+    actions: ['BLOCK'], alertCount: 1, unevaluatedRules: [], unevaluatedCount: 0, auditTime: '2026-10-02T10:00:01' }
+]
+// warehouseName/warehouseId 为空是真实语义：订单模块不解析具体仓库
+const AUDIT_ROUTE = {
+  id: 88, shopId: 1, amazonOrderId: '114-1111111-1111111', sku: 'SKU-1', asin: 'B0TEST01', quantity: 2,
+  warehouseId: null, warehouseName: null, warehouseType: 'FBA', carrierName: null, trackingNo: null,
+  shippingCost: null, selectedReason: 'FBA主配送国家，仅仓库类型建议；具体发货仓未解析，需物流模块确认',
+  routeTime: '2026-10-02T10:00:00'
+}
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -597,6 +644,17 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/customer\/email\/process\//, data: { processed: 1, failed: 0, skipped: 0 } },
   { match: /^\/customer\/review\/solicit\//, data: 2 },
   { match: /^\/customer\/email\/negative-review\/\d+\/match$/, data: { reviewId: 31, matchedOrderId: '114-7712567-000001' } },
+
+  // ===== 审单 /order-audit =====
+  // 顺序敏感：/rule/{id} 的宽模式必须排在 /rule/list/{shopId} 之后，否则列表请求会被当成 id 命中。
+  { match: /^\/order\/audit\/rule\/list\//, data: AUDIT_RULES },
+  { match: /^\/order\/audit\/split-log\/list\//, data: [] },
+  { match: /^\/order\/audit\/rule\/\d+\/toggle$/, data: true },
+  { match: /^\/order\/audit\/order\//, data: AUDIT_RESULT_ONE },
+  { match: /^\/order\/audit\/batch\//, data: AUDIT_BATCH },
+  { match: /^\/order\/audit\/route\//, data: AUDIT_ROUTE },
+  { match: /^\/order\/audit\/rule\/\d+$/, data: { id: 1, enabled: false } },
+  { match: /^\/order\/audit\/rule$/, data: { id: 4 } },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

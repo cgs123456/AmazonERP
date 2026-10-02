@@ -51,6 +51,15 @@ export default defineConfig(({ mode }) => {
       // 生产构建（mode=production）时移除 console 与 debugger，dev 模式保留 console
       drop: mode === 'production' ? ['console', 'debugger'] : []
     },
+    optimizeDeps: {
+      // 路由组件全是动态 import，vite 的依赖预扫描从 index.html 出发爬不到它们，
+      // 于是每个页面第一次被请求时才现场发现依赖 -> 触发重新优化 -> 同一时刻在飞的
+      // 模块请求被打断。E2E 实测（2026-10-02，冷启动连跑多轮）表现为：
+      //   TypeError: Failed to fetch dynamically imported module: /src/views/Xxx.vue
+      // 页面只剩空壳，用例等 30s 后超时；受影响的不只新页面，也包括既有用例。
+      // 把页面与组件列进 entries，让优化在启动时一次做完，跑测试期间不再重启。
+      entries: ['index.html', 'src/main.ts', 'src/views/*.vue', 'src/components/*.vue']
+    },
     test: {
       environment: 'jsdom',
       globals: true,

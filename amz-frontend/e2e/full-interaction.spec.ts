@@ -29,6 +29,7 @@ function makeToken(): string {
 
 const NAV = [
   { path: '/orders', linkText: '订单管理' },
+  { path: '/order-audit', linkText: '订单审单' },
   { path: '/inventory', linkText: '库存监控' },
   { path: '/warehouse', linkText: '海外仓' },
   { path: '/ads', linkText: '广告管理' },
@@ -358,6 +359,91 @@ test.describe('CustomerService 交互（客服中心）', () => {
     await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
     await expect(page.locator('.modal-mask')).toHaveCount(0)
     await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+})
+
+test.describe('OrderAudit 交互（订单审单）', () => {
+  test('规则分区渲染后端条件，判不出来的字段与仅建议动作有标注', async ({ page }) => {
+    await page.goto('/order-audit')
+    const panel = page.locator('.tab-panel[data-panel="rule"]')
+    await expect(panel).toContainText('PO Box地址检测')
+    await expect(panel).toContainText('final_price GT 500')
+    await expect(panel.locator('.neg')).toHaveCount(2)
+    await expect(panel).toContainText('仅建议')
+    await expect(panel.locator('tbody tr')).toHaveCount(3)
+    await expect(page.locator('.tab-panel')).toHaveCount(1)
+  })
+
+  test('删除规则要二次确认：取消时一条写请求都不发', async ({ page }) => {
+    const writes: string[] = []
+    page.on('request', (r) => {
+      if (r.url().includes('/api/order/audit/rule/') && r.method() !== 'GET') {
+        writes.push(`${r.method()} ${new URL(r.url()).pathname}`)
+      }
+    })
+    await page.goto('/order-audit')
+    const row = page.locator('.tab-panel[data-panel="rule"] tbody tr').first()
+    await row.locator('button', { hasText: '删除' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('不校验该规则属于当前店铺')
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    await expect(page.locator('.modal-mask')).toHaveCount(0)
+    expect(writes).toEqual([])
+
+    await row.locator('button', { hasText: '删除' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => writes.length).toBe(1)
+    expect(writes[0]).toBe('DELETE /api/order/audit/rule/1')
+  })
+
+  test('单订单审单先挡住空订单号，再把命中与未判定分开显示', async ({ page }) => {
+    await page.goto('/order-audit')
+    await page.locator('.tab', { hasText: '单订单审单' }).click()
+    const panel = page.locator('.tab-panel[data-panel="audit"]')
+    await panel.locator('button', { hasText: '审这一单' }).click()
+    await expect(page.locator('.error-zone')).toContainText('订单号必填')
+
+    await panel.locator('input').first().fill('114-1111111-1111111')
+    await panel.locator('button', { hasText: '审这一单' }).click()
+    await expect(panel).toContainText('REVIEW')
+    await expect(panel).toContainText('命中 1 条')
+    await expect(panel).toContainText('未判定 1 条')
+    await expect(panel).toContainText('条件字段 shipping_address 取不到值')
+    await expect(panel.locator('.advisory')).toContainText('没有合并/拆单实现')
+  })
+
+  test('批量审单逐条渲染 verdict，不把一批压成一个结论', async ({ page }) => {
+    await page.goto('/order-audit')
+    await page.locator('.tab', { hasText: '批量审单' }).click()
+    const panel = page.locator('.tab-panel[data-panel="batch"]')
+    await panel.locator('textarea').fill('[{"amazonOrderId":"114-1"},{"amazonOrderId":"114-2","finalPrice":900}]')
+    await panel.locator('button', { hasText: '执行批量审单' }).click()
+    await expect(panel).toContainText('共 2 条')
+    await expect(panel.locator('tbody tr')).toHaveCount(2)
+    await expect(panel).toContainText('PASS')
+    await expect(panel).toContainText('BLOCKED')
+  })
+
+  test('路由结果为空仓名时显示未解析，不拼一个假仓库', async ({ page }) => {
+    await page.goto('/order-audit')
+    await page.locator('.tab', { hasText: '发货路由' }).click()
+    const panel = page.locator('.tab-panel[data-panel="route"]')
+    await panel.locator('button', { hasText: '生成并入库' }).click()
+    await expect(page.locator('.error-zone')).toContainText('订单号与 SKU 必填')
+
+    await panel.locator('input').nth(0).fill('114-1111111-1111111')
+    await panel.locator('input').nth(1).fill('SKU-1')
+    await panel.locator('button', { hasText: '生成并入库' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('插入一行')
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect(panel).toContainText('未解析（需物流模块确认）')
+    await expect(panel).not.toContainText('FBA-Warehouse')
+  })
+
+  test('拆分日志空态说明系统里这张表没有写入方', async ({ page }) => {
+    await page.goto('/order-audit')
+    await page.locator('.tab', { hasText: '拆分日志' }).click()
+    await expect(page.locator('.tab-panel[data-panel="split"]'))
+      .toContainText('全仓没有 amz_order_split_log 的插入点')
   })
 })
 
