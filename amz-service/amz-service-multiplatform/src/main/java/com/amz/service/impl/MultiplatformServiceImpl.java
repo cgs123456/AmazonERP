@@ -475,9 +475,13 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         event.setCreateTime(LocalDateTime.now());
         webhookEventMapper.insert(event);
 
-        // 异步标记为 PROCESSED
+        // 同步执行处理并落最终状态
         try {
             handleWebhookEvent(event);
+            // 原来只在异常分支改 status，成功路径把 RECEIVED 又写回去一遍：
+            // DDL 里的 PROCESSED 因此永远不会出现，按状态筛选/统计都会以为事件还堵着。
+            event.setStatus("PROCESSED");
+            event.setProcessResult("已记录；当前事件分发只写日志，不触发业务动作");
         } catch (Exception e) {
             log.error("Webhook 事件处理失败 id={}", event.getId(), e);
             event.setStatus("FAILED");
