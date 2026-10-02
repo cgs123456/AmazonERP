@@ -167,9 +167,13 @@
 
 ## 七、第 6 项剩余
 
-- **N1 残留**：report 模块整体仍没有 `@RequireRole`——本次补的是「店铺归属」这一层，
-  「什么角色能写报表」仍是缺的；改切面或给 5 个端点加注解会波及内部调用与定时任务，
-  留作单独一轮再做。
+- **N1 残留**：已收。report 的 7 个写端点（5 个摄取 + `POST /profit/snapshot` +
+  `POST /profit/allocate/{shopId}`）现在都有 `@RequireRole({"OPERATOR","ADMIN"})`，
+  并新增 `ReportWriteEndpointAuthorizationContractTest`：反射清点「写接口必须同时有
+  @RequireRole 与 @ShopScoped」并钉住数量为 7（新增写接口时必须显式改数），
+  再用 `AspectJProxyFactory` 把真切面套到真 controller 上验 VIEWER 被拒（code=400 且服务层
+  一次都没被调用）、OPERATOR 放行、以及「受信服务身份先放行」这条豁免确实存在——
+  内部调用不会因这次收紧被打断。摘掉注解、往角色表里塞 VIEWER 两种变异都被抓红。
 - **N5**：清点已用脚本固化并可复核（`tools/schema/zero_reference_tables.py`），逐张处置见
   `2026-10-03-n5-zero-reference-tables.md`。`amz_purchase_approval` 已按「补功能而不是删表」的解法
   接上审批留痕，零引用从 12 张降到 **11 张**。剩下的只有 `amz_logistics_quote` 属真重复可删，

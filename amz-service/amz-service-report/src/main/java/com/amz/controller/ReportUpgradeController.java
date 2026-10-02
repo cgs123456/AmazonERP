@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.BusinessOverview;
 import com.amz.model.InventoryTurnover;
@@ -36,6 +37,7 @@ public class ReportUpgradeController {
     /** 保存利润明细 */
     @ShopScoped
     @PostMapping("/profit")
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<ProfitDetail> saveProfit(@RequestBody ProfitDetail detail) {
         return Result.success(reportUpgradeService.saveProfitDetail(detail));
     }
@@ -64,6 +66,7 @@ public class ReportUpgradeController {
     /** 保存库存周转数据 */
     @ShopScoped
     @PostMapping("/inventory-turnover")
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<InventoryTurnover> saveTurnover(@RequestBody InventoryTurnover turnover) {
         return Result.success(reportUpgradeService.saveInventoryTurnover(turnover));
     }
@@ -88,6 +91,7 @@ public class ReportUpgradeController {
     /** 保存销售日报 */
     @ShopScoped
     @PostMapping("/sales-daily")
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<SalesDaily> saveSalesDaily(@RequestBody SalesDaily salesDaily) {
         return Result.success(reportUpgradeService.saveSalesDaily(salesDaily));
     }
@@ -117,6 +121,7 @@ public class ReportUpgradeController {
     /** 保存经营概览 */
     @ShopScoped
     @PostMapping("/business-overview")
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<BusinessOverview> saveOverview(@RequestBody BusinessOverview overview) {
         return Result.success(reportUpgradeService.saveBusinessOverview(overview));
     }

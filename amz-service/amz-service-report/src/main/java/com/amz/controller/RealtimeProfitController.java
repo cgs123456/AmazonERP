@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.CostAllocation;
 import com.amz.model.ProfitSnapshot;
@@ -34,6 +35,7 @@ public class RealtimeProfitController {
     /** 触发 SKU 利润快照 */
     @ShopScoped
     @PostMapping("/snapshot")
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<ProfitSnapshot> snapshot(@RequestParam Long shopId,
                                             @RequestParam String sku,
                                             @RequestParam(required = false) String asin) {
@@ -77,6 +79,7 @@ public class RealtimeProfitController {
     /** 保存费用分摊记录 */
     @ShopScoped
     @PostMapping("/allocation")
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<CostAllocation> saveAllocation(@RequestBody CostAllocation allocation) {
         return Result.success(realtimeProfitService.saveAllocation(allocation));
     }
@@ -103,6 +106,7 @@ public class RealtimeProfitController {
      */
     @ShopScoped
     @PostMapping("/allocate/{shopId}")
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<Map<String, BigDecimal>> allocateCost(@PathVariable Long shopId,
                                                         @RequestParam String costType,
                                                         @RequestParam BigDecimal totalAmount,
