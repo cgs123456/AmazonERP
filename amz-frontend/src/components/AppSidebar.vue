@@ -102,6 +102,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/listings') }"
+        @click="navigateTo('/listings')"
+        role="button"
+        aria-label="商品与Listing"
+        tabindex="0"
+      >
+        <Icon icon="mdi:tag-text-outline" class="nav-icon" width="24" />
+        <span class="nav-text">商品与Listing</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/connectors') }"
         @click="navigateTo('/connectors')"
         role="button"

@@ -64,6 +64,11 @@ const router = createRouter({
             component: () => import('../views/KnowledgeBase.vue')
         },
         {
+            path: '/listings',
+            name: 'Listings',
+            component: () => import('../views/ListingMonitor.vue')
+        },
+        {
             path: '/:pathMatch(.*)*',
             name: 'NotFound',
             component: () => import('../views/NotFound.vue')
