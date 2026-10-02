@@ -2,10 +2,15 @@ package com.amz.service.impl;
 
 import com.amz.client.KingdeeClient;
 import com.amz.dto.KingdeeSyncResult;
+import com.amz.dto.SettlementVoucherReport;
+import com.amz.exception.AttrIsNullException;
 import com.amz.exception.ConnectorException;
 import com.amz.finance.CurrencyConverter;
 import com.amz.mapper.AccountingVoucherMapper;
+import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.AccountingVoucher;
+import com.amz.model.SettlementDetail;
+import com.amz.parse.SettlementClassifier;
 import com.amz.service.FinanceService;
 import com.amz.util.MapArgUtils;
 import com.amz.result.PageRequest;
@@ -45,6 +50,16 @@ public class FinanceServiceImpl implements FinanceService {
 
     /** 凭证来源类型：平台索赔追回（T08）。 */
     private static final String SOURCE_REIMBURSEMENT = "REIMBURSEMENT";
+    private static final String SOURCE_ORDER = "ORDER";
+    private static final String SOURCE_PLATFORM_FEE = "PLATFORM_FEE";
+    private static final String SOURCE_REFUND = "REFUND";
+
+    /**
+     * 结算行扫描上限：一次调用不把整表拉进内存；命中上限要在报告里显式 capped，
+     * 调用方据此再跑一次，而不是把「扫到上限」误读成「这个店只有这些结算行」。
+     */
+    private static final int SETTLEMENT_SCAN_CAP = 5000;
+    private static final int SETTLEMENT_SCAN_PAGE = 500;
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -67,6 +82,9 @@ public class FinanceServiceImpl implements FinanceService {
     private CurrencyConverter currencyConverter;
 
     @Autowired
+    private SettlementDetailMapper settlementDetailMapper;
+
+    @Autowired
     private KingdeeClient kingdeeClient;
 
     /**
@@ -83,54 +101,25 @@ public class FinanceServiceImpl implements FinanceService {
     public AccountingVoucher generateOrderVoucher(Long shopId, String orderNo, BigDecimal amount, String currency) {
         // 幂等去重：同一订单重复触发（MQ 重投 / Feign 重试）时返回既有凭证，
         // 避免重复凭证导致 calculateProfit 重复计入收入
-        AccountingVoucher existing = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
-                .eq(AccountingVoucher::getShopId, shopId)
-                .eq(AccountingVoucher::getSourceType, "ORDER")
-                .eq(AccountingVoucher::getSourceNo, orderNo)
-                .last("LIMIT 1"));
+        AccountingVoucher existing = findVoucher(shopId, SOURCE_ORDER, orderNo);
         if (existing != null) {
             log.info("订单凭证已存在，幂等返回：shopId={} orderNo={} voucherNo={}",
                     shopId, orderNo, existing.getVoucherNo());
             return existing;
         }
-
-        BigDecimal cnyAmount = currencyConverter.convertToCny(amount, currency);
-        BigDecimal rate = currencyConverter.getRate(currency);
-
-        AccountingVoucher v = new AccountingVoucher();
-        // 凭证编号：UUID 去横线，规避 "V"+System.currentTimeMillis() 在并发落库时
-        // 撞库触发 amz_accounting_voucher.uk_voucher_no 唯一约束的问题。
-        v.setVoucherNo("V" + UUID.randomUUID().toString().replace("-", ""));
-        v.setShopId(shopId);
-        v.setBizDate(LocalDate.now().format(FMT));
-        v.setSummary("订单销售 - " + orderNo);
-        v.setDebitAccount(ACCT_RECEIVABLE);
-        v.setCreditAccount(ACCT_MAIN_REVENUE);
-        v.setOriginalAmount(amount);
-        v.setCurrency(currency);
-        v.setExchangeRate(rate);
-        v.setCnyAmount(cnyAmount);
-        v.setSourceType("ORDER");
-        v.setSourceNo(orderNo);
-        v.setKingdeeSyncStatus("PENDING");
+        AccountingVoucher v = buildVoucher(shopId, "订单销售 - " + orderNo,
+                ACCT_RECEIVABLE, ACCT_MAIN_REVENUE, amount, currency, SOURCE_ORDER, orderNo);
         try {
             voucherMapper.insert(v);
         } catch (org.springframework.dao.DuplicateKeyException e) {
             // 并发窗口兜底：另一线程已插入同源凭证，查询返回既有记录。
             // 注意：走到这里 existing 恒为 null（非空已在方法开头返回），
             // 若重查仍为空必须抛异常，禁止返回 null 把 NPE 抛给上游。
-            AccountingVoucher concurrent = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
-                    .eq(AccountingVoucher::getShopId, shopId)
-                    .eq(AccountingVoucher::getSourceType, "ORDER")
-                    .eq(AccountingVoucher::getSourceNo, orderNo)
-                    .last("LIMIT 1"));
-            if (concurrent == null) {
-                throw new IllegalStateException("订单凭证并发写入冲突且重查失败：orderNo=" + orderNo, e);
-            }
+            AccountingVoucher concurrent = requireExisting(shopId, SOURCE_ORDER, orderNo, e);
             log.warn("订单凭证并发幂等命中：orderNo={}", orderNo);
             return concurrent;
         }
-        log.info("订单凭证生成：orderNo={} 原币 {} {} → CNY {}", orderNo, amount, currency, cnyAmount);
+        log.info("订单凭证生成：orderNo={} 原币 {} {} → CNY {}", orderNo, amount, currency, v.getCnyAmount());
         return v;
     }
 
@@ -138,50 +127,162 @@ public class FinanceServiceImpl implements FinanceService {
     public AccountingVoucher generateReimbursementVoucher(Long shopId, String claimNo,
                                                           BigDecimal amount, String currency) {
         // 幂等去重：索赔重试提交 / MQ 重投时返回既有凭证，避免重复计入赔付收入
-        AccountingVoucher existing = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
-                .eq(AccountingVoucher::getShopId, shopId)
-                .eq(AccountingVoucher::getSourceType, SOURCE_REIMBURSEMENT)
-                .eq(AccountingVoucher::getSourceNo, claimNo)
-                .last("LIMIT 1"));
+        AccountingVoucher existing = findVoucher(shopId, SOURCE_REIMBURSEMENT, claimNo);
         if (existing != null) {
             log.info("索赔追回凭证已存在，幂等返回：shopId={} claimNo={} voucherNo={}",
                     shopId, claimNo, existing.getVoucherNo());
             return existing;
         }
-
-        BigDecimal cnyAmount = currencyConverter.convertToCny(amount, currency);
-        BigDecimal rate = currencyConverter.getRate(currency);
-
-        AccountingVoucher v = new AccountingVoucher();
-        v.setVoucherNo("V" + UUID.randomUUID().toString().replace("-", ""));
-        v.setShopId(shopId);
-        v.setBizDate(LocalDate.now().format(FMT));
-        v.setSummary("平台索赔追回 - " + claimNo);
         // 借 应收账款（平台应付未付 → 已赔付即收回）/ 贷 其他业务收入
-        v.setDebitAccount(ACCT_RECEIVABLE);
-        v.setCreditAccount(ACCT_OTHER_REVENUE);
-        v.setOriginalAmount(amount);
-        v.setCurrency(currency);
-        v.setExchangeRate(rate);
-        v.setCnyAmount(cnyAmount);
-        v.setSourceType(SOURCE_REIMBURSEMENT);
-        v.setSourceNo(claimNo);
-        v.setKingdeeSyncStatus("PENDING");
+        AccountingVoucher v = buildVoucher(shopId, "平台索赔追回 - " + claimNo,
+                ACCT_RECEIVABLE, ACCT_OTHER_REVENUE, amount, currency, SOURCE_REIMBURSEMENT, claimNo);
         try {
             voucherMapper.insert(v);
         } catch (org.springframework.dao.DuplicateKeyException e) {
-            AccountingVoucher concurrent = voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
-                    .eq(AccountingVoucher::getShopId, shopId)
-                    .eq(AccountingVoucher::getSourceType, SOURCE_REIMBURSEMENT)
-                    .eq(AccountingVoucher::getSourceNo, claimNo)
-                    .last("LIMIT 1"));
-            if (concurrent == null) {
-                throw new IllegalStateException("索赔凭证并发写入冲突且重查失败：claimNo=" + claimNo, e);
-            }
+            AccountingVoucher concurrent = requireExisting(shopId, SOURCE_REIMBURSEMENT, claimNo, e);
             log.warn("索赔凭证并发幂等命中：claimNo={}", claimNo);
             return concurrent;
         }
-        log.info("索赔追回凭证生成：claimNo={} 原币 {} {} → CNY {}", claimNo, amount, currency, cnyAmount);
+        log.info("索赔追回凭证生成：claimNo={} 原币 {} {} → CNY {}", claimNo, amount, currency, v.getCnyAmount());
+        return v;
+    }
+
+    /**
+     * 由结算行补齐 PLATFORM_FEE / REFUND 凭证。
+     * <p>
+     * calculateProfit 一直会扣这两类，但此前无人写入，利润因此只剩收入侧。
+     * 刻意不加 @Transactional：本方法按 (shopId, sourceType, sourceNo) 幂等，
+     * 中途失败时已写入的凭证是有效结果，重跑只补差额；把 5000 行包进一个长事务
+     * 反而会让失败时的回滚把有效凭证一起丢掉。
+     */
+    @Override
+    public SettlementVoucherReport generateSettlementVouchers(Long shopId) {
+        if (shopId == null) {
+            throw new AttrIsNullException("shopId 不能为空");
+        }
+        SettlementVoucherReport report = new SettlementVoucherReport();
+        report.setShopId(shopId);
+        long lastId = 0L;
+        while (report.getScanned() < SETTLEMENT_SCAN_CAP) {
+            int limit = Math.min(SETTLEMENT_SCAN_PAGE, SETTLEMENT_SCAN_CAP - report.getScanned());
+            List<SettlementDetail> page = settlementDetailMapper.selectList(
+                    new LambdaQueryWrapper<SettlementDetail>()
+                            .eq(SettlementDetail::getShopId, shopId)
+                            .gt(SettlementDetail::getId, lastId)
+                            .orderByAsc(SettlementDetail::getId)
+                            .last("LIMIT " + limit));
+            if (page.isEmpty()) {
+                break;
+            }
+            for (SettlementDetail row : page) {
+                report.setScanned(report.getScanned() + 1);
+                lastId = row.getId();
+                applySettlementRow(shopId, row, report);
+            }
+            if (page.size() < limit) {
+                break;
+            }
+        }
+        report.setCapped(report.getScanned() >= SETTLEMENT_SCAN_CAP);
+        if (report.isCapped()) {
+            log.warn("结算凭证生成命中扫描上限：shopId={} cap={}，仍有未扫结算行，需再跑一次",
+                    shopId, SETTLEMENT_SCAN_CAP);
+        }
+        log.info("结算凭证生成 shopId={} 扫描={} 费用凭证={} 退款凭证={} 幂等命中={} 跳过(类型/无币种/零金额)={}/{}/{}",
+                shopId, report.getScanned(), report.getFeeVouchers(), report.getRefundVouchers(),
+                report.getExisting(), report.getSkippedByKind(), report.getSkippedNoCurrency(),
+                report.getSkippedZeroAmount());
+        return report;
+    }
+
+    private void applySettlementRow(Long shopId, SettlementDetail row, SettlementVoucherReport report) {
+        SettlementClassifier.Kind kind = SettlementClassifier.classify(row);
+        if (!SettlementClassifier.voucherizable(kind)) {
+            // PRINCIPAL 由订单凭证覆盖，ADJUSTMENT 属索赔链路：出凭证会重复计入利润
+            report.setSkippedByKind(report.getSkippedByKind() + 1);
+            return;
+        }
+        String currency = row.getCurrency();
+        if (currency == null || currency.isBlank()) {
+            // 无币种无法折 CNY；按 1:1 硬编会把美元扣费当人民币扣费，宁可跳过并计数
+            report.setSkippedNoCurrency(report.getSkippedNoCurrency() + 1);
+            return;
+        }
+        // 结算行扣项为负：取反后凭证是「正数的成本/退款」，与 calculateProfit 的减项方向一致
+        BigDecimal original = (row.getAmount() == null ? BigDecimal.ZERO : row.getAmount()).negate();
+        if (original.signum() == 0) {
+            report.setSkippedZeroAmount(report.getSkippedZeroAmount() + 1);
+            return;
+        }
+        boolean isFee = kind == SettlementClassifier.Kind.FEE;
+        String sourceType = isFee ? SOURCE_PLATFORM_FEE : SOURCE_REFUND;
+        // row_key 是结算行的业务指纹（唯一索引），重导同一行不会生成第二张凭证；
+        // 历史行缺指纹时退到行 PK，并同样保证幂等
+        String sourceNo = row.getRowKey() == null || row.getRowKey().isBlank()
+                ? "SD-" + row.getId() : row.getRowKey();
+        if (findVoucher(shopId, sourceType, sourceNo) != null) {
+            report.setExisting(report.getExisting() + 1);
+            return;
+        }
+        AccountingVoucher v = buildVoucher(shopId,
+                (isFee ? "平台结算扣费 - " : "平台退款 - ") + (row.getAmazonOrderId() == null ? row.getSku() : row.getAmazonOrderId()),
+                isFee ? ACCT_SALES_FEE : ACCT_MAIN_REVENUE,
+                isFee ? ACCT_BANK : ACCT_RECEIVABLE,
+                original, currency, sourceType, sourceNo);
+        try {
+            voucherMapper.insert(v);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            // 与另一路并发（或上一轮未提交的同键行）撞上：按幂等命中处理
+            requireExisting(shopId, sourceType, sourceNo, e);
+            report.setExisting(report.getExisting() + 1);
+            return;
+        }
+        if (isFee) {
+            report.setFeeVouchers(report.getFeeVouchers() + 1);
+        } else {
+            report.setRefundVouchers(report.getRefundVouchers() + 1);
+        }
+        report.setOriginalAmountSum(report.getOriginalAmountSum().add(original));
+    }
+
+    /** 同源凭证查询：(shopId, sourceType, sourceNo) 三元组即幂等键。 */
+    private AccountingVoucher findVoucher(Long shopId, String sourceType, String sourceNo) {
+        return voucherMapper.selectOne(new LambdaQueryWrapper<AccountingVoucher>()
+                .eq(AccountingVoucher::getShopId, shopId)
+                .eq(AccountingVoucher::getSourceType, sourceType)
+                .eq(AccountingVoucher::getSourceNo, sourceNo)
+                .last("LIMIT 1"));
+    }
+
+    /** 唯一键冲突后重查仍为空，说明撞到了别的约束：抛错，不返回 null 把 NPE 传给上游。 */
+    private AccountingVoucher requireExisting(Long shopId, String sourceType, String sourceNo, Exception cause) {
+        AccountingVoucher concurrent = findVoucher(shopId, sourceType, sourceNo);
+        if (concurrent == null) {
+            throw new IllegalStateException(
+                    "凭证并发写入冲突且重查失败：" + sourceType + " sourceNo=" + sourceNo, cause);
+        }
+        return concurrent;
+    }
+
+    private AccountingVoucher buildVoucher(Long shopId, String summary, String debitAccount, String creditAccount,
+                                           BigDecimal originalAmount, String currency,
+                                           String sourceType, String sourceNo) {
+        AccountingVoucher v = new AccountingVoucher();
+        // 凭证编号：UUID 去横线，规避 "V"+System.currentTimeMillis() 在并发落库时
+        // 撞库触发 amz_accounting_voucher.uk_voucher_no 唯一约束的问题。
+        v.setVoucherNo("V" + UUID.randomUUID().toString().replace("-", ""));
+        v.setShopId(shopId);
+        v.setBizDate(LocalDate.now().format(FMT));
+        v.setSummary(summary);
+        v.setDebitAccount(debitAccount);
+        v.setCreditAccount(creditAccount);
+        v.setOriginalAmount(originalAmount);
+        v.setCurrency(currency);
+        v.setExchangeRate(currencyConverter.getRate(currency));
+        v.setCnyAmount(currencyConverter.convertToCny(originalAmount, currency));
+        v.setSourceType(sourceType);
+        v.setSourceNo(sourceNo);
+        v.setKingdeeSyncStatus("PENDING");
         return v;
     }
 

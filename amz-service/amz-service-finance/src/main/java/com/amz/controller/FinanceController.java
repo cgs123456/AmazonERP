@@ -44,6 +44,21 @@ public class FinanceController {
     }
 
     /**
+     * 由结算行补齐 PLATFORM_FEE / REFUND 凭证（幂等，可重复调用）。
+     * POST /finance/voucher/from-settlement?shopId=
+     * <p>
+     * 利润口径一直在减这两类，此前没有任何生产者写入，导致利润只剩收入侧、系统性偏高。
+     * 返回报告把「扫了多少行 / 生成了几张 / 为什么跳过」分开计数，
+     * capped=true 说明命中扫描上限、需要再跑一次。
+     */
+    @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @PostMapping("/voucher/from-settlement")
+    public Result<com.amz.dto.SettlementVoucherReport> generateSettlementVouchers(@RequestParam Long shopId) {
+        return Result.success(financeService.generateSettlementVouchers(shopId));
+    }
+
+    /**
      * 同步凭证到金蝶。
      * POST /finance/voucher/{voucherId}/sync
      * <p>

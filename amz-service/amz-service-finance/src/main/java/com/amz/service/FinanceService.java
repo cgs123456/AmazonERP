@@ -57,6 +57,21 @@ public interface FinanceService {
     PageResult<AccountingVoucher> listVouchers(Long shopId, String sourceType, PageRequest page);
 
     /**
+     * 由已入库的结算行补齐 PLATFORM_FEE / REFUND 凭证。
+     * <p>
+     * {@link #calculateProfit} 早就在扣这两类成本，但此前没有任何生产者写入它们，
+     * 于是利润只剩收入侧、系统性偏高。本方法是那个缺口的补法：以结算行的
+     * {@code rowKey}（业务指纹）作幂等键，重复调用不会重复入账。
+     * <p>
+     * 只处理有符号金额非零、且币种可用于折算 CNY 的行；其余按原因分别计数返回，
+     * 不静默跳过，也不按 1:1 硬编汇率。
+     *
+     * @param shopId 店铺 ID
+     * @return 扫描/生成/跳过/截断计数
+     */
+    com.amz.dto.SettlementVoucherReport generateSettlementVouchers(Long shopId);
+
+    /**
      * 查询店铺某时间段内的总利润（收入 - 成本 - 费用，CNY）。
      */
     BigDecimal calculateProfit(Long shopId, String startDate, String endDate);

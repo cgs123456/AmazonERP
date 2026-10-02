@@ -8,6 +8,7 @@ import com.amz.mapper.PaymentCollectionMapper;
 import com.amz.mapper.SettlementDetailMapper;
 import com.amz.model.PaymentCollection;
 import com.amz.model.SettlementDetail;
+import com.amz.parse.SettlementClassifier;
 import com.amz.service.PaymentCollectionService;
 import com.amz.util.MapArgUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -262,21 +263,13 @@ public class PaymentCollectionServiceImpl implements PaymentCollectionService {
         for (SettlementDetail d : rows) {
             BigDecimal amount = nz(d.getAmount());
             netReceived = netReceived.add(amount);
-            String type = d.getTransactionType() == null ? "" : d.getTransactionType();
-            if ("Order".equalsIgnoreCase(type)) {
-                if ("Principal".equalsIgnoreCase(d.getAmountType())) {
-                    receivable = receivable.add(amount);
-                } else {
-                    // Order 类型下的非 Principal 行（佣金、配送费等）为平台扣费
-                    feeDeducted = feeDeducted.add(amount.negate());
-                }
-            } else if ("Refund".equalsIgnoreCase(type)) {
-                refunded = refunded.add(amount.negate());
-            } else if ("Adjustment".equalsIgnoreCase(type)) {
-                reimbursed = reimbursed.add(amount);
-            } else {
-                // ServiceFee / 其他类型：按扣费处理（负数为扣，正数为返还）
-                feeDeducted = feeDeducted.add(amount.negate());
+            // 归类口径与凭证生成共用 SettlementClassifier，两套「钱」不会各算各的
+            switch (SettlementClassifier.classify(d)) {
+                case PRINCIPAL -> receivable = receivable.add(amount);
+                // 扣费与退款在报表里都是负数，取反后作为正数分项展示
+                case FEE -> feeDeducted = feeDeducted.add(amount.negate());
+                case REFUND -> refunded = refunded.add(amount.negate());
+                case ADJUSTMENT -> reimbursed = reimbursed.add(amount);
             }
             if (currency == null && d.getCurrency() != null && !d.getCurrency().isBlank()) {
                 currency = d.getCurrency();
