@@ -368,6 +368,33 @@ export const allocateShipmentCosts = (shipmentId: number) =>
 export const receiveShipment = (shipmentId: number, lines: Array<{ itemId: number; receivedQty: number }>) =>
   request.post<void, ApiResponse<ReceiptResult>>(`/procurement/fba/shipment/${shipmentId}/receive`, lines)
 
+/* ==================== 入库短收（财务差异闭环的事实来源） ==================== */
+
+/**
+ * 签收数 < 发货数 的明细行。财务侧「登记入库短收」表单用它当数据来源，
+ * 这样亚马逊该赔的钱不再只停在 processReceipt 的一条 warn 日志里。
+ * unitCost 是我方成本口径且未记币种，所以金额与币种要人在登记时确认。
+ */
+export interface ReceiptShortage {
+  itemId: number
+  shipmentId: number
+  shipmentNo?: string
+  /** 亚马逊侧货件号：财务差异表认它，不认内部 shipmentId */
+  fbaShipmentId?: string
+  sku?: string
+  asin?: string
+  expectedQty?: number
+  receivedQty?: number
+  shortUnits?: number
+  unitCost?: number | string | null
+  totalCost?: number | string | null
+  shipmentStatus?: string
+}
+
+export const listReceiptShortages = (shopId: number | string, q: ListQuery = {}) =>
+  request.get<void, ApiResponse<ReceiptShortage[]>>(`/procurement/fba/shipment/receipt-shortages/${shopId}`,
+    { params: params(q) })
+
 /* ==================== 库存批次 ==================== */
 
 export const listBatches = (shopId: number | string, sku: string, q: ListQuery = {}) =>

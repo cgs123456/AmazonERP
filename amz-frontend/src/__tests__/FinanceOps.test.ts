@@ -40,6 +40,9 @@ vi.mock('@/api/finance-ext', async () => {
 })
 
 import { listVouchers } from '@/api/finance'
+
+vi.mock('@/api/procurement', () => ({ listReceiptShortages: vi.fn() }))
+import { listReceiptShortages } from '@/api/procurement'
 import * as ext from '@/api/finance-ext'
 
 const ok = <T,>(data: T, page?: unknown) =>
@@ -49,6 +52,13 @@ const pageOf = (nextCursor: string | null, truncated = nextCursor !== null) =>
   ({ size: 50, returned: 1, hasMore: truncated, truncated, nextCursor, total: null })
 
 const mockedVouchers = vi.mocked(listVouchers)
+const mockedShortages = vi.mocked(listReceiptShortages)
+
+const SHORTAGES = ok([
+  { itemId: 41, shipmentId: 31, shipmentNo: 'FBA-SHIP-0031', fbaShipmentId: 'FBA18ABC',
+    sku: 'SKU-9', asin: 'B9', expectedQty: 100, receivedQty: 88, shortUnits: 12,
+    unitCost: 12.5, totalCost: 150, shipmentStatus: 'RECEIVING' }
+], pageOf(null))
 
 const COLLECTIONS = ok([
   { id: 1, shopId: 900000000000001000, amazonOrderId: '114-7788-1234', currency: 'USD',
@@ -113,6 +123,7 @@ describe('Finance 视图：财务运营分区（回款/结算/差异/索赔/单�
     localStorage.setItem('current_shop_id', '900000000000001000')
     vi.clearAllMocks()
     mockedVouchers.mockResolvedValue(ok([], pageOf(null)))
+    mockedShortages.mockResolvedValue(SHORTAGES)
   })
 
   it('挂载只拉凭证，其余分区首次进入才请求（不在首屏打满 8 个重端点）', async () => {
@@ -303,5 +314,39 @@ describe('Finance 视图：财务运营分区（回款/结算/差异/索赔/单�
     await clickBtn(wrapper, '加载更多')
     expect(ext.listClaims).toHaveBeenLastCalledWith('900000000000001000',
       expect.objectContaining({ cursor: 'v1:31' }))
+  })
+
+  it('费用差异分区带出采购域的入库短收清单，并把「成本没记币种」说在明处', async () => {
+    vi.mocked(ext.listDiscrepancies).mockResolvedValue(DISCREPANCIES)
+    const wrapper = await mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '费用差异')
+    expect(listReceiptShortages).toHaveBeenCalledWith('900000000000001000', expect.anything())
+    const panel = wrapper.find('[data-panel="discrepancy"]')
+    expect(panel.text()).toContain('FBA18ABC')
+    expect(panel.text()).toContain('12')
+    expect(panel.text()).toContain('单位成本是我方口径且没有记币种')
+  })
+
+  it('按短收行登记：事实带入表单，币种必须人工确认才提交', async () => {
+    vi.mocked(ext.listDiscrepancies).mockResolvedValue(DISCREPANCIES)
+    vi.mocked(ext.intakeInboundShortage).mockResolvedValue(ok(77))
+    const wrapper = await mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '费用差异')
+    await clickBtn(wrapper, '按此行登记')
+    const inputs = wrapper.findAll('.form-grid input')
+    expect((inputs[0].element as HTMLInputElement).value).toBe('SKU-9')
+    // 货件号带的是亚马逊侧 FBA18ABC，不是内部货件号
+    expect((inputs[1].element as HTMLInputElement).value).toBe('FBA18ABC')
+    expect((inputs[2].element as HTMLInputElement).value).toBe('12')
+    // 币种留空：不能默认 USD 就把钱报了
+    await clickBtn(wrapper, '提交')
+    expect(ext.intakeInboundShortage).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('必须显式选择赔付币种')
+    await inputs[4].setValue('USD')
+    await clickBtn(wrapper, '提交')
+    expect(ext.intakeInboundShortage).toHaveBeenCalledWith('900000000000001000',
+      expect.objectContaining({ sku: 'SKU-9', shipmentId: 'FBA18ABC', shortageUnits: 12, unitAmount: 12.5, currency: 'USD' }))
   })
 })

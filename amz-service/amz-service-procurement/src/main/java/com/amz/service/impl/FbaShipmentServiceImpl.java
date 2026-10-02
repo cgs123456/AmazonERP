@@ -4,6 +4,7 @@ import com.amz.context.UserContext;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.dto.BatchCostSummary;
+import com.amz.dto.ReceiptShortage;
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
 import com.amz.exception.InvalidParamException;
@@ -44,6 +45,10 @@ import java.util.Set;
 @Slf4j
 @Service
 public class FbaShipmentServiceImpl implements FbaShipmentService {
+
+    /** 入库短收：每页明细行数与货件 ID 扫描上限（扫描上限命中时结果不是全量，只告警不静默） */
+    private static final int RECEIPT_SHORTAGE_PAGE_SIZE = 100;
+    private static final int RECEIPT_SHORTAGE_SHIPMENT_SCAN = 2000;
 
     private static final DateTimeFormatter BATCH_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -150,6 +155,73 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
                 .last("LIMIT " + page.probeSize() + (forUpdate ? " FOR UPDATE" : ""));
         return PageResult.of(fbaShipmentItemMapper.selectList(wrapper), page.size(),
                 item -> PageRequest.encodeCursor(item.getId()));
+    }
+
+    @Override
+    public PageResult<ReceiptShortage> listReceiptShortages(Long shopId, PageRequest page) {
+        if (shopId == null) {
+            throw new AttrIsNullException("店铺ID不能为空");
+        }
+        if (!UserContext.isShopAllowed(shopId)) {
+            throw new CodeErrorException("无权查询该店铺的入库短收：shopId=" + shopId);
+        }
+        PageRequest req = page == null ? PageRequest.first(RECEIPT_SHORTAGE_PAGE_SIZE) : page;
+
+        // 明细表没有 shop_id，只能先按店铺扫出货件 ID 再用 in 过滤明细；
+        // 扫描有硬上限，命中就告警——「扫到上限」和「这家店没有短收」是两个结论。
+        List<FbaShipment> shipments = fbaShipmentMapper.selectList(new LambdaQueryWrapper<FbaShipment>()
+                .select(FbaShipment::getId, FbaShipment::getShipmentNo,
+                        FbaShipment::getFbaShipmentId, FbaShipment::getStatus)
+                .eq(FbaShipment::getShopId, shopId)
+                .isNotNull(FbaShipment::getFbaShipmentId)
+                .orderByAsc(FbaShipment::getId)
+                .last("LIMIT " + RECEIPT_SHORTAGE_SHIPMENT_SCAN));
+        if (shipments.size() >= RECEIPT_SHORTAGE_SHIPMENT_SCAN) {
+            log.warn("入库短收扫描命中货件上限：shopId={} scan={}，之后的货件未扫描，结果不是全量",
+                    shopId, RECEIPT_SHORTAGE_SHIPMENT_SCAN);
+        }
+        if (shipments.isEmpty()) {
+            return PageResult.of(List.<ReceiptShortage>of(), req.size(),
+                    row -> PageRequest.encodeCursor(row.getItemId()));
+        }
+        Map<Long, FbaShipment> shipmentById = new LinkedHashMap<>();
+        for (FbaShipment s : shipments) {
+            shipmentById.put(s.getId(), s);
+        }
+
+        LambdaQueryWrapper<FbaShipmentItem> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(FbaShipmentItem::getFbaShipmentId, shipmentById.keySet())
+                .isNotNull(FbaShipmentItem::getReceivedQuantity)
+                .apply("received_quantity < quantity");
+        Long cursorId = req.cursorId();
+        if (cursorId != null) {
+            wrapper.lt(FbaShipmentItem::getId, cursorId);
+        }
+        wrapper.orderByDesc(FbaShipmentItem::getId)
+                .last("LIMIT " + req.probeSize());
+
+        List<ReceiptShortage> rows = new ArrayList<>();
+        for (FbaShipmentItem item : fbaShipmentItemMapper.selectList(wrapper)) {
+            FbaShipment s = shipmentById.get(item.getFbaShipmentId());
+            if (s == null || item.getQuantity() == null || item.getReceivedQuantity() == null) {
+                continue;
+            }
+            ReceiptShortage row = new ReceiptShortage();
+            row.setItemId(item.getId());
+            row.setShipmentId(s.getId());
+            row.setShipmentNo(s.getShipmentNo());
+            row.setFbaShipmentId(s.getFbaShipmentId());
+            row.setSku(item.getSku());
+            row.setAsin(item.getAsin());
+            row.setExpectedQty(item.getQuantity());
+            row.setReceivedQty(item.getReceivedQuantity());
+            row.setShortUnits(item.getQuantity() - item.getReceivedQuantity());
+            row.setUnitCost(item.getUnitCost());
+            row.setTotalCost(item.getTotalCost());
+            row.setShipmentStatus(s.getStatus());
+            rows.add(row);
+        }
+        return PageResult.of(rows, req.size(), row -> PageRequest.encodeCursor(row.getItemId()));
     }
 
     /**

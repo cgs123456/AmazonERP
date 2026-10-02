@@ -325,6 +325,35 @@
           </table>
         </div>
         <cursor-bar :state="disc" :load="loadDiscrepancies" />
+
+        <div class="table-card">
+          <div class="panel-title">入库短收待登记（来自采购域签收事实）</div>
+          <div class="filter-bar">
+            <button class="filter-btn" :disabled="shortagesLoading" @click="loadShortages">刷新待登记清单</button>
+            <span class="muted">
+              单位成本是我方口径且没有记币种，亚马逊赔付按站点币种结算：
+              金额与币种请在登记时确认，不要直接采信带入的成本数。
+            </span>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr><th>亚马逊货件号</th><th>内部货件号</th><th>SKU</th><th>应发</th><th>实收</th><th>短收</th><th>我方单位成本口径</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="s in shortages" :key="s.itemId">
+                <td class="mono">{{ s.fbaShipmentId || '-' }}</td>
+                <td class="mono">{{ s.shipmentNo || s.shipmentId }}</td>
+                <td class="mono">{{ s.sku || '-' }}</td>
+                <td>{{ s.expectedQty }}</td>
+                <td>{{ s.receivedQty }}</td>
+                <td class="profit-negative">{{ s.shortUnits }}</td>
+                <td>{{ s.unitCost ?? '-' }}</td>
+                <td><button class="sync-btn" :disabled="busy" @click="prefillShortage(s)">按此行登记</button></td>
+              </tr>
+              <tr v-if="!shortages.length"><td colspan="8" class="empty-row">没有待登记的入库短收</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <!-- 亚马逊索赔 -->
@@ -556,7 +585,7 @@
             <label>货件号 *<input v-model="shortage.shipmentId" /></label>
             <label>短收件数 *<input type="number" min="1" v-model="shortage.shortageUnits" /></label>
             <label>单件金额<input type="number" step="0.01" min="0" v-model="shortage.unitAmount" /></label>
-            <label>币种<input v-model="shortage.currency" placeholder="USD" /></label>
+            <label>币种 *<input v-model="shortage.currency" placeholder="亚马逊赔付币种，如 USD" /></label>
             <label>备注<input v-model="shortage.note" /></label>
           </div>
           <div v-else class="form-grid">
@@ -585,6 +614,7 @@ import { useShopGuard } from '@/composables/useShopGuard'
 import { useToast } from '@/composables/useToast'
 import type { ApiResponse } from '@/api/types'
 import * as ext from '@/api/finance-ext'
+import { listReceiptShortages, type ReceiptShortage } from '@/api/procurement'
 import {
   COLLECTION_STATUS, CLAIM_STATUS, DISCREPANCY_STATUS
 } from '@/api/finance-ext'
@@ -925,6 +955,18 @@ const loadCursor = async <T>(
 
 const shop = () => refreshShop()
 
+/** 一次性列表加载（不累积游标）：清单类端点数有限，用不着分页状态 */
+const loadCursor2 = async <T>(target: { value: T[] }, name: string,
+  fetcher: () => Promise<ApiResponse<T[]>>) => {
+  try {
+    const res = await fetcher()
+    if (res?.code !== 200) { pushError(`${name}：${res?.message || '后端返回非 200'}`); return }
+    target.value = Array.isArray(res.data) ? res.data : []
+  } catch (e) {
+    pushError(`${name}：${e instanceof Error ? e.message : '调用失败'}`)
+  }
+}
+
 /* ---------- 回款 ---------- */
 const loadCollections = (append = false) => {
   void loadCursor(col, '回款列表', cursor => ext.listCollections(shop(), { status: colStatus.value || undefined, size: PAGE, cursor }), append)
@@ -954,6 +996,32 @@ const settlementSyncConfirm = {
     const ok = await call('结算同步', () => ext.syncSettlement(shop()), (d) => { ingest.value = d })
     if (ok) await loadSettlements()
   }
+}
+
+/* ---------- 入库短收待登记（采购域 → 财务差异） ---------- */
+const shortages = ref<ReceiptShortage[]>([])
+const shortagesLoading = ref(false)
+
+const loadShortages = async () => {
+  shortagesLoading.value = true
+  try {
+    await loadCursor2(shortages, '入库短收清单', () => listReceiptShortages(shop(), { size: 50 }))
+  } finally {
+    shortagesLoading.value = false
+  }
+}
+
+/** 用签收事实预填登记表单：件数与 SKU 是事实，金额与币种留给人确认。 */
+const prefillShortage = (s: ReceiptShortage) => {
+  shortage.value = {
+    sku: s.sku || '',
+    shipmentId: s.fbaShipmentId || s.shipmentNo || '',
+    shortageUnits: s.shortUnits ?? 1,
+    unitAmount: s.unitCost === null || s.unitCost === undefined ? undefined : Number(s.unitCost),
+    currency: '',
+    note: `系统短收事实：应发 ${s.expectedQty} / 实收 ${s.receivedQty}（明细 #${s.itemId}）`
+  }
+  formKind.value = 'shortage'
 }
 
 /* ---------- 费用差异 ---------- */
@@ -1103,6 +1171,10 @@ const submitForm = async () => {
       pushError('入库短收：SKU、货件号必填，短收件数至少 1')
       return
     }
+    if (!String(s.currency || '').trim()) {
+      pushError('入库短收：必须显式选择赔付币种（我方成本口径没有记币种，不能默认）')
+      return
+    }
     const ok = await call('登记短收差异', () => ext.intakeInboundShortage(shop(), { ...s, shortageUnits: Number(s.shortageUnits) }),
       (id) => showToast(`已登记差异 #${id}`, 'success'))
     if (ok) {
@@ -1127,7 +1199,7 @@ const TAB_LOADERS: Record<TabKey, () => Promise<unknown> | void> = {
   profit: () => undefined,
   collection: async () => { await Promise.all([loadCollections(), loadCollectionSummary()]) },
   settlement: () => loadSettlements(),
-  discrepancy: () => loadDiscrepancies(),
+  discrepancy: async () => { await Promise.all([loadDiscrepancies(), loadShortages()]) },
   claim: async () => { await Promise.all([loadClaims(), loadClaimSummary()]) },
   skuprofit: () => undefined,
   tax: () => undefined

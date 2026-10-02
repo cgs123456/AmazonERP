@@ -1,6 +1,7 @@
 package com.amz.service;
 
 import com.amz.dto.BatchCostSummary;
+import com.amz.dto.ReceiptShortage;
 
 import com.amz.model.FbaShipment;
 import com.amz.model.FbaShipmentItem;
@@ -50,6 +51,16 @@ public interface FbaShipmentService {
      * 分摊后自动创建库存批次（status=ACTIVE，待到货后更新入库日期）。
      */
     Map<String, Object> allocateCosts(Long shipmentId);
+
+    /**
+     * 入库短收待登记清单（签收数 &lt; 发货数的明细行，按明细 ID 倒序游标分页）。
+     * <p>
+     * 这条链路的由来：processReceipt 检测到短收过去只写一条 warn 日志，
+     * 亚马逊该赔的钱就停在日志里。这里把事实（应发/实发/短收 + 我方成本口径）交出去，
+     * 由财务侧「登记入库短收」表单落成费用差异。<b>金额不在这里生成</b>：
+     * 货件分摊金额没有记币种，而亚马逊赔付按站点币种结算，直接当索赔额会算错钱。
+     */
+    PageResult<ReceiptShortage> listReceiptShortages(Long shopId, PageRequest page);
 
     /**
      * FBA 签收处理：同步亚马逊签收数量，处理多签收/少签收异常。

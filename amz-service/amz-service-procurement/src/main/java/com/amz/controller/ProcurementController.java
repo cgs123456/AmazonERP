@@ -1,6 +1,7 @@
 package com.amz.controller;
 
 import com.amz.dto.BatchCostSummary;
+import com.amz.dto.ReceiptShortage;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.FbaShipment;
@@ -355,6 +356,20 @@ public class ProcurementController {
     public Result<Map<String, Object>> processReceipt(@PathVariable Long shipmentId,
                                                        @RequestBody List<Map<String, Object>> receivedItems) {
         return Result.success(fbaShipmentService.processReceipt(shipmentId, receivedItems));
+    }
+
+    /**
+     * 入库短收待登记清单（GET /procurement/fba/shipment/receipt-shortages/{shopId}?size=&cursor=）。
+     * <p>
+     * 给财务侧「登记入库短收」表单当数据来源：只交事实（应发/实发/短收 + 我方成本口径），
+     * 金额与币种由人在登记时确认，因为分摊金额没有记币种。
+     */
+    @ShopScoped
+    @GetMapping("/fba/shipment/receipt-shortages/{shopId}")
+    public Result<List<ReceiptShortage>> listReceiptShortages(@PathVariable Long shopId,
+                                                              @RequestParam(required = false) Integer size,
+                                                              @RequestParam(required = false) String cursor) {
+        return Result.paged(fbaShipmentService.listReceiptShortages(shopId, PageRequest.of(size, cursor)));
     }
 
     // ==================== 批次管理 ====================
