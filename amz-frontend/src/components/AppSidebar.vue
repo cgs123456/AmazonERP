@@ -124,6 +124,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/reports') }"
+        @click="navigateTo('/reports')"
+        role="button"
+        aria-label="经营报表"
+        tabindex="0"
+      >
+        <Icon icon="mdi:file-chart-outline" class="nav-icon" width="24" />
+        <span class="nav-text">经营报表</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/connectors') }"
         @click="navigateTo('/connectors')"
         role="button"

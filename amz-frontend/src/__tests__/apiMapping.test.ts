@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mapProfitReport } from '@/api/profit'
 import { mapHealthLevel, mapInventoryRow, joinSuggestQty, deriveHealthCounts } from '@/api/inventory'
 import { mapOrderRow, mapOrderStatus } from '@/api/order'
+import { mapKpiItems } from '@/api/dashboard'
 
 // 后端原始结构 → 前端展示模型的纯函数映射测试
 // （对齐后端 Controller 实际返回：OrderController#profitReport、
@@ -156,5 +157,27 @@ describe('mapOrderRow（后端 Order 实体 → OrderItem 展示行）', () => {
   it('缺失字段应兜底为空占位', () => {
     const item = mapOrderRow({}, 'S')
     expect(item).toMatchObject({ orderNo: '-', sku: '-', qty: 0, amount: '$0.00', date: '' })
+  })
+})
+
+describe('mapKpiItems（/report/dashboard/kpi → KPI 卡片）', () => {
+  it('转化率缺失显示「未统计」，不得渲染成 0%', () => {
+    // 真实报表实现从不赋值 conversionRate，它恒为 null
+    const items = mapKpiItems({ totalSales: 1000, totalOrders: 12, avgOrderValue: 83.3 })
+    expect(items[2].label).toBe('转化率')
+    expect(items[2].value).toBe('未统计')
+    expect(items[2].value).not.toBe('0%')
+  })
+
+  it('转化率有值时按百分比显示，0 也要显示 0%（测出来的 0 与没测不是一回事）', () => {
+    expect(mapKpiItems({ conversionRate: 3.5 })[2].value).toBe('3.5%')
+    expect(mapKpiItems({ conversionRate: 0 })[2].value).toBe('0%')
+  })
+
+  it('金额与订单数缺值退化为 0 占位，不显示 undefined', () => {
+    const items = mapKpiItems({})
+    expect(items[0].value).toBe('$0')
+    expect(items[1].value).toBe(0)
+    expect(items[3].value).toBe('$0')
   })
 })

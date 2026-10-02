@@ -34,6 +34,24 @@ export interface KpiRaw {
   avgOrderValue?: number | string
 }
 
+/**
+ * 后端 KPI Map → 前端卡片数组。
+ *
+ * 转化率单独处理：真实报表实现（RealReportServiceImpl）从不给 conversionRate 赋值，
+ * 它恒为 null。旧写法 `?? 0` 会把它显示成「0%」，看起来像量出来是 0，
+ * 实际是「没统计」——两者对运营是完全不同的结论，所以缺值一律显示「未统计」。
+ * trend 后端不提供，置 0 只用于隐藏涨跌箭头，不表示涨跌为 0。
+ */
+export const mapKpiItems = (d: KpiRaw): KpiItem[] => {
+  const rateMissing = d.conversionRate === null || d.conversionRate === undefined
+  return [
+    { label: '销售额', value: `$${d.totalSales ?? 0}`, trend: 0, icon: 'mdi:currency-usd' },
+    { label: '订单数', value: d.totalOrders ?? 0, trend: 0, icon: 'mdi:cart' },
+    { label: '转化率', value: rateMissing ? '未统计' : `${d.conversionRate}%`, trend: 0, icon: 'mdi:trending-up' },
+    { label: '客单价', value: `$${d.avgOrderValue ?? 0}`, trend: 0, icon: 'mdi:chart-line' }
+  ]
+}
+
 // 获取 Dashboard KPI 数据（shopId 为后端必填参数），并把原始 Map 结构适配为 KpiItem[]
 export const getKpiData = (shopId: number | string) => {
   return request
@@ -43,14 +61,7 @@ export const getKpiData = (shopId: number | string) => {
     .then((res) => {
       if (res?.code === 200 && res.data) {
         const d = res.data
-        // 适配为前端 KPI 卡片数组结构（trend 后端未提供，置 0 隐藏涨跌箭头语义）
-        const items: KpiItem[] = [
-          { label: '销售额', value: `$${d.totalSales ?? 0}`, trend: 0, icon: 'mdi:currency-usd' },
-          { label: '订单数', value: d.totalOrders ?? 0, trend: 0, icon: 'mdi:cart' },
-          { label: '转化率', value: `${d.conversionRate ?? 0}%`, trend: 0, icon: 'mdi:trending-up' },
-          { label: '客单价', value: `$${d.avgOrderValue ?? 0}`, trend: 0, icon: 'mdi:chart-line' }
-        ]
-        return { ...res, data: items }
+        return { ...res, data: mapKpiItems(d) }
       }
       return res
     })
