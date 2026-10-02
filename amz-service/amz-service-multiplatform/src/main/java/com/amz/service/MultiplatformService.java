@@ -8,6 +8,9 @@ import com.amz.model.PlatformMessage;
 import com.amz.model.PlatformProduct;
 import com.amz.model.WebhookEvent;
 
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
+
 import java.util.List;
 import java.util.Map;
 
@@ -32,7 +35,7 @@ public interface MultiplatformService {
 
     PlatformAccount updateAccount(Long id, PlatformAccount account);
 
-    List<PlatformAccount> listAccounts(Long shopId);
+    PageResult<PlatformAccount> listAccounts(Long shopId, PageRequest page);
 
     boolean deleteAccount(Long id);
 
@@ -42,7 +45,7 @@ public interface MultiplatformService {
 
     int syncProducts(Long shopId, String platform);
 
-    List<PlatformProduct> listProducts(Long shopId, String platform);
+    PageResult<PlatformProduct> listProducts(Long shopId, String platform, PageRequest page);
 
     boolean mapProduct(Long platformProductId, String amazonAsin, String amazonSku);
 
@@ -50,7 +53,7 @@ public interface MultiplatformService {
 
     int syncMessages(Long shopId, String platform);
 
-    List<PlatformMessage> listMessages(Long shopId, String platform, Integer status);
+    PageResult<PlatformMessage> listMessages(Long shopId, String platform, String status, PageRequest page);
 
     boolean replyMessage(Long messageId, String replyContent);
 
@@ -60,7 +63,7 @@ public interface MultiplatformService {
 
     int syncInventory(Long shopId, String platform);
 
-    List<PlatformInventory> listPlatformInventory(Long shopId, String platform);
+    PageResult<PlatformInventory> listPlatformInventory(Long shopId, String platform, PageRequest page);
 
     Map<String, Object> aggregatedInventory(Long shopId);
 
@@ -68,7 +71,7 @@ public interface MultiplatformService {
 
     WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload, Long shopId);
 
-    List<WebhookEvent> listWebhookEvents(Long shopId, String status);
+    PageResult<WebhookEvent> listWebhookEvents(Long shopId, String status, PageRequest page);
 
     // ===== OAuth 开放 API =====
 
@@ -83,7 +86,7 @@ public interface MultiplatformService {
      */
     Map<String, Object> rotateAppSecret(Long appId);
 
-    List<OauthApp> listApps(Long ownerShopId);
+    PageResult<OauthApp> listApps(Long ownerShopId, PageRequest page);
 
     OauthToken generateToken(String appKey, String appSecret, String[] scopes, Long shopId);
 }

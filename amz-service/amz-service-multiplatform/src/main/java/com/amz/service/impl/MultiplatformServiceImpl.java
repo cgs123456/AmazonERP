@@ -7,6 +7,7 @@ import com.amz.client.TikTokClient;
 import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
+import com.amz.exception.InvalidParamException;
 import com.amz.finance.PlatformCurrencyConverter;
 import com.amz.mapper.OauthAppMapper;
 import com.amz.mapper.OauthTokenMapper;
@@ -129,10 +130,32 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     }
 
     @Override
-    public List<PlatformAccount> listAccounts(Long shopId) {
+    public PageResult<PlatformAccount> listAccounts(Long shopId, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        Long cursorId = req.cursorId();
         LambdaQueryWrapper<PlatformAccount> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformAccount::getShopId, shopId);
-        return platformAccountMapper.selectList(wrapper);
+        if (cursorId != null) {
+            wrapper.lt(PlatformAccount::getId, cursorId);
+        }
+        wrapper.orderByDesc(PlatformAccount::getId).last("LIMIT " + req.probeSize());
+        List<PlatformAccount> rows = platformAccountMapper.selectList(wrapper);
+        rows.forEach(MultiplatformServiceImpl::redactAccountSecrets);
+        return PageResult.of(rows, req.size(), a -> PageRequest.encodeCursor(a.getId()));
+    }
+
+    /**
+     * 凭证列只写不回显：apiKey 是明文，其余三列是密文；
+     * 读取接口把它们带出去只会扩大泄露面（与 SP-API 凭证端点同一约定）。
+     */
+    private static void redactAccountSecrets(PlatformAccount account) {
+        if (account == null) {
+            return;
+        }
+        account.setApiKey(null);
+        account.setApiSecretEncrypted(null);
+        account.setAccessTokenEncrypted(null);
+        account.setRefreshTokenEncrypted(null);
     }
 
     @Override
@@ -212,13 +235,20 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
 
     @Override
-    public List<PlatformProduct> listProducts(Long shopId, String platform) {
+    public PageResult<PlatformProduct> listProducts(Long shopId, String platform, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        Long cursorId = req.cursorId();
         LambdaQueryWrapper<PlatformProduct> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformProduct::getShopId, shopId);
         if (platform != null && !platform.isBlank()) {
             wrapper.eq(PlatformProduct::getPlatform, platform);
         }
-        return platformProductMapper.selectList(wrapper);
+        if (cursorId != null) {
+            wrapper.lt(PlatformProduct::getId, cursorId);
+        }
+        wrapper.orderByDesc(PlatformProduct::getId).last("LIMIT " + req.probeSize());
+        List<PlatformProduct> rows = platformProductMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(), x -> PageRequest.encodeCursor(x.getId()));
     }
 
     @Override
@@ -267,13 +297,22 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
 
     @Override
-    public List<PlatformMessage> listMessages(Long shopId, String platform, Integer status) {
+    public PageResult<PlatformMessage> listMessages(Long shopId, String platform, String status, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        TimeCursor cursor = timeCursor(req, "receive_time");
         LambdaQueryWrapper<PlatformMessage> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformMessage::getShopId, shopId);
         if (platform != null && !platform.isBlank()) wrapper.eq(PlatformMessage::getPlatform, platform);
-        if (status != null) wrapper.eq(PlatformMessage::getStatus, status);
-        wrapper.orderByDesc(PlatformMessage::getReceiveTime);
-        return platformMessageMapper.selectList(wrapper);
+        if (status != null && !status.isBlank()) wrapper.eq(PlatformMessage::getStatus, status);
+        if (cursor != null) {
+            before(wrapper, PlatformMessage::getReceiveTime, PlatformMessage::getId, cursor);
+        }
+        wrapper.orderByDesc(PlatformMessage::getReceiveTime)
+               .orderByDesc(PlatformMessage::getId)
+               .last("LIMIT " + req.probeSize());
+        List<PlatformMessage> rows = platformMessageMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(),
+                m -> PageRequest.encodeCursor(cursorPayload(m.getReceiveTime(), m.getId())));
     }
 
     @Override
@@ -350,12 +389,21 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
 
     @Override
-    public List<PlatformInventory> listPlatformInventory(Long shopId, String platform) {
+    public PageResult<PlatformInventory> listPlatformInventory(Long shopId, String platform, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        TimeCursor cursor = timeCursor(req, "snapshot_time");
         LambdaQueryWrapper<PlatformInventory> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformInventory::getShopId, shopId);
         if (platform != null && !platform.isBlank()) wrapper.eq(PlatformInventory::getPlatform, platform);
-        wrapper.orderByDesc(PlatformInventory::getSnapshotTime);
-        return platformInventoryMapper.selectList(wrapper);
+        if (cursor != null) {
+            before(wrapper, PlatformInventory::getSnapshotTime, PlatformInventory::getId, cursor);
+        }
+        wrapper.orderByDesc(PlatformInventory::getSnapshotTime)
+               .orderByDesc(PlatformInventory::getId)
+               .last("LIMIT " + req.probeSize());
+        List<PlatformInventory> rows = platformInventoryMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(),
+                i -> PageRequest.encodeCursor(cursorPayload(i.getSnapshotTime(), i.getId())));
     }
 
     @Override
@@ -381,7 +429,8 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         result.put("grandTotalAvailable", grandTotal);
         result.put("byPlatform", byPlatform);
         result.put("bySku", bySku);
-        result.put("snapshotTime", LocalDateTime.now());
+        // 这是本次聚合的计算时刻，不是平台侧库存快照时间；沿用 snapshotTime 会被读成后者
+        result.put("computedAt", LocalDateTime.now());
         return result;
     }
 
@@ -458,12 +507,21 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     }
 
     @Override
-    public List<WebhookEvent> listWebhookEvents(Long shopId, String status) {
+    public PageResult<WebhookEvent> listWebhookEvents(Long shopId, String status, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        TimeCursor cursor = timeCursor(req, "create_time");
         LambdaQueryWrapper<WebhookEvent> wrapper = new LambdaQueryWrapper<>();
         if (shopId != null) wrapper.eq(WebhookEvent::getShopId, shopId);
         if (status != null && !status.isBlank()) wrapper.eq(WebhookEvent::getStatus, status);
-        wrapper.orderByDesc(WebhookEvent::getCreateTime);
-        return webhookEventMapper.selectList(wrapper);
+        if (cursor != null) {
+            before(wrapper, WebhookEvent::getCreateTime, WebhookEvent::getId, cursor);
+        }
+        wrapper.orderByDesc(WebhookEvent::getCreateTime)
+               .orderByDesc(WebhookEvent::getId)
+               .last("LIMIT " + req.probeSize());
+        List<WebhookEvent> rows = webhookEventMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(),
+                e -> PageRequest.encodeCursor(cursorPayload(e.getCreateTime(), e.getId())));
     }
 
     // ========================================================
@@ -515,10 +573,17 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     }
 
     @Override
-    public List<OauthApp> listApps(Long ownerShopId) {
+    public PageResult<OauthApp> listApps(Long ownerShopId, PageRequest page) {
         LambdaQueryWrapper<OauthApp> wrapper = new LambdaQueryWrapper<>();
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        Long cursorId = req.cursorId();
         wrapper.eq(OauthApp::getOwnerShopId, ownerShopId);
-        return oauthAppMapper.selectList(wrapper);
+        if (cursorId != null) {
+            wrapper.lt(OauthApp::getId, cursorId);
+        }
+        wrapper.orderByDesc(OauthApp::getId).last("LIMIT " + req.probeSize());
+        List<OauthApp> rows = oauthAppMapper.selectList(wrapper);
+        return PageResult.of(rows, req.size(), a -> PageRequest.encodeCursor(a.getId()));
     }
 
     /**
@@ -787,5 +852,43 @@ public class MultiplatformServiceImpl implements MultiplatformService {
                 UserContext.getUserId(), UserContext.getRole(), what, shopId,
                 detail == null ? "" : detail);
         throw new CodeErrorException(what + "不存在或无权访问");
+    }
+
+    /** 时间列不唯一，所以游标必须带 id；载荷是 {@code LocalDateTime|id}。 */
+    private record TimeCursor(LocalDateTime time, long id) {
+    }
+
+    private static TimeCursor timeCursor(PageRequest page, String field) {
+        if (page == null || !page.hasCursor()) {
+            return null;
+        }
+        String[] parts = page.payload().split("\\|", -1);
+        if (parts.length != 2) {
+            throw new InvalidParamException("分页游标非法：" + field + " 游标格式应为 时间|id");
+        }
+        try {
+            return new TimeCursor(LocalDateTime.parse(parts[0]), Long.parseLong(parts[1]));
+        } catch (java.time.format.DateTimeParseException | NumberFormatException e) {
+            throw new InvalidParamException("分页游标非法：" + field + " 时间或 id 无法解析");
+        }
+    }
+
+    private static String cursorPayload(LocalDateTime time, Long id) {
+        if (time == null || id == null) {
+            throw new InvalidParamException("分页游标生成失败：排序键缺失（time=" + time + ", id=" + id + "）");
+        }
+        return time.toString() + "|" + id;
+    }
+
+    /**
+     * {@code (time, id) < (cursorTime, cursorId)}：先比较时间，同一时间戳内再按 id 往前推。
+     * 只按时间翻页会在同一秒内多行时漏行或重复——消息、库存快照、Webhook 都是这种密度。
+     */
+    private static <T> void before(LambdaQueryWrapper<T> wrapper,
+                                   com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, LocalDateTime> timeGet,
+                                   com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, Long> idGet,
+                                   TimeCursor cursor) {
+        wrapper.and(q -> q.lt(timeGet, cursor.time())
+                .or(inner -> inner.eq(timeGet, cursor.time()).lt(idGet, cursor.id())));
     }
 }

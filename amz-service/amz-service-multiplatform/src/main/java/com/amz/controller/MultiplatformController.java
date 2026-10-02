@@ -54,8 +54,10 @@ public class MultiplatformController {
 
     @ShopScoped
     @GetMapping("/account/list/{shopId}")
-    public Result<List<PlatformAccount>> listAccounts(@PathVariable Long shopId) {
-        return Result.success(multiplatformService.listAccounts(shopId));
+    public Result<List<PlatformAccount>> listAccounts(@PathVariable Long shopId,
+                                                       @RequestParam(required = false) Integer size,
+                                                       @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listAccounts(shopId, PageRequest.of(size, cursor)));
     }
 
     @ShopScoped
@@ -93,8 +95,11 @@ public class MultiplatformController {
     @ShopScoped
     @GetMapping("/product/list/{shopId}")
     public Result<List<PlatformProduct>> listProducts(@PathVariable Long shopId,
-                                                       @RequestParam(required = false) String platform) {
-        return Result.success(multiplatformService.listProducts(shopId, platform));
+                                                       @RequestParam(required = false) String platform,
+                                                       @RequestParam(required = false) Integer size,
+                                                       @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listProducts(
+                shopId, platform, PageRequest.of(size, cursor)));
     }
 
     @ShopScoped
@@ -117,8 +122,11 @@ public class MultiplatformController {
     @GetMapping("/message/list/{shopId}")
     public Result<List<PlatformMessage>> listMessages(@PathVariable Long shopId,
                                                        @RequestParam(required = false) String platform,
-                                                       @RequestParam(required = false) Integer status) {
-        return Result.success(multiplatformService.listMessages(shopId, platform, status));
+                                                       @RequestParam(required = false) String status,
+                                                       @RequestParam(required = false) Integer size,
+                                                       @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listMessages(
+                shopId, platform, status, PageRequest.of(size, cursor)));
     }
 
     @ShopScoped
@@ -146,8 +154,11 @@ public class MultiplatformController {
     @ShopScoped
     @GetMapping("/inventory/list/{shopId}")
     public Result<List<PlatformInventory>> listPlatformInventory(@PathVariable Long shopId,
-                                                                  @RequestParam(required = false) String platform) {
-        return Result.success(multiplatformService.listPlatformInventory(shopId, platform));
+                                                                  @RequestParam(required = false) String platform,
+                                                                  @RequestParam(required = false) Integer size,
+                                                                  @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listPlatformInventory(
+                shopId, platform, PageRequest.of(size, cursor)));
     }
 
     @ShopScoped
@@ -169,8 +180,11 @@ public class MultiplatformController {
     @ShopScoped
     @GetMapping("/webhook/list/{shopId}")
     public Result<List<WebhookEvent>> listWebhookEvents(@PathVariable Long shopId,
-                                                         @RequestParam(required = false) String status) {
-        return Result.success(multiplatformService.listWebhookEvents(shopId, status));
+                                                         @RequestParam(required = false) String status,
+                                                         @RequestParam(required = false) Integer size,
+                                                         @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listWebhookEvents(
+                shopId, status, PageRequest.of(size, cursor)));
     }
 
     // ==================== OAuth 开放 API ====================
@@ -189,8 +203,10 @@ public class MultiplatformController {
 
     @ShopScoped
     @GetMapping("/oauth/app/list/{shopId}")
-    public Result<List<OauthApp>> listApps(@PathVariable Long shopId) {
-        return Result.success(multiplatformService.listApps(shopId));
+    public Result<List<OauthApp>> listApps(@PathVariable Long shopId,
+                                            @RequestParam(required = false) Integer size,
+                                            @RequestParam(required = false) String cursor) {
+        return Result.paged(multiplatformService.listApps(shopId, PageRequest.of(size, cursor)));
     }
 
     @PostMapping("/oauth/token")
