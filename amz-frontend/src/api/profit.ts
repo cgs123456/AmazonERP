@@ -102,3 +102,86 @@ export const getProfitReport = (
       return { ...res, data: zeroProfitReport() }
     })
 }
+
+/**
+ * 利润下钻（ProfitController，`/order/profit/**`）。
+ *
+ * 三条各自解决一个此前没有入口的问题：
+ * - 按订单：这单到底赚了多少钱（含每一项费用与 dataComplete 标记）；
+ * - 按 SKU：某个 SKU 的逐日利润行；
+ * - 月度汇总：后端 SQL 按 SKU×月 GROUP BY 的真实聚合，替代页面上那个永远填不上的「按店铺」维度。
+ *
+ * dataComplete=false 表示这条利润的某项成本没拿全（利润由 ProfitMQConsumer 逐单算出），
+ * 这种行不能和完整行同样当成决策依据，所以页面必须把它标出来而不是照常渲染数字。
+ * 两条明细查询是 keyset 分页（`_page` 给出 truncated/nextCursor）；月度汇总不分页但有后端上限。
+ */
+export interface ProfitReportRow {
+  id?: number
+  shopId?: number | string
+  amazonOrderId?: string | null
+  sku?: string | null
+  statDate?: string | null
+  revenue?: number | string | null
+  productCost?: number | string | null
+  fbaFulfillmentFee?: number | string | null
+  fbaStorageFee?: number | string | null
+  referralFee?: number | string | null
+  adCost?: number | string | null
+  vat?: number | string | null
+  grossProfit?: number | string | null
+  netProfit?: number | string | null
+  netMargin?: number | string | null
+  dataComplete?: boolean | null
+}
+
+/** 后端 selectMonthlySummary 的聚合行（列名就是 SQL 里的下划线别名） */
+export interface MonthlyProfitRow {
+  shop_id?: number | string
+  sku: string
+  month: string
+  total_revenue?: number | string | null
+  total_cost?: number | string | null
+  total_profit?: number | string | null
+  margin?: number | string | null
+}
+
+interface PageQuery {
+  size?: number
+  cursor?: string | null
+}
+
+export const listProfitByOrder = (
+  shopId: number | string,
+  amazonOrderId: string,
+  q: PageQuery = {}
+) =>
+  request.get<void, ApiResponse<ProfitReportRow[]>>(
+    `/order/profit/order/${shopId}/${encodeURIComponent(amazonOrderId)}`,
+    { params: q }
+  )
+
+export const listProfitBySku = (shopId: number | string, sku: string, q: PageQuery = {}) =>
+  request.get<void, ApiResponse<ProfitReportRow[]>>(
+    `/order/profit/sku/${shopId}/${encodeURIComponent(sku)}`,
+    { params: q }
+  )
+
+export const getMonthlyProfitSummary = (shopId: number | string) =>
+  request.get<void, ApiResponse<MonthlyProfitRow[]>>(`/order/profit/summary/${shopId}`)
+
+/** 聚合行 → 现有表格展示模型；margin 后端是 0-1 小数（ROUND(...,4)） */
+export const mapMonthlyRows = (rows: MonthlyProfitRow[]): ProfitRow[] =>
+  rows.map((r) => {
+    const revenue = toNum(r.total_revenue)
+    const profit = toNum(r.total_profit)
+    return {
+      name: `${r.sku} · ${r.month}`,
+      revenue: fmtMoney(revenue),
+      cost: fmtMoney(r.total_cost),
+      platformFee: '—',
+      adFee: '—',
+      shipping: '—',
+      profit,
+      margin: Number((toNum(r.margin) * 100).toFixed(1))
+    }
+  })

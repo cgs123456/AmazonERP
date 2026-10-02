@@ -733,6 +733,26 @@ const MP_ORDERS = [
  *    否则前端「凭证不回显」这条边界在 E2E 里是假绿（页面上本来就没有可泄露的值）。
  * 2. Webhook 行的 PROCESSED 只代表入库且处理未抛异常，processResult 直接写清这一点。
  */
+// 利润下钻行：第二行的成本列是 null 且 dataComplete=false，
+// 页面必须把它标成「数据不全」而不是当普通行一样渲染数字。
+const PROFIT_DRILL_ROWS = [
+  {
+    id: 901, shopId: 1, amazonOrderId: '111-2222222-3333333', sku: 'SKU-A1', statDate: '2026-09-01',
+    revenue: 5000, productCost: 3000, referralFee: 750, adCost: 250,
+    fbaFulfillmentFee: 300, fbaStorageFee: 50, vat: 200, netProfit: 450, netMargin: 0.09, dataComplete: true
+  },
+  {
+    id: 900, shopId: 1, amazonOrderId: '111-2222222-3333333', sku: 'SKU-B2', statDate: '2026-08-31',
+    revenue: 120, productCost: null, referralFee: 18, adCost: null,
+    fbaFulfillmentFee: null, fbaStorageFee: null, vat: null, netProfit: -4, netMargin: -0.03, dataComplete: false
+  }
+]
+
+const PROFIT_MONTHLY_ROWS = [
+  { shop_id: 1, sku: 'SKU-A1', month: '2026-09', total_revenue: 5000, total_cost: 3000, total_profit: 450, margin: 0.09 },
+  { shop_id: 1, sku: 'SKU-B2', month: '2026-08', total_revenue: 800, total_cost: 900, total_profit: -100, margin: -0.125 }
+]
+
 const MP_ACCOUNTS = [
   {
     id: 7, shopId: 1, platform: 'TEMU', storeName: 'Temu US 旗舰店',
@@ -891,6 +911,12 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
     }
   },
   { match: /^\/order\/profit\/report$/, data: PROFIT_REPORT },
+
+  // ===== 利润下钻 /order/profit/{order,sku,summary} =====
+  // 上面 report 那条是精确匹配，三条下钻互不重叠。
+  { match: /^\/order\/profit\/order\//, data: PROFIT_DRILL_ROWS, page: FULL_PAGE(PROFIT_DRILL_ROWS.length) },
+  { match: /^\/order\/profit\/sku\//, data: PROFIT_DRILL_ROWS },
+  { match: /^\/order\/profit\/summary\//, data: PROFIT_MONTHLY_ROWS },
   { match: /^\/report\/dashboard\/kpi$/, data: DASHBOARD_KPI },
   { match: /^\/report\/dashboard\/sales-trend$/, data: DASHBOARD_SALES_TREND },
   { match: /^\/report\/dashboard\/shop-distribution$/, data: DASHBOARD_SHOP_DIST },

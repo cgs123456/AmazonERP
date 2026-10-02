@@ -964,6 +964,83 @@ test.describe('MultiplatformOps 交互（多平台运营台）', () => {
   })
 })
 
+test.describe('ProfitReport 交互（利润报表与下钻）', () => {
+  test('统计区间可见可改，且不再有填不上的「按店铺」维度', async ({ page }) => {
+    const reportCalls: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname === '/api/order/profit/report') reportCalls.push(u.search)
+    })
+    await page.goto('/profit')
+    await expect(page.locator('.skeleton-zone')).toHaveCount(0, { timeout: 15000 })
+
+    // 此前这个区间写死在代码里，页面上看不到；现在它是能改的输入，并且标进了汇总卡片
+    await expect(page.locator('.window-row')).toContainText('当前区间 2026-06-01 ~ 2026-06-30')
+    await expect(page.locator('.summary-label').first()).toContainText('2026-06-01 ~ 2026-06-30')
+    expect(reportCalls.length).toBe(1)
+    expect(decodeURIComponent(reportCalls[0])).toContain('startDate=2026-06-01')
+
+    const dates = page.locator('.window-row input')
+    await dates.nth(0).fill('2026-09-01')
+    await dates.nth(1).fill('2026-09-30')
+    await page.locator('.window-row .action-btn').click()
+    await expect.poll(() => reportCalls.length).toBe(2)
+    expect(decodeURIComponent(reportCalls[1])).toContain('startDate=2026-09-01')
+    expect(decodeURIComponent(reportCalls[1])).toContain('endDate=2026-09-30')
+
+    const tabs = page.locator('.dim-tab')
+    await expect(tabs).toHaveCount(2)
+    await expect(tabs.filter({ hasText: '按店铺' })).toHaveCount(0)
+    await expect(page.locator('.notice-zone')).toContainText('本页不提供「按店铺」维度')
+  })
+
+  test('「按 SKU×月」真的去查后端聚合，而不是把示例月份搬过来', async ({ page }) => {
+    const hits: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/order/profit/summary/1') hits.push('summary')
+    })
+    await page.goto('/profit')
+    await expect(page.locator('.skeleton-zone')).toHaveCount(0, { timeout: 15000 })
+    expect(hits).toEqual([])
+
+    await page.locator('.dim-tab', { hasText: '按 SKU×月' }).click()
+    await expect.poll(() => hits.length).toBe(1)
+    const panel = page.locator('.table-card').first()
+    await expect(panel).toContainText('SKU-A1 · 2026-09')
+    await expect(panel).toContainText('SKU-B2 · 2026-08')
+    // 聚合行没有费用分项，缺的列必须是留白而不是 0
+    await expect(panel).toContainText('—')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+
+  test('下钻按订单号取利润行，成本没取全的行标成「数据不全」', async ({ page }) => {
+    const urls: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname.startsWith('/api/order/profit/order/')) urls.push(u.pathname + u.search)
+    })
+    await page.goto('/profit')
+    await expect(page.locator('.skeleton-zone')).toHaveCount(0, { timeout: 15000 })
+
+    const panel = page.locator('[data-panel="drill"]')
+    await expect(panel).toContainText('填一个订单号或 SKU 再查')
+    expect(urls).toEqual([])
+
+    await panel.locator('input').fill('111-2222222-3333333')
+    await panel.locator('.action-btn', { hasText: '查询' }).click()
+    await expect.poll(() => urls.length).toBe(1)
+    expect(urls[0]).toContain('/api/order/profit/order/1/111-2222222-3333333')
+    expect(urls[0]).toContain('size=20')
+
+    await expect(panel).toContainText('2026-09-01')
+    await expect(panel).toContainText('$5,000.00')
+    await expect(panel.locator('.flag.incomplete')).toHaveCount(1)
+    await expect(panel.locator('.flag')).toHaveCount(2)
+    // 桩给的是 FULL_PAGE（hasMore=false），所以这里应当报「共 N 行」而不是「仍有下一页」
+    await expect(panel).toContainText('共 2 行（按记录倒序）')
+  })
+})
+
 test.describe('OpsAlerts 交互（运营预警台）', () => {
   test('差评告警渲染真实列，已处理的行不给按钮，三个扫描入口都不存在', async ({ page }) => {
     await page.goto('/ops-alerts')
