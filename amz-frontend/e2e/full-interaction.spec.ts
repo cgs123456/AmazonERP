@@ -156,6 +156,31 @@ test.describe('InventoryMonitor 交互', () => {
 })
 
 test.describe('AdManager 交互', () => {
+  test('日报回补入口把后端计数原样报出来，并且不会变成第二个 ext-section', async ({ page }) => {
+    const syncs: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/reports/sync') syncs.push(r.method())
+    })
+    await page.goto('/ads')
+    await waitReady(page)
+    const card = page.locator('[data-panel="sync"]')
+    // 常驻可见的卡片不能污染 .ext-section:visible 这类活动区定位器
+    await expect(card).not.toHaveClass(/ext-section/)
+
+    await expect(card).toContainText('日报同步回补')
+    await expect(card).not.toContainText('回补窗口')
+    await card.locator('.action-btn', { hasText: '展开' }).click()
+    await expect(card).toContainText('最多 30 天')
+    expect(syncs).toEqual([])
+
+    await card.locator('.action-btn', { hasText: '同步当前店铺' }).click()
+    await expect.poll(() => syncs.length).toBe(1)
+    expect(syncs[0]).toBe('POST')
+    await expect(card.locator('.ops-result')).toContainText('店铺 1')
+    await expect(card.locator('.ops-result')).toContainText('落库 12 行')
+    await expect(card.locator('.ops-error')).toHaveCount(0)
+  })
+
   test('SB tab 按活动ID查素材；切回 SP 仍是 2 条活动', async ({ page }) => {
     await page.goto('/ads')
     await waitReady(page)

@@ -774,6 +774,8 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
 
   // ===== 广告 /ads =====
   { match: /^\/ad\/reports$/, data: AD_REPORTS },
+  // 手动回补：单店与全店共用这个路径，靠有没有 shopId 参数分重载；这里给一份成功计数
+  { match: /^\/ad\/reports\/sync$/, data: { shopId: 1, days: 7, attempted: 1, succeeded: 1, failed: 0, skipped: 0, upserted: 12, metadataWarnings: 0 } },
   { match: /^\/ad\/trend$/, data: AD_TREND },
   { match: /^\/ad\/campaigns\/list\//, data: AD_CAMPAIGNS },
   { match: /^\/ad\/campaigns\/summary\/type\//, data: AD_SUMMARY_BY_TYPE },

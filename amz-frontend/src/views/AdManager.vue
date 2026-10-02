@@ -220,6 +220,52 @@
       </div>
       </template>
 
+      <!-- 日报回补：上面那句「请先执行日报同步」以前没有对应入口，这里就是那个入口。
+           刻意不带 ext-section 类：页面上既有 .ext-section:visible 这类活动区定位器，
+           一个常驻可见的同类块会把它们变成多义匹配。 -->
+      <div v-if="!loading" class="ops-card" data-panel="sync">
+        <div class="section-header">
+          <h3>日报同步回补</h3>
+          <button class="action-btn" @click="opsOpen = !opsOpen">{{ opsOpen ? '收起' : '展开' }}</button>
+        </div>
+        <template v-if="opsOpen">
+          <p class="ops-note">
+            趋势与概览都来自 <code>amz_ad_daily_report</code>，此前只有后端定时任务会写这张表。
+            这里可以按店铺手工回补：同步是「读广告 API + 本地覆盖写」，不改平台数据，但会消耗调用配额，
+            单次窗口最多 {{ AD_SYNC_MAX_DAYS }} 天。
+          </p>
+          <div class="ops-row">
+            <label class="ops-filter">回补窗口
+              <select v-model="syncDays">
+                <option v-for="d in SYNC_DAY_CHOICES" :key="d" :value="d">近 {{ d }} 天</option>
+              </select>
+            </label>
+            <button class="action-btn" :disabled="!currentShopId || syncing" @click="runSync(false)">
+              {{ syncing ? '同步中' : '同步当前店铺' }}
+            </button>
+            <button class="action-btn" :disabled="syncing" @click="runSync(true)">
+              {{ syncing ? '同步中' : '同步全部店铺' }}
+            </button>
+            <span class="ops-hint">全部店铺那个重载只有 ADMIN 能过；OPERATOR 点了会得到后端拒绝，不会退化成单店同步。</span>
+          </div>
+          <div v-if="syncErrors.length" class="ops-error" role="alert">{{ syncErrors.join('；') }}</div>
+          <div v-if="lastSync" class="ops-result">
+            <span class="ops-scope">{{ lastSyncScope }}</span>
+            窗口 {{ lastSync.days }} 天：尝试 {{ lastSync.attempted }} · 成功 {{ lastSync.succeeded }}
+            · 失败 {{ lastSync.failed }} · 跳过 {{ lastSync.skipped }} · 落库 {{ lastSync.upserted }} 行
+            <span v-if="lastSync.metadataWarnings > 0" class="ops-warn">
+              另有 {{ lastSync.metadataWarnings }} 条活动元数据回填告警
+            </span>
+            <p v-if="lastSync.failed > 0" class="ops-sub">
+              有店铺没同步成功，上面的落库行数不代表窗口已补齐——失败原因看后端日志里的 shopId。
+            </p>
+            <p v-else-if="lastSync.succeeded === 0" class="ops-sub">
+              本次没有任何店铺成功：多为没有广告授权或该店没有活动，跳过（skipped）不等于同步完成。
+            </p>
+          </div>
+        </template>
+      </div>
+
       <!-- 素材弹窗 -->
       <div v-if="creativeDialog.visible" class="modal-mask" @click.self="creativeDialog.visible = false">
         <div class="modal">
@@ -280,8 +326,8 @@ import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import { getAdReports, getAdTrend } from '@/api/ad'
-import type { AdOverview, AcosTrendItem, AdCampaign } from '@/api/ad'
+import { getAdReports, getAdTrend, syncAdReports, syncAllAdReports, AD_SYNC_MAX_DAYS } from '@/api/ad'
+import type { AdOverview, AcosTrendItem, AdCampaign, AdSyncSummary } from '@/api/ad'
 import * as AdExt from '@/api/ad-ext'
 import type { AdCreative, AdTargeting, AdSummary, AdType } from '@/api/ad-ext'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -291,6 +337,44 @@ const adDemoMode = import.meta.env.VITE_AD_DEMO_MODE === 'true'
 
 // 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
 const { currentShopId, refreshShop } = useShopGuard()
+
+// ===== 日报回补 =====
+const SYNC_DAY_CHOICES = [1, 7, 14, AD_SYNC_MAX_DAYS]
+const opsOpen = ref(false)
+const syncing = ref(false)
+const syncDays = ref<number | string>(7)
+const syncErrors = ref<string[]>([])
+const lastSync = ref<AdSyncSummary | null>(null)
+const lastSyncScope = ref('')
+
+const runSync = async (allShops: boolean) => {
+  const shopId = refreshShop()
+  if (!allShops && !shopId) return
+  const raw = Number(syncDays.value)
+  const days = Number.isFinite(raw) && raw > 0 ? Math.trunc(raw) : 7
+  syncing.value = true
+  syncErrors.value = []
+  lastSync.value = null
+  lastSyncScope.value = allShops ? '全部店铺' : `店铺 ${shopId}`
+  try {
+    // 全店那个重载靠「不带 shopId」区分，带上就退化成单店同步
+    const res = allShops ? await syncAllAdReports(days) : await syncAdReports(shopId as string, days)
+    if (res?.code !== 200 || !res.data) {
+      syncErrors.value = [`同步未执行：${res?.message || '后端返回非 200'}`]
+      return
+    }
+    lastSync.value = res.data
+    if (res.data.failed > 0) {
+      syncErrors.value = [`有 ${res.data.failed} 个店铺同步失败，落库行数不代表窗口已补齐`]
+    }
+    // 真的写进了日报表才重拉本页数据，否则空转一次没有意义的请求
+    if (res.data.upserted > 0) await loadOverview()
+  } catch (e) {
+    syncErrors.value = [`同步调用失败：${e instanceof Error ? e.message : '未知错误'}`]
+  } finally {
+    syncing.value = false
+  }
+}
 
 // 广告类型 Tab
 const adTabs = [
@@ -409,7 +493,7 @@ const acosTrendDots = computed(() => {
   }))
 })
 
-onMounted(async () => {
+const loadOverview = async () => {
   // 未选择店铺时不发请求
   const shopId = refreshShop()
   if (!shopId) {
@@ -475,7 +559,9 @@ onMounted(async () => {
   }
   await loadTrend(shopId, activeAdTab.value)
   loading.value = false
-})
+}
+
+onMounted(loadOverview)
 
 // ===== SB 广告素材 =====
 const creatives = ref<AdCreative[]>([])
@@ -646,6 +732,18 @@ const acosClass = (acos?: number) => {
 .ext-section { margin-top: 1rem; }
 .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
 .section-header h3 { font-size: 1rem; font-weight: 600; margin: 0; }
+.ops-card { margin-top: 1rem; }
+.ops-note { font-size: 0.8125rem; color: var(--color-muted); line-height: 1.6; margin: 0 0 0.625rem; }
+.ops-note code { font-family: var(--font-mono, monospace); }
+.ops-row { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+.ops-filter { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--color-muted); }
+.ops-filter select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); }
+.ops-hint { font-size: 0.75rem; color: var(--color-muted); }
+.ops-error { margin-top: 0.625rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--color-light-red); color: var(--color-error); font-size: 0.8125rem; }
+.ops-result { margin-top: 0.625rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--color-surface-variant); font-size: 0.8125rem; color: var(--color-on-surface); }
+.ops-scope { font-weight: 600; margin-right: 0.25rem; }
+.ops-warn { color: var(--color-warning-dark); }
+.ops-sub { margin: 0.375rem 0 0; font-size: 0.75rem; color: var(--color-muted); }
 .ext-toolbar { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: center; }
 .ext-toolbar input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; flex: 1; max-width: 320px; }
 
