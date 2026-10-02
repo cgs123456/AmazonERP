@@ -179,3 +179,29 @@
   接上审批留痕，零引用从 12 张降到 **11 张**。剩下的只有 `amz_logistics_quote` 属真重复可删，
   删表需要单独立项（正向 DROP 迁移 + 备份恢复 + 先数行数），本轮仍未动任何表。
 - **N3 残留**：客服邮件通道仍需真实 SMTP/Messaging 客户端；RMA 的订单号不与订单表校验。
+
+## 八、完成审计：把「还有谁零入口」重新扫了一遍（2026-10-03）
+
+不能靠回忆说「6 项都做完了」。新增 `tools/schema/endpoint_coverage_audit.py`：
+把每个 controller 的路径与 `amz-frontend/src/api/*.ts` 里出现的字符串对齐，
+报「前端一次都没提到的端点」。输出快照存在
+`docs/superpowers/evidence/2026-10-03-endpoint-coverage-audit.txt`。
+
+工具自身先被证伪过一次，两次都是真错：
+
+1. 第一版用字面串比较，把已经接好的 `GET /search/search/{key}` 报成缺口
+   （前端写的是 `/search/search/${encodeURIComponent(key)}`）——现在路径参数按通配段匹配；
+2. 第一版还留了一条「末段名字在任意位置出现就算用过」的宽松兜底，
+   它把缺口数从 131 压到 79，属于反向误报（末段同名不代表同一个端点）。去掉后数字才可信。
+
+按域统计（131 条，按前缀）：`/spapi` 29、`/multiplatform` 26、`/ad` 22、`/ai` 13、
+`/product` 11、`/ops` 9、`/logistics` 9、`/order` 6、`/user` 3，
+`/procurement` `/internal` `/finance` 各 1。
+
+**这张表不能直接当「还差这么多功能」读**，两条已知偏差：
+- 统计的分母只有 `src/api/*.ts`：组件里直接 `fetch` 的（AgentChat 的 SSE、WebSocket）会被误报；
+- 一部分端点本就不是给浏览器的（内部服务间调用、定时任务、被别的服务 Feign 消费）。
+  逐条判「该不该接」是下一轮的事，不在本轮里顺手猜。
+
+本轮结论：**修复方案的 6 项都已落地并各有闸口证据**（见上文各节），
+但「业务功能覆盖齐全」这件事按这份清点还有 131 条待逐条判类，不宣布整体完成。

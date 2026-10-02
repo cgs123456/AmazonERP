@@ -1,0 +1,192 @@
+module                 controller                           eps endpoints not named by amz-frontend/src/api
+amz                    AdCampaignExtController.java           5
+amz                    AdController.java                     10  <-- 8 missing
+        GET /ad/report/{shopId}
+        GET /ad/summary/{shopId}
+        GET /ad/keyword/optimize
+        POST /ad/bidSchedule
+        GET /ad/bidSchedule/{shopId}
+        POST /ad/reports/sync
+        POST /ad/reports/sync
+        GET /ad/competitor
+amz                    AdCreativeController.java              2
+amz                    AdTargetingController.java             2
+amz                    SearchTermController.java             14  <-- 14 missing
+        GET /ad/search-term/list/{shopId}
+        GET /ad/search-term/analyze/{shopId}
+        GET /ad/search-term/cluster/{shopId}
+        POST /ad/search-term/converting/extract/{shopId}
+        GET /ad/search-term/converting/list/{shopId}
+        GET /ad/search-term/asin-reverse/{shopId}
+        POST /ad/search-term/asin-reverse/batch
+        POST /ad/search-term/rule
+        PUT /ad/search-term/rule/{id}
+        GET /ad/search-term/rule/list/{shopId}
+        POST /ad/search-term/rule/{id}/toggle
+        DELETE /ad/search-term/rule/{id}
+        POST /ad/search-term/rule/execute/{shopId}
+        POST /ad/search-term/rule/{ruleId}/execute
+amz                    AgentMemoryController.java             6  <-- 6 missing
+        POST /ai/agent/memory/chat
+        GET /ai/agent/memory/preference/{userId}
+        POST /ai/agent/memory/preference
+        POST /ai/agent/memory/language
+        GET /ai/agent/memory/history/{userId}
+        POST /ai/agent/memory/reminder/scan
+amz                    AgentSseController.java                1  <-- 1 missing
+        GET /ai/chat-stream
+amz                    AiController.java                      4  <-- 4 missing
+        POST /ai/chat
+        POST /ai/agent/chat
+        POST /ai/erp/agent
+        POST /ai/eval/run
+amz                    KnowledgeController.java               3
+amz                    ReviewAnalysisController.java          1  <-- 1 missing
+        POST /ai/review/analyze
+amz                    SelectionAnalysisController.java       1  <-- 1 missing
+        POST /ai/selection/analyze
+amz                    CustomerController.java                5
+amz                    CustomerEmailController.java          16
+amz                    FeeDiscrepancyController.java          5
+amz                    FinanceController.java                 6  <-- 1 missing
+        POST /finance/voucher/order
+amz                    PaymentCollectionController.java       3
+amz                    ReimbursementClaimController.java      9
+amz                    SettlementController.java              2
+amz                    SkuProfitController.java               1
+amz                    VatController.java                     4
+amz                    InboundController.java                 4
+amz                    LogisticsController.java               5
+amz                    LogisticsDashboardController.java      8
+amz                    LogisticsImportController.java         2
+amz                    LogisticsUpgradeController.java       15
+amz                    MultiWarehouseController.java          8  <-- 8 missing
+        POST /logistics/warehouse/stock
+        GET /logistics/warehouse/stock/list/{shopId}
+        GET /logistics/warehouse/stock/view/{shopId}
+        GET /logistics/warehouse/stock/aging/{shopId}
+        POST /logistics/warehouse/alert
+        GET /logistics/warehouse/alert/list/{shopId}
+        POST /logistics/warehouse/alert/{id}/toggle
+        GET /logistics/warehouse/alert/check/{shopId}
+amz                    OutboundController.java                5
+amz                    WarehouseController.java               3  <-- 1 missing
+        PUT /logistics/warehouse/inventory/{inventoryId}/location
+amz                    MessageNotifyController.java           1  <-- 1 missing
+        POST /internal/message/notify
+amz                    MultiplatformController.java          26  <-- 26 missing
+        POST /multiplatform/account
+        PUT /multiplatform/account/{id}
+        GET /multiplatform/account/list/{shopId}
+        DELETE /multiplatform/account/{id}
+        POST /multiplatform/account/{id}/test
+        POST /multiplatform/product/sync/{shopId}/{platform}
+        GET /multiplatform/product/list/{shopId}
+        POST /multiplatform/product/{productId}/map
+        POST /multiplatform/message/sync/{shopId}/{platform}
+        GET /multiplatform/message/list/{shopId}
+        POST /multiplatform/message/{messageId}/reply
+        POST /multiplatform/message/{messageId}/assign
+        POST /multiplatform/inventory/sync/{shopId}/{platform}
+        GET /multiplatform/inventory/list/{shopId}
+        GET /multiplatform/inventory/aggregated/{shopId}
+        POST /multiplatform/webhook/{platform}/{eventType}
+        GET /multiplatform/webhook/list/{shopId}
+        POST /multiplatform/oauth/app
+        POST /multiplatform/oauth/app/{id}/rotate
+        GET /multiplatform/oauth/app/list/{shopId}
+        POST /multiplatform/oauth/token
+        POST /multiplatform/sync/all/{shopId}
+        POST /multiplatform/sync/{shopId}/{platform}
+        GET /multiplatform/order/list/{shopId}
+        GET /multiplatform/order/list/{shopId}/{platform}
+        POST /multiplatform/order/{orderId}/ship
+amz                    OpsController.java                     7  <-- 7 missing
+        POST /ops/review/scan/{shopId}
+        GET /ops/review/list/{shopId}
+        POST /ops/review/{alertId}/handle
+        POST /ops/hijack/scan/{shopId}
+        GET /ops/hijack/list/{shopId}
+        POST /ops/rank/capture/{shopId}
+        GET /ops/rank/trend
+amz                    ProductSelectionController.java        5  <-- 2 missing
+        GET /ops/selection/competitors/{asin}
+        POST /ops/selection/keyword
+amz                    OrderAuditController.java              9
+amz                    OrderController.java                   6  <-- 3 missing
+        POST /order/saveOrder
+        GET /order/getOrderList
+        GET /order/fees/lookup
+amz                    ProfitController.java                  3  <-- 3 missing
+        GET /order/profit/order/{shopId}/{amazonOrderId}
+        GET /order/profit/sku/{shopId}/{sku}
+        GET /order/profit/summary/{shopId}
+amz                    ProcurementController.java            38  <-- 1 missing
+        GET /procurement/order/voucher-source/{shopId}
+amz                    KeepaController.java                   3  <-- 1 missing
+        GET /product/keepa/competitor/{asin}
+amz                    ListingMonitorController.java         13  <-- 3 missing
+        POST /product/listing-monitor/health/check
+        GET /product/listing-monitor/ranking/trend/{shopId}
+        GET /product/listing-monitor/competitor/compare/{shopId}
+amz                    ProductController.java                 8  <-- 7 missing
+        GET /product/getProductList
+        GET /product/getProduct/{productId}
+        GET /product/getProductsByShop/{productId}
+        POST /product/postProduct
+        PUT /product/updateProduct
+        POST /product/listing/copy
+        POST /product/translate
+amz                    ProductMasterController.java           4
+amz                    RealtimeProfitController.java          7
+amz                    ReportController.java                  4
+amz                    ReportUpgradeController.java          12
+amz                    HistoryController.java                 2
+amz                    HotController.java                     1
+amz                    SearchController.java                  1
+amz                    ConnectorController.java               5  <-- 5 missing
+        GET /spapi/connectors/rate-limits
+        GET /spapi/connectors/outbox
+        POST /spapi/connectors/outbox/{id}/replay
+        GET /spapi/connectors/{code}
+        POST /spapi/connectors/{code}/self-test
+amz                    FeedsController.java                   3  <-- 3 missing
+        POST /spapi/feeds/submit
+        GET /spapi/feeds/status/{shopId}/{feedId}
+        GET /spapi/feeds/result/{shopId}/{feedId}
+amz                    FinancialDataController.java           5  <-- 5 missing
+        POST /spapi/finance/report/request
+        GET /spapi/finance/report/{reportId}
+        GET /spapi/finance/document/{documentId}
+        GET /spapi/finance/events
+        POST /spapi/finance/fees/estimate
+amz                    InventoryController.java               2  <-- 1 missing
+        POST /spapi/inventory/sync/{shopId}
+amz                    MessagingController.java               3  <-- 3 missing
+        GET /spapi/messaging/actions
+        GET /spapi/messaging/attributes
+        POST /spapi/messaging/send
+amz                    PreflightController.java               1  <-- 1 missing
+        POST /spapi/preflight/shop/{shopId}
+amz                    ReplenishmentController.java           3  <-- 2 missing
+        POST /spapi/replenish/calc/{shopId}
+        GET /spapi/replenish/urgent/{shopId}
+amz                    SellersController.java                 1  <-- 1 missing
+        GET /spapi/sellers/marketplace-participations
+amz                    ShopCredentialController.java          3  <-- 3 missing
+        GET /spapi/credentials/shop/{shopId}/status
+        PUT /spapi/credentials/shop/{shopId}
+        DELETE /spapi/credentials/shop/{shopId}
+amz                    SpapiController.java                   6  <-- 4 missing
+        GET /spapi/status
+        POST /spapi/credential
+        POST /spapi/sync/orders
+        GET /spapi/replenish/suggest
+amz                    SpApiOperationController.java          1  <-- 1 missing
+        POST /spapi/operations/{operationId}
+amz                    LoginController.java                   3
+amz                    UserController.java                    4  <-- 3 missing
+        GET /user/getUserById/{userId}
+        POST /user/updateImage
+        PUT /user/editInfo
+controllers=59 endpoints_without_a_frontend_name=131
