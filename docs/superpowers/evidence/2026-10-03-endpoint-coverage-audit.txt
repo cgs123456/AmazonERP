@@ -1,55 +1,55 @@
 module                 controller                           eps endpoints not named by amz-frontend/src/api
 amz                    AdCampaignExtController.java           5
 amz                    AdController.java                     10  <-- 8 missing
-        GET /ad/report/{shopId}
-        GET /ad/summary/{shopId}
-        GET /ad/keyword/optimize
-        POST /ad/bidSchedule
-        GET /ad/bidSchedule/{shopId}
-        POST /ad/reports/sync
-        POST /ad/reports/sync
-        GET /ad/competitor
+        [user-facing-candidate] GET /ad/report/{shopId}
+        [has-feign-caller] GET /ad/summary/{shopId}
+        [user-facing-candidate] GET /ad/keyword/optimize
+        [user-facing-candidate] POST /ad/bidSchedule
+        [user-facing-candidate] GET /ad/bidSchedule/{shopId}
+        [user-facing-candidate] POST /ad/reports/sync
+        [user-facing-candidate] POST /ad/reports/sync
+        [has-feign-caller] GET /ad/competitor
 amz                    AdCreativeController.java              2
 amz                    AdTargetingController.java             2
 amz                    SearchTermController.java             14  <-- 14 missing
-        GET /ad/search-term/list/{shopId}
-        GET /ad/search-term/analyze/{shopId}
-        GET /ad/search-term/cluster/{shopId}
-        POST /ad/search-term/converting/extract/{shopId}
-        GET /ad/search-term/converting/list/{shopId}
-        GET /ad/search-term/asin-reverse/{shopId}
-        POST /ad/search-term/asin-reverse/batch
-        POST /ad/search-term/rule
-        PUT /ad/search-term/rule/{id}
-        GET /ad/search-term/rule/list/{shopId}
-        POST /ad/search-term/rule/{id}/toggle
-        DELETE /ad/search-term/rule/{id}
-        POST /ad/search-term/rule/execute/{shopId}
-        POST /ad/search-term/rule/{ruleId}/execute
+        [user-facing-candidate] GET /ad/search-term/list/{shopId}
+        [has-feign-caller] GET /ad/search-term/analyze/{shopId}
+        [user-facing-candidate] GET /ad/search-term/cluster/{shopId}
+        [user-facing-candidate] POST /ad/search-term/converting/extract/{shopId}
+        [user-facing-candidate] GET /ad/search-term/converting/list/{shopId}
+        [user-facing-candidate] GET /ad/search-term/asin-reverse/{shopId}
+        [user-facing-candidate] POST /ad/search-term/asin-reverse/batch
+        [user-facing-candidate] POST /ad/search-term/rule
+        [user-facing-candidate] PUT /ad/search-term/rule/{id}
+        [user-facing-candidate] GET /ad/search-term/rule/list/{shopId}
+        [user-facing-candidate] POST /ad/search-term/rule/{id}/toggle
+        [user-facing-candidate] DELETE /ad/search-term/rule/{id}
+        [user-facing-candidate] POST /ad/search-term/rule/execute/{shopId}
+        [user-facing-candidate] POST /ad/search-term/rule/{ruleId}/execute
 amz                    AgentMemoryController.java             6  <-- 6 missing
-        POST /ai/agent/memory/chat
-        GET /ai/agent/memory/preference/{userId}
-        POST /ai/agent/memory/preference
-        POST /ai/agent/memory/language
-        GET /ai/agent/memory/history/{userId}
-        POST /ai/agent/memory/reminder/scan
+        [user-facing-candidate] POST /ai/agent/memory/chat
+        [user-facing-candidate] GET /ai/agent/memory/preference/{userId}
+        [user-facing-candidate] POST /ai/agent/memory/preference
+        [user-facing-candidate] POST /ai/agent/memory/language
+        [user-facing-candidate] GET /ai/agent/memory/history/{userId}
+        [user-facing-candidate] POST /ai/agent/memory/reminder/scan
 amz                    AgentSseController.java                1  <-- 1 missing
-        GET /ai/chat-stream
+        [user-facing-candidate] GET /ai/chat-stream
 amz                    AiController.java                      4  <-- 4 missing
-        POST /ai/chat
-        POST /ai/agent/chat
-        POST /ai/erp/agent
-        POST /ai/eval/run
+        [user-facing-candidate] POST /ai/chat
+        [user-facing-candidate] POST /ai/agent/chat
+        [user-facing-candidate] POST /ai/erp/agent
+        [user-facing-candidate] POST /ai/eval/run
 amz                    KnowledgeController.java               3
 amz                    ReviewAnalysisController.java          1  <-- 1 missing
-        POST /ai/review/analyze
+        [user-facing-candidate] POST /ai/review/analyze
 amz                    SelectionAnalysisController.java       1  <-- 1 missing
-        POST /ai/selection/analyze
+        [has-feign-caller] POST /ai/selection/analyze
 amz                    CustomerController.java                5
 amz                    CustomerEmailController.java          16
 amz                    FeeDiscrepancyController.java          5
 amz                    FinanceController.java                 6  <-- 1 missing
-        POST /finance/voucher/order
+        [has-feign-caller] POST /finance/voucher/order
 amz                    PaymentCollectionController.java       3
 amz                    ReimbursementClaimController.java      9
 amz                    SettlementController.java              2
@@ -60,83 +60,76 @@ amz                    LogisticsController.java               5
 amz                    LogisticsDashboardController.java      8
 amz                    LogisticsImportController.java         2
 amz                    LogisticsUpgradeController.java       15
-amz                    MultiWarehouseController.java          8  <-- 8 missing
-        POST /logistics/warehouse/stock
-        GET /logistics/warehouse/stock/list/{shopId}
-        GET /logistics/warehouse/stock/view/{shopId}
-        GET /logistics/warehouse/stock/aging/{shopId}
-        POST /logistics/warehouse/alert
-        GET /logistics/warehouse/alert/list/{shopId}
-        POST /logistics/warehouse/alert/{id}/toggle
-        GET /logistics/warehouse/alert/check/{shopId}
+amz                    MultiWarehouseController.java          8  <-- 2 missing
+        [has-feign-caller] GET /logistics/warehouse/stock/view/{shopId}
+        [has-feign-caller] GET /logistics/warehouse/stock/aging/{shopId}
 amz                    OutboundController.java                5
-amz                    WarehouseController.java               3  <-- 1 missing
-        PUT /logistics/warehouse/inventory/{inventoryId}/location
+amz                    WarehouseController.java               3
 amz                    MessageNotifyController.java           1  <-- 1 missing
-        POST /internal/message/notify
+        [internal-access,has-feign-caller] POST /internal/message/notify
 amz                    MultiplatformController.java          26  <-- 26 missing
-        POST /multiplatform/account
-        PUT /multiplatform/account/{id}
-        GET /multiplatform/account/list/{shopId}
-        DELETE /multiplatform/account/{id}
-        POST /multiplatform/account/{id}/test
-        POST /multiplatform/product/sync/{shopId}/{platform}
-        GET /multiplatform/product/list/{shopId}
-        POST /multiplatform/product/{productId}/map
-        POST /multiplatform/message/sync/{shopId}/{platform}
-        GET /multiplatform/message/list/{shopId}
-        POST /multiplatform/message/{messageId}/reply
-        POST /multiplatform/message/{messageId}/assign
-        POST /multiplatform/inventory/sync/{shopId}/{platform}
-        GET /multiplatform/inventory/list/{shopId}
-        GET /multiplatform/inventory/aggregated/{shopId}
-        POST /multiplatform/webhook/{platform}/{eventType}
-        GET /multiplatform/webhook/list/{shopId}
-        POST /multiplatform/oauth/app
-        POST /multiplatform/oauth/app/{id}/rotate
-        GET /multiplatform/oauth/app/list/{shopId}
-        POST /multiplatform/oauth/token
-        POST /multiplatform/sync/all/{shopId}
-        POST /multiplatform/sync/{shopId}/{platform}
-        GET /multiplatform/order/list/{shopId}
-        GET /multiplatform/order/list/{shopId}/{platform}
-        POST /multiplatform/order/{orderId}/ship
+        [user-facing-candidate] POST /multiplatform/account
+        [user-facing-candidate] PUT /multiplatform/account/{id}
+        [user-facing-candidate] GET /multiplatform/account/list/{shopId}
+        [user-facing-candidate] DELETE /multiplatform/account/{id}
+        [user-facing-candidate] POST /multiplatform/account/{id}/test
+        [user-facing-candidate] POST /multiplatform/product/sync/{shopId}/{platform}
+        [user-facing-candidate] GET /multiplatform/product/list/{shopId}
+        [user-facing-candidate] POST /multiplatform/product/{productId}/map
+        [user-facing-candidate] POST /multiplatform/message/sync/{shopId}/{platform}
+        [user-facing-candidate] GET /multiplatform/message/list/{shopId}
+        [user-facing-candidate] POST /multiplatform/message/{messageId}/reply
+        [user-facing-candidate] POST /multiplatform/message/{messageId}/assign
+        [user-facing-candidate] POST /multiplatform/inventory/sync/{shopId}/{platform}
+        [user-facing-candidate] GET /multiplatform/inventory/list/{shopId}
+        [user-facing-candidate] GET /multiplatform/inventory/aggregated/{shopId}
+        [user-facing-candidate] POST /multiplatform/webhook/{platform}/{eventType}
+        [user-facing-candidate] GET /multiplatform/webhook/list/{shopId}
+        [user-facing-candidate] POST /multiplatform/oauth/app
+        [user-facing-candidate] POST /multiplatform/oauth/app/{id}/rotate
+        [user-facing-candidate] GET /multiplatform/oauth/app/list/{shopId}
+        [user-facing-candidate] POST /multiplatform/oauth/token
+        [user-facing-candidate] POST /multiplatform/sync/all/{shopId}
+        [user-facing-candidate] POST /multiplatform/sync/{shopId}/{platform}
+        [user-facing-candidate] GET /multiplatform/order/list/{shopId}
+        [user-facing-candidate] GET /multiplatform/order/list/{shopId}/{platform}
+        [user-facing-candidate] POST /multiplatform/order/{orderId}/ship
 amz                    OpsController.java                     7  <-- 7 missing
-        POST /ops/review/scan/{shopId}
-        GET /ops/review/list/{shopId}
-        POST /ops/review/{alertId}/handle
-        POST /ops/hijack/scan/{shopId}
-        GET /ops/hijack/list/{shopId}
-        POST /ops/rank/capture/{shopId}
-        GET /ops/rank/trend
+        [user-facing-candidate] POST /ops/review/scan/{shopId}
+        [user-facing-candidate] GET /ops/review/list/{shopId}
+        [user-facing-candidate] POST /ops/review/{alertId}/handle
+        [user-facing-candidate] POST /ops/hijack/scan/{shopId}
+        [user-facing-candidate] GET /ops/hijack/list/{shopId}
+        [user-facing-candidate] POST /ops/rank/capture/{shopId}
+        [user-facing-candidate] GET /ops/rank/trend
 amz                    ProductSelectionController.java        5  <-- 2 missing
-        GET /ops/selection/competitors/{asin}
-        POST /ops/selection/keyword
+        [user-facing-candidate] GET /ops/selection/competitors/{asin}
+        [user-facing-candidate] POST /ops/selection/keyword
 amz                    OrderAuditController.java              9
 amz                    OrderController.java                   6  <-- 3 missing
-        POST /order/saveOrder
-        GET /order/getOrderList
-        GET /order/fees/lookup
+        [user-facing-candidate] POST /order/saveOrder
+        [has-feign-caller] GET /order/getOrderList
+        [has-feign-caller] GET /order/fees/lookup
 amz                    ProfitController.java                  3  <-- 3 missing
-        GET /order/profit/order/{shopId}/{amazonOrderId}
-        GET /order/profit/sku/{shopId}/{sku}
-        GET /order/profit/summary/{shopId}
+        [user-facing-candidate] GET /order/profit/order/{shopId}/{amazonOrderId}
+        [user-facing-candidate] GET /order/profit/sku/{shopId}/{sku}
+        [user-facing-candidate] GET /order/profit/summary/{shopId}
 amz                    ProcurementController.java            38  <-- 1 missing
-        GET /procurement/order/voucher-source/{shopId}
+        [user-facing-candidate] GET /procurement/order/voucher-source/{shopId}
 amz                    KeepaController.java                   3  <-- 1 missing
-        GET /product/keepa/competitor/{asin}
+        [user-facing-candidate] GET /product/keepa/competitor/{asin}
 amz                    ListingMonitorController.java         13  <-- 3 missing
-        POST /product/listing-monitor/health/check
-        GET /product/listing-monitor/ranking/trend/{shopId}
-        GET /product/listing-monitor/competitor/compare/{shopId}
+        [user-facing-candidate] POST /product/listing-monitor/health/check
+        [user-facing-candidate] GET /product/listing-monitor/ranking/trend/{shopId}
+        [user-facing-candidate] GET /product/listing-monitor/competitor/compare/{shopId}
 amz                    ProductController.java                 8  <-- 7 missing
-        GET /product/getProductList
-        GET /product/getProduct/{productId}
-        GET /product/getProductsByShop/{productId}
-        POST /product/postProduct
-        PUT /product/updateProduct
-        POST /product/listing/copy
-        POST /product/translate
+        [user-facing-candidate] GET /product/getProductList
+        [has-feign-caller] GET /product/getProduct/{productId}
+        [user-facing-candidate] GET /product/getProductsByShop/{productId}
+        [user-facing-candidate] POST /product/postProduct
+        [has-feign-caller] PUT /product/updateProduct
+        [has-feign-caller] POST /product/listing/copy
+        [has-feign-caller] POST /product/translate
 amz                    ProductMasterController.java           4
 amz                    RealtimeProfitController.java          7
 amz                    ReportController.java                  4
@@ -145,48 +138,153 @@ amz                    HistoryController.java                 2
 amz                    HotController.java                     1
 amz                    SearchController.java                  1
 amz                    ConnectorController.java               5  <-- 5 missing
-        GET /spapi/connectors/rate-limits
-        GET /spapi/connectors/outbox
-        POST /spapi/connectors/outbox/{id}/replay
-        GET /spapi/connectors/{code}
-        POST /spapi/connectors/{code}/self-test
+        [user-facing-candidate] GET /spapi/connectors/rate-limits
+        [user-facing-candidate] GET /spapi/connectors/outbox
+        [user-facing-candidate] POST /spapi/connectors/outbox/{id}/replay
+        [user-facing-candidate] GET /spapi/connectors/{code}
+        [user-facing-candidate] POST /spapi/connectors/{code}/self-test
 amz                    FeedsController.java                   3  <-- 3 missing
-        POST /spapi/feeds/submit
-        GET /spapi/feeds/status/{shopId}/{feedId}
-        GET /spapi/feeds/result/{shopId}/{feedId}
+        [user-facing-candidate] POST /spapi/feeds/submit
+        [internal-access] GET /spapi/feeds/status/{shopId}/{feedId}
+        [internal-access] GET /spapi/feeds/result/{shopId}/{feedId}
 amz                    FinancialDataController.java           5  <-- 5 missing
-        POST /spapi/finance/report/request
-        GET /spapi/finance/report/{reportId}
-        GET /spapi/finance/document/{documentId}
-        GET /spapi/finance/events
-        POST /spapi/finance/fees/estimate
+        [user-facing-candidate] POST /spapi/finance/report/request
+        [internal-access] GET /spapi/finance/report/{reportId}
+        [internal-access] GET /spapi/finance/document/{documentId}
+        [internal-access] GET /spapi/finance/events
+        [user-facing-candidate] POST /spapi/finance/fees/estimate
 amz                    InventoryController.java               2  <-- 1 missing
-        POST /spapi/inventory/sync/{shopId}
+        [user-facing-candidate] POST /spapi/inventory/sync/{shopId}
 amz                    MessagingController.java               3  <-- 3 missing
-        GET /spapi/messaging/actions
-        GET /spapi/messaging/attributes
-        POST /spapi/messaging/send
+        [user-facing-candidate] GET /spapi/messaging/actions
+        [user-facing-candidate] GET /spapi/messaging/attributes
+        [user-facing-candidate] POST /spapi/messaging/send
 amz                    PreflightController.java               1  <-- 1 missing
-        POST /spapi/preflight/shop/{shopId}
+        [user-facing-candidate] POST /spapi/preflight/shop/{shopId}
 amz                    ReplenishmentController.java           3  <-- 2 missing
-        POST /spapi/replenish/calc/{shopId}
-        GET /spapi/replenish/urgent/{shopId}
+        [user-facing-candidate] POST /spapi/replenish/calc/{shopId}
+        [user-facing-candidate] GET /spapi/replenish/urgent/{shopId}
 amz                    SellersController.java                 1  <-- 1 missing
-        GET /spapi/sellers/marketplace-participations
+        [user-facing-candidate] GET /spapi/sellers/marketplace-participations
 amz                    ShopCredentialController.java          3  <-- 3 missing
-        GET /spapi/credentials/shop/{shopId}/status
-        PUT /spapi/credentials/shop/{shopId}
-        DELETE /spapi/credentials/shop/{shopId}
+        [user-facing-candidate] GET /spapi/credentials/shop/{shopId}/status
+        [user-facing-candidate] PUT /spapi/credentials/shop/{shopId}
+        [user-facing-candidate] DELETE /spapi/credentials/shop/{shopId}
 amz                    SpapiController.java                   6  <-- 4 missing
-        GET /spapi/status
-        POST /spapi/credential
-        POST /spapi/sync/orders
-        GET /spapi/replenish/suggest
+        [user-facing-candidate] GET /spapi/status
+        [user-facing-candidate] POST /spapi/credential
+        [user-facing-candidate] POST /spapi/sync/orders
+        [internal-access,has-feign-caller] GET /spapi/replenish/suggest
 amz                    SpApiOperationController.java          1  <-- 1 missing
-        POST /spapi/operations/{operationId}
+        [user-facing-candidate] POST /spapi/operations/{operationId}
 amz                    LoginController.java                   3
 amz                    UserController.java                    4  <-- 3 missing
-        GET /user/getUserById/{userId}
-        POST /user/updateImage
-        PUT /user/editInfo
-controllers=59 endpoints_without_a_frontend_name=131
+        [has-feign-caller] GET /user/getUserById/{userId}
+        [user-facing-candidate] POST /user/updateImage
+        [user-facing-candidate] PUT /user/editInfo
+controllers=59 endpoints_without_a_frontend_name=124 user_facing_candidates=103
+
+==== 待接候选（既没有 @InternalServiceAccess，也没有任何 Feign 客户端指向它）====
+  amz            AdController.java                  GET /ad/report/{shopId}
+  amz            AdController.java                  GET /ad/keyword/optimize
+  amz            AdController.java                  POST /ad/bidSchedule
+  amz            AdController.java                  GET /ad/bidSchedule/{shopId}
+  amz            AdController.java                  POST /ad/reports/sync
+  amz            AdController.java                  POST /ad/reports/sync
+  amz            SearchTermController.java          GET /ad/search-term/list/{shopId}
+  amz            SearchTermController.java          GET /ad/search-term/cluster/{shopId}
+  amz            SearchTermController.java          POST /ad/search-term/converting/extract/{shopId}
+  amz            SearchTermController.java          GET /ad/search-term/converting/list/{shopId}
+  amz            SearchTermController.java          GET /ad/search-term/asin-reverse/{shopId}
+  amz            SearchTermController.java          POST /ad/search-term/asin-reverse/batch
+  amz            SearchTermController.java          POST /ad/search-term/rule
+  amz            SearchTermController.java          PUT /ad/search-term/rule/{id}
+  amz            SearchTermController.java          GET /ad/search-term/rule/list/{shopId}
+  amz            SearchTermController.java          POST /ad/search-term/rule/{id}/toggle
+  amz            SearchTermController.java          DELETE /ad/search-term/rule/{id}
+  amz            SearchTermController.java          POST /ad/search-term/rule/execute/{shopId}
+  amz            SearchTermController.java          POST /ad/search-term/rule/{ruleId}/execute
+  amz            AgentMemoryController.java         POST /ai/agent/memory/chat
+  amz            AgentMemoryController.java         GET /ai/agent/memory/preference/{userId}
+  amz            AgentMemoryController.java         POST /ai/agent/memory/preference
+  amz            AgentMemoryController.java         POST /ai/agent/memory/language
+  amz            AgentMemoryController.java         GET /ai/agent/memory/history/{userId}
+  amz            AgentMemoryController.java         POST /ai/agent/memory/reminder/scan
+  amz            AgentSseController.java            GET /ai/chat-stream
+  amz            AiController.java                  POST /ai/chat
+  amz            AiController.java                  POST /ai/agent/chat
+  amz            AiController.java                  POST /ai/erp/agent
+  amz            AiController.java                  POST /ai/eval/run
+  amz            ReviewAnalysisController.java      POST /ai/review/analyze
+  amz            MultiplatformController.java       POST /multiplatform/account
+  amz            MultiplatformController.java       PUT /multiplatform/account/{id}
+  amz            MultiplatformController.java       GET /multiplatform/account/list/{shopId}
+  amz            MultiplatformController.java       DELETE /multiplatform/account/{id}
+  amz            MultiplatformController.java       POST /multiplatform/account/{id}/test
+  amz            MultiplatformController.java       POST /multiplatform/product/sync/{shopId}/{platform}
+  amz            MultiplatformController.java       GET /multiplatform/product/list/{shopId}
+  amz            MultiplatformController.java       POST /multiplatform/product/{productId}/map
+  amz            MultiplatformController.java       POST /multiplatform/message/sync/{shopId}/{platform}
+  amz            MultiplatformController.java       GET /multiplatform/message/list/{shopId}
+  amz            MultiplatformController.java       POST /multiplatform/message/{messageId}/reply
+  amz            MultiplatformController.java       POST /multiplatform/message/{messageId}/assign
+  amz            MultiplatformController.java       POST /multiplatform/inventory/sync/{shopId}/{platform}
+  amz            MultiplatformController.java       GET /multiplatform/inventory/list/{shopId}
+  amz            MultiplatformController.java       GET /multiplatform/inventory/aggregated/{shopId}
+  amz            MultiplatformController.java       POST /multiplatform/webhook/{platform}/{eventType}
+  amz            MultiplatformController.java       GET /multiplatform/webhook/list/{shopId}
+  amz            MultiplatformController.java       POST /multiplatform/oauth/app
+  amz            MultiplatformController.java       POST /multiplatform/oauth/app/{id}/rotate
+  amz            MultiplatformController.java       GET /multiplatform/oauth/app/list/{shopId}
+  amz            MultiplatformController.java       POST /multiplatform/oauth/token
+  amz            MultiplatformController.java       POST /multiplatform/sync/all/{shopId}
+  amz            MultiplatformController.java       POST /multiplatform/sync/{shopId}/{platform}
+  amz            MultiplatformController.java       GET /multiplatform/order/list/{shopId}
+  amz            MultiplatformController.java       GET /multiplatform/order/list/{shopId}/{platform}
+  amz            MultiplatformController.java       POST /multiplatform/order/{orderId}/ship
+  amz            OpsController.java                 POST /ops/review/scan/{shopId}
+  amz            OpsController.java                 GET /ops/review/list/{shopId}
+  amz            OpsController.java                 POST /ops/review/{alertId}/handle
+  amz            OpsController.java                 POST /ops/hijack/scan/{shopId}
+  amz            OpsController.java                 GET /ops/hijack/list/{shopId}
+  amz            OpsController.java                 POST /ops/rank/capture/{shopId}
+  amz            OpsController.java                 GET /ops/rank/trend
+  amz            ProductSelectionController.java    GET /ops/selection/competitors/{asin}
+  amz            ProductSelectionController.java    POST /ops/selection/keyword
+  amz            OrderController.java               POST /order/saveOrder
+  amz            ProfitController.java              GET /order/profit/order/{shopId}/{amazonOrderId}
+  amz            ProfitController.java              GET /order/profit/sku/{shopId}/{sku}
+  amz            ProfitController.java              GET /order/profit/summary/{shopId}
+  amz            ProcurementController.java         GET /procurement/order/voucher-source/{shopId}
+  amz            KeepaController.java               GET /product/keepa/competitor/{asin}
+  amz            ListingMonitorController.java      POST /product/listing-monitor/health/check
+  amz            ListingMonitorController.java      GET /product/listing-monitor/ranking/trend/{shopId}
+  amz            ListingMonitorController.java      GET /product/listing-monitor/competitor/compare/{shopId}
+  amz            ProductController.java             GET /product/getProductList
+  amz            ProductController.java             GET /product/getProductsByShop/{productId}
+  amz            ProductController.java             POST /product/postProduct
+  amz            ConnectorController.java           GET /spapi/connectors/rate-limits
+  amz            ConnectorController.java           GET /spapi/connectors/outbox
+  amz            ConnectorController.java           POST /spapi/connectors/outbox/{id}/replay
+  amz            ConnectorController.java           GET /spapi/connectors/{code}
+  amz            ConnectorController.java           POST /spapi/connectors/{code}/self-test
+  amz            FeedsController.java               POST /spapi/feeds/submit
+  amz            FinancialDataController.java       POST /spapi/finance/report/request
+  amz            FinancialDataController.java       POST /spapi/finance/fees/estimate
+  amz            InventoryController.java           POST /spapi/inventory/sync/{shopId}
+  amz            MessagingController.java           GET /spapi/messaging/actions
+  amz            MessagingController.java           GET /spapi/messaging/attributes
+  amz            MessagingController.java           POST /spapi/messaging/send
+  amz            PreflightController.java           POST /spapi/preflight/shop/{shopId}
+  amz            ReplenishmentController.java       POST /spapi/replenish/calc/{shopId}
+  amz            ReplenishmentController.java       GET /spapi/replenish/urgent/{shopId}
+  amz            SellersController.java             GET /spapi/sellers/marketplace-participations
+  amz            ShopCredentialController.java      GET /spapi/credentials/shop/{shopId}/status
+  amz            ShopCredentialController.java      PUT /spapi/credentials/shop/{shopId}
+  amz            ShopCredentialController.java      DELETE /spapi/credentials/shop/{shopId}
+  amz            SpapiController.java               GET /spapi/status
+  amz            SpapiController.java               POST /spapi/credential
+  amz            SpapiController.java               POST /spapi/sync/orders
+  amz            SpApiOperationController.java      POST /spapi/operations/{operationId}
+  amz            UserController.java                POST /user/updateImage
+  amz            UserController.java                PUT /user/editInfo

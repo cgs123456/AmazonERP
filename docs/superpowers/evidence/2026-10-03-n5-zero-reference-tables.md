@@ -78,3 +78,22 @@ python tools/schema/zero_reference_tables.py --json docs/superpowers/evidence/20
 - 没有连任何真实 MySQL 统计这些表的行数；「表里有数据但代码不读」这种情况脚本看不出来，
   真要删之前必须先数行（沿用 `tools/db-migration/ad_v7_preflight.py` 的做法）。
 - 脚本按「三路引用」判定，不看反射拼表名的动态 SQL；已核对没有这种写法，但若将来出现需要加第四路。
+
+## 追加：接上「海外仓库存与预警」6 个端点（同一轮清点里挑出的第一块待接候选）
+
+清点里 110 条「该接候选」中，`/logistics/warehouse/stock/list`、`alert`(建/列/启停) 、
+`alert/check` 这 6 条最干净：页面无需新数据源、闭环清楚（规则 → 立即检查 → 命中清单），
+且已有一处会被误读：`alert_type` 只有 5 个取值真的参与判定，其它值在 `evaluateAlert` 落 default，
+规则存得进去却永远不触发。新增 `src/api/warehouseAlerts.ts` + `src/views/WarehouseAlerts.vue`
+（3 个分区：库存快照 / 预警规则 / 检查结果），路由 `/warehouse-alerts`。
+
+四条写进界面的判读边界：不提供手工录入库存（后端有 `POST /stock`，数量该由海外仓回传，
+手填等于造数，刻意不接）；只有 5 类会被判定，其它标「不会被判定」；阈值单位只有字面 `DAYS` 走天数分支，
+且 LOW_STOCK/STOCKOUT 选 DAYS 时后端比的是**在库天数 ≤ 阈值**（源码注释自陈是简化反算），不是可售天数；
+「立即检查」只读——不发通知（`notify_channels` 只存不读）、不写库，且扫描 500 行上限，
+`stocksTruncated=true` 时必须显示结论不是全量。
+
+闸口：新增单测 12 条 + E2E 3 条（整包 71 条，1 条既有导航用例冷启动偶发，单独重跑 13/13 绿）；
+`vue-tsc` 0 错；前端 30 文件 / 291 测试；build 出 `WarehouseAlerts` 分块；hygiene 0 finding
+（router 重钉 `43fc90cf…`）。变异 4 项：不可判定类型不标注、空 SKU 不再转 null、
+立即检查绕过确认、截断不提示 → 全部抓红后复原核对 sha。

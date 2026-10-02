@@ -574,6 +574,44 @@ const PROCUREMENT_TRAIL_PLAN_12 = [
 ]
 
 /**
+ * 海外仓库存与预警（/logistics/warehouse 的 stock/alert 部分）。
+ * 第二条规则故意用 alertType=DAMAGE_RISK：后端 evaluateAlert 对未知类型走 default，
+ * 页面必须自己标「不会被判定」而不是让运营以为它在生效。
+ */
+const WAREHOUSE_STOCKS = [
+  {
+    id: 71, shopId: 1, warehouseId: 5, warehouseName: '洛杉矶仓', warehouseType: 'OVERSEAS',
+    sku: 'SKU-WH-01', asin: 'B0WH01', availableQty: 3, reservedQty: 1, inboundQty: 0,
+    transferOutQty: 0, totalQty: 4, unitCost: 12.5, totalValue: 50.0,
+    lastInboundDate: '2026-08-01', daysInStock: 62, snapshotTime: '2026-10-01T03:00:00'
+  },
+  {
+    id: 72, shopId: 1, warehouseId: 6, warehouseName: '深圳仓', warehouseType: 'DOMESTIC',
+    sku: 'SKU-WH-02', asin: null, availableQty: 0, reservedQty: null, inboundQty: null,
+    transferOutQty: null, totalQty: null, unitCost: null, totalValue: null,
+    lastInboundDate: null, daysInStock: null, snapshotTime: null
+  }
+]
+const INVENTORY_ALERTS = [
+  {
+    id: 81, shopId: 1, sku: 'SKU-WH-01', warehouseId: 5, alertType: 'LOW_STOCK', thresholdValue: 5,
+    thresholdUnit: 'QTY', alertLevel: 'CRITICAL', notifyChannels: 'EMAIL', enabled: true, description: '低库存'
+  },
+  {
+    id: 82, shopId: 1, sku: null, warehouseId: null, alertType: 'DAMAGE_RISK', thresholdValue: 30,
+    thresholdUnit: 'DAYS', alertLevel: 'WARNING', notifyChannels: null, enabled: false, description: null
+  }
+]
+const ALERT_CHECK_REPORT = {
+  shopId: 1, alertRulesChecked: 1, totalTriggered: 1, critical: 1, warning: 0, info: 0,
+  alerts: [{
+    alertId: 81, alertType: 'LOW_STOCK', alertLevel: 'CRITICAL', description: '低库存',
+    sku: 'SKU-WH-01', warehouseName: '洛杉矶仓', availableQty: 3, daysInStock: 62, totalValue: 50.0
+  }],
+  stocksTruncated: true, scannedStockCount: 500
+}
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -713,6 +751,13 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/procurement\/plan\/12\/approvals$/, data: PROCUREMENT_TRAIL_PLAN_12 },
   { match: /^\/procurement\/plan\/\d+\/approvals$/, data: [] },
   { match: /^\/procurement\/plan\/\d+\/approve$/, data: PROCUREMENT_PLANS[0] },
+
+  // ===== 海外仓库存与预警 /logistics/warehouse（stock + alert 部分） =====
+  { match: /^\/logistics\/warehouse\/stock\/list\//, data: WAREHOUSE_STOCKS, page: FULL_PAGE(WAREHOUSE_STOCKS.length) },
+  { match: /^\/logistics\/warehouse\/alert\/check\//, data: ALERT_CHECK_REPORT },
+  { match: /^\/logistics\/warehouse\/alert\/list\//, data: INVENTORY_ALERTS },
+  { match: /^\/logistics\/warehouse\/alert\/\d+\/toggle$/, data: true },
+  { match: /^\/logistics\/warehouse\/alert$/, data: INVENTORY_ALERTS[0] },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

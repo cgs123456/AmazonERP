@@ -32,6 +32,7 @@ const NAV = [
   { path: '/order-audit', linkText: '订单审单' },
   { path: '/inventory', linkText: '库存监控' },
   { path: '/warehouse', linkText: '海外仓' },
+  { path: '/warehouse-alerts', linkText: '海外仓预警' },
   { path: '/ads', linkText: '广告管理' },
   { path: '/profit', linkText: '利润报表' },
   { path: '/finance', linkText: '财务管理' },
@@ -558,6 +559,56 @@ test.describe('Procurement 交互（采购供应链）', () => {
       .locator('button', { hasText: '审批留痕' }).click()
     await expect(page.locator('.trail-row')).toContainText('不会伪造')
     await expect(page.locator('.trail-row tbody tr')).toHaveCount(0)
+  })
+})
+
+test.describe('WarehouseAlerts 交互（海外仓库存与预警）', () => {
+  test('库存快照渲染真实列，预警规则给不可判定类型与只存不读的渠道标注', async ({ page }) => {
+    await page.goto('/warehouse-alerts')
+    const stock = page.locator('.tab-panel[data-panel="stock"]')
+    await expect(stock.locator('tbody tr')).toHaveCount(2)
+    await expect(stock).toContainText('SKU-WH-01')
+    await expect(stock).toContainText('洛杉矶仓')
+    await expect(stock).toContainText('62')
+    await expect(page.locator('.notice-zone')).toContainText('不提供手工录入库存')
+
+    await page.locator('.tab', { hasText: '预警规则' }).click()
+    const rules = page.locator('.tab-panel[data-panel="alert"]')
+    await expect(rules).toContainText('LOW_STOCK')
+    await expect(rules).toContainText('EMAIL（只存不读）')
+    await expect(rules).toContainText('（不会被判定）')
+    await expect(page.locator('.tab-panel')).toHaveCount(1)
+  })
+
+  test('新建规则的类型下拉只有后端真会判定的那 5 个', async ({ page }) => {
+    await page.goto('/warehouse-alerts')
+    await page.locator('.tab', { hasText: '预警规则' }).click()
+    await page.getByRole('button', { name: '新建规则' }).click()
+    const options = await page.locator('.modal select').first().locator('option').allTextContents()
+    expect(options).toEqual(['LOW_STOCK', 'STOCKOUT', 'OVERSTOCK', 'AGING', 'NO_MOVEMENT'])
+    expect(options).not.toContain('DAMAGE_RISK')
+    await expect(page.locator('.modal-note')).toContainText('会被真的判定')
+    await expect(page.locator('.modal-note')).toContainText('通知渠道存了也没人读')
+  })
+
+  test('立即检查要确认，确认后才出计数，扫描截断时说明结论不是全量', async ({ page }) => {
+    const checks: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname.includes('/alert/check/')) checks.push(r.method())
+    })
+    await page.goto('/warehouse-alerts')
+    await page.locator('.tab', { hasText: '预警规则' }).click()
+    await page.getByRole('button', { name: '立即检查' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('上限 500 行')
+    expect(checks).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+
+    const panel = page.locator('.tab-panel[data-panel="check"]')
+    await expect(panel).toContainText('触发 1 条')
+    await expect(panel).toContainText('CRITICAL 1')
+    await expect(panel).toContainText('SKU-WH-01')
+    await expect(panel.locator('.advisory')).toContainText('不是全量')
+    expect(checks).toEqual(['GET'])
   })
 })
 

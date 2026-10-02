@@ -54,6 +54,11 @@ const router = createRouter({
             component: () => import('../views/Warehouse.vue')
         },
         {
+            path: '/warehouse-alerts',
+            name: 'WarehouseAlerts',
+            component: () => import('../views/WarehouseAlerts.vue')
+        },
+        {
             path: '/logistics',
             name: 'Logistics',
             component: () => import('../views/LogisticsDashboard.vue')

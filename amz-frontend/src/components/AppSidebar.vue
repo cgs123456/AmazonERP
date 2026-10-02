@@ -58,6 +58,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/warehouse-alerts') }"
+        @click="navigateTo('/warehouse-alerts')"
+        role="button"
+        aria-label="海外仓预警"
+        tabindex="0"
+      >
+        <Icon icon="mdi:bell-alert-outline" class="nav-icon" width="24" />
+        <span class="nav-text">海外仓预警</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/logistics') }"
         @click="navigateTo('/logistics')"
         role="button"
