@@ -91,6 +91,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/ad-search-terms') }"
+        @click="navigateTo('/ad-search-terms')"
+        role="button"
+        aria-label="搜索词与规则"
+        tabindex="0"
+      >
+        <Icon icon="mdi:magnify-plus-outline" class="nav-icon" width="24" />
+        <span class="nav-text">搜索词与规则</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/profit') }"
         @click="navigateTo('/profit')"
         role="button"

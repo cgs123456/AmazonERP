@@ -41,6 +41,7 @@ const NAV = [
   { path: '/procurement', linkText: '采购供应链' },
   { path: '/connectors', linkText: '连接器状态' },
   { path: '/connector-queue', linkText: '调用队列' },
+  { path: '/ad-search-terms', linkText: '搜索词与规则' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/customer', linkText: '客服中心' }
 ]
@@ -658,6 +659,61 @@ test.describe('ConnectorQueue 交互（调用队列与限流）', () => {
     await expect.poll(() => replays.length).toBe(1)
     expect(replays[0]).toBe('POST')
     await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+})
+
+test.describe('AdSearchTerms 交互（搜索词分析与广告规则）', () => {
+  test('规则表按后端语义渲染，死规则的缺上界要看得见', async ({ page }) => {
+    await page.goto('/ad-search-terms')
+    const panel = page.locator('.tab-panel[data-panel="rules"]')
+    await expect(panel.locator('tbody tr')).toHaveCount(2)
+    await expect(panel).toContainText('ACOS GT 50')
+    await expect(panel).toContainText('CAMPAIGN=camp-777')
+    await expect(panel).toContainText('缺上界')
+    await expect(page.locator('.notice-zone')).toContainText('没有自动来源')
+    await expect(page.locator('.notice-zone')).toContainText('只产出建议')
+  })
+
+  test('出建议必须二次确认，结果卡由后端标记决定文案', async ({ page }) => {
+    const executes: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/search-term/rule/41/execute') executes.push(r.method())
+    })
+    await page.goto('/ad-search-terms')
+    const row = page.locator('tbody tr', { hasText: '高ACoS自动暂停' }).first()
+    await row.locator('button', { hasText: '出建议' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('不会暂停投放')
+    expect(executes).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    expect(executes).toEqual([])
+
+    await row.locator('button', { hasText: '出建议' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => executes.length).toBe(1)
+    const card = page.locator('.result-card')
+    await expect(card).toContainText('仅建议，未下发广告账号')
+    await expect(card).toContainText('暂停该搜索词所在投放')
+    await expect(card).toContainText('未调用广告 API')
+  })
+
+  test('报表与分析分区各自取数，空态不把没数据说成好结果', async ({ page }) => {
+    await page.goto('/ad-search-terms')
+    await page.locator('.tab', { hasText: '搜索词报表' }).click()
+    const terms = page.locator('.tab-panel[data-panel="terms"]')
+    await expect(terms.locator('tbody tr')).toHaveCount(1)
+    await expect(terms).toContainText('yoga mat')
+
+    await page.locator('.tab', { hasText: '综合分析' }).click()
+    await page.locator('.tab-panel[data-panel="analyze"] button', { hasText: '重新分析' }).click()
+    const analyze = page.locator('.tab-panel[data-panel="analyze"]')
+    await expect(analyze).toContainText('扫描行数')
+    await expect(analyze.locator('.metric-value').first()).toHaveText('1')
+    await expect(analyze).toContainText('yoga mat')
+
+    await page.locator('.tab', { hasText: 'ASIN 反查' }).click()
+    await page.locator('.tab-panel[data-panel="asin"] input').first().fill('B0ABC12345')
+    await page.locator('.tab-panel[data-panel="asin"] button', { hasText: '反查' }).click()
+    await expect(page.locator('.tab-panel[data-panel="asin"] tbody tr')).toHaveCount(1)
   })
 })
 

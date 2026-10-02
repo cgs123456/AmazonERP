@@ -13,7 +13,11 @@ root = Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve()
 fe_api = root / 'amz-frontend' / 'src' / 'api'
 
 CLASS_MAP = re.compile(r'@RequestMapping\(\s*(?:value\s*=\s*)?"([^"]+)"')
-METHOD_MAP = re.compile(r'@(Get|Post|Put|Delete|Patch)Mapping\(\s*(?:value\s*=\s*)?"([^"]*)"?')
+# 方法级注解先按行抓，再从括号里解析路径：
+# 上一版用「必须有 ( 和字符串」的正则，直接把 15 个 `@PostMapping`（无参、路径就是类前缀）
+# 整个漏掉了 —— 分母本身就少算，被漏掉的还偏偏是数据写入端点。
+MAPPING_LINE = re.compile(r'@(Get|Post|Put|Delete|Patch)Mapping\b[ \t]*([^\n]*)')
+PATH_LITERAL = re.compile(r'(?:value|path)\s*=\s*"([^"]*)"|"([^"]*)"')
 
 frontend_text = "\n".join(
     io.open(p, encoding='utf-8', errors='replace').read() for p in fe_api.glob('*.ts')
@@ -54,12 +58,35 @@ def shape(path: str) -> str:
     return '/' + '/'.join(segs)
 
 
+def parse_mappings(text: str):
+    """把方法级 mapping 注解解析成 (verb, path, anchor, raw)。
+
+    path == '' 表示无参注解（`@PostMapping`），它的路径就是类前缀；
+    path is None 表示这行有括号但没解析出字符串字面量（consumes/produces/params 之类），
+    调用方必须把它打印出来——工具的失败模式只能是「少算并说明」，不能是静默少一条。
+    """
+    out = []
+    for m in MAPPING_LINE.finditer(text):
+        verb, rest = m.group(1), m.group(2).strip()
+        raw = m.group(0).strip()
+        if not rest:
+            out.append((verb, '', m.start(), raw))
+            continue
+        if not rest.startswith('('):
+            out.append((verb, None, m.start(), raw))
+            continue
+        literal = PATH_LITERAL.search(rest)
+        path = ((literal.group(1) or literal.group(2)) if literal else None)
+        out.append((verb, path, m.start(), raw))
+    return out
+
+
 def collect_feign_paths() -> set:
     """其他模块的 Feign 客户端声明过的路径 = 存在服务间调用方，不该由浏览器负责。"""
     found = set()
     for client in sorted(root.glob('amz-service/*/src/main/java/com/amz/client/**/*.java')):
         text = io.open(client, encoding='utf-8', errors='replace').read()
-        for _, p in METHOD_MAP.findall(text):
+        for _, p, _, _ in parse_mappings(text):
             if p:
                 found.add(shape(p if p.startswith('/') else '/' + p))
     return found
@@ -75,20 +102,21 @@ FEIGN_PATHS = collect_feign_paths()
 
 rows = []
 alias_hits = []
+unparsed = []
 for controller in sorted(root.glob('amz-service/*/src/main/java/com/amz/controller/*.java')):
     text = io.open(controller, encoding='utf-8', errors='replace').read()
     cls = CLASS_MAP.search(text)
     prefix = cls.group(1) if cls else ''
-    methods = list(METHOD_MAP.finditer(text))
+    methods = parse_mappings(text)
     if not methods:
         continue
     missing = []
-    for m in methods:
-        verb, path = m.group(1), m.group(2)
-        full = (prefix + path) if path.startswith('/') or path == '' else prefix + '/' + path
-        full = full.rstrip('/')
-        if full == prefix.rstrip('/') and not path:
+    for verb, path, anchor, raw in methods:
+        if path is None:
+            unparsed.append((controller.name, raw))
             continue
+        full = (prefix + path) if path.startswith('/') or path == '' else prefix + '/' + path
+        full = full.rstrip('/') or '/'
         # 前端写的是模板串（`/search/search/${encodeURIComponent(key)}`），
         # 所以要把 {param} 与 ${...} 都当成通配段再比，否则每个带路径参数的端点都会误报成没人用。
         # 这一版初稿就是用字面串比较，把已经接好的 /search/search/{key} 报成了缺口。
@@ -101,7 +129,7 @@ for controller in sorted(root.glob('amz-service/*/src/main/java/com/amz/controll
         if alias and re.compile(build_matcher(alias)).search(frontend_text):
             alias_hits.append((full, alias))
             continue
-        block = annotation_block(text, m.start())
+        block = annotation_block(text, anchor)
         tags = []
         if '@InternalServiceAccess' in block:
             tags.append('internal-access')
@@ -123,6 +151,8 @@ for module, name, n, missing in rows:
         total_missing += 1
 print('controllers=%d endpoints_without_a_frontend_name=%d user_facing_candidates=%d'
       % (len(rows), total_missing, len(candidates)))
+print('parsed_method_annotations=%d unparsed=%d'
+      % (sum(n for _, _, n, _ in rows), len(unparsed)))
 print('matched_via_gateway_alias=%d' % len(alias_hits))
 for path, alias in alias_hits:
     print('   %s  <- 前端写作 %s' % (
@@ -132,3 +162,8 @@ print('')
 print('==== 待接候选（既没有 @InternalServiceAccess，也没有任何 Feign 客户端指向它）====')
 for module, name, ep, _ in candidates:
     print('  %-14s %-34s %s' % (module, name, ep.encode('ascii', 'backslashreplace').decode()))
+if unparsed:
+    print('')
+    print('==== 没解析出路径的注解（需要人工确认，不能当成「不存在」）====')
+    for name, raw in unparsed:
+        print('  %-34s %s' % (name, raw.encode('ascii', 'backslashreplace').decode()))

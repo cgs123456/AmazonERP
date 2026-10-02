@@ -62,4 +62,12 @@ describe('路由守卫鉴权', () => {
     await router.push('/connectors')
     expect(router.currentRoute.value.name).toBe('Connectors')
   })
+
+  it('搜索词规则页有独立路由，且不会被 /ads 的前缀匹配吃掉', async () => {
+    localStorage.setItem('token', 'fake-token')
+    await router.push('/ad-search-terms')
+    expect(router.currentRoute.value.name).toBe('AdSearchTerms')
+    await router.push('/ads')
+    expect(router.currentRoute.value.name).toBe('Ads')
+  })
 })

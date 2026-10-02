@@ -165,7 +165,7 @@ public class SearchTermController {
         return Result.success(adAutoRuleService.deleteRule(id));
     }
 
-    /** 执行所有启用的规则 */
+    /** 扫描全部启用规则并产出建议（不下发到广告账号，也没有调度器自动跑） */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/rule/execute/{shopId}")
@@ -173,7 +173,7 @@ public class SearchTermController {
         return Result.success(adAutoRuleService.executeRules(shopId));
     }
 
-    /** 执行单个规则 */
+    /** 按单条规则的口径产出建议 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @PostMapping("/rule/{ruleId}/execute")

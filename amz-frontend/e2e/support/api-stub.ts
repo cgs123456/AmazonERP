@@ -643,6 +643,68 @@ const CONNECTOR_RATE_LIMITS = [
 ]
 
 /**
+ * 搜索词分析与规则 /ad/search-term。
+ * 执行结果必须带 appliedToAdAccount:false —— 后端的规则引擎不调广告 API，
+ * 桩数据如果写成 true，就等于是测试替页面撒了谎。
+ */
+const AD_RULES = [
+  {
+    id: 41, shopId: 1, ruleName: '高ACoS自动暂停', ruleType: 'KEYWORD_PAUSE',
+    scope: 'CAMPAIGN', scopeValue: 'camp-777', conditionField: 'ACOS', conditionOp: 'GT',
+    conditionValue: 50, conditionValue2: null, action: 'PAUSE', actionValue: null,
+    timeWindow: 14, priority: 10, enabled: 1, lastExecuted: null
+  },
+  {
+    id: 42, shopId: 1, ruleName: 'BETWEEN 死规则', ruleType: 'KEYWORD_BID',
+    scope: null, scopeValue: null, conditionField: 'ACOS', conditionOp: 'BETWEEN',
+    conditionValue: 10, conditionValue2: null, action: 'DECREASE_BID', actionValue: 15,
+    timeWindow: 7, priority: 8, enabled: 0, lastExecuted: '2026-10-01T08:00:00'
+  }
+]
+const AD_SEARCH_TERMS = [
+  {
+    id: 1, shopId: 1, campaignId: 'camp-777', keywordId: 4242, searchTerm: 'yoga mat',
+    matchType: 'EXACT', impressions: 1200, clicks: 24, cost: 48, sales: 12, orders: 1,
+    acos: 400, cr: 4.17, ctr: 2, cpc: 2, reportDate: '2026-09-20'
+  }
+]
+const AD_ANALYZE = {
+  shopId: 1, analysisPeriod: 7, scannedRows: 1, totalSearchTerms: 1, convertingTerms: 1,
+  wasteTerms: 0, highAcosTerms: 1, lowCrTerms: 1, totalCost: 48, totalSales: 12, wasteCost: 0,
+  overallAcos: 400,
+  topConvertingTerms: [{ searchTerm: 'yoga mat', orders: 1, sales: 12, cost: 48, acos: 400 }],
+  topWasteTerms: []
+}
+const AD_CLUSTERS = {
+  shopId: 1, scannedRows: 1, totalClusters: 2,
+  topClusters: [
+    { root: 'yoga', termCount: 1, totalImpressions: 1200, totalClicks: 24, totalCost: 48, totalSales: 12, totalOrders: 1 },
+    { root: 'mat', termCount: 1, totalImpressions: 1200, totalClicks: 24, totalCost: 48, totalSales: 12, totalOrders: 1 }
+  ]
+}
+const AD_CONVERTING = [
+  {
+    id: 7, shopId: 1, asin: null, searchTerm: 'yoga mat', campaignId: 'camp-777',
+    totalOrders: 3, totalSales: 36, totalCost: 144, avgAcos: 400,
+    firstSeen: '2026-09-14', lastSeen: '2026-09-20', isAddedToKeyword: 0, status: 'ACTIVE'
+  }
+]
+const AD_ASIN_KEYWORDS = [
+  {
+    id: 3, shopId: 1, asin: 'B0ABC12345', keyword: 'yoga mat', organicRank: 12, adRank: 4,
+    searchVolume: 40000, relevanceScore: 4.5, isIndexed: 1, lastChecked: '2026-09-28'
+  }
+]
+const AD_EXEC_RESULT = {
+  ruleId: 41, ruleName: '高ACoS自动暂停', ruleType: 'KEYWORD_PAUSE',
+  appliedToAdAccount: false, actionCount: 1,
+  note: '本接口只产出建议清单，未调用广告 API',
+  matchedActions: [
+    { searchTerm: 'yoga mat', matchedValue: 400, action: 'PAUSE', suggestion: '暂停该搜索词所在投放', applied: false }
+  ]
+}
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -794,6 +856,24 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/connectors\/outbox\/\d+\/replay$/, data: { success: true, outcome: 'REPLAYED', status: 'SUCCEEDED', message: null } },
   { match: /^\/connectors\/outbox$/, data: CONNECTOR_OUTBOX },
   { match: /^\/connectors\/rate-limits$/, data: CONNECTOR_RATE_LIMITS },
+
+  // ===== 搜索词与规则 /ad/search-term =====
+  // 顺序敏感：batch 必须排在 asin-reverse 通配之前；bare 根路径（POST /ad/search-term）
+  // 是数据录入端点，路径最短，放最后。
+  { match: /^\/ad\/search-term\/asin-reverse\/batch$/, data: AD_ASIN_KEYWORDS },
+  { match: /^\/ad\/search-term\/asin-reverse\//, data: AD_ASIN_KEYWORDS, page: FULL_PAGE(AD_ASIN_KEYWORDS.length) },
+  { match: /^\/ad\/search-term\/converting\/extract\//, data: AD_CONVERTING },
+  { match: /^\/ad\/search-term\/converting\/list\//, data: AD_CONVERTING, page: FULL_PAGE(AD_CONVERTING.length) },
+  { match: /^\/ad\/search-term\/rule\/execute\//, data: { shopId: 1, rulesExecuted: 2, totalActions: 1, ruleResults: [AD_EXEC_RESULT] } },
+  { match: /^\/ad\/search-term\/rule\/list\//, data: AD_RULES, page: FULL_PAGE(AD_RULES.length) },
+  { match: /^\/ad\/search-term\/rule\/\d+\/execute$/, data: AD_EXEC_RESULT },
+  { match: /^\/ad\/search-term\/rule\/\d+\/toggle$/, data: true },
+  { match: /^\/ad\/search-term\/rule\/\d+$/, data: AD_RULES[0] },
+  { match: /^\/ad\/search-term\/rule$/, data: AD_RULES[0] },
+  { match: /^\/ad\/search-term\/list\//, data: AD_SEARCH_TERMS, page: FULL_PAGE(AD_SEARCH_TERMS.length) },
+  { match: /^\/ad\/search-term\/analyze\//, data: AD_ANALYZE },
+  { match: /^\/ad\/search-term\/cluster\//, data: AD_CLUSTERS },
+  { match: /^\/ad\/search-term$/, data: AD_SEARCH_TERMS[0] },
 
   { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
 ]

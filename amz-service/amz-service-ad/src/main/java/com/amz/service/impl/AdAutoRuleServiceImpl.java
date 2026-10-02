@@ -1,12 +1,10 @@
 package com.amz.service.impl;
 
-import com.amz.client.AdvertisingApiClient;
 import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
 import com.amz.exception.InvalidParamException;
 import com.amz.mapper.AdAutoRuleMapper;
-import com.amz.mapper.AdKeywordMapper;
 import com.amz.mapper.AdSearchTermMapper;
 import com.amz.model.AdAutoRule;
 import com.amz.model.AdSearchTerm;
@@ -26,30 +24,51 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
- * 广告自动规则服务实现。
+ * 广告规则服务实现。
  * <p>
- * 定时扫描启用规则 → 按条件匹配关键词/活动 → 执行动作（调价/暂停/否词）。
+ * 按条件匹配搜索词报表 → 产出调价/暂停/否词<b>建议</b>。
+ * <p>
+ * 两条容易被字面意思误解的边界，写在这里以免下次「顺手补上」：
+ * <ul>
+ *   <li>本类不向广告账号下发任何动作。全仓只有 {@code BidScheduleExecutor}（分时调价）
+ *       会真实改价，它走的是 {@code BidSchedule} 与 {@code AdvertisingApiClient}，与本类无关；
+ *       因此执行结果固定带 {@code appliedToAdAccount=false}，动作明细只给 {@code suggestion}。</li>
+ *   <li>没有任何调度器调用 {@code executeRules}，「自动规则」目前必须由页面或接口手动触发。</li>
+ * </ul>
+ * <p>
+ * {@code rule_type} 仅作分类标签（列表筛选、展示），判定逻辑不看它，改判定要看
+ * {@code condition_*} 与 {@code action}。
  */
 @Slf4j
 @Service
 public class AdAutoRuleServiceImpl implements AdAutoRuleService {
 
+    /** 取值来源：V1 迁移里 condition_field/condition_op/scope/action 的列注释。 */
+    private static final Set<String> CONDITION_FIELDS =
+            Set.of("ACOS", "CR", "CTR", "CPC", "SPEND", "SALES", "IMPRESSIONS");
+    private static final Set<String> CONDITION_OPS = Set.of("GT", "GTE", "LT", "LTE", "EQ", "BETWEEN");
+    private static final Set<String> SCOPES = Set.of("KEYWORD", "CAMPAIGN");
+
+    /** 只登记有执行分支的动作：DDL 注释里的 ENABLE 至今没有分支，允许写入就是一条永不生效的规则。 */
+    private static final Set<String> ACTIONS = Set.of(
+            "PAUSE", "INCREASE_BID", "DECREASE_BID", "ADD_NEGATIVE", "INCREASE_BUDGET", "DECREASE_BUDGET");
+
+    /** 与搜索词分析窗口上限保持一致，避免负数把起始日期推到未来。 */
+    private static final int MAX_TIME_WINDOW_DAYS = 365;
+
     @Autowired
     private AdAutoRuleMapper adAutoRuleMapper;
 
     @Autowired
-    private AdKeywordMapper adKeywordMapper;
-
-    @Autowired
     private AdSearchTermMapper adSearchTermMapper;
-
-    @Autowired
-    private AdvertisingApiClient advertisingApiClient;
 
     @Override
     public AdAutoRule createRule(AdAutoRule rule) {
@@ -57,11 +76,12 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
             throw new AttrIsNullException("店铺ID、规则名称和规则类型不能为空");
         }
         requireShopAccess(rule.getShopId());
+        requireValidRule(rule);
         if (rule.getEnabled() == null) rule.setEnabled(1);
         if (rule.getPriority() == null) rule.setPriority(0);
         if (rule.getTimeWindow() == null) rule.setTimeWindow(7);
         adAutoRuleMapper.insert(rule);
-        log.info("广告自动规则已创建：ruleName={}, type={}", rule.getRuleName(), rule.getRuleType());
+        log.info("广告规则已创建：ruleName={}, type={}", rule.getRuleName(), rule.getRuleType());
         return rule;
     }
 
@@ -75,6 +95,9 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
             throw new CodeErrorException("规则所属店铺不可修改");
         }
         rule.setShopId(existing.getShopId());
+        // PUT 可以只带被改的字段，所以校验对象是「库里现值 + 本次非空覆盖」的合并结果；
+        // 只校验请求体会把合法的局部更新挡在门外，也会放过 BETWEEN 缺上界这类跨字段组合。
+        requireValidRule(mergeForValidation(existing, rule));
         adAutoRuleMapper.updateById(rule);
         return rule;
     }
@@ -161,15 +184,18 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
             result.put("ruleId", ruleId);
             result.put("ruleName", rule.getRuleName());
             result.put("skipped", "规则未启用");
+            result.put("appliedToAdAccount", false);
             result.put("actionCount", 0);
             return result;
         }
 
         // 获取时间窗口内的搜索词数据
-        LocalDate startDate = LocalDate.now().minusDays(rule.getTimeWindow());
+        int window = rule.getTimeWindow() == null ? 7 : rule.getTimeWindow();
+        LocalDate startDate = LocalDate.now().minusDays(window);
         LambdaQueryWrapper<AdSearchTerm> stWrapper = new LambdaQueryWrapper<>();
         stWrapper.eq(AdSearchTerm::getShopId, rule.getShopId())
                  .ge(AdSearchTerm::getReportDate, startDate);
+        applyScope(stWrapper, rule);
         List<AdSearchTerm> searchTerms = adSearchTermMapper.selectList(stWrapper);
 
         // 按 searchTerm 聚合
@@ -214,30 +240,31 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
                 action.put("matchedValue", conditionValue);
                 action.put("action", rule.getAction());
 
-                // 执行动作
-                switch (rule.getAction()) {
+                // 给出建议：没有任何动作被下发到广告账号
+                action.put("applied", false);
+                switch (rule.getAction() == null ? "" : rule.getAction().trim()) {
                     case "PAUSE":
-                        action.put("executed", "暂停关键词/搜索词投放");
+                        action.put("suggestion", "暂停该搜索词所在投放");
                         break;
                     case "INCREASE_BID":
-                        action.put("suggestedBid", rule.getActionValue() != null
-                                ? "加价 " + rule.getActionValue() + "%" : "加价 25%");
+                        action.put("suggestion", "加价 "
+                                + (rule.getActionValue() != null ? rule.getActionValue().stripTrailingZeros().toPlainString() + "%" : "25%"));
                         break;
                     case "DECREASE_BID":
-                        action.put("suggestedBid", rule.getActionValue() != null
-                                ? "降价 " + rule.getActionValue() + "%" : "降价 20%");
+                        action.put("suggestion", "降价 "
+                                + (rule.getActionValue() != null ? rule.getActionValue().stripTrailingZeros().toPlainString() + "%" : "20%"));
                         break;
                     case "ADD_NEGATIVE":
-                        action.put("executed", "加入否定关键词");
+                        action.put("suggestion", "加入否定关键词");
                         break;
                     case "INCREASE_BUDGET":
-                        action.put("executed", "增加活动预算");
+                        action.put("suggestion", "提高活动预算");
                         break;
                     case "DECREASE_BUDGET":
-                        action.put("executed", "减少活动预算");
+                        action.put("suggestion", "降低活动预算");
                         break;
                     default:
-                        action.put("executed", "未知动作");
+                        action.put("suggestion", "未支持的动作，需人工判断");
                 }
                 matchedActions.add(action);
             }
@@ -251,8 +278,11 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
         result.put("ruleId", rule.getId());
         result.put("ruleName", rule.getRuleName());
         result.put("ruleType", rule.getRuleType());
+        result.put("appliedToAdAccount", false);
         result.put("actionCount", matchedActions.size());
         result.put("matchedActions", matchedActions);
+        result.put("note", "本接口只产出建议清单，未调用广告 API：暂停/否词/预算与改价都需要人工在广告后台执行。"
+                + "全店唯一的真实改价通道是分时调价（BidSchedule，按小时自动下发）。");
         return result;
     }
 
@@ -300,9 +330,125 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
         }
         return rule;
     }
+
+    /**
+     * 把 scope/scope_value 变成真正的扫描条件。
+     * <p>
+     * 缺值即视为全店：V1 种子里的三条规则都是 {@code scope=KEYWORD, scope_value=NULL}，
+     * 加了过滤会让它们从「全店」静默变成「命中 0 条」。
+     */
+    private static void applyScope(LambdaQueryWrapper<AdSearchTerm> wrapper, AdAutoRule rule) {
+        String scope = trimToNull(rule.getScope());
+        String value = trimToNull(rule.getScopeValue());
+        if (scope == null || value == null) {
+            return;
+        }
+        switch (scope) {
+            case "CAMPAIGN" -> wrapper.eq(AdSearchTerm::getCampaignId, value);
+            case "KEYWORD" -> wrapper.eq(AdSearchTerm::getKeywordId, parseKeywordId(value));
+            default -> throw new InvalidParamException("规则作用范围非法：" + scope);
+        }
+    }
+
+    private static Long parseKeywordId(String value) {
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException e) {
+            throw new InvalidParamException("关键词作用范围必须是关键词 ID（数字），实际：" + value);
+        }
+    }
+
+    /**
+     * 规则能否被判定出来，取决于跨字段组合而不是单个字段，所以这些校验必须发生在写入前：
+     * 放过去的就是页面上一条「已启用但永远不出结果」的规则。
+     */
+    private void requireValidRule(AdAutoRule rule) {
+        if (trimToNull(rule.getRuleName()) == null) {
+            throw new InvalidParamException("规则名称不能为空");
+        }
+        if (trimToNull(rule.getRuleType()) == null) {
+            throw new InvalidParamException("规则类型不能为空");
+        }
+        requireIn(CONDITION_FIELDS, rule.getConditionField(), "条件字段");
+        requireIn(CONDITION_OPS, rule.getConditionOp(), "比较方式");
+        requireIn(ACTIONS, rule.getAction(), "动作");
+        if (rule.getConditionValue() == null) {
+            throw new InvalidParamException("阈值不能为空：判定会静默恒为 false");
+        }
+        if ("BETWEEN".equals(trimToNull(rule.getConditionOp()))) {
+            if (rule.getConditionValue2() == null) {
+                throw new InvalidParamException("BETWEEN 需要同时给出上界，否则规则永远不命中");
+            }
+            if (rule.getConditionValue2().compareTo(rule.getConditionValue()) < 0) {
+                throw new InvalidParamException("BETWEEN 的上界不能小于下界");
+            }
+        }
+        if (rule.getTimeWindow() != null
+                && (rule.getTimeWindow() < 1 || rule.getTimeWindow() > MAX_TIME_WINDOW_DAYS)) {
+            throw new InvalidParamException("统计窗口必须在 1-" + MAX_TIME_WINDOW_DAYS + " 天之间，实际 "
+                    + rule.getTimeWindow());
+        }
+        String scope = trimToNull(rule.getScope());
+        if (scope == null) {
+            return;
+        }
+        if ("ASIN".equals(scope)) {
+            throw new InvalidParamException(
+                    "暂不支持按 ASIN 限定范围：搜索词报表表没有 ASIN 字段，写了也不会生效");
+        }
+        if (!SCOPES.contains(scope)) {
+            throw new InvalidParamException("作用范围只能是 KEYWORD 或 CAMPAIGN，实际：" + scope);
+        }
+        String value = trimToNull(rule.getScopeValue());
+        if (value == null) {
+            throw new InvalidParamException("限定了作用范围就要给出对应 ID，否则规则会静默作用于全店");
+        }
+        if ("KEYWORD".equals(scope)) {
+            parseKeywordId(value);
+        }
+    }
+
+    /** 合并库里现值与本次非空覆盖，得到写库后真正生效的规则形态。 */
+    private static AdAutoRule mergeForValidation(AdAutoRule existing, AdAutoRule patch) {
+        AdAutoRule merged = new AdAutoRule();
+        merged.setId(patch.getId() != null ? patch.getId() : existing.getId());
+        merged.setShopId(existing.getShopId());
+        merged.setRuleName(patch.getRuleName() != null ? patch.getRuleName() : existing.getRuleName());
+        merged.setRuleType(patch.getRuleType() != null ? patch.getRuleType() : existing.getRuleType());
+        merged.setScope(patch.getScope() != null ? patch.getScope() : existing.getScope());
+        merged.setScopeValue(patch.getScopeValue() != null
+                ? patch.getScopeValue() : existing.getScopeValue());
+        merged.setConditionField(patch.getConditionField() != null
+                ? patch.getConditionField() : existing.getConditionField());
+        merged.setConditionOp(patch.getConditionOp() != null
+                ? patch.getConditionOp() : existing.getConditionOp());
+        merged.setConditionValue(patch.getConditionValue() != null
+                ? patch.getConditionValue() : existing.getConditionValue());
+        merged.setConditionValue2(patch.getConditionValue2() != null
+                ? patch.getConditionValue2() : existing.getConditionValue2());
+        merged.setAction(patch.getAction() != null ? patch.getAction() : existing.getAction());
+        merged.setActionValue(patch.getActionValue() != null
+                ? patch.getActionValue() : existing.getActionValue());
+        merged.setTimeWindow(patch.getTimeWindow() != null
+                ? patch.getTimeWindow() : existing.getTimeWindow());
+        return merged;
+    }
+
+    private static void requireIn(Set<String> allowed, String value, String label) {
+        String normalized = trimToNull(value);
+        if (normalized == null || !allowed.contains(normalized.toUpperCase(Locale.ROOT))) {
+            throw new InvalidParamException(label + "取值非法：" + value + "，可选 "
+                    + String.join("/", new TreeSet<>(allowed)));
+        }
+    }
+
+    private static String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private BigDecimal getConditionValue(String field, BigDecimal acos, BigDecimal cr, BigDecimal ctr,
-                                          BigDecimal cpc, BigDecimal spend, BigDecimal sales, long impressions) {
-        switch (field) {
+                                         BigDecimal cpc, BigDecimal spend, BigDecimal sales, long impressions) {
+        switch (field == null ? "" : field) {
             case "ACOS": return acos;
             case "CR": return cr;
             case "CTR": return ctr;

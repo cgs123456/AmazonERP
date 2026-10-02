@@ -29,6 +29,11 @@ const router = createRouter({
             component: () => import('../views/AdManager.vue')
         },
         {
+            path: '/ad-search-terms',
+            name: 'AdSearchTerms',
+            component: () => import('../views/AdSearchTerms.vue')
+        },
+        {
             path: '/profit',
             name: 'Profit',
             component: () => import('../views/ProfitReport.vue')

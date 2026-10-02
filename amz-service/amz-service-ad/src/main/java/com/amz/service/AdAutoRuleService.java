@@ -1,7 +1,6 @@
 package com.amz.service;
 
 import com.amz.model.AdAutoRule;
-import com.amz.optimizer.KeywordOptimizer;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 
@@ -29,14 +28,15 @@ public interface AdAutoRuleService {
     boolean deleteRule(Long ruleId);
 
     /**
-     * 执行自动规则：扫描所有启用规则，匹配条件后执行动作。
-     * @return 执行结果摘要
+     * 扫描该店铺所有启用规则，逐条产出建议。
+     * <p>
+     * 没有调度器调用它，也不会把动作下发到广告账号；结果里的
+     * {@code appliedToAdAccount} 恒为 false。
      */
     Map<String, Object> executeRules(Long shopId);
 
     /**
-     * 执行单个规则。
-     * @return 匹配的关键词及建议动作列表
+     * 按单条规则的口径扫描搜索词报表，返回命中的建议动作列表（未执行）。
      */
     Map<String, Object> executeRule(Long ruleId);
 }

@@ -1,10 +1,8 @@
 package com.amz.service.impl;
 
-import com.amz.client.AdvertisingApiClient;
 import com.amz.context.UserContext;
 import com.amz.exception.CodeErrorException;
 import com.amz.mapper.AdAutoRuleMapper;
-import com.amz.mapper.AdKeywordMapper;
 import com.amz.mapper.AdSearchTermMapper;
 import com.amz.model.AdAutoRule;
 import org.junit.jupiter.api.AfterEach;
@@ -37,9 +35,7 @@ class AdAutoRuleServiceImplTest {
         ruleMapper = mock(AdAutoRuleMapper.class);
         searchTermMapper = mock(AdSearchTermMapper.class);
         ReflectionTestUtils.setField(service, "adAutoRuleMapper", ruleMapper);
-        ReflectionTestUtils.setField(service, "adKeywordMapper", mock(AdKeywordMapper.class));
         ReflectionTestUtils.setField(service, "adSearchTermMapper", searchTermMapper);
-        ReflectionTestUtils.setField(service, "advertisingApiClient", mock(AdvertisingApiClient.class));
     }
 
     @AfterEach
