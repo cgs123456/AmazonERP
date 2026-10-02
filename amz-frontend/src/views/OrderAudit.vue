@@ -485,7 +485,7 @@ const submitRule = async () => {
 
 const toggle = async (r: OrderAuditRule) => {
   const next = !truthy(r.enabled)
-  // toggleRule 对不存在的规则静默 no-op 并仍返回 true，所以结果只以重新加载后的列表为准
+  // 后端现在会校验规则归属，不存在或越权都会报错；界面仍以重新加载后的列表为准
   const ok = await call(next ? '启用规则' : '停用规则', () => audit.toggleRule(r.id as number, next), () => undefined)
   if (ok) await loadRules()
 }
@@ -493,8 +493,8 @@ const toggle = async (r: OrderAuditRule) => {
 const askDelete = (r: OrderAuditRule) => {
   confirmBox.value = {
     title: `删除规则「${r.ruleName}」`,
-    detail: '删除不可恢复。后端按规则 id 删除且不校验该规则属于当前店铺，'
-      + '请确认 id 正确；已被删除的规则不会再参与后续审单。',
+    detail: '删除不可恢复。后端会先确认这条规则属于当前用户的授权店铺，'
+      + '不存在或不属于本店都会直接报错；已删除的规则不再参与后续审单。',
     run: async () => {
       const ok = await call('删除规则', () => audit.deleteRule(r.id as number), () => undefined)
       if (ok) await loadRules()

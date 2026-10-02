@@ -126,11 +126,49 @@
 残留这一类的发生率约 1~2/轮，`workers: 1` 下不与产品行为相关；继续查的方向是
 `page.route('**/*')` 打桩层在页面加载期间的挂起，而不是给用例加重试。
 
-## 六、第 6 项剩余
+## 六、N1 越权缺口（已完成）
 
-- **N1**：report 模块 5 个 POST 摄取端点 `@ShopScoped` 空转（shopId 在 `@RequestBody` 里，
-  切面只认 `@PathVariable/@RequestParam` 的同名参数）且整个模块没有 `@RequireRole`。
-  本次又看到同族一处：`/order/audit/rule/{id}` 的 toggle/delete/update 只按 id 操作，
-  不校验规则属于哪家店（删除确认文案里已把这句写进界面提示，因为改切面会波及定时任务与内部调用）。
+`ShopIdGuardAspect` 只从 `@PathVariable` / `@RequestParam` 里取名为 `shopId` 的 Long 参数，
+所以「shopId 只在 `@RequestBody` 实体里」的端点挂着 `@ShopScoped` 却完全空转。本次逐个补上服务层归属：
+
+**report 模块（5 个摄取写入口）**
+
+- 新增 `ReportTenantGuard`（照 `AdTenantGuard` 的形状），用严格档 `UserContext.isShopAllowedStrict`；
+  接进 `saveProfitDetail` / `saveInventoryTurnover` / `saveSalesDaily` / `saveBusinessOverview`
+  / `saveAllocation`。
+- 选严格档的理由：这 5 个端点**今天没有任何合法内部调用方**（全仓无 Feign 客户端指向它们、
+  无进程内调用、前端 `api/report.ts` 明确不接），所以没有需要放行的来源；
+  宽松档 `isShopAllowed` 在「无店铺列表」时放行是为了兼容定时任务，用在这里等于不校验。
+  将来真要让调度器或别的服务写，正确做法是把端点声明成双信任（`@InternalServiceAccess` +
+  `isShopAllowedByUserOrTrustedService`），文档里写死了这条路径，避免有人回头放宽这里。
+- `saveAllocation` 此前连 `shopId` 是否为空都不检查，会带着 null 直接 insert。
+
+**order 模块（审单规则按 id 的写操作）**
+
+- `createRule`：校验请求体实体的 shopId；
+- `updateRule` / `toggleRule` / `deleteRule`：先 `selectById` 取出行，再判 `rule.shopId` 是否
+  在调用方授权店铺内；「行不存在」与「不是你的店铺」返回同一句话，不把「这条 id 属于哪家店」泄露给探测者；
+- 顺带修掉诚实性问题：旧 `toggleRule` 对不存在的行静默 no-op、Controller 仍返回 `true`，
+  等于把「什么都没做」显示成「已启用/已停用」；现在会报错。前端 OrderAudit.vue 的删除确认文案与
+  那条注释原样记录了旧行为，一并改到新语义（含单测与 E2E 的断言）。
+
+**测试与变异**
+
+- 新增 `ReportTenantGuardTest`（6 条：越权拒 / 缺 shops claim 不等于放行 / 无身份拒 / 命中放行 /
+  ADMIN 短路 / null 报属性缺失）与 `ReportIngestTenantWiringTest`（6 条：5 个入口逐个点名越权被拒且
+  `verifyNoInteractions(mapper)`，另加不带 shopId 的费用分摊）；
+  `OrderAuditRuleOwnershipTest` 14 条覆盖 toggle/update/delete/create 的本店、他店、不存在、
+  跨店移动、ADMIN 与统一错误信息。
+- 模块全量：order 177 测试、report 63 测试全绿。
+- 变异 6 项逐个拆线：4 个 report 守卫拆线各自让对应接线用例红、费用分摊拆线红 2 条
+  （写入与不带 shopId）、把归属判定改成「只查存在」后恰好红掉 4 条跨店用例而不影响存在性用例。
+  中途有一次变异把整条 `if` 语句替换掉导致编译错误——那不算被抓，已换成合法的等价改写重跑。
+- 前端：`vue-tsc` 0 错，29 文件 / 276 测试绿，Playwright 63 全绿，hygiene 0 finding。
+
+## 七、第 6 项剩余
+
+- **N1 残留**：report 模块整体仍没有 `@RequireRole`——本次补的是「店铺归属」这一层，
+  「什么角色能写报表」仍是缺的；改切面或给 5 个端点加注解会波及内部调用与定时任务，
+  留作单独一轮再做。
 - **N5**：12 张零引用表的删/留决策，其中 `amz_purchase_approval`、`amz_logistics_quote` 是真重复。
 - **N3 残留**：客服邮件通道仍需真实 SMTP/Messaging 客户端；RMA 的订单号不与订单表校验。

@@ -1,5 +1,8 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
+import com.amz.exception.AttrIsNullException;
+import com.amz.exception.CodeErrorException;
 import com.amz.mapper.OrderAuditRuleMapper;
 import com.amz.mapper.OrderMapper;
 import com.amz.mapper.OrderSplitLogMapper;
@@ -53,6 +56,9 @@ public class OrderAuditServiceImpl implements OrderAuditService {
 
     @Override
     public OrderAuditRule createRule(OrderAuditRule rule) {
+        // @ShopScoped 对「shopId 只在 @RequestBody 里」的端点是空转的：切面只认名为 shopId 的
+        // PathVariable/RequestParam。所以归属必须在这里兜住，否则任何登录用户都能给别人建规则。
+        requireShopAccess(rule.getShopId(), "新建审单规则");
         if (rule.getPriority() == null) rule.setPriority(0);
         if (rule.getEnabled() == null) rule.setEnabled(true);
         orderAuditRuleMapper.insert(rule);
@@ -61,6 +67,11 @@ public class OrderAuditServiceImpl implements OrderAuditService {
 
     @Override
     public OrderAuditRule updateRule(OrderAuditRule rule) {
+        OrderAuditRule existing = requireOwnedRule(rule.getId());
+        if (rule.getShopId() != null && !rule.getShopId().equals(existing.getShopId())) {
+            throw new CodeErrorException("不允许跨店铺移动审单规则：id=" + existing.getId());
+        }
+        rule.setShopId(existing.getShopId());
         orderAuditRuleMapper.updateById(rule);
         return rule;
     }
@@ -76,16 +87,49 @@ public class OrderAuditServiceImpl implements OrderAuditService {
 
     @Override
     public void toggleRule(Long id, boolean enabled) {
-        OrderAuditRule rule = orderAuditRuleMapper.selectById(id);
-        if (rule != null) {
-            rule.setEnabled(enabled);
-            orderAuditRuleMapper.updateById(rule);
-        }
+        OrderAuditRule rule = requireOwnedRule(id);
+        rule.setEnabled(enabled);
+        orderAuditRuleMapper.updateById(rule);
     }
 
     @Override
     public void deleteRule(Long id) {
+        requireOwnedRule(id);
         orderAuditRuleMapper.deleteById(id);
+    }
+
+    /**
+     * 校验调用方对该店铺的写权限。
+     */
+    private static void requireShopAccess(Long shopId, String what) {
+        if (shopId == null) {
+            throw new AttrIsNullException(what + "：店铺ID不能为空");
+        }
+        if (!UserContext.isShopAllowedStrict(shopId)) {
+            log.warn("审单规则越权写入拦截：what={}, userId={}, role={}, shopId={}, authorizedShops={}",
+                    what, UserContext.getUserId(), UserContext.getRole(), shopId, UserContext.getShops());
+            throw new CodeErrorException("店铺不存在或无权写入：" + shopId);
+        }
+    }
+
+    /**
+     * 按 id 定位的规则必须先查出行、再判归属：这类端点没有 shopId 参数，
+     * {@code @ShopScoped} 完全空转。「行不存在」与「不是你的店铺」返回同一个错误，
+     * 避免把「哪家店有这条规则」泄露给探测者。旧实现里 toggleRule 对不存在的行静默 no-op
+     * 并让 Controller 返回 true，等于把「什么都没做」显示成「已启用/已停用」。
+     */
+    private OrderAuditRule requireOwnedRule(Long id) {
+        if (id == null) {
+            throw new AttrIsNullException("规则ID不能为空");
+        }
+        OrderAuditRule rule = orderAuditRuleMapper.selectById(id);
+        if (rule == null || !UserContext.isShopAllowedStrict(rule.getShopId())) {
+            log.warn("审单规则写操作被拒：id={}, 命中行={}, 行归属店铺={}, userId={}, role={}, authorizedShops={}",
+                    id, rule != null, rule == null ? null : rule.getShopId(),
+                    UserContext.getUserId(), UserContext.getRole(), UserContext.getShops());
+            throw new CodeErrorException("审单规则不存在或无权访问");
+        }
+        return rule;
     }
 
     // ==================== 审单执行 ====================

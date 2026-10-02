@@ -50,11 +50,15 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
     @Autowired
     private BusinessOverviewMapper businessOverviewMapper;
 
+    @Autowired
+    private ReportTenantGuard tenantGuard;
+
     // ==================== 利润核算 ====================
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ProfitDetail saveProfitDetail(ProfitDetail detail) {
+        tenantGuard.requireShopAccess(detail.getShopId(), "利润明细");
         if (detail.getShopId() == null || detail.getAmazonOrderId() == null) {
             throw new IllegalArgumentException("店铺ID和订单号不能为空");
         }
@@ -153,6 +157,7 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
 
     @Override
     public InventoryTurnover saveInventoryTurnover(InventoryTurnover turnover) {
+        tenantGuard.requireShopAccess(turnover.getShopId(), "库存周转");
         if (turnover.getReportDate() == null) {
             turnover.setReportDate(LocalDate.now());
         }
@@ -202,6 +207,7 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
 
     @Override
     public SalesDaily saveSalesDaily(SalesDaily salesDaily) {
+        tenantGuard.requireShopAccess(salesDaily.getShopId(), "销售日报");
         if (salesDaily.getReportDate() == null) {
             salesDaily.setReportDate(LocalDate.now());
         }
@@ -292,6 +298,7 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
 
     @Override
     public BusinessOverview saveBusinessOverview(BusinessOverview overview) {
+        tenantGuard.requireShopAccess(overview.getShopId(), "经营概览");
         if (overview.getReportDate() == null) {
             overview.setReportDate(LocalDate.now());
         }

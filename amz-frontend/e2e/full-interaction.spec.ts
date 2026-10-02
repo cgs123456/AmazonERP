@@ -385,7 +385,7 @@ test.describe('OrderAudit 交互（订单审单）', () => {
     await page.goto('/order-audit')
     const row = page.locator('.tab-panel[data-panel="rule"] tbody tr').first()
     await row.locator('button', { hasText: '删除' }).click()
-    await expect(page.locator('.confirm-detail')).toContainText('不校验该规则属于当前店铺')
+    await expect(page.locator('.confirm-detail')).toContainText('不存在或不属于本店都会直接报错')
     await page.locator('.modal-actions button', { hasText: '取消' }).click()
     await expect(page.locator('.modal-mask')).toHaveCount(0)
     expect(writes).toEqual([])

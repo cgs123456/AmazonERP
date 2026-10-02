@@ -210,7 +210,7 @@ describe('OrderAudit 视图（订单审单）', () => {
   it('删除规则必须二次确认，取消时不发 DELETE', async () => {
     const wrapper = await mountPage()
     await rowBtn(wrapper, '[data-panel="rule"]', 0, '删除')
-    expect(wrapper.find('.confirm-detail').text()).toContain('不校验该规则属于当前店铺')
+    expect(wrapper.find('.confirm-detail').text()).toContain('不存在或不属于本店都会直接报错')
     expect(audit.deleteRule).not.toHaveBeenCalled()
     await clickBtn(wrapper, '取消')
     expect(audit.deleteRule).not.toHaveBeenCalled()

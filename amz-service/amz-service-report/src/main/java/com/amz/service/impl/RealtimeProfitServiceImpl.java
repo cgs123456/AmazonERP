@@ -70,6 +70,8 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     @Autowired
     private CostAllocationMapper costAllocationMapper;
     @Autowired
+    private ReportTenantGuard tenantGuard;
+    @Autowired
     private ObjectMapper objectMapper;
 
     // ==================== 利润快照 ====================
@@ -300,6 +302,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
 
     @Override
     public CostAllocation saveAllocation(CostAllocation allocation) {
+        tenantGuard.requireShopAccess(allocation.getShopId(), "费用分摊");
         if (allocation.getAllocDate() == null) allocation.setAllocDate(LocalDate.now());
         costAllocationMapper.insert(allocation);
         evictHeadhaulCache(allocation.getShopId());
