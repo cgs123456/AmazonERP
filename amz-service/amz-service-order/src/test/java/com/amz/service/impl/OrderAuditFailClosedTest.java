@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -144,6 +145,22 @@ class OrderAuditFailClosedTest {
 
         assertTrue(String.valueOf(result.get("unevaluatedRules")).contains("未知动作"),
                 "未知动作要留下原因，实际：" + result.get("unevaluatedRules"));
+    }
+
+    @Test
+    @DisplayName("SPLIT 动作只是建议：必须自报「没真的拆单」，也不写拆分日志表")
+    void advisoryActionIsLabelledAsSuch() {
+        stubRules(rule(9L, "order_status", "EQ", "SHIPPED", "SPLIT"));
+
+        Map<String, Object> result = service.auditOrder(7L, order("SHIPPED"));
+
+        assertEquals(List.of("SPLIT"), result.get("advisoryActions"));
+        assertTrue(String.valueOf(result.get("advisoryNote")).contains("没有合并/拆单实现"),
+                "要说清这条动作不会改数据，实际：" + result.get("advisoryNote"));
+        // 命中规则本身仍要进 REVIEW，不能因为「只是建议」就当没事
+        assertEquals("REVIEW", result.get("verdict"));
+        // 关键：审单不产生任何拆分日志（这张表全仓零插入点）
+        verifyNoInteractions(orderSplitLogMapper);
     }
 
     // ------------------------------------------------------------------ helpers

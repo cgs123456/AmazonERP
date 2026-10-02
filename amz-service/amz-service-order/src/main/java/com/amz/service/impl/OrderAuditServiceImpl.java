@@ -96,6 +96,10 @@ public class OrderAuditServiceImpl implements OrderAuditService {
         List<Map<String, Object>> alerts = new ArrayList<>();
         List<String> actions = new ArrayList<>();
         List<Map<String, Object>> unevaluated = new ArrayList<>();
+        // 只给建议、不改变数据的动作（MERGE/SPLIT）：系统里没有拆合单实现，
+        // amz_order_split_log 也全仓零插入点，把它们和 BLOCK/FLAG 混在 actions 里
+        // 会让运营以为订单已经被合并/拆分过。
+        List<String> advisoryActions = new ArrayList<>();
         boolean blocked = false;
 
         for (OrderAuditRule rule : rules) {
@@ -138,9 +142,11 @@ public class OrderAuditServiceImpl implements OrderAuditService {
                     break;
                 case "MERGE":
                     actions.add("MERGE");
+                    advisoryActions.add("MERGE");
                     break;
                 case "SPLIT":
                     actions.add("SPLIT");
+                    advisoryActions.add("SPLIT");
                     break;
                 default:
                     // 动作名写错的规则等于没生效：这里必须留下 WARN 级痕迹，
@@ -172,6 +178,13 @@ public class OrderAuditServiceImpl implements OrderAuditService {
         result.put("alertCount", alerts.size());
         result.put("unevaluatedRules", unevaluated);
         result.put("unevaluatedCount", unevaluated.size());
+        if (!advisoryActions.isEmpty()) {
+            log.warn("订单 {} 命中建议类动作 {}：审单不会真的合并/拆分订单，也不会写 amz_order_split_log",
+                    result.get("orderId"), advisoryActions);
+            result.put("advisoryActions", advisoryActions);
+            result.put("advisoryNote", "MERGE/SPLIT 只是规则建议：本系统没有合并/拆单实现，"
+                    + "amz_order_split_log 全仓没有任何插入点，订单数据不会被这条规则改变。");
+        }
         result.put("auditTime", LocalDateTime.now().toString());
         return result;
     }
