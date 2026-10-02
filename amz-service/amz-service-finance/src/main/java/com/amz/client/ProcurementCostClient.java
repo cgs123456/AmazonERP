@@ -2,11 +2,14 @@ package com.amz.client;
 
 import com.amz.client.dto.RemoteBatchCostSummary;
 import com.amz.client.fallback.ProcurementCostClientFallbackFactory;
+import com.amz.client.dto.RemotePurchaseOrder;
 import com.amz.result.Result;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.List;
 
 
 
@@ -30,4 +33,15 @@ public interface ProcurementCostClient {
     @GetMapping("/batch/cost-summary/{shopId}")
     Result<RemoteBatchCostSummary> getCostSummary(@PathVariable("shopId") Long shopId,
                                                   @RequestParam("sku") String sku);
+
+    /**
+     * 成本可确认的采购单（供财务生成 PROCUREMENT 凭证），游标分页。
+     * <p>
+     * 取不到时必须返回失败而不是空列表：空列表会让财务把「没读到」当成「没有采购成本」，
+     * 利润因此比补齐凭证前更高——那是更难发现的错。
+     */
+    @GetMapping("/order/voucher-source/{shopId}")
+    Result<List<RemotePurchaseOrder>> listVoucherSources(@PathVariable("shopId") Long shopId,
+                                                        @RequestParam(value = "size", required = false) Integer size,
+                                                        @RequestParam(value = "cursor", required = false) String cursor);
 }

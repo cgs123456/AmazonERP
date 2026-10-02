@@ -234,6 +234,21 @@ public class ProcurementController {
         return Result.paged(procurementService.listPurchaseOrders(shopId, PageRequest.of(size, cursor)));
     }
 
+    /**
+     * 成本可确认的采购单（供财务生成 PROCUREMENT 凭证，游标分页）。
+     * GET /procurement/order/voucher-source/{shopId}?size=&cursor=
+     * <p>
+     * 与 /order/list 的区别只在状态过滤：这里只出 QC_PASSED/RECEIVED/COMPLETED 三种，
+     * 未成交的单不会变成凭证；调用方必须按 _page 翻完，否则会漏出凭证。
+     */
+    @ShopScoped
+    @GetMapping("/order/voucher-source/{shopId}")
+    public Result<List<PurchaseOrder>> listOrdersForVoucher(@PathVariable Long shopId,
+                                                            @RequestParam(required = false) Integer size,
+                                                            @RequestParam(required = false) String cursor) {
+        return Result.paged(procurementService.listOrdersForVoucher(shopId, PageRequest.of(size, cursor)));
+    }
+
     // ==================== 质检 ====================
 
     /** 提交质检结果 */

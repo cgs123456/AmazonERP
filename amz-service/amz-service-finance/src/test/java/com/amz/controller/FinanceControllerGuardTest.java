@@ -52,8 +52,8 @@ class FinanceControllerGuardTest {
         }
 
         assertFalse(writeEndpoints.isEmpty(), "必须扫描到财务写接口，扫到 0 个会使测试假通过");
-        assertEquals(14, writeEndpoints.size(),
-                "当前有 14 个财务写接口（含 /finance/voucher/from-settlement）；新增接口必须同步声明 @RequireRole 并更新本断言");
+        assertEquals(15, writeEndpoints.size(),
+                "当前有 15 个财务写接口（含 /voucher/from-settlement 与 /voucher/procurement）；新增接口必须同步声明 @RequireRole 并更新本断言");
 
         for (Method method : writeEndpoints) {
             RequireRole requireRole = method.getAnnotation(RequireRole.class);

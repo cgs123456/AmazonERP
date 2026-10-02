@@ -72,6 +72,18 @@ public interface FinanceService {
     com.amz.dto.SettlementVoucherReport generateSettlementVouchers(Long shopId);
 
     /**
+     * 由成本可确认的采购单补齐 PROCUREMENT 凭证（跨采购域读取，幂等，可重复调用）。
+     * <p>
+     * 采购数据归采购域，财务只读不造：读不到时对端返回失败，本方法把
+     * {@code remoteDegraded=true} 带回来，绝不返回「0 张凭证」当成功——
+     * 那会把「没读到」变成「这批采购没花钱」。
+     *
+     * @param shopId 店铺 ID
+     * @return 读取/生成/幂等命中/跳过/降级计数
+     */
+    com.amz.dto.ProcurementVoucherReport generateProcurementVouchers(Long shopId);
+
+    /**
      * 查询店铺某时间段内的总利润（收入 - 成本 - 费用，CNY）。
      */
     BigDecimal calculateProfit(Long shopId, String startDate, String endDate);

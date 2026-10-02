@@ -2,7 +2,10 @@ package com.amz.client.fallback;
 
 import com.amz.client.ProcurementCostClient;
 import com.amz.client.dto.RemoteBatchCostSummary;
+import com.amz.client.dto.RemotePurchaseOrder;
 import com.amz.result.Result;
+
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
@@ -23,6 +26,18 @@ public class ProcurementCostClientFallbackFactory implements FallbackFactory<Pro
     @Override
     public ProcurementCostClient create(Throwable cause) {
         log.warn("Feign call to amz-service-procurement (cost) degraded", cause);
-        return (shopId, sku) -> Result.failure("procurement service degraded: " + cause.getMessage());
+        final String reason = "procurement service degraded: " + cause.getMessage();
+        return new ProcurementCostClient() {
+            @Override
+            public Result<RemoteBatchCostSummary> getCostSummary(Long shopId, String sku) {
+                return Result.failure(reason);
+            }
+
+            @Override
+            public Result<List<RemotePurchaseOrder>> listVoucherSources(Long shopId, Integer size, String cursor) {
+                // 同 batch 成本一样：降级不返回空列表，财务据此知道采购成本不完整
+                return Result.failure(reason);
+            }
+        };
     }
 }

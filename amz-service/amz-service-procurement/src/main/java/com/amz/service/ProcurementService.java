@@ -42,6 +42,16 @@ public interface ProcurementService {
     PageResult<PurchaseOrder> listPurchaseOrders(Long shopId, PageRequest page);
 
     /**
+     * 查询「成本可确认」的采购单（QC_PASSED / RECEIVED / COMPLETED），供财务生成 PROCUREMENT 凭证。
+     * <p>
+     * 只放这三态：草稿、已取消、仍在 1688 流程中的单尚未形成真实成本，
+     * 让它们进入凭证流等于把没发生的采购记进利润，而利润口径会照单全扣。
+     *
+     * @param page 游标分页；null 表示首页 + 默认页大小
+     */
+    PageResult<PurchaseOrder> listOrdersForVoucher(Long shopId, PageRequest page);
+
+    /**
      * 提交质检结果，自动判定 PASS/FAIL/CONDITIONAL 并更新采购单状态。
      */
     QualityCheck submitQualityCheck(Long purchaseOrderId, Integer sampleCount,

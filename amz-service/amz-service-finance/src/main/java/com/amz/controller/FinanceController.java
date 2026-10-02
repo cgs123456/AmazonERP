@@ -3,6 +3,7 @@ package com.amz.controller;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.dto.KingdeeSyncResult;
+import com.amz.dto.ProcurementVoucherReport;
 import com.amz.model.AccountingVoucher;
 import com.amz.result.Result;
 import com.amz.result.PageRequest;
@@ -41,6 +42,26 @@ public class FinanceController {
             @RequestParam BigDecimal amount,
             @RequestParam String currency) {
         return Result.success(financeService.generateOrderVoucher(shopId, orderNo, amount, currency));
+    }
+
+    /**
+     * 由成本可确认的采购单补齐 PROCUREMENT 凭证。
+     * POST /finance/voucher/procurement?shopId=
+     * <p>
+     * 采购域读不到数据时返回失败（data 仍带完整报告），而不是 code=200 + 0 张凭证：
+     * 「没读到」和「没有采购成本」在利润上是两回事。
+     */
+    @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @PostMapping("/voucher/procurement")
+    public Result<ProcurementVoucherReport> generateProcurementVouchers(@RequestParam Long shopId) {
+        ProcurementVoucherReport report = financeService.generateProcurementVouchers(shopId);
+        if (report.isRemoteDegraded()) {
+            Result<ProcurementVoucherReport> failure = Result.failure("采购域数据不完整：" + report.getRemoteMessage());
+            failure.setData(report);
+            return failure;
+        }
+        return Result.success(report);
     }
 
     /**

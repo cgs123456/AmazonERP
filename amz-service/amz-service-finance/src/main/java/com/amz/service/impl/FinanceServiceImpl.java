@@ -1,6 +1,9 @@
 package com.amz.service.impl;
 
 import com.amz.client.KingdeeClient;
+import com.amz.client.ProcurementCostClient;
+import com.amz.client.dto.RemotePurchaseOrder;
+import com.amz.dto.ProcurementVoucherReport;
 import com.amz.dto.KingdeeSyncResult;
 import com.amz.dto.SettlementVoucherReport;
 import com.amz.exception.AttrIsNullException;
@@ -13,7 +16,9 @@ import com.amz.model.SettlementDetail;
 import com.amz.parse.SettlementClassifier;
 import com.amz.service.FinanceService;
 import com.amz.util.MapArgUtils;
+import com.amz.result.PageMeta;
 import com.amz.result.PageRequest;
+import com.amz.result.Result;
 import com.amz.result.PageResult;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +58,14 @@ public class FinanceServiceImpl implements FinanceService {
     private static final String SOURCE_ORDER = "ORDER";
     private static final String SOURCE_PLATFORM_FEE = "PLATFORM_FEE";
     private static final String SOURCE_REFUND = "REFUND";
+    private static final String SOURCE_PROCUREMENT = "PROCUREMENT";
+
+    /** 采购凭证源的页大小与最大翻页数：翻页读到尽为止，读到上限也要如实 capped */
+    private static final int PROCUREMENT_VOUCHER_PAGE_SIZE = 200;
+    private static final int PROCUREMENT_VOUCHER_MAX_PAGES = 50;
+
+    /** 采购单没有币种列，1688 报价与支付都是人民币，凭证按 CNY 记账 */
+    private static final String PROCUREMENT_CURRENCY = "CNY";
 
     /**
      * 结算行扫描上限：一次调用不把整表拉进内存；命中上限要在报告里显式 capped，
@@ -83,6 +96,9 @@ public class FinanceServiceImpl implements FinanceService {
 
     @Autowired
     private SettlementDetailMapper settlementDetailMapper;
+
+    @Autowired
+    private ProcurementCostClient procurementCostClient;
 
     @Autowired
     private KingdeeClient kingdeeClient;
@@ -243,6 +259,92 @@ public class FinanceServiceImpl implements FinanceService {
             report.setRefundVouchers(report.getRefundVouchers() + 1);
         }
         report.setOriginalAmountSum(report.getOriginalAmountSum().add(original));
+    }
+
+    /**
+     * 由采购域读成本可确认的采购单，补齐 PROCUREMENT 凭证。
+     * <p>
+     * 同样不加 @Transactional：按 (shopId, PROCUREMENT, orderNo) 幂等，
+     * 中途降级时已生成的凭证是有效结果，下次接着补。
+     */
+    @Override
+    public ProcurementVoucherReport generateProcurementVouchers(Long shopId) {
+        if (shopId == null) {
+            throw new AttrIsNullException("shopId 不能为空");
+        }
+        ProcurementVoucherReport report = new ProcurementVoucherReport();
+        report.setShopId(shopId);
+        String cursor = null;
+        for (int page = 0; page < PROCUREMENT_VOUCHER_MAX_PAGES; page++) {
+            Result<List<RemotePurchaseOrder>> res;
+            try {
+                res = procurementCostClient.listVoucherSources(shopId, PROCUREMENT_VOUCHER_PAGE_SIZE, cursor);
+            } catch (Exception e) {
+                report.setRemoteDegraded(true);
+                report.setRemoteMessage("采购域调用异常：" + e.getMessage());
+                log.error("拉取采购凭证源异常 shopId={}", shopId, e);
+                return report;
+            }
+            if (res == null || res.getCode() != 200) {
+                report.setRemoteDegraded(true);
+                report.setRemoteMessage("采购域未返回成功：" + (res == null ? "响应为空" : res.getMessage()));
+                log.warn("采购凭证源降级 shopId={} message={}", shopId, report.getRemoteMessage());
+                return report;
+            }
+            report.setPagesRead(report.getPagesRead() + 1);
+            List<RemotePurchaseOrder> rows = res.getData() == null ? List.of() : res.getData();
+            for (RemotePurchaseOrder order : rows) {
+                report.setScanned(report.getScanned() + 1);
+                applyPurchaseOrder(shopId, order, report);
+            }
+            PageMeta meta = res.getPage();
+            if (meta == null || !meta.isHasMore() || meta.getNextCursor() == null) {
+                cursor = null;
+                break;
+            }
+            cursor = meta.getNextCursor();
+        }
+        report.setCapped(cursor != null);
+        if (report.isCapped()) {
+            log.warn("采购凭证生成达到最大页数 shopId={} pages={}，仍有采购单未读，需再跑一次",
+                    shopId, PROCUREMENT_VOUCHER_MAX_PAGES);
+        }
+        log.info("采购凭证生成 shopId={} 读取={} 生成={} 幂等命中={} 跳过(无单号/零金额)={}/{} 降级={}",
+                shopId, report.getScanned(), report.getGenerated(), report.getExisting(),
+                report.getSkippedNoOrderNo(), report.getSkippedZeroAmount(), report.isRemoteDegraded());
+        return report;
+    }
+
+    private void applyPurchaseOrder(Long shopId, RemotePurchaseOrder order, ProcurementVoucherReport report) {
+        if (order.getOrderNo() == null || order.getOrderNo().isBlank()) {
+            // 没有单号就没有幂等键，重复跑会重复入账，只能跳过并计数
+            report.setSkippedNoOrderNo(report.getSkippedNoOrderNo() + 1);
+            return;
+        }
+        BigDecimal amount = order.getTotalAmount();
+        if (amount == null && order.getUnitPrice() != null && order.getQuantity() != null) {
+            amount = order.getUnitPrice().multiply(BigDecimal.valueOf(order.getQuantity()));
+        }
+        if (amount == null || amount.signum() == 0) {
+            report.setSkippedZeroAmount(report.getSkippedZeroAmount() + 1);
+            return;
+        }
+        if (findVoucher(shopId, SOURCE_PROCUREMENT, order.getOrderNo()) != null) {
+            report.setExisting(report.getExisting() + 1);
+            return;
+        }
+        // 借 库存商品 / 贷 应付账款：与 calculateProfit 对 PROCUREMENT 做减法的方向一致
+        AccountingVoucher v = buildVoucher(shopId, "采购成本 - " + order.getOrderNo(),
+                ACCT_INVENTORY, ACCT_PAYABLE, amount, PROCUREMENT_CURRENCY, SOURCE_PROCUREMENT, order.getOrderNo());
+        try {
+            voucherMapper.insert(v);
+        } catch (org.springframework.dao.DuplicateKeyException e) {
+            requireExisting(shopId, SOURCE_PROCUREMENT, order.getOrderNo(), e);
+            report.setExisting(report.getExisting() + 1);
+            return;
+        }
+        report.setGenerated(report.getGenerated() + 1);
+        report.setOriginalAmountSum(report.getOriginalAmountSum().add(amount));
     }
 
     /** 同源凭证查询：(shopId, sourceType, sourceNo) 三元组即幂等键。 */

@@ -32,6 +32,10 @@ import java.util.List;
 @Service
 public class ProcurementServiceImpl implements ProcurementService {
 
+    /** 成本可确认状态：只有这三态的采购单允许被财务生成 PROCUREMENT 凭证 */
+    private static final List<String> VOUCHER_ELIGIBLE_STATUS =
+            List.of("QC_PASSED", "RECEIVED", "COMPLETED");
+
     /** 质检合格率阈值：≥95% PASS，<90% FAIL，中间 CONDITIONAL */
     private static final BigDecimal PASS_THRESHOLD = new BigDecimal("95");
     private static final BigDecimal FAIL_THRESHOLD = new BigDecimal("90");
@@ -161,6 +165,24 @@ public class ProcurementServiceImpl implements ProcurementService {
         List<PurchaseOrder> rows = purchaseOrderMapper.selectList(wrapper);
         if (rows.size() > req.size()) {
             log.warn("采购单列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页", shopId, req.size());
+        }
+        return PageResult.of(rows, req.size(), o -> PageRequest.encodeCursor(o.getId()));
+    }
+
+    @Override
+    public PageResult<PurchaseOrder> listOrdersForVoucher(Long shopId, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
+        LambdaQueryWrapper<PurchaseOrder> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PurchaseOrder::getShopId, shopId)
+                .in(PurchaseOrder::getStatus, VOUCHER_ELIGIBLE_STATUS);
+        if (req.hasCursor()) {
+            wrapper.lt(PurchaseOrder::getId, req.cursorId());
+        }
+        wrapper.orderByDesc(PurchaseOrder::getId)
+                .last("LIMIT " + req.probeSize());
+        List<PurchaseOrder> rows = purchaseOrderMapper.selectList(wrapper);
+        if (rows.size() > req.size()) {
+            log.warn("凭证用采购单列表被截断：shopId={} size={}，调用方需携带 nextCursor 继续翻页", shopId, req.size());
         }
         return PageResult.of(rows, req.size(), o -> PageRequest.encodeCursor(o.getId()));
     }
