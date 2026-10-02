@@ -113,6 +113,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/procurement') }"
+        @click="navigateTo('/procurement')"
+        role="button"
+        aria-label="采购供应链"
+        tabindex="0"
+      >
+        <Icon icon="mdi:cart-arrow-right" class="nav-icon" width="24" />
+        <span class="nav-text">采购供应链</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/connectors') }"
         @click="navigateTo('/connectors')"
         role="button"

@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { asNumber } from '@/utils/format'
 
 /**
  * 商品与 Listing 运营接口层（amz-service-product, 端口 8095）。
@@ -85,13 +86,6 @@ export interface KeepaPoint {
   date?: string
   price?: number | string | null
   rank?: number | string | null
-}
-
-/** 后端 SUM/COUNT 回来的可能是字符串（DECIMAL/BIGINT），统一收成数字。 */
-export const asNumber = (value: unknown, fallback = 0): number => {
-  if (value === null || value === undefined || value === '') return fallback
-  const n = Number(value)
-  return Number.isFinite(n) ? n : fallback
 }
 
 /** severity 由后端按 utf8mb4_bin 精确比较产出，这里只做展示归类，不做大小写猜测。 */
