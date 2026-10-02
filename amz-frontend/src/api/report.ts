@@ -304,7 +304,19 @@ export const realtimeSummary = (shopId: number | string, q: { startTime?: string
 export const listAllocations = (shopId: number | string, q: ReportQuery & { startTime?: string } = {}) =>
   request.get<void, ApiResponse<CostAllocation[]>>(`/report/profit/allocation/list/${shopId}`, { params: params(q) })
 
-/** 把一笔总成本按 SKU 列表分摊；返回每个 SKU 分到的金额。 */
-export const allocateCost = (shopId: number | string, costType: string, totalAmount: number, skus: string[]) =>
-  request.post<void, ApiResponse<Record<string, number>>>(`/report/profit/allocate/${shopId}`, skus,
-    { params: { costType, totalAmount } })
+/**
+ * 成本分摊入账。
+ *
+ * entries 每项是 `SKU` 或 `SKU:金额`：带金额就按给定金额入账（后端校验合计必须等于 totalAmount，
+ * 不一致直接 400，不静默补差），全不带则由后端均摊。
+ * sourceRef 给了就幂等（同来源不重复入账）；currency 必须显式给，后端不猜。
+ */
+export const allocateCost = (
+  shopId: number | string,
+  costType: string,
+  totalAmount: number,
+  entries: string[],
+  opts: { sourceRef?: string; currency?: string } = {}
+) =>
+  request.post<void, ApiResponse<Record<string, number>>>(`/report/profit/allocate/${shopId}`, entries,
+    { params: params({ costType, totalAmount, sourceRef: opts.sourceRef, currency: opts.currency }) })

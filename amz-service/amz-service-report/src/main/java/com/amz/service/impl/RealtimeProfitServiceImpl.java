@@ -359,39 +359,132 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     }
 
     @Override
-    public Map<String, BigDecimal> allocateCost(Long shopId, String costType, BigDecimal totalAmount, List<String> skus) {
-        // 均摊法（默认）
-        if (skus == null || skus.isEmpty()) return Collections.emptyMap();
-        BigDecimal perUnit = totalAmount.divide(new BigDecimal(skus.size()), 4, RoundingMode.HALF_UP);
-
-        // 处理除不尽的情况：最后一个 SKU 拿剩余
-        BigDecimal remaining = totalAmount;
-        Map<String, BigDecimal> allocation = new LinkedHashMap<>();
-        for (int i = 0; i < skus.size(); i++) {
-            if (i == skus.size() - 1) {
-                allocation.put(skus.get(i), remaining);
-            } else {
-                allocation.put(skus.get(i), perUnit);
-                remaining = remaining.subtract(perUnit);
-            }
+    public Map<String, BigDecimal> allocateCost(Long shopId, String costType, BigDecimal totalAmount,
+                                                List<String> entries, String sourceRef, String currency) {
+        if (shopId == null) {
+            throw new InvalidParamException("shopId 不能为空");
+        }
+        if (costType == null || costType.isBlank()) {
+            throw new InvalidParamException("costType 不能为空");
+        }
+        if (totalAmount == null || totalAmount.signum() <= 0) {
+            throw new InvalidParamException("分摊总额必须大于 0，实际 " + totalAmount);
+        }
+        if (entries == null || entries.isEmpty()) {
+            return Collections.emptyMap();
         }
 
-        // 记录分摊
+        // 带金额 = 按给定金额入账（来自采购域已摊好的明细）；全不带 = 均摊
+        Map<String, BigDecimal> explicit = new LinkedHashMap<>();
+        List<String> plainSkus = new ArrayList<>();
+        for (String raw : entries) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            String entry = raw.trim();
+            int sep = entry.indexOf(':');
+            if (sep < 0) {
+                if (explicit.containsKey(entry) || plainSkus.contains(entry)) {
+                    throw new InvalidParamException("SKU 重复出现在分摊列表中：" + entry);
+                }
+                plainSkus.add(entry);
+                continue;
+            }
+            String sku = entry.substring(0, sep).trim();
+            String amountText = entry.substring(sep + 1).trim();
+            if (sku.isEmpty() || amountText.isEmpty()) {
+                throw new InvalidParamException("分摊项格式非法，需为 SKU 或 SKU:金额，实际 " + raw);
+            }
+            BigDecimal amount;
+            try {
+                amount = new BigDecimal(amountText);
+            } catch (NumberFormatException e) {
+                throw new InvalidParamException("分摊金额不是数字：" + raw + "（" + e.getMessage() + "）");
+            }
+            if (amount.signum() < 0) {
+                throw new InvalidParamException("分摊金额不能为负：" + raw);
+            }
+            if (explicit.containsKey(sku)) {
+                throw new InvalidParamException("SKU 重复出现在分摊列表中：" + sku);
+            }
+            explicit.put(sku, amount);
+        }
+        if (!explicit.isEmpty() && !plainSkus.isEmpty()) {
+            throw new InvalidParamException("分摊项不能混用「带金额」与「只写 SKU」两种写法");
+        }
+
+        Map<String, BigDecimal> allocation;
+        String allocMethod;
+        if (!explicit.isEmpty()) {
+            BigDecimal sum = explicit.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP);
+            if (sum.compareTo(totalAmount.setScale(2, RoundingMode.HALF_UP)) != 0) {
+                // 静默补差等于凭空多算或少算成本，必须拒绝入账
+                throw new InvalidParamException("给定分摊金额合计 " + sum.toPlainString()
+                        + " 与总额 " + totalAmount.toPlainString() + " 不一致，拒绝入账");
+            }
+            allocation = explicit;
+            allocMethod = "EXPLICIT";
+        } else {
+            // 均摊法：除不尽的尾差给最后一个 SKU，保证合计严格等于总额
+            BigDecimal perUnit = totalAmount.divide(new BigDecimal(plainSkus.size()), 4, RoundingMode.HALF_UP);
+            BigDecimal remaining = totalAmount;
+            allocation = new LinkedHashMap<>();
+            for (int i = 0; i < plainSkus.size(); i++) {
+                if (i == plainSkus.size() - 1) {
+                    allocation.put(plainSkus.get(i), remaining);
+                } else {
+                    allocation.put(plainSkus.get(i), perUnit);
+                    remaining = remaining.subtract(perUnit);
+                }
+            }
+            allocMethod = "EVEN";
+        }
+
+        boolean hasSource = sourceRef != null && !sourceRef.isBlank();
+        if (hasSource && costAllocationMapper.countBySource(shopId, costType, sourceRef) > 0) {
+            CostAllocation stored = costAllocationMapper.selectBySource(shopId, costType, sourceRef);
+            Map<String, BigDecimal> storedDetails = parseStoredDetails(stored);
+            log.info("同来源分摊已存在，幂等跳过：shopId={} costType={} sourceRef={}", shopId, costType, sourceRef);
+            // 返回账上真正记着的明细，而不是本次算出来的：两者不一致时以账为准
+            return storedDetails.isEmpty() ? allocation : storedDetails;
+        }
+
         try {
             CostAllocation alloc = new CostAllocation();
             alloc.setShopId(shopId);
             alloc.setCostType(costType);
+            alloc.setSourceRef(hasSource ? sourceRef : null);
+            alloc.setCurrency(currency);
             alloc.setTotalAmount(totalAmount);
-            alloc.setAllocMethod("EVEN");
+            alloc.setAllocMethod(allocMethod);
             alloc.setAllocDetails(objectMapper.writeValueAsString(allocation));
             alloc.setAllocDate(LocalDate.now());
             costAllocationMapper.insert(alloc);
             evictHeadhaulCache(shopId);
         } catch (JsonProcessingException e) {
-            log.warn("分摊明细序列化失败 costType={}", costType, e);
+            // 明细序列化不了就不要留一条「有总额、没分摊」的半成品记录
+            throw new IllegalStateException("分摊明细序列化失败 costType=" + costType + "：" + e.getMessage(), e);
         }
-
         return allocation;
+    }
+
+    /** 读回已入账的分摊明细；解析不了返回空 Map，由调用方决定退化到什么。 */
+    private Map<String, BigDecimal> parseStoredDetails(CostAllocation stored) {
+        if (stored == null || stored.getAllocDetails() == null || stored.getAllocDetails().isBlank()) {
+            return Collections.emptyMap();
+        }
+        try {
+            Map<String, Object> raw = objectMapper.readValue(stored.getAllocDetails(),
+                    new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {
+                    });
+            Map<String, BigDecimal> out = new LinkedHashMap<>();
+            raw.forEach((k, v) -> out.put(k, v == null ? BigDecimal.ZERO : new BigDecimal(v.toString())));
+            return out;
+        } catch (Exception e) {
+            log.warn("已入账分摊明细无法解析，按本次计算值返回：{}", e.getMessage());
+            return Collections.emptyMap();
+        }
     }
 
     // ==================== 辅助方法 ====================

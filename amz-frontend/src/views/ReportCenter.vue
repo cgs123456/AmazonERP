@@ -444,9 +444,36 @@
                 </select>
               </label>
               <label class="filter">总额<input class="cell-input" type="number" min="0" step="0.01" v-model="newAllocAmount" /></label>
-              <label class="filter">SKU 列表（逗号分隔）<input v-model="newAllocSkus" /></label>
+              <label class="filter">币种 *<input class="cell-input" v-model="newAllocCurrency" placeholder="CNY / USD" /></label>
+              <label class="filter">来源标识<input v-model="newAllocSource" placeholder="如货件号，留空则不做幂等" /></label>
+              <label class="filter">分摊项（逗号分隔，写 SKU 或 SKU:金额）<input v-model="newAllocSkus" /></label>
               <button class="action-btn" @click="confirm(allocateConfirm)">执行分摊</button>
             </div>
+            <p class="muted alloc-note">
+              写 SKU:金额时按给定金额入账，后端会校验合计等于总额；只写 SKU 时均摊。
+              实时快照只消费 HEADHAUL 这一类（headhaulCost），其余类型入账也不会进利润，别指望它自动生效。
+            </p>
+
+            <div class="filter-row">
+              <label class="filter">到货件分摊导入
+                <select class="cell-input" v-model="pickShipmentId" @change="loadShipmentForImport">
+                  <option value="">选择货件</option>
+                  <option v-for="sh in importableShipments" :key="sh.id" :value="sh.id">
+                    {{ sh.shipmentNo || sh.id }} · {{ sh.status }} · 总成本 {{ sh.totalCost ?? '-' }}
+                  </option>
+                </select>
+              </label>
+              <label class="filter">赔付/结算币种 *<input class="cell-input" v-model="importCurrency" placeholder="USD" /></label>
+              <button class="action-btn" :disabled="!pickedShipment || busy" @click="confirm(shipmentImportConfirm)">
+                按货件运费入账 HEADHAUL
+              </button>
+            </div>
+            <p v-if="pickedShipment" class="muted">
+              货件 {{ pickedShipment.shipmentNo }}：运费合计 {{ importPreview.freight }}（取每行 freightAllocation），
+              关税 {{ importPreview.customs }}、其他 {{ importPreview.other }} 不会进这一笔——
+              快照的 headhaulCost 只读运费口径，货件成本字段本身没有币种，所以币种要人确认。
+            </p>
+
             <table v-if="allocResult.length" class="data-table">
               <thead><tr><th>SKU</th><th>分摊金额</th></tr></thead>
               <tbody>
@@ -480,6 +507,8 @@ import { useShopGuard } from '@/composables/useShopGuard'
 import { asNumber } from '@/utils/format'
 import type { ApiResponse, PageMeta } from '@/api/types'
 import * as rpt from '@/api/report'
+import { listShipments as listProcurementShipments, listShipmentItems as listProcurementShipmentItems } from '@/api/procurement'
+import type { FbaShipment, FbaShipmentItem } from '@/api/procurement'
 import type {
   ProfitDetail, ProfitSummaryReport, InventoryTurnover, DeadStockReport, SalesDaily,
   SalesComparison, BusinessOverview, ShopDashboard, ProfitSnapshot, ProfitTrend,
@@ -535,6 +564,12 @@ const newAllocType = ref('HEADHAUL')
 const newAllocAmount = ref<number | string>('')
 const newAllocSkus = ref('')
 const allocResult = ref<Array<{ sku: string; amount: number | string }>>([])
+const newAllocCurrency = ref('')
+const newAllocSource = ref('')
+const importableShipments = ref<FbaShipment[]>([])
+const importItems = ref<FbaShipmentItem[]>([])
+const pickShipmentId = ref<number | string>('')
+const importCurrency = ref('')
 
 const confirmBox = ref<null | { title: string; detail: string; run: () => Promise<void> }>(null)
 
@@ -718,19 +753,76 @@ const allocDetailText = (a: CostAllocation): string => {
   }
 }
 
+const pickedShipment = computed(() =>
+  importableShipments.value.find(s => String(s.id) === String(pickShipmentId.value)) || null)
+
+const sumBy = (pick: (i: FbaShipmentItem) => number | string | null | undefined) =>
+  importItems.value.reduce((acc, i) => acc + asNumber(pick(i)), 0)
+
+/** 只把运费摊成 HEADHAUL：实时快照的 headhaulCost 只认这一类，其余口径不在此消费。 */
+const importPreview = computed(() => ({
+  freight: sumBy(i => i.freightAllocation).toFixed(2),
+  customs: sumBy(i => i.customsAllocation).toFixed(2),
+  other: (() => {
+    const total = sumBy(i => i.totalCost)
+    const goods = sumBy(i => asNumber(i.unitCost) * asNumber(i.quantity))
+    return Math.max(0, total - goods - sumBy(i => i.freightAllocation) - sumBy(i => i.customsAllocation)).toFixed(2)
+  })()
+}))
+
+const loadImportShipments = async () => {
+  await call('可导入货件', () => listProcurementShipments(shop(), { size: 50 }),
+    (rows) => { importableShipments.value = (rows || []).filter(r => r.id) })
+}
+
+const loadShipmentForImport = async () => {
+  const id = pickShipmentId.value
+  importItems.value = []
+  if (!id) return
+  await call('货件明细分摊', () => listProcurementShipmentItems(Number(id), { size: 200 }),
+    (rows) => { importItems.value = rows || [] })
+}
+
 const allocateConfirm = {
   title: '执行成本分摊',
-  detail: `把 ${newAllocAmount.value} 的 ${newAllocType.value} 成本按 SKU 列表分摊并落库`
-    + '（后端会写一条 CostAllocation 记录）。已存在的分摊不会被覆盖，重复执行会新增一条。',
+  detail: `按 ${newAllocAmount.value} 的 ${newAllocType.value} 成本写一条 CostAllocation 记录。`
+    + '来源标识留空时后端不做幂等：重复点一次就多记一条，实时利润会被重复扣。',
   run: async () => {
-    const skus = newAllocSkus.value.split(/[,，\s]+/).filter(Boolean)
+    const entries = newAllocSkus.value.split(/[,，\s]+/).filter(Boolean)
     const amount = asNumber(newAllocAmount.value)
-    if (!skus.length) { pushError('分摊：SKU 列表不能为空'); return }
+    if (!entries.length) { pushError('分摊：分摊项不能为空'); return }
     if (amount <= 0) { pushError('分摊：总额必须大于 0'); return }
-    const ok = await call('成本分摊', () => rpt.allocateCost(shop(), newAllocType.value, amount, skus),
-      (map) => {
-        allocResult.value = Object.entries(map || {}).map(([sku, v]) => ({ sku, amount: v }))
-      })
+    if (!newAllocCurrency.value.trim()) { pushError('分摊：币种必填，后端不替调用方猜'); return }
+    const ok = await call('成本分摊', () => rpt.allocateCost(shop(), newAllocType.value, amount, entries, {
+      sourceRef: newAllocSource.value.trim() || undefined, currency: newAllocCurrency.value.trim()
+    }), (map) => {
+      allocResult.value = Object.entries(map || {}).map(([sku, v]) => ({ sku, amount: v }))
+    })
+    if (ok) await loadAllocations()
+  }
+}
+
+const shipmentImportConfirm = {
+  title: '按货件运费入账 HEADHAUL',
+  detail: `把货件 ${pickedShipment.value?.shipmentNo || ''} 的运费合计 `
+    + `${importPreview.value.freight} 按每行 freightAllocation 分摊到 SKU 并写入 HEADHAUL 成本，`
+    + '来源标识用货件号，所以同一货件重复导入不会二次入账。关税与其他费用不在这一笔里。',
+  run: async () => {
+    const s = pickedShipment.value
+    const currency = importCurrency.value.trim()
+    if (!s?.id) { pushError('导入：请先选择货件'); return }
+    if (!importItems.value.length) { pushError('导入：该货件还没有分摊明细，先在采购页执行费用分摊'); return }
+    if (!currency) { pushError('导入：币种必填，货件成本字段没有记币种'); return }
+    const entries = importItems.value
+      .filter(i => asNumber(i.freightAllocation) > 0)
+      .map(i => `${i.sku}:${asNumber(i.freightAllocation).toFixed(2)}`)
+    const freight = asNumber(importPreview.value.freight)
+    if (!entries.length || freight <= 0) { pushError('导入：运费合计为 0，没有可入账的金额'); return }
+    const ok = await call('货件运费入账', () => rpt.allocateCost(shop(), 'HEADHAUL', freight, entries, {
+      sourceRef: s.shipmentNo || `SHIP-${s.id}`, currency
+    }), (map) => {
+      allocResult.value = Object.entries(map || {}).map(([sku, v]) => ({ sku, amount: v }))
+    })
     if (ok) await loadAllocations()
   }
 }
@@ -748,7 +840,7 @@ const TAB_LOADERS: Record<TabKey, () => Promise<unknown>> = {
   profit: loadAllProfit,
   turnover: loadTurnover,
   sales: loadSales,
-  snapshot: loadAllSnapshot
+  snapshot: async () => { await Promise.all([loadAllSnapshot(), loadImportShipments()]) }
 }
 
 const loaded = new Set<TabKey>()

@@ -3,6 +3,12 @@ import { readFileSync } from 'node:fs'
 import { mount, flushPromises } from '@vue/test-utils'
 import ReportCenter from '../views/ReportCenter.vue'
 
+vi.mock('@/api/procurement', () => ({
+  listShipments: vi.fn(),
+  listShipmentItems: vi.fn()
+}))
+import { listShipments, listShipmentItems } from '@/api/procurement'
+
 vi.mock('@/api/report', async () => {
   const actual = await vi.importActual<typeof import('@/api/report')>('@/api/report')
   return {
@@ -92,6 +98,15 @@ const ALLOCATIONS = ok([
     allocDetails: 'not-json', allocDate: '2026-09-29' }
 ], pageOf(null))
 
+const SHIPMENTS = ok([
+  { id: 31, shopId: 1, shipmentNo: 'FBA-SHIP-0031', status: 'SHIPPED', totalCost: 1500 },
+  { id: 32, shopId: 1, shipmentNo: 'FBA-SHIP-0032', status: 'CREATED', totalCost: 0 }
+])
+const SHIPMENT_ITEMS = ok([
+  { id: 41, fbaShipmentId: 31, sku: 'SKU-1', quantity: 100, freightAllocation: 600, customsAllocation: 90, totalCost: 2090 },
+  { id: 42, fbaShipmentId: 31, sku: 'SKU-2', quantity: 50, freightAllocation: 300, customsAllocation: 45, totalCost: 1045 }
+])
+
 const stubs = { stubs: { AppHeader: { template: '<div />' }, AppSidebar: { template: '<div />' }, Icon: true } }
 
 const happy = () => {
@@ -105,6 +120,8 @@ const happy = () => {
   vi.mocked(rpt.listSnapshots).mockResolvedValue(SNAPSHOTS)
   vi.mocked(rpt.realtimeSummary).mockResolvedValue(REALTIME_SUMMARY)
   vi.mocked(rpt.listAllocations).mockResolvedValue(ALLOCATIONS)
+  vi.mocked(listShipments).mockResolvedValue(SHIPMENTS)
+  vi.mocked(listShipmentItems).mockResolvedValue(SHIPMENT_ITEMS)
 }
 
 const mountPage = async () => {
@@ -197,14 +214,23 @@ describe('ReportCenter 视图（经营报表）', () => {
     const wrapper = await mountPage()
     await openTab(wrapper, '实时快照与成本分摊')
     const inputs = wrapper.find('[data-panel="snapshot"]').findAll('input')
-    // 顺序：SKU / 起 / 止 / 趋势小时 / 分摊总额 / SKU 列表
-    await inputs[5].setValue('SKU-1，SKU-2 SKU-3')
+    // 顺序：SKU / 起 / 止 / 趋势小时 / 总额 / 币种 / 来源 / 分摊项 /（导入区）币种
+    await inputs[7].setValue('SKU-1，SKU-2 SKU-3')
     await inputs[4].setValue('100')
     await clickBtn(wrapper, '执行分摊')
+    // 确认文案要说明幂等风险：留空来源时重复点会重复入账
+    expect(wrapper.text()).toContain('来源标识留空时后端不做幂等')
+    // 币种没填：确认后拒绝入账，后端不猜币种
     expect(rpt.allocateCost).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('重复执行会新增一条')
     await clickBtn(wrapper, '确认执行')
-    expect(rpt.allocateCost).toHaveBeenCalledWith('900000000000001000', 'HEADHAUL', 100, ['SKU-1', 'SKU-2', 'SKU-3'])
+    expect(rpt.allocateCost).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('币种必填')
+    await inputs[5].setValue('CNY')
+    await inputs[6].setValue('MANUAL-001')
+    await clickBtn(wrapper, '执行分摊')
+    await clickBtn(wrapper, '确认执行')
+    expect(rpt.allocateCost).toHaveBeenCalledWith('900000000000001000', 'HEADHAUL', 100,
+      ['SKU-1', 'SKU-2', 'SKU-3'], { sourceRef: 'MANUAL-001', currency: 'CNY' })
     // 结果表按后端返回的 map 渲染（后端只回了两个 key，就不硬凑第三个）
     expect(wrapper.text()).toContain('分摊金额')
     expect(wrapper.text()).toContain('SKU-1')
@@ -265,5 +291,30 @@ describe('ReportCenter 视图（经营报表）', () => {
     expect(src).toMatch(/\/report\/profit\/allocate\//)
     expect(src).not.toMatch(/request\.post[^;]*\/report\/v2\/(profit|inventory-turnover|sales-daily|business-overview)/)
     expect(src).not.toMatch(/request\.post[^;]*\/report\/profit\/allocation'/)
+  })
+
+  it('货件运费按采购域已摊好的金额导入 HEADHAUL，来源用货件号保证幂等', async () => {
+    vi.mocked(rpt.allocateCost).mockResolvedValue(ok({ 'SKU-1': 600, 'SKU-2': 300 }))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '实时快照与成本分摊')
+    // select 顺序：分摊类型筛选 / 新分摊类型 / 待导入货件
+    const selects = wrapper.find('[data-panel="snapshot"]').findAll('select')
+    await selects[2].setValue('31')
+    await flushPromises()
+    expect(listShipmentItems).toHaveBeenCalledWith(31, expect.anything())
+    expect(wrapper.text()).toContain('运费合计 900.00')
+    expect(wrapper.text()).toContain('不会进这一笔')
+
+    const inputs = wrapper.find('[data-panel="snapshot"]').findAll('input')
+    await clickBtn(wrapper, '按货件运费入账 HEADHAUL')
+    await clickBtn(wrapper, '确认执行')
+    expect(rpt.allocateCost).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('币种必填，货件成本字段没有记币种')
+
+    await inputs[8].setValue('USD')
+    await clickBtn(wrapper, '按货件运费入账 HEADHAUL')
+    await clickBtn(wrapper, '确认执行')
+    expect(rpt.allocateCost).toHaveBeenCalledWith('900000000000001000', 'HEADHAUL', 900,
+      ['SKU-1:600.00', 'SKU-2:300.00'], { sourceRef: 'FBA-SHIP-0031', currency: 'USD' })
   })
 })

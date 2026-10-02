@@ -94,13 +94,22 @@ public class RealtimeProfitController {
                 PageRequest.of(size, cursor)));
     }
 
-    /** 执行成本分摊计算 */
+    /**
+     * 执行成本分摊入账。
+     * <p>
+     * body 每项写 {@code SKU} 或 {@code SKU:金额}：带金额按给定金额入账（用于导入采购域已摊好的头程），
+     * 全不带则均摊。给定金额之和与总额不一致直接 400，不静默补差。
+     * {@code sourceRef} 给了就幂等；{@code currency} 由调用方显式声明，服务端不猜。
+     */
     @ShopScoped
     @PostMapping("/allocate/{shopId}")
     public Result<Map<String, BigDecimal>> allocateCost(@PathVariable Long shopId,
-                                                         @RequestParam String costType,
-                                                         @RequestParam BigDecimal totalAmount,
-                                                         @RequestBody List<String> skus) {
-        return Result.success(realtimeProfitService.allocateCost(shopId, costType, totalAmount, skus));
+                                                        @RequestParam String costType,
+                                                        @RequestParam BigDecimal totalAmount,
+                                                        @RequestBody List<String> entries,
+                                                        @RequestParam(required = false) String sourceRef,
+                                                        @RequestParam(required = false) String currency) {
+        return Result.success(realtimeProfitService.allocateCost(
+                shopId, costType, totalAmount, entries, sourceRef, currency));
     }
 }
