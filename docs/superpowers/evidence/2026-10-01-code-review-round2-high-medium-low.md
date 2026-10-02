@@ -419,3 +419,24 @@ fail-fast 语义（`baseline-on-migrate: false`，存量库无 history 必须炸
 （扫到 mvn 步骤数 ≠ 2 直接红，避免"空泛成立"），且钉住挂载只出现在构建阶段、
 不得烘进最终镜像层；实测去掉一处挂载 → 用例点名该行变红。
 镜像内容复核：`._*` 垃圾 0、真插件 153、`app.jar` 在位、最终层里没有 `/root/.m2`。
+
+## 14. 其它 agent 分支合并 master 的预检（移交用，只读）
+
+推送后（master = `3e7a6bf`）用 `git merge-tree --write-tree` 在**不动任何 worktree** 的前提下
+预演了各分支合并 master 的结果。四个分支都落后 **86 个提交**：
+
+| 分支 | 合并预演 | 冲突点 |
+|---|---|---|
+| `codex/p2-performance-baseline`（项9） | **干净** | — |
+| `codex/p1-db-migration-audit`（项7） | **干净** | — |
+| `codex/p1-frontend-e2e-logistics` | 有冲突 | `amz-frontend/e2e/all-pages.spec.ts`（`full-interaction.spec.ts` 亦在自动合并列表中） |
+| `codex/p2-observability-prometheus` | 有冲突 | 各服务 `src/main/resources/application.yml` 成片（ad/ai/customer/finance/logistics/message/multiplatform/ops/procurement/report/search…） |
+
+对项9 的直接含义：**它没有任何合并障碍**，"必须重测"这件事现在只剩它自己排期——
+基线分支可以干净地拿到本轮全部修复（含 Feign 降级可见性、批量写、口径变更）。
+对 `p2-observability` 的含义：它在改所有服务的 yml，而本轮我删过 `platform.exchange-rates` 死配置段
+（只动了 multiplatform 那一份 yml），两边会在同一批文件上撞车，需要它那边逐文件核。
+
+限制（不要把这条当完整结论）：`merge-tree` 只看**已提交**的树，
+`codex/p2-performance-baseline` 当前还有 **17 个未提交文件**，这些改动没进预演；
+所以"干净"仅指两个提交树可干净合并，落地时仍以它自己 `git merge` 的结果为准。
