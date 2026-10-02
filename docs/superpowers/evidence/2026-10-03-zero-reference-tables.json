@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "tables_total": 113,
+  "tables_zero_reference": 12,
+  "zero_reference": [
+    {
+      "table": "amz_ad_placement_report",
+      "created_in": [
+        "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_attention",
+      "created_in": [
+        "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": [
+        "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/FlywayBaselineContractTest.java"
+      ]
+    },
+    {
+      "table": "amz_cart",
+      "created_in": [
+        "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_coupon",
+      "created_in": [
+        "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_customer_service_kpi",
+      "created_in": [
+        "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_listing_seo",
+      "created_in": [
+        "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_logistics_quote",
+      "created_in": [
+        "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_oper_log",
+      "created_in": [
+        "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_product_browse",
+      "created_in": [
+        "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_purchase_approval",
+      "created_in": [
+        "amz-service/amz-service-procurement/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_report_template",
+      "created_in": [
+        "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    },
+    {
+      "table": "amz_user_coupon",
+      "created_in": [
+        "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
+      ],
+      "mentioned_in_tests_or_docs": []
+    }
+  ]
+}
