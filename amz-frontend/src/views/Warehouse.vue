@@ -121,11 +121,13 @@
                   <div v-else class="loc-view">
                     <span>{{ inv.locationCode || '-' }}</span>
                     <button
+                      v-if="locationRoleAllowed"
                       class="page-btn loc-btn"
                       :disabled="!inv.id"
                       :title="inv.id ? '修改库位码（需 OPERATOR 或 ADMIN 角色）' : '该行没有 id，无法定位记录'"
                       @click="startLocationEdit(inv)"
                     >改库位</button>
+                    <span v-else class="loc-locked" role="note">需 OPERATOR/ADMIN</span>
                     <span v-if="savedLocationId === inv.id" class="loc-saved" role="status">已保存</span>
                   </div>
                 </td>
@@ -388,11 +390,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue'
+import { ref, onMounted, onUnmounted, reactive } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import * as WH from '@/api/warehouse'
+import { canUseRole, LOCATION_EDIT_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder } from '@/api/warehouse'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { useToast } from '@/composables/useToast'
@@ -428,6 +431,18 @@ const savedLocationId = ref<number | null>(null)
 // 命名空间对象不能直接出现在模板绑定里（Vue 会对 setup 绑定做 ref 解包，
 // 解包时读到的会是 mock 的代理键），所以在脚本里取成普通常量再交给模板。
 const LOCATION_MAX = WH.LOCATION_CODE_MAX_LENGTH
+
+/**
+ * 后端该端点是 @RequireRole({"OPERATOR","ADMIN"})。角色未知（AppHeader 的 getInfo 还没回来）
+ * 时不隐藏按钮：权限的权威判定在后端，前端只做「点了必然 403」的提前告知。
+ */
+const locationRoleAllowed = ref(canUseRole(LOCATION_EDIT_ROLES))
+
+const syncLocationRole = () => {
+  locationRoleAllowed.value = canUseRole(LOCATION_EDIT_ROLES)
+}
+onMounted(() => window.addEventListener(ROLE_CHANGED_EVENT, syncLocationRole))
+onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncLocationRole))
 
 const startLocationEdit = (inv: WarehouseInventory) => {
   if (!inv.id) return
@@ -832,6 +847,7 @@ onMounted(async () => {
 .loc-input:focus { border-color: var(--color-primary); outline: none; }
 .loc-error { color: var(--color-error); font-size: 0.75rem; max-width: 14rem; }
 .loc-saved { color: var(--color-success); font-size: 0.75rem; }
+.loc-locked { color: var(--color-muted); font-size: 0.75rem; }
 
 /* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */
 

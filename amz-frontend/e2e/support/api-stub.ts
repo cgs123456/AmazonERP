@@ -1184,7 +1184,11 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/ai\/agent\/memory\/language$/, data: { ...AGENT_PREFERENCE, language: 'EN' } },
   { match: /^\/ai\/agent\/memory\/history\//, data: AGENT_HISTORY },
 
-  { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E' } } }
+  // role 一直在 getInfo 的响应里（前端 utils/identity.ts 把它存进 localStorage 用于入口判断），
+  // 桩必须带上，否则所有依赖角色的用例都在测「角色未知」这条分支。
+  { match: /^\/user\/getInfo$/, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'ADMIN', birthday: '1990-05-06', address: '杭州市', image: 'https://oss.example.com/a.png', sex: '1' }, age: 36 } },
+  // PUT /user/editInfo：后端返回 Result<Void>，data 恒为 null，前端自己回填已提交的值
+  { match: /^\/user\/editInfo$/, data: null }
 ]
 
 /**

@@ -183,6 +183,9 @@ export interface UserVo {
     sex?: string
     birthday?: string
     address?: string
+    // 后端 amz_user 有 role 列且 getInfo 一直在返回它，前端此前没声明，
+    // 导致全站没有角色来源（见 utils/identity.ts）
+    role?: string
 }
 
 export interface UserInfoResponse {

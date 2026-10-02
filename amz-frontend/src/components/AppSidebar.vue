@@ -287,6 +287,17 @@
         <Icon icon="mdi:brain" class="nav-icon" width="24" />
         <span class="nav-text">助手记忆</span>
       </div>
+      <div
+        class="nav-item"
+        :class="{ active: isActive('/profile') }"
+        @click="navigateTo('/profile')"
+        role="button"
+        aria-label="个人资料"
+        tabindex="0"
+      >
+        <Icon icon="mdi:account-circle-outline" class="nav-icon" width="24" />
+        <span class="nav-text">个人资料</span>
+      </div>
     </div>
   </aside>
 </template>

@@ -1299,6 +1299,60 @@ test.describe('库位编辑与补货重算', () => {
   })
 })
 
+test.describe('个人资料', () => {
+  test('只读区打码手机号，保存只提交改过的那一个字段', async ({ page }) => {
+    const puts: Array<{ path: string; body: string }> = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (r.method() === 'PUT' && u.pathname === '/api/user/editInfo') {
+        puts.push({ path: u.pathname, body: r.postData() || '' })
+      }
+    })
+
+    await page.goto('/profile')
+    const grid = page.locator('.field-grid')
+    await expect(grid).toContainText('138****0000', { timeout: 20000 })
+    await expect(grid).not.toContainText('13800000000')
+    await expect(page.locator('.kv:has(.k:text("角色")) .v')).toHaveText('ADMIN')
+
+    await page.locator('.field input').first().fill('E2E 改名')
+    await expect(page.locator('.form-actions')).toContainText('将提交 1 个字段：昵称')
+    await page.locator('.form-actions .action-btn.primary').click()
+
+    await expect.poll(() => puts.length).toBe(1)
+    const sent = JSON.parse(puts[0].body) as Record<string, unknown>
+    expect(Object.keys(sent)).toEqual(['nickname'])
+    expect(sent.nickname).toBe('E2E 改名')
+    await expect(page.locator('.saved-tip')).toContainText('已保存 1 个字段')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+
+  test('没有改动时保存按钮禁用，避免提交一次空更新', async ({ page }) => {
+    await page.goto('/profile')
+    await expect(page.locator('.form-actions')).toContainText('没有改动', { timeout: 20000 })
+    await expect(page.locator('.form-actions .action-btn.primary')).toBeDisabled()
+  })
+
+  test('角色是 VIEWER 时海外仓不给改库位入口', async ({ page }) => {
+    // 后注册的 route 先匹配：用它覆盖 installApiStub 里那个 ADMIN 用户，
+    // 才能真的走到「入口隐藏」这条分支（角色未知时是故意不隐藏的）。
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'VIEWER' } } })
+      })
+    )
+
+    await page.goto('/warehouse')
+    await page.locator('.tab-item', { hasText: '库存查询' }).click()
+    await expect(page.locator('.loc-locked')).toContainText('需 OPERATOR/ADMIN', { timeout: 20000 })
+    await expect(page.locator('.loc-btn')).toHaveCount(0)
+    // 入口隐藏不等于数据被藏起来：库位值本身必须仍然可读
+    await expect(page.locator('.loc-view').first()).toContainText('A-01-03')
+  })
+})
+
 test.describe('未登录态', () => {
   test('无 token 时 header 显示登录入口', async ({ browser }) => {
     // 自建干净上下文：无任何 token，也不装 /api 桩（userInfo 取不到 -> v-if="!userInfo" 分支）

@@ -114,6 +114,11 @@ const router = createRouter({
             component: () => import('../views/AgentMemory.vue')
         },
         {
+            path: '/profile',
+            name: 'Profile',
+            component: () => import('../views/Profile.vue')
+        },
+        {
             path: '/listings',
             name: 'Listings',
             component: () => import('../views/ListingMonitor.vue')

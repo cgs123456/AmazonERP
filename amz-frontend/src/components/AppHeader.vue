@@ -75,6 +75,7 @@ import { Icon } from '@iconify/vue'
 import { useRouter } from 'vue-router'
 import LoginModal from './LoginModal.vue'
 import { getUserInfo, type UserVo } from '../api/auth'
+import { setUserRole, clearUserRole } from '../utils/identity'
 import { websocketManager } from '../utils/websocket'
 import { getShops, getCurrentShopId, setCurrentShopId, type ShopOption } from '../utils/shop'
 
@@ -120,6 +121,8 @@ const loadUserInfo = async () => {
     const response = await getUserInfo()
     if (response.code === 200 && response.data && response.data.user) {
       userInfo.value = response.data.user
+      // 角色随用户信息一起落到 localStorage：这是全站唯一的角色来源（后端响应一直带 role）
+      setUserRole(response.data.user.role)
       refreshShops()
     } else if (response.code === 401) {
       // 明确的鉴权失败才清除凭证
@@ -143,6 +146,7 @@ const clearCredentials = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('token_expiry')
   localStorage.removeItem('refreshToken')
+  clearUserRole()
   userInfo.value = null
 }
 
@@ -167,6 +171,7 @@ const handleLogout = () => {
   localStorage.removeItem('token')
   localStorage.removeItem('token_expiry')
   localStorage.removeItem('refreshToken')
+  clearUserRole()
   userInfo.value = null
   showUserMenu.value = false
   websocketManager.close()

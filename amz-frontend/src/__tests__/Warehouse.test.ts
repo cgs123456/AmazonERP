@@ -316,3 +316,41 @@ describe('Warehouse 库位码就地编辑', () => {
     expect(mockedUpdateLocation).not.toHaveBeenCalled()
   })
 })
+
+describe('Warehouse 库位入口的角色门禁', () => {
+  const row = { id: 77, warehouseId: 1, shopId: 1, sku: 'SKU-77', quantity: 10, availableQuantity: 8, locationCode: 'A-01-02' }
+
+  const mountWithRole = async (role: string | null) => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '1')
+    if (role === null) localStorage.removeItem('user_role')
+    else localStorage.setItem('user_role', role)
+    mockedListWarehouses.mockResolvedValue({ code: 200, message: 'ok', data: [] })
+    mockedListInboundOrders.mockResolvedValue({ code: 200, message: 'ok', data: [] })
+    mockedListOutboundOrders.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: page({ returned: 0 }) })
+    mockedListInventory.mockResolvedValue({ code: 200, message: 'ok', data: [row], _page: page({ returned: 1 }) })
+    const wrapper = mount(Warehouse, { shallow: true, global: globalStubs })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('VIEWER 看不到改库位入口，但库位值仍然可读', async () => {
+    const wrapper = await mountWithRole('VIEWER')
+    expect(wrapper.find('.loc-btn').exists()).toBe(false)
+    expect(wrapper.find('.loc-locked').text()).toContain('需 OPERATOR/ADMIN')
+    expect(wrapper.text()).toContain('A-01-02')
+  })
+
+  it('ADMIN 与 OPERATOR 有入口', async () => {
+    for (const role of ['ADMIN', 'OPERATOR']) {
+      const wrapper = await mountWithRole(role)
+      expect(wrapper.find('.loc-btn').exists(), role).toBe(true)
+      expect(wrapper.find('.loc-locked').exists(), role).toBe(false)
+    }
+  })
+
+  it('角色未知（AppHeader 还没回 getInfo）时不隐藏入口，权限由后端判', async () => {
+    const wrapper = await mountWithRole(null)
+    expect(wrapper.find('.loc-btn').exists()).toBe(true)
+  })
+})
