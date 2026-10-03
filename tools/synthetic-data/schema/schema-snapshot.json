@@ -604,6 +604,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 1274,
+      "lines": 16,
+      "sha256": "edec2bbad3f5d1a507f691ccd1d8eda86ebae4c2a1d6b59ea8e5391e9b7994e5",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_spapi",
+      "alter_table_statements": 1,
+      "add_column_statements": 3,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V10__replenishment_ml_columns.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 5321,
       "lines": 114,
       "sha256": "e75b149658d289b3c0c73f4299c9a1d580139ba5777261e74ac19fb1b38bc51f",
@@ -760,7 +775,7 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 49,
+        "files": 50,
         "tables": 113
       }
     },
@@ -790,9 +805,9 @@
     ],
     "tables_with_conditional_columns": [],
     "conditional_columns_total": 0,
-    "alter_table_statements": 30,
-    "add_column_statements": 19,
-    "applied_alter_operations": 39,
+    "alter_table_statements": 31,
+    "add_column_statements": 22,
+    "applied_alter_operations": 42,
     "unapplied_alter_operations": 0,
     "renamed_columns": [
       [
@@ -34326,6 +34341,63 @@
           ],
           "conditional": false,
           "conflicts": []
+        },
+        {
+          "name": "ml_predicted_demand",
+          "type": "DECIMAL",
+          "args": "10,2",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "ML 预测需求量，NULL 表示本次未使用 ML",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "ml_confidence",
+          "type": "DECIMAL",
+          "args": "4,3",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "ML 置信度 0.000-1.000，NULL 表示本次未使用 ML",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "blend_strategy",
+          "type": "VARCHAR",
+          "args": "32",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "RULE_ONLY / HYBRID_ML_70_RULE_30",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
         }
       ],
       "column_sources": {
@@ -34367,6 +34439,15 @@
         ],
         "urgency_level": [
           "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "ml_predicted_demand": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "ml_confidence": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "blend_strategy": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql"
         ]
       },
       "conditional_columns": [],
@@ -34394,13 +34475,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "c5ba57af1d2c510ad20204e073eb840489e70f72fff6cfaecd25beb07f6790f2",
+      "table_hash": "9da821f1fc2b9600f54c6f0d8ada1b4471bd2000a51856ec387f9ed808d332c0",
       "definitions": [
         {
           "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V1__init.sql",
           "line": 53,
           "group": "flyway-migration",
-          "hash": "c5ba57af1d2c510ad20204e073eb840489e70f72fff6cfaecd25beb07f6790f2"
+          "hash": "9da821f1fc2b9600f54c6f0d8ada1b4471bd2000a51856ec387f9ed808d332c0"
         }
       ]
     },
@@ -39316,6 +39397,129 @@
       "database": "amz_product",
       "sql": "ALTER TABLE amz_listing_copy_task MODIFY COLUMN status VARCHAR(20) DEFAULT 'PENDING' COMMENT 'PENDING/PROCESSING/SUBMITTED/SUCCESS/PARTIAL/FAILED/TIMEOUT'",
       "path": "amz-service/amz-service-product/src/main/resources/db/migration/V4__listing_copy_partial_status.sql"
+    },
+    {
+      "table": "amz_replenishment_suggestion",
+      "add_columns": [
+        {
+          "column": "ml_predicted_demand",
+          "if_not_exists": false,
+          "definition": {
+            "name": "ml_predicted_demand",
+            "type": "DECIMAL",
+            "args": "10,2",
+            "unsigned": false,
+            "nullable": true,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "ML 预测需求量，NULL 表示本次未使用 ML"
+          }
+        },
+        {
+          "column": "ml_confidence",
+          "if_not_exists": false,
+          "definition": {
+            "name": "ml_confidence",
+            "type": "DECIMAL",
+            "args": "4,3",
+            "unsigned": false,
+            "nullable": true,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "ML 置信度 0.000-1.000，NULL 表示本次未使用 ML"
+          }
+        },
+        {
+          "column": "blend_strategy",
+          "if_not_exists": false,
+          "definition": {
+            "name": "blend_strategy",
+            "type": "VARCHAR",
+            "args": "32",
+            "unsigned": false,
+            "nullable": true,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "RULE_ONLY / HYBRID_ML_70_RULE_30"
+          }
+        }
+      ],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "add_column",
+          "column": "ml_predicted_demand",
+          "if_not_exists": false,
+          "definition": {
+            "name": "ml_predicted_demand",
+            "type": "DECIMAL",
+            "args": "10,2",
+            "unsigned": false,
+            "nullable": true,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "ML 预测需求量，NULL 表示本次未使用 ML"
+          }
+        },
+        {
+          "kind": "add_column",
+          "column": "ml_confidence",
+          "if_not_exists": false,
+          "definition": {
+            "name": "ml_confidence",
+            "type": "DECIMAL",
+            "args": "4,3",
+            "unsigned": false,
+            "nullable": true,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "ML 置信度 0.000-1.000，NULL 表示本次未使用 ML"
+          }
+        },
+        {
+          "kind": "add_column",
+          "column": "blend_strategy",
+          "if_not_exists": false,
+          "definition": {
+            "name": "blend_strategy",
+            "type": "VARCHAR",
+            "args": "32",
+            "unsigned": false,
+            "nullable": true,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "RULE_ONLY / HYBRID_ML_70_RULE_30"
+          }
+        }
+      ],
+      "line": 12,
+      "database": "amz_spapi",
+      "sql": "ALTER TABLE amz_replenishment_suggestion ADD COLUMN ml_predicted_demand DECIMAL(10,2) NULL COMMENT 'ML 预测需求量，NULL 表示本次未使用 ML' AFTER urgency_level, ADD COLUMN ml_confidence DECIMAL(4,3) NULL COMMENT 'ML 置信度 0.000-1.000，NULL 表示本次未使用 ML' AFTER",
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V10__replenishment_ml_columns.sql"
     },
     {
       "table": "amz_shop_credential",

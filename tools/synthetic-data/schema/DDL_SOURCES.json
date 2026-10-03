@@ -603,6 +603,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 1274,
+      "lines": 16,
+      "sha256": "edec2bbad3f5d1a507f691ccd1d8eda86ebae4c2a1d6b59ea8e5391e9b7994e5",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_spapi",
+      "alter_table_statements": 1,
+      "add_column_statements": 3,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V10__replenishment_ml_columns.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 5321,
       "lines": 114,
       "sha256": "e75b149658d289b3c0c73f4299c9a1d580139ba5777261e74ac19fb1b38bc51f",
