@@ -129,7 +129,7 @@ jobs:
       # 数据库由 IT 自己 CREATE DATABASE 建立（CI 的 mysql service 只给空实例）。
       #
       # FLYWAY_ALL_IT_*：把 amz-service-spapi 的 AllModulesFlywayMySqlIT 接进常驻执行。
-      # 它用 Flyway 在真实 MySQL 8 上依次跑完全部 14 个库 x 49 个迁移，覆盖此前只被
+      # 它用 Flyway 在真实 MySQL 8 上依次跑完全部 14 个库 x 50 个迁移，覆盖此前只被
       # apply_migrations.py 裸 SQL 执行过（绕过 Flyway）的 13 个库 —— 版本号重复 /
       # 应用顺序 / baseline 行为 / Flyway 专有语法这类问题只在 Flyway 下才暴露，部署时
       # 表现为服务启动失败。同理不得改用 -Dtest= 触发。
@@ -294,7 +294,7 @@ jobs:
 
   # Job 2.7: 真实 MySQL 8 导入（把 SQLite 仿真升级成 mysqld 实证）
   # verify_schema_load.py 只证明「数据符合真实 DDL 的列定义」，它跑在 SQLite 上；
-  # 这个 job 用 mysql:8.0 service 真跑一遍：建库 -> 应用 49 个 Flyway 迁移 -> 灌数
+  # 这个 job 用 mysql:8.0 service 真跑一遍：建库 -> 应用 50 个 Flyway 迁移 -> 灌数
   # -> 行数核对（基线 + manifest）-> cleanup.sql 删除并回到基线。
   mysql-import:
     runs-on: ubuntu-latest

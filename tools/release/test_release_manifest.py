@@ -164,7 +164,7 @@ class ReleaseManifestTest(unittest.TestCase):
             expected = tree_digest([(item["path"], item["sha256"]) for item in items])
             self.assertEqual(expected, manifest["migrations"]["treeSha256"])
 
-    def test_current_flyway_inventory_contains_all_49_files(self) -> None:
+    def test_current_flyway_inventory_contains_all_50_files(self) -> None:
         manifest = build_manifest(ROOT, COMMIT, VERSION, IMAGE_REF, IMAGE_DIGEST)
         expected_paths = sorted(
             path.relative_to(ROOT).as_posix()
@@ -172,8 +172,8 @@ class ReleaseManifestTest(unittest.TestCase):
             if not any(part == "target" for part in path.parts)
         )
 
-        self.assertEqual(49, len(expected_paths))
-        self.assertEqual(49, manifest["migrations"]["count"])
+        self.assertEqual(50, len(expected_paths))
+        self.assertEqual(50, manifest["migrations"]["count"])
         self.assertEqual(expected_paths, [item["path"] for item in manifest["migrations"]["items"]])
 
     def test_cli_builds_verifies_and_rejects_changed_input(self) -> None:

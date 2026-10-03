@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 全仓 14 个库 x 49 个 Flyway 迁移，在真实 MySQL 8 上被 Flyway 依次执行通过的验收。
+ * 全仓 14 个库 x 50 个 Flyway 迁移，在真实 MySQL 8 上被 Flyway 依次执行通过的验收。
  *
  * <p>动机（2026-09-28 实测）：在此之前只有 amz_ad 一个库的迁移在 Flyway 下被真机验证过
  * （amz-service-ad 的 {@code AdMigrationMySqlIT}）；其余 13 个库的迁移只被

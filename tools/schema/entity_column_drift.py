@@ -129,8 +129,7 @@ def column_names(body):
 PENDING = {
     'amz_product': (['image', 'name', 'sales', 'stock', 'time', 'type', 'user_id'],
                     '7p：HTTP 入口已 fail-fast 收口，等补齐列的迁移决策'),
-    'amz_replenishment_suggestion': (['blend_strategy', 'ml_confidence', 'ml_predicted_demand'],
-                                     '#52：引擎真写这三列，补 V10 会 ALTER 共享演示库，等用户定夺'),
+
 }
 
 

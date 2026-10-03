@@ -219,7 +219,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesFlywayMySqlIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "16c497695e4ced78a313d604bc4347020e5ce5199b9823b2d7fd215e364f293d"
+      "sha256": "ca1ee9439c7d671d1675aaccb1875a818036d54c2893aef05be2f96c989027ab"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
