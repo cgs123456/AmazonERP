@@ -44,6 +44,11 @@ jobs:
           python-version: '3.11'
       - name: Repository hygiene
         run: python tools/release/repository_hygiene.py --root .
+      # 实体-表列名漂移闸门：新漂移必红；已登记的两条待决策项一旦「不再匹配」也红，防止豁免烂成永久绿灯。
+      - name: Entity/column drift self-test + gate
+        run: |
+          python tools/schema/entity_column_drift.py --self-test .
+          python tools/schema/entity_column_drift.py --gate .
       - name: Release tool tests
         run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_verify_clean_clone -v
 

@@ -125,6 +125,27 @@ def column_names(body):
     return cols
 
 
+# 已知且刻意留下的漂移：闸门模式下放行，但条目一旦不再匹配就红（防止豁免变成永久绿灯）
+PENDING = {
+    'amz_product': (['image', 'name', 'sales', 'stock', 'time', 'type', 'user_id'],
+                    '7p：HTTP 入口已 fail-fast 收口，等补齐列的迁移决策'),
+    'amz_replenishment_suggestion': (['blend_strategy', 'ml_confidence', 'ml_predicted_demand'],
+                                     '#52：引擎真写这三列，补 V10 会 ALTER 共享演示库，等用户定夺'),
+}
+
+
+def gate_verdict(hard_by_table, pending=None):
+    """闸门只在两种情况下开口：没登记的新漂移、以及豁免条目失效。"""
+    pending = PENDING if pending is None else pending
+    unexpected = sorted(set(hard_by_table) - set(pending))
+    stale = []
+    for table, (columns, _reason) in pending.items():
+        seen = sorted(hard_by_table.get(table, []))
+        if seen != sorted(columns):
+            stale.append('%s registered=%s actual=%s' % (table, sorted(columns), seen))
+    return unexpected, stale
+
+
 # --self-test：先证明解析器本身能咬住驱动它重写的那两个缺陷，再谈它的输出可信
 if '--self-test' in sys.argv:
     LEGACY_ALTER_RE = re.compile(r'ALTER TABLE\s+`?(\w+)`?\s+(.*?);', re.S | re.I)
@@ -195,6 +216,14 @@ if '--self-test' in sys.argv:
         check('real V5 file: all 4 ADD COLUMN parsed', len(real) == 4 and 'token_source' in real)
     else:
         check('real V5 file present', False)
+    u, s = gate_verdict({'amz_product': ['image'], 'amz_new': ['a']},
+                         {'amz_product': (['image'], 'only')})
+    check('gate flags an unregistered drift table', u == ['amz_new'])
+    check('gate lets a registered pending table through', 'amz_product' not in u)
+    u2, s2 = gate_verdict({}, {'amz_y': (['q'], 'already fixed')})
+    check('gate goes red when an exemption no longer matches', bool(s2))
+    u3, s3 = gate_verdict({'amz_y': ['q', 'extra']}, {'amz_y': (['q'], 'shape changed')})
+    check('gate goes red when a pending table gains a column gap', bool(s3) and not u3)
     sys.exit(1 if failed else 0)
 
 # 1) 收集所有 SQL 里的表定义（Flyway 为准，docker/init-sql-legacy 单独标注）
@@ -259,6 +288,10 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
         pending = None
         skip_next = False
         for ln in lines:
+            # 注释行不能参与解析：被注释掉的 @TableField 曾经让漂移扫不出变化
+            stripped = ln.strip()
+            if stripped.startswith('//') or stripped.startswith('*') or stripped.startswith('/*'):
+                continue
             if EXIST_RE.search(ln):
                 skip_next = True
                 continue
@@ -308,3 +341,19 @@ for table, entity, verdict, n, missing, legacy_only in sorted(rows):
     print('%-26s %-52s %-6s %s' % (table, entity, 'YES' if hard else 'no',
           'HARD=[%s]  soft=[%s]' % (', '.join(hard), ', '.join(soft))))
 print('\nentities checked=%d  hard-mismatch=%d  flyway-only-mismatch=%d' % (len(rows), hard_total, soft_total))
+
+
+if '--gate' in sys.argv:
+    hard_by_table = {}
+    for table, _entity, _verdict, _n, _missing, legacy_only in rows:
+        if legacy_only:
+            hard_by_table.setdefault(table, set()).update(legacy_only)
+    hard_by_table = {k: sorted(v) for k, v in hard_by_table.items()}
+    unexpected, stale = gate_verdict(hard_by_table)
+    print('gate: scanned_entities=%d drifted_tables=%d pending_registered=%d'
+          % (len(rows), len(hard_by_table), len(PENDING)))
+    if unexpected:
+        print('GATE RED new-drift: %s' % ', '.join(unexpected))
+    if stale:
+        print('GATE RED stale-exemption: %s' % '; '.join(stale))
+    sys.exit(1 if (unexpected or stale) else 0)

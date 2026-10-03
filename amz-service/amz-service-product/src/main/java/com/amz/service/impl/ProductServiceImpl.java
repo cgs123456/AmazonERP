@@ -56,7 +56,7 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     public Result<ProductVo> getProduct(Integer productId) {
-        // 原实现：selectById + ShopMapper.selectById + Mongo 属性拼装，三段全是漂移列
+        // 原实现要查商品行 + 店铺行 + Mongo 属性，三段引用的列在现表里都不存在
         return refuseLegacyDrift("GET /product/getProduct/" + productId);
     }
 

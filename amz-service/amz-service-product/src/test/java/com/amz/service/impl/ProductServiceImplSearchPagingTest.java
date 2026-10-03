@@ -2,7 +2,6 @@ package com.amz.service.impl;
 
 import com.amz.context.UserContext;
 import com.amz.mapper.ProductMapper;
-import com.amz.mapper.ShopMapper;
 import com.amz.model.pojo.Product;
 import com.amz.result.PageRequest;
 import com.amz.result.Result;
@@ -44,9 +43,6 @@ class ProductServiceImplSearchPagingTest {
 
     @Mock
     private ProductMapper productMapper;
-
-    @Mock
-    private ShopMapper shopMapper;
 
     @Mock
     private MongoTemplate mongoTemplate;

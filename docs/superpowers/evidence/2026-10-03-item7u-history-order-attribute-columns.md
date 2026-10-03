@@ -70,3 +70,31 @@ surefire 报告目录求和（含上一轮全模块跑留下的行，仅作参�
 
 这 3 条都不是「再改一次注解」能收的，所以本轮不硬凑。核对器仍未进 CI：
 它现在还会红 3 条，其中 2 条是待决策项——先把闸做成永远红、再被人绕过，比没有闸更糟。
+## 6. 追加：孤儿旧实体删除 + 漂移闸门上线（同一轮）
+
+证明不可达后才动：`pojo/Shop` 全仓只被 `ProductVo.shop` 引用，`ShopMapper`（product 模块）
+在 7p 之后只剩自身声明 + 一个测试里的空 mock + 一句注释；前端没有任何镜像类型。
+于是删掉 `amz-service-product/.../mapper/ShopMapper.java` 与 `.../pojo/Shop.java`、
+`ProductVo.shop` 字段、测试里的空 mock，并把提到已删除类的注释改写为不点名。
+商品模块 `mvn -pl amz-service-product -am test` BUILD SUCCESS，
+`ProductServiceImplSearchPagingTest` 仍 4/4（那 4 条断言的是分页契约，与 mock 字段无关）。
+核对器：`entities checked 103 → 102`、`hard-mismatch 3 → 2`。
+
+闸门 `--gate` 模式：`PENDING` 里登记两条刻意保留的漂移（`amz_product` 已收口等迁移、
+`amz_replenishment_suggestion` 等 #52 决策），只在两种情况开口——出现没登记的新漂移，
+或某条豁免与现状不再匹配（列集变了或已修好），后者防止豁免变成永久绿灯。
+`--self-test` 从 6 项扩到 10 项，新增 4 项全打在闸门自身：新表要红、登记的表要放行、
+豁免失效要红、登记表多出新缺口也要红。
+
+**闸门差点是假的。** 第一次真树变异（把 `@TableField("trend_30d")` 注释掉）跑出来
+仍 rc=0、`drifted_tables=2`——因为实体解析器会把**注释行**里的 `@TableField` 当成有效注解，
+于是「删掉守卫」这个动作对扫描器完全隐形。修成跳过 `//`、`*`、`/*` 开头的行之后：
+
+| 阶段 | 结果 |
+| --- | --- |
+| 干净树 `--gate` | rc=0，scanned=102 drifted=2 pending=2 |
+| 变异：注释掉 `@TableField("trend_30d")` | rc=**1**，hard-mismatch 3，`GATE RED new-drift: amz_selection_opportunity` |
+| 恢复 | rc=0，与变异前逐项一致（源文件按字节回写并比对相等） |
+
+CI 侧新增 `Entity/column drift self-test + gate` 步骤（hygiene 作业内，python 3.11 已有），
+自检不过就不必谈闸门。
