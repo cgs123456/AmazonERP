@@ -152,3 +152,11 @@ Spring 的语义是路径取类前缀，所以它等价于裸 `@PostMapping`，�
 `ProductServiceImplSearchPagingTest`（P1-01 硬编码 LIMIT 20 的回归）——`searchProducts` 从未挂在
 任何 HTTP 映射上，随 `ProductService` 一起删除。防同类回归的职责已由「实体↔建表零豁免闸门」承担，
 它在 CI 的 hygiene 作业里先跑 `--self-test`（12 项）再跑 `--gate`。
+
+## 收线补记（第五版）：D 桶清空，候选 36 → 35
+
+- `GET /ad/report/{shopId}`：证明零调用方（前端只用 `/ad/reports`，无 Feign 引用）后删除，D 桶 -1；
+- `POST /user/updateImage`：改为「OSS 未配置即显式拒绝」，从「口径重复」移出，归入已收口一类。
+
+现在 35 条 = A 类 15（必然失败/造数/未配置，含 updateImage）+ B 类 20（缺外部凭据）。
+D 桶清空；C 桶已随死面删除归零（见上一版）。明细见 `2026-10-03-item7x-oss-guard-and-dup-endpoint.md`。

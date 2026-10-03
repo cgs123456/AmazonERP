@@ -39,18 +39,6 @@ public class AdController {
     private AdReportSyncScheduler adReportSyncScheduler;
 
     /**
-     * 查询店铺活动级报表（含 ACoS/ROAS）。
-     * GET /ad/report/{shopId}
-     */
-    @ShopScoped
-    @GetMapping("/report/{shopId}")
-    public Result<List<AdReport>> getReports(@PathVariable Long shopId,
-                                              @RequestParam(required = false) Integer size,
-                                              @RequestParam(required = false) String cursor) {
-        return Result.paged(adService.getShopReports(shopId, PageRequest.of(size, cursor)));
-    }
-
-    /**
      * 查询店铺整体汇总指标。
      * GET /ad/summary/{shopId}
      */
