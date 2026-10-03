@@ -82,3 +82,24 @@ CI：`test / hygiene / frontend / runtime-smoke / mysql-import / checkstyle*` �
   登记项一旦与现状不匹配就红（这是防豁免烂掉的机制）。
 - 不要相信任何没跑过「变异」的守卫：本轮 4 道新闸（漂移、列名契约、fail-fast、评测页）
   都是靠把缺陷重新注入才确认它真的会红；台账与 7p/7q/7s/7u 证据文档里逐个记了红数。
+## 4. 收线时的 CI 事实（V10 落地后）
+
+`4203f36`（V10）与 `a70558b`（内部口径 + 快照重生成）两次 CI 都是 `test` 作业红，其余作业绿；
+其中 `synthetic-data` 的红已归因并修好（schema 快照漂移闸门，重新生成后 `--check` 通过）。
+`test` 的红**未归因**，证据边界如下，不要当成已解决：
+
+- `mysql-import` 在同一提交上绿：说明 V10 的 SQL 在真实 MySQL 8 上能被裸客户端执行；
+- 本机 `mvn -B test -fae` 全绿：但两个 DB 门控 IT（`AllModulesFlywayMySqlIT`、
+  `BareSqlBuiltSchemaFlywayStartIT`）在本机因无 MySQL 而跳过，所以本地绿不覆盖它们；
+- 更早的 `a58a65e` 也只有 `test` 红、随后 5 个提交全绿：所以「DB 门控 IT 抖动」与
+  「V10 让某个 IT 真红」两种解释目前无法区分；
+- 作业日志匿名 API 403，annotations 只有「exit code 1」，取不到失败测试名；
+- 我本机起临时 MySQL 复现失败：先是 mysql:8.4 不认 `default-authentication-plugin` 直接退出，
+  换 8.0 后 root 口令没生效（Access denied）——那次「Communications link failure」
+  是我的探针自己死了，不是被测物失败，不能记为 V10 的问题。
+
+下一轮取结论只需一条命令（需带 token 的 gh）：
+`gh run view --log-failed --job <test-job-id> <run-id for a70558b> | grep -E "Tests run|ERROR\]" | head`，
+或在任意可达的 MySQL 8 上设 `FLYWAY_ALL_IT_*` 后跑那两个 IT。若归因为 V10，
+需要同时把三列补进 `docker/init-sql-legacy/09-init-tables-p0-modules.sql`，
+让裸 SQL 建库与 Flyway 建库两条部署路径一致（这条目前**没做**，是已知缺口）。
