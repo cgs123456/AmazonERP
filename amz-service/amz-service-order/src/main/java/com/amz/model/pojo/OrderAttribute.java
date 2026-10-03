@@ -24,6 +24,8 @@ public class OrderAttribute {
     /**
      * 属性标签
      */
+    /** 列名是 name：字段沿用 label 是为了不改 JSON 契约，映射必须显式对齐。 */
+    @TableField("name")
     private String label;
 
     /**

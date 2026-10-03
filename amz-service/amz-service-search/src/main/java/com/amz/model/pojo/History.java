@@ -15,7 +15,7 @@ public class History implements Serializable {
     /**
      * 记录
      */
-    @TableField("history")
+    @TableField("keyword")
     private String history;
 
     /**
