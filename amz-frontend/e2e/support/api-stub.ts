@@ -991,6 +991,28 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/order\/profit\/order\//, data: PROFIT_DRILL_ROWS, page: FULL_PAGE(PROFIT_DRILL_ROWS.length) },
   { match: /^\/order\/profit\/sku\//, data: PROFIT_DRILL_ROWS },
   { match: /^\/order\/profit\/summary\//, data: PROFIT_MONTHLY_ROWS },
+  // Agent 评测回归：totalCases/passed/failed/passRate 与 results 行数自洽（4 条、75%），
+  // 这样页面断言拿到的是「同一份事实」，不会因为拼了个更大的总数而掩盖解析分支的错。
+  // mode=both 的失败分支不在这里表达，由用例用 page.route 覆盖。
+  {
+    match: /^\/ai\/eval\/run$/,
+    data: {
+      timestamp: '2026-10-03T01:00:00',
+      totalCases: 4,
+      passedCount: 3,
+      failedCount: 1,
+      passRate: 0.75,
+      totalDurationMs: 3400,
+      agentVersion: 'erp-agent-v1',
+      evalMode: 'keyword',
+      results: [
+        { caseId: 'EVAL-001', passed: true, matchedKeywords: ['库存', '补货'], missedKeywords: [], durationMs: 800, errorMessage: null },
+        { caseId: 'EVAL-002', passed: true, matchedKeywords: ['订单'], missedKeywords: [], durationMs: 700, errorMessage: null },
+        { caseId: 'EVAL-003', passed: true, matchedKeywords: ['广告'], missedKeywords: [], durationMs: 900, errorMessage: null },
+        { caseId: 'EVAL-004', passed: false, matchedKeywords: ['物流'], missedKeywords: ['成本', '报价'], durationMs: 1000, errorMessage: '响应缺少成本口径' }
+      ]
+    }
+  },
   { match: /^\/report\/dashboard\/kpi$/, data: DASHBOARD_KPI },
   { match: /^\/report\/dashboard\/sales-trend$/, data: DASHBOARD_SALES_TREND },
   { match: /^\/report\/dashboard\/shop-distribution$/, data: DASHBOARD_SHOP_DIST },

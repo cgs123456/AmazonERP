@@ -289,6 +289,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/agent-eval') }"
+        @click="navigateTo('/agent-eval')"
+        role="button"
+        aria-label="Agent 评测"
+        tabindex="0"
+      >
+        <Icon icon="mdi:clipboard-check-outline" class="nav-icon" width="24" />
+        <span class="nav-text">Agent 评测</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/profile') }"
         @click="navigateTo('/profile')"
         role="button"

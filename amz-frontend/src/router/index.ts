@@ -114,6 +114,11 @@ const router = createRouter({
             component: () => import('../views/AgentMemory.vue')
         },
         {
+            path: '/agent-eval',
+            name: 'AgentEval',
+            component: () => import('../views/AgentEval.vue')
+        },
+        {
             path: '/profile',
             name: 'Profile',
             component: () => import('../views/Profile.vue')
