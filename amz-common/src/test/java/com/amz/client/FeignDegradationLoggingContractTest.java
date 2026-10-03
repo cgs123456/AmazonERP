@@ -49,8 +49,11 @@ class FeignDegradationLoggingContractTest {
     @DisplayName("每个 FallbackFactory 都把 cause 交给 logger")
     void everyFallbackFactoryLogsTheThrowableItself() throws IOException {
         List<Path> factories = fallbackFactories();
-        assertEquals(20, factories.size(),
-                "FallbackFactory 数量变了（当前应为 20）：新增的要同步纳入本契约，删除的要更新断言");
+        // 2026-10-03：ProductClientFallbackFactory 随其唯一调用方一起删除（订单金额改由消息本身
+        // 携带，不再跨服务查一张已漂移的旧表），所以这里的基线从 20 降到 19。
+        // 数量仍需钉死：新增 factory 不纳入本契约要红，无谓删除也要红。
+        assertEquals(19, factories.size(),
+                "FallbackFactory 数量变了（当前应为 19）：新增的要同步纳入本契约，删除的要更新断言");
         for (Path factory : factories) {
             String text = read(factory);
             assertTrue(LOG_WITH_THROWABLE.matcher(text).find(),

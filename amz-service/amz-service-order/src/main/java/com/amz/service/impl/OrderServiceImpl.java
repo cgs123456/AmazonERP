@@ -2,7 +2,6 @@ package com.amz.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.amz.client.FinanceServiceFeignClient;
-import com.amz.client.ProductClient;
 import com.amz.constant.MqConstant;
 import com.amz.enums.OrderStatusEnum;
 import com.amz.exception.MessageProcessLimitExceededException;
@@ -18,7 +17,6 @@ import com.amz.model.pojo.CustomAttribute;
 import com.amz.model.pojo.Order;
 import com.amz.model.pojo.OrderItem;
 import com.amz.model.pojo.OrderAttribute;
-import com.amz.model.pojo.Product;
 import com.amz.result.Result;
 import com.amz.service.OrderService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,8 +68,6 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private OrderItemMapper orderItemMapper;
 
-    @Autowired
-    private ProductClient productClient;
 
     @Autowired
     private FinanceServiceFeignClient financeServiceFeignClient;
@@ -145,6 +141,15 @@ public class OrderServiceImpl implements OrderService {
         if (userId == null) {
             // 永久不合法：重投也不会有 userId，交 Consumer 直接转死信，别 ack 丢单也别无限重投
             throw new OrderMessageRejectedException("用户ID不能为空");
+        }
+        // 金额同样属于「重投也不会变好」的永久不合法：必须在幂等占位之前拒掉，
+        // 放进 try 里会被失败计数吃进去、最终变成 MessageProcessLimitExceeded 而不是直接死信。
+        java.math.BigDecimal unitPrice = orderDto.getPrice();
+        if (unitPrice == null) {
+            throw new OrderMessageRejectedException("订单金额缺失：消息里没有 price，无法定价");
+        }
+        if (unitPrice.signum() <= 0) {
+            throw new OrderMessageRejectedException("订单金额非法：price 必须大于 0，实际 " + unitPrice);
         }
 
         // 幂等性检查：使用消息ID（由 Consumer 设置：优先 amazonOrderId+shopId，其次 AMQP messageId）
@@ -354,7 +359,7 @@ public class OrderServiceImpl implements OrderService {
 
     /**
      * 明细行映射。币种/配送渠道缺省时回退订单级取值（同一订单内这两个值是订单级属性）。
-     * product_id 暂不解析：ProductClient 只提供按 ID 查询，没有 SKU 反查接口，
+     * product_id 暂不解析：商品服务只提供按主数据 ID 读写，没有 SKU 反查接口，
      * 强行猜测映射会制造错误的商品关联，因此保持 NULL 并留待商品侧提供 SKU 查询。
      */
     private OrderItem toOrderItem(OrderSyncDto syncDto, OrderItemSyncDto item, Long shopId) {
@@ -380,24 +385,19 @@ public class OrderServiceImpl implements OrderService {
      * 保存订单的内部方法（提取公共逻辑）
      */
     private void saveOrderInternal(OrderDto orderDto, Integer userId) {
-        // 获取商品信息（注意：本方法运行在 @Transactional 内，Feign 降级/超时时快速失败，
-        // 避免长时间占用 DB 连接；抛异常触发回滚，由 MQ 机制稍后重试）
-        Result<Product> productResult = productClient.getProductById(orderDto.getProductId());
-        if (productResult == null || productResult.getCode() != 200 || productResult.getData() == null) {
-            throw new IllegalStateException("商品不存在或商品服务不可用");
-        }
-        Product product = productResult.getData();
-        if (product.getPrice() == null) {
-            throw new IllegalStateException("商品价格缺失");
-        }
+        // 金额取自消息本身：OrderDto.price 是这条链路的既定载体（OrderConsumer 已在解析它），
+        // 不再为了拿一个价格去跨服务查 amz_product 的旧列——那条路在 7p 之后必然返回失败，
+        // 于是 HTTP 下单与 MQ 消费两条入口其实都永远下不了单。
+        // 金额已在 processOrderMessage 入口校验（永久不合法要在幂等占位之前拒掉），
+        // 这里只取用：OrderDto.price 是这条链路的既定载体，OrderConsumer 已在解析它。
+        java.math.BigDecimal unitPrice = orderDto.getPrice();
 
         // 保存订单
         Order order = new Order();
         order.setProductId(orderDto.getProductId());
         order.setUserId(userId);
         order.setStatus(OrderStatusEnum.DUE.getCode());
-        // 使用商品实际价格（经 Double.toString 中转，避免二进制浮点直接转 BigDecimal 的精度误差）
-        order.setFinalPrice(new BigDecimal(Double.toString(product.getPrice())));
+        order.setFinalPrice(unitPrice);
         orderMapper.insert(order);
 
         // 保存订单属性
