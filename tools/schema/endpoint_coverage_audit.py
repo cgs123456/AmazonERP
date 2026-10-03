@@ -62,6 +62,44 @@ def build_matcher(full_path: str) -> str:
     return '/'.join(out) + r'(?![\w-])'
 
 
+NON_PATH_ONLY_ARGS = re.compile(r"^\(\s*(?:consumes|produces|params|headers)\s*=")
+VALUE_OR_PATH_ARG = re.compile(r"(?:value|path)\s*=")
+
+
+def shape(path: str) -> str:
+    """把 /a/{id}/b 与 /a/${x}/b 都归一成 /a/{}/b，用于跨服务比对同一条路径。"""
+    segs = ['{}' if s.startswith('{') or s.startswith('$') else s for s in path.split('/') if s]
+    return '/' + '/'.join(segs)
+
+
+def parse_mappings(text: str):
+    """把方法级 mapping 注解解析成 (verb, path, anchor, raw)。
+
+    path == '' 表示无参注解（`@PostMapping`），它的路径就是类前缀；
+    path is None 表示这行有括号但没解析出字符串字面量（consumes/produces/params 之类），
+    调用方必须把它打印出来——工具的失败模式只能是「少算并说明」，不能是静默少一条。
+    """
+    out = []
+    for m in MAPPING_LINE.finditer(text):
+        verb, rest = m.group(1), m.group(2).strip()
+        raw = m.group(0).strip()
+        if not rest:
+            out.append((verb, '', m.start(), raw))
+            continue
+        if not rest.startswith('('):
+            out.append((verb, None, m.start(), raw))
+            continue
+        # 只有 consumes/produces/params/headers 的写法：Spring 按类前缀取路径。
+        # 上一版把它算成「解析不出来」，于是一条真实端点直接从分母里消失了。
+        if NON_PATH_ONLY_ARGS.match(rest) and not VALUE_OR_PATH_ARG.search(rest):
+            out.append((verb, '', m.start(), raw))
+            continue
+        literal = PATH_LITERAL.search(rest)
+        path = ((literal.group(1) or literal.group(2)) if literal else None)
+        out.append((verb, path, m.start(), raw))
+    return out
+
+
 if '--self-test' in sys.argv:
     # 三条都是踩过的坑，钉在这里而不是只写注释：任何一条断了，清点结果就不可信。
     cases = []
@@ -88,11 +126,17 @@ if '--self-test' in sys.argv:
     check('子路径式命中仍成立（斜杠后继续写路径不算断点）',
           bool(re.compile(build_matcher('/ad/report/{shopId}')).search(nested)), True)
 
+    amap = parse_mappings('@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)')
+    check('attribute-only mapping resolves to the class prefix', len(amap) == 1 and amap[0][1] == '', True)
+    cmap = parse_mappings('@PostMapping(UPLOAD_PATH)')
+    check('constant-path mapping is disclosed, never guessed', len(cmap) == 1 and cmap[0][1] is None, True)
+
     failed = [c for c in cases if not c[1]]
     for name, ok_flag, got, want in cases:
         print('%-56s %s (got=%s want=%s)' % (
             name.encode('ascii', 'replace').decode(), 'PASS' if ok_flag else 'FAIL', got, want))
     print('SELFTEST %d/%d passed' % (len(cases) - len(failed), len(cases)))
+
     sys.exit(1 if failed else 0)
 
 
@@ -111,33 +155,6 @@ def to_frontend_alias(full_path: str) -> str:
     return ''
 
 
-def shape(path: str) -> str:
-    """把 /a/{id}/b 与 /a/${x}/b 都归一成 /a/{}/b，用于跨服务比对同一条路径。"""
-    segs = ['{}' if s.startswith('{') or s.startswith('$') else s for s in path.split('/') if s]
-    return '/' + '/'.join(segs)
-
-
-def parse_mappings(text: str):
-    """把方法级 mapping 注解解析成 (verb, path, anchor, raw)。
-
-    path == '' 表示无参注解（`@PostMapping`），它的路径就是类前缀；
-    path is None 表示这行有括号但没解析出字符串字面量（consumes/produces/params 之类），
-    调用方必须把它打印出来——工具的失败模式只能是「少算并说明」，不能是静默少一条。
-    """
-    out = []
-    for m in MAPPING_LINE.finditer(text):
-        verb, rest = m.group(1), m.group(2).strip()
-        raw = m.group(0).strip()
-        if not rest:
-            out.append((verb, '', m.start(), raw))
-            continue
-        if not rest.startswith('('):
-            out.append((verb, None, m.start(), raw))
-            continue
-        literal = PATH_LITERAL.search(rest)
-        path = ((literal.group(1) or literal.group(2)) if literal else None)
-        out.append((verb, path, m.start(), raw))
-    return out
 
 
 def collect_feign_paths() -> set:

@@ -106,3 +106,25 @@ E 桶原本写「9/12/14 是真实回传/真实签发，值得接线」——**�
 
 **2026-10-03 后续（7u）**：核对器 5 → 3 条。`amz_history.history→keyword` 与 `amz_order_attribute.label→name` 两处**已接线路径上**的错映射已修并各自加了列名契约测试；
 剩下 3 条里 `amz_replenishment_suggestion` 仍是唯一未决的已接线漂移（#52），另两条是已收口的 `amz_product` 与孤儿实体 `product/pojo/Shop`（删除需先证明不可达，单独处理）。
+## 分母订正（同日第三版）：闸门的解析盲点让计数少算了一条
+
+完成度自查时发现 `parsed_method_annotations=359 unparsed=1`：那条是
+`UploadsController` 的 `@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)`——
+属性型注解没有路径字面量，解析器判成「解析不出来」，于是这条端点**从来没进过分母**。
+Spring 的语义是路径取类前缀，所以它等价于裸 `@PostMapping`，是可以确定的，不该丢。
+
+订正后实测：`parsed_method_annotations=359 unparsed=0`，
+`endpoints_without_a_frontend_name 59 → 60`，`user_facing_candidates **38 → 39**`。
+也就是说我之前几轮引用的 39/38 一直被自己的工具少算 1 条。
+
+新进入视野的 `POST /spapi/uploads` 判入 **B 桶（缺外部凭证）**，依据写在类注释里：
+它是 Amazon Uploads 的服务端闭环（服务端算 MD5 → createUploadDestinationForResource → PUT 预签名 URL，
+只回 uploadDestinationId，预签名 URL 不进响应以免被网关日志/浏览器拿到写权限），
+且整类标了 `@Profile("!mock")`——mock 环境下这个 bean 根本不注册，浏览器接上去是 404，
+生产环境没有真凭据也只能失败。所以不接按钮是对的，但**这条曾经不在清单上**，
+差别就在于我有没有把「解析不出」当成「不存在」。
+
+闸门自检从 5 项扩到 7 项：属性型 mapping 必须解析成类前缀；`@PostMapping(UPLOAD_PATH)`
+这种常量路径必须继续被披露、不许猜。
+
+两个失误留在记录里：(1) 第一次把新用例插到了 `failed` 统计之后，输出照报 `SELFTEST 5/5`——**计数没动就是没跑**，这条判据救了我一次；(2) 移动代码块时把两行 `if` 插进了跨行 `print` 的续行之间，脚本直接 SyntaxError。
