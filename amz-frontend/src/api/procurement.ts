@@ -347,6 +347,19 @@ export const cancelOrder = (orderId: number) =>
 export const listOrders = (shopId: number | string, q: ListQuery = {}) =>
   request.get<void, ApiResponse<PurchaseOrder[]>>(`/procurement/order/list/${shopId}`, { params: params(q) })
 
+/**
+ * 凭证来源：可入账的采购单（成本已确认）。
+ * GET /procurement/order/voucher-source/{shopId}?size=&cursor=
+ *
+ * 与 listOrders 的唯一区别是后端的状态过滤：只出 QC_PASSED / RECEIVED / COMPLETED，
+ * 未成交的单不会变成凭证。财务侧 POST /finance/voucher/procurement 认的就是这三态，
+ * 所以「页面上看到哪些单会进凭证」必须以这个端点为准，而不是拿全量列表自己筛——
+ * 自己筛会漏掉状态机口径（例如 CONDITIONAL 放行算不算可入账）。
+ * 返回体带 _page 游标，必须翻完才不会漏出凭证。
+ */
+export const listVoucherSourceOrders = (shopId: number | string, q: ListQuery = {}) =>
+  request.get<void, ApiResponse<PurchaseOrder[]>>(`/procurement/order/voucher-source/${shopId}`, { params: params(q) })
+
 /** 质检：仅 QC_PENDING 可提交；后端按合格率判 PASS/CONDITIONAL/FAIL */
 export const submitQualityCheck = (purchaseOrderId: number, body: {
   sampleCount: number; failedCount: number; inspector: string; defectDescription?: string

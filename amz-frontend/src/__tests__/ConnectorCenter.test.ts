@@ -8,7 +8,10 @@ vi.mock('@/api/connectors', () => ({
   preflightConnector: vi.fn(),
   getConnectorCredentialStatus: vi.fn(),
   saveConnectorCredential: vi.fn(),
-  deleteConnectorCredential: vi.fn()
+  deleteConnectorCredential: vi.fn(),
+  getSpapiStatus: vi.fn(),
+  listSpapiOperations: vi.fn(),
+  CREDENTIAL_COUNT_UNKNOWN: -1
 }))
 
 import {
@@ -18,10 +21,15 @@ import {
   getConnectorCredentialStatus,
   saveConnectorCredential,
   deleteConnectorCredential,
+  getSpapiStatus,
+  listSpapiOperations,
   type ConnectorCapability,
   type ConnectorPreflightReport,
   type ConnectorCredentialStatus
 } from '@/api/connectors'
+
+const mockedSpapiStatus = vi.mocked(getSpapiStatus)
+const mockedSpapiOps = vi.mocked(listSpapiOperations)
 
 const mockedList = vi.mocked(listConnectors)
 const mockedSelfTest = vi.mocked(selfTestConnector)
@@ -383,5 +391,122 @@ describe('连接器状态中心', () => {
     expect(mockedDeleteCredential).toHaveBeenCalledWith(7)
     expect(wrapper.text()).toContain('尚未配置')
     expect(wrapper.text()).not.toContain('clientSecret 已配置')
+  })
+})
+describe('ConnectorCenter SP-API 进程自检与操作目录', () => {
+  const stubs = {
+    stubs: {
+      AppHeader: { template: '<div />' },
+      AppSidebar: { template: '<div />' },
+      Icon: true
+    }
+  }
+
+  const SELF = {
+    service: 'amz-service-spapi',
+    connector: 'spapi',
+    profile: 'prod',
+    mockClientsActive: false,
+    startupCheckRan: true,
+    startupRequireCredentials: true,
+    loadedCredentialCount: 3
+  }
+
+  const OPS = [
+    { operationId: 'orders.getOrder', family: 'orders', method: 'GET', path: '/orders/v0/orders/{amazonOrderId}',
+      grantless: false, bodyRequired: false, requiredPathParameters: ['amazonOrderId'], requiredQueryParameters: [] },
+    { operationId: 'feeds.createFeedDocument', family: 'feeds', method: 'POST', path: '/feeds/2021-06-30/documents',
+      grantless: false, bodyRequired: true, requiredPathParameters: [], requiredQueryParameters: [] }
+  ]
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '7')
+    vi.mocked(listConnectors).mockResolvedValue({ code: 200, message: 'ok', data: [capability()] } as any)
+    mockedSpapiStatus.mockResolvedValue({ code: 200, message: 'ok', data: { ...SELF } } as any)
+    mockedSpapiOps.mockResolvedValue({ code: 200, message: 'ok', data: OPS.map(o => ({ ...o })) } as any)
+  })
+
+  const mountPage = async () => {
+    const wrapper = mount(ConnectorCenter, { shallow: true, global: stubs })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('自检卡渲染 profile / mock 开关 / 凭证条数，全部来自 /spapi/status', async () => {
+    const wrapper = await mountPage()
+    const panel = wrapper.find('[data-panel="selfcheck"]')
+
+    expect(getSpapiStatus).toHaveBeenCalledTimes(1)
+    const kv = (label: string) => {
+      const cell = panel.findAll('.kv').filter((n: any) => n.find('.k').text() === label)[0]
+      expect(cell, `自检卡里找不到「${label}」`).toBeTruthy()
+      return cell.find('.v').text()
+    }
+    expect(kv('生效 profile')).toBe('prod')
+    expect(kv('已加载凭证')).toBe('3 条')
+    expect(kv('mock 客户端')).toBe('否')
+    // 自检说明要写出它存在的理由（C1 约束），不是「健康检查」
+    expect(panel.text()).toContain('C1')
+  })
+
+  it('凭证条数 -1 显示为未知，不能显示成 0 条', async () => {
+    mockedSpapiStatus.mockResolvedValue({
+      code: 200, message: 'ok', data: { ...SELF, loadedCredentialCount: -1, startupCheckRan: false }
+    } as any)
+
+    const wrapper = await mountPage()
+
+    expect(wrapper.find('[data-panel="selfcheck"]').text()).toContain('未知（启动自检未执行）')
+    expect(wrapper.find('[data-panel="selfcheck"]').text()).not.toContain('0 条')
+  })
+
+  it('mock 客户端激活时给出口径警告', async () => {
+    mockedSpapiStatus.mockResolvedValue({
+      code: 200, message: 'ok', data: { ...SELF, profile: 'mock', mockClientsActive: true }
+    } as any)
+
+    const wrapper = await mountPage()
+    const warn = wrapper.find('.mock-warning')
+
+    expect(warn.exists()).toBe(true)
+    expect(warn.text()).toContain('离线样例')
+  })
+
+  it('自检读失败时清空旧值并给重试，不留上一次的口径警告在屏上', async () => {
+    // mockWarning 走的是 v-if，不在 error/kv-grid 的互斥链里：
+    // 只有它是「旧值残留」真正会被看到的地方，所以断言钉在这句警告上，
+    // 而不是钉在 kv-grid 消失上（那条由 v-if="statusError" 顺带实现，测不出清空有没有生效）。
+    mockedSpapiStatus.mockResolvedValueOnce({
+      code: 200, message: 'ok', data: { ...SELF, profile: 'mock', mockClientsActive: true }
+    } as any)
+    const wrapper = await mountPage()
+    expect(wrapper.find('.mock-warning').exists()).toBe(true)
+
+    mockedSpapiStatus.mockResolvedValueOnce({ code: 500, message: '服务未就绪', data: null } as any)
+    await wrapper.findAll('[data-panel="selfcheck"] .secondary-btn')[0].trigger('click')
+    await flushPromises()
+
+    const panel = wrapper.find('[data-panel="selfcheck"]')
+    expect(panel.find('.inline-error').text()).toContain('服务未就绪')
+    expect(wrapper.find('.mock-warning').exists()).toBe(false)
+    expect(panel.find('.kv-grid').exists()).toBe(false)
+  })
+
+  it('操作目录来自 /spapi/operations，必填参数与 body 合并展示', async () => {
+    const wrapper = await mountPage()
+    const panel = wrapper.find('[data-panel="selfcheck"]')
+
+    expect(listSpapiOperations).toHaveBeenCalledTimes(1)
+    expect(panel.text()).toContain('可调用操作目录（共 2 条）')
+    const rows = panel.findAll('tbody tr')
+    expect(rows.length).toBe(2)
+    expect(rows[0].text()).toContain('amazonOrderId')
+    // 第二条 bodyRequired=true → 必填参数里出现 body
+    expect(rows[1].text()).toContain('body')
+    // 执行入口不给：页面上不存在调用按钮
+    expect(panel.text()).toContain('不提供执行')
+    expect(wrapper.findAll('button').filter((b: any) => b.text().includes('执行操作')).length).toBe(0)
   })
 })

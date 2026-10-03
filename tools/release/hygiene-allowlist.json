@@ -34,7 +34,7 @@
     {
       "path": "amz-frontend/src/__tests__/ConnectorCenter.test.ts",
       "rule": "secret-like-assignment",
-      "sha256": "3674989797866bcc7ffa1f92db2e56db5232dafd1c1f43fec9b05db6d17cbb7c"
+      "sha256": "1853b8a1e6af6aa48cbf7c4b6a121f373d6b52de1de7079e2be0eb69cbbc7657"
     },
     {
       "path": "amz-frontend/src/__tests__/auth.test.ts",
@@ -84,7 +84,7 @@
     {
       "path": "amz-frontend/src/views/ConnectorCenter.vue",
       "rule": "secret-like-assignment",
-      "sha256": "e409671560d039921de9fe4981b1fbdd589dfe2f5c20bd59744aaf35f2f27a92"
+      "sha256": "421d97409c1ff8ea5197719ba62982894cd3f1c2869aa0686b4a2629730add49"
     },
     {
       "path": "amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java",

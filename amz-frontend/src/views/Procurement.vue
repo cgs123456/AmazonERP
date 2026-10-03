@@ -310,6 +310,45 @@
           </div>
         </div>
 
+        <!-- ==================== 凭证来源（可入账采购单） ==================== -->
+        <div v-if="tab === 'voucher'" class="table-card" data-panel="voucher">
+          <div class="filter-row">
+            <button class="action-btn" :disabled="voucherOrders.loading.value" @click="loadVoucherOrders()">刷新</button>
+            <span class="muted">
+              只出成本已确认的三态（QC_PASSED / RECEIVED / COMPLETED）；财务侧
+              POST /finance/voucher/procurement 认的就是这份口径，未成交的单不会变成凭证
+            </span>
+          </div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>单号</th><th>SKU</th><th>供应商</th><th>数量</th><th>单价</th><th>金额</th><th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="o in voucherOrders.rows.value" :key="o.id">
+                <td class="mono">{{ o.orderNo || o.id }}</td>
+                <td class="mono">{{ o.sku }}</td>
+                <td>{{ o.supplierName || '-' }}</td>
+                <td>{{ o.quantity }}</td>
+                <td>{{ o.unitPrice ?? '-' }}</td>
+                <td>{{ o.totalAmount ?? '-' }}</td>
+                <td><span class="status-tag" :class="orderClass(o.status)">{{ o.status }}</span></td>
+              </tr>
+              <tr v-if="!voucherOrders.loading.value && !voucherOrders.rows.value.length">
+                <td colspan="7" class="empty-row">该店铺暂无可入账采购单</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="table-pager">
+            <span class="page-info">{{ pagerText(voucherOrders) }}；凭证补数要翻完，否则漏出的不是全部</span>
+            <div class="page-actions">
+              <button v-if="voucherOrders.truncated.value" class="page-btn" :disabled="voucherOrders.loading.value"
+                      @click="loadVoucherOrders(true)">加载下一页</button>
+            </div>
+          </div>
+        </div>
+
         <!-- ==================== FBA 货件 ==================== -->
         <div v-if="tab === 'shipment'" class="table-card">
           <div class="filter-row">
@@ -653,11 +692,12 @@ import type {
   PurchaseApproval
 } from '@/api/procurement'
 
-type TabKey = 'supplier' | 'plan' | 'order' | 'shipment' | 'batch'
+type TabKey = 'supplier' | 'plan' | 'order' | 'voucher' | 'shipment' | 'batch'
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'supplier', label: '供应商与比价' },
   { key: 'plan', label: '采购计划' },
   { key: 'order', label: '采购单（1688）' },
+  { key: 'voucher', label: '凭证来源（可入账）' },
   { key: 'shipment', label: 'FBA 货件' },
   { key: 'batch', label: '库存批次与 FIFO' }
 ]
@@ -875,8 +915,18 @@ const urgencyClass = (urgency?: string) =>
 /* ---------- 采购单 ---------- */
 const orders = makeList<PurchaseOrder>()
 
+/**
+ * 凭证来源：后端按状态过滤（只出 QC_PASSED / RECEIVED / COMPLETED），
+ * 与「采购单」Tab 的全量列表口径不同，所以单独一份游标状态，
+ * 不拿全量列表在前端自己筛——状态机口径（例如条件放行算不算可入账）由后端定。
+ */
+const voucherOrders = makeList<PurchaseOrder>()
+
 const loadOrders = (append = false) =>
   fetchPage(orders, cursor => proc.listOrders(shop(), { cursor }), '采购单列表', append)
+
+const loadVoucherOrders = (append = false) =>
+  fetchPage(voucherOrders, cursor => proc.listVoucherSourceOrders(shop(), { cursor }), '凭证来源采购单', append)
 
 const runOrder = async (o: PurchaseOrder, action: 'submit' | 'sync' | 'cancel') => {
   if (!o.id) return
@@ -1154,14 +1204,14 @@ const runConfirm = async () => {
 const pageAmountTotal = computed(() =>
   orders.rows.value.reduce((sum, o) => sum + asNumber(o.totalAmount), 0).toFixed(2))
 const anyTruncated = computed(() =>
-  [suppliers, plans, orders, shipments, batches].some(l => l.truncated.value))
+  [suppliers, plans, orders, voucherOrders, shipments, batches].some(l => l.truncated.value))
 
 const loadTabData = async () => {
   const shopId = refreshShop()
   if (!shopId) return
   loading.value = true
   errors.value = []
-  await Promise.all([loadSuppliers(), loadPlans(), loadOrders(), loadShipments()])
+  await Promise.all([loadSuppliers(), loadPlans(), loadOrders(), loadVoucherOrders(), loadShipments()])
   loading.value = false
 }
 

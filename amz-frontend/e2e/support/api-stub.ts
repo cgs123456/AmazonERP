@@ -1086,6 +1086,14 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/search\/deleteHistory$/, data: null },
 
   // ===== 采购 /procurement =====
+  // 凭证来源与全量列表刻意给不同单号：/order/list 返回空，voucher-source 返回一条，
+  // 页面若把两个端点弄混（或拿全量列表自己筛状态），断言立刻能看出来。
+  {
+    match: /^\/procurement\/order\/voucher-source\//,
+    data: [{ id: 77, orderNo: 'PO-VOUCHER-77', sku: 'SKU-V1', supplierName: '仅可入账供应商',
+      quantity: 5, unitPrice: 9.9, totalAmount: 49.5, status: 'COMPLETED' }],
+    page: FULL_PAGE(1)
+  },
   { match: /^\/procurement\/supplier\/list\//, data: PROCUREMENT_SUPPLIERS, page: FULL_PAGE(PROCUREMENT_SUPPLIERS.length) },
   { match: /^\/procurement\/plan\/list\//, data: PROCUREMENT_PLANS, page: FULL_PAGE(PROCUREMENT_PLANS.length) },
   { match: /^\/procurement\/order\/list\//, data: [], page: FULL_PAGE(0) },
@@ -1103,6 +1111,38 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/logistics\/warehouse\/alert$/, data: INVENTORY_ALERTS[0] },
 
   // ===== 连接器队列 /connectors（outbox + rate-limits） =====
+  // 能力清单（GET /connectors 精确匹配）：不登记时它会落到对象兜底，
+  // 页面靠兜底不炸只是运气，自检卡的断言不该建在这上面。
+  {
+    match: /^\/connectors$/,
+    data: [{
+      code: 'spapi', name: 'Amazon Selling Partner API', enabled: true, profile: 'prod', mockActive: false,
+      credentialSource: 'db', credentialCount: 2, implementedCount: 12, notImplementedCount: 7,
+      operations: [], evidenceLevel: 'E3', apiReady: false, reachable: false,
+      displayText: '具备对接能力（未联调）', blockerSummary: 'A1(E2<E4)', criteria: { A1: 'E2' },
+      lastCallAt: null, lastResult: 'NEVER_RUN', lastOutcomeCode: 'NOT_RUN'
+    }]
+  },
+  // SP-API 进程自描述与操作目录（GET /spapi/status、GET /spapi/operations）
+  {
+    match: /^\/spapi\/status$/,
+    data: {
+      service: 'amz-service-spapi', connector: 'spapi', profile: 'prod',
+      mockClientsActive: false, startupCheckRan: true, startupRequireCredentials: true,
+      loadedCredentialCount: 2
+    }
+  },
+  {
+    match: /^\/spapi\/operations$/,
+    data: [
+      { operationId: 'orders.getOrder', family: 'orders', method: 'GET', path: '/orders/v0/orders/{amazonOrderId}',
+        grantless: false, bodyRequired: false, successStatuses: [200],
+        requiredPathParameters: ['amazonOrderId'], requiredQueryParameters: [] },
+      { operationId: 'feeds.createFeedDocument', family: 'feeds', method: 'POST', path: '/feeds/2021-06-30/documents',
+        grantless: false, bodyRequired: true, successStatuses: [201],
+        requiredPathParameters: [], requiredQueryParameters: [] }
+    ]
+  },
   { match: /^\/connectors\/outbox\/\d+\/replay$/, data: { success: true, outcome: 'REPLAYED', status: 'SUCCEEDED', message: null } },
   { match: /^\/connectors\/outbox$/, data: CONNECTOR_OUTBOX },
   { match: /^\/connectors\/rate-limits$/, data: CONNECTOR_RATE_LIMITS },

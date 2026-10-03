@@ -1366,6 +1366,50 @@ test.describe('个人资料', () => {
   })
 })
 
+test.describe('连接器自检与凭证来源', () => {
+  test('连接器中心读进程自描述与操作目录，不提供执行入口', async ({ page }) => {
+    const paths: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname
+      if (p === '/api/spapi/status' || p === '/api/spapi/operations') paths.push(p)
+    })
+
+    await page.goto('/connectors')
+    const panel = page.locator('[data-panel="selfcheck"]')
+    await expect(panel).toContainText('生效 profile', { timeout: 20000 })
+    await expect(panel.locator('.kv', { hasText: '生效 profile' }).locator('.v')).toHaveText('prod')
+    await expect(panel.locator('.kv', { hasText: '已加载凭证' }).locator('.v')).toHaveText('2 条')
+    expect(paths).toContain('/api/spapi/status')
+    expect(paths).toContain('/api/spapi/operations')
+
+    // 目录列出来，但执行入口不存在
+    await expect(panel).toContainText('orders.getOrder')
+    await expect(panel).toContainText('amazonOrderId')
+    await expect(panel).toContainText('不提供执行')
+    await expect(panel.locator('button', { hasText: '执行操作' })).toHaveCount(0)
+  })
+
+  test('采购页凭证来源 Tab 打的是 voucher-source，单号与全量列表不同源', async ({ page }) => {
+    const urls: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname
+      if (p.startsWith('/api/procurement/order/')) urls.push(p)
+    })
+
+    await page.goto('/procurement')
+    await page.locator('.tab', { hasText: '凭证来源' }).click()
+    const panel = page.locator('[data-panel="voucher"]')
+    await expect(panel).toContainText('PO-VOUCHER-77', { timeout: 20000 })
+    await expect(panel).toContainText('QC_PASSED')
+    expect(urls.some(u => u.startsWith('/api/procurement/order/voucher-source/'))).toBe(true)
+
+    // 「采购单」Tab 走的是另一个端点，两个口径不能互相顶替
+    await page.locator('.tab', { hasText: '采购单（1688）' }).click()
+    await expect(page.locator('.table-card').first()).toContainText('该店铺暂无采购单')
+    expect(urls.some(u => u.startsWith('/api/procurement/order/list/'))).toBe(true)
+  })
+})
+
 test.describe('未登录态', () => {
   test('无 token 时 header 显示登录入口', async ({ browser }) => {
     // 自建干净上下文：无任何 token，也不装 /api 桩（userInfo 取不到 -> v-if="!userInfo" 分支）

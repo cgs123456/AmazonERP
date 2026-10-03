@@ -220,3 +220,58 @@ export const deleteConnectorCredential = (shopId: number) => {
     `/credentials/shop/${shopId}`
   )
 }
+/* ==================== SP-API 连接器自描述与操作目录 ==================== */
+
+/**
+ * GET /spapi/status（ConnectorSelfDescription.of 的固定键集合）。
+ *
+ * 这块的存在理由不是"再做一个健康检查"：验收 runbook 的硬约束 C1 要求
+ * 「被测服务必须以 SPRING_PROFILES_ACTIVE=prod 启动，违反则整份验收记录作废」，
+ * 而在这个端点之前，进程外没有任何渠道能核验它——mock 档下 Reports/Finances/Fees
+ * 三个 mock 客户端会返回离线样例数据，据此产出的"成功样例"是假证据。
+ * 于是"一条命令出验收报告"退化成人工声明。这里把那条声明变成看得见的字段。
+ *
+ * 只读、不含任何机密：只有 profile 名、布尔开关与凭证**条数**
+ * （clientId/clientSecret/refreshToken/accessKey/secretKey/token 一律不出现）。
+ */
+export interface SpapiSelfDescription {
+  service?: string
+  connector?: string
+  profile?: string
+  mockClientsActive?: boolean
+  startupCheckRan?: boolean
+  startupRequireCredentials?: boolean
+  /** 未执行启动自检时为 -1，含义是「未知」，不是「0 条凭证」 */
+  loadedCredentialCount?: number
+}
+
+/** 未知凭证条数的哨兵值，与后端 ConnectorSelfDescription.UNKNOWN_CREDENTIAL_COUNT 同义 */
+export const CREDENTIAL_COUNT_UNKNOWN = -1
+
+export const getSpapiStatus = () => {
+  return request.get<void, ApiResponse<SpapiSelfDescription>>('/spapi/status')
+}
+
+/**
+ * GET /spapi/operations：官方操作目录（SpApiOperationCatalog 的静态清单，不需要店铺凭据）。
+ * 只列「能调什么」，本页不提供执行：POST /spapi/operations/{operationId} 需要已存凭证，
+ * 且它的 @ShopScoped 实测不生效（路径里没有 Long shopId 参数，切面直接放行），
+ * 真正的守卫是服务内显式的 isShopAllowedStrict(request.shopId)——把一个能写远端的
+ * 通用执行器摊到页面上，等于给每个登录用户一个任意 API 调用面板。
+ */
+export interface SpApiOperationSpec {
+  operationId: string
+  family?: string
+  method?: string
+  path?: string
+  grantless?: boolean
+  bodyRequired?: boolean
+  successStatuses?: number[]
+  requiredPathParameters?: string[]
+  requiredQueryParameters?: string[]
+  requiredBodyFields?: string[]
+}
+
+export const listSpapiOperations = () => {
+  return request.get<void, ApiResponse<SpApiOperationSpec[]>>('/spapi/operations')
+}

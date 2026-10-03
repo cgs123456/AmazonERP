@@ -10,6 +10,7 @@ vi.mock('@/api/procurement', async () => {
     listSuppliers: vi.fn(),
     listPlans: vi.fn(),
     listOrders: vi.fn(),
+    listVoucherSourceOrders: vi.fn(),
     listShipments: vi.fn(),
     listShipmentItems: vi.fn(),
     suppliersBySku: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock('@/api/procurement', async () => {
 })
 
 import {
-  listSuppliers, listPlans, listOrders, listShipments, listShipmentItems,
+  listSuppliers, listPlans, listOrders, listVoucherSourceOrders, listShipments, listShipmentItems,
   suppliersBySku, compareSuppliers, updateSupplierStatus,
   submitOrderTo1688, cancelOrder, receiveShipment, createPlan, approvePlan, listPlanApprovals
 } from '@/api/procurement'
@@ -98,6 +99,8 @@ const happyPath = () => {
   vi.mocked(listSuppliers).mockResolvedValue(SUPPLIERS)
   vi.mocked(listPlans).mockResolvedValue(PLANS)
   vi.mocked(listOrders).mockResolvedValue(ORDERS)
+  // 凭证来源默认与全量列表同形，具体用例再覆盖成「只有可入账三态」
+  vi.mocked(listVoucherSourceOrders).mockResolvedValue(ORDERS)
   vi.mocked(listShipments).mockResolvedValue(SHIPMENTS)
   vi.mocked(listShipmentItems).mockResolvedValue(ITEMS)
 }
@@ -132,7 +135,9 @@ describe('Procurement 视图（采购供应链）', () => {
     happyPath()
     const wrapper = await mountPage()
     expect(wrapper.find('.hero-title').text()).toBe('采购供应链')
-    expect(wrapper.findAll('.tab').length).toBe(5)
+    expect(wrapper.findAll('.tab').length).toBe(6)
+    // 第 6 个是本轮加的「凭证来源（可入账）」
+    expect(wrapper.findAll('.tab').map((t: any) => t.text()).join('|')).toContain('凭证来源')
   })
 
   it('挂载即按当前店铺拉列表，字段直接来自后端不做页面常量', async () => {
@@ -367,5 +372,56 @@ describe('Procurement 视图（采购供应链）', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('人工随手填的依据，不是 JSON')
     expect(wrapper.text()).toContain('原样显示')
+  })
+})
+
+describe('Procurement 凭证来源 Tab（GET /procurement/order/voucher-source/{shopId}）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    withShop()
+    happyPath()
+  })
+
+  it('取数打的是凭证来源端点，不是全量采购单列表', async () => {
+    vi.mocked(listVoucherSourceOrders).mockResolvedValue(paged([
+      { id: 77, orderNo: 'PO-V-77', sku: 'SKU-V', supplierName: '仅可入账的单', quantity: 5,
+        unitPrice: 9.9, totalAmount: 49.5, status: 'COMPLETED' }
+    ]))
+
+    const wrapper = await mountPage()
+    await openTab(wrapper, '凭证来源')
+
+    expect(listVoucherSourceOrders).toHaveBeenCalled()
+    const panel = wrapper.find('[data-panel="voucher"]')
+    expect(panel.text()).toContain('PO-V-77')
+    expect(panel.text()).toContain('仅可入账的单')
+    // 口径由后端定：说明里必须点出三态与「翻完」
+    expect(panel.text()).toContain('QC_PASSED')
+    expect(panel.text()).toContain('翻完')
+  })
+
+  it('被截断时按游标续拉，不把半页当全部', async () => {
+    vi.mocked(listVoucherSourceOrders)
+      .mockResolvedValueOnce(paged([{ id: 77, orderNo: 'PO-V-77', sku: 'A', status: 'RECEIVED' }], true))
+      .mockResolvedValueOnce(paged([{ id: 78, orderNo: 'PO-V-78', sku: 'B', status: 'QC_PASSED' }]))
+
+    const wrapper = await mountPage()
+    await openTab(wrapper, '凭证来源')
+
+    const panel = wrapper.find('[data-panel="voucher"]')
+    await clickText(panel, '加载下一页')
+
+    expect(listVoucherSourceOrders).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(listVoucherSourceOrders).mock.calls[1][1]).toMatchObject({ cursor: 'v1:100' })
+    expect(panel.text()).toContain('PO-V-78')
+  })
+
+  it('端点失败时报错而不是显示成「没有可入账的单」', async () => {
+    vi.mocked(listVoucherSourceOrders).mockResolvedValue({ code: 500, message: '库没连上', data: [] } as any)
+
+    const wrapper = await mountPage()
+    await openTab(wrapper, '凭证来源')
+
+    expect(wrapper.find('.error-zone').text()).toContain('凭证来源采购单')
   })
 })

@@ -33,6 +33,87 @@
         <span>暂无连接器能力清单</span>
       </div>
 
+      <!-- SP-API 进程自描述 + 操作目录（GET /spapi/status、GET /spapi/operations） -->
+      <section class="selfcheck-card card-surface" data-panel="selfcheck">
+        <div class="section-title-row">
+          <div>
+            <h3>SP-API 进程自检</h3>
+            <p class="section-sub">
+              验收约束 C1「被测服务必须以 prod 档启动，违反则整份记录作废」以前只能人工声明；
+              下面几个字段是它在进程外唯一的凭据。只报 profile、布尔开关与凭证条数，不含任何密文。
+            </p>
+          </div>
+          <button class="secondary-btn" type="button" :disabled="statusLoading" @click="loadSelfDescription">
+            {{ statusLoading ? '加载中...' : '刷新' }}
+          </button>
+        </div>
+
+        <div v-if="statusError" class="inline-error" role="alert">
+          <span>{{ statusError }}</span>
+          <button class="link-btn" type="button" @click="loadSelfDescription">重试</button>
+        </div>
+        <div v-else-if="selfDescription" class="kv-grid">
+          <div class="kv">
+            <span class="k">生效 profile</span>
+            <span class="v mono">{{ selfDescription.profile || '未声明' }}</span>
+          </div>
+          <div class="kv">
+            <span class="k">mock 客户端</span>
+            <span class="v" :class="selfDescription.mockClientsActive ? 'flag-mock' : 'flag-real'">
+              {{ boolText(selfDescription.mockClientsActive) }}
+            </span>
+          </div>
+          <div class="kv">
+            <span class="k">启动自检已执行</span><span class="v">{{ boolText(selfDescription.startupCheckRan) }}</span>
+          </div>
+          <div class="kv">
+            <span class="k">自检要求凭证</span><span class="v">{{ boolText(selfDescription.startupRequireCredentials) }}</span>
+          </div>
+          <div class="kv"><span class="k">已加载凭证</span><span class="v">{{ credentialCountText }}</span></div>
+        </div>
+        <p v-if="mockWarning" class="mock-warning" role="status">{{ mockWarning }}</p>
+
+        <div class="section-title-row catalog-head">
+          <div>
+            <h3>可调用操作目录（共 {{ operations.length }} 条）</h3>
+            <p class="section-sub">
+              静态目录，读取不需要店铺凭据。本页不提供执行：POST /spapi/operations/{operationId}
+              要已存凭证，且它的 @ShopScoped 因路径没有 Long shopId 参数而实测不生效，
+              真正的守卫是服务内显式的店铺归属判定——把通用执行器摊成按钮，
+              等于给每个登录用户一个任意 API 调用面板。
+            </p>
+          </div>
+          <button class="secondary-btn" type="button" :disabled="opsLoading" @click="loadOperationCatalog">
+            {{ opsLoading ? '加载中...' : '刷新' }}
+          </button>
+        </div>
+        <div v-if="opsError" class="inline-error" role="alert">
+          <span>{{ opsError }}</span>
+          <button class="link-btn" type="button" @click="loadOperationCatalog">重试</button>
+        </div>
+        <div v-else-if="!operations.length" class="inline-empty">目录为空或尚未加载</div>
+        <div v-else class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr><th>operationId</th><th>家族</th><th>方法</th><th>路径</th><th>必填参数</th><th>免授权</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="op in shownOperations" :key="op.operationId">
+                <td class="mono">{{ op.operationId }}</td>
+                <td>{{ op.family || '-' }}</td>
+                <td class="mono">{{ op.method || '-' }}</td>
+                <td class="mono path-cell" :title="op.path || ''">{{ op.path || '-' }}</td>
+                <td class="params-cell">{{ requiredText(op) }}</td>
+                <td>{{ boolText(op.grantless) }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <button v-if="operations.length > OPS_PAGE" class="link-btn" type="button" @click="showAllOps = !showAllOps">
+            {{ showAllOps ? `只看前 ${OPS_PAGE} 条` : `展开全部 ${operations.length} 条` }}
+          </button>
+        </div>
+      </section>
+
       <section v-for="connector in connectors" :key="connector.code" class="connector-card card-surface">
         <header class="connector-head">
           <div>
@@ -340,16 +421,21 @@ import AppSidebar from '../components/AppSidebar.vue'
 import {
   deleteConnectorCredential,
   getConnectorCredentialStatus,
+  getSpapiStatus,
   listConnectors,
+  listSpapiOperations,
   preflightConnector,
   saveConnectorCredential,
   selfTestConnector,
+  CREDENTIAL_COUNT_UNKNOWN,
   type ConnectorCapability,
   type ConnectorCredentialStatus,
   type ConnectorCredentialUpdate,
   type ConnectorPreflightReport,
   type ConnectorPreflightStageStatus,
-  type ConnectorSelfTestData
+  type ConnectorSelfTestData,
+  type SpapiSelfDescription,
+  type SpApiOperationSpec
 } from '@/api/connectors'
 import { useShopGuard } from '@/composables/useShopGuard'
 
@@ -607,6 +693,78 @@ const deleteCredential = async (connector: ConnectorCapability) => {
     credentialDeleting.value = false
   }
 }
+
+// ===== SP-API 进程自描述与操作目录 =====
+const OPS_PAGE = 20
+const selfDescription = ref<SpapiSelfDescription | null>(null)
+const statusLoading = ref(false)
+const statusError = ref('')
+const operations = ref<SpApiOperationSpec[]>([])
+const opsLoading = ref(false)
+const opsError = ref('')
+const showAllOps = ref(false)
+
+/** 后端拿不到启动自检快照时给的是 -1，含义是「未知」；显示成 0 条会被读成「一张凭证都没有」。 */
+const credentialCountText = computed(() => {
+  const n = selfDescription.value?.loadedCredentialCount
+  if (n === undefined || n === null) return '未知'
+  if (n === CREDENTIAL_COUNT_UNKNOWN) return '未知（启动自检未执行）'
+  return `${n} 条`
+})
+
+const mockWarning = computed(() => (selfDescription.value?.mockClientsActive
+  ? '当前进程启用了 mock 客户端：Reports / Finances / Fees 返回的是离线样例，据此产出的验收成功样例不成立。'
+  : ''))
+
+const boolText = (v?: boolean | null): string => (v === undefined || v === null ? '未知' : v ? '是' : '否')
+
+const requiredText = (op: SpApiOperationSpec): string => {
+  const parts = [...(op.requiredPathParameters || []), ...(op.requiredQueryParameters || [])]
+  if (op.bodyRequired) parts.push('body')
+  return parts.length ? parts.join('、') : '无'
+}
+
+const shownOperations = computed(() => (showAllOps.value ? operations.value : operations.value.slice(0, OPS_PAGE)))
+
+/** 读失败时清空旧值：留着上一次读到的 profile，看起来就像当前进程的状态。 */
+const loadSelfDescription = async () => {
+  statusLoading.value = true
+  statusError.value = ''
+  try {
+    const res = await getSpapiStatus()
+    if (res?.code === 200 && res.data) {
+      selfDescription.value = res.data
+    } else {
+      selfDescription.value = null
+      statusError.value = `自检读取失败：${res?.message || '后端未返回成功'}`
+    }
+  } catch (e) {
+    selfDescription.value = null
+    statusError.value = `自检读取失败：${e instanceof Error ? e.message : '调用失败'}`
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+const loadOperationCatalog = async () => {
+  opsLoading.value = true
+  opsError.value = ''
+  try {
+    const res = await listSpapiOperations()
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      operations.value = res.data
+    } else {
+      operations.value = []
+      opsError.value = `目录读取失败：${res?.message || '后端未返回成功'}`
+    }
+  } catch (e) {
+    operations.value = []
+    opsError.value = `目录读取失败：${e instanceof Error ? e.message : '调用失败'}`
+  } finally {
+    opsLoading.value = false
+  }
+}
+
 const loadConnectors = async () => {
   loading.value = true
   loadError.value = ''
@@ -806,6 +964,8 @@ const selfTestResultIcon = (connector: ConnectorCapability) => {
 onMounted(() => {
   refreshShop()
   void loadConnectors()
+  void loadSelfDescription()
+  void loadOperationCatalog()
 })
 </script>
 
@@ -845,6 +1005,20 @@ onMounted(() => {
 .metric small { color: var(--color-muted); font-size: var(--font-size-1); }
 .section-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
 .section-title-row h3 { margin: 0; color: var(--color-on-surface); font-size: var(--font-size-3); }
+.selfcheck-card { padding: 1rem; margin-bottom: 1rem; }
+.section-sub { margin: 0.25rem 0 0; color: var(--color-muted); font-size: var(--font-size-1); line-height: 1.5; }
+.catalog-head { margin-top: 1.25rem; }
+.kv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.5rem; }
+.kv { display: flex; flex-direction: column; gap: 0.125rem; background: var(--color-surface-variant); border-radius: var(--radius-sm); padding: 0.5rem 0.625rem; }
+.k { font-size: 0.75rem; color: var(--color-muted); }
+.v { font-size: 0.875rem; color: var(--color-on-surface); }
+.flag-mock { color: var(--color-warning-dark); }
+.flag-real { color: var(--color-success); }
+.mock-warning { margin: 0.75rem 0 0; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; }
+.inline-error { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--color-light-red); color: var(--color-error); font-size: 0.8125rem; }
+.inline-empty { padding: 0.5rem 0.75rem; color: var(--color-muted); font-size: 0.8125rem; }
+.link-btn { background: none; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.8125rem; padding: 0.25rem 0; }
+.path-cell, .params-cell { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .section-title-row p { margin: 0.25rem 0 0; }
 .muted { color: var(--color-muted); font-size: var(--font-size-1); }
 .criteria-block, .operations-block, .self-test-block { padding-top: 1rem; border-top: 1px solid var(--color-border); margin-top: 1rem; }
