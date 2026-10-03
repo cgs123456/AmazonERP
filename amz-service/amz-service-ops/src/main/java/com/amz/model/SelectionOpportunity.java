@@ -1,6 +1,7 @@
 package com.amz.model;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -60,10 +61,12 @@ public class SelectionOpportunity implements Serializable {
 
     // ===== 趋势 =====
 
-    /** 30 天趋势 UP/FLAT/DOWN */
+    /** 30 天趋势 UP/FLAT/DOWN。列名带下划线，必须显式声明：驼峰推断得到的是 trend30d。 */
+    @TableField("trend_30d")
     private String trend30d;
 
     /** 90 天趋势 UP/FLAT/DOWN */
+    @TableField("trend_90d")
     private String trend90d;
 
     // ===== AI 建议 =====
