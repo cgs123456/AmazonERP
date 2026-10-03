@@ -5,10 +5,10 @@
 
 口径：闸口数仍是 **39**，因为 24–26 三条只是后端改为拒绝、前端本来就没接。
 「已收口」是判定而不是接线，闸口看不出区别——这是闸口的边界，不是它的缺陷。
-分桶合计 11+19+3+2+4=39。本轮相对 v13 的变化：24–26 从「阻塞在迁移」变为「已 fail-fast 收口」（见 7p），
+分桶合计 14+19+3+2+1=39。本轮相对 v13 的变化：24–26 从「阻塞在迁移」变为「已 fail-fast 收口」（见 7p），
 新增一条同类硬缺陷 `amz_replenishment_suggestion`（见 7q 第 5 节，待用户定夺）。
 
-## A. 后端会必然失败或必然造数，故意不给按钮（11 条）
+## A. 后端会必然失败或必然造数，故意不给按钮（14 条，含文末更正移入的 9/12/14）
 
 | # | 端点 | 判定依据 |
 | --- | --- | --- |
@@ -22,6 +22,9 @@
 | 18 | `GET /ops/selection/competitors/{asin}` | 7k 加了 mock 门禁 + 前端「模拟数据」标；生产 Profile 拒绝 |
 | 19 | `POST /ops/selection/keyword` | 同 18 |
 | 2 | `GET /ad/keyword/optimize` | 7n 实测：报表行恒为 `Collections.emptyList()`，优化建议恒为 `OBSERVE`——按钮点下去只会永远一个答案 |
+| 9 | `POST /multiplatform/account/{id}/test` | 7f 已判定：它只校验端点字符串格式，却会把账号 `status` 改写成 ACTIVE/ERROR——一个没发过包的检查不该改「账号是否活跃」。接按钮前要先定后端口径（api/multiplatform.ts:95-97 同条） |
+| 12 | `POST /multiplatform/message/{messageId}/reply` | 7f 已判定：只往本地库写一条回复，不会发到平台或买家；「回复」按钮等于对客服说已回复而买家什么都没收到 |
+| 14 | `POST /multiplatform/oauth/token` | 7c/7d/7f 三处已判定：机机换发接口，不给浏览器。附带一条独立的安全观察（不属于覆盖率口径）：`appSecret` 目前是 `@RequestParam`，即便调用方是服务器，密钥也会进网关访问日志 |
 | 20 | `POST /order/saveOrder` | 经 `ProductClient.getProductById` 打进 7p 已证死的 `amz_product` 旧列通路；且「允许无商品的裸订单吗」是产品口径，不是覆盖率 |
 
 A 类的共同点：**接上去就是把必然失败或假数据摆到页面上**。前 9 条在页面上的正确形态是
@@ -65,12 +68,11 @@ B 类的共同点：**能接通的前提是外部密钥**，而这台机器/这�
 | 1 | `GET /ad/report/{shopId}` | 与已接的广告报表同口径，7n 已把 spend/sales/acos 改为真实关联；再开一个只多一份数字来源 |
 | 39 | `POST /user/updateImage` | 头像上传指向阿里云 OSS，配置项是 `your-access-key-id`/`your-bucket-name` 占位；7m 的个人资料页因此只接文本三字段，图片以文本框呈现 |
 
-## E. 值得下一轮做的真缺口（4 条：7 / 9 / 12 / 14）
+## E. 值得下一轮做的真缺口（1 条：#7；原列的 9/12/14 已下移到 A，见文末更正）
 
 | # | 端点 | 为什么算真缺口 |
 | --- | --- | --- |
 | 7 | `POST /ai/eval/run` | 12 条评测用例是**已存在且真实执行**的后端能力。已读到实现：`AiController:113-124`，缺省 `mode=keyword` 走 `agentEvalRunner.runAll()`，**不需要模型 key**，并把每次运行落库 `amz_agent_eval_log`（best-effort）；`mode=both` 才要求 `AGENT_LLM_EVAL_ENABLED=true` + `deepseek.api-key`，否则返回明确的失败文案。也就是说它缺的不是凭证而是入口：没有任何界面能跑一次 prompt 回归。做成面板时要把「both 未配 key ⇒ 直接失败」如实显示 |
-| 9, 12, 14 | `POST /multiplatform/account/{id}/test`、`/message/{id}/reply`、`/oauth/token` | 这三条是真实回传/真实签发（不是 UnsupportedOperation）：`reply` 平台接受后本地才变状态，`generateToken`（`MultiplatformServiceImpl:612-630`）经 `sha256Hex(appSecret)` 比对 fail-closed 并绑定归属店铺。**但** `oauth/token` 的 `appSecret` 目前是 `@RequestParam`，密钥会进访问日志与浏览器历史；接按钮之前应先把凭证挪进请求体，否则是把凭证泄漏摆到 UI 上 |
 
 B 类里唯一需要补一句的是 `POST /ai/review/analyze`：已读到 `ReviewAnalysisServiceImpl:49-62`
 在空列表时才走「无评论数据可分析」，非空即 `buildPrompt → callDeepSeek`，确实需要模型 key，
@@ -87,3 +89,17 @@ B 类里唯一需要补一句的是 `POST /ai/review/analyze`：已读到 `Revie
   本轮把 3 条从「待迁移」挪到「已收口」，闸口数不变（闸口只看前端名字）。
 - 剩余漂移由 `tools/schema/entity_column_drift.py`（含 `--self-test`）给出 5 条，
   其中 `amz_replenishment_suggestion` 是唯一落在已接线路径上的，见 7q 第 5 节。
+
+## 更正（2026-10-03 同日，本台账发布后）
+
+E 桶原本写「9/12/14 是真实回传/真实签发，值得接线」——**错了**，而且错的证据就在我自己
+两天内写下的三份文档里：`item7f-multiplatform-ops.md:21-23` 明确判定 `account/{id}/test`
+只做端点格式校验却改写账号 status、`message/{id}/reply` 只写本地库不会发到平台、
+`item7c/7d` 两处写明 `oauth/token` 是机机接口不给浏览器；`src/api/multiplatform.ts:95-97`
+也把同样的理由写在了代码注释里。判定时我只读了 Controller 与 Service 的实现形状，
+没有回读这三处已有结论，于是把「代码不抛 UnsupportedOperation」误当成「接上就有真答案」。
+已把这三行移入 A 桶并注明出处；E 桶只剩 `POST /ai/eval/run`（本轮 7s 已接线）。
+
+教训写在这里而不是删掉原文：**判类要按端点逐条回读既有结论**，尤其是那种
+「实现看着像真的、但语义会让页面说谎」的情况。appSecret 进查询参数这条保留，
+但它是安全项（#54 已改写），不属于覆盖率口径。
