@@ -188,6 +188,19 @@ test.describe('AdManager 交互', () => {
     await expect(card.locator('.ops-error')).toHaveCount(0)
   })
 
+  test('SP 表格的花费/销售额来自日报关联，不是扩展表的零值列', async ({ page }) => {
+    await page.goto('/ads')
+    await waitReady(page)
+    const row = page.locator('table.data-table tbody tr', { hasText: '关键词-蓝牙耳机-US' }).first()
+    // AD_REPORTS 里 C-1001 是 cost 320 / sales 1600；ext 表的 spend/sales 是 0，
+    // 读错来源会显示 $0.00 与 0%。
+    await expect(row).toContainText('$320.00')
+    await expect(row).toContainText('$1,600.00')
+    await expect(row).toContainText('20%')
+    await expect(row).toContainText('$50')
+    await expect(page.locator('[data-note="sp-source"]')).toContainText('按 campaignId 关联')
+  })
+
   test('SB tab 按活动ID查素材；切回 SP 仍是 2 条活动', async ({ page }) => {
     await page.goto('/ads')
     await waitReady(page)

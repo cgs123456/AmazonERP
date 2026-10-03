@@ -108,9 +108,9 @@
               <td>{{ camp.name }}</td>
               <td><span class="status-tag" :class="camp.active ? 'active' : 'paused'">{{ camp.active ? '运行中' : '已暂停' }}</span></td>
               <td>${{ camp.budget }}</td>
-              <td>${{ camp.spend }}</td>
-              <td>${{ camp.sales }}</td>
-              <td :class="camp.acos > 50 ? 'acos-bad' : camp.acos > 35 ? 'acos-warn' : 'acos-good'">{{ camp.acos }}%</td>
+              <td>{{ money(camp.spend) }}</td>
+              <td>{{ money(camp.sales) }}</td>
+              <td :class="spAcosClass(camp.acos)">{{ pct(camp.acos) }}</td>
             </tr>
             <tr v-if="!loading && campaigns.length === 0">
               <td colspan="6" class="empty-row">
@@ -122,6 +122,10 @@
             </tr>
           </tbody>
         </table>
+        <p class="col-note" data-note="sp-source">
+          花费 / 销售额 / ACoS 取自本页已拉到的日报聚合行，按 campaignId 关联过来；
+          活动没有日报时显示「—」。日预算仍是广告活动扩展表的真列。
+        </p>
       </div>
 
       <!-- SB 广告素材管理 -->
@@ -327,7 +331,7 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getAdReports, getAdTrend, syncAdReports, syncAllAdReports, AD_SYNC_MAX_DAYS } from '@/api/ad'
-import type { AdOverview, AcosTrendItem, AdCampaign, AdSyncSummary } from '@/api/ad'
+import type { AdOverview, AcosTrendItem, AdCampaign, AdSyncSummary, AdReportRow } from '@/api/ad'
 import * as AdExt from '@/api/ad-ext'
 import type { AdCreative, AdTargeting, AdSummary, AdType } from '@/api/ad-ext'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -433,16 +437,23 @@ const mockTrend: AcosTrendItem[] = [
   { day: '7/7', value: 24.9 }
 ]
 const mockCampaigns: AdCampaign[] = [
-  { id: 1, name: '关键词-蓝牙耳机-US', active: true, budget: 50, spend: 32.50, sales: 158.00, acos: 20.6 },
-  { id: 2, name: '自动广告-全店铺', active: true, budget: 100, spend: 68.30, sales: 210.50, acos: 32.4 },
-  { id: 3, name: '品牌广告-Shop B', active: false, budget: 30, spend: 12.00, sales: 28.50, acos: 42.1 },
-  { id: 4, name: '商品推广-新品', active: true, budget: 40, spend: 15.70, sales: 89.20, acos: 17.6 }
+  { id: 1, campaignId: 'MOCK-SP-1', name: '关键词-蓝牙耳机-US', active: true, budget: 50, spend: 32.50, sales: 158.00, acos: 20.6 },
+  { id: 2, campaignId: 'MOCK-SP-2', name: '自动广告-全店铺', active: true, budget: 100, spend: 68.30, sales: 210.50, acos: 32.4 },
+  { id: 3, campaignId: 'MOCK-SP-3', name: '品牌广告-Shop B', active: false, budget: 30, spend: 12.00, sales: 28.50, acos: 42.1 },
+  { id: 4, campaignId: 'MOCK-SP-4', name: '商品推广-新品', active: true, budget: 40, spend: 15.70, sales: 89.20, acos: 17.6 }
 ]
 
 const emptyOverview: AdOverview = { totalAcos: 0, totalSpend: '0.00', totalSales: '0.00', roas: '0.00' }
 const acosData = ref<AdOverview>(adDemoMode ? { ...mockOverview } : { ...emptyOverview })
 const acosTrend = ref<AcosTrendItem[]>(adDemoMode ? [...mockTrend] : [])
 const campaigns = ref<AdCampaign[]>(adDemoMode ? [...mockCampaigns] : [])
+
+/** 「没有数据」和「值为 0」必须长得不一样：$0.00 会被读成这个活动没花钱。 */
+const money = (v: number | null): string =>
+  v === null ? '—' : '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const pct = (v: number | null): string => (v === null ? '—' : `${v}%`)
+const spAcosClass = (v: number | null): string =>
+  v === null ? 'acos-unknown' : v > 50 ? 'acos-bad' : v > 35 ? 'acos-warn' : 'acos-good'
 
 const acosLevel = computed(() => {
   const a = acosData.value.totalAcos
@@ -508,12 +519,18 @@ const loadOverview = async () => {
   // 金额存裸数字串（模板统一加 $ 前缀；此前 live 路径自带 $ 导致渲染成 $$，mock 路径无此问题）
   const fmtMoney = (n: number): string =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // 日报行要在前后两个 try 之间共用，所以声明在 try 外面：
+  // 放进第一个 try 会让第二个 try 抛 ReferenceError，loading 永不复位，表现就是表格整块消失。
+  let reportRows: AdReportRow[] = []
   try {
-    // 后端 GET /ad/reports 返回 AdReport 行数组（无总览包装），前端聚合总览
+    // 后端 GET /ad/reports 返回 AdReport 行数组（无总览包装），前端聚合总览。
+    // 行同时留给 SP 表格按 campaignId 关联：ext 表的 spend/sales/acos 三列无人写入，
+    // 真实模式下恒为 0，只有日报里有数。
     const res = await getAdReports(shopId)
     if (res?.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
       overviewIsLive.value = true
       const rows = res.data
+      reportRows = rows
       const totalSpend = rows.reduce((s, r) => s + toNum(r.cost), 0)
       const totalSales = rows.reduce((s, r) => s + toNum(r.sales), 0)
       acosData.value = {
@@ -538,15 +555,31 @@ const loadOverview = async () => {
     // 活动列表改用 /ad/campaigns/list（含名称/状态/预算，AdReport 行无这些字段）
     const cres = await AdExt.listCampaigns(shopId, 'SP')
     if (cres?.code === 200 && Array.isArray(cres.data) && cres.data.length > 0) {
-      campaigns.value = cres.data.map((c, i) => ({
-        id: Number(c.id ?? i + 1),
-        name: c.campaignName || c.campaignId,
-        active: c.status === 'ENABLED',
-        budget: toNum(c.budget),
-        spend: toNum(c.spend),
-        sales: toNum(c.sales),
-        acos: toNum(c.acos)
-      }))
+      // 同一活动可能有多天日报，先按 campaignId 汇总再关联
+      const byCampaign = new Map<string, { cost: number; sales: number }>()
+      reportRows.forEach((r) => {
+        const key = String(r.campaignId ?? '')
+        if (!key) return
+        const acc = byCampaign.get(key) || { cost: 0, sales: 0 }
+        acc.cost += toNum(r.cost)
+        acc.sales += toNum(r.sales)
+        byCampaign.set(key, acc)
+      })
+      campaigns.value = cres.data.map((c, i) => {
+        const key = String(c.campaignId ?? '')
+        const agg = byCampaign.get(key) || null
+        return {
+          id: Number(c.id ?? i + 1),
+          campaignId: key,
+          name: c.campaignName || key,
+          active: c.status === 'ENABLED',
+          budget: toNum(c.budget),
+          spend: agg ? agg.cost : null,
+          sales: agg ? agg.sales : null,
+          // 销售额为 0 时 ACoS 无定义：显示 — 而不是 0%（0% 会被读成免费流量）
+          acos: agg && agg.sales > 0 ? Number(((agg.cost / agg.sales) * 100).toFixed(1)) : null
+        }
+      })
     } else {
       campaigns.value = adDemoMode ? [...mockCampaigns] : []
       if (!cres || cres.code !== 200) {
@@ -706,6 +739,8 @@ const acosClass = (acos?: number) => {
 .acos-good { color: var(--color-success); font-weight: 600; }
 .acos-warn { color: var(--color-warning-dark); font-weight: 600; }
 .acos-bad { color: var(--color-error); font-weight: 600; }
+.acos-unknown { color: var(--color-muted); }
+.col-note { padding: 0.625rem 1rem; margin: 0; font-size: 0.75rem; color: var(--color-muted); line-height: 1.5; }
 
 .action-btn {
   padding: 0.25rem 0.75rem;

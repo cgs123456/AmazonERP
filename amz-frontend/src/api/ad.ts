@@ -18,12 +18,19 @@ export interface AcosTrendItem {
 // 广告活动
 export interface AdCampaign {
   id: number
+  /** 与 AdReportRow.campaignId 对齐的关联键：花费/销售额靠它从日报聚合过来 */
+  campaignId: string
   name: string
   active: boolean
   budget: number
-  spend: number
-  sales: number
-  acos: number
+  /**
+   * null = 这家店这个活动在日报里没有行，即「没有数据」。
+   * 不能塌成 0：amz_ad_campaign_ext 的 spend/sales/acos 三列是 DEFAULT 0 且全仓无写入路径
+   * （日报同步写的是 amz_ad_daily_report），照抄下来会把「没数据」显示成 "$0.00 / 0%"。
+   */
+  spend: number | null
+  sales: number | null
+  acos: number | null
 }
 
 // 后端 GET /ad/reports 行结构（AdReport 实体：活动粒度聚合指标，无总览/趋势包装）

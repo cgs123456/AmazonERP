@@ -272,3 +272,98 @@ describe('AdManager 视图', () => {
     expect(mockedSyncShop).not.toHaveBeenCalled()
   })
 })
+
+describe('AdManager SP 表格的花费/销售额来源', () => {
+  // amz_ad_campaign_ext 的 spend/sales/acos 三列在库里是 DEFAULT 0，
+  // 全仓没有任何写入路径（日报同步写的是 amz_ad_daily_report），
+  // 所以直接读这三列会把「没有数据」渲染成 $0.00 / 0%。
+  const extRow = (campaignId: string, name: string) => ({
+    id: 1, shopId: 1, campaignId, campaignName: name, adType: 'SP',
+    budget: 50, status: 'ENABLED', spend: 0, sales: 0, acos: 0
+  })
+
+  const spTable = (wrapper: any) => {
+    const t = wrapper.findAll('table.data-table').filter((n: any) => n.text().includes('蓝牙耳机'))
+    expect(t.length, 'SP 表格没找到').toBe(1)
+    return t[0]
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '1')
+    vi.stubEnv('VITE_AD_DEMO_MODE', 'false')
+    mockedGetAdTrend.mockReset().mockResolvedValue({ code: 200, message: 'ok', data: [] } as any)
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllEnvs()
+  })
+
+  it('按 campaignId 关联日报：花费/销售额/ACoS 用真实聚合值', async () => {
+    mockedGetAdReports.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: [{ campaignId: 'SP-1', cost: 32.5, sales: 158, impressions: 10, clicks: 4 }]
+    } as any)
+    mockedListCampaigns.mockResolvedValue({
+      code: 200, message: 'ok', data: [extRow('SP-1', '关键词-蓝牙耳机-US')]
+    } as any)
+
+    const wrapper = mount(AdManager, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    const row = spTable(wrapper).findAll('tbody tr')[0]
+    expect(row.text()).toContain('$32.50')
+    expect(row.text()).toContain('$158.00')
+    expect(row.text()).toContain('20.6%')
+    // 日预算仍来自 ext 表（这列日报同步确实会写）
+    expect(row.text()).toContain('$50')
+  })
+
+  it('活动没有日报行时显示 —，不显示 $0.00', async () => {
+    mockedGetAdReports.mockResolvedValue({ code: 200, message: 'ok', data: [] } as any)
+    mockedListCampaigns.mockResolvedValue({
+      code: 200, message: 'ok', data: [extRow('SP-9', '关键词-蓝牙耳机-US')]
+    } as any)
+
+    const wrapper = mount(AdManager, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    const text = spTable(wrapper).findAll('tbody tr')[0].text()
+    expect(text).toContain('—')
+    expect(text).not.toContain('$0.00')
+    expect(text).not.toContain('0%')
+  })
+
+  it('有花费但销售额为 0 时 ACoS 是 —，不是 0%（0% 会被读成免费流量）', async () => {
+    mockedGetAdReports.mockResolvedValue({
+      code: 200, message: 'ok', data: [{ campaignId: 'SP-1', cost: 32.5, sales: 0 }]
+    } as any)
+    mockedListCampaigns.mockResolvedValue({
+      code: 200, message: 'ok', data: [extRow('SP-1', '关键词-蓝牙耳机-US')]
+    } as any)
+
+    const wrapper = mount(AdManager, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    const text = spTable(wrapper).findAll('tbody tr')[0].text()
+    expect(text).toContain('$32.50')
+    expect(text).toContain('—')
+    expect(text).not.toContain('0%')
+  })
+
+  it('表格说明数据来源与 — 的含义', async () => {
+    mockedGetAdReports.mockResolvedValue({ code: 200, message: 'ok', data: [] } as any)
+    mockedListCampaigns.mockResolvedValue({
+      code: 200, message: 'ok', data: [extRow('SP-1', '关键词-蓝牙耳机-US')]
+    } as any)
+
+    const wrapper = mount(AdManager, { shallow: true, global: globalStubs })
+    await flushPromises()
+
+    const note = wrapper.find('[data-note="sp-source"]')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('日报')
+    expect(note.text()).toContain('—')
+  })
+})

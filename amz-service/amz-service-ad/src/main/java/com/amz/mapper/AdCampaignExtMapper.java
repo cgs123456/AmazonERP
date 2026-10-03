@@ -62,8 +62,15 @@ public interface AdCampaignExtMapper extends BaseMapper<AdCampaignExt> {
     /**
      * 原子写入 Advertising API 返回的活动元数据。
      * <p>
-     * 唯一键为 {@code (shop_id, campaign_id)}。更新分支仅覆盖元数据字段，
-     * 不触碰由日报同步维护的 impressions/clicks/spend/sales/orders/acos/roas。
+     * 唯一键为 {@code (shop_id, campaign_id)}。更新分支仅覆盖元数据字段。
+     * <p>
+     * 更正一处历史误述（本注释此前写作「不触碰由日报同步维护的 …」）：
+     * 日报同步 {@code AdReportSyncScheduler#upsertRows} 写的是 {@code amz_ad_daily_report}，
+     * 本仓库没有任何语句写 {@code amz_ad_campaign_ext} 的
+     * impressions/clicks/spend/sales/orders/acos/roas 这几列——它们只会保持 DDL 里的
+     * {@code DEFAULT 0}。因此读侧不能把这几列当指标使用：
+     * {@code AdManager.vue} 的 SP 表格已改为按 campaignId 关联日报聚合值，
+     * 关联不到时显示「—」，而不是把「没有数据」渲染成 {@code $0.00 / 0%}。
      */
     @Insert("""
             INSERT INTO amz_ad_campaign_ext

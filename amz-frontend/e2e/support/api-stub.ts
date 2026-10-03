@@ -311,8 +311,11 @@ const AD_TREND = [
 
 // GET /ad/campaigns/list/{shopId} -> 活动行数组（AdManager 里映射成 {name,active,...}）
 const AD_CAMPAIGNS = [
-  { id: 11, campaignId: 'C-1001', campaignName: '关键词-蓝牙耳机-US', status: 'ENABLED', budget: 50, spend: 32.5, sales: 158, acos: 20.6 },
-  { id: 12, campaignId: 'C-1002', campaignName: '自动广告-全店铺', status: 'PAUSED', budget: 100, spend: 68.3, sales: 210.5, acos: 32.4 }
+  // spend/sales/acos 一律给 0：amz_ad_campaign_ext 的这几列在 DDL 里是 DEFAULT 0，
+  // 而全仓没有任何语句写它们（日报同步写的是 amz_ad_daily_report）。
+  // 打桩若给非 0，就等于让页面「读错来源」也能通过；真实数据只能从 AD_REPORTS 关联过来。
+  { id: 11, campaignId: 'C-1001', campaignName: '关键词-蓝牙耳机-US', status: 'ENABLED', budget: 50, spend: 0, sales: 0, acos: 0 },
+  { id: 12, campaignId: 'C-1002', campaignName: '自动广告-全店铺', status: 'PAUSED', budget: 100, spend: 0, sales: 0, acos: 0 }
 ]
 
 // GET /ad/campaigns/summary/type/{shopId} -> Record<adType, AdSummary>（对象，不是数组）
