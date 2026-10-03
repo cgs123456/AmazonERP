@@ -42,6 +42,18 @@ public class OpsMonitorScheduler {
     @Autowired
     private DistributedJobLock distributedJobLock;
 
+    /** 未注入时按「可用」处理，与 OpsServiceImpl.mockGeneratorsAllowed() 同一口径。 */
+    @Autowired(required = false)
+    private org.springframework.core.env.Environment environment;
+
+    private boolean mockGeneratorsAllowed() {
+        if (environment == null) {
+            return true;
+        }
+        return environment.acceptsProfiles(org.springframework.core.env.Profiles.of("mock"));
+    }
+
+
     /**
      * 每天早 8 点扫描差评 + 跟卖（cron: 0 0 8 * * ?）。
      * 遍历所有已授权店铺，单店失败不影响其他店铺。
@@ -53,6 +65,13 @@ public class OpsMonitorScheduler {
     }
 
     private void doDailyScan() {
+        if (!mockGeneratorsAllowed()) {
+            // 三条 scan 在非 mock 档现在会抛业务拒绝；与其让每家店铺刷一条 ERROR，
+            // 不如在这里说明本轮不执行——数据源没接之前，这个任务本来就没有产出。
+            log.warn("运营监控定时任务跳过：当前 profile {} 非 mock，模拟扫描未接入真实数据源",
+                    java.util.Arrays.toString(environment.getActiveProfiles()));
+            return;
+        }
         log.info("运营监控定时任务启动：差评 + 跟卖扫描");
         List<Shop> shops = listActiveShops();
         int totalReviewAlerts = 0;
@@ -85,6 +104,13 @@ public class OpsMonitorScheduler {
     }
 
     private void doRankCapture() {
+        if (!mockGeneratorsAllowed()) {
+            // 三条 scan 在非 mock 档现在会抛业务拒绝；与其让每家店铺刷一条 ERROR，
+            // 不如在这里说明本轮不执行——数据源没接之前，这个任务本来就没有产出。
+            log.warn("运营监控定时任务跳过：当前 profile {} 非 mock，模拟扫描未接入真实数据源",
+                    java.util.Arrays.toString(environment.getActiveProfiles()));
+            return;
+        }
         log.info("关键词排名抓取任务启动");
         List<Shop> shops = listActiveShops();
         int totalCaptured = 0;

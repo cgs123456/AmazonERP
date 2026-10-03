@@ -71,7 +71,8 @@ public class OpsServiceImpl implements OpsService {
     public int scanNegativeReviews(Long shopId) {
         if (!mockGeneratorsAllowed()) {
             log.warn("模拟差评扫描仅限 mock 环境，生产环境拒绝执行 shopId={}", shopId);
-            return 0;
+        // 旧行为是 return 0：调用方看到 200 + 「新增 0 条」，与「真的扫过但没有」完全无法区分。
+        throw new CodeErrorException("差评扫描未接入真实数据源：仅 mock 档会产出示例告警；非 mock 环境不返回伪造的「0 条告警」");
         }
         // 模拟：拉取某 ASIN 最新评论，≤3 星则告警
         NegativeReviewAlert alert = new NegativeReviewAlert();
@@ -132,7 +133,8 @@ public class OpsServiceImpl implements OpsService {
     public int scanHijackers(Long shopId) {
         if (!mockGeneratorsAllowed()) {
             log.warn("模拟跟卖扫描仅限 mock 环境，生产环境拒绝执行 shopId={}", shopId);
-            return 0;
+        // 旧行为是 return 0：调用方看到 200 + 「新增 0 条」，与「真的扫过但没有」完全无法区分。
+        throw new CodeErrorException("跟卖扫描未接入真实数据源：仅 mock 档会产出示例告警；非 mock 环境不返回伪造的「0 条告警」");
         }
         // 模拟：检测到其他卖家挂卖
         HijackAlert alert = new HijackAlert();
@@ -168,7 +170,8 @@ public class OpsServiceImpl implements OpsService {
     public int captureKeywordRanks(Long shopId) {
         if (!mockGeneratorsAllowed()) {
             log.warn("模拟排名抓取仅限 mock 环境，生产环境拒绝执行 shopId={}", shopId);
-            return 0;
+        // 旧行为是 return 0：调用方看到 200 + 「新增 0 条」，与「真的扫过但没有」完全无法区分。
+        throw new CodeErrorException("关键词排名抓取未接入真实数据源：仅 mock 档会产出示例快照；非 mock 环境不返回伪造的「0 条记录」");
         }
         // 模拟：抓取 3 个关键词的当前排名快照
         String[] keywords = {"wireless earbuds", "bluetooth headphone", "noise cancelling"};

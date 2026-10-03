@@ -160,3 +160,10 @@ Spring 的语义是路径取类前缀，所以它等价于裸 `@PostMapping`，�
 
 现在 35 条 = A 类 15（必然失败/造数/未配置，含 updateImage）+ B 类 20（缺外部凭据）。
 D 桶清空；C 桶已随死面删除归零（见上一版）。明细见 `2026-10-03-item7x-oss-guard-and-dup-endpoint.md`。
+
+## 收线补记（第六版）：ops 三条扫描的「静默 0」改成显式拒绝
+
+A 桶里 `/ops/review/scan`、`/ops/hijack/scan`、`/ops/rank/capture` 原来在非 mock 档 `return 0`，
+控制器包成 `Result.success(0)`——「扫过没有」与「没实现」在协议上同形。现改为抛业务拒绝，
+并给定时任务加同档跳过（否则每轮为每家店铺刷 ERROR）。条数不变（仍 35），但 A 桶的语义从
+「静默假成功」变成「显式不可用」。明细见 `2026-10-03-item7y-ops-scan-silent-zero.md`。
