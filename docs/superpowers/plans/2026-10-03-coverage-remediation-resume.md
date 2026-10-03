@@ -100,6 +100,32 @@ CI：`test / hygiene / frontend / runtime-smoke / mysql-import / checkstyle*` �
 
 下一轮取结论只需一条命令（需带 token 的 gh）：
 `gh run view --log-failed --job <test-job-id> <run-id for a70558b> | grep -E "Tests run|ERROR\]" | head`，
-或在任意可达的 MySQL 8 上设 `FLYWAY_ALL_IT_*` 后跑那两个 IT。若归因为 V10，
-需要同时把三列补进 `docker/init-sql-legacy/09-init-tables-p0-modules.sql`，
-让裸 SQL 建库与 Flyway 建库两条部署路径一致（这条目前**没做**，是已知缺口）。
+或在任意可达的 MySQL 8 上设 `FLYWAY_ALL_IT_*` 后跑那两个 IT。
+
+### 更正：不要往 init-sql-legacy 补列（我上一条建议是错的）
+
+我把「裸 SQL 建库」当成与 Flyway 并列的第二条执行路径，据此建议把三列也补进
+`docker/init-sql-legacy/09-init-tables-p0-modules.sql`。仓库自己的两个契约测试否掉了这个前提：
+
+- `DeploymentSchemaBootstrapContractTest`：`docker/init-sql` 只允许有 `01-init-databases.sql`
+  一个建库入口（实测该目录确实只有这一个文件），**表结构一律来自 Flyway 迁移**；
+- `LegacyInitSqlArchiveContractTest`：守护 `init-sql-legacy` 的「只归档、不执行」不变式，
+  并明确任何部署描述符都不得引用它（grep 部署描述符结果为空），理由是该目录 9/31 个脚本
+  在 MySQL 8.0 上根本执行失败。
+
+所以只有一条被执行的建表路径，V10 本身就是代码侧的完整修复；补归档文件既不会到达任何环境，
+又把「历史不可执行」的档案改成一个看起来能执行的假象。用户已批准该动作，但前提被证据否掉，
+因此**没有执行**，把结论写在这里。
+
+真正剩下的、且需要单独授权的是环境侧问题：如果某个在跑的库当初是历史脚本建的、
+没有 `flyway_schema_history`，那么各服务 `baseline-on-migrate: false` 会**拒绝启动**而不是自动补 V10
+（这是 P0-58 刻意保留的 fail-fast 语义，不是缺陷）。要确认只需一次只读查询，不写任何数据：
+
+```sql
+SHOW TABLES FROM amz_spapi LIKE 'flyway_schema_history';
+SELECT version, success FROM amz_spapi.flyway_schema_history ORDER BY installed_rank DESC LIMIT 3;
+SELECT column_name FROM information_schema.columns
+  WHERE table_schema='amz_spapi' AND table_name='amz_replenishment_suggestion';
+```
+三种结果对应三种动作：无 history 且缺列 → 需要一次显式批准的 baseline 或直接执行 V10 的 ALTER；
+有 history 且版本 < 10 → 下次服务启动会自动补上；已有三列 → 什么都不用做。
