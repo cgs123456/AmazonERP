@@ -127,8 +127,6 @@ def column_names(body):
 
 # 已知且刻意留下的漂移：闸门模式下放行，但条目一旦不再匹配就红（防止豁免变成永久绿灯）
 PENDING = {
-    'amz_product': (['image', 'name', 'sales', 'stock', 'time', 'type', 'user_id'],
-                    '7p：HTTP 入口已 fail-fast 收口，等补齐列的迁移决策'),
 
 }
 

@@ -3,13 +3,9 @@ package com.amz.controller;
 import com.amz.annotation.RequireRole;
 import com.amz.client.OrderServiceFeignClient;
 import com.amz.context.UserContext;
-import com.amz.model.dto.ProductDto;
 import com.amz.model.ListingCopyTask;
-import com.amz.model.pojo.Product;
-import com.amz.model.vo.ProductVo;
 import com.amz.result.Result;
 import com.amz.service.ListingCopyService;
-import com.amz.service.ProductService;
 import com.amz.service.TranslationService;
 import com.amz.util.MapArgUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -17,7 +13,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -40,8 +35,6 @@ public class ProductController {
     /** 兜底默认 storageFee 每月每公斤系数（估算值）。 */
     private static final BigDecimal DEFAULT_STORAGE_FEE_PER_KG = new BigDecimal("0.87");
 
-    @Autowired
-    private ProductService productService;
 
     @Autowired
     private ListingCopyService listingCopyService;
@@ -52,30 +45,6 @@ public class ProductController {
     @Autowired
     private OrderServiceFeignClient orderServiceFeignClient;
 
-    @GetMapping("/getProductList")
-    public Result<List<Product>> getProductList() {
-        return productService.getProductList();
-    }
-
-    @GetMapping("/getProduct/{productId}")
-    public Result<ProductVo> getProduct(@PathVariable Integer productId) {
-        return productService.getProduct(productId);
-    }
-
-    @GetMapping("/getProductsByShop/{productId}")
-    public Result<List<Product>> getProductsByShop(@PathVariable Integer productId) {
-        return productService.getProductByShop(productId);
-    }
-
-    @PostMapping("/postProduct")
-    public Result<Void> postProduct(@RequestBody ProductDto productDto) {
-        return productService.postProduct(productDto);
-    }
-
-    @PutMapping("/updateProduct")
-    public Result<Void> updateProduct(@RequestBody ProductDto productDto) {
-        return productService.updateProduct(productDto);
-    }
 
     /**
      * 跨站点 Listing 复制（供 Agent 工具调用）。

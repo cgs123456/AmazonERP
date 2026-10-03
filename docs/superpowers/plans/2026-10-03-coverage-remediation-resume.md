@@ -34,7 +34,11 @@ python tools/release/repository_hygiene.py --root .            # findings=0
 CI：`test / hygiene / frontend / runtime-smoke / mysql-import / checkstyle*` 等 11 个作业，
 `b5fb9f1`、`2187319`、`bbb1ba1`、`7f695ec`、`04f74f9` 全部 conclusion=success。
 
-## 2. 覆盖计数现状
+## 2. 覆盖计数现状（最新：候选 36）
+
+> 2026-10-03 收线补记：旧商品死面删除后 `user_facing_candidates=36`、
+> `endpoints_without_a_frontend_name=55`，列漂移 `hard-mismatch=0` 且闸门豁免清单为空。
+> 分桶：A 14 + B 20 + D 2 = 36（原 C 桶 3 条已随端点删除而不存在）。下方数字为删除前记录，保留不删。
 
 原始 103 条「后端有、前端无」→ 现在 **39 条**，逐条判定见
 `docs/superpowers/evidence/2026-10-03-endpoint-coverage-v14-ledger.md`：

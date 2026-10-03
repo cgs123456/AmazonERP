@@ -9,7 +9,8 @@ import java.util.List;
  * 商品主数据（amz_product）的维护契约。
  * <p>
  * 存在动因（2026-10-02 功能覆盖清点）：同一个表 {@code amz_product} 上并存的
- * {@code model/pojo/Product} 已被标 {@code @Deprecated} 且只有 12 个字段，
+     * 旧的 {@code model/pojo/Product} 通路（映射 name/type/image 等表里没有的列）已于
+     * 2026-10-03 整体删除，商品读写只剩本服务这一条；
  * 而真正承载 FBA 计费与跨站复制所需信息的 {@link AmzProduct}（brand/sizeTier/weightG/marketplaceId）
  * 此前**只被 ListingCopyService 读**，没有任何写入与查询入口——于是费用试算只能靠请求参数临时传，
  * 跨店铺的同一 ASIN 映射也无从查起。

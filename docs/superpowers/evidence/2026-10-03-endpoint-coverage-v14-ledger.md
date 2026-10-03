@@ -128,3 +128,27 @@ Spring 的语义是路径取类前缀，所以它等价于裸 `@PostMapping`，�
 这种常量路径必须继续被披露、不许猜。
 
 两个失误留在记录里：(1) 第一次把新用例插到了 `failed` 统计之后，输出照报 `SELFTEST 5/5`——**计数没动就是没跑**，这条判据救了我一次；(2) 移动代码块时把两行 `if` 插进了跨行 `print` 的续行之间，脚本直接 SyntaxError。
+## 收线补记（同日第四版）：旧商品死面整体删除，候选 41 → 36，漂移豁免清零
+
+`59b03d7` 把订单金额的来源改回消息本身之后，`/product/getProduct/{id}` 与 `/product/updateProduct`
+失去了唯一的 Feign 调用方，被闸口重新计成 user-facing 候选（39 → 41）。这说明 7p 的「入口拒绝」
+只是止血：拒绝体仍然占着端点位置，而且它把「两条端点本来没人用」这件事盖住了。
+
+于是按「确实无用就清理」把它们撤干净：`ProductController` 的 5 个旧映射、`ProductService`、
+`ProductServiceImpl`、`ProductMapper`、`pojo/Product`、`ProductDto`、`ProductVo`、
+`pojo/ProductAttribute`（全仓零引用）一并删除。删前逐类证明隔离：除这块死面自身与两个专属测试外，
+没有任何引用（search 模块的 `ProductVo` 是另一个模块里的同名类，不是同一份代码）。
+
+| 指标 | 删前 | 删后 |
+| --- | --- | --- |
+| user-facing 候选 | 41 | **36** |
+| 无前端名的端点数 | 60 | 55 |
+| 列漂移 hard-mismatch | 1（amz_product） | **0** |
+| 闸门豁免清单 PENDING | 1 条 | **0 条**（此后任何漂移都直接红） |
+
+分桶随之改写：A 14 + B 20 + D 2 = 36，**C 桶归零**（那 5 条不是「收口」，是不存在了）。
+随死面一起删掉的两个测试要记明白，别当成「为了变绿删断言」：
+`ProductLegacyDriftFenceTest`（守卫 5 个入口的拒绝行为）——被守卫的端点已经不存在；
+`ProductServiceImplSearchPagingTest`（P1-01 硬编码 LIMIT 20 的回归）——`searchProducts` 从未挂在
+任何 HTTP 映射上，随 `ProductService` 一起删除。防同类回归的职责已由「实体↔建表零豁免闸门」承担，
+它在 CI 的 hygiene 作业里先跑 `--self-test`（12 项）再跑 `--gate`。
