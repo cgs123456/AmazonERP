@@ -1,13 +1,19 @@
 package com.amz.service.impl;
 
+import com.amz.client.PlatformDataClient;
+import com.amz.client.TemuClient;
 import com.amz.context.UserContext;
+import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
 import com.amz.mapper.OauthAppMapper;
 import com.amz.mapper.PlatformAccountMapper;
 import com.amz.mapper.PlatformMessageMapper;
 import com.amz.mapper.PlatformProductMapper;
 import com.amz.model.PlatformAccount;
+import com.amz.model.PlatformInventory;
 import com.amz.model.PlatformMessage;
+import com.amz.model.PlatformProduct;
+import com.amz.model.UnifiedOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -22,6 +28,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -34,10 +41,11 @@ import static org.mockito.Mockito.when;
  * <p>
  * 这一族原来各自有一处会让页面说谎的写法：
  * <ul>
- *   <li>{@code testConnection} 只做端点字符串格式校验（{@code isEndpointWellFormed}
- *       明确不发网络请求），却把账号 {@code status} 写成 ACTIVE/ERROR 并刷新
- *       {@code lastSyncTime}。一个没发过包的检查就这样改变了「账号是否活跃」和
- *       「最近同步时间」两个运维口径；</li>
+ *   <li>{@code testConnection} 只做端点字符串格式校验（不发网络请求），却把账号
+ *       {@code status} 写成 ACTIVE/ERROR 并刷新 {@code lastSyncTime}。一个没发过包的检查
+ *       就这样改变了「账号是否活跃」和「最近同步时间」两个运维口径。
+ *       现在它是一次<b>真探测</b>：复用各家已实现的订单读发一次已鉴权请求，
+ *       状态由平台是否回话决定；但探测仍然不是同步，所以 {@code lastSyncTime} 一个字节都不写。</li>
  *   <li>{@code replyMessage} 只往本地库写一条 OUT 记录，平台和买家都收不到，
  *       而它给这条记录拼的 {@code platformMessageId} 长得像平台真实 ID
  *       （{@code 原ID-REPLY-时间戳}），将来接真实发送时分不清「内部记过」和「平台真回过」。
@@ -61,6 +69,9 @@ class MultiplatformInternalSemanticsTest {
     @Mock
     private OauthAppMapper oauthAppMapper;
 
+    @Mock
+    private TemuClient temuClient;
+
     @InjectMocks
     private MultiplatformServiceImpl service;
 
@@ -76,32 +87,78 @@ class MultiplatformInternalSemanticsTest {
         UserContext.clear();
     }
 
+    // ==================== 探测契约本身 ====================
+
     @Test
-    @DisplayName("端点自检无论通过与否，都不改写账号状态与同步时间")
-    void testConnectionNeverMutatesAccount() {
-        PlatformAccount good = account(11L, 1L, "https://open-api.temu.com/verify", "key-1");
-        when(platformAccountMapper.selectById(11L)).thenReturn(good);
-        assertTrue(service.testConnection(11L), "格式合规应返回 true");
+    @DisplayName("探测复用订单读：平台回话即成功，抛错即失败，不把异常抛给调用方")
+    void probeReusesTheAuthenticatedOrderRead() {
+        assertTrue(orderReadReturning(List.of(new UnifiedOrder())).probeConnection(1L),
+                "订单读成功就等于连通");
+        assertTrue(orderReadReturning(List.of()).probeConnection(1L),
+                "空订单列表也是已鉴权成功，不能当成没连通");
 
-        PlatformAccount bad = account(12L, 1L, "not-an-endpoint", "key-2");
-        when(platformAccountMapper.selectById(12L)).thenReturn(bad);
-        assertFalse(service.testConnection(12L), "格式不合规应返回 false");
+        RuntimeException noCredential = new IllegalStateException("Temu 凭证未配置");
+        assertFalse(orderReadThrowing(noCredential).probeConnection(1L),
+                "凭证缺失应判为没连通");
+        assertFalse(orderReadThrowing(new RuntimeException("Temu fetchRecentOrders failed: 401")).probeConnection(1L),
+                "签名被拒应判为没连通");
+    }
 
-        // 这两条就是本轮改动的本体：返回结论，但一个字段都不写
-        verify(platformAccountMapper, never()).updateById(any(PlatformAccount.class));
-        assertEquals("ACTIVE", good.getStatus(), "状态必须还是取出来那个值，没被自检改写");
-        assertEquals(null, good.getLastSyncTime(), "自检不该产生「最近同步时间」");
+    // ==================== testConnection ====================
+
+    @Test
+    @DisplayName("探测通过才写 ACTIVE，且探测不改写「最近同步时间」")
+    void testConnectionWritesStatusFromRealProbe() {
+        PlatformAccount account = account(11L, 1L, "TEMU");
+        when(platformAccountMapper.selectById(11L)).thenReturn(account);
+        when(temuClient.probeConnection(1L)).thenReturn(true);
+
+        assertTrue(service.testConnection(11L));
+
+        ArgumentCaptor<PlatformAccount> saved = ArgumentCaptor.forClass(PlatformAccount.class);
+        verify(platformAccountMapper).updateById(saved.capture());
+        assertEquals("ACTIVE", saved.getValue().getStatus());
+        assertNull(saved.getValue().getLastSyncTime(),
+                "探测不是同步：lastSyncTime 只能由真实同步任务推进");
     }
 
     @Test
-    @DisplayName("自检他店账号仍然被拒，且同样不写库")
+    @DisplayName("探测失败写 ERROR，而不是保留上一次的 ACTIVE")
+    void testConnectionMarksErrorWhenProbeFails() {
+        PlatformAccount account = account(12L, 1L, "TEMU");
+        when(platformAccountMapper.selectById(12L)).thenReturn(account);
+        when(temuClient.probeConnection(1L)).thenReturn(false);
+
+        assertFalse(service.testConnection(12L));
+
+        ArgumentCaptor<PlatformAccount> saved = ArgumentCaptor.forClass(PlatformAccount.class);
+        verify(platformAccountMapper).updateById(saved.capture());
+        assertEquals("ERROR", saved.getValue().getStatus());
+        assertNull(saved.getValue().getLastSyncTime(), "失败路径同样不能碰同步时间");
+    }
+
+    @Test
+    @DisplayName("亚马逊账号点名拒绝探测而不是标成 ERROR：没做这条检查和探测失败是两回事")
+    void testConnectionRefusesUnsupportedPlatformInsteadOfMarkingItBroken() {
+        when(platformAccountMapper.selectById(14L)).thenReturn(account(14L, 1L, "AMAZON"));
+
+        AttrIsNullException refused = assertThrows(AttrIsNullException.class,
+                () -> service.testConnection(14L));
+        assertTrue(refused.getMessage().contains("不支持的平台"),
+                "拒绝理由要能读出来，实际=" + refused.getMessage());
+        verify(platformAccountMapper, never()).updateById(any(PlatformAccount.class));
+    }
+
+    @Test
+    @DisplayName("探测他店账号仍然被拒，且完全不写库")
     void testConnectionStillRejectsForeignShop() {
-        when(platformAccountMapper.selectById(13L)).thenReturn(
-                account(13L, 2L, "https://open-api.temu.com/verify", "key-3"));
+        when(platformAccountMapper.selectById(13L)).thenReturn(account(13L, 2L, "TEMU"));
 
         assertThrows(CodeErrorException.class, () -> service.testConnection(13L));
         verify(platformAccountMapper, never()).updateById(any(PlatformAccount.class));
     }
+
+    // ==================== replyMessage ====================
 
     @Test
     @DisplayName("回复只记内部备注：OUT 行的 ID 必须自标 LOCAL-REPLY，不像平台真实 ID")
@@ -135,14 +192,56 @@ class MultiplatformInternalSemanticsTest {
         verify(platformMessageMapper, never()).updateById(any(PlatformMessage.class));
     }
 
-    private static PlatformAccount account(Long id, Long shopId, String endpoint, String apiKey) {
+    /** 探测契约的两种实现：只关心默认方法怎么把订单读的结果变成 true/false。 */
+    private static PlatformDataClient orderReadReturning(List<UnifiedOrder> orders) {
+        return new StubClient(orders, null);
+    }
+
+    private static PlatformDataClient orderReadThrowing(RuntimeException failure) {
+        return new StubClient(List.of(), failure);
+    }
+
+    private static final class StubClient implements PlatformDataClient {
+        private final List<UnifiedOrder> orders;
+        private final RuntimeException failure;
+
+        StubClient(List<UnifiedOrder> orders, RuntimeException failure) {
+            this.orders = orders;
+            this.failure = failure;
+        }
+
+        @Override
+        public List<PlatformProduct> fetchProducts(Long shopId) {
+            return List.of();
+        }
+
+        @Override
+        public List<PlatformMessage> fetchMessages(Long shopId) {
+            return List.of();
+        }
+
+        @Override
+        public List<PlatformInventory> fetchInventory(Long shopId) {
+            return List.of();
+        }
+
+        @Override
+        public List<UnifiedOrder> fetchRecentOrders(Long shopId) {
+            if (failure != null) {
+                throw failure;
+            }
+            return orders;
+        }
+    }
+
+    private static PlatformAccount account(Long id, Long shopId, String platform) {
         PlatformAccount a = new PlatformAccount();
         a.setId(id);
         a.setShopId(shopId);
-        a.setPlatform("TEMU");
+        a.setPlatform(platform);
         a.setStatus("ACTIVE");
-        a.setApiEndpoint(endpoint);
-        a.setApiKey(apiKey);
+        a.setApiEndpoint("https://open-api.temu.com");
+        a.setApiKey("key-1");
         return a;
     }
 

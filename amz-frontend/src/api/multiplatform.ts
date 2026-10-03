@@ -92,10 +92,11 @@ export const markOrderShipped = (orderId: number, trackingNo: string) =>
  * 两条必须知道：
  * 1. 账号读取接口不返回凭证列（apiKey 明文、三个密文列都在服务端抹掉），
  *    所以页面没有「查看密钥」这种能力，写入也只能靠提交新值覆盖；
- * 2. `POST account/{id}/test` 不提供：它只做端点字符串格式校验、从不发网络请求，
- *    所以它是「配置自检」而不是「平台连通性」，页面据此判断活跃状态会错。
- *    （2026-10-03 后端已按内部口径改掉：自检不再改写 status 与 lastSyncTime。）
- *    `message/{id}/reply` 同样不提供：它只写本地一条 OUT 备注，平台与买家都收不到；
+ * 2. `POST account/{id}/test` 是**真探测**（2026-10-03 改）：后端复用各家已鉴权的订单读发一次
+ *    真实请求，平台回话才写 ACTIVE，凭证缺失/签名被拒/网络不通写 ERROR；它不写 lastSyncTime，
+ *    所以「最后同步」只反映真同步。亚马逊账号会被点名拒绝（本模块不探测亚马逊），
+ *    页面拿到的是 code 400 的业务失败，不是「探测失败」——两者不要混为一谈。
+ *    `message/{id}/reply` 仍然不提供：它只写本地一条 OUT 备注，平台与买家都收不到；
  *    那条备注的平台消息 ID 现在显式带 LOCAL-REPLY- 前缀，将来接真实发送时
  *    可以据此区分「内部记过」与「平台真回过」。
  */
@@ -216,6 +217,14 @@ export const updateAccount = (id: number, account: Partial<PlatformAccount>) =>
 
 export const deleteAccount = (id: number) =>
   request.delete<void, ApiResponse<boolean>>(`/multiplatform/account/${id}`)
+
+/**
+ * 真探测账号连通性：后端拿这家店铺的凭证向平台发一次已鉴权订单读，
+ * data=true 表示平台回话了（账号写成 ACTIVE），false 表示没回话（写成 ERROR）。
+ * 探测不改 lastSyncTime；亚马逊账号会得到 code 400 的点名拒绝。
+ */
+export const testAccountConnection = (id: number | string) =>
+  request.post<void, ApiResponse<boolean>>(`/multiplatform/account/${id}/test`)
 
 export const listProducts = (shopId: number | string, q: ListQuery & { platform?: string } = {}) =>
   request.get<void, ApiResponse<PlatformProduct[]>>(`/multiplatform/product/list/${shopId}`, { params: q })

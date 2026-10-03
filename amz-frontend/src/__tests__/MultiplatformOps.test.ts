@@ -107,6 +107,7 @@ const happy = () => {
   vi.mocked(api.createAccount).mockResolvedValue(ok(ACCOUNTS[0]))
   vi.mocked(api.updateAccount).mockResolvedValue(ok(ACCOUNTS[0]))
   vi.mocked(api.deleteAccount).mockResolvedValue(ok(true))
+  vi.mocked(api.testAccountConnection).mockResolvedValue(ok(true))
   vi.mocked(api.mapProduct).mockResolvedValue(ok(true))
   vi.mocked(api.assignMessage).mockResolvedValue(ok(true))
   vi.mocked(api.registerApp).mockResolvedValue(ok(ISSUE))
@@ -174,14 +175,18 @@ describe('多平台运营台', () => {
     expect(wrapper.find('[data-panel="apps"]').exists()).toBe(false)
   })
 
-  it('说明区写清四条边界：凭证不回显、不做测试连接、不做回复、不做同步', async () => {
+  it('说明区写清四条边界：凭证不回显、测试连接是真探测、不做回复、不做同步', async () => {
     const wrapper = await mountPage()
     const note = wrapper.find('.notice-zone').text()
     expect(note).toContain('凭证只写不回显')
-    expect(note).toContain('测试连接')
+    expect(note).toContain('不要贴生产密钥')
+    // 「测试连接」已经不是那个只校验字符串的自检了，说明区必须讲清真探测的三条口径
+    expect(note).toContain('真探测')
+    expect(note).toContain('不会刷新「最后同步」')
+    expect(note).toContain('本模块不探测亚马逊')
+    expect(note).not.toContain('按钮没有做')
     expect(note).toContain('消息回复')
     expect(note).toContain('同步')
-    expect(note).toContain('不要贴生产密钥')
   })
 
   it('后端抹掉凭证列这件事不能被页面绕过：任何面板都不许渲染出 apiKey 的值', async () => {
@@ -439,9 +444,9 @@ describe('多平台运营台', () => {
     expect(vi.mocked(api.listApps).mock.calls.length).toBe(1)
   })
 
-  it('三个后端有、语义未定的入口在页面上必须不存在', async () => {
+  it('后端有、语义仍未定的入口在页面上必须不存在（测试连接已改为真探测，所以它现在是唯一被接的那个）', async () => {
     const wrapper = await mountPage()
-    for (const label of ['测试连接', '回复', '同步商品', '同步消息', '同步库存', '查看密钥']) {
+    for (const label of ['回复', '同步商品', '同步消息', '同步库存', '查看密钥']) {
       expect(wrapper.findAll('button').filter((b: any) => b.text().includes(label)).length,
         `页面出现了「${label}」按钮`).toBe(0)
     }
@@ -449,10 +454,36 @@ describe('多平台运营台', () => {
     await openTab(wrapper, '消息')
     await openTab(wrapper, '库存')
     await openTab(wrapper, 'ISV 应用')
-    for (const label of ['测试连接', '回复', '同步', '查看密钥']) {
+    for (const label of ['回复', '同步', '查看密钥']) {
       expect(wrapper.findAll('button').filter((b: any) => b.text().includes(label)).length,
         `页面出现了「${label}」按钮`).toBe(0)
     }
+  })
+
+  it('测试连接是真探测：结论写在状态列所以要重拉列表，没回话必须说清状态已标 ERROR', async () => {
+    const wrapper = await mountPage()
+
+    await rowBtn(wrapper, 'accounts', 0, '测试连接')
+    expect(api.testAccountConnection).toHaveBeenCalledWith(7)
+    // 首屏 1 次 + 探测后 1 次：探测的产物就是账号状态列，不重拉就等于没给出结果
+    expect(vi.mocked(api.listAccounts).mock.calls.length).toBe(2)
+    expect(wrapper.find('.error-zone').exists(), '平台回话了却报错')
+      .toBe(false)
+
+    vi.mocked(api.testAccountConnection).mockResolvedValue(ok(false))
+    await rowBtn(wrapper, 'accounts', 0, '测试连接')
+    const zone = wrapper.find('.error-zone').text()
+    expect(zone).toContain('没有回话')
+    expect(zone).toContain('ERROR')
+    // 这条红条要活过探测后的那次刷新，否则等于「点了没反应」
+    expect(zone).toContain('原因在后端日志')
+
+    // 点名拒绝（如亚马逊）是业务失败：读后端理由，而且不刷新——一行都没写
+    vi.mocked(api.testAccountConnection).mockResolvedValue(fail('不支持的平台：AMAZON'))
+    const callsBefore = vi.mocked(api.listAccounts).mock.calls.length
+    await rowBtn(wrapper, 'accounts', 0, '测试连接')
+    expect(wrapper.find('.error-zone').text()).toContain('不支持的平台：AMAZON')
+    expect(vi.mocked(api.listAccounts).mock.calls.length).toBe(callsBefore)
   })
 
   it('空列表要说清为什么空：凭证缺失 / 从没同步过，而不是「没有数据」', async () => {

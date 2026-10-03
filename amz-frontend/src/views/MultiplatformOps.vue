@@ -18,9 +18,10 @@
       <div class="notice-zone" role="note">
         四条边界：<b>① 凭证只写不回显</b>——账号列表里 apiKey 与三个 *Encrypted 列由后端抹掉，
         页面没有「查看密钥」，编辑时留空表示不改；apiKey 目前按原文入库（后端没有加密步骤），
-        所以不要贴生产密钥，其余凭证列页面不提供写入。<b>②「测试连接」按钮没有做</b>：
-        那个端点只校验端点字符串格式，却会把账号状态改写成 ACTIVE/ERROR 并刷新 lastSyncTime，
-        口径先定再说。<b>③ 消息回复也不做</b>：后端只往本地库写一条回复，不会发到平台或买家。
+        所以不要贴生产密钥，其余凭证列页面不提供写入。<b>②「测试连接」是真探测</b>：
+        后端拿这家店的凭证向平台发一次已鉴权订单读，平台回话才写 ACTIVE，凭证缺失/签名被拒/网络不通写 ERROR；
+        探测不算同步，所以不会刷新「最后同步」；亚马逊账号会被点名拒绝（本模块不探测亚马逊），
+        那是「没有这个能力」而不是「平台坏了」。<b>③ 消息回复也不做</b>：后端只往本地库写一条回复，不会发到平台或买家。
         <b>④ 商品/库存/消息的「同步」按钮不做</b>：三家的真实客户端对这些动作一律抛「未接入」。
       </div>
 
@@ -54,6 +55,7 @@
                   <td class="mono">{{ a.tokenExpiresAt || '-' }}</td>
                   <td class="mono">{{ a.lastSyncTime || '从未' }}</td>
                   <td class="row-actions">
+                    <button class="action-btn" :disabled="busy" @click="testAccount(a)">测试连接</button>
                     <button class="action-btn" :disabled="busy" @click="editAccount(a)">编辑</button>
                     <button class="action-btn danger" :disabled="busy" @click="askDeleteAccount(a)">删除</button>
                   </td>
@@ -609,6 +611,19 @@ const askDeleteAccount = (a: PlatformAccount) => {
       if (accountForm.id === a.id) accountFormOpen.value = false
       await loadAccounts(false, false)
     }
+  }
+}
+
+// 探测不弹确认框：它对平台只发一次已鉴权的订单读，本地只改账号状态列，点错也能再点。
+const testAccount = async (a: PlatformAccount) => {
+  const ok = await run(`${a.platform} 连接探测`, () => api.testAccountConnection(a.id as number))
+  if (ok === null) return
+  // 结论写在状态列上，所以要重拉列表；clearErrors=false 否则这次刷新会把紧随其后
+  // push 的那条探测说明擦干净，页面看起来像「点了没反应」。
+  await loadAccounts(false, false)
+  if (ok === false) {
+    pushError(`连接探测：${a.platform} 账号「${a.storeName || a.id}」没有回话，状态已标为 ERROR`
+      + '（原因在后端日志：凭证未配置 / 签名被拒 / 网络不通）')
   }
 }
 

@@ -68,7 +68,9 @@ public class MultiplatformController {
 
     @PostMapping("/account/{id}/test")
     public Result<Boolean> testConnection(@PathVariable Long id) {
-        return Result.success(multiplatformService.testConnection(id));
+        // 亚马逊这类本模块不探测的平台会点名拒绝，要走成前端读得懂的业务失败，
+        // 不能被全局兜底成「服务器内部错误」——那会把"没有这个能力"说成"服务坏了"。
+        return guarded(() -> multiplatformService.testConnection(id));
     }
 
 
@@ -77,7 +79,7 @@ public class MultiplatformController {
      * 而不是被全局兜底成 500「服务器内部错误」。真实调用失败（网络/对端）不在此列，
      * 仍按异常上抛，避免把故障伪装成"功能没开"。
      */
-    private Result<Integer> guarded(java.util.function.Supplier<Integer> action) {
+    private <T> Result<T> guarded(java.util.function.Supplier<T> action) {
         try {
             return Result.success(action.get());
         } catch (UnsupportedOperationException | com.amz.exception.AttrIsNullException e) {

@@ -167,3 +167,16 @@ A 桶里 `/ops/review/scan`、`/ops/hijack/scan`、`/ops/rank/capture` 原来在
 控制器包成 `Result.success(0)`——「扫过没有」与「没实现」在协议上同形。现改为抛业务拒绝，
 并给定时任务加同档跳过（否则每轮为每家店铺刷 ERROR）。条数不变（仍 35），但 A 桶的语义从
 「静默假成功」变成「显式不可用」。明细见 `2026-10-03-item7y-ops-scan-silent-zero.md`。
+
+## 收线补记（第七版）：A 桶的「测试连接」改真探测并接进页面，候选 35 → 34
+
+A 桶第 9 条 `POST /multiplatform/account/{id}/test` 的判定被推翻了一次：原先理由是「它只校验
+端点字符串格式，却会改写 status/lastSyncTime，接按钮前要先定后端口径」。口径定完（自检版：只回结果
+不改状态）之后发现更根本的问题是**这条端点本身没在探测**。现在它复用三家真实客户端都已实现的
+`fetchRecentOrders` 发一次已鉴权读，状态由平台是否回话决定，`lastSyncTime` 一个字节都不写；
+亚马逊由控制器 `guarded` 转成点名的业务失败，不再被全局兜底成「服务器内部错误」。
+前端运营台账号行加了「测试连接」，探测后重拉列表（结论只在状态列上）。
+
+分桶随之改写：A 14 + B 20 = **34**。A 桶里剩下的多平台两条仍是「接上去就是假动作」：
+`message/{messageId}/reply`（只写本地备注，买家收不到）与 `oauth/token`（机机接口）。
+明细见 `2026-10-03-item7z-platform-connection-probe.md`。

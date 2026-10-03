@@ -173,29 +173,18 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     public boolean testConnection(Long accountId) {
         PlatformAccount account = platformAccountMapper.selectById(accountId);
         if (account == null) return false;
-        requireShopOnRow(account.getShopId(), "多平台账号");
-        boolean ok = false;
-        try {
-            ok = isEndpointWellFormed(account.getPlatform(), account.getApiEndpoint(), account.getApiKey());
-        } catch (Exception e) {
-            log.warn("平台连接测试失败 accountId={} platform={}", accountId, account.getPlatform(), e);
-        }
-        // 按内部自检处理：这只证明端点字符串“像个地址”，不代表平台连通。
-        // 旧实现把 status 写成 ACTIVE/ERROR 并刷新 lastSyncTime，于是一个没发过包的检查
-        // 就改变了「账号是否活跃」和「最近同步时间」两个运维口径。现在只回结果、不改状态。
-        log.info("平台账号端点自检（本地格式校验，未发起网络请求，不改写账号状态）"
-                + " accountId={} platform={} ok={}", accountId, account.getPlatform(), ok);
+        requireShopOnRow(account.getShopId(), "平台账号");
+        // 客户端分派放在探测之外：不支持的平台（亚马逊）在这里点名拒绝，
+        // 而不是把账号写成 ERROR——「这条探测我们不提供」和「探测到了故障」是两回事。
+        PlatformDataClient client = dataClient(account.getPlatform());
+        // 真探测：向平台发一次已鉴权的只读请求（复用各家已实现的订单读），
+        // 而不是校验端点字符串格式——后者从来没碰过网络，却曾被用来改写账号状态。
+        boolean ok = client.probeConnection(account.getShopId());
+        account.setStatus(ok ? "ACTIVE" : "ERROR");
+        // 探测不是同步：lastSyncTime 只能由真正的同步任务推进，否则运维看到的"最近同步"是假的。
+        platformAccountMapper.updateById(account);
+        log.info("平台连接探测完成 accountId={} platform={} ok={}", accountId, account.getPlatform(), ok);
         return ok;
-    }
-
-    /**
-     * 仅校验端点格式是否“像”一个合法地址（含 "." 或以 http 开头），
-     * 并不发起真实网络请求，因此命名为“端点格式校验”而非“连接测试”，避免误导。
-     * 真实连通性需由各平台 RealClient 的实际发请求动作来验证。
-     */
-    private boolean isEndpointWellFormed(String platform, String endpoint, String apiKey) {
-        if (endpoint == null || endpoint.isBlank()) return false;
-        return endpoint.contains(".") || endpoint.startsWith("http");
     }
 
     // ========================================================

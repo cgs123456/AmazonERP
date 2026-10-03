@@ -1221,6 +1221,8 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   // account 的 list 同理要排在 /account/\d+ 之前。
   { match: /^\/multiplatform\/account\/list\//, data: MP_ACCOUNTS, page: FULL_PAGE(MP_ACCOUNTS.length) },
   { match: /^\/multiplatform\/account\/\d+$/, data: MP_ACCOUNTS[0] },
+  // 真探测：后端返回的是「平台有没有回话」这个布尔，不是分页对象
+  { match: /^\/multiplatform\/account\/\d+\/test$/, data: true },
   { match: /^\/multiplatform\/account$/, data: MP_ACCOUNTS[0] },
   { match: /^\/multiplatform\/product\/\d+\/map$/, data: true },
   { match: /^\/multiplatform\/product\/list\//, data: MP_PRODUCTS, page: FULL_PAGE(MP_PRODUCTS.length) },

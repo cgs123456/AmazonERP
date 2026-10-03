@@ -953,8 +953,8 @@ test.describe('MultiplatformOps 交互（多平台运营台）', () => {
     await expect(accounts).toContainText('Temu US 旗舰店')
     await expect(accounts).toContainText('从未')
     await expect(page.locator('.notice-zone')).toContainText('凭证只写不回显')
-    // 后端有、语义未定的三个入口不能出现在页面上
-    for (const label of ['测试连接', '回复', '同步', '查看密钥']) {
+    // 后端有、语义仍未定的入口不能出现在页面上（测试连接已是真探测，所以它不在这一列）
+    for (const label of ['回复', '同步', '查看密钥']) {
       await expect(page.locator('.tab-panel button', { hasText: label })).toHaveCount(0)
     }
     // 首屏只应请求账号列表，其余五个要等切 Tab
@@ -969,6 +969,28 @@ test.describe('MultiplatformOps 交互（多平台运营台）', () => {
     await page.locator('.tab', { hasText: 'Webhook 事件' }).click()
     await expect(page.locator('[data-panel="webhook"]')).toContainText('只写日志，不触发业务动作')
     expect(paths).toContain('/api/multiplatform/webhook/list/1')
+  })
+
+  test('测试连接是真探测：一次 POST 之后必须重拉列表，结论才看得见', async ({ page }) => {
+    const calls: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname
+      if (p.startsWith('/api/multiplatform/account')) calls.push(`${r.method()} ${p}`)
+    })
+    await page.goto('/multiplatform-ops')
+    await expect(page.locator('.notice-zone')).toContainText('真探测')
+    await page.locator('[data-panel="accounts"] tbody tr').first()
+      .locator('button', { hasText: '测试连接' }).click()
+    await expect
+      .poll(() => calls.filter((c) => c === 'POST /api/multiplatform/account/7/test').length)
+      .toBe(1)
+    // 探测的结论只落在账号状态列上：只发 POST 不重拉，页面显示的就还是探测前的状态
+    await expect
+      .poll(() => calls.filter((c) => c.startsWith('GET /api/multiplatform/account/list')).length)
+      .toBe(2)
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+    // 探测不是同步：这一行原本 lastSyncTime 是 null，重拉后仍然要显示「从未」
+    await expect(page.locator('[data-panel="accounts"] tbody tr').first()).toContainText('从未')
   })
 
   test('新增账号要确认才落库，apiKey 留空时请求体里根本不出现这个键', async ({ page }) => {
