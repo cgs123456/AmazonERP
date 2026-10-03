@@ -98,3 +98,24 @@ surefire 报告目录求和（含上一轮全模块跑留下的行，仅作参�
 
 CI 侧新增 `Entity/column drift self-test + gate` 步骤（hygiene 作业内，python 3.11 已有），
 自检不过就不必谈闸门。
+## 7. 闸门的第二个洞：整张表不在 Flyway 里
+
+闸门上线后复查发现它对**一类缺陷永久沉默**：实体映射的表如果在 Flyway 里根本没有建表语句，
+`rows` 里会被标成 `NO-FLYWAY-DDL`，但打印与 `--gate` 都只看 `missing`，这一类既不进汇总也不红——
+真库上的表现不是 1054 而是「表不存在」，比缺列更彻底。
+
+先量再改：`python tools/schema/entity_column_drift.py .` 加一行 `no-flyway-ddl=N` 自报扫描面，
+实测 **N=0**（102 个实体全部有 Flyway 建表语句）。既然接受集为空，就不需要登记豁免，
+直接把规则做成阻断：出现任何一个这种实体即红。
+
+| 阶段 | 结果 |
+| --- | --- |
+| 干净树 `--gate` | rc=0，scanned_entities=102 drifted=2 pending=2 no-flyway-ddl=0 |
+| 真树探针：临时放一个 `@TableName("amz_no_such_table")` 实体 | rc=**1**，`GATE RED table-without-flyway-ddl: amz_no_such_table`，checked 102→103 |
+| 删除探针后 | rc=0，回到 102/2/2（临时文件由 finally 删除并二次确认不存在） |
+
+`--self-test` 10 → 12 项，两条新用例打在 `no_ddl_verdict` 自身（有该实体必须点名、没有必须不响）。
+
+过程里还自伤一次：第一次把 `if no_ddl_hit:` 插到了跨行 `print(...)` 的续行之间，脚本
+SyntaxError 直接跑不起来——`--self-test` 的 rc=1 立刻暴露（不是被静默跳过），
+修完再跑 12/12 PASS。这条写在这里是因为「闸门自己坏掉」和「缺陷没抓到」在输出上长得一样。

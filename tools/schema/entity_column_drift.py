@@ -146,6 +146,15 @@ def gate_verdict(hard_by_table, pending=None):
     return unexpected, stale
 
 
+def no_ddl_verdict(no_ddl_tables):
+    """实体映射的表在 Flyway 里根本没有建表语句。
+
+    接受集是空的：本轮实测 102 个实体里这一类为 0，所以不需要登记豁免，
+    出现任何一个都应当拦下来（否则闸门对「整张表不存在」永久沉默）。
+    """
+    return sorted(set(no_ddl_tables))
+
+
 # --self-test：先证明解析器本身能咬住驱动它重写的那两个缺陷，再谈它的输出可信
 if '--self-test' in sys.argv:
     LEGACY_ALTER_RE = re.compile(r'ALTER TABLE\s+`?(\w+)`?\s+(.*?);', re.S | re.I)
@@ -224,6 +233,9 @@ if '--self-test' in sys.argv:
     check('gate goes red when an exemption no longer matches', bool(s2))
     u3, s3 = gate_verdict({'amz_y': ['q', 'extra']}, {'amz_y': (['q'], 'shape changed')})
     check('gate goes red when a pending table gains a column gap', bool(s3) and not u3)
+    check('gate flags entities whose table has no Flyway DDL',
+          no_ddl_verdict(['amz_ghost', 'amz_ghost']) == ['amz_ghost'])
+    check('gate stays silent when every table has Flyway DDL', no_ddl_verdict([]) == [])
     sys.exit(1 if failed else 0)
 
 # 1) 收集所有 SQL 里的表定义（Flyway 为准，docker/init-sql-legacy 单独标注）
@@ -340,7 +352,13 @@ for table, entity, verdict, n, missing, legacy_only in sorted(rows):
         continue
     print('%-26s %-52s %-6s %s' % (table, entity, 'YES' if hard else 'no',
           'HARD=[%s]  soft=[%s]' % (', '.join(hard), ', '.join(soft))))
-print('\nentities checked=%d  hard-mismatch=%d  flyway-only-mismatch=%d' % (len(rows), hard_total, soft_total))
+# 扫描面自己也要报数：NO-FLYWAY-DDL 指「实体映射的表在 Flyway 里根本没有建表语句」，
+# 这一类不出现在输出里的话，闸门就对「整张表不存在」永久沉默。
+no_ddl = sorted(set(r[0] for r in rows if r[2] == 'NO-FLYWAY-DDL'))
+print('\nentities checked=%d  hard-mismatch=%d  flyway-only-mismatch=%d  no-flyway-ddl=%d'
+      % (len(rows), hard_total, soft_total, len(no_ddl)))
+if no_ddl:
+    print('NO-FLYWAY-DDL tables: %s' % ', '.join(no_ddl))
 
 
 if '--gate' in sys.argv:
@@ -349,11 +367,15 @@ if '--gate' in sys.argv:
         if legacy_only:
             hard_by_table.setdefault(table, set()).update(legacy_only)
     hard_by_table = {k: sorted(v) for k, v in hard_by_table.items()}
+    no_ddl_hit = no_ddl_verdict(
+        r[0] for r in rows if r[2] == 'NO-FLYWAY-DDL')
     unexpected, stale = gate_verdict(hard_by_table)
     print('gate: scanned_entities=%d drifted_tables=%d pending_registered=%d'
           % (len(rows), len(hard_by_table), len(PENDING)))
+    if no_ddl_hit:
+        print('GATE RED table-without-flyway-ddl: %s' % ', '.join(no_ddl_hit))
     if unexpected:
         print('GATE RED new-drift: %s' % ', '.join(unexpected))
     if stale:
         print('GATE RED stale-exemption: %s' % '; '.join(stale))
-    sys.exit(1 if (unexpected or stale) else 0)
+    sys.exit(1 if (unexpected or stale or no_ddl_hit) else 0)
