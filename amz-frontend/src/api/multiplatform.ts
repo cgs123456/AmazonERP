@@ -92,9 +92,12 @@ export const markOrderShipped = (orderId: number, trackingNo: string) =>
  * 两条必须知道：
  * 1. 账号读取接口不返回凭证列（apiKey 明文、三个密文列都在服务端抹掉），
  *    所以页面没有「查看密钥」这种能力，写入也只能靠提交新值覆盖；
- * 2. `POST account/{id}/test` 不提供：它只做端点格式校验，却会把账号 status 写成
- *    ACTIVE/ERROR 并刷新 lastSyncTime——一个没发过包的检查不该改「账号是否活跃」，
- *    这条要先定后端口径。`message/{id}/reply` 同理：只写本地库、不会发到平台。
+ * 2. `POST account/{id}/test` 不提供：它只做端点字符串格式校验、从不发网络请求，
+ *    所以它是「配置自检」而不是「平台连通性」，页面据此判断活跃状态会错。
+ *    （2026-10-03 后端已按内部口径改掉：自检不再改写 status 与 lastSyncTime。）
+ *    `message/{id}/reply` 同样不提供：它只写本地一条 OUT 备注，平台与买家都收不到；
+ *    那条备注的平台消息 ID 现在显式带 LOCAL-REPLY- 前缀，将来接真实发送时
+ *    可以据此区分「内部记过」与「平台真回过」。
  */
 
 export const ACCOUNT_STATUSES = ['ACTIVE', 'INACTIVE', 'ERROR']

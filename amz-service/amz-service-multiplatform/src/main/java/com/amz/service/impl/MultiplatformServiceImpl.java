@@ -180,9 +180,11 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         } catch (Exception e) {
             log.warn("平台连接测试失败 accountId={} platform={}", accountId, account.getPlatform(), e);
         }
-        account.setStatus(ok ? "ACTIVE" : "ERROR");
-        account.setLastSyncTime(LocalDateTime.now());
-        platformAccountMapper.updateById(account);
+        // 按内部自检处理：这只证明端点字符串“像个地址”，不代表平台连通。
+        // 旧实现把 status 写成 ACTIVE/ERROR 并刷新 lastSyncTime，于是一个没发过包的检查
+        // 就改变了「账号是否活跃」和「最近同步时间」两个运维口径。现在只回结果、不改状态。
+        log.info("平台账号端点自检（本地格式校验，未发起网络请求，不改写账号状态）"
+                + " accountId={} platform={} ok={}", accountId, account.getPlatform(), ok);
         return ok;
     }
 
@@ -330,7 +332,10 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         PlatformMessage reply = new PlatformMessage();
         reply.setShopId(msg.getShopId());
         reply.setPlatform(msg.getPlatform());
-        reply.setPlatformMessageId(msg.getPlatformMessageId() + "-REPLY-" + System.currentTimeMillis());
+        // 这条 OUT 记录是内部处理备注：平台和买家都没收到任何东西。
+        // 列是 NOT NULL，历史上直接拼了一条看着像平台 ID 的串；现在明确标 LOCAL-REPLY-，
+        // 将来接真实发送时，能靠它区分「内部记过」与「平台真回过」。
+        reply.setPlatformMessageId("LOCAL-REPLY-" + msg.getId() + "-" + System.currentTimeMillis());
         reply.setBuyerName(msg.getBuyerName());
         reply.setBuyerEmail(msg.getBuyerEmail());
         reply.setSubject("Re: " + msg.getSubject());
