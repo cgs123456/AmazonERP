@@ -38,11 +38,6 @@ public class LogisticsServiceClientFallbackFactory implements FallbackFactory<Lo
             }
 
             @Override
-            public Result<Map<String, Object>> getAgingAnalysis(Long shopId) {
-                return Result.failure(failMsg());
-            }
-
-            @Override
             public Result<Map<String, Object>> compareShippingQuotes(Long shopId, String originPort,
                     String destinationPort, Double weightKg, Double volumeCbm) {
                 return Result.failure(failMsg());

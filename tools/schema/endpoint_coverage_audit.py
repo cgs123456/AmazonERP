@@ -11,10 +11,13 @@ import re
 import sys
 from pathlib import Path
 
-root = Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve()
+# 位置参数是仓库根；以 - 开头的都是开关，不能被当成路径
+# （上一版把 `--self-test` 当成 root，self-test 恰好不读文件才没炸，`--reverse` 一读就炸）。
+_positional = [a for a in sys.argv[1:] if not a.startswith('-')]
+root = Path(_positional[0] if _positional else '.').resolve()
 fe_api = root / 'amz-frontend' / 'src' / 'api'
 
-CLASS_MAP = re.compile(r'@RequestMapping\(\s*(?:value\s*=\s*)?"([^"]+)"')
+CLASS_MAP = re.compile(r'^@RequestMapping\(\s*(?:value\s*=\s*)?"([^"]+)"', re.M)
 # 方法级注解先按行抓，再从括号里解析路径：
 # 上一版用「必须有 ( 和字符串」的正则，直接把 15 个 `@PostMapping`（无参、路径就是类前缀）
 # 整个漏掉了 —— 分母本身就少算，被漏掉的还偏偏是数据写入端点。
@@ -67,7 +70,12 @@ VALUE_OR_PATH_ARG = re.compile(r"(?:value|path)\s*=")
 
 
 def shape(path: str) -> str:
-    """把 /a/{id}/b 与 /a/${x}/b 都归一成 /a/{}/b，用于跨服务比对同一条路径。"""
+    """把 /a/{id}/b 与 /a/${x}/b 都归一成 /a/{}/b，用于跨服务比对同一条路径。
+
+    查询串先丢掉：`/ai/eval/run?mode=${mode}` 与 `/ai/eval/run` 是同一条端点，
+    把 `?mode=...` 留在段里会让前端明明调用了的端点被判成「后端没有」。
+    """
+    path = path.split('?')[0]
     segs = ['{}' if s.startswith('{') or s.startswith('$') else s for s in path.split('/') if s]
     return '/' + '/'.join(segs)
 
@@ -98,6 +106,203 @@ def parse_mappings(text: str):
         path = ((literal.group(1) or literal.group(2)) if literal else None)
         out.append((verb, path, m.start(), raw))
     return out
+
+
+
+
+GATEWAY_YML = root / 'amz-gateway' / 'src' / 'main' / 'resources' / 'application.yml'
+REWRITE_LINE = re.compile(
+    r'RewritePath=/api/([a-z-]+)\(\?<segment>\.\*\),\s*(/[\w/-]+)\$\{segment\}')
+
+
+def gateway_alias_map() -> dict:
+    """后端前缀 -> 前端书写前缀，从网关的 RewritePath 过滤器现场解析。
+
+    这张表原本在工具里手抄了第三份（另两份是 viteProxy.ts 与网关 yml）。
+    三份手抄 = 三个可以各自漂移的地方，所以这里改成只认网关这一份事实来源：
+    网关没有配别名时工具就退化成「前端必须写后端全路径」，宁可多报缺口也不能自己造绿灯。
+    """
+    if not GATEWAY_YML.exists():
+        return {}
+    text = io.open(GATEWAY_YML, encoding='utf-8', errors='replace').read()
+    return {target: '/api/' + src for src, target in REWRITE_LINE.findall(text)}
+
+
+GATEWAY_ALIASES = gateway_alias_map()
+
+
+def to_frontend_alias(full_path: str) -> str:
+    for backend_prefix, frontend_prefix in GATEWAY_ALIASES.items():
+        if full_path == backend_prefix or full_path.startswith(backend_prefix + '/'):
+            # 网关把 /api/x 重写成 /spapi/x，而 axios 的 baseURL 会再补一层 /api；
+            # 前端源码里写的是去掉 /api 之后的形状，所以返回 /x 而不是 /api/x。
+            return frontend_prefix[len('/api'):] + full_path[len(backend_prefix):]
+    return ''
+
+
+
+
+def collect_feign_paths() -> set:
+    """其他模块的 Feign 客户端声明过的路径 = 存在服务间调用方，不该由浏览器负责。"""
+    found = set()
+    for client in sorted(root.glob('amz-service/*/src/main/java/com/amz/client/**/*.java')):
+        text = io.open(client, encoding='utf-8', errors='replace').read()
+        for _, p, _, _ in parse_mappings(text):
+            if p:
+                found.add(shape(p if p.startswith('/') else '/' + p))
+    return found
+
+
+def annotation_block(text: str, anchor: int) -> str:
+    """取一个 mapping 注解所属的方法注解块：往前找到上一个 } 或 ; 为止。"""
+    start = max(text.rfind('}', 0, anchor), text.rfind(';', 0, anchor)) + 1
+    return text[start:anchor]
+
+
+# 泛型是可选的：`request.get('/x')` 这种不写 `<void, ApiResponse<T>>` 的调用也是调用点。
+# 上一版强制要求 `<`，于是不带泛型的调用静默不进分母 —— 反向尺会因此漏报。
+FRONTEND_CALL = re.compile(
+    r"request\s*\.\s*(get|post|put|delete|patch)\s*(?:<.*?>)?\s*\(\s*[`\"'](/[A-Za-z][^`\"']*)[`\"']",
+    re.S)
+STUB_LITERAL = re.compile(r'match:\s*/\^(.*?)/[a-z]*\s*,')
+SSE_LITERAL = re.compile(r'match:\s*/\^(.*?)/[a-z]*\s*,\s*contentType', re.S)
+
+
+def stub_shape(raw: str) -> str:
+    """把桩正则 `\\/multiplatform\\/account\\/\\d+\\/test` 变成可比对的形状段。
+
+    只处理仓库里实际出现的构造（转义斜杠、`\d+`、`[^/]+`、`.*`、可选组、行尾 `$`，
+    以及 `/plan/12/approvals` 这种把 id 写死的桩）。认不出来的段原样留着，
+    比对时它匹配不上任何后端形状，就会被当成缺口打印出来 ——
+    工具的失败模式必须是「多报并说明」，不能是静默跳过。
+    """
+    s = raw.replace('\\/', '/')
+    s = re.sub(r'\(\?:[^)]*\)\+?', '', s)
+    s = s.replace('\\d+', '{}').replace('[^/]+', '{}').replace('.*', '{}')
+    s = s.replace('(', '').replace(')', '').replace('|', '/')
+    s = s.replace('$', '')
+    s = shape(s)
+    return '/' + '/'.join('{}' if seg.isdigit() else seg for seg in s.split('/') if seg)
+
+
+def prefix_matches(stub_segs, backend_segs) -> bool:
+    if len(stub_segs) > len(backend_segs):
+        return False
+    for a, b in zip(stub_segs, backend_segs):
+        if a == '{}' or b == '{}' or a == b:
+            continue
+        return False
+    return True
+
+
+def backend_verbs_by_shape():
+    """所有控制器映射：形状 -> {方法}，以及形状集合（供反向核对）。"""
+    by_shape = {}
+    for controller in sorted(root.glob('amz-service/*/src/main/java/com/amz/controller/*.java')):
+        text = io.open(controller, encoding='utf-8', errors='replace').read()
+        cls = CLASS_MAP.search(text)
+        prefix = cls.group(1) if cls else ''
+        for verb, path, _, _ in parse_mappings(text):
+            if path is None:
+                continue
+            full = (prefix + path) if path.startswith('/') or path == '' else prefix + '/' + path
+            full = full.rstrip('/') or '/'
+            by_shape.setdefault(shape(full), set()).add(verb.upper())
+    return by_shape
+
+
+def frontend_calls():
+    """api/*.ts 里真实的调用点（剥掉注释后）：(方法, 形状, 文件)。"""
+    out = []
+    for p in sorted((root / 'amz-frontend' / 'src' / 'api').glob('*.ts')):
+        text = strip_comments(io.open(p, encoding='utf-8', errors='replace').read())
+        for m in FRONTEND_CALL.finditer(text):
+            verb, path = m.group(1).upper(), m.group(2)
+            if '/' not in path[1:]:
+                continue          # 单段串（如错误文案里的 `/x`）不是路径
+            out.append((verb, shape(path), p.name))
+    return out
+
+
+def e2e_stub_paths():
+    stub = root / 'amz-frontend' / 'e2e' / 'support' / 'api-stub.ts'
+    if not stub.exists():
+        return []
+    text = io.open(stub, encoding='utf-8', errors='replace').read()
+    return [stub_shape(r) for r in STUB_LITERAL.findall(text)]
+
+
+def route_paths():
+    router = root / 'amz-frontend' / 'src' / 'router' / 'index.ts'
+    text = io.open(router, encoding='utf-8', errors='replace').read()
+    return [p for p in re.findall(r"path:\s*'([^']+)'", text)]
+
+
+def sidebar_refs():
+    nav = root / 'amz-frontend' / 'src' / 'components' / 'AppSidebar.vue'
+    text = io.open(nav, encoding='utf-8', errors='replace').read()
+    return set(re.findall(r"navigateTo\('([^']+)'\)", text)) | set(
+        re.findall(r"isActive\('([^']+)'\)", text))
+
+
+ANN_RUN = re.compile(r'^(?:@\w+(?:\s*\([^()]*(?:\([^()]*\)[^()]*)*\))?\s*)+')
+
+
+def method_name_after(text: str, anchor: int) -> str:
+    """取映射注解之后第一个方法声明的名字。
+
+    不能从 anchor 起直接找 `word(`：那里第一个括号属于注解自己（PostMapping），
+    上一版因此把方法名全看成 PostMapping，调用点计数变成「全是 0」。
+    也不该把中间的其它注解（@ShopScoped、@InternalServiceAccess("...")）当成签名。
+    """
+    own = MAPPING_LINE.match(text, anchor)
+    rest = text[own.end():] if own else text[anchor + 1:]
+    rest = ANN_RUN.sub('', rest.lstrip(), count=1)
+    sig = re.search(r'(\w+)\s*\(', rest)
+    return sig.group(1) if sig else ''
+
+
+def feign_declared_uncalled():
+    """Feign 客户端声明过、但全仓没有任何调用点的方法 = 假豁免。
+
+    清点原先把 has-feign-caller 当成「有服务间调用方，所以不该由浏览器负责」，
+    但声明存在不等于有人调用。这两类必须分开：删除这类声明会让被它豁免的端点
+    立刻变成真缺口（/logistics/warehouse/stock/aging 就是这么浮出来的）。
+    """
+    java_src = [(f, io.open(f, encoding='utf-8', errors='replace').read())
+                for f in root.glob('amz-service/*/src/main/java/**/*.java')]
+    rows = []
+    for client in sorted(root.glob('amz-service/*/src/main/java/com/amz/client/**/*.java')):
+        text = io.open(client, encoding='utf-8', errors='replace').read()
+        cls = CLASS_MAP.search(text)
+        prefix = cls.group(1) if cls else ''
+        for _, path, anchor, _ in parse_mappings(text):
+            if not path:
+                continue
+            name = method_name_after(text, anchor)
+            if not name or name in ('if', 'for', 'while', 'return'):
+                continue
+            callers = sum(1 for f, body in java_src
+                          if f != client and re.search(r'\.' + re.escape(name) + r'\s*\(', body))
+            if callers == 0:
+                full = (prefix + path) if path.startswith('/') else prefix + '/' + path
+                rows.append((shape(full), name, client.name))
+    return rows
+
+
+ALIAS_FRONT_TO_BACK = {}
+for _backend_prefix in GATEWAY_ALIASES:
+    _front = to_frontend_alias(_backend_prefix)
+    if _front:
+        ALIAS_FRONT_TO_BACK[shape(_front)] = _backend_prefix
+
+
+def to_backend_shape(front_shape: str) -> str:
+    """前端书写形状 -> 后端注册形状（走网关别名）。"""
+    for f, b in ALIAS_FRONT_TO_BACK.items():
+        if front_shape == f or front_shape.startswith(f + '/'):
+            return b + front_shape[len(f):]
+    return front_shape
 
 
 if '--self-test' in sys.argv:
@@ -131,6 +336,45 @@ if '--self-test' in sys.argv:
     cmap = parse_mappings('@PostMapping(UPLOAD_PATH)')
     check('constant-path mapping is disclosed, never guessed', len(cmap) == 1 and cmap[0][1] is None, True)
 
+    # —— 反向核对的四条逻辑，全部用内联样本，不依赖仓库当前内容 ——
+    two_line_call = "const x = request\n  .get<void, ApiResponse<Foo>>(`/a/b/${id}`, { params })\n"
+    check('跨两行写的调用仍被抓到（含方法）',
+          [(m.group(1), shape(m.group(2))) for m in FRONTEND_CALL.finditer(two_line_call)],
+          [('get', '/a/b/{}')])
+    commented_call = "// request.post('/a/ghost', {})\nrequest.post('/a/real', {})\n"
+    check('注释里的调用不算调用点，同段的真调用仍要抓到（正/负对照同一条）',
+          sorted({m.group(2) for m in FRONTEND_CALL.finditer(strip_comments(commented_call))}),
+          ['/a/real'])
+    check('不带泛型的 request.get 也是调用点（不能只认 <void, ApiResponse<T>> 写法）',
+          [m.group(2) for m in FRONTEND_CALL.finditer("request.get('/a/plain')")],
+          ['/a/plain'])
+    check('桩正则转成可比形状',
+          stub_shape(r'\/multiplatform\/account\/\d+\/test'), '/multiplatform/account/{}/test')
+    check('桩的列表形状能前缀命中后端带参形状',
+          prefix_matches(shape('/multiplatform/order/list').split('/')[1:],
+                         shape('/multiplatform/order/list/{shopId}').split('/')[1:]), True)
+    check('前缀对不上就是不存在（不能靠去掉首段凑）',
+          prefix_matches(['ad', 'report'], ['report', '{shopId}']), False)
+    javadoc_prefix = ' * 见 @RequestMapping("/fake") 的例子\n@RequestMapping("/real")\n'
+    check('类前缀只认行首注解，javadoc 里的例子不算',
+          CLASS_MAP.search(javadoc_prefix).group(1), '/real')
+    yml_sample = ('- RewritePath=/api/connectors(?<segment>.*), /spapi/connectors${segment}\n'
+                  '- RewritePath=/ws/(?<segment>.*), /${segment}\n')
+    check('别名只从网关 RewritePath 现场解析，且不吃 /ws 那条',
+          REWRITE_LINE.findall(yml_sample), [('connectors', '/spapi/connectors')])
+    check('别名来回换算必须复原（前端形状 -> 后端形状）',
+          all(to_backend_shape(to_frontend_alias(b)) == b for b in GATEWAY_ALIASES)
+          and len(GATEWAY_ALIASES) >= 3, True)
+    check('方法名取映射注解之后第一个签名，跳过中间注解',
+          method_name_after('@GetMapping("/events")\n    @ShopScoped\n'
+                            '    Result<List<X>> listEvents(@RequestParam Long shopId);', 0),
+          'listEvents')
+    check('桩里的行尾 $ 与写死的数字都要归一',
+          [stub_shape(r'\/user\/getInfo$'), stub_shape(r'\/procurement\/plan\/12\/approvals')],
+          ['/user/getInfo', '/procurement/plan/{}/approvals'])
+    check('带查询串的调用与不带的是同一条端点',
+          shape('/ai/eval/run?mode=${mode}'), '/ai/eval/run')
+
     failed = [c for c in cases if not c[1]]
     for name, ok_flag, got, want in cases:
         print('%-56s %s (got=%s want=%s)' % (
@@ -140,38 +384,75 @@ if '--self-test' in sys.argv:
     sys.exit(1 if failed else 0)
 
 
-# 网关/vite 代理里确实存在的别名：后端前缀 -> 前端书写前缀。
-GATEWAY_ALIASES = {
-    '/spapi/connectors': '/connectors',
-    '/spapi/preflight': '/preflight',
-    '/spapi/credentials': '/credentials',
-}
+if '--reverse' in sys.argv:
+    # 正向尺回答「后端有端点、前端没人叫」；反向尺回答另外三件同样会假绿的事：
+    #   1. 前端叫了而后端没有（或方法不对）—— 接线打错路径/动词时页面只会静默报错；
+    #   2. e2e 桩拦了一条后端不存在的形状 —— 桩越像真的，测试越能替 404 打掩护；
+    #   3. 静态路由没有侧边栏入口 / 侧边栏指向不存在的路由 —— 「孤儿页面」的正体。
+    # 另外披露（不拦）：Feign 声明了却没有任何调用点，这类声明会错误豁免后端端点。
+    by_shape = backend_verbs_by_shape()
+    calls = frontend_calls()
+    stubs = e2e_stub_paths()
+    routes = route_paths()
+    nav = sidebar_refs()
+    segs_by_shape = {k: k.split('/')[1:] for k in by_shape}
 
+    orphans, verbs = [], []
+    for verb, fs, fname in calls:
+        bs = to_backend_shape(fs)
+        if bs not in by_shape:
+            orphans.append((verb, fs, bs, fname))
+        elif verb not in by_shape[bs]:
+            verbs.append((verb, fs, '/'.join(sorted(by_shape[bs])), fname))
 
-def to_frontend_alias(full_path: str) -> str:
-    for backend_prefix, frontend_prefix in GATEWAY_ALIASES.items():
-        if full_path == backend_prefix or full_path.startswith(backend_prefix + '/'):
-            return frontend_prefix + full_path[len(backend_prefix):]
-    return ''
+    stub_missing = []
+    for ss in stubs:
+        # 桩路径可能写成前端形状（/connectors/outbox）也可能写成后端形状（/spapi/status），
+        # 两种都试：别名只有一处事实来源（网关 yml），这里不重复维护表。
+        cands = {ss, to_backend_shape(ss)}
+        if not any(prefix_matches(c.split('/')[1:], b)
+                   for c in cands for b in segs_by_shape.values()):
+            stub_missing.append(ss)
 
+    static_routes = [p for p in routes if ':' not in p and p != '*']
+    route_orphans = [p for p in static_routes if p not in nav]
+    nav_dead = [p for p in sorted(nav) if ':' not in p and p not in routes]
+    uncalled = feign_declared_uncalled()
 
-
-
-def collect_feign_paths() -> set:
-    """其他模块的 Feign 客户端声明过的路径 = 存在服务间调用方，不该由浏览器负责。"""
-    found = set()
-    for client in sorted(root.glob('amz-service/*/src/main/java/com/amz/client/**/*.java')):
-        text = io.open(client, encoding='utf-8', errors='replace').read()
-        for _, p, _, _ in parse_mappings(text):
-            if p:
-                found.add(shape(p if p.startswith('/') else '/' + p))
-    return found
-
-
-def annotation_block(text: str, anchor: int) -> str:
-    """取一个 mapping 注解所属的方法注解块：往前找到上一个 } 或 ; 为止。"""
-    start = max(text.rfind('}', 0, anchor), text.rfind(';', 0, anchor)) + 1
-    return text[start:anchor]
+    print('reverse: backend-shapes=%d frontend-call-sites=%d e2e-stubs=%d routes=%d(static=%d) nav-refs=%d'
+          % (len(by_shape), len(calls), len(stubs), len(routes), len(static_routes), len(nav)))
+    findings = 0
+    if orphans:
+        findings += len(orphans)
+        print('GATE RED frontend-call-without-backend-mapping: %d' % len(orphans))
+        for verb, fs, bs, fname in orphans:
+            print('   %s %s (后端找 %s)  <- src/api/%s' % (verb, fs, bs, fname))
+    if verbs:
+        findings += len(verbs)
+        print('GATE RED http-verb-mismatch: %d' % len(verbs))
+        for verb, fs, have, fname in verbs:
+            print('   %s %s 后端只有 %s  <- src/api/%s' % (verb, fs, have, fname))
+    if stub_missing:
+        findings += len(stub_missing)
+        print('GATE RED e2e-stub-without-backend-mapping: %d' % len(stub_missing))
+        for ss in stub_missing:
+            print('   %s' % ss)
+    if route_orphans:
+        findings += len(route_orphans)
+        print('GATE RED static-route-without-sidebar-entry: %d' % len(route_orphans))
+        for p in route_orphans:
+            print('   %s' % p)
+    if nav_dead:
+        findings += len(nav_dead)
+        print('GATE RED sidebar-entry-without-route: %d' % len(nav_dead))
+        for p in nav_dead:
+            print('   %s' % p)
+    print('disclosed feign-declared-uncalled=%d（声明了但全仓无调用点，非阻断）' % len(uncalled))
+    for path, name, fname in uncalled:
+        print('   %-46s %-28s <- %s' % (path, name, fname))
+    if not findings:
+        print('reverse gate: 0 findings')
+    sys.exit(1 if findings else 0)
 
 
 FEIGN_PATHS = collect_feign_paths()

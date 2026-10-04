@@ -219,3 +219,20 @@ A 桶第 9 条 `POST /multiplatform/account/{id}/test` 的判定被推翻了一�
    `GatewayAliasContract.test.ts` 4 项断言 + 两条变异验证（改网关目标 / 加一条没人用的别名）都会红。
 
 台账缺口一并记下：第六版记录的「36→35」那一步没有留下快照文件，35 这个中间态无法复核。
+
+## 收线补记（第十一版）：反向接线闸门进 CI，候选 33 → 34（挤掉一条假豁免）
+
+`endpoint_coverage_audit.py --reverse` 把四件事变成阻断检查：前端调用的路径与方法必须在后端存在且一致、
+e2e 桩不能拦后端没有的形状、静态路由必须有侧边栏入口、侧边栏不能指向不存在的路由。
+基线 276 调用点 / 140 桩 / 29 静态路由，0 findings；四条变异注入各由对应检查报出（详见
+`2026-10-04-unmeasured-closure-reverse-gate.md`）。
+
+候选 +1 的来源必须说清楚：`/logistics/warehouse/stock/aging/{shopId}` 原先被 `has-feign-caller`
+豁免，但 ai 模块只是**声明**了这个 Feign 方法，全仓没有任何调用点（接口 + 降级实现之外再无引用，
+已 grep 复核）。豁免前提「有服务间调用方」是假的，所以删掉这条死声明，端点如实浮成浏览器候选。
+同类披露：`/spapi/finance/events`（`listEvents`）也声明无调用，但带 `@InternalServiceAccess`
+所以不进候选，改由 `--reverse` 的 `feign-declared-uncalled` 行报出（当前 =1，不阻断）。
+
+工具侧顺带清掉三处自身缺陷：别名表从三份手抄改成只认网关 `RewritePath`；`@RequestMapping`
+类前缀只认行首（javadoc 里的例子不再被当声明）；`shape()` 剥查询串。另有两处本轮自暴：
+强制泛型会让不带泛型的调用静默不进分母、Feign 方法名取到注解名导致「无调用点」虚报成 8 条。

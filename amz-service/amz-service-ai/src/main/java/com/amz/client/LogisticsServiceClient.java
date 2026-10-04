@@ -46,13 +46,6 @@ public interface LogisticsServiceClient {
     Result<Map<String, Object>> getGlobalInventoryView(@PathVariable("shopId") Long shopId);
 
     /**
-     * 多仓库存老化分析（含各仓库 SKU 入库天数、滞销预警）。
-     * 对应 amz-service-logistics 的 /logistics/warehouse/stock/aging/{shopId}。
-     */
-    @GetMapping("/logistics/warehouse/stock/aging/{shopId}")
-    Result<Map<String, Object>> getAgingAnalysis(@PathVariable("shopId") Long shopId);
-
-    /**
      * 物流商运费比价（最优/次优/第三路线路 + 费用 + 时效）。
      * 对应 amz-service-logistics 的 /logistics/v2/quote/compare/{shopId}。
      */

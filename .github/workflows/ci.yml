@@ -49,6 +49,12 @@ jobs:
         run: |
           python tools/schema/entity_column_drift.py --self-test .
           python tools/schema/entity_column_drift.py --gate .
+      # 反向接线闸门：前端调用的路径/方法必须在后端存在且一致、e2e 桩不能拦后端没有的形状、
+      # 静态路由必须有侧边栏入口。正向清点（端点->前端命名）是人读的台账，不进 CI。
+      - name: Endpoint wiring reverse gate
+        run: |
+          python tools/schema/endpoint_coverage_audit.py --self-test .
+          python tools/schema/endpoint_coverage_audit.py --reverse .
       - name: Release tool tests
         run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_verify_clean_clone -v
 
