@@ -16,6 +16,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -152,6 +153,26 @@ class BareSqlBuiltSchemaFlywayStartIT {
                           List<Path> migrationFiles, int maxVersion) {
     }
 
+    /** Flyway 文件名里的版本号；不是迁移名就报错，不静默当成 0。 */
+    static int migrationVersion(Path file) {
+        Matcher m = MIGRATION_FILE.matcher(file.getFileName().toString());
+        if (!m.matches()) {
+            throw new IllegalArgumentException("不是 Flyway 迁移文件名：" + file.getFileName());
+        }
+        return Integer.parseInt(m.group(1));
+    }
+
+    /**
+     * 裸 SQL 重放的执行顺序：版本号数值升序，同版本号按文件名兜底。
+     * 单独成方法是为了让不需要 MySQL 的 {@code MigrationOrderingContractTest} 也能钉住它。
+     */
+    static List<Path> sortedByMigrationVersion(List<Path> files) {
+        return files.stream()
+                .sorted(Comparator.comparingInt(BareSqlBuiltSchemaFlywayStartIT::migrationVersion)
+                        .thenComparing(p -> p.getFileName().toString()))
+                .toList();
+    }
+
     private static List<Module> discoverModules() throws IOException {
         List<Module> modules = new ArrayList<>();
         try (Stream<Path> dirs = Files.list(ROOT.resolve("amz-service"))) {
@@ -169,13 +190,19 @@ class BareSqlBuiltSchemaFlywayStartIT {
                 List<Path> files = new ArrayList<>();
                 int maxVersion = 0;
                 try (Stream<Path> list = Files.list(migrationDir)) {
-                    for (Path file : list.sorted().toList()) {
-                        Matcher fileMatcher = MIGRATION_FILE.matcher(file.getFileName().toString());
-                        if (fileMatcher.matches()) {
+                    for (Path file : list.toList()) {
+                        if (MIGRATION_FILE.matcher(file.getFileName().toString()).matches()) {
                             files.add(file);
-                            maxVersion = Math.max(maxVersion, Integer.parseInt(fileMatcher.group(1)));
                         }
                     }
+                }
+                // 必须按版本号数值排序：Files.list 的字典序会把 V10 排在 V1/V2 之前
+                // （'V1' 之后是 '_'(0x5F) 而 'V10' 之后是 '0'(0x30)），于是 V10 里对 V1 建的表
+                // 做 ALTER 时报「Table doesn't exist」。Flyway 自己是数值序，
+                // 所以这条只在「裸 SQL 重放」路径上暴露 —— 也正是 CI 的 test 作业红的原因。
+                files = sortedByMigrationVersion(files);
+                for (Path file : files) {
+                    maxVersion = Math.max(maxVersion, migrationVersion(file));
                 }
                 assertFalse(files.isEmpty(), "迁移目录为空：" + migrationDir);
                 modules.add(new Module(dir.getFileName().toString(), matcher.group(1),

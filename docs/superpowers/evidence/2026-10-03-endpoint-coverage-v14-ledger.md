@@ -236,3 +236,20 @@ e2e 桩不能拦后端没有的形状、静态路由必须有侧边栏入口、�
 工具侧顺带清掉三处自身缺陷：别名表从三份手抄改成只认网关 `RewritePath`；`@RequestMapping`
 类前缀只认行首（javadoc 里的例子不再被当声明）；`shape()` 剥查询串。另有两处本轮自暴：
 强制泛型会让不带泛型的调用静默不进分母、Feign 方法名取到注解名导致「无调用点」虚报成 8 条。
+
+## 收线补记（第十二版）：#56 结案 —— CI 的红是 IT 自己的字典序重放，不是 V10
+
+一次性 MySQL 8.0.46 实测：走真 Flyway 的 `AllModulesFlywayMySqlIT` 一直全绿（14 库 × 50 迁移），
+红的是 `BareSqlBuiltSchemaFlywayStartIT` —— 它用 `Files.list(...).sorted()` 按**字典序**重放迁移，
+`V10__` 排在 `V1__`/`V2__` 之前（`_`=0x5F > `0`=0x30），于是 V10 的 ALTER 早于 V1 建表。
+`apply_migrations.py` 的真实路径本来就有数值排序键，所以 synthetic-data 作业一直是绿的；
+错的只有那个「复刻版」。V10 只是第一个把缺陷暴露出来的输入，不是缺陷本身。
+
+修：IT 抽出 `sortedByMigrationVersion()`；`apply_migrations.py` 的 dry-run 与真实执行共用同一把钥匙；
+新增不需要 MySQL 的 `MigrationOrderingContractTest`（数值序 vs 字典序、ALTER 不得早于 CREATE、
+版本号唯一且首文件是 V1）。修前 IT_RC=1，修后 =0（两个 IT + 3 项顺序测试全绿）。
+细节与两处自暴（第一版顺序测试把同文件内「先 CREATE 后 ALTER」的 V2 误判为违规；
+参数名探针报的 8 条全是解析伪影）见 `2026-10-04-migration-order-ci-red-attribution.md`。
+
+覆盖率计数不变（34 条候选）。边界说清楚：CI 是否转绿要等下一次 run 的日志，匿名拉不到，
+这里只能说「同一输入下的精确复现已消除」。

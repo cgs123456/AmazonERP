@@ -224,7 +224,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "a9e52f66eb1343f9254ef1fb455637c29947a45cad71e03e6d930a3659299d22"
+      "sha256": "44e42e738425640bf1f6756fc42a75a0584f8dae3ddd81d6aa58a581ffc87537"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BootstrapDeploymentContractTest.java",

@@ -154,6 +154,29 @@ def discover_services():
     return services
 
 
+MIGRATION_NAME = re.compile(r'^V(\d+)__.*\.sql$')
+
+
+def migration_files(mdir):
+    """按**版本号数值**升序返回 [(version, filename)]。
+
+    这里只允许一把排序钥匙。字典序会把 V10 排到 V1/V2 前面
+    （'V1' 之后是 '_'=0x5F，'V10' 之后是 '0'=0x30），
+    于是「ALTER 早于 CREATE」——CI 里 test 作业红过一次就是这么来的。
+    """
+    out = []
+    for name in os.listdir(mdir):
+        m = MIGRATION_NAME.match(name)
+        if m:
+            out.append((int(m.group(1)), name))
+    out.sort()
+    return out
+
+
+def migration_names(mdir):
+    return [name for _, name in migration_files(mdir)]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Apply every Flyway migration to a MySQL 8 server')
     parser.add_argument('--mysql-path', default='mysql', help='mysql client (default: $PATH mysql)')
@@ -177,8 +200,9 @@ def main(argv=None):
         print('[apply-migrations] dry-run: %d databases' % len(databases))
         for service, db in services:
             mdir = os.path.join(SERVICE_ROOT, service, 'src', 'main', 'resources', 'db', 'migration')
-            files = sorted(f for f in os.listdir(mdir) if re.match(r'^V\d+__.*\.sql$', f)) \
-                if os.path.isdir(mdir) else []
+            # 与下面真实执行路径同一把排序钥匙（版本号数值）。dry-run 用字典序会印出
+            # V10 在 V1 之前，让人以为建表顺序是错的 —— 打印顺序也必须是真的执行顺序。
+            files = migration_names(mdir) if os.path.isdir(mdir) else []
             print('  %-28s -> %-18s %d migration(s)' % (service, db, len(files)))
         return 0
 
@@ -211,12 +235,7 @@ def main(argv=None):
         if not os.path.isdir(mdir):
             print('  %-28s -> %-18s (no flyway migrations)' % (service, db))
             continue
-        files = []
-        for f in os.listdir(mdir):
-            m = re.match(r'^V(\d+)__.*\.sql$', f)
-            if m:
-                files.append((int(m.group(1)), f))
-        files.sort()
+        files = migration_files(mdir)
         ok = 0
         for _, f in files:
             code, _, err = mysql.run(database=db, stdin_path=os.path.join(mdir, f))
