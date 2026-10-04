@@ -970,6 +970,25 @@ const SSE_STUBS: Array<{ match: RegExp; contentType: string; body: string }> = [
  * 按 /api 之后的路径匹配；顺序敏感，先命中先返回。
  * 这里的 URL 与 src/api/*.ts 里的实际请求路径一一对应，改后端路径时要同步改这里。
  */
+// ===== 自建下单（B2C）桩数据：形状取后端 Order 实体与 MasterRow 的真实子集 =====
+// 这两张表都是「没有店铺归属」的读法：B2C_ORDERS 里 shopId 缺省，
+// 正是这条链路落库的真实结果（saveOrderInternal 不写 shop_id）。
+const B2C_MASTERS = [
+  {
+    id: 31, shopId: 1, sku: 'SKU-A', asin: 'B0ABC12345', title: 'Yoga mat',
+    price: 19.9, currency: 'USD', status: 'ACTIVE', marketplaceId: 'ATVPDKIKX0DER'
+  },
+  {
+    id: 32, shopId: 1, sku: 'SKU-B', asin: null, title: null,
+    price: null, currency: null, status: 'ACTIVE', marketplaceId: 'ATVPDKIKX0DER'
+  }
+]
+
+const B2C_ORDERS = [
+  { id: 9001, productId: 31, userId: 1, quantity: null, finalPrice: 19.9, status: 0 },
+  { id: 9002, productId: 32, userId: 1, quantity: 2, finalPrice: 8, status: 1 }
+]
+
 type StubData = unknown | ((query: URLSearchParams) => unknown)
 type StubPage = PageMeta | ((query: URLSearchParams) => PageMeta)
 
@@ -984,6 +1003,12 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
       return { list, total: list.length, page: 1, size: 20 }
     }
   },
+  // ===== 自建下单（B2C）：POST /order/saveOrder + GET /order/getOrderList =====
+  // saveOrder 只把消息投进队列，后端返回 Result<Void>（data 恒为 null）：
+  // 桩给成对象，页面就会把「还没落库」显示成有一行订单数据。
+  { match: /^\/order\/saveOrder$/, data: null },
+  { match: /^\/order\/getOrderList$/, data: B2C_ORDERS },
+  { match: /^\/product\/master\/list\//, data: B2C_MASTERS },
   { match: /^\/order\/profit\/report$/, data: PROFIT_REPORT },
 
   // ===== 利润下钻 /order/profit/{order,sku,summary} =====

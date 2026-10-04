@@ -3,6 +3,7 @@ package com.amz.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.amz.client.FinanceServiceFeignClient;
 import com.amz.constant.MqConstant;
+import com.amz.context.UserContext;
 import com.amz.enums.OrderStatusEnum;
 import com.amz.exception.MessageProcessLimitExceededException;
 import com.amz.exception.OrderMessageDuplicateException;
@@ -81,9 +82,44 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private ObjectMapper objectMapper;
 
+    /**
+     * 金额口径单源：MQ 入口（{@link #processOrderMessage}）和 HTTP 下单入口共用这一条判定。
+     * 两处各写一遍、措辞迟早分叉，页面就会出现「同一个数，网页拒我、队列收它」这种没法解释的差。
+     *
+     * @return 拒绝理由；null 表示合法
+     */
+    private static String priceRejectReason(java.math.BigDecimal price) {
+        if (price == null) {
+            return "订单金额缺失：消息里没有 price，无法定价";
+        }
+        if (price.signum() <= 0) {
+            return "订单金额非法：price 必须大于 0，实际 " + price;
+        }
+        return null;
+    }
+
     @Override
     public Result<Void> saveOrder(OrderDto orderDto) {
-        // B2C 购物车下单场景：本方法仅负责发送订单保存消息，库存扣减应由调用方在调用前完成
+        // B2C 下单场景：本方法只负责投递订单消息，库存扣减应由调用方在调用前完成。
+        //
+        // 归属与幂等键一律由服务端定，不认 body：
+        // - 原先 userId 直接取请求体，任何登录者都能给任意用户造订单；而
+        //   GET /order/getOrderList 读的是认证上下文里的 userId——别人能替你下单，
+        //   你自己下完却查不到，两边口径是反的。
+        // - 原先 messageId 也取自请求体，而消费端用它做幂等占位：
+        //   塞一个已被占用的 id，这条订单会被静默丢弃。
+        Integer currentUserId = UserContext.getUserId();
+        if (currentUserId == null) {
+            return Result.failure("下单需要登录身份：当前认证上下文没有 userId");
+        }
+        String priceReason = priceRejectReason(orderDto.getPrice());
+        if (priceReason != null) {
+            // 当场拒掉。投一条注定进死信的消息再回「已提交」，页面看到的就是一次成功，
+            // 而订单永远不会出现（死信要运维在 MQ 侧才看得见）。
+            return Result.failure(priceReason);
+        }
+        orderDto.setUserId(currentUserId);
+        orderDto.setMessageId(UUID.randomUUID().toString());
         try {
             // 异步保存订单：发送 JSON 文本消息（与 OrderConsumer 原始字节解析对齐），
             // 同时设置 AMQP messageId，作为消费端缺少业务标识时的幂等 fallback。
@@ -97,7 +133,10 @@ public class OrderServiceImpl implements OrderService {
             return Result.success(null);
         } catch (Exception e) {
             log.error("保存订单失败", e);
-            return Result.failure("保存订单失败");
+            // 带上异常类型：MQ 不可达、序列化失败都曾被这句话洗成同一个「保存订单失败」，
+            // 页面无法区分「队列挂了」和「我的请求本身有问题」。
+            return Result.failure("下单消息投递失败：" + e.getClass().getSimpleName()
+                    + " - " + String.valueOf(e.getMessage()));
         }
     }
 
@@ -145,11 +184,9 @@ public class OrderServiceImpl implements OrderService {
         // 金额同样属于「重投也不会变好」的永久不合法：必须在幂等占位之前拒掉，
         // 放进 try 里会被失败计数吃进去、最终变成 MessageProcessLimitExceeded 而不是直接死信。
         java.math.BigDecimal unitPrice = orderDto.getPrice();
-        if (unitPrice == null) {
-            throw new OrderMessageRejectedException("订单金额缺失：消息里没有 price，无法定价");
-        }
-        if (unitPrice.signum() <= 0) {
-            throw new OrderMessageRejectedException("订单金额非法：price 必须大于 0，实际 " + unitPrice);
+        String priceReason = priceRejectReason(unitPrice);
+        if (priceReason != null) {
+            throw new OrderMessageRejectedException(priceReason);
         }
 
         // 幂等性检查：使用消息ID（由 Consumer 设置：优先 amazonOrderId+shopId，其次 AMQP messageId）

@@ -120,3 +120,49 @@ export const getOrderList = (params: OrderListParams) => {
     })
 }
 
+
+/* ==================== B2C 手工下单（POST /order/saveOrder、GET /order/getOrderList） ==================== */
+
+/** 商品自定义属性：label + 取值数组，后端只取每个 label 的第一个值落 amz_order_attribute */
+export interface CustomAttribute {
+  label: string
+  value: string[]
+}
+
+/**
+ * 下单请求体。**不要**从页面传 userId 与 messageId：
+ * - userId 由后端取认证上下文里的登录用户（原来信任请求体，任何登录者都能给别人造订单，
+ *   而下完在「我的下单」里查不到——读的是登录用户）；
+ * - messageId 由后端每次新生成（原来信任请求体，而消费端拿它做幂等占位，
+ *   塞一个已占用的 id 就能让订单被静默丢弃）。
+ * 副作用是**重复点击会各下一单**，所以提交期间按钮必须禁用。
+ */
+export interface B2cOrderDraft {
+  productId: number
+  price: number | string
+  selectAttributes?: CustomAttribute[]
+}
+
+/** 后端落库的 B2C 订单行（Order 实体子集：这条链路不写 shop_id / amazon_order_id） */
+export interface B2cOrderRow {
+  id?: number
+  productId?: number
+  userId?: number
+  quantity?: number | null
+  finalPrice?: number | string | null
+  /** 0=待付款 1=已付款 2=已取消（OrderStatusEnum） */
+  status?: number | null
+}
+
+export const B2C_STATUS_LABELS: Record<string, string> = {
+  0: '待付款',
+  1: '已付款',
+  2: '已取消'
+}
+
+export const saveB2cOrder = (draft: B2cOrderDraft) =>
+  request.post<void, ApiResponse<null>>('/order/saveOrder', draft)
+
+/** 我这个登录账号提交出来的订单（后端按认证上下文读，没有分页） */
+export const getMyB2cOrders = () =>
+  request.get<void, ApiResponse<B2cOrderRow[]>>('/order/getOrderList')

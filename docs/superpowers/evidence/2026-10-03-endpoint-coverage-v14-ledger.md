@@ -180,3 +180,16 @@ A 桶第 9 条 `POST /multiplatform/account/{id}/test` 的判定被推翻了一�
 分桶随之改写：A 14 + B 20 = **34**。A 桶里剩下的多平台两条仍是「接上去就是假动作」：
 `message/{messageId}/reply`（只写本地备注，买家收不到）与 `oauth/token`（机机接口）。
 明细见 `2026-10-03-item7z-platform-connection-probe.md`。
+
+## 收线补记（第八版）：A 桶的 `/order/saveOrder` 接成「自建下单」页，候选 34 → 33
+
+用户点名的第 1 项。接之前先量了三件事：这条链路**不写 shop_id**（所以它永远不会出现在按店铺读的
+`/order/list`，只能由 `/order/getOrderList` 按登录用户读回）、`amz_order.product_id` 是 `INT`
+而 `amz_product.id` 是 `BIGINT`（今天装得下，2^31 会溢出，另立一片）、以及
+`saveOrder` 成功只代表「消息进队列」。
+
+后端同时修掉三条会让页面说谎的口径：`userId` 与 `messageId` 不再认请求体
+（原先任何登录者可替他人造订单，而读的是登录用户；塞已占用的幂等键可让订单被静默丢弃），
+金额非法在 HTTP 入口当场拒且与 MQ 入口共用同一条判定，投递失败带上异常类型。
+
+分桶：A 13 + B 20 = **33**。明细见 `2026-10-03-item7aa-b2c-order-page.md`。

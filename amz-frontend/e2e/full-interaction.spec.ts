@@ -30,6 +30,7 @@ function makeToken(): string {
 const NAV = [
   { path: '/orders', linkText: '订单管理' },
   { path: '/order-audit', linkText: '订单审单' },
+  { path: '/b2c-order', linkText: '自建下单' },
   { path: '/inventory', linkText: '库存监控' },
   { path: '/warehouse', linkText: '海外仓' },
   { path: '/warehouse-alerts', linkText: '海外仓预警' },
@@ -1450,5 +1451,53 @@ test.describe('404 页面', () => {
     await expect(page.locator('.not-found-page .hero-title')).toHaveText('404')
     await page.locator('.hero-cta', { hasText: '返回首页' }).click()
     await expect(page).toHaveURL(/\/$/)
+  })
+})
+
+test.describe('自建下单（B2C）', () => {
+  test('提交只声明「已投递」：请求体里没有 userId 与 messageId，投完要重拉我的下单', async ({ page }) => {
+    const bodies: string[] = []
+    const reads: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname
+      if (p === '/api/order/saveOrder' && r.method() === 'POST') bodies.push(r.postData() || '')
+      if (p === '/api/order/getOrderList') reads.push(p)
+    })
+    await page.goto('/b2c-order')
+    await expect(page.locator('.notice-zone')).toContainText('提交≠成单')
+    await expect(page.locator('.notice-zone')).toContainText('没有 shop_id')
+    await expect(page.locator('tbody tr')).toHaveCount(2)
+    await expect(page.locator('tbody tr').first()).toContainText('待付款')
+
+    // 按 label 选：option 的 value 是 Vue 写的 DOM property，不是属性，Playwright 按值匹配不到
+    await page.locator('.form-card select').selectOption({ label: 'SKU-A · Yoga mat' })
+    await page.locator('input[inputmode="decimal"]').fill('19.90')
+    await page.locator('.form-actions button', { hasText: '提交下单' }).click()
+    await expect.poll(() => bodies.length).toBe(1)
+    const body = JSON.parse(bodies[0])
+    // 身份与幂等键归后端：页面代填会被它丢弃，但「页面上存在这个框」本身就是误导
+    expect(body).toEqual({ productId: 31, price: 19.9 })
+    expect('userId' in body).toBe(false)
+    expect('messageId' in body).toBe(false)
+    // 投递后必须再读一次，否则「有没有真的落库」当场看不出来
+    await expect.poll(() => reads.length).toBe(2)
+    await expect(page.locator('.note-line')).toContainText('才算成单')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+
+  test('没选商品或没填单价时不给提交，也不发任何请求', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/order/saveOrder') posts.push('x')
+    })
+    await page.goto('/b2c-order')
+    const submit = page.locator('.form-actions button', { hasText: '提交下单' })
+    await expect(submit).toBeDisabled()
+    await page.locator('input[inputmode="decimal"]').fill('19.90')
+    await expect(submit).toBeDisabled()
+    await page.locator('.form-card select').selectOption({ label: 'SKU-B' })
+    await expect(submit).toBeEnabled()
+    await submit.click()
+    await expect.poll(() => posts.length).toBe(1)
   })
 })

@@ -36,6 +36,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/b2c-order') }"
+        @click="navigateTo('/b2c-order')"
+        role="button"
+        aria-label="自建下单"
+        tabindex="0"
+      >
+        <Icon icon="mdi:cart-plus" class="nav-icon" width="24" />
+        <span class="nav-text">自建下单</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/inventory') }"
         @click="navigateTo('/inventory')"
         role="button"

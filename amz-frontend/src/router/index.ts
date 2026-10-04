@@ -19,6 +19,11 @@ const router = createRouter({
             component: () => import('../views/OrderAudit.vue')
         },
         {
+            path: '/b2c-order',
+            name: 'B2cOrder',
+            component: () => import('../views/B2cOrder.vue')
+        },
+        {
             path: '/inventory',
             name: 'Inventory',
             component: () => import('../views/InventoryMonitor.vue')
