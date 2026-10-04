@@ -215,6 +215,7 @@ A 桶第 9 条 `POST /multiplatform/account/{id}/test` 的判定被推翻了一�
    调用点，0 孤儿、0 方法不一致。第一版没剥注释时报了 19 条孤儿，其中 12 条是 doc 注释里的通配串。
 3. **发现一个结构性风险**：`/connectors` `/preflight` `/credentials` 是网关别名，别名表在
    `viteProxy.ts` 与 gateway `RewritePath` 两处各自维护，没有任何一致性测试——
-   一处漂移会让前端 404 而 hermetic e2e 全绿。已单独立项。
+   一处漂移会让前端 404 而 hermetic e2e 全绿。**本轮清点后即补上**：
+   `GatewayAliasContract.test.ts` 4 项断言 + 两条变异验证（改网关目标 / 加一条没人用的别名）都会红。
 
 台账缺口一并记下：第六版记录的「36→35」那一步没有留下快照文件，35 这个中间态无法复核。
