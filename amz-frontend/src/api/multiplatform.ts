@@ -96,9 +96,11 @@ export const markOrderShipped = (orderId: number, trackingNo: string) =>
  *    真实请求，平台回话才写 ACTIVE，凭证缺失/签名被拒/网络不通写 ERROR；它不写 lastSyncTime，
  *    所以「最后同步」只反映真同步。亚马逊账号会被点名拒绝（本模块不探测亚马逊），
  *    页面拿到的是 code 400 的业务失败，不是「探测失败」——两者不要混为一谈。
- *    `message/{id}/reply` 仍然不提供：它只写本地一条 OUT 备注，平台与买家都收不到；
- *    那条备注的平台消息 ID 现在显式带 LOCAL-REPLY- 前缀，将来接真实发送时
- *    可以据此区分「内部记过」与「平台真回过」。
+ *    `message/{id}/reply` 仍然不提供按钮，但语义已经换了（2026-10-03）：后端不再「只写一条本地
+ *    OUT 备注」，而是先向平台真发、拿到平台消息 ID 才写本地记账。三家真实客户端都还没接
+ *    买家站内信发送的 Open API method，所以生产档一律显式拒绝（code 400 点名「未接入」），
+ *    本地一行都不写；只有 mock 档会返回带 MOCK-OUT- 前缀的假 ID。
+ *    换句话说：接上按钮在当前环境只会稳定报错，等真有 method 依据再接。
  */
 
 export const ACCOUNT_STATUSES = ['ACTIVE', 'INACTIVE', 'ERROR']

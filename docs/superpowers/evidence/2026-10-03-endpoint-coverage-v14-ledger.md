@@ -193,3 +193,14 @@ A 桶第 9 条 `POST /multiplatform/account/{id}/test` 的判定被推翻了一�
 金额非法在 HTTP 入口当场拒且与 MQ 入口共用同一条判定，投递失败带上异常类型。
 
 分桶：A 13 + B 20 = **33**。明细见 `2026-10-03-item7aa-b2c-order-page.md`。
+
+## 收线补记（第九版）：A 桶的 `message/{id}/reply` 从「假动作」变「先真发、拒就点名」
+
+条数不变（仍 33），但这条端点的性质换了：`replyMessage` 过去只往本地写一条 OUT 备注就把原消息
+标成 REPLIED——客服页面显示「已回复」而买家什么都没收到。现在它先向平台真发，拿到平台消息 ID
+才写本地两行；三家真实客户端都没有站内信发送的 method 依据，因此生产档一律
+`UnsupportedOperationException`（经控制器转成 code 400 的点名拒绝），一行都不写。
+`LOCAL-REPLY-` 这个"只有内部记过"的前缀随之从代码里消失。
+
+前端仍然不给「回复」按钮，理由从"语义未定"更新为"给了只会稳定报错，等真有 method 依据再接"。
+明细见 `2026-10-03-item7ab-real-send-refusal.md`。

@@ -312,30 +312,39 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         PlatformMessage msg = platformMessageMapper.selectById(messageId);
         if (msg == null) throw new AttrIsNullException("消息不存在 id=" + messageId);
         requireShopOnRow(msg.getShopId(), "平台消息");
+
+        PlatformMessage outbound = new PlatformMessage();
+        outbound.setShopId(msg.getShopId());
+        outbound.setPlatform(msg.getPlatform());
+        outbound.setBuyerName(msg.getBuyerName());
+        outbound.setBuyerEmail(msg.getBuyerEmail());
+        outbound.setSubject("Re: " + msg.getSubject());
+        outbound.setContent(replyContent);
+        outbound.setDirection("OUT");
+
+        // 先真发、后记账：平台收下（返回它自己的消息 ID）才允许本地出现 REPLIED。
+        // 旧顺序是先标 REPLIED 再插一条 LOCAL-REPLY- 备注，而全程没人向平台发过请求——
+        // 客服页面就此显示「已回复」，买家什么都没收到。
+        // 未接入时 sendMessage 抛 UnsupportedOperationException，一行都不写。
+        // 残余风险与 markShipped 同类：平台已收、本地写入却回滚，重试会重复发送；
+        // 真接入时需要平台侧的幂等键，这里不假装已经解决。
+        String platformMessageId = dataClient(msg.getPlatform()).sendMessage(outbound);
+
+        LocalDateTime now = LocalDateTime.now();
         msg.setStatus("REPLIED");
-        msg.setReplyTime(LocalDateTime.now());
-        msg.setUpdateTime(LocalDateTime.now());
+        msg.setReplyTime(now);
+        msg.setUpdateTime(now);
         platformMessageMapper.updateById(msg);
 
-        // 创建回复记录（OUT 方向）
-        PlatformMessage reply = new PlatformMessage();
-        reply.setShopId(msg.getShopId());
-        reply.setPlatform(msg.getPlatform());
-        // 这条 OUT 记录是内部处理备注：平台和买家都没收到任何东西。
-        // 列是 NOT NULL，历史上直接拼了一条看着像平台 ID 的串；现在明确标 LOCAL-REPLY-，
-        // 将来接真实发送时，能靠它区分「内部记过」与「平台真回过」。
-        reply.setPlatformMessageId("LOCAL-REPLY-" + msg.getId() + "-" + System.currentTimeMillis());
-        reply.setBuyerName(msg.getBuyerName());
-        reply.setBuyerEmail(msg.getBuyerEmail());
-        reply.setSubject("Re: " + msg.getSubject());
-        reply.setContent(replyContent);
-        reply.setDirection("OUT");
-        reply.setStatus("REPLIED");
-        reply.setReceiveTime(LocalDateTime.now());
-        reply.setCreateTime(LocalDateTime.now());
-        reply.setUpdateTime(LocalDateTime.now());
-        platformMessageMapper.insert(reply);
-        log.info("消息回复：messageId={} contentLen={}", messageId, replyContent != null ? replyContent.length() : 0);
+        outbound.setPlatformMessageId(platformMessageId);
+        outbound.setStatus("REPLIED");
+        outbound.setReceiveTime(now);
+        outbound.setCreateTime(now);
+        outbound.setUpdateTime(now);
+        platformMessageMapper.insert(outbound);
+        log.info("平台站内信已发送并记账：messageId={} platform={} platformMessageId={} contentLen={}",
+                messageId, msg.getPlatform(), platformMessageId,
+                replyContent != null ? replyContent.length() : 0);
         return true;
     }
 

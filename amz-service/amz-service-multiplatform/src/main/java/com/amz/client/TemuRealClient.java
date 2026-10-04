@@ -159,6 +159,14 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
     }
 
     @Override
+    public String sendMessage(PlatformMessage outbound) {
+        // 不编造 method 名：三家的买家站内信发送各自要哪个 Open API method、字段怎么映射，
+        // 手上没有依据。返回假 ID 会让本地记成「已回复」而买家什么都没收到，
+        // 所以按 unimplemented 显式失败（与商品/库存同步同一口径）。
+        throw unimplemented("买家站内信发送（需对应 Open API method 名与请求字段映射）");
+    }
+
+    @Override
     public List<PlatformProduct> fetchProducts(Long shopId) {
         throw unimplemented("商品");
     }

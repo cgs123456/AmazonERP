@@ -37,7 +37,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 多平台两个动作的「按内部处理」口径。
+ * 多平台两个运维动作的真实语义：连接是真探测，回复是真发送。
  * <p>
  * 这一族原来各自有一处会让页面说谎的写法：
  * <ul>
@@ -46,15 +46,15 @@ import static org.mockito.Mockito.when;
  *       就这样改变了「账号是否活跃」和「最近同步时间」两个运维口径。
  *       现在它是一次<b>真探测</b>：复用各家已实现的订单读发一次已鉴权请求，
  *       状态由平台是否回话决定；但探测仍然不是同步，所以 {@code lastSyncTime} 一个字节都不写。</li>
- *   <li>{@code replyMessage} 只往本地库写一条 OUT 记录，平台和买家都收不到，
- *       而它给这条记录拼的 {@code platformMessageId} 长得像平台真实 ID
- *       （{@code 原ID-REPLY-时间戳}），将来接真实发送时分不清「内部记过」和「平台真回过」。
- *       该列是 NOT NULL，所以必须留个 ID —— 留的就明确标成 LOCAL-REPLY-。</li>
+ *   <li>{@code replyMessage} 曾经只往本地库写一条 OUT 记录就把原消息标成 REPLIED，
+ *       平台和买家都收不到，而它拼的 {@code platformMessageId} 长得像平台真实 ID。
+ *       现在它先真发（{@code PlatformDataClient#sendMessage}），拿到平台消息 ID 才写本地两行；
+ *       没接入的平台一律抛「未接入」，一行都不写。</li>
  * </ul>
  * 两个动作的店铺归属守卫不能因为口径改了就被绕过，所以这里同时钉住拒绝路径。
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("多平台动作的内部处理口径")
+@DisplayName("多平台动作：真探测与真发送")
 class MultiplatformInternalSemanticsTest {
 
     @Mock
@@ -161,25 +161,48 @@ class MultiplatformInternalSemanticsTest {
     // ==================== replyMessage ====================
 
     @Test
-    @DisplayName("回复只记内部备注：OUT 行的 ID 必须自标 LOCAL-REPLY，不像平台真实 ID")
-    void replyRecordsInternalNoteWithLocalId() {
+    @DisplayName("回复是真发送：先拿到平台消息 ID，之后才写本地两行")
+    void replySendsFirstAndRecordsOnlyWhatThePlatformAccepted() {
         PlatformMessage inbound = message(21L, 1L, "TM-888");
         when(platformMessageMapper.selectById(21L)).thenReturn(inbound);
+        ArgumentCaptor<PlatformMessage> draft = ArgumentCaptor.forClass(PlatformMessage.class);
+        when(temuClient.sendMessage(draft.capture())).thenReturn("TM-OUT-777");
 
         assertTrue(service.replyMessage(21L, "已与客户主管沟通"));
+
+        PlatformMessage sent = draft.getValue();
+        assertEquals("OUT", sent.getDirection(), "发出去的必须是 OUT 方向");
+        assertEquals(1L, sent.getShopId());
+        assertEquals("已与客户主管沟通", sent.getContent());
+        assertEquals("Re: When will it ship?", sent.getSubject());
 
         ArgumentCaptor<PlatformMessage> inserted = ArgumentCaptor.forClass(PlatformMessage.class);
         verify(platformMessageMapper).insert(inserted.capture());
         PlatformMessage note = inserted.getValue();
-        assertEquals("OUT", note.getDirection());
-        assertTrue(note.getPlatformMessageId().startsWith("LOCAL-REPLY-"),
-                "内部备注的 ID 必须自带 LOCAL- 标记，实际=" + note.getPlatformMessageId());
-        assertFalse(note.getPlatformMessageId().startsWith("TM-888-REPLY-"),
-                "不能再拼成看着像平台 ID 派生的串，实际=" + note.getPlatformMessageId());
-        assertEquals(1L, note.getShopId());
-        // 原消息标为已处理仍要写：这是内部工单状态，不是平台回传
+        // 这条 OUT 记录现在是平台确认的副本：ID 就是平台给的，不再自造 LOCAL-REPLY-
+        assertEquals("TM-OUT-777", note.getPlatformMessageId());
+        assertFalse(note.getPlatformMessageId().startsWith("LOCAL-REPLY-"),
+                "自造 ID 会把「内部记过」冒充成平台回过");
         assertEquals("REPLIED", inbound.getStatus());
-        verify(platformMessageMapper).updateById(inbound);
+
+        // 顺序就是这条链路的本体：平台没收之前，一行都不许写
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(temuClient, platformMessageMapper);
+        order.verify(temuClient).sendMessage(any(PlatformMessage.class));
+        order.verify(platformMessageMapper).updateById(inbound);
+        order.verify(platformMessageMapper).insert(any(PlatformMessage.class));
+    }
+
+    @Test
+    @DisplayName("平台侧没接入就显式拒绝：不写 REPLIED，也不留任何一行回复")
+    void replyRefusesWithoutWritingWhenPlatformSendIsMissing() {
+        when(platformMessageMapper.selectById(21L)).thenReturn(message(21L, 1L, "TM-888"));
+        when(temuClient.sendMessage(any(PlatformMessage.class)))
+                .thenThrow(new UnsupportedOperationException(
+                        "TEMU 平台的买家站内信发送接口尚未接入"));
+
+        assertThrows(UnsupportedOperationException.class, () -> service.replyMessage(21L, "hi"));
+        verify(platformMessageMapper, never()).insert(any(PlatformMessage.class));
+        verify(platformMessageMapper, never()).updateById(any(PlatformMessage.class));
     }
 
     @Test
@@ -232,6 +255,11 @@ class MultiplatformInternalSemanticsTest {
             }
             return orders;
         }
+
+        @Override
+        public String sendMessage(PlatformMessage outbound) {
+            return "STUB-OUT-1";
+        }
     }
 
     private static PlatformAccount account(Long id, Long shopId, String platform) {
@@ -253,6 +281,7 @@ class MultiplatformInternalSemanticsTest {
         m.setPlatformMessageId(platformMessageId);
         m.setDirection("IN");
         m.setStatus("UNREAD");
+        m.setSubject("When will it ship?");
         return m;
     }
 }

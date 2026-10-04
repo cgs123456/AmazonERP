@@ -59,6 +59,13 @@ public class TikTokMockClient extends AbstractPlatformClient implements TikTokCl
     }
 
     @Override
+    public String sendMessage(PlatformMessage outbound) {
+        log.warn("[MOCK] {} 站内信发送只是模拟动作，买家并没有真的收到：shopId={}", getPlatform(),
+                outbound == null ? null : outbound.getShopId());
+        return "MOCK-OUT-" + System.currentTimeMillis();
+    }
+
+    @Override
     public List<PlatformProduct> fetchProducts(Long shopId) {
         log.warn("[MOCK] {} 商品为离线样例数据，非平台真实数据：shopId={}", getPlatform(), shopId);
         return PlatformMockSamples.products(getPlatform(), shopId);

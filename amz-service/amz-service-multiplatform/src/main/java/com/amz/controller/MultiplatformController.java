@@ -135,7 +135,9 @@ public class MultiplatformController {
     @PostMapping("/message/{messageId}/reply")
     public Result<Boolean> replyMessage(@PathVariable Long messageId,
                                          @RequestParam String replyContent) {
-        return Result.success(multiplatformService.replyMessage(messageId, replyContent));
+        // 「这家平台的发送接口没接入」必须是点名的业务失败，而不是全局兜底的 500；
+        // 真实调用失败（网络/对端拒绝）仍按异常上抛，不伪装成功也不伪装成"功能没开"。
+        return guarded(() -> multiplatformService.replyMessage(messageId, replyContent));
     }
 
     @ShopScoped

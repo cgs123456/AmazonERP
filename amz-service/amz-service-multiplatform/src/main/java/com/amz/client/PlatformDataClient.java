@@ -52,6 +52,21 @@ public interface PlatformDataClient {
     List<UnifiedOrder> fetchRecentOrders(Long shopId);
 
     /**
+     * 向平台回一条买家站内信。
+     *
+     * <p>返回平台侧消息 ID，调用方**只有拿到这个 ID 才允许**把本地记录写成「已回复」——
+     * 语义与 {@code markShipped} 一致：本地状态必须是平台确认的副本，不能是自我声明。
+     * <p>
+     * 未接入的平台实现必须抛 {@link UnsupportedOperationException}（走
+     * {@code AbstractPlatformClient#unimplemented}），不允许返回 null、假 ID 或 {@code false}
+     * 冒充成功。mock 实现返回带 MOCK- 前缀的显式假 ID，便于日志和页面区分档位。
+     *
+     * @param outbound 待发送的 OUT 方向消息（含店铺、平台、买家与正文）
+     * @return 平台侧消息 ID
+     */
+    String sendMessage(PlatformMessage outbound);
+
+    /**
      * 连接探测：真的向平台发一次已鉴权的只读请求，能不能回话就是答案。
      *
      * <p>刻意复用订单读，而不是编一个 "ping/health" 路径——平台没有那个端点时，
