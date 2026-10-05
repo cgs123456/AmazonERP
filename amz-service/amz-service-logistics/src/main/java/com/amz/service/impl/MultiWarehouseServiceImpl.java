@@ -27,7 +27,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import static com.amz.service.impl.LogisticsShopGuard.requireShopAllowed;
 
 /**
@@ -191,7 +190,8 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
-        result.put("totalSkus", all.stream().filter(s -> s.getAvailableQty() > 0).count());
+        result.put("totalSkus", all.stream()
+                .filter(s -> s.getAvailableQty() != null && s.getAvailableQty() > 0).count());
         result.put("aging", Map.of(
                 "fresh_30d", Map.of("count", fresh30, "value", freshValue, "pct",
                         grandTotal.compareTo(BigDecimal.ZERO) > 0
@@ -210,15 +210,27 @@ public class MultiWarehouseServiceImpl implements MultiWarehouseService {
         result.put("stocksTruncated", stockScan.truncated());
         result.put("scannedStockCount", all.size());
 
-        // Top 10 最老库存
-        result.put("oldestTop10", all.stream()
-                .filter(s -> s.getAvailableQty() > 0)
-                .sorted(Comparator.comparingInt(WarehouseStock::getDaysInStock).reversed())
-                .limit(10)
-                .map(s -> Map.of("sku", s.getSku(), "warehouse", s.getWarehouseName(),
-                        "days", s.getDaysInStock(), "qty", s.getAvailableQty(),
-                        "value", s.getTotalValue() != null ? s.getTotalValue() : BigDecimal.ZERO))
-                .collect(Collectors.toList()));
+        // Top 10 最老库存：与上面的分段共用同一套 null 兜底口径。
+        // 这里原先写的是 filter(s -> s.getAvailableQty() > 0) + comparingInt(getDaysInStock)
+        // + Map.of("warehouse", name, ...)，而 available_qty / days_in_stock / warehouse_name
+        // 三列在 DDL 里都可空：任意一条快照缺值就整页 500（前两列拆箱 NPE，
+        // Map.of 直接拒绝 null 值）。这条端点在接前端之前从没被浏览器调过，所以一直没人碰到。
+        List<Map<String, Object>> oldest = new ArrayList<>();
+        for (WarehouseStock s : all) {
+            int qty = s.getAvailableQty() == null ? 0 : s.getAvailableQty();
+            if (qty <= 0) {
+                continue;
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("sku", s.getSku());
+            row.put("warehouse", s.getWarehouseName() == null ? "" : s.getWarehouseName());
+            row.put("days", s.getDaysInStock() == null ? 0 : s.getDaysInStock());
+            row.put("qty", qty);
+            row.put("value", s.getTotalValue() != null ? s.getTotalValue() : BigDecimal.ZERO);
+            oldest.add(row);
+        }
+        oldest.sort(Comparator.comparingInt((Map<String, Object> r) -> (Integer) r.get("days")).reversed());
+        result.put("oldestTop10", oldest.size() > 10 ? new ArrayList<>(oldest.subList(0, 10)) : oldest);
 
         return result;
     }

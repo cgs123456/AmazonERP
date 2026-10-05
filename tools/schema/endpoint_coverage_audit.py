@@ -384,6 +384,24 @@ if '--self-test' in sys.argv:
     sys.exit(1 if failed else 0)
 
 
+def require_repo_root() -> None:
+    """root 不像仓库根就直接退出，不能让人拿着 0 条结果当「没有缺口」。
+
+    这一条是当场踩出来的：在 amz-frontend/ 里跑 `python ../tools/schema/endpoint_coverage_audit.py`
+    会安静地输出 controllers=0 / candidates=0，看起来像全绿，其实是分母为空。
+    """
+    controllers = list(root.glob('amz-service/*/src/main/java/com/amz/controller/*.java'))
+    api_files = list((root / 'amz-frontend' / 'src' / 'api').glob('*.ts'))
+    if not controllers or not api_files:
+        print('ROOT NOT A REPO: %s（控制器=%d 前端api=%d，两端分母都不能为空）'
+              % (root, len(controllers), len(api_files)))
+        print('请在仓库根目录运行，或显式传根：python tools/schema/endpoint_coverage_audit.py .')
+        sys.exit(2)
+
+
+require_repo_root()
+
+
 if '--reverse' in sys.argv:
     # 正向尺回答「后端有端点、前端没人叫」；反向尺回答另外三件同样会假绿的事：
     #   1. 前端叫了而后端没有（或方法不对）—— 接线打错路径/动词时页面只会静默报错；

@@ -970,6 +970,26 @@ const SSE_STUBS: Array<{ match: RegExp; contentType: string; body: string }> = [
  * 按 /api 之后的路径匹配；顺序敏感，先命中先返回。
  * 这里的 URL 与 src/api/*.ts 里的实际请求路径一一对应，改后端路径时要同步改这里。
  */
+// ===== 海外仓库龄分析桩（GET /logistics/warehouse/stock/aging/{shopId}） =====
+// aging 的键是 snake_case：后端返回 Map，Jackson 不做驼峰转换。
+// 第二行 warehouse 为空串，对应 DDL 里可空的 warehouse_name（后端已兜底成空串而不是 500）。
+const WAREHOUSE_AGING = {
+  shopId: 1,
+  totalSkus: 4,
+  scannedStockCount: 4,
+  stocksTruncated: false,
+  aging: {
+    fresh_30d: { count: 1, value: 20.5, pct: 0.205 },
+    mid_31_90d: { count: 1, value: 10, pct: 0.1 },
+    old_91_180d: { count: 0, value: 0, pct: 0 },
+    dead_181d_plus: { count: 2, value: 69.5, pct: 0.695 }
+  },
+  oldestTop10: [
+    { sku: 'SKU-OLD', warehouse: '美西仓', days: 400, qty: 3, value: 45.5 },
+    { sku: 'SKU-NO-NAME', warehouse: '', days: 210, qty: 1, value: 24 }
+  ]
+}
+
 // ===== 自建下单（B2C）桩数据：形状取后端 Order 实体与 MasterRow 的真实子集 =====
 // 这两张表都是「没有店铺归属」的读法：B2C_ORDERS 里 shopId 缺省，
 // 正是这条链路落库的真实结果（saveOrderInternal 不写 shop_id）。
@@ -1009,6 +1029,7 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/order\/saveOrder$/, data: null },
   { match: /^\/order\/getOrderList$/, data: B2C_ORDERS },
   { match: /^\/product\/master\/list\//, data: B2C_MASTERS },
+  { match: /^\/logistics\/warehouse\/stock\/aging\//, data: WAREHOUSE_AGING },
   { match: /^\/order\/profit\/report$/, data: PROFIT_REPORT },
 
   // ===== 利润下钻 /order/profit/{order,sku,summary} =====

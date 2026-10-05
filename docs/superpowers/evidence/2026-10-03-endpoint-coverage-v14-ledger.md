@@ -253,3 +253,16 @@ e2e 桩不能拦后端没有的形状、静态路由必须有侧边栏入口、�
 
 覆盖率计数不变（34 条候选）。边界说清楚：CI 是否转绿要等下一次 run 的日志，匿名拉不到，
 这里只能说「同一输入下的精确复现已消除」。
+
+## 收线补记（第十三版）：库龄接进海外仓，候选 34 → 33，并修掉一条从没被调过的端点里的 NPE
+
+第十二版浮出来的那条 `GET /logistics/warehouse/stock/aging/{shopId}` 已接线到 `/warehouse`
+「库存查询」面板（四段库龄 + 最老 Top10 + 快照时效/扫描触顶提示）。
+
+接线时先量了后端：`agingAnalysis` 的 Top-10 段用 `filter(getAvailableQty() > 0)`、
+`comparingInt(getDaysInStock)` 与 `Map.of("warehouse", name, ...)`，而这三列在 DDL 里都可空 ——
+`available_qty`/`days_in_stock` 拆箱 NPE，`Map.of` 直接拒绝 null。分段那一段本来就有 null 兜底，
+两处口径不一致。这条端点在被浏览器调用之前永远不会暴露，正是「有声明无调用方」掩盖的东西。
+
+先写 `WarehouseAgingAnalysisTest` 跑出真实 NPE（两条红，异常由 JVM 指名），再改成同一套兜底口径。
+计数：A 13 → 12，B 20 不变，合计 **33**。

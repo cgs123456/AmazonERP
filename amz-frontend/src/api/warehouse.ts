@@ -179,3 +179,48 @@ export const shipOutbound = (
 export const cancelOutbound = (id: number) => {
   return request.post<void, ApiResponse<OutboundOrder>>(`/logistics/outbound/${id}/cancel`)
 }
+
+/* ==================== 库龄分析（GET /logistics/warehouse/stock/aging/{shopId}） ==================== */
+
+export interface AgingBucket {
+  count: number
+  /** 金额：后端是 BigDecimal，JSON 里可能是数字或字符串 */
+  value: number | string
+  /** 占总库存价值的比例（0–1，四位小数） */
+  pct: number | string
+}
+
+export interface AgingTopRow {
+  sku: string
+  /** 仓库名在 DDL 里可空，缺失时后端回空串（不是 null，避免整页 500） */
+  warehouse: string
+  days: number
+  qty: number
+  value: number | string
+}
+
+/**
+ * 库龄分段。两条口径要记住：
+ * 1. `aging` 的键是 **snake_case**：后端返回的是 Map，Jackson 不对 Map 键做驼峰转换，
+ *    前端改名就会读到 undefined；
+ * 2. `days` 来自快照列 `days_in_stock`，快照滞后时该值会偏高，所以它是「按快照算的库龄」，
+ *    不是实时天数。`stocksTruncated` 为真时结果只覆盖扫描上限内的行。
+ */
+export interface StockAging {
+  shopId?: number | string
+  totalSkus?: number
+  scannedStockCount?: number
+  stocksTruncated?: boolean
+  aging: Record<'fresh_30d' | 'mid_31_90d' | 'old_91_180d' | 'dead_181d_plus', AgingBucket>
+  oldestTop10: AgingTopRow[]
+}
+
+export const AGING_BUCKETS = [
+  { key: 'fresh_30d', label: '≤30 天' },
+  { key: 'mid_31_90d', label: '31–90 天' },
+  { key: 'old_91_180d', label: '91–180 天' },
+  { key: 'dead_181d_plus', label: '181 天以上' }
+] as const
+
+export const getStockAging = (shopId: number | string) =>
+  request.get<void, ApiResponse<StockAging>>(`/logistics/warehouse/stock/aging/${shopId}`)

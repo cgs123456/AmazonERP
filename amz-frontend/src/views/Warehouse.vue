@@ -153,6 +153,58 @@
             服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
           </div>
         </div>
+
+        <!-- 库龄分析：这条端点接前端前从没被浏览器调过，可空快照列的兜底口径见 api/warehouse.ts -->
+        <div class="table-card aging-card" data-panel="aging">
+          <div class="panel-header">
+            <h3>库龄分析</h3>
+            <div class="filter-bar">
+              <button class="primary-btn" :disabled="agingLoading" @click="loadAging(true)">
+                {{ agingLoading ? '加载中...' : '重新计算' }}
+              </button>
+              <span v-if="aging" class="page-info">有货 SKU {{ aging.totalSkus ?? 0 }} 个</span>
+            </div>
+          </div>
+
+          <div v-if="agingError" class="truncated-tip" role="alert">{{ agingError }}</div>
+          <template v-else-if="aging">
+            <div class="aging-grid">
+              <div v-for="b in AGING_BUCKETS" :key="b.key" class="aging-cell">
+                <div class="aging-label">{{ b.label }}</div>
+                <div class="aging-count">{{ aging.aging[b.key]?.count ?? 0 }} 个 SKU</div>
+                <div class="aging-value">
+                  货值 {{ fmtMoney(aging.aging[b.key]?.value) }} · {{ fmtPct(aging.aging[b.key]?.pct) }}
+                </div>
+              </div>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr><th>SKU</th><th>仓库</th><th>在库天数</th><th>可用</th><th>货值</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(r, i) in aging.oldestTop10" :key="`${r.sku}-${r.warehouse}-${i}`">
+                  <td>{{ r.sku }}</td>
+                  <td>{{ r.warehouse || '—（快照未记仓库名）' }}</td>
+                  <td>{{ r.days }}</td>
+                  <td>{{ r.qty }}</td>
+                  <td>{{ fmtMoney(r.value) }}</td>
+                </tr>
+                <tr v-if="!aging.oldestTop10.length">
+                  <td colspan="5" class="page-info">
+                    没有「可用库存 &gt; 0」的快照行。这不代表仓里没货，代表这条店铺的库存快照是空的。
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p class="aging-note">
+              天数取自快照列 days_in_stock：快照滞后时该值会偏高，这里是「按快照算的库龄」，不是实时在库天数。
+              <template v-if="aging.stocksTruncated">
+                本次扫描触顶（已扫 {{ aging.scannedStockCount }} 行），分段与 Top10 只覆盖已扫描部分。
+              </template>
+            </p>
+          </template>
+          <div v-else-if="!agingLoading" class="aging-note">尚未加载：切到本标签会自动算一次。</div>
+        </div>
       </div>
       <!-- 入库单 -->
       <div v-show="activeTab === 'inbound'" class="panel">
@@ -390,13 +442,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, reactive } from 'vue'
+import { ref, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import * as WH from '@/api/warehouse'
 import { canUseRole, LOCATION_EDIT_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
-import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder } from '@/api/warehouse'
+import { AGING_BUCKETS } from '@/api/warehouse'
+import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder, StockAging } from '@/api/warehouse'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { useToast } from '@/composables/useToast'
 
@@ -441,6 +494,54 @@ const locationRoleAllowed = ref(canUseRole(LOCATION_EDIT_ROLES))
 const syncLocationRole = () => {
   locationRoleAllowed.value = canUseRole(LOCATION_EDIT_ROLES)
 }
+// ==================== 库龄分析 ====================
+// 库龄分析：这条端点接前端前只有 curl 能碰，且 DDL 里 available_qty / days_in_stock /
+// warehouse_name 三列都可空 —— 后端已改成按 0 与空串兜底（见 WarehouseAgingAnalysisTest）
+const aging = ref<StockAging | null>(null)
+const agingLoading = ref(false)
+const agingError = ref('')
+
+const fmtMoney = (v?: number | string) => {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) ? n.toFixed(2) : String(v ?? '-')
+}
+const fmtPct = (v?: number | string) => {
+  const n = Number(v ?? 0)
+  return Number.isFinite(n) ? `${(n * 100).toFixed(2)}%` : '-'
+}
+
+const loadAging = async (force = false) => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    aging.value = null
+    agingError.value = '未选择店铺：库龄按店铺读取，不能猜一家。'
+    return
+  }
+  if (aging.value && !force) return
+  agingLoading.value = true
+  agingError.value = ''
+  try {
+    const res = await WH.getStockAging(shopId)
+    if (res?.code !== 200 || !res.data) {
+      aging.value = null
+      agingError.value = `库龄分析失败：${res?.message || '后端没有返回数据'}`
+      return
+    }
+    aging.value = res.data
+  } catch (e) {
+    aging.value = null
+    agingError.value = `库龄分析失败：${e instanceof Error ? e.message : '调用失败'}`
+  } finally {
+    agingLoading.value = false
+  }
+}
+
+// 切到「库存查询」才读，且只在第一次进入时自动读；之后靠「重新计算」按钮。
+
+watch(activeTab, (t) => {
+  if (t === 'inventory') void loadAging()
+})
+
 onMounted(() => window.addEventListener(ROLE_CHANGED_EVENT, syncLocationRole))
 onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncLocationRole))
 
@@ -838,6 +939,14 @@ onMounted(async () => {
 /* 页面基础 */
 .warehouse-page { background: var(--color-background); }
 .truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
+/* 库龄分析卡片 */
+.aging-card { margin-top: 1rem; }
+.aging-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.aging-cell { border: 1px solid var(--color-border); border-radius: 8px; padding: 0.75rem; }
+.aging-label { font-size: 0.8125rem; color: var(--color-muted); }
+.aging-count { font-size: 1.125rem; font-weight: 600; margin: 0.25rem 0; }
+.aging-value { font-size: 0.8125rem; color: var(--color-muted); }
+.aging-note { font-size: 0.8125rem; color: var(--color-muted); margin: 0.5rem 0 0; line-height: 1.5; }
 
 /* 库位码就地编辑 */
 .loc-view { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }

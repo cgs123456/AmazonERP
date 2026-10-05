@@ -4,9 +4,9 @@
 
 ## 一句话现状
 
-覆盖率候选从 **103 → 34**；实体↔列漂移闸门 **101 实体 / 0 漂移 / 0 豁免**；反向接线闸门已进 CI；
+覆盖率候选从 **103 → 33**；实体↔列漂移闸门 **101 实体 / 0 漂移 / 0 豁免**；反向接线闸门已进 CI；
 悬了两个会话的 **#56（CI `test` 作业红）已结案** —— 根因是 IT 自己按字典序重放迁移，不是 V10。
-剩下的 34 条里 **20 条只缺外部凭据**，**13 条是刻意显式拒绝**，**1 条是我删掉假豁免后如实浮出来的真缺口**（库龄分析）。
+剩下的 34 条里 **20 条只缺外部凭据**，**13 条是刻意显式拒绝**，库龄分析那条（删假豁免后浮出来的真缺口）已在本班接进海外仓页，所以 A 桶回到 13、B 桶 20。
 
 ## 当前任务
 
@@ -15,8 +15,9 @@
 | 任务 | 状态 |
 | --- | --- |
 | #57 `oauth/token` 的 `appSecret` 走 query → 进访问日志 | **待决策**：需要先确认有无真实外部 ISV 调用方 |
-| #60 `GET /logistics/warehouse/stock/aging/{shopId}` | **待做**：数据来源已量过（真实 `WarehouseStock`，非播种），该接线到海外仓页 |
+| #60 库龄分析 | **已做完**：接进 `/warehouse` 的「库存查询」面板；顺带修掉后端三处可空列 NPE（见下） |
 | 参数名 / DTO 字段位的一致性 | **未量到**：探针伪影占多数，需要真正的签名解析 |
+| CI 是否真的转绿 | **未证实**：只能看下一次 run 的日志；本地精确复现已消除 |
 
 ## 本会话完成的 8 个 commit
 
@@ -92,8 +93,9 @@ python tools/schema/zero_reference_tables.py                    # 113 表 / 11 �
 2. **豁免按整份文件内容哈希钉住**：改了 `hygiene-allowlist.json` 覆盖过的任何文件（哪怕加一条路由），
    原豁免就失效并重新报 finding。这是设计意图（碰过就要重看），不是误报。
    处理办法：确认那一行确无密钥 → 重新 attest 哈希；**不要放宽规则、不要加跳过名单**。
-   副作用：**证据文档里也不要原样引用** `const token = localStorage.getItem('token')` 这类句子，
-   md 也在扫描范围内（本会话踩过）。
+   副作用：**证据文档本身也在扫描范围内**，不要把那种「名字像密钥的赋值」原样抄进 md ——
+   本会话踩了两次：第一次写在证据文档里，第二次写在本文档的警告句里（提交后才被 hygiene 拦下，
+   已改写为不含字面量的描述）。
 3. **注释不是调用**：反向尺第一版没剥注释，19 条孤儿里 12 条是 doc 注释里的 `**` 通配串；
    `@RequestMapping` 类前缀正则不锚行首时会被 javadoc 举例骗。
 4. **提取器的隐性门槛**：强制要求泛型 `request.get<...>()` 会让不带泛型的调用静默不进分母；
@@ -105,6 +107,26 @@ python tools/schema/zero_reference_tables.py                    # 113 表 / 11 �
 7. **一次性 MySQL 的前置条件**：官方镜像只给 `root@localhost`；从宿主机连会拿到
    `Access denied for 'root'@'172.17.0.1'`。要显式建应用账号并 `GRANT ALL ON *.*`（IT 会 DROP/CREATE 自己的 `<db>_fwit`/`_bsit` 库）。
    上一班把这个环境失败写成「V10 嫌疑未洗清」是不严谨的 —— 那是探针没跑起来，不是产品结论。
+
+## 本班最后一轮（#60 库龄接线）新增的事实与坑
+
+- 后端 `MultiWarehouseServiceImpl.agingAnalysis` 的 Top-10 段在**可空列**上会抛 NPE：
+  `filter(s -> s.getAvailableQty() > 0)` 与 `comparingInt(getDaysInStock)` 自动拆箱，
+  `Map.of("warehouse", name, ...)` 直接拒绝 null 值；而 DDL 里 `available_qty`、
+  `days_in_stock`、`warehouse_name` 三列都可空。这条端点在接前端之前从没被浏览器调过，所以没人撞见。
+  先写 `WarehouseAgingAnalysisTest` 跑出真实异常（两条红，异常信息由 JVM 指名），再改代码；
+  分段与明细现在共用同一套「null 当 0 / 缺失仓库名当空串」口径。
+- **`<script setup>` 的模板里不能写 `WH.AGG_BUCKETS`（命名空间导入）**：渲染时抛
+  "Cannot read properties of undefined"，而 vue-tsc 完全不报 —— 只有跑起来才红。
+  要在模板里用的常量必须具名导入。
+- **清点工具现在会拒绝错误的 root**：在 `amz-frontend/` 里跑它会安静输出
+  `controllers=0 / candidates=0`，看着像全绿。现在打印 `ROOT NOT A REPO` 并退出码 2。
+  任何「0 findings」先确认分母非空。
+- 面板是 `v-show` 同时挂着的：给面板加新表格时必须同时把行定位从
+  `.panel:visible .data-table tbody tr` 收窄到具体卡片，否则会把别人在跑的断言一起改掉。
+- 我在本文档里写「不要把那种赋值抄进 md」时，就把那条赋值原样写进去了，
+  被自家 hygiene 拦下（`b965c34` 推上去时 hygiene 是红的，本次改写后才绿）。
+  **教训：写文档也要过一遍 `repository_hygiene.py --root .` 再提交。**
 
 ## 环境与边界（务必遵守）
 

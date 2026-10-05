@@ -281,11 +281,40 @@ test.describe('Finance 交互', () => {
 })
 
 test.describe('Warehouse 交互', () => {
+  test('库龄分析只在切到「库存查询」后才读，并把可空仓库名的行显示出来', async ({ page }) => {
+    const paths: string[] = []
+    page.on('request', (r) => {
+      const p = new URL(r.url()).pathname
+      if (p.startsWith('/api/logistics/')) paths.push(p)
+    })
+    await page.goto('/warehouse')
+    await waitReady(page)
+    // 未切 Tab 之前不该打这条端点（它按店铺扫描，切店时才需要重算）
+    expect(paths.filter((p) => p.includes('/stock/aging/'))).toEqual([])
+
+    const card = page.locator('[data-panel="aging"]')
+    // 面板是 v-show 挂着的，切过去之前它就在 DOM 里但不可见 —— 先断言「不可见」才有意义
+    await expect(card).toBeHidden()
+    await page.locator('.tab-item', { hasText: '库存查询' }).click()
+    await expect(card).toBeVisible()
+    await expect.poll(() => paths.filter((p) => p.includes('/stock/aging/')).length).toBe(1)
+
+    await expect(card).toContainText('≤30 天')
+    await expect(card).toContainText('1 个 SKU')
+    await expect(card).toContainText('181 天以上')
+    await expect(card).toContainText('美西仓')
+    // warehouse_name 可空：后端兜底成空串，页面必须显式说「快照未记仓库名」而不是留白
+    await expect(card).toContainText('—（快照未记仓库名）')
+    await expect(card).toContainText('不是实时在库天数')
+    expect(card.locator('.truncated-tip')).toHaveCount(0)
+  })
+
   test('四个 Tab 分别渲染各自打桩数据', async ({ page }) => {
     await page.goto('/warehouse')
     await waitReady(page)
-    // 四个面板用 v-show 同时挂在 DOM 上，只统计当前可见面板的行
-    const rows = page.locator('.panel:visible .data-table tbody tr')
+    // 四个面板用 v-show 同时挂在 DOM 上，只统计当前可见面板的行；
+    // 库龄卡片也在同一个面板里，它有自己的 data-panel，不能混进「库存查询列表」的行数
+    const rows = page.locator('.panel:visible .table-card:not([data-panel="aging"]) .data-table tbody tr')
     await expect(rows).toHaveCount(2)
     await expect(page.locator('.panel:visible')).toContainText('US-West-FBA')
     await expect(page.locator('.panel:visible')).toContainText('DE-ThirdParty')
