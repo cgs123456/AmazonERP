@@ -46,6 +46,14 @@
       </div>
 
       <template v-else>
+        <div v-if="loadErrors.length" class="error-zone" role="alert">
+          <Icon icon="mdi:alert-circle-outline" width="16" />
+          <span>{{ loadErrors.join('；') }}</span>
+          <button class="action-btn" @click="loadAll">重试</button>
+        </div>
+        <div v-if="demoDataTags.length" class="demo-banner" role="status">
+          示意数据（后端返回形状异常已降级）：{{ demoDataTags.join('、') }}
+        </div>
         <!-- KPI 卡片网格 - bento grid: 4 个 cell, 无空单元格 -->
         <div class="kpi-grid">
           <div class="kpi-card" v-for="kpi in kpiData" :key="kpi.label">
@@ -162,6 +170,9 @@ const maxSales = computed(() => {
   return max > 0 ? max : 1
 })
 
+const loadErrors = ref<string[]>([])
+const demoDataTags = ref<string[]>([])
+
 const loadAll = async () => {
   // 未登录直接返回：不发请求（防 401 重载循环），页面仅展示登录提示
   if (!hasToken.value) {
@@ -169,32 +180,30 @@ const loadAll = async () => {
     return
   }
   loading.value = true
-  // 并行请求三组数据，任一失败则该组降级到 mock
+  loadErrors.value = []
+  demoDataTags.value = []
+  // 并行请求三组数据。失败与非 200 一律进错误横幅（不再静默回退 mock——
+  // 假成功会让「今日订单 23」被当成真实经营数据）；只有 200 但形状不对时
+  // 才退示意数据，且必须带「示意数据」标识（渲染保护不是假成功）。
   const tasks = [
     {
       fn: () => getKpiData(getCurrentShopId()),
-      // 形状防御：后端返回非数组时（异常分支或字段变更）不能把渲染打进 TypeError，
-      // 否则 maxSales / v-for 抛错会让骨架屏永不消失、页面等于白屏。这里退到 mock。
-      onSuccess: (data: KpiItem[]) => { kpiData.value = Array.isArray(data) ? data : [...mockKpiData] },
-      onFallback: () => { kpiData.value = [...mockKpiData] },
-      tag: 'getKpiData'
+      tag: '经营 KPI',
+      apply: (data: KpiItem[]) => { kpiData.value = data },
+      shapeFallback: () => { kpiData.value = [...mockKpiData] }
     },
     {
       // 趋势/分布支持按店铺过滤；未选中店铺时传 undefined（axios 自动省略），后端返回全局聚合
       fn: () => getSalesTrend(7, getCurrentShopId() || undefined),
-      // 形状防御：后端返回非数组时（异常分支或字段变更）不能把渲染打进 TypeError，
-      // 否则 maxSales / v-for 抛错会让骨架屏永不消失、页面等于白屏。这里退到 mock。
-      onSuccess: (data: SalesTrendItem[]) => { salesTrend.value = Array.isArray(data) ? data : [...mockSalesTrend] },
-      onFallback: () => { salesTrend.value = [...mockSalesTrend] },
-      tag: 'getSalesTrend'
+      tag: '销售趋势',
+      apply: (data: SalesTrendItem[]) => { salesTrend.value = data },
+      shapeFallback: () => { salesTrend.value = [...mockSalesTrend] }
     },
     {
       fn: () => getShopDistribution(getCurrentShopId() || undefined),
-      // 形状防御：后端返回非数组时（异常分支或字段变更）不能把渲染打进 TypeError，
-      // 否则 maxSales / v-for 抛错会让骨架屏永不消失、页面等于白屏。这里退到 mock。
-      onSuccess: (data: ShopDistItem[]) => { shopDist.value = Array.isArray(data) ? data : [...mockShopDist] },
-      onFallback: () => { shopDist.value = [...mockShopDist] },
-      tag: 'getShopDistribution'
+      tag: '店铺分布',
+      apply: (data: ShopDistItem[]) => { shopDist.value = data },
+      shapeFallback: () => { shopDist.value = [...mockShopDist] }
     }
   ]
 
@@ -202,15 +211,20 @@ const loadAll = async () => {
     tasks.map(async (t) => {
       try {
         const res = await t.fn()
-        if (res?.code === 200 && res.data) {
-          t.onSuccess(res.data as any)
-        } else {
-          console.warn(`[Dashboard] ${t.tag} 返回数据异常，使用降级数据`, res)
-          t.onFallback()
+        if (res?.code !== 200) {
+          loadErrors.value.push(`${t.tag}：${res?.message || '后端返回非 200'}`)
+          return
         }
-      } catch (e) {
-        console.warn(`[Dashboard] ${t.tag} 调用失败，使用降级数据`, e)
-        t.onFallback()
+        if (!Array.isArray(res.data)) {
+          // 形状防御：不能把渲染打进 TypeError（maxSales / v-for 会白屏），
+          // 但降级必须可见——退示意数据并标注来源
+          t.shapeFallback()
+          demoDataTags.value.push(t.tag)
+          return
+        }
+        t.apply(res.data as any)
+      } catch (e: any) {
+        loadErrors.value.push(`${t.tag}：${e?.message || '网络异常'}`)
       }
     })
   )
@@ -323,6 +337,18 @@ onUnmounted(() => {
 /* trend 缺失（后端未提供涨跌）时中性展示，避免恒显示红色下跌误导 */
 .kpi-trend.flat { color: var(--color-muted); }
 
+.error-zone, .demo-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+.error-zone { background: var(--color-light-red); color: var(--color-error); }
+.error-zone .action-btn { margin-left: auto; }
+.demo-banner { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .login-hint {
   display: flex;
   align-items: center;

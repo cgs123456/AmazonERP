@@ -887,15 +887,18 @@ services:
       - rabbitmq
     restart: unless-stopped
 
-  # Frontend (Vue 3 + Vite, served by nginx, host:5173 -> container:80)
-  # Before starting, run `npm run build` in amz-frontend to generate the dist directory
+  # Frontend (Vue 3 + Vite, built by amz-frontend/Dockerfile)
+  # 镜像内 nginx 带 /api -> amz-gateway:10010 代理、VITE_API_BASE_URL=/api；
+  # 不要退回「裸 nginx 挂 dist」的写法——本地 build 出的 dist 烤进的是
+  # .env.production 的占位域名，前端将无法调通后端。
   amz-frontend:
-    image: nginx:1.27-alpine
+    build:
+      context: .
+      dockerfile: amz-frontend/Dockerfile
+    image: amazonerp-frontend:local
     container_name: amz-frontend
     ports:
       - "5173:80"
-    volumes:
-      - ./amz-frontend/dist:/usr/share/nginx/html:ro
     depends_on:
       - amz-gateway
     restart: unless-stopped

@@ -27,6 +27,11 @@
         </div>
       </div>
 
+      <div v-if="listErrors.length" class="error-zone" role="alert">
+        <Icon icon="mdi:alert-circle-outline" width="16" />
+        <span>{{ listErrors.join('；') }}</span>
+      </div>
+
       <!-- Tab 切换 -->
       <div class="tab-bar">
         <div
@@ -602,6 +607,16 @@ const outboundNextCursor = ref<string | null>(null)
 const outboundTruncated = ref(false)
 const outboundPageMetaMissing = ref(false)
 const outboundLoadingMore = ref(false)
+// 列表加载失败必须可见：不能把失败渲染成「暂无数据」空态（假成功）。
+// 错误只在整页装载时清一次，各 loader 只追加，避免并发加载互相擦横幅（踩过的坑）。
+const listErrors = ref<string[]>([])
+const pushListError = (tag: string, e?: unknown) => {
+  const detail = e instanceof Error ? e.message : (e as string | undefined) || '后端返回异常'
+  if (!listErrors.value.some((x) => x.startsWith(`${tag}：`))) {
+    listErrors.value.push(`${tag}：${detail}`)
+  }
+}
+
 const invFilter = reactive<{ warehouseId?: number; sku?: string }>({})
 
 const warehouseName = (id?: number) => {
@@ -614,7 +629,8 @@ const loadWarehouses = async () => {
   try {
     const res = await WH.listWarehouses(currentShopId.value)
     if (res?.code === 200) warehouses.value = res.data || []
-  } catch (e) { console.warn('[Warehouse] 加载仓库失败', e) }
+    else pushListError('仓库列表', res?.message)
+  } catch (e) { console.warn('[Warehouse] 加载仓库失败', e); pushListError('仓库列表', e) }
 }
 
 // 库存/出库都使用服务端游标分页：前端只负责保留已加载行，不能再假装当前页就是全量。
@@ -653,10 +669,12 @@ const loadInventory = async (append = false, manageLoading = true) => {
       inventoryNextCursor.value = page?.nextCursor ?? null
     } else {
       console.warn('[Warehouse] 库存列表返回异常', res)
+      pushListError('库存列表', res?.message)
       if (!append) inventoryList.value = []
     }
   } catch (e) {
     console.warn('[Warehouse] 加载库存失败', e)
+    pushListError('库存列表', e)
     if (!append) inventoryList.value = []
   } finally {
     if (append) inventoryLoadingMore.value = false
@@ -698,10 +716,12 @@ const loadInbound = async (append = false) => {
       inboundNextCursor.value = page?.nextCursor ?? null
     } else {
       console.warn('[Warehouse] 入库单列表返回异常', res)
+      pushListError('入库单', res?.message)
       if (!append) inboundOrders.value = []
     }
   } catch (e) {
     console.warn('[Warehouse] 加载入库单失败', e)
+    pushListError('入库单', e)
     if (!append) inboundOrders.value = []
   } finally {
     if (append) inboundLoadingMore.value = false
@@ -742,10 +762,12 @@ const loadOutbound = async (append = false) => {
       outboundNextCursor.value = page?.nextCursor ?? null
     } else {
       console.warn('[Warehouse] 出库单列表返回异常', res)
+      pushListError('出库单', res?.message)
       if (!append) outboundOrders.value = []
     }
   } catch (e) {
     console.warn('[Warehouse] 加载出库单失败', e)
+    pushListError('出库单', e)
     if (!append) outboundOrders.value = []
   } finally {
     if (append) outboundLoadingMore.value = false
@@ -928,6 +950,7 @@ onMounted(async () => {
     return
   }
   loading.value = true
+  listErrors.value = []
   try {
     await loadWarehouses()
     await Promise.all([loadInventory(false, false), loadInbound(), loadOutbound()])
@@ -936,6 +959,17 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.error-zone {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  background: var(--color-light-red);
+  color: var(--color-error);
+}
 /* 页面基础 */
 .warehouse-page { background: var(--color-background); }
 .truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
