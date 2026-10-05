@@ -55,6 +55,12 @@ jobs:
         run: |
           python tools/schema/endpoint_coverage_audit.py --self-test .
           python tools/schema/endpoint_coverage_audit.py --reverse .
+      # 形状级闸门：e2e 桩返回的字段必须真存在于后端 DTO——桩越像真的，
+      # 越能替字段漂移打掩护（页面接真实后端后该列永远 undefined）。
+      - name: Stub shape gate
+        run: |
+          python tools/schema/stub_shape_audit.py --self-test .
+          python tools/schema/stub_shape_audit.py .
       - name: Release tool tests
         run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_verify_clean_clone -v
 

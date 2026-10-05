@@ -311,7 +311,7 @@
             <tbody>
               <tr v-for="(log, i) in changeLogs" :key="i">
                 <td class="mono">{{ log.asin ?? '-' }}</td>
-                <td>{{ log.fieldName ?? log.field ?? '-' }}</td>
+                <td>{{ log.fieldName ?? '-' }}</td>
                 <td class="cell-clip">{{ log.oldValue ?? '-' }}</td>
                 <td class="cell-clip">{{ log.newValue ?? '-' }}</td>
                 <td>{{ log.operator ?? '-' }}</td>

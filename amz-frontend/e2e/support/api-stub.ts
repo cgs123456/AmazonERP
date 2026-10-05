@@ -868,7 +868,9 @@ const LM_BUYBOX = [
   { id: 1, shopId: 1, asin: 'B00000000001', sellerId: 'A2SELLER', isSelf: true, buyboxPrice: 23.5, ourPrice: 23.49, priceGap: -0.01, fulfillmentType: 'FBA', ownershipPct: 62.5, snapshotTime: '2026-10-02T08:30:02' }
 ]
 const LM_CHANGELOGS = [
-  { id: 1, shopId: 1, asin: 'B00000000001', field: 'price', oldValue: '25.99', newValue: '23.99', changeTime: '2026-10-01T09:00:00' }
+  // 字段名必须对齐后端 ListingChangeLog DTO（fieldName，不是 field）——
+  // 由 tools/schema/stub_shape_audit.py 把关
+  { id: 1, shopId: 1, asin: 'B00000000001', fieldName: 'price', oldValue: '25.99', newValue: '23.99', changeTime: '2026-10-01T09:00:00' }
 ]
 const LM_MASTERS = [
   { id: 1, shopId: 1, sku: 'MASTER-1', asin: 'B0MASTER001', marketplaceId: 'ATVPDKIKX0DER', title: '瑜伽垫 6mm', brand: 'Akman', sizeTier: 'SMALL_LIGHT', weightG: 900, status: 'ACTIVE' }
