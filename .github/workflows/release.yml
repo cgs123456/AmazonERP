@@ -22,11 +22,43 @@ env:
 jobs:
   quality-gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       contents: read
     outputs:
       version: ${{ steps.meta.outputs.version }}
       image_tag: ${{ steps.meta.outputs.image_tag }}
+    # 测试基础设施与 ci.yml 的 test 作业逐字一致（由脚本从 ci.yml 截取）：
+    # IT 靠 env 存在性触发，此前这里没有 service 容器，IT 全部静默跳过、跑成弱化版。
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7.2
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      mongodb:
+        image: mongo:7.0
+        ports:
+          - 27017:27017
+      rabbitmq:
+        image: rabbitmq:3.13-management
+        ports:
+          - 5672:5672
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,9 +67,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: maven
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: amz-frontend/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -46,6 +81,40 @@ jobs:
       - name: Critical Checkstyle
         run: mvn -B -ntp checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml
       - name: Full Maven Test
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          DB_USERNAME: root
+          REDIS_PASSWORD: ''
+          RABBITMQ_USERNAME: guest
+          RABBITMQ_PASSWORD: guest
+          NACOS_ADDR: ''
+          AD_MYSQL_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          AD_MYSQL_IT_USER: root
+          AD_MYSQL_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          FLYWAY_ALL_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          FLYWAY_ALL_IT_USER: root
+          FLYWAY_ALL_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # COLLECTION_UPSERT_IT_* / SETTLEMENT_BATCH_IT_*：台账批量幂等写（ON DUPLICATE KEY UPDATE）
+          # 与结算明细批量写（Db.saveBatch）必须"真的经过 MyBatis 执行一遍"。
+          # 手工把 SQL 模板代进 mysql 客户端只能证明语句对，证明不了 foreach 展开后的
+          # 列名/属性名对应关系，也证明不了重复键抛出来的形态还能被兜底路径认出来。
+          # 两者都只操作自己的 *_it 专用库（避开 *_fwit，那是 Flyway IT 的命名空间），不设变量则整类跳过。
+          COLLECTION_UPSERT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          COLLECTION_UPSERT_IT_USER: root
+          COLLECTION_UPSERT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          SETTLEMENT_BATCH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          SETTLEMENT_BATCH_IT_USER: root
+          SETTLEMENT_BATCH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # LISTING_HEALTH_IT_*：健康度汇总下沉 SQL 后，severity 的大小写敏感只能由真库证明
+          # （mock 不走 collation）。同一 *_it 命名空间规则，详见该 IT 的类注释。
+          LISTING_HEALTH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          LISTING_HEALTH_IT_USER: root
+          LISTING_HEALTH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # PROFIT_ORDER_COUNT_IT_*：报表订单数改去重口径后，"相加≠全店"（一单跨多 ASIN）
+          # 与 <if> 日期边界只有在真 MyBatis 上执行才验得到。
+          PROFIT_ORDER_COUNT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+          PROFIT_ORDER_COUNT_IT_USER: root
+          PROFIT_ORDER_COUNT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
         run: mvn -B -ntp test -fae
       - name: Frontend Install
         working-directory: amz-frontend
@@ -229,3 +298,39 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/*
+      # 回滚演练（plan 干跑）：当前 manifest 对比上一版 manifest，产出 kubectl set image
+      # 的回滚计划但不执行。此前该工具只在单测里活着，CLI 到 manifest 的链路从未跑过。
+      - name: Rollback drill plan (dry-run)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ROLLBACK_NAMESPACE: ${{ vars.ROLLBACK_NAMESPACE || 'amz-erp' }}
+        run: |
+          set -euo pipefail
+          # git tag -l 恒 exit 0，首次发布时 prev_tag 为空走显式 exit 0——
+          # 失败掩蔽写法（两个竖线接 true）已被契约测试列为禁词，注释里都不能出现
+          prev_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-creatordate | sed -n 2p)"
+          if [ -z "$prev_tag" ]; then
+            echo "没有上一版 tag，跳过回滚演练（首次发布）"
+            exit 0
+          fi
+          gh release download "$prev_tag" --pattern 'release-manifest.json' --output previous-manifest.json
+          python tools/release/rollback_drill.py plan             --current ./release-manifest.json             --previous ./previous-manifest.json             --namespace "$ROLLBACK_NAMESPACE"             --output ./rollback-plan.json
+          python -c "import json,io;plan=json.load(io.open('rollback-plan.json',encoding='utf-8'));print('回滚计划条目数:',len(plan.get('steps',plan.get('images',[]))))"
+
+  # verify_clean_clone.ps1 是 PowerShell：只在 windows runner 上有意义。
+  # 手动触发（workflow_dispatch 时 quality-gate/release 也会跑，本作业仅额外验证干净克隆复现）。
+  verify-clean-clone-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Clean clone verify (PowerShell)
+        shell: pwsh
+        run: ./tools/release/verify_clean_clone.ps1
