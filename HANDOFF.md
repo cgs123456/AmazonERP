@@ -1,6 +1,6 @@
 # HANDOFF — AmazonERP 功能覆盖修复（2026-10-05 交班）
 
-工作树干净，`HEAD = a9a4aa2`，已推送 `origin/master`（本文件在其后单独提交）。
+工作树干净，`HEAD = b6039b3` 之上又落了参数名尺收口 commit（本文件随该 commit 推送）。
 
 ## 一句话现状
 
@@ -17,7 +17,7 @@
 | #57 `oauth/token` 密钥走 query | **已收口**（2026-10-05）：挪进 JSON 请求体（`OauthTokenRequest`），query 传输位被契约测试钉死。依据是证据不是假设：端点在网关 JWT 白名单外（外部 ISV 无调用资格）、仓内零调用方、无 ISV 文档；泄漏通道在 ingress 层访问日志（nginx-ingress 默认记完整 request line），网关自身只记 path |
 | #60 库龄分析 | **已做完**（上一班）：接进 `/warehouse`，候选回到 33 |
 | 形状级反向核对尺 | **已做完**（本班）：`tools/schema/stub_shape_audit.py` 进 CI，见 `docs/superpowers/evidence/2026-10-05-stub-shape-gate.md` |
-| 参数名一致性（`@RequestParam` 名 vs 前端 `params` 键） | **已做完**（本班）：`tools/schema/param_name_audit.py` 进 CI。上一班探针的 8 条伪影全部按 Spring 契约消解（`defaultValue` 不是名字、body 键不比 query、POJO 按 ModelAttribute 绑定）；首轮 20 红经「形状全等匹配」修正归零，变异验证精确 1 红 |
+| 参数名一致性（`@RequestParam` 名 vs 前端 `params` 键） | **已做完 + 已收口**（本班）：闸门进 CI；函数作用域归属 + 类型解析后可比分母 106 → 155，不可比 57 → 8；键按溯源分桶（literal 缺失=红、type 键缺失=type-extra 披露 19 条）；`params="shopId"/"!shopId"` 分发变体按限定符消歧，歧义与缺必填双清零；双变异验证（字面量注入=红、类型注入=披露） |
 | CI 是否真的转绿 | **未证实**：只能看下一次 run 的日志；本地精确复现已消除（#56），本班又推了 3 个 commit |
 
 ## 本班完成的 2 个 commit
@@ -68,14 +68,13 @@ python tools/schema/zero_reference_tables.py                    # 113 表 / 11 �
 
 ## 下一步计划（建议顺序）
 
-1. **整仓 `mvn test`** 例行确认（`a9a4aa2` 后还没跑过，虽然只加了 python 工具）。
-2. **收参数名尺的披露桶**：57 条 not-comparable 主要是 `params: q` 变量透传——
-   键就写在函数签名的类型注解里，可解析；但先解决「同名参数命中多个签名」的
-   归属歧义，别为了收分母引入伪影。
-3. **两个披露项是否收紧成红**：`/ad/reports/sync` 的 `params="shopId"/"!shopId"`
-   分发变体歧义、后端必填而前端缺键——都是先披露后决策的口径，要用户点头。
-4. 若继续压 A 桶：显式拒绝优于假成功，**不要把拒绝改回沉默**。
-5. CI 绿了之后，把 #56 的结案记录从「本地复现」升级成「run 日志佐证」。
+1. 三个披露桶里挑值得人工看的：**type-extra 19 条**（共享类型 `ListQuery` 等
+   声明了后端没有的筛选键，如 ticket 列表的 `minRating`/`templateType`）——
+   是删类型键、还是后端补 @RequestParam，属产品/接口契约决策。
+2. not-comparable 剩 8 条（`finance-ext.ts` 的 helper 转发、listing.ts 的
+   `...spread`），再收需要跨文件解构/变量追踪，性价比开始变低。
+3. 若继续压 A 桶：显式拒绝优于假成功，**不要把拒绝改回沉默**。
+4. CI 绿了之后，把 #56 的结案记录从「本地复现」升级成「run 日志佐证」。
 
 ## 踩过的坑（勿重演；历史条目见 git 历史版本，以下含本班新增）
 
@@ -113,6 +112,13 @@ root 拒绝 / v-show 行定位）仍然有效，详见 `git show 471c9fe:HANDOFF
 - **ad Real 契约测试的瞬时代理抖动**：本机代理（127.0.0.1:7897）开启时，
   Real 契约测试连自己 127.0.0.1 桩可能 ConnectException；单模块重跑即过，
   **先重跑再归因**，别写成产品结论。
+- **嵌套 heredoc 补丁是转义雷区**：`python - <<'EOF'` 里的三引号字符串再包一层
+  补丁文本时，`
+`/`` 会被外层字符串吃成真实控制字符写进源文件（本班写了
+  两处坏文件）。含转义序列的代码补丁一律走 Write/Edit 工具或文件拼接。
+- **类型注解是键的上界不是实发集**：共享超类型（customer.ts 的 `ListQuery`）
+  把四个列表端点的筛选键混在一起，直接当实发集比会产生伪红；
+  按 literal/type 溯源分桶才诚实（本班 19 条伪红靠这个归位）。
 
 ## 本班新增的事实（形状尺量出来的）
 

@@ -1,6 +1,49 @@
 # 参数名闸门进 CI：前端 query 键 vs 后端 @RequestParam（2026-10-05）
 
-## 结论
+## 同日增量：披露桶收口 + 分发变体消歧（任务 2/3）
+
+初版基线（106 可比 / 57 不可比 / 1 歧义 / 1 缺必填）按 HANDOFF 计划 2/3 收口：
+
+**函数作用域归属 + 类型解析**：文件按顶层 const 箭头函数声明切成顺序区间，
+每个调用点只归属包含它的那一个函数体——helper（`params(q)` 的 null 过滤器）
+自己的 `q: Record<...>` 不会再串到 api 函数的 `q: ReportQuery` 上，这就是
+「同名参数命中多个签名」歧义的解法。归属唯一后，`params: q` / `{ params }` /
+`params: params(q)` 三类变量透传都能经函数签名解析键：命名类型（`type X = {...}`）、
+交叉类型（`A & {...}` 合并）、内联字面量、跨文件 `import type`（一跳）都支持；
+`Record`/联合类型/索引签名/未解析展开如实披露。
+
+**键溯源分桶（本轮最重要的口径决策）**：类型注解是键的**上界**而非实际发送集——
+`ListQuery` 是 customer 四个列表函数共享的超类型，`minRating`/`templateType`
+只在部分端点有意义。因此：
+- 后端缺 **literal** 键（调用点内联字面量、路径内联 `?key=`）= 确定发送、
+  真静默失效 → **GATE RED**；
+- 后端缺 **type** 键 = 契约层虚报、运行时未必发送 → 单独披露 type-extra
+  （19 条，如 `ListQuery` 系列与 `/logistics/warehouse/stock/list` 的 `enabled`），
+  不当红。为收分母把上界当实发集就是制造伪影——上一班探针的教训反过来用。
+
+**params= 分发变体消歧**：`@PostMapping(value="/reports/sync", params="shopId")`
+与 `params="!shopId"` 是同路径同方法的两条 Spring 分发变体。解析限定符后按
+「present ⊆ 调用键 且 forbid 与调用键不相交」过滤，只剩实际命中的那条——
+歧义披露清零；限定符要求的键计入必填。若所有变体都不满足则披露
+「该请求在后端会 404」。
+
+**基线更新（同日）**：
+
+```
+backend-shapes=352 call-sites=278 with-keys=155 compared=155
+passed=155 RED=0 type-extra=19 missing-required=0 ambiguous=0 unverifiable=0 not-comparable=8
+```
+
+可比分母 106 → 155（+46%），不可比 57 → 8，歧义与缺必填双清零。
+自测 **25/25**（新增：类型字面量/交叉/联合/Record、归属唯一、限定符解析、
+literal 溯源）。双变异验证：字面量注入 `bogus` 键精确 1 红（exit 1）；
+类型注解注入 `bogusFilter` 只进 type-extra 披露（exit 0）。
+
+## 实现里值得记的坑（第三次踩「切片后区间失效」）
+
+- 外层补丁脚本的字符串转义会把 `\n`/`\b` 变成真实控制字符写进源文件
+  （heredoc → Python 三引号 → 字面量三层转义）。写含转义序列的补丁一律走
+  文件拼接或 Edit 工具，别用嵌套 heredoc。
 
 上一班键名探针的遗留问题（「8 条伪影、方法不可靠」）本轮按形状尺的方法论重做，
 固化为 `tools/schema/param_name_audit.py`（`--self-test` + 闸门模式），接进 CI
