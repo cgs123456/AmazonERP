@@ -59,7 +59,7 @@ amz-service-multiplatform   — 多平台（Shopify/eBay/Walmart/Shopee/Lazada�
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
 
-> 共 54 张表（含广告日报表、统一订单明细列）、140+ REST 端点、AI Agent 29 工具
+> 共 113 张表（Flyway CREATE TABLE 去重集合，见下文数据库迁移行）、360+ REST 端点（方法注解实测）、AI Agent 29 工具
 
 ## 🤖 AI 运营 Agent（29 工具）
 
@@ -338,9 +338,11 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（第 81 轮 fresh；`mvn test`） | 1134（0 失败 / 0 错误 / 2 跳过） | 19/19 模块 `BUILD SUCCESS` |
-| 前端 Vitest（第 81 轮 fresh；`npm run test:run`） | 144（0 失败） | 19/19 文件通过 |
-| 前端 Playwright 全交互 E2E（历史证据；本轮未复跑） | 39 | 历史记录 |
+| 后端 JUnit 5（2026-10-05 fresh；`mvn test`） | 1999（0 失败 / 0 错误 / 17 跳过） | 20/20 模块 `BUILD SUCCESS` |
+| 前端 Vitest（2026-10-05 fresh；`npm run test:run`） | 479（0 失败） | 43/43 文件通过 |
+| 前端 Playwright 全交互 E2E（2026-10-05 串行复跑） | 40+（受影响套件） | 全过 |
+
+> 最新整仓数字以 HANDOFF.md 为准（2026-10-05 整仓 1999 tests / 0F / 0E / 17S，BUILD SUCCESS）。
 
 > 第 81 轮后端按新鲜重写的 Surefire XML 统计为 **175 份 / 1134 例 / 0F / 0E / 2S**，19/19 Reactor 模块 `BUILD SUCCESS`。2 个跳过项仍是缺少真实网络/凭证的 `SpApiIntegrationTest`。前端本轮复跑为 **19 文件 / 144 例 / 0F**，`vue-tsc && vite build` 成功（156 modules transformed）。E2E 仍需通过 `.start-backend-final.bat` + `.start-vite.bat` 拉起本地全栈后运行 `npx playwright test` 复验。
 
@@ -398,7 +400,7 @@ AmazonERP/
 ├── grafana/              # Grafana 预置面板
 ├── alertmanager/         # AlertManager 配置
 ├── logstash/             # Logstash 管道
-├── skywalking/           # Skywalking Agent 配置
+├── docker/               # init-sql、rabbitmq 插件、filebeat 配置（Skywalking Agent 在根 Dockerfile 注入）
 ├── k8s/                  # Kubernetes 部署清单
 ├── scripts/              # 工具脚本（TLS 证书生成等）
 ├── ml/                   # LightGBM 训练脚本

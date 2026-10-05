@@ -20,7 +20,7 @@
 | 参数名一致性（`@RequestParam` 名 vs 前端 `params` 键） | **已做完 + 已收口**（本班）：闸门进 CI；函数作用域归属 + 类型解析后可比分母 106 → 163；按端点拆窄共享类型 + 4 个条件拼装调用点重构为字面量 params 后，type-extra/不可比/歧义/缺必填全部归零——**每一个带 params 的调用点都被完整核验且通过**；`params="shopId"/"!shopId"` 分发变体按限定符消歧，歧义与缺必填双清零；双变异验证（字面量注入=红、类型注入=披露） |
 | CI 是否真的转绿 | **未证实**：只能看下一次 run 的日志；本地精确复现已消除（#56），本班又推了 3 个 commit |
 
-## 本班完成的 2 个 commit
+## 本班完成的 3 个 commit
 
 | commit | 内容 | 对基数的影响 |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ python tools/schema/endpoint_coverage_audit.py                  # 候选 33（�
 # 形状级（本班新增，进 CI）
 python tools/schema/stub_shape_audit.py --self-test .           # 20/20
 python tools/schema/stub_shape_audit.py .                       # 0 findings，非 0 即红
-python tools/schema/param_name_audit.py --self-test .           # 17/17
+python tools/schema/param_name_audit.py --self-test .           # 25/25
 python tools/schema/param_name_audit.py .                       # 0 findings，非 0 即红
 python tools/schema/entity_column_drift.py --self-test . && python tools/schema/entity_column_drift.py --gate .
 python tools/release/repository_hygiene.py --root .             # 以退出码为准，别 grep 文本
@@ -74,6 +74,19 @@ python tools/schema/zero_reference_tables.py                    # 113 表 / 11 �
 4. report.ts 的 `loadProfitDetails` 因后端无分页参数改为全量读（原 cursor 被后端
    静默忽略）；若日后利润明细表变大需要分页，先给后端加 size/cursor 再恢复
    loadList 的 cursor 续读——两处契约要同步改。
+5. **部署必读（webhook 验签）**：多平台 webhook 现在按
+   `multiplatform.webhook.secret.<temu|tiktok|shein>` 验签（X-Signature =
+   HMAC-SHA256(payload) hex）。密钥未配置的平台回调一律拒绝；启用真实平台回调
+   前必须在部署清单里配好这三个密钥。
+6. **死表处置（待产品决策，不 DROP）**：11 张零引用表全部核实为死表
+   （amz_attention/amz_cart/amz_coupon/amz_customer_service_kpi/amz_listing_seo/
+   amz_logistics_quote/amz_oper_log/amz_product_browse/amz_report_template/
+   amz_user_coupon/amz_ad_placement_report，均只存在于 V1 DDL）。按环境边界
+   「不 DROP 业务表」不自动清理；要么补功能接线、要么出正式决策后单独出迁移。
+7. **VARCHAR 日期列（待迁移决策）**：procurement.expected_delivery_date、
+   logistics amz_shipment.eta、amz_tracking_event.event_time 仍是 VARCHAR，
+   范围查询与索引失效；改 DATE/DATETIME 需先审计存量数据格式（跨格式会转换失败），
+   不能盲改。
 
 ## 踩过的坑（勿重演；历史条目见 git 历史版本，以下含本班新增）
 
