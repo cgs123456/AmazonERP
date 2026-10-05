@@ -74,6 +74,16 @@ public class UserServiceImpl implements UserService {
             // 用户不存在时明确失败：禁止 success(null) 把 NPE 抛给调用方
             return Result.failure("用户不存在");
         }
+        // PII 边界：该端点被搜索服务用于商品卡片展示卖家昵称（枚举 id 不可拖走全站手机号/住址），
+        // 因此非本人、非 ADMIN 一律掩码 phone/address；需要完整信息的调用方走本人 getInfo。
+        Integer current = UserContext.getUserId();
+        boolean self = current != null && current.equals(userId);
+        boolean admin = "ADMIN".equalsIgnoreCase(UserContext.getRole());
+        if (!self && !admin) {
+            log.info("用户信息按需掩码：current={}, target={}", current, userId);
+            user.setPhone(null);
+            user.setAddress(null);
+        }
         return Result.success(user);
     }
 

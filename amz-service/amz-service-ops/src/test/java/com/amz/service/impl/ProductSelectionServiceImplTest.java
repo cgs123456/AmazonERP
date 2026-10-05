@@ -189,4 +189,36 @@ class ProductSelectionServiceImplTest {
         assertEquals(200, result.getCode());
         assertEquals(1, ((List<?>) result.getData()).size());
     }
+
+    @Test
+    @DisplayName("aiSuggestion：他店机会 → 拒绝且不触发 AI、不落库（shopId 在行上，切面拦不到）")
+    void aiSuggestionRejectsForeignOpportunity() {
+        UserContext.setUserId(7);
+        UserContext.setShops(List.of(1L));
+        SelectionOpportunity opp = new SelectionOpportunity();
+        opp.setId(9L);
+        opp.setShopId(2L);
+        when(opportunityMapper.selectById(9L)).thenReturn(opp);
+
+        Result result = selectionService.aiSuggestion(9L);
+
+        assertEquals("机会记录不存在或无权访问", result.getMessage());
+        verify(opportunityMapper, never()).updateById(any(SelectionOpportunity.class));
+    }
+
+    @Test
+    @DisplayName("aiSuggestion：本人店铺机会 → 正常走 AI 未启用兜底并落库")
+    void aiSuggestionAcceptsOwnedOpportunity() {
+        UserContext.setUserId(7);
+        UserContext.setShops(List.of(1L));
+        SelectionOpportunity opp = new SelectionOpportunity();
+        opp.setId(9L);
+        opp.setShopId(1L);
+        when(opportunityMapper.selectById(9L)).thenReturn(opp);
+
+        Result result = selectionService.aiSuggestion(9L);
+
+        assertEquals(200, result.getCode());
+        verify(opportunityMapper).updateById(opp);
+    }
 }

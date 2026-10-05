@@ -1,6 +1,8 @@
 package com.amz.service.impl;
 
 import com.amz.classifier.TicketClassifier;
+import com.amz.context.UserContext;
+import com.amz.exception.CodeErrorException;
 import com.amz.mapper.CustomerTicketMapper;
 import com.amz.mapper.ReviewSolicitationMapper;
 import com.amz.model.CustomerTicket;
@@ -18,6 +20,10 @@ import java.util.List;
 
 /**
  * 客服工单服务实现。
+ * <p>
+ * 工单的 shopId 在请求体/行上而不在参数里，{@code @ShopScoped} 切面拦不到，
+ * 归属校验必须在 service 层按行做（与 MultiplatformServiceImpl.requireShopOnRow 同一口径）：
+ * 回复/关闭他人店铺的工单、向任意店铺灌工单，都是跨租户越权。
  */
 @Slf4j
 @Service
@@ -35,8 +41,19 @@ public class CustomerServiceImpl implements CustomerService {
     @Autowired
     private Environment environment;
 
+    /** 行归属校验：工单行上的 shopId 必须命中当前用户授权店铺，否则点名拒绝。 */
+    private void requireShopOnRow(Long shopId) {
+        if (!UserContext.isShopAllowedStrict(shopId)) {
+            log.warn("客服越权拦截：userId={}, role={}, 工单ShopId={}",
+                    UserContext.getUserId(), UserContext.getRole(), shopId);
+            throw new CodeErrorException("客服工单不存在或无权访问");
+        }
+    }
+
     @Override
     public CustomerTicket receiveMessage(CustomerTicket ticket) {
+        // 请求体里的 shopId 切面覆盖不到，归属只能在这里按行判定
+        requireShopOnRow(ticket.getShopId());
         // AI 自动分类
         TicketClassifier.Classification c = classifier.classify(ticket.getContent());
         ticket.setCategory(c.getCategory());
@@ -54,6 +71,8 @@ public class CustomerServiceImpl implements CustomerService {
         if (ticket == null) {
             throw new IllegalArgumentException("工单不存在：id=" + ticketId);
         }
+        // 行上的 shopId 不在参数里，切面拦不到，按行校验归属
+        requireShopOnRow(ticket.getShopId());
         ticket.setReply(reply);
         ticket.setStatus("REPLIED");
         ticketMapper.updateById(ticket);

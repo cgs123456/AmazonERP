@@ -268,6 +268,14 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
             return Result.failure("机会记录不存在: " + opportunityId);
         }
 
+        // 机会行上的 shopId 不在参数里，@ShopScoped 拦不到：越权读他店机会评分
+        // 还会顺带触发 DeepSeek 调用白耗配额，按行校验归属（不存在与无权访问同一话术，不泄露存在性）
+        if (!UserContext.isShopAllowedStrict(opp.getShopId())) {
+            log.warn("选品越权拦截：userId={}, opportunityId={}, shopId={}",
+                    UserContext.getUserId(), opportunityId, opp.getShopId());
+            return Result.failure("机会记录不存在或无权访问");
+        }
+
         if (aiServiceClient == null) {
             String fallback = "AI 服务未启用，无法生成 DeepSeek 选品建议。机会评分："
                     + opp.getOpportunityScore() + "，建议参考评分和评论壁垒综合决策。";

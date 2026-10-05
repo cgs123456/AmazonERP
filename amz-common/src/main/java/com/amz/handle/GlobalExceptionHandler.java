@@ -33,10 +33,14 @@ public class GlobalExceptionHandler {
      * 都被下面的 {@code RuntimeException} 兜底吞成「服务器内部错误」——
      * 调用方看不到真正原因（例如「调拨单不存在：id=5」），只能去翻服务端日志。
      * <p>
+     * {@link IllegalArgumentException} 同理：service 层的「工单不存在：id=x」一类
+     * fail-closed 拒绝都用它表达，不登记就会全部变成 500。代价是三方库的编程错误
+     * 也会把 message 透出——本仓约定 service 层只把<b>面向用户的业务原因</b>放进去。
+     * <p>
      * 返回码仍是 {@code Result.failure} 的 400，与其余业务异常一致，前端无需适配。
      */
     @ExceptionHandler({UserNoExistException.class, CodeErrorException.class, ConnectorException.class,
-            AttrIsNullException.class, InvalidParamException.class})
+            AttrIsNullException.class, InvalidParamException.class, IllegalArgumentException.class})
     public Result<String> businessException(RuntimeException e) {
         log.error("业务异常: {}", e.getMessage());
         return Result.failure(e.getMessage());
