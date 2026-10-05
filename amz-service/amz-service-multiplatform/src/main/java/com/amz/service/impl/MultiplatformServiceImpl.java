@@ -32,9 +32,12 @@ import com.amz.service.MultiplatformService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -69,6 +72,16 @@ import java.util.stream.Collectors;
 public class MultiplatformServiceImpl implements MultiplatformService {
 
     // ===== 原有依赖 =====
+    /** 平台回调验签密钥：未配置的平台一律拒绝回调（显式拒绝优于假成功）。 */
+    @Value("${multiplatform.webhook.secret.temu:}")
+    private String temuWebhookSecret;
+
+    @Value("${multiplatform.webhook.secret.tiktok:}")
+    private String tiktokWebhookSecret;
+
+    @Value("${multiplatform.webhook.secret.shein:}")
+    private String sheinWebhookSecret;
+
     @Autowired
     private UnifiedOrderMapper unifiedOrderMapper;
     @Autowired
@@ -443,7 +456,11 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
     @Override
     @Transactional
-    public WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload, Long shopId) {
+    public WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload, Long shopId,
+                                       String signature) {
+        // 验签先于一切副作用：密钥未配置、缺签名头、签名不匹配都点名拒绝，
+        // 不让未签名的回调消耗幂等查询或落库（显式拒绝优于假成功）。
+        requireValidWebhookSignature(platform, payload, signature);
         // 幂等去重
         if (eventId != null && !eventId.isEmpty()) {
             LambdaQueryWrapper<WebhookEvent> dupCheck = new LambdaQueryWrapper<>();
@@ -683,6 +700,45 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             }
         }
         return set;
+    }
+
+    /** 平台回调验签：密钥未配置 / 缺签名头 / 签名不匹配三类都拒绝，话术不泄露是哪一种。 */
+    private void requireValidWebhookSignature(String platform, String payload, String signature) {
+        String key = platform == null ? "" : platform.toLowerCase();
+        String secret = switch (key) {
+            case "temu" -> temuWebhookSecret;
+            case "tiktok" -> tiktokWebhookSecret;
+            case "shein" -> sheinWebhookSecret;
+            default -> "";
+        };
+        if (secret == null || secret.isBlank()) {
+            throw new CodeErrorException(
+                    "Webhook 验签失败：平台 " + platform + " 未配置验签密钥（multiplatform.webhook.secret." + key + "）");
+        }
+        if (signature == null || signature.isBlank()) {
+            throw new CodeErrorException("Webhook 验签失败：缺少 X-Signature 签名头");
+        }
+        String expected = hmacSha256Hex(secret, payload == null ? "" : payload);
+        // 常量时间比较，防时序侧信道；大小写不敏感（部分平台发大写 hex）
+        if (!MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
+                signature.trim().toLowerCase().getBytes(StandardCharsets.UTF_8))) {
+            throw new CodeErrorException("Webhook 验签失败：签名不匹配");
+        }
+    }
+
+    private static String hmacSha256Hex(String secret, String input) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] digest = mac.doFinal(input.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("HMAC-SHA256 不可用", e);
+        }
     }
 
     private static String sha256Hex(String input) {

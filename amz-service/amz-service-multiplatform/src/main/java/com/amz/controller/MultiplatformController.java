@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -178,8 +179,9 @@ public class MultiplatformController {
     public Result<WebhookEvent> receiveWebhook(@PathVariable String platform,
                                                 @PathVariable String eventType,
                                                 @RequestParam(required = false) String eventId,
-                                                @RequestBody(required = false) String payload) {
-        return Result.success(multiplatformService.receiveWebhook(platform, eventType, eventId, payload, null));
+                                                @RequestBody(required = false) String payload,
+                                                @RequestHeader(value = "X-Signature", required = false) String signature) {
+        return Result.success(multiplatformService.receiveWebhook(platform, eventType, eventId, payload, null, signature));
     }
 
     @ShopScoped
