@@ -240,17 +240,6 @@ export interface CostAllocation {
 /** 快照口径缺口：后端把这三项写成常量，页面据此提示利润被高估。 */
 export const SNAPSHOT_PLACEHOLDER_FIELDS = ['vatCost', 'refundCost', 'otherCost'] as const
 
-export type ReportQuery = {
-  asin?: string
-  sku?: string
-  startDate?: string
-  endDate?: string
-  status?: string
-  costType?: string
-  size?: number
-  cursor?: string
-}
-
 const params = (q: Record<string, unknown>) => {
   const out: Record<string, unknown> = {}
   Object.entries(q).forEach(([k, v]) => {
@@ -261,7 +250,8 @@ const params = (q: Record<string, unknown>) => {
 
 /* ==================== /report/v2 ==================== */
 
-export const listProfitDetails = (shopId: number | string, q: ReportQuery = {}) =>
+export const listProfitDetails = (shopId: number | string,
+                                  q: { asin?: string; startDate?: string; endDate?: string } = {}) =>
   request.get<void, ApiResponse<ProfitDetail[]>>(`/report/v2/profit/list/${shopId}`, { params: params(q) })
 
 export const profitSummary = (shopId: number | string, q: { startDate?: string; endDate?: string } = {}) =>
@@ -274,7 +264,8 @@ export const listTurnover = (shopId: number | string, asin?: string) =>
 export const deadStock = (shopId: number | string) =>
   request.get<void, ApiResponse<DeadStockReport>>(`/report/v2/inventory-turnover/dead-stock/${shopId}`)
 
-export const listSalesDaily = (shopId: number | string, q: ReportQuery = {}) =>
+export const listSalesDaily = (shopId: number | string,
+                              q: { asin?: string; startDate?: string; endDate?: string } = {}) =>
   request.get<void, ApiResponse<SalesDaily[]>>(`/report/v2/sales-daily/list/${shopId}`, { params: params(q) })
 
 export const salesComparison = (shopId: number | string, q: { asin?: string; currentDate?: string; compareDays?: number } = {}) =>
@@ -288,7 +279,8 @@ export const shopDashboard = (shopId: number | string) =>
 
 /* ==================== /report/profit（实时） ==================== */
 
-export const listSnapshots = (shopId: number | string, q: ReportQuery & { startTime?: string; endTime?: string } = {}) =>
+export const listSnapshots = (shopId: number | string,
+                              q: { sku?: string; startTime?: string; endTime?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<ProfitSnapshot[]>>(`/report/profit/snapshot/list/${shopId}`, { params: params(q) })
 
 /** 按 SKU+ASIN 现算一条快照（参数式 POST，不接收 body）：这是唯一放进 UI 的写端点。 */
@@ -301,7 +293,8 @@ export const profitTrend = (shopId: number | string, sku: string, hours?: number
 export const realtimeSummary = (shopId: number | string, q: { startTime?: string; endTime?: string } = {}) =>
   request.get<void, ApiResponse<RealtimeProfitSummary>>(`/report/profit/summary/${shopId}`, { params: params(q) })
 
-export const listAllocations = (shopId: number | string, q: ReportQuery & { startTime?: string } = {}) =>
+export const listAllocations = (shopId: number | string,
+                                q: { costType?: string; startDate?: string; endDate?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<CostAllocation[]>>(`/report/profit/allocation/list/${shopId}`, { params: params(q) })
 
 /**

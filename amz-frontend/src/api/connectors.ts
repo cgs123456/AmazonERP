@@ -1,6 +1,16 @@
 import request from './auth'
 import type { ApiResponse } from './types'
 
+/** 空串/undefined/null 不进 query：避免后端把空值当条件 */
+const params = (q: Record<string, unknown>) => {
+  const out: Record<string, unknown> = {}
+  Object.entries(q).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') out[k] = v
+  })
+  return out
+}
+
+
 export type ConnectorOperationStatus = 'IMPLEMENTED' | 'NOT_IMPLEMENTED'
 
 export interface ConnectorOperation {
@@ -131,12 +141,8 @@ export interface RateLimitObservation {
   observedAt?: string | null
 }
 
-export const listOutbox = (q: { status?: string; limit?: number } = {}) => {
-  const params: Record<string, unknown> = {}
-  if (q.status) params.status = q.status
-  if (q.limit) params.limit = q.limit
-  return request.get<void, ApiResponse<OutboxRecord[]>>('/connectors/outbox', { params })
-}
+export const listOutbox = (q: { status?: string; limit?: number } = {}) =>
+  request.get<void, ApiResponse<OutboxRecord[]>>('/connectors/outbox', { params: params(q) })
 
 /** 人工重放：按记录原方法重发，写操作会有远端副作用 */
 export const replayOutbox = (id: number) =>

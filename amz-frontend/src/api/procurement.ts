@@ -240,14 +240,6 @@ export interface ReceiptResult {
   }>
 }
 
-export type ListQuery = {
-  status?: string
-  keyword?: string
-  sku?: string
-  size?: number
-  cursor?: string
-}
-
 /** 空串/undefined 不进 query：后端把空 keyword 当条件拼进 LIKE */
 const params = (q: Record<string, unknown>) => {
   const out: Record<string, unknown> = {}
@@ -265,7 +257,8 @@ export const createSupplier = (body: Partial<Supplier>) =>
 export const updateSupplier = (id: number, body: Partial<Supplier>) =>
   request.put<void, ApiResponse<Supplier>>(`/procurement/supplier/${id}`, body)
 
-export const listSuppliers = (shopId: number | string, q: ListQuery = {}) =>
+export const listSuppliers = (shopId: number | string,
+                              q: { status?: string; keyword?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<Supplier[]>>(`/procurement/supplier/list/${shopId}`, { params: params(q) })
 
 export const getSupplier = (id: number) =>
@@ -303,7 +296,7 @@ export const approvePlan = (planId: number, operator: string, approved: boolean,
 export const convertPlan = (planId: number) =>
   request.post<void, ApiResponse<Record<string, unknown>>>(`/procurement/plan/${planId}/convert`)
 
-export const listPlans = (shopId: number | string, q: ListQuery = {}) =>
+export const listPlans = (shopId: number | string, q: { status?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<PurchasePlan[]>>(`/procurement/plan/list/${shopId}`, { params: params(q) })
 
 export const cancelPlan = (planId: number) =>
@@ -344,7 +337,7 @@ export const syncOrderStatus = (orderId: number) =>
 export const cancelOrder = (orderId: number) =>
   request.post<void, ApiResponse<boolean>>(`/procurement/order/${orderId}/cancel`)
 
-export const listOrders = (shopId: number | string, q: ListQuery = {}) =>
+export const listOrders = (shopId: number | string, q: { size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<PurchaseOrder[]>>(`/procurement/order/list/${shopId}`, { params: params(q) })
 
 /**
@@ -357,7 +350,7 @@ export const listOrders = (shopId: number | string, q: ListQuery = {}) =>
  * 自己筛会漏掉状态机口径（例如 CONDITIONAL 放行算不算可入账）。
  * 返回体带 _page 游标，必须翻完才不会漏出凭证。
  */
-export const listVoucherSourceOrders = (shopId: number | string, q: ListQuery = {}) =>
+export const listVoucherSourceOrders = (shopId: number | string, q: { size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<PurchaseOrder[]>>(`/procurement/order/voucher-source/${shopId}`, { params: params(q) })
 
 /** 质检：仅 QC_PENDING 可提交；后端按合格率判 PASS/CONDITIONAL/FAIL */
@@ -377,10 +370,10 @@ export const updateShipment = (id: number, body: Partial<FbaShipment>) =>
 export const addShipmentItem = (shipmentId: number, body: Partial<FbaShipmentItem>) =>
   request.post<void, ApiResponse<FbaShipmentItem>>(`/procurement/fba/shipment/${shipmentId}/item`, body)
 
-export const listShipmentItems = (shipmentId: number, q: ListQuery = {}) =>
+export const listShipmentItems = (shipmentId: number, q: { size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<FbaShipmentItem[]>>(`/procurement/fba/shipment/${shipmentId}/items`, { params: params(q) })
 
-export const listShipments = (shopId: number | string, q: ListQuery = {}) =>
+export const listShipments = (shopId: number | string, q: { status?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<FbaShipment[]>>(`/procurement/fba/shipment/list/${shopId}`, { params: params(q) })
 
 export const getShipment = (id: number) =>
@@ -423,13 +416,13 @@ export interface ReceiptShortage {
   shipmentStatus?: string
 }
 
-export const listReceiptShortages = (shopId: number | string, q: ListQuery = {}) =>
+export const listReceiptShortages = (shopId: number | string, q: { size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<ReceiptShortage[]>>(`/procurement/fba/shipment/receipt-shortages/${shopId}`,
     { params: params(q) })
 
 /* ==================== 库存批次 ==================== */
 
-export const listBatches = (shopId: number | string, sku: string, q: ListQuery = {}) =>
+export const listBatches = (shopId: number | string, sku: string, q: { size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<InventoryBatch[]>>(`/procurement/batch/list/${shopId}`, { params: params({ ...q, sku }) })
 
 export const batchCostSummary = (shopId: number | string, sku: string) =>

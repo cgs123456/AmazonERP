@@ -17,7 +17,7 @@
 | #57 `oauth/token` 密钥走 query | **已收口**（2026-10-05）：挪进 JSON 请求体（`OauthTokenRequest`），query 传输位被契约测试钉死。依据是证据不是假设：端点在网关 JWT 白名单外（外部 ISV 无调用资格）、仓内零调用方、无 ISV 文档；泄漏通道在 ingress 层访问日志（nginx-ingress 默认记完整 request line），网关自身只记 path |
 | #60 库龄分析 | **已做完**（上一班）：接进 `/warehouse`，候选回到 33 |
 | 形状级反向核对尺 | **已做完**（本班）：`tools/schema/stub_shape_audit.py` 进 CI，见 `docs/superpowers/evidence/2026-10-05-stub-shape-gate.md` |
-| 参数名一致性（`@RequestParam` 名 vs 前端 `params` 键） | **已做完 + 已收口**（本班）：闸门进 CI；函数作用域归属 + 类型解析后可比分母 106 → 159，不可比 57 → 4；键按溯源分桶（literal 缺失=红、type 键缺失=type-extra 披露 23 条）；`params="shopId"/"!shopId"` 分发变体按限定符消歧，歧义与缺必填双清零；双变异验证（字面量注入=红、类型注入=披露） |
+| 参数名一致性（`@RequestParam` 名 vs 前端 `params` 键） | **已做完 + 已收口**（本班）：闸门进 CI；函数作用域归属 + 类型解析后可比分母 106 → 163；按端点拆窄共享类型 + 4 个条件拼装调用点重构为字面量 params 后，type-extra/不可比/歧义/缺必填全部归零——**每一个带 params 的调用点都被完整核验且通过**；`params="shopId"/"!shopId"` 分发变体按限定符消歧，歧义与缺必填双清零；双变异验证（字面量注入=红、类型注入=披露） |
 | CI 是否真的转绿 | **未证实**：只能看下一次 run 的日志；本地精确复现已消除（#56），本班又推了 3 个 commit |
 
 ## 本班完成的 2 个 commit
@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | `a2d35c0` | #57 收口：`oauth/token` 密钥挪进 JSON 请求体；服务层入口补显式空参校验；3 条契约测试钉住传输位；台账 14 行更新 | 不变（该端点本就不是候选） |
 | `57e79d3` | 形状级闸门进 CI：新尺 self-test 20 项；首轮抓到真漂移（`LM_CHANGELOGS` 的 `field` vs DTO `fieldName`，页面双读掩盖）；变异验证精确 1 红 | 桩可比分母 140 条注册 / 106 可比 |
-| `a9a4aa2` | 参数名闸门进 CI：新尺 self-test 17 项；`defaultValue` 伪名陷阱、无注解 POJO 绑定、形状全等匹配（前缀匹配产出 18 条伪红）；变异精确 1 红 | 调用点分母 278 / 带键可比 106 / 105 过（后经收口至 159/4） |
+| `a9a4aa2` | 参数名闸门进 CI：新尺 self-test 17 项；`defaultValue` 伪名陷阱、无注解 POJO 绑定、形状全等匹配（前缀匹配产出 18 条伪红）；变异精确 1 红 | 调用点分母 278 / 带键可比 163 / 163 过，六桶全零 |
 
 ## 门禁基线与复跑命令
 
@@ -68,13 +68,12 @@ python tools/schema/zero_reference_tables.py                    # 113 表 / 11 �
 
 ## 下一步计划（建议顺序）
 
-1. 三个披露桶里挑值得人工看的：**type-extra 19 条**（共享类型 `ListQuery` 等
-   声明了后端没有的筛选键，如 ticket 列表的 `minRating`/`templateType`）——
-   是删类型键、还是后端补 @RequestParam，属产品/接口契约决策。
-2. not-comparable 剩 4 条（connectors/finance 的函数体内条件拼装、listing.ts
-   的三元与展开），再收需要真数据流分析，性价比低——建议接受为永久披露。
-3. 若继续压 A 桶：显式拒绝优于假成功，**不要把拒绝改回沉默**。
-4. CI 绿了之后，把 #56 的结案记录从「本地复现」升级成「run 日志佐证」。
+1. 参数名尺三桶已全部归零（163/163 全过），无待决策披露项。
+2. 若继续压 A 桶：显式拒绝优于假成功，**不要把拒绝改回沉默**。
+3. CI 绿了之后，把 #56 的结案记录从「本地复现」升级成「run 日志佐证」。
+4. report.ts 的 `loadProfitDetails` 因后端无分页参数改为全量读（原 cursor 被后端
+   静默忽略）；若日后利润明细表变大需要分页，先给后端加 size/cursor 再恢复
+   loadList 的 cursor 续读——两处契约要同步改。
 
 ## 踩过的坑（勿重演；历史条目见 git 历史版本，以下含本班新增）
 
@@ -119,6 +118,12 @@ root 拒绝 / v-show 行定位）仍然有效，详见 `git show 471c9fe:HANDOFF
 - **类型注解是键的上界不是实发集**：共享超类型（customer.ts 的 `ListQuery`）
   把四个列表端点的筛选键混在一起，直接当实发集比会产生伪红；
   按 literal/type 溯源分桶才诚实（本班 19 条伪红靠这个归位）。
+  终解是按端点拆窄类型（本班已做），共享超类型整体删除。
+- **vitest 必须在 amz-frontend/ 里跑**：在仓库根跑会捡进 e2e 的 Playwright spec
+  （47 个文件、21 个假失败）。CWD 曾经 cd 回根目录就会踩。
+- **e2e 并行批会偶发单例失败且每次不同**：共享 dev server + HMR + 多 worker
+  的基础设施抖动。判据：失败用例单独跑即过、且每批失败的用例不同。
+  复核用 `--workers=1` 串行跑整批。
 
 ## 本班新增的事实（形状尺量出来的）
 

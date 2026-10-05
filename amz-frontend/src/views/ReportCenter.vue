@@ -667,8 +667,9 @@ const loadOverview = async () => {
 
 /* ---------- 利润明细 ---------- */
 const loadProfitDetails = (append = false) =>
-  loadList(profitList, '利润明细', cursor => rpt.listProfitDetails(shop(), {
-    asin: pdAsin.value || undefined, startDate: pdStart.value || undefined, endDate: pdEnd.value || undefined, cursor
+  // 后端 /report/v2/profit/list 无分页参数（全量返回），不做 cursor 续读
+  loadList(profitList, '利润明细', () => rpt.listProfitDetails(shop(), {
+    asin: pdAsin.value || undefined, startDate: pdStart.value || undefined, endDate: pdEnd.value || undefined
   }), append)
 
 const loadAllProfit = async () => {

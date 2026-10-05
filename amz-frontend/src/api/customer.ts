@@ -119,15 +119,6 @@ export const RMA_CONDITIONS = ['NEW', 'OPENED', 'UNOPENED', 'USED_DAMAGED']
 /** 非 mock 环境下必然失败/抛错的三个动作，界面上要标出来 */
 export const CHANNEL_NOT_INTEGRATED = ['process', 'match', 'solicit'] as const
 
-export type ListQuery = {
-  status?: string
-  category?: string
-  templateType?: string
-  minRating?: number
-  size?: number
-  cursor?: string
-}
-
 const params = (q: Record<string, unknown>) => {
   const out: Record<string, unknown> = {}
   Object.entries(q).forEach(([k, v]) => {
@@ -144,7 +135,8 @@ export const receiveTicket = (body: Partial<CustomerTicket>) =>
 export const replyTicket = (ticketId: number, reply: string) =>
   request.post<void, ApiResponse<CustomerTicket>>(`/customer/ticket/${ticketId}/reply`, null, { params: { reply } })
 
-export const listTickets = (shopId: number | string, q: ListQuery = {}) =>
+export const listTickets = (shopId: number | string,
+                            q: { status?: string; category?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<CustomerTicket[]>>(`/customer/ticket/list/${shopId}`, { params: params(q) })
 
 /* ==================== 索评 ==================== */
@@ -153,7 +145,7 @@ export const listTickets = (shopId: number | string, q: ListQuery = {}) =>
 export const solicitReviews = (shopId: number | string) =>
   request.post<void, ApiResponse<number>>(`/customer/review/solicit/${shopId}`)
 
-export const listSolicitations = (shopId: number | string, q: ListQuery = {}) =>
+export const listSolicitations = (shopId: number | string, q: { size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<ReviewSolicitation[]>>(`/customer/review/list/${shopId}`, { params: params(q) })
 
 /* ==================== 邮件模板 ==================== */
@@ -164,7 +156,8 @@ export const createTemplate = (body: Partial<EmailTemplate>) =>
 export const updateTemplate = (id: number, body: Partial<EmailTemplate>) =>
   request.put<void, ApiResponse<EmailTemplate>>(`/customer/email/template/${id}`, body)
 
-export const listTemplates = (shopId: number | string, q: ListQuery = {}) =>
+export const listTemplates = (shopId: number | string,
+                              q: { templateType?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<EmailTemplate[]>>(`/customer/email/template/list/${shopId}`, { params: params(q) })
 
 export const toggleTemplate = (id: number, enabled: boolean) =>
@@ -182,7 +175,7 @@ export const triggerEmail = (shopId: number | string, body: {
 export const processPendingEmails = (shopId: number | string) =>
   request.post<void, ApiResponse<Record<string, unknown>>>(`/customer/email/process/${shopId}`)
 
-export const listEmailTasks = (shopId: number | string, q: ListQuery = {}) =>
+export const listEmailTasks = (shopId: number | string, q: { status?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<EmailTask[]>>(`/customer/email/task/list/${shopId}`, { params: params(q) })
 
 export const createManualTask = (body: Partial<EmailTask>) =>
@@ -193,7 +186,8 @@ export const createManualTask = (body: Partial<EmailTask>) =>
 export const saveNegativeReview = (body: Partial<NegativeReview>) =>
   request.post<void, ApiResponse<NegativeReview>>('/customer/email/negative-review', body)
 
-export const listNegativeReviews = (shopId: number | string, q: ListQuery = {}) =>
+export const listNegativeReviews = (shopId: number | string,
+                                    q: { status?: string; minRating?: number; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<NegativeReview[]>>(`/customer/email/negative-review/list/${shopId}`, { params: params(q) })
 
 /** ⚠ mock 档才可用：非 mock 抛错，mock 档会写 SIMULATED-MATCH-* 假订单号 */
@@ -208,7 +202,7 @@ export const followUpNegativeReview = (reviewId: number) =>
 export const createRma = (body: Partial<Rma>) =>
   request.post<void, ApiResponse<Rma>>('/customer/email/rma', body)
 
-export const listRmas = (shopId: number | string, q: ListQuery = {}) =>
+export const listRmas = (shopId: number | string, q: { status?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<Rma[]>>(`/customer/email/rma/list/${shopId}`, { params: params(q) })
 
 export const rmaDetail = (rmaId: number) =>

@@ -85,7 +85,7 @@ export const ALERT_LEVELS = ['CRITICAL', 'WARNING', 'INFO']
 /** 后端只认字面量 "DAYS" 走天数分支，其它任何值都按数量比较 */
 export const THRESHOLD_UNITS = ['DAYS', 'QTY']
 
-type ListQuery = { sku?: string; warehouseId?: number | string; size?: number; cursor?: string; enabled?: boolean }
+
 
 const params = (q: Record<string, unknown>) => {
   const out: Record<string, unknown> = {}
@@ -95,7 +95,8 @@ const params = (q: Record<string, unknown>) => {
   return out
 }
 
-export const listStock = (shopId: number | string, q: ListQuery = {}) =>
+export const listStock = (shopId: number | string,
+                          q: { sku?: string; warehouseId?: number | string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<WarehouseStock[]>>(`/logistics/warehouse/stock/list/${shopId}`, {
     params: params({ ...q })
   })

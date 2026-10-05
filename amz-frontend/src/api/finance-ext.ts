@@ -51,7 +51,7 @@ export interface PaymentCollectionSummary {
 
 export const COLLECTION_STATUS = ['PENDING', 'IN_TRANSIT', 'SETTLED', 'REFUNDED', 'SHORTFALL']
 
-export const listCollections = (shopId: number | string, q: ListQuery = {}) =>
+export const listCollections = (shopId: number | string, q: { status?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<PaymentCollection[]>>(`/finance/collection/list/${shopId}`, { params: params(q) })
 
 export const collectionSummary = (shopId: number | string) =>
@@ -92,7 +92,8 @@ export interface SettlementIngestReport {
   rowErrors?: Array<{ rowKey?: string; message?: string }>
 }
 
-export const listSettlements = (shopId: number | string, q: ListQuery = {}) =>
+export const listSettlements = (shopId: number | string,
+                                q: { amazonOrderId?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<SettlementDetail[]>>(`/finance/settlement/list/${shopId}`, { params: params(q) })
 
 /** 从 SP-API 拉结算报表并入库；返回「读了多少行 / 入了几行 / 跳过几行」三个分开的数。 */
@@ -143,7 +144,8 @@ export interface InboundShortageRequest {
 
 export const DISCREPANCY_STATUS = ['OPEN', 'CLAIMED', 'DISMISSED']
 
-export const listDiscrepancies = (shopId: number | string, q: ListQuery = {}) =>
+export const listDiscrepancies = (shopId: number | string,
+                                  q: { status?: string; type?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<FeeDiscrepancy[]>>(`/finance/discrepancy/list/${shopId}`, { params: params(q) })
 
 /** 扫描：把结算行与预估费用对不上的差额登记成差异。 */
@@ -214,7 +216,7 @@ export interface ReimbursementReconcileReport {
 
 export const CLAIM_STATUS = ['CANDIDATE', 'SUBMITTED', 'ACCEPTED', 'REIMBURSED', 'REJECTED']
 
-export const listClaims = (shopId: number | string, q: ListQuery = {}) =>
+export const listClaims = (shopId: number | string, q: { status?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<ReimbursementClaim[]>>(`/finance/claim/list/${shopId}`, { params: params(q) })
 
 export const claimSummary = (shopId: number | string) =>
@@ -335,15 +337,6 @@ export const generateProcurementVouchers = (shopId: number | string) =>
   request.post<void, ApiResponse<ProcurementVoucherReport>>('/finance/voucher/procurement', null, { params: { shopId } })
 
 /* ==================== 内部：query 清洗 ==================== */
-
-export type ListQuery = {
-  status?: string
-  type?: string
-  amazonOrderId?: string
-  sku?: string
-  size?: number
-  cursor?: string
-}
 
 const params = (q: Record<string, unknown>) => {
   const out: Record<string, unknown> = {}

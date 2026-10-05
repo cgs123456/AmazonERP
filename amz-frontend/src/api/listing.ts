@@ -2,6 +2,16 @@ import request from './auth'
 import type { ApiResponse } from './types'
 import { asNumber } from '@/utils/format'
 
+/** 空串/undefined/null 不进 query：避免后端把空值当条件 */
+const params = (q: Record<string, unknown>) => {
+  const out: Record<string, unknown> = {}
+  Object.entries(q).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') out[k] = v
+  })
+  return out
+}
+
+
 /**
  * 商品与 Listing 运营接口层（amz-service-product, 端口 8095）。
  *
@@ -128,7 +138,7 @@ export const getListingHealthList = async (shopId: number | string, severity?: s
 export const getRankings = async (shopId: number | string, asin?: string, keyword?: string) => {
   const res = await request.get<void, ApiResponse<KeywordRankingRow[]>>(
     `/product/listing-monitor/ranking/list/${shopId}`,
-    { params: { ...(asin ? { asin } : {}), ...(keyword ? { keyword } : {}) } })
+    { params: params({ asin, keyword }) })
   return { ...res, data: okList<KeywordRankingRow>(res) }
 }
 
@@ -183,7 +193,7 @@ export interface MasterRow {
 export const listMaster = async (shopId: number | string, asin?: string, keyword?: string) => {
   const res = await request.get<void, ApiResponse<MasterRow[]>>(
     `/product/master/list/${shopId}`,
-    { params: { ...(asin ? { asin } : {}), ...(keyword ? { keyword } : {}) } })
+    { params: params({ asin, keyword }) })
   return { ...res, data: okList<MasterRow>(res) }
 }
 
