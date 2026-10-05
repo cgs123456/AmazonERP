@@ -106,12 +106,16 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: amz-rabbitmq
+    # 开启 prometheus 插件暴露 15692/metrics，供 prometheus 抓取队列积压
     environment:
       - RABBITMQ_DEFAULT_USER=${RABBITMQ_USERNAME:-admin}
       - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD_required}
+    volumes:
+      - ./docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     ports:
       - "5672:5672"
       - "15672:15672"
+      - "15692:15692"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 15s
@@ -161,6 +165,27 @@ services:
       - LS_JAVA_OPTS=-Xms256m -Xmx256m
     depends_on:
       - elasticsearch
+    restart: unless-stopped
+
+  # Filebeat：把各容器 stdout 收进 logstash（5044/beats）。没有它 Kibana 永远为空。
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.15.3
+    container_name: amz-filebeat
+    user: root
+    volumes:
+      - ./docker/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    depends_on:
+      - logstash
+    restart: unless-stopped
+
+  # Node Exporter：宿主机磁盘/内存水位（磁盘告警的数据源）
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: amz-node-exporter
+    ports:
+      - "9100:9100"
     restart: unless-stopped
 
   # Kibana（Elasticsearch 可视化）
@@ -254,6 +279,12 @@ services:
     container_name: amz-gateway
     ports:
       - "10010:10010"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:10010/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-gateway
@@ -272,8 +303,10 @@ services:
       - JAVA_OPTS=${JAVA_OPTS:-}
       - GATEWAY_DOCS_ENABLED=${GATEWAY_DOCS_ENABLED:-false}
     depends_on:
-      - nacos
-      - redis
+      nacos:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
   # SP-API Integration Service (order sync, FBA inventory, replenishment engine, port 8096)
@@ -283,6 +316,12 @@ services:
     container_name: amz-service-spapi
     ports:
       - "8096:8096"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8096/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-spapi
@@ -369,6 +408,12 @@ services:
     container_name: amz-service-user
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8080/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-user
@@ -408,6 +453,12 @@ services:
     container_name: amz-service-product
     ports:
       - "8095:8095"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8095/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-product
@@ -460,6 +511,12 @@ services:
     container_name: amz-service-order
     ports:
       - "8105:8105"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8105/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-order
@@ -497,6 +554,12 @@ services:
     container_name: amz-service-search
     ports:
       - "8090:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8090/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-search
@@ -534,6 +597,12 @@ services:
     container_name: amz-service-ai
     ports:
       - "8091:8091"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8091/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-ai
@@ -573,6 +642,12 @@ services:
     container_name: amz-service-ad
     ports:
       - "8097:8097"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8097/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-ad
@@ -611,6 +686,12 @@ services:
     container_name: amz-service-procurement
     ports:
       - "8098:8098"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8098/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-procurement
@@ -645,6 +726,12 @@ services:
     container_name: amz-service-customer
     ports:
       - "8099:8099"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8099/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-customer
@@ -676,6 +763,12 @@ services:
     container_name: amz-service-logistics
     ports:
       - "8100:8100"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8100/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-logistics
@@ -724,6 +817,12 @@ services:
     container_name: amz-service-ops
     ports:
       - "8101:8101"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8101/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-ops
@@ -755,6 +854,12 @@ services:
     container_name: amz-service-report
     ports:
       - "8102:8102"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8102/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-report
@@ -783,6 +888,12 @@ services:
     container_name: amz-service-finance
     ports:
       - "8103:8103"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8103/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-finance
@@ -831,6 +942,12 @@ services:
     container_name: amz-service-multiplatform
     ports:
       - "8104:8104"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8104/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-multiplatform
@@ -864,6 +981,11 @@ services:
       - "8889:8889"
       # Netty WebSocket 端口：网关 /ws/** 路由转发到该端口（见 gateway application.yml）
       - "8888:8888"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8889/actuator/health | grep -q \"status\":\"UP\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-message
