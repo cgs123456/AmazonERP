@@ -61,6 +61,12 @@ jobs:
         run: |
           python tools/schema/stub_shape_audit.py --self-test .
           python tools/schema/stub_shape_audit.py .
+      # 参数名闸门：前端 query 键必须是后端真会读的 @RequestParam 名——
+      # Spring 对未知 query 参数静默忽略，带着失效筛选键的页面照样"已筛选"。
+      - name: Param name gate
+        run: |
+          python tools/schema/param_name_audit.py --self-test .
+          python tools/schema/param_name_audit.py .
       - name: Release tool tests
         run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_verify_clean_clone -v
 
