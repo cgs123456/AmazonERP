@@ -595,10 +595,34 @@ def ts_type_decls(text: str) -> dict:
 
 
 def _ts_stmt_rhs(text: str, start: int, spans) -> str:
-    """类型 RHS：到下一个「行首是新声明」或文件尾为止。"""
-    m = re.search(r'\n\s*(?:(?:export|import|const|type|interface|class)\b|/\*|//)', text[start:])
-    end = start + m.start() if m else len(text)
-    return text[start:end].strip()
+    """类型 RHS：块闭合即止；否则到下一个「深度 0 的行首新声明」或文件尾。
+
+    不能只用正则找行首声明：类型字面量成员可以叫 `type`/`class`（finance-ext
+    的 ListQuery 第二个成员就是 `type?: string`），深度 0 才是语句边界。
+    """
+    depth = 0
+    i = start
+    n = len(text)
+    while i < n:
+        if any(a <= i < b for a, b in spans):
+            i += 1
+            continue
+        c = text[i]
+        if c in '{[(':
+            depth += 1
+        elif c in '}])':
+            depth -= 1
+            if depth == 0:
+                j = i + 1
+                if j < n and text[j] == ';':
+                    j += 1           # 块后的分号一并带上
+                return text[start:j].strip()
+        elif depth == 0 and c == '\n':
+            m2 = re.match(r'\n\s*(?:(?:export|import|const|type|interface|class)\b|/\*|//)', text[i:])
+            if m2:
+                return text[start:i].strip()
+        i += 1
+    return text[start:].strip()
 
 
 def ts_import_types(text: str) -> dict:
