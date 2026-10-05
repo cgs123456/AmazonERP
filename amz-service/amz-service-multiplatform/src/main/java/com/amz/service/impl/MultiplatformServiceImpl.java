@@ -613,6 +613,13 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     @Transactional
     public OauthToken generateToken(String appKey, String appSecret, String[] scopes, Long shopId) {
+        // 请求体绑定后必填位不再由 Spring 兜底，缺参必须在入口处显式拒绝（fail-closed）
+        if (appKey == null || appKey.isBlank()) {
+            throw new AttrIsNullException("appKey 不能为空");
+        }
+        if (shopId == null) {
+            throw new AttrIsNullException("shopId 不能为空");
+        }
         // 校验 App
         LambdaQueryWrapper<OauthApp> appQuery = new LambdaQueryWrapper<>();
         appQuery.eq(OauthApp::getAppKey, appKey);

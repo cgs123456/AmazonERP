@@ -3,6 +3,7 @@ package com.amz.controller;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.OauthApp;
 import com.amz.model.OauthToken;
+import com.amz.model.OauthTokenRequest;
 import com.amz.model.PlatformAccount;
 import com.amz.model.PlatformInventory;
 import com.amz.model.PlatformMessage;
@@ -214,11 +215,9 @@ public class MultiplatformController {
     }
 
     @PostMapping("/oauth/token")
-    public Result<OauthToken> generateToken(@RequestParam String appKey,
-                                             @RequestParam String appSecret,
-                                             @RequestParam(required = false) String[] scopes,
-                                             @RequestParam Long shopId) {
-        return Result.success(multiplatformService.generateToken(appKey, appSecret, scopes, shopId));
+    public Result<OauthToken> generateToken(@RequestBody OauthTokenRequest request) {
+        return Result.success(multiplatformService.generateToken(
+                request.getAppKey(), request.getAppSecret(), request.getScopes(), request.getShopId()));
     }
 
     // ==================== 原有端点 ====================

@@ -24,7 +24,7 @@
 | 2 | `GET /ad/keyword/optimize` | 7n 实测：报表行恒为 `Collections.emptyList()`，优化建议恒为 `OBSERVE`——按钮点下去只会永远一个答案 |
 | 9 | `POST /multiplatform/account/{id}/test` | 7f 已判定：它只校验端点字符串格式，却会把账号 `status` 改写成 ACTIVE/ERROR——一个没发过包的检查不该改「账号是否活跃」。接按钮前要先定后端口径（api/multiplatform.ts:95-97 同条） |
 | 12 | `POST /multiplatform/message/{messageId}/reply` | 7f 已判定：只往本地库写一条回复，不会发到平台或买家；「回复」按钮等于对客服说已回复而买家什么都没收到 |
-| 14 | `POST /multiplatform/oauth/token` | 7c/7d/7f 三处已判定：机机换发接口，不给浏览器。附带一条独立的安全观察（不属于覆盖率口径）：`appSecret` 目前是 `@RequestParam`，即便调用方是服务器，密钥也会进网关访问日志 |
+| 14 | `POST /multiplatform/oauth/token` | 7c/7d/7f 三处已判定：机机换发接口，不给浏览器。独立安全观察已收口（2026-10-05）：密钥挪进 JSON 请求体（`OauthTokenRequest`），query 传输位被契约测试拒绝。收口依据——本端点不在网关 JWT 白名单内（外部 ISV 无调用资格）、仓内零调用方（前端只接了 app 注册/轮换/列表三端点）、无 ISV 文档证据；泄漏通道在 ingress 层（nginx-ingress 默认访问日志记完整 request line），网关自身只记 path |
 | 20 | `POST /order/saveOrder` | 经 `ProductClient.getProductById` 打进 7p 已证死的 `amz_product` 旧列通路；且「允许无商品的裸订单吗」是产品口径，不是覆盖率 |
 
 A 类的共同点：**接上去就是把必然失败或假数据摆到页面上**。前 9 条在页面上的正确形态是

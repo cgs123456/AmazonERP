@@ -187,6 +187,15 @@ class MultiplatformServiceImplTest {
         verify(unifiedOrderMapper, never()).updateById(any(UnifiedOrder.class));
     }
 
+    @Test
+    @DisplayName("OAuth Token 签发 - 缺 appKey / shopId → 入口显式拒绝（请求体绑定后不再由 Spring 兜底）")
+    void generateTokenRejectsMissingRequiredFields() {
+        assertThrows(AttrIsNullException.class,
+                () -> multiplatformService.generateToken(" ", "sk", null, 1L));
+        assertThrows(AttrIsNullException.class,
+                () -> multiplatformService.generateToken("ak", "sk", null, null));
+    }
+
     private UnifiedOrder buildOrder(String platform, String platformOrderNo,
                                     BigDecimal originalAmount, String currency) {
         UnifiedOrder o = new UnifiedOrder();
