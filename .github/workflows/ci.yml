@@ -420,6 +420,6 @@ jobs:
         uses: docker/setup-buildx-action@v3
       - name: Dry-run bake (no image built)
         run: |
-          docker buildx bake --dry-run --file docker-bake.hcl --progress plain
+          docker buildx bake --print --file docker-bake.hcl
       - name: Build Docker image
         run: docker build -t amazon-erp:latest .
