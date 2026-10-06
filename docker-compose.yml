@@ -953,6 +953,9 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=${SPRING_PROFILES_ACTIVE:-prod}
       - SW_AGENT_NAME=amz-service-multiplatform
+      - MULTIPLATFORM_WEBHOOK_SECRET_TEMU=${MULTIPLATFORM_WEBHOOK_SECRET_TEMU:-}
+      - MULTIPLATFORM_WEBHOOK_SECRET_TIKTOK=${MULTIPLATFORM_WEBHOOK_SECRET_TIKTOK:-}
+      - MULTIPLATFORM_WEBHOOK_SECRET_SHEIN=${MULTIPLATFORM_WEBHOOK_SECRET_SHEIN:-}
       # CRYPTO_KEY 经 Spring 宽松绑定直接落到 crypto.key。AMZ_CRYPTO_KEY 只有 spapi/user 的 application.yml 显式映射过，
       # 其它服务只认 CRYPTO_KEY 这个名字；缺它 CryptoUtil 启动即拒（实测 gateway exit 1：crypto.key 未配置，拒绝启动）。
       - CRYPTO_KEY=${AMZ_CRYPTO_KEY:?AMZ_CRYPTO_KEY_required}
