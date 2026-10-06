@@ -945,7 +945,8 @@ const loadCursor = async <T>(
   if (!append) {
     state.rows.value = []
     state.cursor.value = null
-    errors.value = []
+    // 只清本列表的错误（按「name：」前缀），并发 loader 互不擦横幅
+    errors.value = errors.value.filter((x) => !x.startsWith(`${name}：`))
   }
   state.loading.value = true
   try {
@@ -1228,6 +1229,7 @@ const gotoTab = async (t: TabKey) => {
 }
 
 onMounted(() => {
+  errors.value = []          // 整页入口清一次；loader 只按各自前缀追加/移除
   void loadVouchers(false)
 })
 </script>

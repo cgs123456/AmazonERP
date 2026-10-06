@@ -408,6 +408,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 1680,
+      "lines": 28,
+      "sha256": "dba72cd93f6774782e385d0d732d4985d62ff803367aeaa292cf4ae04a7efc71",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_logistics",
+      "alter_table_statements": 2,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V6__date_type_convergence.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 9521,
       "lines": 165,
       "sha256": "46bdd504f8bff99b91134bdb017b024bb11da82cb27ad2e2d8d5f15a030332b6",
@@ -569,6 +584,21 @@
       "mysql8_incompatible_add_column": 0,
       "db_source": "application.yml",
       "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V2__fba_receipt_idempotency.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1126,
+      "lines": 19,
+      "sha256": "3091812b3cfdb5968ac9f0eab9665e087149b2b938c16411afaf242dde193dbb",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_procurement",
+      "alter_table_statements": 1,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V6__purchase_order_date_type.sql",
       "dynamic_ddl": 0
     },
     {

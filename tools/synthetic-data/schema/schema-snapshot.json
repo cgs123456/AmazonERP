@@ -409,6 +409,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 1680,
+      "lines": 28,
+      "sha256": "dba72cd93f6774782e385d0d732d4985d62ff803367aeaa292cf4ae04a7efc71",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_logistics",
+      "alter_table_statements": 2,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V6__date_type_convergence.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 9521,
       "lines": 165,
       "sha256": "46bdd504f8bff99b91134bdb017b024bb11da82cb27ad2e2d8d5f15a030332b6",
@@ -570,6 +585,21 @@
       "mysql8_incompatible_add_column": 0,
       "db_source": "application.yml",
       "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V2__fba_receipt_idempotency.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1126,
+      "lines": 19,
+      "sha256": "3091812b3cfdb5968ac9f0eab9665e087149b2b938c16411afaf242dde193dbb",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_procurement",
+      "alter_table_statements": 1,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V6__purchase_order_date_type.sql",
       "dynamic_ddl": 0
     },
     {
@@ -865,7 +895,7 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 56,
+        "files": 58,
         "tables": 113
       }
     },
@@ -895,9 +925,9 @@
     ],
     "tables_with_conditional_columns": [],
     "conditional_columns_total": 0,
-    "alter_table_statements": 38,
+    "alter_table_statements": 41,
     "add_column_statements": 22,
-    "applied_alter_operations": 48,
+    "applied_alter_operations": 51,
     "unapplied_alter_operations": 0,
     "renamed_columns": [
       [
@@ -12416,8 +12446,8 @@
         },
         {
           "name": "eta",
-          "type": "VARCHAR",
-          "args": "20",
+          "type": "DATE",
+          "args": "",
           "unsigned": false,
           "nullable": true,
           "default": "NULL",
@@ -12560,13 +12590,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "59bd999db396e1492eb8d4e45db3ad0394551a91d13802a1c9d117ef494ef98d",
+      "table_hash": "36058c1e94a44bee8a254efa72b32d272433190f15c530fa0c36266924e13acf",
       "definitions": [
         {
           "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V1__init.sql",
           "line": 8,
           "group": "flyway-migration",
-          "hash": "59bd999db396e1492eb8d4e45db3ad0394551a91d13802a1c9d117ef494ef98d"
+          "hash": "36058c1e94a44bee8a254efa72b32d272433190f15c530fa0c36266924e13acf"
         }
       ]
     },
@@ -12675,8 +12705,8 @@
         },
         {
           "name": "event_time",
-          "type": "VARCHAR",
-          "args": "25",
+          "type": "DATETIME",
+          "args": "",
           "unsigned": false,
           "nullable": true,
           "default": "NULL",
@@ -12685,7 +12715,7 @@
           "on_update": false,
           "inline_primary_key": false,
           "inline_unique": false,
-          "comment": "事件发生时间",
+          "comment": "事件发生时间（UTC）",
           "sources": [
             "amz-service/amz-service-logistics/src/main/resources/db/migration/V1__init.sql"
           ],
@@ -12801,13 +12831,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "c95e482b15394aaa81db36caa8d26fefe8de887e76ea5d2f66da1c6b535921cf",
+      "table_hash": "91c32c8c667f7e857220d5d9cbc51f7e211c9cfe2433afe245cebfb1493aeb85",
       "definitions": [
         {
           "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V1__init.sql",
           "line": 31,
           "group": "flyway-migration",
-          "hash": "c95e482b15394aaa81db36caa8d26fefe8de887e76ea5d2f66da1c6b535921cf"
+          "hash": "91c32c8c667f7e857220d5d9cbc51f7e211c9cfe2433afe245cebfb1493aeb85"
         }
       ]
     },
@@ -23000,8 +23030,8 @@
         },
         {
           "name": "expected_delivery_date",
-          "type": "VARCHAR",
-          "args": "20",
+          "type": "DATE",
+          "args": "",
           "unsigned": false,
           "nullable": true,
           "default": "NULL",
@@ -23197,13 +23227,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "5dd63ec57d8ececa5344d3b52abadd495732e1cfe2cbdedc6b5d306e8454c3a3",
+      "table_hash": "2f55eb2927a264b9b1352b2a38cbe35914052f981332e6a60fd353ca90b9e6ed",
       "definitions": [
         {
           "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V1__init.sql",
           "line": 8,
           "group": "flyway-migration",
-          "hash": "5dd63ec57d8ececa5344d3b52abadd495732e1cfe2cbdedc6b5d306e8454c3a3"
+          "hash": "2f55eb2927a264b9b1352b2a38cbe35914052f981332e6a60fd353ca90b9e6ed"
         }
       ]
     },
@@ -36520,6 +36550,64 @@
       "path": "amz-service/amz-service-finance/src/main/resources/db/migration/V7__order_number_column_rename.sql"
     },
     {
+      "table": "amz_shipment",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "eta",
+          "definition": {
+            "name": "eta",
+            "type": "DATE",
+            "args": "",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "预计到港日期"
+          }
+        }
+      ],
+      "line": 23,
+      "database": "amz_logistics",
+      "sql": "ALTER TABLE amz_shipment MODIFY COLUMN eta DATE DEFAULT NULL COMMENT '预计到港日期'",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V6__date_type_convergence.sql"
+    },
+    {
+      "table": "amz_tracking_event",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "event_time",
+          "definition": {
+            "name": "event_time",
+            "type": "DATETIME",
+            "args": "",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "事件发生时间（UTC）"
+          }
+        }
+      ],
+      "line": 26,
+      "database": "amz_logistics",
+      "sql": "ALTER TABLE amz_tracking_event MODIFY COLUMN event_time DATETIME DEFAULT NULL COMMENT '事件发生时间（UTC）'",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V6__date_type_convergence.sql"
+    },
+    {
       "table": "amz_unified_order",
       "add_columns": [
         {
@@ -36789,6 +36877,35 @@
       "database": "amz_procurement",
       "sql": "ALTER TABLE amz_inventory_batch ADD COLUMN shipment_item_id BIGINT NULL COMMENT 'FBA货件明细ID（签收幂等键）' AFTER inbound_order_id, ADD UNIQUE KEY uk_inventory_batch_shipment_item (shipment_item_id)",
       "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V2__fba_receipt_idempotency.sql"
+    },
+    {
+      "table": "amz_purchase_order",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "expected_delivery_date",
+          "definition": {
+            "name": "expected_delivery_date",
+            "type": "DATE",
+            "args": "",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "预计交期"
+          }
+        }
+      ],
+      "line": 17,
+      "database": "amz_procurement",
+      "sql": "ALTER TABLE amz_purchase_order MODIFY COLUMN expected_delivery_date DATE DEFAULT NULL COMMENT '预计交期'",
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V6__purchase_order_date_type.sql"
     },
     {
       "table": "amz_product",

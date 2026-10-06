@@ -9,8 +9,8 @@
 | 来源分组 | 文件数 | CREATE TABLE 数 |
 |---|---|---|
 | `compose-init-sql` | 1 | 0 |
-| `flyway-migration` | 56 | 113 |
-| **去重并集** | 57 个文件 | **102** 张表 |
+| `flyway-migration` | 58 | 113 |
+| **去重并集** | 59 个文件 | **102** 张表 |
 
 数据库（14 个）：`amz_ad`、`amz_ai`、`amz_customer`、`amz_finance`、`amz_logistics`、`amz_multiplatform`、`amz_ops`、`amz_order`、`amz_procurement`、`amz_product`、`amz_report`、`amz_search`、`amz_spapi`、`amz_user`
 
@@ -32,9 +32,9 @@
 
 ## 4. ALTER TABLE 事实（MySQL 8 兼容性，P0-39 机器可核证据）
 
-- ALTER TABLE 语句：**38** 条；其中 ADD COLUMN：**22** 条
+- ALTER TABLE 语句：**41** 条；其中 ADD COLUMN：**22** 条
 - 使用 `ADD COLUMN IF NOT EXISTS` 的语句：**0** 条（MySQL 8 不支持该语法，执行即 `ERROR 1064`）
-- 快照重放的 ALTER 操作：**48** 条生效 / **0** 条未生效（列重命名 4 处）
+- 快照重放的 ALTER 操作：**51** 条生效 / **0** 条未生效（列重命名 4 处）
 
 | 表 | 列重命名 |
 |---|---|

@@ -400,7 +400,7 @@ const loadRules = async () => {
   const shopId = shop()
   if (!shopId) return
   loading.rule = true
-  errors.value = []
+  errors.value = errors.value.filter((x) => !x.startsWith('规则列表：'))
   try {
     const enabled = ruleEnabled.value === '' ? undefined : ruleEnabled.value === 'true'
     const res = await audit.listRules(shopId, enabled)
@@ -422,7 +422,7 @@ const loadSplitLogs = async () => {
   const shopId = shop()
   if (!shopId) return
   loading.split = true
-  errors.value = []
+  errors.value = errors.value.filter((x) => !x.startsWith('拆分日志：'))
   try {
     const res = await audit.listSplitLogs(shopId, splitOrderId.value || undefined)
     if (res?.code !== 200) {
@@ -593,6 +593,8 @@ const TAB_LOADERS: Record<TabKey, () => Promise<unknown>> = {
 const loaded = new Set<TabKey>()
 const gotoTab = async (key: TabKey) => {
   tab.value = key
+  // 切 Tab 是整页入口：清一次全部错误，此后 loader 只按各自前缀追加/移除
+  errors.value = []
   if (loaded.has(key)) return
   loaded.add(key)
   await TAB_LOADERS[key]()

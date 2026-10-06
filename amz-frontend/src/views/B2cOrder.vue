@@ -142,7 +142,7 @@ const loadProducts = async () => {
   const shopId = shop()
   if (!shopId) return
   productsLoading.value = true
-  errors.value = []
+  errors.value = errors.value.filter((x) => !x.startsWith('商品主数据：'))
   try {
     const res = await listMaster(shopId)
     if (res?.code !== 200) {
@@ -214,6 +214,7 @@ const pushNote = (text: string) => {
 }
 
 onMounted(async () => {
+  errors.value = []          // 整页入口清一次；loader 只按各自前缀追加/移除
   await loadProducts()
   await loadMine()
 })

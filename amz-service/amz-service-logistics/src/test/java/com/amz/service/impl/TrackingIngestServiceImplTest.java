@@ -297,7 +297,7 @@ class TrackingIngestServiceImplTest {
     @DisplayName("ETA 超期 → 标记 DELAYED")
     void testMarkDelayedShipments() {
         Shipment overdue = shipment(10L, "SHP-1", "IN_TRANSIT");
-        overdue.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        overdue.setEta(LocalDate.now().minusDays(10));
         when(shipmentMapper.selectList(any())).thenReturn(List.of(overdue));
 
         int marked = ingestService.markDelayedShipments(0);
@@ -311,7 +311,7 @@ class TrackingIngestServiceImplTest {
     @DisplayName("宽限期内的 ETA → 不判延误")
     void testMarkDelayedRespectsGraceDays() {
         Shipment justDue = shipment(11L, "SHP-2", "IN_TRANSIT");
-        justDue.setEta(LocalDate.now().format(DATE_FMT));
+        justDue.setEta(LocalDate.now());
         Shipment noEta = shipment(12L, "SHP-3", "IN_TRANSIT");
         when(shipmentMapper.selectList(any())).thenReturn(List.of(justDue, noEta));
 
@@ -325,7 +325,7 @@ class TrackingIngestServiceImplTest {
     @DisplayName("已标延误的货件 → 重复标记不重复计数")
     void testMarkDelayedSkipsAlreadyMarked() {
         Shipment already = shipment(13L, "SHP-4", "DELAYED");
-        already.setEta(LocalDate.now().minusDays(30).format(DATE_FMT));
+        already.setEta(LocalDate.now().minusDays(30));
         when(shipmentMapper.selectList(any())).thenReturn(List.of(already));
 
         assertEquals(0, ingestService.markDelayedShipments(0));
@@ -338,9 +338,9 @@ class TrackingIngestServiceImplTest {
         ReflectionTestUtils.setField(ingestService, "delayScanBatchSize", 1);
         ReflectionTestUtils.setField(ingestService, "delayScanMaxRows", 10);
         Shipment first = shipment(10L, "SHP-1", "IN_TRANSIT");
-        first.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        first.setEta(LocalDate.now().minusDays(10));
         Shipment second = shipment(11L, "SHP-2", "IN_TRANSIT");
-        second.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        second.setEta(LocalDate.now().minusDays(10));
         when(shipmentMapper.selectList(any()))
                 .thenReturn(List.of(first, second), List.of(second));
 
@@ -357,9 +357,9 @@ class TrackingIngestServiceImplTest {
         ReflectionTestUtils.setField(ingestService, "delayScanBatchSize", 1);
         ReflectionTestUtils.setField(ingestService, "delayScanMaxRows", 1);
         Shipment first = shipment(10L, "SHP-1", "IN_TRANSIT");
-        first.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        first.setEta(LocalDate.now().minusDays(10));
         Shipment second = shipment(11L, "SHP-2", "IN_TRANSIT");
-        second.setEta(LocalDate.now().minusDays(10).format(DATE_FMT));
+        second.setEta(LocalDate.now().minusDays(10));
         when(shipmentMapper.selectList(any())).thenReturn(List.of(first, second));
 
         assertThrows(IllegalStateException.class, () -> ingestService.markDelayedShipments(0));

@@ -62,8 +62,8 @@ public class PurchaseOrder implements Serializable {
     /** 1688 平台订单号（下单成功后回填） */
     private String alibabaOrderNo;
 
-    /** 预计交期 */
-    private String expectedDeliveryDate;
+    /** 预计交期（DATE 列，2026-10-05 类型收敛） */
+    private java.time.LocalDate expectedDeliveryDate;
 
     /** 物流单号（供应商发货后回填） */
     private String trackingNo;

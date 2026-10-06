@@ -161,7 +161,7 @@ public class LogisticsImportServiceImpl implements LogisticsImportService {
         shipment.setBoxCount(row.getBoxCount());
         shipment.setWeight(row.getWeight());
         shipment.setFreightCost(row.getFreightCost());
-        shipment.setEta(clean(row.getEta()));
+        shipment.setEta(parseDate(clean(row.getEta())));
         shipment.setStatus(status == null ? DEFAULT_SHIPMENT_STATUS : status);
         shipment.setDataSource(dataSource == null ? DEFAULT_DATA_SOURCE : dataSource);
         return shipment;
@@ -187,7 +187,7 @@ public class LogisticsImportServiceImpl implements LogisticsImportService {
         changed |= apply(row.getBoxCount(), target::getBoxCount, target::setBoxCount);
         changed |= apply(row.getWeight(), target::getWeight, target::setWeight);
         changed |= apply(row.getFreightCost(), target::getFreightCost, target::setFreightCost);
-        changed |= apply(clean(row.getEta()), target::getEta, target::setEta);
+        changed |= apply(parseDate(clean(row.getEta())), target::getEta, target::setEta);
         changed |= apply(status, target::getStatus, target::setStatus);
         changed |= apply(dataSource, target::getDataSource, target::setDataSource);
         return changed;
@@ -352,5 +352,17 @@ public class LogisticsImportServiceImpl implements LogisticsImportService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /** 导入 JSON 的 eta 是 yyyy-MM-dd 字符串：解析为 LocalDate，非法值点名拒绝而不是静默落 NULL */
+    private static java.time.LocalDate parseDate(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return java.time.LocalDate.parse(value.trim(), java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new IllegalArgumentException("eta 日期格式非法（期望 yyyy-MM-dd）：" + value, e);
+        }
     }
 }

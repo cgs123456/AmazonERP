@@ -545,7 +545,7 @@ class LogisticsOpsDashboardServiceImplTest {
         s.setShipmentNo(no);
         s.setCarrier("COSCO");
         s.setStatus("IN_TRANSIT");
-        s.setEta("2026-10-01");
+        s.setEta(java.time.LocalDate.parse("2026-10-01"));
         return s;
     }
 

@@ -198,7 +198,7 @@ public class TrackingIngestServiceImpl implements TrackingIngestService {
                 if (STATUS_DELAYED.equals(shipment.getStatus())) {
                     continue;
                 }
-                LocalDate eta = parseDate(shipment.getEta());
+                LocalDate eta = shipment.getEta();
                 if (eta == null || !eta.isBefore(threshold)) {
                     continue;
                 }

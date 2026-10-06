@@ -187,7 +187,8 @@ const loadList = async (append = false) => {
   if (!append) {
     rows.rows.value = []
     rows.cursor.value = null
-    errors.value = []
+    // 只清本列表的错误（按「调价规则：」前缀），动作类错误互不擦
+    errors.value = errors.value.filter((x) => !x.startsWith(`调价规则：`))
   }
   rows.loading.value = true
   try {
@@ -326,6 +327,7 @@ const runConfirm = async () => {
 }
 
 onMounted(() => {
+  errors.value = []          // 整页入口清一次；loader 只按各自前缀追加/移除
   void loadList()
 })
 </script>

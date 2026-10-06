@@ -70,7 +70,7 @@ public class FreightCostBoard implements Serializable {
         private String shipmentNo;
         private String carrier;
         private String status;
-        private String eta;
+        private java.time.LocalDate eta;
         private BigDecimal freightCost;
 
         /** 该货件在货件主单上已登记的运费；有值但没分摊，说明是「有费用未摊」而非「无费用」 */

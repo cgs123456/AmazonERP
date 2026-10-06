@@ -334,7 +334,8 @@ const loadReport = async () => {
     return
   }
   loading.value = true
-  errors.value = []
+  // 只清主报表与统计区间自己的错误：下钻/月度的错误由各自 loader 管，不许互擦
+  errors.value = errors.value.filter((x) => !x.startsWith('利润报表：') && !x.startsWith('统计区间：'))
   try {
     const res = await getProfitReport(shopId, range.value.start, range.value.end)
     if (res?.code === 200 && res.data) {
@@ -380,6 +381,7 @@ const switchToMonth = async () => {
 }
 
 onMounted(() => {
+  errors.value = []          // 整页入口清一次；loader 只按各自前缀追加/移除
   void loadReport()
 })
 </script>

@@ -163,7 +163,7 @@ public class LogisticsDashboardServiceImpl implements LogisticsDashboardService 
                 stale++;
             }
 
-            LocalDate eta = parseDate(shipment.getEta());
+            LocalDate eta = shipment.getEta();
             if (eta == null) {
                 continue;
             }
@@ -341,7 +341,7 @@ public class LogisticsDashboardServiceImpl implements LogisticsDashboardService 
             if (TRACKING_DONE.contains(status)) {
                 continue;
             }
-            LocalDate eta = parseDate(shipment.getEta());
+            LocalDate eta = shipment.getEta();
             Integer daysOverdue = eta == null ? null : (int) (today.toEpochDay() - eta.toEpochDay());
 
             if (STATUS_DELAYED.equals(status)) {

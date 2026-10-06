@@ -72,8 +72,8 @@ public class Shipment implements Serializable {
     /** 状态：CREATED/IN_TRANSIT/CUSTOMS/DELIVERED/RECEIVED/CLOSED/DELAYED/EXCEPTION */
     private String status;
 
-    /** 预计到港日期 */
-    private String eta;
+    /** 预计到港日期（DATE 列，2026-10-05 类型收敛） */
+    private java.time.LocalDate eta;
 
     /**
      * 取数来源偏好：IMPORT（仅走外部导入）/ API（仅走第三方拉取）/ AUTO（默认，交给调度择优）。

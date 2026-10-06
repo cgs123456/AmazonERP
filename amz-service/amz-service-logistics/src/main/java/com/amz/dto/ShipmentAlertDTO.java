@@ -35,7 +35,7 @@ public class ShipmentAlertDTO {
     private String status;
 
     /** 预计到港日期 */
-    private String eta;
+    private java.time.LocalDate eta;
 
     /** 超期天数（ETA 已过时为正数）；不适用时为 null */
     private Integer daysOverdue;

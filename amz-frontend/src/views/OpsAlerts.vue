@@ -269,7 +269,8 @@ const loadList = async <T>(
   if (!append) {
     list.rows.value = []
     list.cursor.value = null
-    errors.value = []
+    // 只清本列表的错误（按「label：」前缀），并发 loader 互不擦横幅
+    errors.value = errors.value.filter((x) => !x.startsWith(`${label}：`))
   }
   list.loading.value = true
   try {
@@ -352,6 +353,8 @@ const runConfirm = async () => {
 const loaded = new Set<TabKey>()
 const gotoTab = async (key: TabKey) => {
   tab.value = key
+  // 切 Tab 是整页入口：清一次全部错误，此后 loader 只按各自前缀追加/移除
+  errors.value = []
   // 排名 Tab 没有「默认查哪个词」，所以不自动查
   if (key === 'rank' || !currentShopId.value || loaded.has(key)) return
   loaded.add(key)
