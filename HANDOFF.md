@@ -83,10 +83,17 @@ python tools/schema/zero_reference_tables.py                    # 102 表 / 0 �
    synthetic-data 的 LAYOUTS/coupon 池同步摘除，快照 113→102，两档数据集已重造。
    旧的「不 DROP 业务表」边界自本批起对已核实的死表解除——**未来 DROP 仍须逐表
    核实零引用 + 过索引冻结集契约**。
-7. **VARCHAR 日期列（待迁移决策）**：procurement.expected_delivery_date、
-   logistics amz_shipment.eta、amz_tracking_event.event_time 仍是 VARCHAR，
-   范围查询与索引失效；改 DATE/DATETIME 需先审计存量数据格式（跨格式会转换失败），
-   不能盲改。
+7. **VARCHAR 日期列已收敛（2026-10-05，用户拍板）**：procurement V6
+   （expected_delivery_date DATE）、logistics V6（eta DATE + event_time DATETIME）。
+   存量清洗用 STR_TO_DATE（非法值→NULL 不中断）。实体侧 PurchaseOrder/Shipment
+   改 LocalDate；**TrackingEvent.eventTime 刻意保持 String**——轨迹游标协议
+   （V|<eventTime>|<id>）、去重指纹、测试断言都建立在字符串形态上，JDBC 对
+   DATETIME 的 getString 同形态，零改动兼容。快照 102 表列类型已更新。
+8. **多清空者已全量统一（2026-10-05）**：9 个视图（CustomerService/Finance/
+   WarehouseAlerts/OpsAlerts/OrderAudit×2/B2cOrder/ProfitReport/AdBidSchedule）
+   的 loader 内无条件 `errors=[]` 全部改为「按本列表前缀过滤」，整页入口
+   （onMounted/gotoTab）才整清。要点：过滤前缀必须与 pushError 的 tag 一致
+   （如「规则列表：」），新视图照抄该模式时先对齐 tag 常量。
 
 ## 踩过的坑（勿重演；历史条目见 git 历史版本，以下含本班新增）
 
