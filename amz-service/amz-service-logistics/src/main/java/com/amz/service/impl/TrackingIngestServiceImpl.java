@@ -460,17 +460,4 @@ public class TrackingIngestServiceImpl implements TrackingIngestService {
         shipmentMapper.updateById(shipment);
     }
 
-    /** 解析 ETA 字符串；仅接受 yyyy-MM-dd，其余返回 null（无法判定即不判延误，避免误伤） */
-    private LocalDate parseDate(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-        String trimmed = value.trim();
-        try {
-            return LocalDate.parse(trimmed.length() > 10 ? trimmed.substring(0, 10) : trimmed, DATE_FMT);
-        } catch (Exception e) {
-            log.debug("ETA 格式无法解析，跳过延误判定：eta={}", value);
-            return null;
-        }
-    }
 }

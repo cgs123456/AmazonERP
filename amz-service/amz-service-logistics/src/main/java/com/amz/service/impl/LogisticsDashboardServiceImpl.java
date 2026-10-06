@@ -532,20 +532,6 @@ public class LogisticsDashboardServiceImpl implements LogisticsDashboardService 
         return DATA_SOURCES.contains(upper) ? upper : "AUTO";
     }
 
-    /** 解析 yyyy-MM-dd（容忍带时间的完整串，取日期部分）；失败返回 null */
-    private LocalDate parseDate(String value) {
-        if (isBlank(value)) {
-            return null;
-        }
-        String text = value.trim();
-        try {
-            return LocalDate.parse(text.length() > 10 ? text.substring(0, 10) : text, DATE_FMT);
-        } catch (DateTimeParseException e) {
-            log.debug("ETA 无法解析，跳过：{}", value);
-            return null;
-        }
-    }
-
     /** 解析归一化后的时间串；失败返回 null（会导致该样本被跳过，不影响其他样本） */
     private LocalDateTime parseDateTime(String value) {
         if (isBlank(value)) {

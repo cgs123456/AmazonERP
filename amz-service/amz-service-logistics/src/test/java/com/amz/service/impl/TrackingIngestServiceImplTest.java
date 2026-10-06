@@ -21,7 +21,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 
@@ -55,7 +54,6 @@ import static org.mockito.Mockito.when;
 @DisplayName("轨迹落库核心单元测试")
 class TrackingIngestServiceImplTest {
 
-    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Mock
     private ShipmentMapper shipmentMapper;
