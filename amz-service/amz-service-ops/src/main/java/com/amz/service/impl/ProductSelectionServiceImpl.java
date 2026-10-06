@@ -264,8 +264,9 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         }
 
         SelectionOpportunity opp = opportunityMapper.selectById(opportunityId);
+        // 不存在与无权访问同一话术：枚举 opportunityId 不得探出「哪条存在」（OpsServiceImpl 同口径）
         if (opp == null) {
-            return Result.failure("机会记录不存在: " + opportunityId);
+            return Result.failure("机会记录不存在或无权访问");
         }
 
         // 机会行上的 shopId 不在参数里，@ShopScoped 拦不到：越权读他店机会评分

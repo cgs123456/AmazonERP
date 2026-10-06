@@ -155,7 +155,7 @@ services:
   # Logstash（日志收集与转发）
   logstash:
     image: logstash:8.15.3
-    container_name: logstash
+    container_name: amz-logstash
     ports:
       - "5044:5044"
     volumes:
@@ -191,7 +191,7 @@ services:
   # Kibana（Elasticsearch 可视化）
   kibana:
     image: kibana:8.15.3
-    container_name: kibana
+    container_name: amz-kibana
     ports:
       - "5601:5601"
     environment:
@@ -204,11 +204,13 @@ services:
 
   prometheus:
     image: prom/prometheus:v2.54.0
-    container_name: prometheus
+    container_name: amz-prometheus
     ports:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      # rule_files: ['rules/*.yml'] 指向这里的子目录；不挂载则告警规则零匹配、永不评估
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -218,7 +220,7 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.27.0
-    container_name: alertmanager
+    container_name: amz-alertmanager
     ports:
       - "9093:9093"
     volumes:
@@ -231,7 +233,7 @@ services:
 
   grafana:
     image: grafana/grafana:11.2.0
-    container_name: grafana
+    container_name: amz-grafana
     ports:
       - "3000:3000"
     volumes:
@@ -247,7 +249,7 @@ services:
 
   skywalking-oap:
     image: apache/skywalking-oap-server:10.1.0
-    container_name: skywalking-oap
+    container_name: amz-skywalking-oap
     ports:
       - "11800:11800"   # gRPC agent port
       - "12800:12800"   # HTTP query port
@@ -262,7 +264,7 @@ services:
 
   skywalking-ui:
     image: apache/skywalking-ui:10.1.0
-    container_name: skywalking-ui
+    container_name: amz-skywalking-ui
     ports:
       - "8081:8080"
     environment:

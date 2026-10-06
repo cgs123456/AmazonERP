@@ -45,8 +45,12 @@ class OrderV4IndexMigrationContractTest {
 
     private static final Pattern DROP_INDEX = Pattern.compile("(?i)\\bDROP\\s+(?:INDEX|KEY)\\b");
 
-    private static final Set<String> KNOWN_DROP_INDEX_MIGRATIONS =
-            Set.of("amz-service-order/V4__order_shop_scoped_identity.sql");
+    private static final Set<String> KNOWN_DROP_INDEX_MIGRATIONS = Set.of(
+            "amz-service-order/V4__order_shop_scoped_identity.sql",
+            // ad V8 DROP idx_shop（uk_campaign 左前缀覆盖的冗余索引）：已按本测试要求的流程审过——
+            // 该索引自 V1 存在、DROP 无任何条件守卫、且排在全部 MODIFY 之后，
+            // 半应用状态只会停在 MODIFY（放宽宽度，可幂等重跑），不存在 1091 重试死锁面。
+            "amz-service-ad/V8__campaign_id_width_convergence.sql");
 
     @Test
     void onlyOrderV4DropsIndexes() throws IOException {

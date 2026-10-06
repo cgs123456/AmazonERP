@@ -1,12 +1,23 @@
-filebeat.inputs:
-  - type: container
-    paths:
-      - /var/lib/docker/containers/*/*.log
-    # 只收本 compose 项目的 amz-* 容器，别把宿主机上别的栈（zc-live-* 等）也拖进 Kibana
-    include_lines: ['"container_name":"amz-']
-    processors:
-      - add_docker_metadata:
-          host: "unix:///var/run/docker.sock"
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: false
+      # 只收本 compose 项目的 amz-* 容器，别把宿主机上别的栈（zc-live-* 等）拖进 Kibana。
+      # 注意不能用 include_lines 过滤容器名：docker json 日志行只有 log/stream/time 三个字段，
+      # container 元数据是 add_docker_metadata 在过滤之后才附加的，include_lines 会把所有行都丢掉。
+      matchers:
+        - type: container
+          pattern: 'amz-'
+
+processors:
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+  # 双保险：autodiscover matcher 之外，再按容器名前缀丢非 amz- 事件
+  - drop_event:
+      when:
+        not:
+          contains:
+            container.name: "amz-"
 
 output.logstash:
   hosts: ["logstash:5044"]

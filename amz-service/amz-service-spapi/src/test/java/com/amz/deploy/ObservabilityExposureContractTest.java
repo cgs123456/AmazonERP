@@ -42,14 +42,35 @@ class ObservabilityExposureContractTest {
             "report", "search", "spapi", "user");
     private static final Pattern SCRAPE_TARGET = Pattern.compile("['\"](amz-[a-z0-9-]+):(\\d+)['\"]");
 
+    /** 基础设施抓取目标（无 application.yml 的 server.port，由 compose 端口保证可达）。 */
+    private static final Set<String> INFRA_SCRAPE_TARGETS =
+            Set.of("amz-rabbitmq:15692", "amz-node-exporter:9100");
+
     @Test
     void everyScrapeTargetResolvesToItsOwnServerPort() throws IOException {
         Map<String, String> targets = scrapeTargetsByModule();
         Map<String, Path> modules = moduleApplicationFiles();
         assertEquals(16, modules.size(), "模块清单应覆盖 gateway + 15 个业务服务");
-        assertEquals(16, targets.size(), "prometheus.yml 应抓取 gateway + 15 个业务服务");
-        assertEquals(modules.keySet(), targets.keySet(),
-                "Prometheus 抓取目标必须与可部署模块一一对应，不能漏抓也不能抓不存在的服务");
+        // 应用目标必须恰好 16 个且与模块一一对应；基础设施目标（队列积压/磁盘水位告警的数据源）
+        // 单独白名单，缺了意味着 amz-alerts.yml 的对应告警没有数据源、永不触发
+        assertEquals(16 + INFRA_SCRAPE_TARGETS.size(), targets.size(),
+                "prometheus.yml 应抓取 gateway + 15 个业务服务 + " + INFRA_SCRAPE_TARGETS.size() + " 个基础设施目标");
+
+        // 应用目标：与可部署模块一一对应（scrapeTargetsByModule 已剥 amz-service- 前缀）
+        Map<String, String> appTargets = new LinkedHashMap<>(targets);
+        // 集合里带端口，targets 的键只有 host：按 host 部分移除
+        INFRA_SCRAPE_TARGETS.forEach(infra -> appTargets.remove(infra.split(":")[0]));
+        assertEquals(modules.keySet(), appTargets.keySet(),
+                "Prometheus 应用抓取目标必须与可部署模块一一对应，不能漏抓也不能抓不存在的服务");
+
+        // 基础设施目标：缺了意味着 amz-alerts.yml 的对应告警没有数据源、永不触发
+        for (String infra : INFRA_SCRAPE_TARGETS) {
+            assertTrue(targets.containsKey(infra.split(":")[0]),
+                    "缺少基础设施抓取目标 " + infra + "：依赖它的告警将永不触发");
+        }
+
+        // 应用目标的端口校验照旧
+        targets = appTargets;
 
         for (Map.Entry<String, String> target : targets.entrySet()) {
             String module = target.getKey();

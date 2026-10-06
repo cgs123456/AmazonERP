@@ -241,6 +241,8 @@ const onAuthChanged = () => {
     kpiData.value = []
     salesTrend.value = []
     shopDist.value = []
+    loadErrors.value = []
+    demoDataTags.value = []
     loading.value = false
   }
 }

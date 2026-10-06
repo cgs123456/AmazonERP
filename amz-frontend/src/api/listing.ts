@@ -269,7 +269,7 @@ export interface CompetitorCompareResult {
 export const getRankingTrend = (shopId: number | string, asin: string, keyword?: string, days = 30) =>
   request.get<void, ApiResponse<RankingTrendResult>>(
     `/product/listing-monitor/ranking/trend/${shopId}`,
-    { params: { asin, ...(keyword ? { keyword } : {}), days } }
+    { params: params({ asin, keyword, days }) }
   )
 
 /** 竞品对比：myAsin 只是回显，真正被查的是 competitorAsin */

@@ -7,6 +7,8 @@
 --   uk_shop_campaign/JOIN 时走长度不一致的比较；Amazon campaignId 超过 50
 --   字符时子表写入将失败或截断。统一收敛为 VARCHAR(64)。
 --   （keyword_id 已由 V4 收敛为 BIGINT，不在本迁移范围。）
+--   amz_ad_placement_report 也有 VARCHAR(50)，但它在零引用死表清单里
+--   （HANDOFF 死表条目），按「不接线不收敛」处理；未来复活该表时必须同步改宽。
 --
 -- 附带：amz_ad_campaign 的 UNIQUE KEY uk_campaign(shop_id, campaign_id)
 --   左前缀已覆盖 shop_id，单列 INDEX idx_shop 纯属冗余（写放大），一并 DROP。
@@ -24,8 +26,11 @@ ALTER TABLE amz_ad_targeting
     MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）';
 ALTER TABLE amz_ad_search_term
     MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）';
+-- converting_terms 的空性契约归 V7：V7 先把 NULL 归一成 '' 再按
+-- uk_ad_converting_shop_campaign_term(shop_id, campaign_id, search_term) 全量去重，
+-- 放回 NULL 会让 MySQL 唯一索引放过 NULL 重复、静默推翻该保证。只放宽宽度。
 ALTER TABLE amz_ad_converting_terms
-    MODIFY COLUMN campaign_id VARCHAR(64) NULL COMMENT '来源活动（对齐 amz_ad_campaign.campaign_id 64）';
+    MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '来源活动（对齐 amz_ad_campaign.campaign_id 64）';
 ALTER TABLE amz_ad_daily_report
     MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）';
 
