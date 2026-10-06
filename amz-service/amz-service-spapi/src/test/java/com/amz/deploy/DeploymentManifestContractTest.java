@@ -55,6 +55,12 @@ class DeploymentManifestContractTest {
         assertTrue(prodKeys.containsAll(requiredConfigMapKeys),
                 ".env.example 缺少 ConfigMap 键：" + difference(requiredConfigMapKeys, prodKeys));
 
+        // secret.yaml 的键也必须全在 .env.example（webhook 密钥经 secretKeyRef 注入，
+        // 同 DB_PASSWORD 一类；.env.example 已含 MULTIPLATFORM_WEBHOOK_SECRET_*）
+        Set<String> secretKeys = yamlDataKeys(ROOT.resolve("k8s/secret.yaml"));
+        assertTrue(prodKeys.containsAll(secretKeys),
+                ".env.example 缺少 Secret 键：" + difference(secretKeys, prodKeys));
+
         assertFalse(prodKeys.contains("MQ_USERNAME"), "已废弃的 MQ_USERNAME 不得继续出现在模板中");
         assertFalse(prodKeys.contains("MQ_PASSWORD"), "已废弃的 MQ_PASSWORD 不得继续出现在模板中");
 

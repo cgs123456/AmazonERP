@@ -74,6 +74,15 @@ class PlaceholderCoverageContractTest {
             // 只有 spapi/user 的 application.yml 显式写了 crypto.key: ${AMZ_CRYPTO_KEY:}，
             // 其余 14 个服务全靠这个名字；缺它会启动即拒（见 CryptoKeyProvisioningContractTest 的 A/B 实测）。
             composeAllowed.add("CRYPTO_KEY");
+            // webhook 密钥：yml 里是 multiplatform.webhook.secret.temu（全小写属性名，走
+            // Spring relaxed binding 读环境变量 MULTIPLATFORM_WEBHOOK_SECRET_TEMU），
+            // 不以 ${大写} 占位符出现，故与 CRYPTO_KEY 同类：只加白名单。密钥空时
+            // requireValidWebhookSignature 已 fail-closed（拒绝回调）。仅 multiplatform 注入。
+            if (module.equals("amz-service-multiplatform")) {
+                composeAllowed.add("MULTIPLATFORM_WEBHOOK_SECRET_TEMU");
+                composeAllowed.add("MULTIPLATFORM_WEBHOOK_SECRET_TIKTOK");
+                composeAllowed.add("MULTIPLATFORM_WEBHOOK_SECRET_SHEIN");
+            }
             Set<String> composeActual = composeEnvironments.get(module);
             assertTrue(composeActual != null, "Compose 缺少服务段：" + module);
             assertEquals(composeAllowed, composeActual,
@@ -93,6 +102,12 @@ class PlaceholderCoverageContractTest {
             // 值从既有 secret 键 AMZ_CRYPTO_KEY 取，不新增一份密钥。
             // 逐服务是否真的供给到由 CryptoKeyProvisioningContractTest 负责。
             k8sAllowed.add("CRYPTO_KEY");
+            // 同 compose：webhook 密钥只被 multiplatform 经 secretKeyRef 注入（值空=回调拒绝）
+            if (module.equals("amz-service-multiplatform")) {
+                k8sAllowed.add("MULTIPLATFORM_WEBHOOK_SECRET_TEMU");
+                k8sAllowed.add("MULTIPLATFORM_WEBHOOK_SECRET_TIKTOK");
+                k8sAllowed.add("MULTIPLATFORM_WEBHOOK_SECRET_SHEIN");
+            }
             Set<String> k8sActual = k8sEnvironments.get(module);
             assertTrue(k8sActual != null, "K8s 缺少 Deployment：" + module);
             assertEquals(k8sAllowed, k8sActual,
