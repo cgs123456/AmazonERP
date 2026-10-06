@@ -120,7 +120,7 @@
         <div v-if="!profitLoading" class="summary-grid">
           <div class="summary-card">
             <div class="summary-label">店铺利润（CNY）</div>
-            <div class="summary-value" :class="profitNum > 0 ? 'profit-positive' : profitNum < 0 ? 'profit-negative' : 'profit-flat'">¥{{ profitDisplay }}</div>
+            <div class="summary-value" :class="profitError || profitNum === null ? 'profit-flat' : profitNum > 0 ? 'profit-positive' : profitNum < 0 ? 'profit-negative' : 'profit-flat'">{{ profitError ? '—' : '¥' + profitDisplay }}<span v-if="profitError">（{{ profitError }}）</span></div>
           </div>
           <div class="summary-card">
             <div class="summary-label">统计区间</div>
@@ -686,10 +686,12 @@ const loadVouchers = async (append = false) => {
       nextCursor.value = page ? page.nextCursor : null
     } else {
       console.warn('[Finance] 凭证列表返回异常', res)
+      pushFinanceError('凭证列表', res?.message)
       if (!append) vouchers.value = []
     }
   } catch (e) {
     console.warn('[Finance] 凭证列表调用失败', e)
+    pushFinanceError('凭证列表', e)
     if (!append) vouchers.value = []
   } finally {
     loading.value = false
@@ -736,10 +738,12 @@ const handleSync = async (v: AccountingVoucher) => {
 const profitLoading = ref(false)
 const profitStart = ref('')
 const profitEnd = ref('')
-const profitNum = ref<number>(0)
+const profitNum = ref<number | null>(null)
+const profitError = ref('')
 const profitDisplay = computed(() => {
   const n = profitNum.value
-  return typeof n === 'number' && !isNaN(n) ? n.toFixed(2) : '0.00'
+  // null = 查询失败：显示 '—'（未知）而不是 0.00（假成功）
+  return typeof n === 'number' && !isNaN(n) ? n.toFixed(2) : '—'
 })
 
 const loadProfit = async () => {
@@ -755,13 +759,17 @@ const loadProfit = async () => {
       const raw = res.data
       const num = typeof raw === 'number' ? raw : parseFloat(String(raw))
       profitNum.value = isNaN(num) ? 0 : num
+      profitError.value = ''
     } else {
+      // 失败显示 '—' 并报错：置 0 会把「查询失败」伪装成「真实利润为 0」
       console.warn('[Finance] 利润查询返回异常', res)
-      profitNum.value = 0
+      profitNum.value = null
+      profitError.value = res?.message || '后端返回非 200'
     }
-  } catch (e) {
+  } catch (e: any) {
     console.warn('[Finance] 利润查询调用失败', e)
-    profitNum.value = 0
+    profitNum.value = null
+    profitError.value = e?.message || '网络异常'
   } finally {
     profitLoading.value = false
   }
@@ -858,6 +866,10 @@ const CursorBar = defineComponent({
 
 const busy = ref(false)
 const errors = ref<string[]>([])
+const pushFinanceError = (tag: string, detail: unknown) => {
+  const msg = detail instanceof Error ? detail.message : (detail as string | undefined) || '后端返回异常'
+  if (!errors.value.some((x) => x.startsWith(`${tag}：`))) errors.value.push(`${tag}：${msg}`)
+}
 const confirmBox = ref<null | { title: string; detail: string; run: () => Promise<void> }>(null)
 
 const col = makeCursor<PaymentCollection>()

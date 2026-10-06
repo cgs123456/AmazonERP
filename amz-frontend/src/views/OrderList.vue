@@ -3,6 +3,9 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
+    <div v-if="loadErrors.length" class="error-zone" role="alert">
+      <span>{{ loadErrors.join('；') }}</span>
+    </div>
       <!-- hero section - design-taste-frontend 约束：headline ≤2 行，subtext 精简，垂直堆叠 -->
       <div class="hero-section">
         <h1 class="hero-title">订单管理</h1>
@@ -106,15 +109,7 @@ const size = ref(20)
 // 当前选中店铺（B4 公共守卫：快照用于模板提示，发请求前 refreshShop 同步最新值）
 const { currentShopId, refreshShop } = useShopGuard()
 
-// 降级用的 mock 数据
-const mockOrders: OrderItem[] = [
-  { id: 1, orderNo: '114-1234567-1234567', shop: 'Shop A (US)', shopId: '1', sku: 'B08X4-001', qty: 2, amount: '$59.98', profit: 18.50, status: '已发货', statusClass: 'shipped', date: '2026-07-06 14:30' },
-  { id: 2, orderNo: '114-2345678-2345678', shop: 'Shop A (US)', shopId: '1', sku: 'B08X4-002', qty: 1, amount: '$29.99', profit: 12.30, status: '已完成', statusClass: 'completed', date: '2026-07-06 12:15' },
-  { id: 3, orderNo: '114-3456789-3456789', shop: 'Shop B (UK)', shopId: '2', sku: 'B08X4-003', qty: 3, amount: '£89.97', profit: 22.80, status: '待发货', statusClass: 'pending', date: '2026-07-06 10:00' },
-  { id: 4, orderNo: '114-4567890-4567890', shop: 'Shop C (DE)', shopId: '3', sku: 'B08X4-004', qty: 1, amount: '€45.00', profit: -3.20, status: '已退款', statusClass: 'refunded', date: '2026-07-05 18:45' },
-  { id: 5, orderNo: '114-5678901-5678901', shop: 'Shop A (US)', shopId: '1', sku: 'B08X4-005', qty: 5, amount: '$149.95', profit: 45.60, status: '已发货', statusClass: 'shipped', date: '2026-07-05 16:20' },
-  { id: 6, orderNo: '114-6789012-6789012', shop: 'Shop B (UK)', shopId: '2', sku: 'B08X4-006', qty: 2, amount: '£55.98', profit: 15.40, status: '已完成', statusClass: 'completed', date: '2026-07-05 09:30' }
-]
+const loadErrors = ref<string[]>([])
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value)))
 
@@ -152,25 +147,20 @@ const loadOrders = async () => {
         orders.value = res.data.list || []
         total.value = res.data.total || 0
       }
+      loadErrors.value = []
     } else {
-      console.warn('[OrderList] 返回数据异常，使用降级数据', res)
-      fallbackToMock()
+      // 失败必须可见：按筛选条件过滤后的 mock 数据会被当成真实查询结果（假成功）
+      loadErrors.value = [res?.message || '后端返回非 200']
+      orders.value = []
+      total.value = 0
     }
-  } catch (e) {
-    console.warn('[OrderList] API 调用失败，使用降级数据', e)
-    fallbackToMock()
+  } catch (e: any) {
+    loadErrors.value = [e?.message || '网络异常']
+    orders.value = []
+    total.value = 0
   } finally {
     loading.value = false
   }
-}
-
-const fallbackToMock = () => {
-  let filtered = [...mockOrders]
-  if (filterShop.value) filtered = filtered.filter(o => o.shopId === filterShop.value)
-  if (filterDate.value) filtered = filtered.filter(o => o.date.startsWith(filterDate.value))
-  if (filterOrderNo.value) filtered = filtered.filter(o => o.orderNo.includes(filterOrderNo.value))
-  orders.value = filtered
-  total.value = filtered.length
 }
 
 const handleQuery = () => {
@@ -198,6 +188,17 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.error-zone {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  background: var(--color-light-red);
+  color: var(--color-error);
+}
 .order-page { background: var(--color-background); }
 /* .main-content / hero / shop-tip / 表格 / 分页样式已收敛至全局 style.css */
 

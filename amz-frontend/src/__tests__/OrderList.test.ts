@@ -109,26 +109,27 @@ describe('OrderList 视图', () => {
     expect(lastParams.orderNo).toBe('AAA')
   })
 
-  it('API 返回非 200 时应降级到 mock 数据并渲染', async () => {
+  it('API 返回非 200 时进错误横幅并清空列表（不降级 mock 假成功）', async () => {
     localStorage.setItem('current_shop_id', '1')
     mockedGetOrderList.mockResolvedValue({ code: 500, message: 'err', data: null as any })
 
     const wrapper = mount(OrderList, { shallow: true, global: globalStubs })
     await flushPromises()
 
-    // 降级数据含 6 条 mock 订单
-    expect(wrapper.findAll('.data-table tbody tr').length).toBe(6)
-    expect(wrapper.text()).toContain('114-1234567-1234567')
+    expect(wrapper.find('.error-zone').exists()).toBe(true)
+    expect(wrapper.text()).toContain('err')
+    expect(wrapper.text()).not.toContain('114-1234567-1234567')
   })
 
-  it('API 抛异常时应降级到 mock 数据', async () => {
+  it('API 抛异常时进错误横幅并清空列表', async () => {
     localStorage.setItem('current_shop_id', '1')
     mockedGetOrderList.mockRejectedValue(new Error('network error'))
 
     const wrapper = mount(OrderList, { shallow: true, global: globalStubs })
     await flushPromises()
 
-    expect(wrapper.findAll('.data-table tbody tr').length).toBe(6)
+    expect(wrapper.find('.error-zone').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('114-1234567-1234567')
   })
 
   it('点击查询按钮应重置页码并再次调用 getOrderList', async () => {

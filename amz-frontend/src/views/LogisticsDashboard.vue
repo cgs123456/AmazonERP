@@ -3,6 +3,9 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
+    <div v-if="blockErrors.length" class="error-zone" role="alert">
+      <span>部分区块加载失败：{{ blockErrors.join('；') }}</span>
+    </div>
       <div class="hero-section">
         <h1 class="hero-title">物流看板</h1>
         <p class="hero-subtitle">头程在途与异常一览</p>
@@ -1756,12 +1759,25 @@ const chart = computed(() => {
  * 统一包一层加载容错。
  * 单个接口异常只记 console，不影响其余区块渲染——
  * 看板是概览视图，因一个接口报错就整页空白会让人误判为「系统挂了」。
+ * 但失败必须可见：catch 里推页面级错误条，空态/旧数据不许冒充真实看板。
  */
+const blockErrors = ref<string[]>([])
+const pushBlockError = (tag: string, detail: unknown) => {
+  const msg = detail instanceof Error ? detail.message : (detail as string | undefined) || '后端返回异常'
+  const hit = blockErrors.value.find((x) => x.startsWith(`${tag}：`))
+  if (hit) {
+    blockErrors.value = blockErrors.value.map((x) => (x === hit ? `${tag}：${msg}` : x))
+  } else {
+    blockErrors.value.push(`${tag}：${msg}`)
+  }
+}
+
 const safeLoad = async (tag: string, fn: () => Promise<void>) => {
   try {
     await fn()
   } catch (e) {
     console.warn(`[Logistics] ${tag} 加载失败`, e)
+    pushBlockError(tag, e)
   }
 }
 
@@ -1769,6 +1785,8 @@ const loadOverview = async (shopId: string) => {
   const res = await getLogisticsOverview(shopId)
   if (res?.code === 200 && res.data) {
     overview.value = res.data
+  } else {
+    throw new Error(res?.message || '后端返回非 200')
   }
 }
 
@@ -1776,6 +1794,8 @@ const loadTrend = async (shopId: string) => {
   const res = await getLogisticsTrend(shopId, trendDays)
   if (res?.code === 200) {
     trend.value = res.data || []
+  } else {
+    throw new Error(res?.message || '后端返回非 200')
   }
 }
 
@@ -1783,6 +1803,8 @@ const loadCarriers = async (shopId: string) => {
   const res = await getCarrierPerformance(shopId)
   if (res?.code === 200) {
     carriers.value = res.data || []
+  } else {
+    throw new Error(res?.message || '后端返回非 200')
   }
 }
 
@@ -1790,6 +1812,8 @@ const loadAlerts = async (shopId: string) => {
   const res = await getLogisticsAlerts(shopId)
   if (res?.code === 200) {
     alerts.value = res.data || []
+  } else {
+    throw new Error(res?.message || '后端返回非 200')
   }
 }
 
@@ -1823,11 +1847,12 @@ const loadShipments = async (append = false) => {
       shipmentsTruncated.value = !metaMissing && hasMore
       shipmentsNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
     } else {
-      console.warn('[Logistics] 货件列表返回异常', res)
+      pushBlockError('货件列表', res?.message)
       if (!append) shipments.value = []
     }
   } catch (e) {
     console.warn('[Logistics] 加载货件列表失败', e)
+    pushBlockError('货件列表', e)
     if (!append) shipments.value = []
   } finally {
     if (append) shipmentsLoadingMore.value = false
@@ -1899,11 +1924,12 @@ const loadTransfers = async (append = false) => {
       transfersTruncated.value = !metaMissing && hasMore
       transfersNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
     } else {
-      console.warn('[Logistics] 调拨列表返回异常', res)
+      pushBlockError('调拨列表', res?.message)
       if (!append) transfers.value = []
     }
   } catch (e) {
     console.warn('[Logistics] 加载调拨列表失败', e)
+    pushBlockError('调拨列表', e)
     if (!append) transfers.value = []
   } finally {
     if (append) transfersLoadingMore.value = false
@@ -1922,6 +1948,7 @@ const reload = async () => {
   if (!shopId) return
 
   loading.value = true
+  blockErrors.value = []
   await Promise.all([
     safeLoad('overview', () => loadOverview(shopId)),
     safeLoad('trend', () => loadTrend(shopId)),
@@ -2047,7 +2074,7 @@ const loadTracking = async (shipmentId: number, append = false) => {
       trackingTruncated.value = !metaMissing && hasMore
       trackingNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
     } else {
-      console.warn('[Logistics] 轨迹返回异常', res)
+      pushBlockError('物流轨迹', res?.message)
       if (!append) timeline.value = []
       trackingPageMetaMissing.value = true
       trackingTruncated.value = false
@@ -2055,6 +2082,7 @@ const loadTracking = async (shipmentId: number, append = false) => {
     }
   } catch (e) {
     console.warn('[Logistics] 轨迹加载失败', e)
+    pushBlockError('物流轨迹', e)
     if (!append) timeline.value = []
     trackingPageMetaMissing.value = true
     trackingTruncated.value = false
@@ -2349,6 +2377,17 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.error-zone {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  background: var(--color-light-red);
+  color: var(--color-error);
+}
 .logistics-page {
   background: var(--color-background);
 }

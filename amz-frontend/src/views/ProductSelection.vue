@@ -3,6 +3,9 @@
     <AppHeader />
     <AppSidebar />
     <main class="main-content">
+      <div v-if="requestErrors.length" class="error-zone" role="alert">
+        <span>{{ requestErrors.join('；') }}</span>
+      </div>
       <!-- hero section - 符合 design-taste-frontend 约束 -->
       <!-- eyebrow: 无 (每 3 个 section 最多 1 个，本页面 0 个，合规)
            headline: "选品分析" - 2 行以内 (15 字符约等于 2 行)
@@ -371,6 +374,13 @@ const labelStyles = computed(() => {
   return styles
 })
 
+// 请求失败必须可见：静默 catch 会让「点了没反应」且旧数据/空态被当成结果
+const requestErrors = ref<string[]>([])
+const pushRequestError = (tag: string, e: unknown) => {
+  const msg = e instanceof Error ? e.message : '后端返回异常'
+  requestErrors.value = [`${tag}：${msg}`]
+}
+
 // 分析市场
 const onAnalyzeMarket = async () => {
   if (!keyword.value.trim()) return
@@ -382,8 +392,10 @@ const onAnalyzeMarket = async () => {
     const resp = await analyzeMarket({ keyword: keyword.value.trim(), marketplace: marketplace.value })
     summary.value = resp.data
     opportunityList.value = resp.data?.opportunities ?? []
+    requestErrors.value = []
   } catch (e) {
     console.error('市场分析失败', e)
+    pushRequestError('市场分析', e)
   } finally {
     analyzing.value = false
     loading.value = false
@@ -407,8 +419,10 @@ const refreshList = async () => {
   try {
     const resp = await findOpportunities(shopId, undefined, sortBy.value, 20)
     opportunityList.value = resp.data ?? []
+    requestErrors.value = []
   } catch (e) {
     console.error('机会列表加载失败', e)
+    pushRequestError('机会列表', e)
   }
 }
 
@@ -430,6 +444,7 @@ const onAiSuggestion = async (opp: SelectionOpportunity) => {
     }
   } catch (e) {
     console.error('AI 建议调用失败', e)
+    pushRequestError('AI 建议', e)
   } finally {
     aiLoading.value = false
   }
@@ -486,6 +501,17 @@ const seasonalityText = (s?: string) => {
 </script>
 
 <style scoped>
+.error-zone {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.625rem 0.875rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  background: var(--color-light-red);
+  color: var(--color-error);
+}
 .selection-page { background: var(--color-background); }
 
 /* 页头/主区/表格等公共样式已收敛至全局 style.css */
