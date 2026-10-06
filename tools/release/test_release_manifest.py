@@ -164,7 +164,12 @@ class ReleaseManifestTest(unittest.TestCase):
             expected = tree_digest([(item["path"], item["sha256"]) for item in items])
             self.assertEqual(expected, manifest["migrations"]["treeSha256"])
 
-    def test_current_flyway_inventory_contains_all_50_files(self) -> None:
+    # 58 = Flyway 迁移文件清点钉数（2026-10-06 死表 DROP 与日期类型收敛把 50 加到 58，
+    # 上一班只改了迁移没改这里，真 CI 的 hygiene job 抓到「改一半」）。新增/删除
+    # db/migration/V*__*.sql 时必须逐处同步：本方法名与两处断言、ci.yml 的
+    # mysql-import/runtime-smoke 注释口径。凡改这个数，交班前逐字复跑
+    # ci.yml 卫生 job 的 release-tools unittest（勿凭 HANDOFF 清单的记忆）。
+    def test_current_flyway_inventory_contains_all_58_files(self) -> None:
         manifest = build_manifest(ROOT, COMMIT, VERSION, IMAGE_REF, IMAGE_DIGEST)
         expected_paths = sorted(
             path.relative_to(ROOT).as_posix()
@@ -172,8 +177,8 @@ class ReleaseManifestTest(unittest.TestCase):
             if not any(part == "target" for part in path.parts)
         )
 
-        self.assertEqual(50, len(expected_paths))
-        self.assertEqual(50, manifest["migrations"]["count"])
+        self.assertEqual(58, len(expected_paths))
+        self.assertEqual(58, manifest["migrations"]["count"])
         self.assertEqual(expected_paths, [item["path"] for item in manifest["migrations"]["items"]])
 
     def test_cli_builds_verifies_and_rejects_changed_input(self) -> None:
