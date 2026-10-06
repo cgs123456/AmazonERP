@@ -44,7 +44,7 @@ python tools/schema/param_name_audit.py --self-test .           # 25/25
 python tools/schema/param_name_audit.py .                       # 0 findings，非 0 即红
 python tools/schema/entity_column_drift.py --self-test . && python tools/schema/entity_column_drift.py --gate .
 python tools/release/repository_hygiene.py --root .             # 以退出码为准，别 grep 文本
-python tools/schema/zero_reference_tables.py                    # 113 表 / 11 零引用
+python tools/schema/zero_reference_tables.py                    # 102 表 / 0 零引用（死表已清）
 ```
 
 - 后端定向跑：**逗号**分隔，从不使用 `+`（`-Dtest='A,B'` + `-q` 会伪装成零测试绿）。
@@ -78,11 +78,11 @@ python tools/schema/zero_reference_tables.py                    # 113 表 / 11 �
    `multiplatform.webhook.secret.<temu|tiktok|shein>` 验签（X-Signature =
    HMAC-SHA256(payload) hex）。密钥未配置的平台回调一律拒绝；启用真实平台回调
    前必须在部署清单里配好这三个密钥。
-6. **死表处置（待产品决策，不 DROP）**：11 张零引用表全部核实为死表
-   （amz_attention/amz_cart/amz_coupon/amz_customer_service_kpi/amz_listing_seo/
-   amz_logistics_quote/amz_oper_log/amz_product_browse/amz_report_template/
-   amz_user_coupon/amz_ad_placement_report，均只存在于 V1 DDL）。按环境边界
-   「不 DROP 业务表」不自动清理；要么补功能接线、要么出正式决策后单独出迁移。
+6. **死表已清理（2026-10-05，用户拍板）**：11 张零引用表由 5 个服务的
+   V-next DROP 迁移删除（user V2 / product V5 / customer V2 / ai V3 / ad V9）；
+   synthetic-data 的 LAYOUTS/coupon 池同步摘除，快照 113→102，两档数据集已重造。
+   旧的「不 DROP 业务表」边界自本批起对已核实的死表解除——**未来 DROP 仍须逐表
+   核实零引用 + 过索引冻结集契约**。
 7. **VARCHAR 日期列（待迁移决策）**：procurement.expected_delivery_date、
    logistics amz_shipment.eta、amz_tracking_event.event_time 仍是 VARCHAR，
    范围查询与索引失效；改 DATE/DATETIME 需先审计存量数据格式（跨格式会转换失败），

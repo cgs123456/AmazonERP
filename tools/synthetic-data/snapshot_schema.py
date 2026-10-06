@@ -224,6 +224,30 @@ def apply_alters(tables_by_key: dict, alters: list):
     return applied
 
 
+def apply_drops(tables_by_key: dict, alters: list, drops: list):
+    """按 Flyway 顺序重放 DROP TABLE：被删除的表从快照移除。
+
+    快照声称「derived from the migrations」，只收集 CREATE/ALTER 而无视 DROP
+    会把死表当成活表。DROP 只可能删除更早版本建的表；同一表被反复 DROP 时
+    取最后一个状态。
+    """
+    applied = []
+    for drop in sorted(drops, key=lambda d: (d['rank'], d.get('table') or '')):
+        key = '%s.%s' % (drop['database'] or '?', drop['table'])
+        occurrences = tables_by_key.get(key)
+        if not occurrences:
+            applied.append({'table': key, 'path': rel_path(drop['path']),
+                            'applied': False, 'note': 'no such table in the snapshot'})
+            continue
+        del tables_by_key[key]
+        applied.append({'table': key, 'path': rel_path(drop['path']), 'applied': True, 'note': None})
+    return applied
+
+
+def rel_path(path: str) -> str:
+    return path.replace(chr(92), '/')
+
+
 def build(root: str) -> dict:
     tables_by_key = {}
     source_stats = []
@@ -231,8 +255,19 @@ def build(root: str) -> dict:
     dynamic_ddl = []
     other_ddl = []
     alters = []
+    drops = []
     for path, group, db_hint, db_source in collect_sources(root):
         tables, file_alters, stats, file_issues = P.parse_sql_file(path, group, db_hint)
+        # 收集 DROP TABLE 语句（快照必须反映迁移重放后的最终 schema，
+        # 只收集 CREATE/ALTER 会把已删除的死表当成活表）
+        if group == 'flyway-migration':
+            file_text = io.open(path, encoding='utf-8', errors='replace').read()
+            # 先剥行注释：回滚说明里的「DROP TABLE xxx」示例不许触发删除（order V5 就有一行）
+            file_text = re.sub(r'(?m)(?:^\s)?\--.*$', '', file_text)
+            for dm in re.finditer(
+                    r'(?is)\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z_][\w]*)`?', file_text):
+                drops.append({'path': path, 'table': dm.group(1), 'database': db_hint,
+                              'rank': migration_rank(path)})
         for alter in file_alters:
             alter['path'] = rel(root, alter.pop('file'))
             alters.append(alter)
@@ -261,9 +296,10 @@ def build(root: str) -> dict:
             key = '%s.%s' % (table['database'] or '?', table['name'])
             tables_by_key.setdefault(key, []).append(table)
     applied_alters = apply_alters(tables_by_key, alters)
+    applied_drops = apply_drops(tables_by_key, alters, drops)
     return {'tables_by_key': tables_by_key, 'sources': source_stats,
             'issues': issues, 'dynamic_ddl': dynamic_ddl, 'other_ddl': other_ddl, 'alters': alters,
-            'applied_alters': applied_alters}
+            'applied_alters': applied_alters, 'drops': drops, 'applied_drops': applied_drops}
 
 
 def column_diff(a: dict, b: dict):

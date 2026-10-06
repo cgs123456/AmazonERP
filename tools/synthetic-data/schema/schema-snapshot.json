@@ -124,6 +124,36 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 2449,
+      "lines": 37,
+      "sha256": "7a4dc74df00fb90ba36a5013332342077bda7ea8a48e19c20fcb6984e21a8401",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_ad",
+      "alter_table_statements": 7,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 327,
+      "lines": 7,
+      "sha256": "6079797060f9f1329b8454d2f829ebfff5f1f744c566a11c3a7ff2c25e15497f",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_ad",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V9__drop_dead_table.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 5047,
       "lines": 90,
       "sha256": "858a5b554033c7f47fcdc2e7b95f3bd8cc85135b7b496298318a6638ebe1610c",
@@ -154,6 +184,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 410,
+      "lines": 10,
+      "sha256": "8d4926baea29bd2bf67a2c7216a44bc6e8f54ab5e5f22fe45b22b4fc1535b815",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_ai",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-ai/src/main/resources/db/migration/V3__drop_dead_tables.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 8958,
       "lines": 156,
       "sha256": "02fef775bc69bd7bad14014e78240f2305a5cbd6dd5216fadc60169428c60780",
@@ -165,6 +210,21 @@
       "mysql8_incompatible_add_column": 0,
       "db_source": "application.yml",
       "path": "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 227,
+      "lines": 6,
+      "sha256": "1f7535e8dbe3b14b94682fe7924b332b9f18e427732b655b61dea17e5f3dffa9",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_customer",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-customer/src/main/resources/db/migration/V2__drop_dead_tables.sql",
       "dynamic_ddl": 0
     },
     {
@@ -574,6 +634,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 491,
+      "lines": 11,
+      "sha256": "1e0d7ea8f460c272aa4775c5d8fb904d9f33dbada7a8e062a18e9812f2a72b26",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_product",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-product/src/main/resources/db/migration/V5__drop_dead_tables.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 7483,
       "lines": 147,
       "sha256": "54ce536ae92cac9a79c05fc22fce964d06e20949cffa80356241186f749a8f4f",
@@ -766,6 +841,21 @@
       "db_source": "application.yml",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql",
       "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 605,
+      "lines": 12,
+      "sha256": "8ddf3c58c2d80a1d783f7d2f183cf641a278339dc48b4e6d0cdb5726bb60c10e",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V2__drop_dead_tables.sql",
+      "dynamic_ddl": 0
     }
   ],
   "stats": {
@@ -775,11 +865,11 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 50,
+        "files": 56,
         "tables": 113
       }
     },
-    "union_table_count": 113,
+    "union_table_count": 102,
     "databases": [
       "amz_ad",
       "amz_ai",
@@ -805,9 +895,9 @@
     ],
     "tables_with_conditional_columns": [],
     "conditional_columns_total": 0,
-    "alter_table_statements": 31,
+    "alter_table_statements": 38,
     "add_column_statements": 22,
-    "applied_alter_operations": 42,
+    "applied_alter_operations": 48,
     "unapplied_alter_operations": 0,
     "renamed_columns": [
       [
@@ -2133,7 +2223,7 @@
         {
           "name": "campaign_id",
           "type": "VARCHAR",
-          "args": "50",
+          "args": "64",
           "unsigned": false,
           "nullable": false,
           "default": null,
@@ -2142,7 +2232,7 @@
           "on_update": false,
           "inline_primary_key": false,
           "inline_unique": false,
-          "comment": null,
+          "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）",
           "sources": [
             "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
           ],
@@ -2580,13 +2670,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "33ba032b147f581bd1e4693cf4888f5eb3d43f67ffd28ecb201a8e152c9071be",
+      "table_hash": "3ce57b64b0cf15f74a6ec5fab9b38c44b1ad7f209d59f06be621d6540d59097c",
       "definitions": [
         {
           "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql",
           "line": 58,
           "group": "flyway-migration",
-          "hash": "33ba032b147f581bd1e4693cf4888f5eb3d43f67ffd28ecb201a8e152c9071be"
+          "hash": "3ce57b64b0cf15f74a6ec5fab9b38c44b1ad7f209d59f06be621d6540d59097c"
         }
       ]
     },
@@ -2677,7 +2767,7 @@
         {
           "name": "campaign_id",
           "type": "VARCHAR",
-          "args": "50",
+          "args": "64",
           "unsigned": false,
           "nullable": false,
           "default": "''",
@@ -2686,7 +2776,7 @@
           "on_update": false,
           "inline_primary_key": false,
           "inline_unique": false,
-          "comment": null,
+          "comment": "来源活动（对齐 amz_ad_campaign.campaign_id 64）",
           "sources": [
             "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
           ],
@@ -2959,13 +3049,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "9e4700fb6d85d8e41e6e3a4feaddf4e803e9521b083fa3bfee74a9468e9c30dc",
+      "table_hash": "9c9536127305eab479c939cd08b086eab9e50acb965941fb0bc944cb4d780436",
       "definitions": [
         {
           "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql",
           "line": 138,
           "group": "flyway-migration",
-          "hash": "9e4700fb6d85d8e41e6e3a4feaddf4e803e9521b083fa3bfee74a9468e9c30dc"
+          "hash": "9c9536127305eab479c939cd08b086eab9e50acb965941fb0bc944cb4d780436"
         }
       ]
     },
@@ -2999,7 +3089,7 @@
         {
           "name": "campaign_id",
           "type": "VARCHAR",
-          "args": "50",
+          "args": "64",
           "unsigned": false,
           "nullable": false,
           "default": null,
@@ -3008,7 +3098,7 @@
           "on_update": false,
           "inline_primary_key": false,
           "inline_unique": false,
-          "comment": null,
+          "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）",
           "sources": [
             "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
           ],
@@ -3260,13 +3350,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "631d199aebf71514f84558a558ed292a9877ef29352206514c0b6006bd385771",
+      "table_hash": "b39461ae461cda83a21e5ce9cc2957f5037fcbdb08844a75f9db4fbb0ac593d0",
       "definitions": [
         {
           "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql",
           "line": 84,
           "group": "flyway-migration",
-          "hash": "631d199aebf71514f84558a558ed292a9877ef29352206514c0b6006bd385771"
+          "hash": "b39461ae461cda83a21e5ce9cc2957f5037fcbdb08844a75f9db4fbb0ac593d0"
         }
       ]
     },
@@ -3319,7 +3409,7 @@
         {
           "name": "campaign_id",
           "type": "VARCHAR",
-          "args": "50",
+          "args": "64",
           "unsigned": false,
           "nullable": false,
           "default": null,
@@ -3328,7 +3418,7 @@
           "on_update": false,
           "inline_primary_key": false,
           "inline_unique": false,
-          "comment": null,
+          "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）",
           "sources": [
             "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
           ],
@@ -3703,13 +3793,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "0a146ae62d80e1fac98226da2e645b95bbcb85d4df4b1369d7334d898e131a0c",
+      "table_hash": "7a0476a35665087aa1418c43dbc6e4e9137a0adfdc1acc4d23a8efaab0c16709",
       "definitions": [
         {
           "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql",
           "line": 159,
           "group": "flyway-migration",
-          "hash": "0a146ae62d80e1fac98226da2e645b95bbcb85d4df4b1369d7334d898e131a0c"
+          "hash": "7a0476a35665087aa1418c43dbc6e4e9137a0adfdc1acc4d23a8efaab0c16709"
         }
       ]
     },
@@ -3977,315 +4067,6 @@
       ]
     },
     {
-      "key": "amz_ad.amz_ad_placement_report",
-      "database": "amz_ad",
-      "name": "amz_ad_placement_report",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "shop_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "campaign_id",
-          "type": "VARCHAR",
-          "args": "50",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "placement",
-          "type": "VARCHAR",
-          "args": "50",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "TOP_OF_SEARCH/PRODUCT_PAGES/REST_OF_SEARCH/DETAIL_PAGE",
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "report_date",
-          "type": "DATE",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "impressions",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "clicks",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "cost",
-          "type": "DECIMAL",
-          "args": "10,2",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "sales",
-          "type": "DECIMAL",
-          "args": "10,2",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "orders",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "bid_multiplier",
-          "type": "DECIMAL",
-          "args": "5,2",
-          "unsigned": false,
-          "nullable": true,
-          "default": "1.00",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "位置竞价倍率",
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "shop_id": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "campaign_id": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "placement": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "report_date": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "impressions": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "clicks": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "cost": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "sales": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "orders": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "bid_multiplier": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [
-        {
-          "name": "idx_shop_date",
-          "columns": [
-            "shop_id",
-            "report_date"
-          ]
-        },
-        {
-          "name": "idx_campaign_placement",
-          "columns": [
-            "campaign_id",
-            "placement"
-          ]
-        }
-      ],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "6b5002f4c13e2202a67ed5a0a467f559b49739757b1733bf968c1cd2062e1325",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql",
-          "line": 227,
-          "group": "flyway-migration",
-          "hash": "6b5002f4c13e2202a67ed5a0a467f559b49739757b1733bf968c1cd2062e1325"
-        }
-      ]
-    },
-    {
       "key": "amz_ad.amz_ad_search_term",
       "database": "amz_ad",
       "name": "amz_ad_search_term",
@@ -4334,7 +4115,7 @@
         {
           "name": "campaign_id",
           "type": "VARCHAR",
-          "args": "50",
+          "args": "64",
           "unsigned": false,
           "nullable": false,
           "default": null,
@@ -4343,7 +4124,7 @@
           "on_update": false,
           "inline_primary_key": false,
           "inline_unique": false,
-          "comment": null,
+          "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）",
           "sources": [
             "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
           ],
@@ -4699,13 +4480,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "825cfefc9a30146c941e3517ceade0178418d0a29981f3f2a469c3356408c533",
+      "table_hash": "e1793b349c05432478cc97b42c8b4f5280b0b699ff1f8dcf85dbed0c5188f436",
       "definitions": [
         {
           "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql",
           "line": 115,
           "group": "flyway-migration",
-          "hash": "825cfefc9a30146c941e3517ceade0178418d0a29981f3f2a469c3356408c533"
+          "hash": "e1793b349c05432478cc97b42c8b4f5280b0b699ff1f8dcf85dbed0c5188f436"
         }
       ]
     },
@@ -4739,7 +4520,7 @@
         {
           "name": "campaign_id",
           "type": "VARCHAR",
-          "args": "50",
+          "args": "64",
           "unsigned": false,
           "nullable": false,
           "default": null,
@@ -4748,7 +4529,7 @@
           "on_update": false,
           "inline_primary_key": false,
           "inline_unique": false,
-          "comment": null,
+          "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）",
           "sources": [
             "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql"
           ],
@@ -4957,13 +4738,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "aaf16cc63233cd788d6e9ebf441cb3e1226ca56cb267772e1a54b4d82eb6ee5b",
+      "table_hash": "9995abdcbfefad9e684e9935c7b575aed1d5568c0f47e86676afe0091574cad6",
       "definitions": [
         {
           "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V1__init.sql",
           "line": 99,
           "group": "flyway-migration",
-          "hash": "aaf16cc63233cd788d6e9ebf441cb3e1226ca56cb267772e1a54b4d82eb6ee5b"
+          "hash": "9995abdcbfefad9e684e9935c7b575aed1d5568c0f47e86676afe0091574cad6"
         }
       ]
     },
@@ -5384,918 +5165,6 @@
       ]
     },
     {
-      "key": "amz_ai.amz_listing_seo",
-      "database": "amz_ai",
-      "name": "amz_listing_seo",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "shop_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "店铺 ID",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "asin",
-          "type": "VARCHAR",
-          "args": "20",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "ASIN",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "check_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "检查时间",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "title_score",
-          "type": "TINYINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "标题分 0-100",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "bullet_score",
-          "type": "TINYINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "五点分 0-100",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "description_score",
-          "type": "TINYINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "描述分 0-100",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "keyword_score",
-          "type": "TINYINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "搜索词分 0-100",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "image_score",
-          "type": "TINYINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "图片分 0-100",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "overall_score",
-          "type": "TINYINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "综合分 0-100",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "suggestions",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "优化建议 JSON",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "ai_analysis",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "AI 分析原文",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "shop_id": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "asin": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "check_time": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "title_score": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "bullet_score": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "description_score": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "keyword_score": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "image_score": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "overall_score": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "suggestions": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "ai_analysis": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [
-        {
-          "name": "idx_asin_time",
-          "columns": [
-            "asin",
-            "check_time"
-          ]
-        },
-        {
-          "name": "idx_shop",
-          "columns": [
-            "shop_id"
-          ]
-        }
-      ],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "2b66ab6769f13a6a61508b78a1c2158aaf58fa06ef96edf63488ee1456bcb6bf",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql",
-          "line": 37,
-          "group": "flyway-migration",
-          "hash": "2b66ab6769f13a6a61508b78a1c2158aaf58fa06ef96edf63488ee1456bcb6bf"
-        }
-      ]
-    },
-    {
-      "key": "amz_ai.amz_logistics_quote",
-      "database": "amz_ai",
-      "name": "amz_logistics_quote",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "shop_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "店铺 ID",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "origin",
-          "type": "VARCHAR",
-          "args": "100",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "起运地",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "destination",
-          "type": "VARCHAR",
-          "args": "100",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "目的地",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "transport_mode",
-          "type": "VARCHAR",
-          "args": "20",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "运输方式：SEA/AIR/EXPRESS",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "weight_kg",
-          "type": "DECIMAL",
-          "args": "10,2",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "重量 kg",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "volume_cbm",
-          "type": "DECIMAL",
-          "args": "10,3",
-          "unsigned": false,
-          "nullable": false,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "体积 CBM",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "estimated_cost",
-          "type": "DECIMAL",
-          "args": "12,2",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "预估费用 CNY",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "estimated_days",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "预估天数",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "currency",
-          "type": "VARCHAR",
-          "args": "10",
-          "unsigned": false,
-          "nullable": true,
-          "default": "'CNY'",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "shop_id": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "origin": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "destination": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "transport_mode": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "weight_kg": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "volume_cbm": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "estimated_cost": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "estimated_days": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "currency": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [
-        {
-          "name": "idx_shop_mode",
-          "columns": [
-            "shop_id",
-            "transport_mode"
-          ]
-        }
-      ],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "9ce72ab571d3931c274cb3951fcb289cf28c9c17b3b8da92f036a722cedcf9e2",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql",
-          "line": 55,
-          "group": "flyway-migration",
-          "hash": "9ce72ab571d3931c274cb3951fcb289cf28c9c17b3b8da92f036a722cedcf9e2"
-        }
-      ]
-    },
-    {
-      "key": "amz_ai.amz_report_template",
-      "database": "amz_ai",
-      "name": "amz_report_template",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "shop_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "店铺 ID",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "name",
-          "type": "VARCHAR",
-          "args": "100",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "模板名称",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "report_type",
-          "type": "VARCHAR",
-          "args": "50",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "报表类型",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "dimensions",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "维度配置 JSON",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "metrics",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "指标配置 JSON",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "filters",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "筛选条件 JSON",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "schedule_cron",
-          "type": "VARCHAR",
-          "args": "100",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "定时推送 cron 表达式",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "recipients",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "推送接收人",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "enabled",
-          "type": "TINYINT",
-          "args": "1",
-          "unsigned": false,
-          "nullable": false,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "是否启用",
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "update_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": true,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "shop_id": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "name": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "report_type": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "dimensions": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "metrics": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "filters": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "schedule_cron": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "recipients": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "enabled": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "update_time": [
-          "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [
-        {
-          "name": "idx_shop_type",
-          "columns": [
-            "shop_id",
-            "report_type"
-          ]
-        }
-      ],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "d8a7c59a6532438b0b98d0e8bb34f554ac6e202e82c741326f42284aa4a3cd2a",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-ai/src/main/resources/db/migration/V1__init.sql",
-          "line": 70,
-          "group": "flyway-migration",
-          "hash": "d8a7c59a6532438b0b98d0e8bb34f554ac6e202e82c741326f42284aa4a3cd2a"
-        }
-      ]
-    },
-    {
       "key": "amz_ai.amz_user_preference",
       "database": "amz_ai",
       "name": "amz_user_preference",
@@ -6556,359 +5425,6 @@
           "line": 8,
           "group": "flyway-migration",
           "hash": "4a8cfd2f722ef85b71a3ba276fdba58fb507af3039a43ef64f4be7837590db52"
-        }
-      ]
-    },
-    {
-      "key": "amz_customer.amz_customer_service_kpi",
-      "database": "amz_customer",
-      "name": "amz_customer_service_kpi",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "shop_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "report_date",
-          "type": "DATE",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "total_tickets",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "工单总数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "pending_tickets",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "待处理数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "replied_tickets",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "已回复数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "resolved_tickets",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "已解决数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "avg_response_time_hours",
-          "type": "DECIMAL",
-          "args": "10,2",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "平均响应时间(小时)",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "overdue_tickets",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "超时工单数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "review_solicitations_sent",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "索评发送数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "negative_reviews_detected",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "差评检测数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "negative_reviews_resolved",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "差评解决数",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "satisfaction_score",
-          "type": "DECIMAL",
-          "args": "3,1",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "满意度评分(0-5)",
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "shop_id": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "report_date": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "total_tickets": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "pending_tickets": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "replied_tickets": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "resolved_tickets": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "avg_response_time_hours": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "overdue_tickets": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "review_solicitations_sent": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "negative_reviews_detected": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "negative_reviews_resolved": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "satisfaction_score": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [
-        {
-          "name": "uk_shop_date",
-          "columns": [
-            "shop_id",
-            "report_date"
-          ]
-        }
-      ],
-      "indexes": [
-        {
-          "name": "idx_shop",
-          "columns": [
-            "shop_id"
-          ]
-        }
-      ],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "e3209a3c07937df4a6ee08543db7f51201a64b95d8ef4191dd42a4219a7a9b9e",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql",
-          "line": 131,
-          "group": "flyway-migration",
-          "hash": "e3209a3c07937df4a6ee08543db7f51201a64b95d8ef4191dd42a4219a7a9b9e"
         }
       ]
     },
@@ -27000,190 +25516,6 @@
       ]
     },
     {
-      "key": "amz_product.amz_cart",
-      "database": "amz_product",
-      "name": "amz_cart",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "user_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "product_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "count",
-          "type": "INT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "1",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "custom_attribute",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "update_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": true,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "user_id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "product_id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "count": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "custom_attribute": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "update_time": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "468eb16dbd496429290fdcaa0bdb1f52655796798796f651f4c31c59775181c0",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql",
-          "line": 8,
-          "group": "flyway-migration",
-          "hash": "468eb16dbd496429290fdcaa0bdb1f52655796798796f651f4c31c59775181c0"
-        }
-      ]
-    },
-    {
       "key": "amz_product.amz_competitor_monitor",
       "database": "amz_product",
       "name": "amz_competitor_monitor",
@@ -27603,146 +25935,6 @@
           "line": 153,
           "group": "flyway-migration",
           "hash": "8f97f7dbcd3aeaccd5af96669fd0ec9c874f258440e650652ec1b6b01b873bac"
-        }
-      ]
-    },
-    {
-      "key": "amz_product.amz_coupon",
-      "database": "amz_product",
-      "name": "amz_coupon",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "name",
-          "type": "VARCHAR",
-          "args": "100",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "discount",
-          "type": "DECIMAL",
-          "args": "10,2",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "limit",
-          "type": "DECIMAL",
-          "args": "10,2",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "name": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "discount": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "limit": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "f411313e062d772c444db6518075f6021788b027e0f087f789a72f364e7b3e2b",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql",
-          "line": 25,
-          "group": "flyway-migration",
-          "hash": "f411313e062d772c444db6518075f6021788b027e0f087f789a72f364e7b3e2b"
         }
       ]
     },
@@ -29632,124 +27824,6 @@
       ]
     },
     {
-      "key": "amz_product.amz_product_browse",
-      "database": "amz_product",
-      "name": "amz_product_browse",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "user_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "product_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "user_id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "product_id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "7012a3526f8b3b70054637a52e4147e9bb3d18836808c5b6230fff8e9ccdbad3",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql",
-          "line": 18,
-          "group": "flyway-migration",
-          "hash": "7012a3526f8b3b70054637a52e4147e9bb3d18836808c5b6230fff8e9ccdbad3"
-        }
-      ]
-    },
-    {
       "key": "amz_product.amz_translation_cache",
       "database": "amz_product",
       "name": "amz_translation_cache",
@@ -29939,124 +28013,6 @@
           "line": 85,
           "group": "flyway-migration",
           "hash": "fbda00283a651ce0902eccc7bc4e74e156781b62129a14ef767de8de43f35bd5"
-        }
-      ]
-    },
-    {
-      "key": "amz_product.amz_user_coupon",
-      "database": "amz_product",
-      "name": "amz_user_coupon",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "user_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "coupon_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "user_id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "coupon_id": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "55b4dc2d167b6df60f32a7b08c8c1866a8d52bfe99d5bf90cb82ada0f6389d43",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-product/src/main/resources/db/migration/V1__init.sql",
-          "line": 33,
-          "group": "flyway-migration",
-          "hash": "55b4dc2d167b6df60f32a7b08c8c1866a8d52bfe99d5bf90cb82ada0f6389d43"
         }
       ]
     },
@@ -37089,132 +35045,6 @@
       ]
     },
     {
-      "key": "amz_user.amz_attention",
-      "database": "amz_user",
-      "name": "amz_attention",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "user_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "attention_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": null,
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "user_id": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "attention_id": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [
-        {
-          "name": "uk_user_attention",
-          "columns": [
-            "user_id",
-            "attention_id"
-          ]
-        }
-      ],
-      "indexes": [],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "55c10a90f90a736bb7681affecf50adc65e2ff43819b2b3bec74fefd591ed7c0",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql",
-          "line": 24,
-          "group": "flyway-migration",
-          "hash": "55c10a90f90a736bb7681affecf50adc65e2ff43819b2b3bec74fefd591ed7c0"
-        }
-      ]
-    },
-    {
       "key": "amz_user.amz_field_permission",
       "database": "amz_user",
       "name": "amz_field_permission",
@@ -37383,341 +35213,6 @@
           "line": 85,
           "group": "flyway-migration",
           "hash": "6c3d3215635392c70f8cf19952c4be1042d8058b2049cb570f66874cc5b52460"
-        }
-      ]
-    },
-    {
-      "key": "amz_user.amz_oper_log",
-      "database": "amz_user",
-      "name": "amz_oper_log",
-      "primary_key": [
-        "id"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": null,
-          "auto_increment": true,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": true,
-          "inline_unique": false,
-          "comment": "主键 ID",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "user_id",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "NULL",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "操作人用户 ID",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "module",
-          "type": "VARCHAR",
-          "args": "64",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "业务模块名",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "action",
-          "type": "VARCHAR",
-          "args": "64",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "操作类型",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "description",
-          "type": "VARCHAR",
-          "args": "255",
-          "unsigned": false,
-          "nullable": true,
-          "default": "NULL",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "操作描述",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "method",
-          "type": "VARCHAR",
-          "args": "255",
-          "unsigned": false,
-          "nullable": false,
-          "default": null,
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "执行方法签名",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "params",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "NULL",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "方法入参（JSON）",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "result",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "NULL",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "返回值（JSON）",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "ip",
-          "type": "VARCHAR",
-          "args": "64",
-          "unsigned": false,
-          "nullable": true,
-          "default": "NULL",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "请求来源 IP",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "status",
-          "type": "VARCHAR",
-          "args": "16",
-          "unsigned": false,
-          "nullable": false,
-          "default": "'SUCCESS'",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "执行状态",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "error_msg",
-          "type": "TEXT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "NULL",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "异常信息",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "cost_time",
-          "type": "BIGINT",
-          "args": "",
-          "unsigned": false,
-          "nullable": true,
-          "default": "0",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "方法耗时（毫秒）",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        },
-        {
-          "name": "create_time",
-          "type": "DATETIME",
-          "args": "",
-          "unsigned": false,
-          "nullable": false,
-          "default": "CURRENT_TIMESTAMP",
-          "auto_increment": false,
-          "generated": false,
-          "on_update": false,
-          "inline_primary_key": false,
-          "inline_unique": false,
-          "comment": "操作时间",
-          "sources": [
-            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-          ],
-          "conditional": false,
-          "conflicts": []
-        }
-      ],
-      "column_sources": {
-        "id": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "user_id": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "module": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "action": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "description": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "method": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "params": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "result": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "ip": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "status": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "error_msg": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "cost_time": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ],
-        "create_time": [
-          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
-        ]
-      },
-      "conditional_columns": [],
-      "conflicting_columns": [],
-      "definition_count": 1,
-      "unique_keys": [],
-      "indexes": [
-        {
-          "name": "idx_user_id",
-          "columns": [
-            "user_id"
-          ]
-        },
-        {
-          "name": "idx_create_time",
-          "columns": [
-            "create_time"
-          ]
-        },
-        {
-          "name": "idx_module",
-          "columns": [
-            "module"
-          ]
-        }
-      ],
-      "foreign_keys": [],
-      "engine": "InnoDB",
-      "charset": "utf8mb4",
-      "comment": null,
-      "table_hash": "ba04d919cc6576ba21dbec54874ed00e7cf32df46781ca6338e0e1489273f3ad",
-      "definitions": [
-        {
-          "path": "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql",
-          "line": 63,
-          "group": "flyway-migration",
-          "hash": "ba04d919cc6576ba21dbec54874ed00e7cf32df46781ca6338e0e1489273f3ad"
         }
       ]
     },
@@ -38747,6 +36242,190 @@
       "database": "amz_ad",
       "sql": "ALTER TABLE amz_ad_asin_keyword ADD UNIQUE KEY uk_ad_asin_shop_asin_keyword (shop_id, asin, keyword)",
       "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V7__ad_business_uniqueness.sql"
+    },
+    {
+      "table": "amz_ad_campaign_ext",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "campaign_id",
+          "definition": {
+            "name": "campaign_id",
+            "type": "VARCHAR",
+            "args": "64",
+            "unsigned": false,
+            "nullable": false,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）"
+          }
+        }
+      ],
+      "line": 20,
+      "database": "amz_ad",
+      "sql": "ALTER TABLE amz_ad_campaign_ext MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）'",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql"
+    },
+    {
+      "table": "amz_ad_creative",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "campaign_id",
+          "definition": {
+            "name": "campaign_id",
+            "type": "VARCHAR",
+            "args": "64",
+            "unsigned": false,
+            "nullable": false,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）"
+          }
+        }
+      ],
+      "line": 22,
+      "database": "amz_ad",
+      "sql": "ALTER TABLE amz_ad_creative MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）'",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql"
+    },
+    {
+      "table": "amz_ad_targeting",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "campaign_id",
+          "definition": {
+            "name": "campaign_id",
+            "type": "VARCHAR",
+            "args": "64",
+            "unsigned": false,
+            "nullable": false,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）"
+          }
+        }
+      ],
+      "line": 24,
+      "database": "amz_ad",
+      "sql": "ALTER TABLE amz_ad_targeting MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）'",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql"
+    },
+    {
+      "table": "amz_ad_search_term",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "campaign_id",
+          "definition": {
+            "name": "campaign_id",
+            "type": "VARCHAR",
+            "args": "64",
+            "unsigned": false,
+            "nullable": false,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）"
+          }
+        }
+      ],
+      "line": 26,
+      "database": "amz_ad",
+      "sql": "ALTER TABLE amz_ad_search_term MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）'",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql"
+    },
+    {
+      "table": "amz_ad_converting_terms",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "campaign_id",
+          "definition": {
+            "name": "campaign_id",
+            "type": "VARCHAR",
+            "args": "64",
+            "unsigned": false,
+            "nullable": false,
+            "default": "''",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "来源活动（对齐 amz_ad_campaign.campaign_id 64）"
+          }
+        }
+      ],
+      "line": 31,
+      "database": "amz_ad",
+      "sql": "ALTER TABLE amz_ad_converting_terms MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL DEFAULT '' COMMENT '来源活动（对齐 amz_ad_campaign.campaign_id 64）'",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql"
+    },
+    {
+      "table": "amz_ad_daily_report",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "campaign_id",
+          "definition": {
+            "name": "campaign_id",
+            "type": "VARCHAR",
+            "args": "64",
+            "unsigned": false,
+            "nullable": false,
+            "default": null,
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）"
+          }
+        }
+      ],
+      "line": 33,
+      "database": "amz_ad",
+      "sql": "ALTER TABLE amz_ad_daily_report MODIFY COLUMN campaign_id VARCHAR(64) NOT NULL COMMENT 'Amazon 广告活动 ID（对齐 amz_ad_campaign.campaign_id 64）'",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql"
+    },
+    {
+      "table": "amz_ad_campaign",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [],
+      "line": 36,
+      "database": "amz_ad",
+      "sql": "ALTER TABLE amz_ad_campaign DROP INDEX idx_shop",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql"
     },
     {
       "table": "amz_settlement_detail",

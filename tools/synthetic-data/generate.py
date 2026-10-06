@@ -116,7 +116,6 @@ LAYOUTS = {
     'amz_user.amz_shop': ['shop', 'marketplace'],
     'amz_user.amz_user_shop': ['user', 'shop'],
     'amz_user.amz_field_permission': ['role', 'service', 'entity', 'field'],
-    'amz_user.amz_oper_log': ['shop', 'user'],
     'amz_product.amz_product': ['shop', 'marketplace', 'product'],
     'amz_order.amz_product_cost': ['shop', 'marketplace', 'product'],
     'amz_order.amz_order': ['shop', 'marketplace', 'product', 'order'],
@@ -166,7 +165,6 @@ LAYOUTS = {
     'amz_customer.amz_email_task': ['shop', 'day3', 'day'],
     'amz_customer.amz_rma': ['shop', 'skus5', 'day3'],
     'amz_customer.amz_negative_review': ['shop', 'skus5', 'day3'],
-    'amz_customer.amz_customer_service_kpi': ['shop', 'day'],
     'amz_customer.amz_email_template': ['category'],
     'amz_ad.amz_ad_campaign': ['shop', 'campaign'],
     'amz_ad.amz_ad_keyword': ['shop', 'campaign', 'keyword'],
@@ -223,18 +221,9 @@ LAYOUTS = {
     'amz_order.amz_shipment_routing': ['shop', 'warehouse', 'day3'],
     'amz_search.amz_history': ['user', 'day3'],
     # --- 补齐无模拟数据的表（QA-01 表覆盖率：112/112；V5 新增 amz_order_item 后为 113/113）--- #
-    'amz_ad.amz_ad_placement_report': ['shop', 'campaign', 'day'],
-    'amz_ai.amz_listing_seo': ['shop', 'product5'],
-    'amz_ai.amz_logistics_quote': ['shop', 'day3'],
-    'amz_ai.amz_report_template': ['shop', 'entity'],
-    'amz_product.amz_cart': ['user', 'product5'],
-    'amz_product.amz_coupon': ['category'],
-    'amz_product.amz_product_browse': ['user', 'product5'],
-    'amz_product.amz_user_coupon': ['user', 'day3'],
     'amz_spapi.amz_spapi_notification_destination': ['shop', 'marketplace'],
     'amz_spapi.amz_spapi_notification_inbox': ['shop', 'day3', 'day'],
     'amz_spapi.amz_spapi_notification_subscription': ['shop', 'marketplace', 'day3'],
-    'amz_user.amz_attention': ['user', 'day3'],
 }
 
 # tables whose row count must not be the full cartesian product
@@ -358,7 +347,6 @@ REF_COLUMNS = {
     'seller_sku': 'sku',
     'amazon_sku': 'sku',
     'fn_sku': 'sku',
-    'coupon_id': 'coupon_id',
 }
 
 # table -> {column: pool} : the values other tables may reference
@@ -373,7 +361,6 @@ HARVEST = {
     'amz_ad.amz_ad_keyword': {'id': 'keyword_id'},
     'amz_order.amz_order': {'id': 'order_id', 'amazon_order_id': 'amazon_order_id'},
     'amz_multiplatform.amz_platform_account': {'id': 'platform_account_id'},
-    'amz_product.amz_coupon': {'id': 'coupon_id'},
 }
 
 # dimension that already determines the pool (so no harvested pool is needed)
@@ -393,7 +380,6 @@ DIM_FOR_POOL = {
     'campaign_id': 'campaign',
     'keyword_id': 'keyword',
     'platform_account_id': None,
-    'coupon_id': None,
 }
 
 PRODUCED_POOLS = set()

@@ -123,6 +123,36 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 2449,
+      "lines": 37,
+      "sha256": "7a4dc74df00fb90ba36a5013332342077bda7ea8a48e19c20fcb6984e21a8401",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_ad",
+      "alter_table_statements": 7,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V8__campaign_id_width_convergence.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 327,
+      "lines": 7,
+      "sha256": "6079797060f9f1329b8454d2f829ebfff5f1f744c566a11c3a7ff2c25e15497f",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_ad",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-ad/src/main/resources/db/migration/V9__drop_dead_table.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 5047,
       "lines": 90,
       "sha256": "858a5b554033c7f47fcdc2e7b95f3bd8cc85135b7b496298318a6638ebe1610c",
@@ -153,6 +183,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 410,
+      "lines": 10,
+      "sha256": "8d4926baea29bd2bf67a2c7216a44bc6e8f54ab5e5f22fe45b22b4fc1535b815",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_ai",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-ai/src/main/resources/db/migration/V3__drop_dead_tables.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 8958,
       "lines": 156,
       "sha256": "02fef775bc69bd7bad14014e78240f2305a5cbd6dd5216fadc60169428c60780",
@@ -164,6 +209,21 @@
       "mysql8_incompatible_add_column": 0,
       "db_source": "application.yml",
       "path": "amz-service/amz-service-customer/src/main/resources/db/migration/V1__init.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 227,
+      "lines": 6,
+      "sha256": "1f7535e8dbe3b14b94682fe7924b332b9f18e427732b655b61dea17e5f3dffa9",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_customer",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-customer/src/main/resources/db/migration/V2__drop_dead_tables.sql",
       "dynamic_ddl": 0
     },
     {
@@ -573,6 +633,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 491,
+      "lines": 11,
+      "sha256": "1e0d7ea8f460c272aa4775c5d8fb904d9f33dbada7a8e062a18e9812f2a72b26",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_product",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-product/src/main/resources/db/migration/V5__drop_dead_tables.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 7483,
       "lines": 147,
       "sha256": "54ce536ae92cac9a79c05fc22fce964d06e20949cffa80356241186f749a8f4f",
@@ -764,6 +839,21 @@
       "mysql8_incompatible_add_column": 0,
       "db_source": "application.yml",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 605,
+      "lines": 12,
+      "sha256": "8ddf3c58c2d80a1d783f7d2f183cf641a278339dc48b4e6d0cdb5726bb60c10e",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V2__drop_dead_tables.sql",
       "dynamic_ddl": 0
     }
   ]

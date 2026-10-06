@@ -59,7 +59,7 @@ amz-service-multiplatform   — 多平台（Shopify/eBay/Walmart/Shopee/Lazada�
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
 
-> 共 113 张表（Flyway CREATE TABLE 去重集合，见下文数据库迁移行）、360+ REST 端点（方法注解实测）、AI Agent 29 工具
+> 共 102 张表（Flyway 迁移重放后的活表集合，2026-10-05 死表清理后实测）、360+ REST 端点（方法注解实测）、AI Agent 29 工具
 
 ## 🤖 AI 运营 Agent（29 工具）
 
@@ -241,7 +241,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **调度防重** | `DistributedJobLock` Redis 分布式锁默认 fail-closed；仅显式幂等/只读任务可选择降级，并记录抢锁、跳过、降级和释放失败指标 |
 | **SQL 注入防护** | 全 MyBatis `#{}` |
 | **全局异常处理器** | 统一 `@ControllerAdvice` 覆盖 16 服务 |
-| **数据库迁移** | Flyway 10.20.0 是 14 个 MySQL 服务的唯一建表事实源（**113 张表**＝迁移文件里 `CREATE TABLE` 去重集合，2026-09-30 实测；旧文的 106 已过期；另有两个非迁移对象：`amz_order.v_profit_summary_by_sku` 是 V1 建的 VIEW，不计入表数，`amz_ops.amz_synthetic_dataset_registry` 由 `tools/synthetic-data/purge.py` 建，是唯一例外；baseline-on-migrate: false —— 存量库无 flyway_schema_history 时 fail-fast 拒绝启动，不自动打基线重放 V2..Vn）；Compose/k8s 只建 14 个空库 |
+| **数据库迁移** | Flyway 10.20.0 是 14 个 MySQL 服务的唯一建表事实源（**102 张表**＝迁移重放（含 V-next DROP）后的活表集合，2026-10-05 实测；旧文的 113 已含 11 张死表，已清理；另有两个非迁移对象：`amz_order.v_profit_summary_by_sku` 是 V1 建的 VIEW，不计入表数，`amz_ops.amz_synthetic_dataset_registry` 由 `tools/synthetic-data/purge.py` 建，是唯一例外；baseline-on-migrate: false —— 存量库无 flyway_schema_history 时 fail-fast 拒绝启动，不自动打基线重放 V2..Vn）；Compose/k8s 只建 14 个空库 |
 | **Docker 健康探针** | 16 服务 Actuator health/liveness/readiness |
 
 ## ⚠️ 已知限制
@@ -354,7 +354,7 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 | 命令 | 作用 | 当前实测 |
 |---|---|---|
 | `python apply_migrations.py --host 127.0.0.1 --port 3399 --user amz --reset` | 在 MySQL 8 上建 14 个库并应用 49 个 Flyway 迁移（真机导入的前置步骤；`--dry-run` 只看计划） | 14 库 / 49 迁移，failed=0 |
-| `python generate.py --tier demo --reset` | 生成 113 张表 / 14 个库的数据集 | demo 档 225,734 行；ci 档 25,484 行 |
+| `python generate.py --tier demo --reset` | 生成 102 张表 / 14 个库的数据集 | demo 档 225,734 行；ci 档 25,484 行 |
 | `python verify.py --tier demo` | 结构 / 引用 / 标记 / 确定性 / DDL 快照校验 | PASS（229 文件两次生成字节一致） |
 | `python purge.py --tier demo --emit --registry` | 生成 `cleanup.sql`（113 条 DELETE）与库级登记表 | exit 0，0 表遗漏 |
 | `python verify_cleanup.py --tier demo` | 在 SQLite 内实跑 `cleanup.sql` 证明能删干净 | 225,734 行删除、剩余 0 |
@@ -362,7 +362,7 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 | `./load.ps1 -Tier demo -Container amz-mysql`（或 `./load.sh` / `-Server 127.0.0.1 -Port 3399 -User amz`） | 按库灌入 MySQL（支持远端 / 容器 / `-DryRun`） | 本机一次性 MySQL 8.0.39（端口 3399）：ci 档约 80s、demo 档约 7min，均 exit 0 |
 | `python verify_import.py --tier demo --host 127.0.0.1 --port 3399 --user amz --baseline out/ci/baseline.json` | 连真实 MySQL 8 核对 `基线 + manifest` 行数与 `amz_ops` 登记表，并可跑 `cleanup.sql` 闭环 | ci 25,574/25,574、demo 225,824/225,824；cleanup 删除 25,484 / 225,734 行，剩余回到基线 |
 
-标记方式：保留 ID 段 + `SYNTHETIC` 文本标记 + `amz_ops.amz_synthetic_dataset_registry(is_demo=1)`；schema 没有 `is_demo` 列，因此没有为演示去改 113 张表。完整步骤与安全规则见
+标记方式：保留 ID 段 + `SYNTHETIC` 文本标记 + `amz_ops.amz_synthetic_dataset_registry(is_demo=1)`；schema 没有 `is_demo` 列，因此没有为演示去改 102 张表。完整步骤与安全规则见
 [`docs/superpowers/runbooks/mock-data-seed-and-cleanup-runbook.md`](docs/superpowers/runbooks/mock-data-seed-and-cleanup-runbook.md)。
 
 > 边界：模拟数据**不是** SP-API 联调证据，连接器中心不得因此显示"已接通"。证据分两层：

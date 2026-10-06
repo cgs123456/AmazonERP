@@ -52,7 +52,6 @@ FK_TARGETS = {
     'purchase_order_id': ('amz_procurement.amz_purchase_order', 'id'),
     'campaign_id': ('amz_ad.amz_ad_campaign', 'campaign_id'),
     'keyword_id': ('amz_ad.amz_ad_keyword', 'id'),
-    'coupon_id': ('amz_product.amz_coupon', 'id'),
     'platform_account_id': ('amz_multiplatform.amz_platform_account', 'id'),
     'asin': ('amz_product.amz_product', 'asin'),
     'amazon_asin': ('amz_product.amz_product', 'asin'),
