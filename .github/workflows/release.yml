@@ -70,7 +70,7 @@ jobs:
           cache: maven
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: '22'
           cache: npm
           cache-dependency-path: amz-frontend/package-lock.json
       - uses: actions/setup-python@v5
@@ -78,6 +78,25 @@ jobs:
           python-version: "3.11"
       - name: Hygiene
         run: python tools/release/repository_hygiene.py --root .
+      # 接线尺（与 ci.yml 一致）
+      - name: Endpoint wiring reverse gate
+        run: |
+          python tools/schema/endpoint_coverage_audit.py --self-test .
+          python tools/schema/endpoint_coverage_audit.py --reverse .
+      - name: Stub shape gate
+        run: |
+          python tools/schema/stub_shape_audit.py --self-test .
+          python tools/schema/stub_shape_audit.py .
+      - name: Param name gate
+        run: |
+          python tools/schema/param_name_audit.py --self-test .
+          python tools/schema/param_name_audit.py .
+      - name: Entity/column drift self-test + gate
+        run: |
+          python tools/schema/entity_column_drift.py --self-test .
+          python tools/schema/entity_column_drift.py --gate .
+      - name: Critical Checkstyle
+        run: mvn -B -ntp checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml
       - name: Critical Checkstyle
         run: mvn -B -ntp checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml
       - name: Full Maven Test
@@ -154,6 +173,25 @@ jobs:
       name: production
     env:
       IMAGE_TAG: ${{ needs.quality-gate.outputs.image_tag }}
+      # Flyway IT 环境变量（与 ci.yml test 作业对齐）：
+      # FLYWAY_ALL_IT_* / COLLECTION_UPSERT_IT_* / SETTLEMENT_BATCH_IT_* /
+      # LISTING_HEALTH_IT_* / PROFIT_ORDER_COUNT_IT_* 全部补上，否则 release 的 Full Maven Test
+      # 会漏掉这些迁移验证（ci.yml test 有、release.yml 没有）。
+      FLYWAY_ALL_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+      FLYWAY_ALL_IT_USER: root
+      FLYWAY_ALL_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+      COLLECTION_UPSERT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+      COLLECTION_UPSERT_IT_USER: root
+      COLLECTION_UPSERT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+      SETTLEMENT_BATCH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+      SETTLEMENT_BATCH_IT_USER: root
+      SETTLEMENT_BATCH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+      LISTING_HEALTH_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+      LISTING_HEALTH_IT_USER: root
+      LISTING_HEALTH_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+      PROFIT_ORDER_COUNT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
+      PROFIT_ORDER_COUNT_IT_USER: root
+      PROFIT_ORDER_COUNT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -309,7 +347,9 @@ jobs:
           set -euo pipefail
           # git tag -l 恒 exit 0，首次发布时 prev_tag 为空走显式 exit 0——
           # 失败掩蔽写法（两个竖线接 true）已被契约测试列为禁词，注释里都不能出现
-          prev_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-creatordate | sed -n 2p)"
+          # --sort=-creatordate 用的是 tag 对象创建时间，本地提前建 tag 或同秒批量建时排序可能与发布顺序不符；
+          # --sort=-v:refname 用版本号语义排序（v1.2.3 < v1.2.4），保证取到上一版稳定 tag。
+          prev_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | sed -n 2p)"
           if [ -z "$prev_tag" ]; then
             echo "没有上一版 tag，跳过回滚演练（首次发布）"
             exit 0
