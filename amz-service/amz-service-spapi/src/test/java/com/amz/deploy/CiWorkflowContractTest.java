@@ -409,4 +409,34 @@ class CiWorkflowContractTest {
         }
         throw new IllegalStateException("无法从 user.dir 定位仓库根目录：" + System.getProperty("user.dir"));
     }
+
+    @Test
+    void frontendNodeVersionConsistentAcrossWorkflowsAndDockerfile() throws IOException {
+        // 动因（2026-10-05 review）：commit 声称「node 统一升到 22」但只改了 release.yml，
+        // ci.yml 停在 20 无人发现——CI 验的 node 与发布镜像构建用的 node 分裂。
+        // 三处必须同一 major：两条 workflow 的 setup-node 与 amz-frontend/Dockerfile 的 builder。
+        Pattern nodeVersion = Pattern.compile("node-version:\\s*['\"]?(\\d+)");
+        Pattern dockerNode = Pattern.compile("FROM\\s+node:(\\d+)");
+
+        Map<String, String> found = new LinkedHashMap<>();
+        for (Path wf : List.of(CI_WORKFLOW, ROOT.resolve(".github/workflows/release.yml"))) {
+            String text = Files.readString(wf, StandardCharsets.UTF_8);
+            Matcher m = nodeVersion.matcher(text);
+            while (m.find()) {
+                found.put(wf.getFileName().toString() + ":" + found.size(), m.group(1));
+            }
+        }
+        assertTrue(found.size() >= 2, "setup-node 扫描失效：只找到 " + found.size() + " 处");
+
+        String dockerfile = Files.readString(
+                ROOT.resolve("amz-frontend/Dockerfile"), StandardCharsets.UTF_8);
+        Matcher dm = dockerNode.matcher(dockerfile);
+        assertTrue(dm.find(), "amz-frontend/Dockerfile 未找到 FROM node:X builder");
+        found.put("amz-frontend/Dockerfile", dm.group(1));
+
+        Set<String> majors = new TreeSet<>(found.values());
+        assertTrue(majors.size() == 1,
+                "node major 分裂（改 workflow/Dockerfile 必须三处同步）：" + found);
+    }
 }
+

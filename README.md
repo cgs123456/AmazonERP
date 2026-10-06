@@ -338,11 +338,11 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（2026-10-05 fresh；`mvn test`） | 1999（0 失败 / 0 错误 / 17 跳过） | 20/20 模块 `BUILD SUCCESS` |
+| 后端 JUnit 5（2026-10-06 fresh；`mvn test`） | 2002（0 失败 / 0 错误 / 17 跳过） | 20/20 模块 `BUILD SUCCESS` |
 | 前端 Vitest（2026-10-05 fresh；`npm run test:run`） | 479（0 失败） | 43/43 文件通过 |
 | 前端 Playwright 全交互 E2E（2026-10-05 串行复跑） | 40+（受影响套件） | 全过 |
 
-> 最新整仓数字以 HANDOFF.md 为准（2026-10-05 整仓 1999 tests / 0F / 0E / 17S，BUILD SUCCESS）。
+> 最新整仓数字以 HANDOFF.md 为准（2026-10-06 交班基线 2002 tests / 0F / 0E / 17S，BUILD SUCCESS）。
 
 > 早期轮次（第 79~87 轮）的分模块计数（如 SP-API 428、Surefire 1134）为当时快照，已随功能增长过时；**全仓与前端最新数字一律以上表及 HANDOFF.md 为准**。
 
