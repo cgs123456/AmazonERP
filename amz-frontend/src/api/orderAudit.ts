@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 /**
  * 智能审单接口层（amz-service-order，`/order/audit/**`）。
@@ -116,19 +117,12 @@ export interface OrderSplitLog {
   splitTime?: string
 }
 
-const clean = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}
 
 /* ==================== 规则 ==================== */
 
 export const listRules = (shopId: number | string, enabled?: boolean) =>
   request.get<void, ApiResponse<OrderAuditRule[]>>(`/order/audit/rule/list/${shopId}`, {
-    params: clean({ enabled })
+    params: params({ enabled })
   })
 
 export const createRule = (body: Partial<OrderAuditRule>) =>
@@ -156,11 +150,11 @@ export const batchAudit = (shopId: number | string, body: AuditOrderInput[]) =>
 export const routeOrder = (shopId: number | string, q: {
   amazonOrderId: string; sku: string; asin?: string; quantity?: number; country?: string
 }) =>
-  request.get<void, ApiResponse<ShipmentRouting>>(`/order/audit/route/${shopId}`, { params: clean({ ...q }) })
+  request.get<void, ApiResponse<ShipmentRouting>>(`/order/audit/route/${shopId}`, { params: params({ ...q }) })
 
 /* ==================== 拆分日志（只读） ==================== */
 
 export const listSplitLogs = (shopId: number | string, originalOrderId?: string) =>
   request.get<void, ApiResponse<OrderSplitLog[]>>(`/order/audit/split-log/list/${shopId}`, {
-    params: clean({ originalOrderId })
+    params: params({ originalOrderId })
   })

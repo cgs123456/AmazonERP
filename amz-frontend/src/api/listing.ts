@@ -1,15 +1,9 @@
 import request from './auth'
 import type { ApiResponse } from './types'
 import { asNumber } from '@/utils/format'
+import { params } from '@/utils/query'
 
 /** 空串/undefined/null 不进 query：避免后端把空值当条件 */
-const params = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}
 
 
 /**
@@ -228,18 +222,9 @@ export interface ListingCheckForm {
   aplus?: boolean | null
 }
 
-/** 只带填了的参数：null/空串会被 Spring 绑成 null，等于把「未知」当答案提交 */
-const filled = (form: ListingCheckForm) => {
-  const out: Record<string, string | number | boolean> = {}
-  Object.entries(form).forEach(([k, v]) => {
-    if (v !== null && v !== undefined && v !== '') out[k] = v as string | number | boolean
-  })
-  return out
-}
-
 export const runListingCheck = (shopId: number | string, asin: string, form: ListingCheckForm) =>
   request.post<void, ApiResponse<ListingHealthRow>>('/product/listing-monitor/health/check', undefined, {
-    params: { shopId, asin, ...filled(form) }
+    params: params({ shopId, asin, ...form })
   })
 
 export interface TrendPoint {

@@ -128,6 +128,9 @@ root 拒绝 / v-show 行定位）仍然有效，详见 `git show 471c9fe:HANDOFF
   补丁文本时，`
 `/`` 会被外层字符串吃成真实控制字符写进源文件（本班写了
   两处坏文件）。含转义序列的代码补丁一律走 Write/Edit 工具或文件拼接。
+- **query 清洗 helper 只有一份**：`amz-frontend/src/utils/query.ts` 的 `params()`
+  （undefined/null/空串不进 query）。历史上 9 个 api 文件有 10 份逐字节相同的本地副本
+  （2026-10-05 清理收敛）。新 api 文件直接 import，不要再写本地副本。
 - **类型注解是键的上界不是实发集**：共享超类型（customer.ts 的 `ListQuery`）
   把四个列表端点的筛选键混在一起，直接当实发集比会产生伪红；
   按 literal/type 溯源分桶才诚实（本班 19 条伪红靠这个归位）。

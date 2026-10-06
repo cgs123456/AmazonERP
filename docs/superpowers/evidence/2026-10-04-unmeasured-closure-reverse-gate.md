@@ -75,3 +75,16 @@ unparsed=0`；`amz-service-ai` **124 tests BUILD SUCCESS**（删声明后测试�
    这把尺只看路径与方法，不看键名。要做需要先决定「以谁为准」，属于新增一把尺，不是本轮补漏。
 3. 桩数据**形状**（字段级）与后端真实响应的结构一致性，仍靠人工核对。
 4. 动态路由（`/orders/:id` 这类）不参与侧边栏可达性判定，只统计不比对。
+
+---
+
+## 后续状态（2026-10-05 更新指针，原文按日期保留）
+
+上面「仍未量到」的四条，三条已被后续工作解决：
+
+1. **#56 CI 红** → `db8346d` 结案（见 2026-10-04-migration-order-ci-red-attribution.md）。
+2. **参数名 / DTO 字段位** → `tools/schema/param_name_audit.py` 进 CI（2026-10-05-param-name-gate.md）。
+3. **桩数据形状字段级核对** → `tools/schema/stub_shape_audit.py` 进 CI（2026-10-05-stub-shape-gate.md）。
+
+第 4 条（动态路由不参与侧边栏可达性判定，只统计不比对）**仍未做**。
+本文基线数字（candidates=34、调用点 276、桩 140）也已随清点漂移到 33/277/141。

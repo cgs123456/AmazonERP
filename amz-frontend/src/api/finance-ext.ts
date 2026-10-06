@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 /**
  * 财务运营接口层（amz-service-finance，端口 8093）——回款 / 结算 / 费用差异 / 索赔 / VAT / 单品利润 / 凭证补数。
@@ -338,10 +339,3 @@ export const generateProcurementVouchers = (shopId: number | string) =>
 
 /* ==================== 内部：query 清洗 ==================== */
 
-const params = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}

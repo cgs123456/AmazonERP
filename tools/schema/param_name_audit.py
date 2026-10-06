@@ -772,18 +772,6 @@ def ts_param_type(params_text: str, ident: str):
     return None
 
 
-def build_matcher(full_path: str) -> str:
-    out = []
-    for seg in full_path.split('/'):
-        if not seg:
-            continue
-        if seg.startswith('{') and seg.endswith('}'):
-            out.append(r"(?:\$\{[^}]*\}|[^/`'\"]+)")
-        else:
-            out.append(re.escape(seg))
-    return '/'.join(out) + r'(?![\w-])'
-
-
 def to_frontend_alias(full_path: str) -> str:
     if not GATEWAY_YML.exists():
         return ''
@@ -1008,9 +996,6 @@ if '--self-test' in sys.argv:
     lit_args = lit_call[lit_call.index('(') + 1:lit_call.rfind(')')]
     check('helper 包着的字面量键溯源为 literal',
           sorted(params_info_of(lit_args, None, {})[2]), ['asin'])
-    check('matcher 不被子路径前缀骗（/ai/chat vs /ai/chat-stream）',
-          [bool(re.search(build_matcher('/ai/chat'), '/ai/chat-stream')),
-           bool(re.search(build_matcher('/ai/chat'), '/ai/chat'))], [False, True])
 
     failed = [c for c in cases if not c[1]]
     for name, ok_flag, got, want in cases:

@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 /**
  * 经营报表接口层（amz-service-report，端口 8102）。
@@ -240,13 +241,6 @@ export interface CostAllocation {
 /** 快照口径缺口：后端把这三项写成常量，页面据此提示利润被高估。 */
 export const SNAPSHOT_PLACEHOLDER_FIELDS = ['vatCost', 'refundCost', 'otherCost'] as const
 
-const params = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}
 
 /* ==================== /report/v2 ==================== */
 

@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 /**
  * 采购供应链接口层（amz-service-procurement，端口 8098）。
@@ -241,13 +242,6 @@ export interface ReceiptResult {
 }
 
 /** 空串/undefined 不进 query：后端把空 keyword 当条件拼进 LIKE */
-const params = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}
 
 /* ==================== 供应商 ==================== */
 

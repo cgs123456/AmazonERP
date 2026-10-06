@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 /**
  * 多仓库存与预警接口层（amz-service-logistics，`/logistics/warehouse/**` 的 stock/alert 部分）。
@@ -87,13 +88,6 @@ export const THRESHOLD_UNITS = ['DAYS', 'QTY']
 
 
 
-const params = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}
 
 export const listStock = (shopId: number | string,
                           q: { sku?: string; warehouseId?: number | string; size?: number; cursor?: string } = {}) =>

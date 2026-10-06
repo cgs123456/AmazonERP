@@ -1,5 +1,9 @@
 # 参数名闸门进 CI：前端 query 键 vs 后端 @RequestParam（2026-10-05）
 
+> **最终态（同日 b750db6 后）**：可比 163/163 全过，六桶全零（type-extra/not-comparable/
+> missing-required/ambiguous/unverifiable/RED）。本文中段的 106→155、57 条、8 条等
+> 数字是收口过程的历史快照；23 条 type-extra 已按「共享类型按端点拆窄」终解。
+
 ## 同日增量：披露桶收口 + 分发变体消歧（任务 2/3）
 
 初版基线（106 可比 / 57 不可比 / 1 歧义 / 1 缺必填）按 HANDOFF 计划 2/3 收口：

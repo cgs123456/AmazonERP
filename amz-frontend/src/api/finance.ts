@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 // 会计凭证（业财一体化核心，复式记账）
 export interface AccountingVoucher {
@@ -29,13 +30,6 @@ export interface AccountingVoucher {
  * 这里改为按 cursor 逐页取，并用 _page.truncated 判断是否还有下一页。
  */
 /** 空串/undefined/null 不进 query：避免后端把空值当条件 */
-const params = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}
 
 export const listVouchers = (shopId: number | string, sourceType?: string, size?: number, cursor?: string) =>
   request.get<void, ApiResponse<AccountingVoucher[]>>(`/finance/voucher/list/${shopId}`, {

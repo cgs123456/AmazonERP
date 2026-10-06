@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 /**
  * 客服域接口层（amz-service-customer，端口 8099）。
@@ -119,13 +120,6 @@ export const RMA_CONDITIONS = ['NEW', 'OPENED', 'UNOPENED', 'USED_DAMAGED']
 /** 非 mock 环境下必然失败/抛错的三个动作，界面上要标出来 */
 export const CHANNEL_NOT_INTEGRATED = ['process', 'match', 'solicit'] as const
 
-const params = (q: Record<string, unknown>) => {
-  const out: Record<string, unknown> = {}
-  Object.entries(q).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== '') out[k] = v
-  })
-  return out
-}
 
 /* ==================== 工单 ==================== */
 
