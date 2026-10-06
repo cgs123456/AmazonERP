@@ -320,7 +320,8 @@ public class ProductSelectionServiceImpl implements ProductSelectionService {
         } catch (Exception e) {
             log.error("AI 选品建议调用异常 opportunityId={}", opportunityId, e);
             opp.setAiSummary("AI 调用异常");
-            opp.setAiSuggestion("AI 服务调用异常: " + e.getMessage());
+            // 不存在与无权访问同一话术：枚举 opportunityId 不得探出「哪条存在」（OpsServiceImpl 同口径）
+            opp.setAiSuggestion("机会记录不存在或无权访问");
             opportunityMapper.updateById(opp);
             return Result.success(opp);
         }
