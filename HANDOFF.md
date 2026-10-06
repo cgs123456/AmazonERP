@@ -1,6 +1,6 @@
 # HANDOFF — AmazonERP 功能覆盖修复（2026-10-05 交班）
 
-工作树干净，`HEAD = b6039b3` 之上又落了参数名尺收口 commit（本文件随该 commit 推送）。
+工作树以本轮 review + 清理为准（见下「本轮清理批次」）；HEAD 随 commit 推进，以 `git log` 为准。
 
 ## 一句话现状
 
@@ -40,7 +40,7 @@ python tools/schema/endpoint_coverage_audit.py                  # 候选 33（�
 # 形状级（本班新增，进 CI）
 python tools/schema/stub_shape_audit.py --self-test .           # 20/20
 python tools/schema/stub_shape_audit.py .                       # 0 findings，非 0 即红
-python tools/schema/param_name_audit.py --self-test .           # 25/25
+python tools/schema/param_name_audit.py --self-test .           # 24/24
 python tools/schema/param_name_audit.py .                       # 0 findings，非 0 即红
 python tools/schema/entity_column_drift.py --self-test . && python tools/schema/entity_column_drift.py --gate .
 python tools/release/repository_hygiene.py --root .             # 以退出码为准，别 grep 文本
@@ -132,9 +132,9 @@ root 拒绝 / v-show 行定位）仍然有效，详见 `git show 471c9fe:HANDOFF
   Real 契约测试连自己 127.0.0.1 桩可能 ConnectException；单模块重跑即过，
   **先重跑再归因**，别写成产品结论。
 - **嵌套 heredoc 补丁是转义雷区**：`python - <<'EOF'` 里的三引号字符串再包一层
-  补丁文本时，`
-`/`` 会被外层字符串吃成真实控制字符写进源文件（本班写了
-  两处坏文件）。含转义序列的代码补丁一律走 Write/Edit 工具或文件拼接。
+  补丁文本时，反斜杠转义序列（换行符、退格符）会被外层字符串吃成真实控制字符写进源文件
+  （本班写了多处坏文件）。含转义序列的代码补丁一律走 Write/Edit 工具或文件拼接，
+  **包括记录这条坑本身——它上一版就被自己描述的坑打断了**（已修）。
 - **query 清洗 helper 只有一份**：`amz-frontend/src/utils/query.ts` 的 `params()`
   （undefined/null/空串不进 query）。历史上 9 个 api 文件有 10 份逐字节相同的本地副本
   （2026-10-05 清理收敛）。新 api 文件直接 import，不要再写本地副本。

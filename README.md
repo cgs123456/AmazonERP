@@ -344,7 +344,7 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 
 > 最新整仓数字以 HANDOFF.md 为准（2026-10-05 整仓 1999 tests / 0F / 0E / 17S，BUILD SUCCESS）。
 
-> 第 81 轮后端按新鲜重写的 Surefire XML 统计为 **175 份 / 1134 例 / 0F / 0E / 2S**，19/19 Reactor 模块 `BUILD SUCCESS`。2 个跳过项仍是缺少真实网络/凭证的 `SpApiIntegrationTest`。前端本轮复跑为 **19 文件 / 144 例 / 0F**，`vue-tsc && vite build` 成功（156 modules transformed）。E2E 仍需通过 `.start-backend-final.bat` + `.start-vite.bat` 拉起本地全栈后运行 `npx playwright test` 复验。
+> 早期轮次（第 79~87 轮）的分模块计数（如 SP-API 428、Surefire 1134）为当时快照，已随功能增长过时；**全仓与前端最新数字一律以上表及 HANDOFF.md 为准**。
 
 
 ## 🗂 模拟数据工具链（没有真实数据时的演示 / 压测基线）
@@ -356,7 +356,7 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 | `python apply_migrations.py --host 127.0.0.1 --port 3399 --user amz --reset` | 在 MySQL 8 上建 14 个库并应用 49 个 Flyway 迁移（真机导入的前置步骤；`--dry-run` 只看计划） | 14 库 / 49 迁移，failed=0 |
 | `python generate.py --tier demo --reset` | 生成 102 张表 / 14 个库的数据集 | demo 档 225,734 行；ci 档 25,484 行 |
 | `python verify.py --tier demo` | 结构 / 引用 / 标记 / 确定性 / DDL 快照校验 | PASS（229 文件两次生成字节一致） |
-| `python purge.py --tier demo --emit --registry` | 生成 `cleanup.sql`（113 条 DELETE）与库级登记表 | exit 0，0 表遗漏 |
+| `python purge.py --tier demo --emit --registry` | 生成 `cleanup.sql`（102 条 DELETE，对应 102 张活表）与库级登记表 | exit 0，0 表遗漏 |
 | `python verify_cleanup.py --tier demo` | 在 SQLite 内实跑 `cleanup.sql` 证明能删干净 | 225,734 行删除、剩余 0 |
 | `python verify_schema_load.py --tier demo --cleanup` | 用真实 DDL 快照重建 14 库 / 113 表再灌数，验证类型/长度/精度/NOT NULL/日期/JSON/唯一键，并可跑 `cleanup.sql` 闭环 | demo 档 225,734/225,734 行灌入，0 错误；cleanup 后 113 DELETE / 0 剩余 |
 | `./load.ps1 -Tier demo -Container amz-mysql`（或 `./load.sh` / `-Server 127.0.0.1 -Port 3399 -User amz`） | 按库灌入 MySQL（支持远端 / 容器 / `-DryRun`） | 本机一次性 MySQL 8.0.39（端口 3399）：ci 档约 80s、demo 档约 7min，均 exit 0 |
