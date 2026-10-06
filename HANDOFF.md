@@ -8,7 +8,10 @@
 抓到 `3fd1b12` 推上去的 **run #195 红**（hygiene job「Release tool tests」：迁移清点钉数
 50 被 `832a4e5`/`6590ca4`/`6a7473c` 的 +8 个迁移文件打破），修复并把同类「交班漏同步数字」
 一次性清账：runbook/README/example manifest 的 113 表、90 行种子、225,734 行等死表清理前
-口径全部刷新，真机导入链在一次性容器上重跑出实测数。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
+口径全部刷新，真机导入链在一次性容器上重跑出实测数。**追红连环**：#196（含钉数修复）hygiene
+转绿后 docker 首跑即红（`buildx bake` 不存在 `--dry-run` 标志，改 `--print`）→
+**run #197 全绿（11/11 job success）——本仓有 CI 记录以来第一次远端全绿**，#56 结案升级为
+run 元数据佐证。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
 （比上班 2002 多 1：`3fd1b12` 给 spapi 新增 node 一致契约方法，本班逐模块求和实测）、
 四把尺 + 漂移 + hygiene 全零、release-tools unittest **88/0F**、部署链三契约 17/17。
 覆盖率候选稳定 **33**（B 桶 20 缺凭据 / A 桶 13 刻意拒绝）。**无已知死代码。**
@@ -19,15 +22,17 @@
 | --- | --- |
 | 例行止损：整仓 mvn test 确认交班 commit 无回归 | ✅ 2003/0/0/17，BUILD SUCCESS（16 测试模块全绿） |
 | 例行止损：看一次新 CI run 日志验证新门禁 | ✅ **匿名 API 现可读 run 状态**（gh 仍无认证、日志 zip 仍 403）；run #195 抓到 1 真红 → 已修（见下） |
-| run #195 红修复：迁移清点钉数 50→58 | ✅ `ce8a360`；钉数锁步范围写进注释；ci.yml 三处过时口径同步 |
+| run #195 红修复：迁移清点钉数 50→58 | ✅ `ce8a360`；钉数锁步范围写进注释；ci.yml 三处过时口径同步；**run #196 hygiene 转绿确认** |
+| run #196 追红：docker `Dry-run bake` 用了不存在的 `--dry-run` 标志 | ✅ `89c10f3` 改 `--print`（本地实测 exit 0；该步骤被 hygiene 恒红连带 skip 从未执行过——坑 30） |
+| 下一步计划 #1 后半段：#56 结案升级「run 日志佐证」 | ✅ **run #197 全绿（11/11）**，归因文档追加「结案升级」段；取证改用匿名 run/job 元数据 API（日志 zip 仍 403） |
 | 合成数据口径随死表清理清账（runbook/README/example） | ✅ `1d91183`；113→102、90→87 种子（归因 `amz_report_template` 3 行随 V3 DROP）、225,734→224,993（demo）/25,484→25,188（ci）；真机链一次性容器重跑实测 ci 25,275/25,275、demo 225,080/225,080 |
-| 下一步计划 #1 后半段：#56 结案升级「run 日志佐证」 | ⏳ 待 run #196 全绿（含本班修复与全部新门禁） |
 
 ## 本班 commit 分组
 
 | 主题 | commits | 要点 |
 | --- | --- | --- |
 | CI 真红修复 | `ce8a360` | `test_current_flyway_inventory_contains_all_50_files` 钉数 50→58（死表 DROP +5、日期收敛 +2、宽度收敛 +1 打破了它）；ci.yml test 注释/mysql-import 注释/step 名三处 49/50→58；方法名+两处断言+锁步注释同改 |
+| CI 真红修复（追红） | `89c10f3` | docker job `Dry-run bake` 的 `buildx bake --dry-run` → `--print`（bake 无 --dry-run 标志；needs hygiene 被连带 skip 所以从未执行，run #196 转绿后首跑即红）；`#56 结案升级`：run #197 全绿佐证写入归因文档 |
 | 文档清账 | `1d91183` | mock-data runbook 全篇 113→102、§8 真机数字换成本班重跑实测（含种子 90→87 归因说明、历史轮次记录保留当时口径的注记）；README 工具链表 6 行数字清账；`docs/examples/release-manifest.example.json` 按 phase0 plan 命令重生成（49→58 迁移 / 75→132 前端文件，不被测试消费、纯示例，故无门禁拦它） |
 
 ## 门禁基线与复跑命令
@@ -72,9 +77,10 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 **需要外部条件（做不了，别在原地重试）**
 - B 桶 20 条：`DEEPSEEK_API_KEY`（4）、Keepa token（3）、店铺 SP-API 凭证（13）。
   代码路径是真代码、未配置即点名失败，没有凭据只能保持未接。
-- CI run **结论可以匿名读**（run 元数据 API 本班实测可用，见坑 3），**但 job 日志 zip 仍 403**、
-  gh 仍未认证。修复靠的是「run→失败 job/step 名→本地逐字复现」，本班走通一次。
-  run #195 是唯一已知红（已修，等 #196 佐证）；#56 结案升级仍待全绿 run。
+- CI run **结论可匿名读**：run/job 元数据 API 本班实测可用（`GET /repos/.../actions/runs`
+  与 `/runs/<id>/jobs`，200，能拿 conclusion、失败 job 名、失败 step 名）；**但 job 日志
+  zip 仍 403**、gh 仍未认证。定位流程 = run→失败 job/step→ci.yml 找 run 行→本地逐字复现，
+  本班走通两次（#195 钉数、#196 bake 标志）。#197 已全绿，#56 结案升级完成。
 - deploy-it 脚本在仓库外：迁移数值序修复只能仓外核实（仓内证据见
   `2026-10-04-migration-order-ci-red-attribution.md`）。
 
@@ -95,9 +101,8 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 
 ## 下一步计划（建议顺序）
 
-1. **看 run #196**（`ce8a360` 或之后推的 HEAD）：匿名 API 轮询 conclusion；全绿则
-   把 #56 结案记录从「本地复现」升级为「run 日志佐证」，并确认本班 release-tools
-   门禁在 CI 真实转绿。若还红，按本班流程：失败 job/step 名 → ci.yml 找 run 行 → 本地逐字复现。
+1. **例行止损闭环（本班已完成）**：整仓回归 2003/0/0/17、#195/#196 两个红修复、
+   #197 全绿、#56 结案升级——下一班接手时 **CI 基线是绿**，先确认后续 run 仍绿即可。
 2. 若做多清空者统一：4 视图迁「前缀过滤」，抄 `CustomerService.vue` 的模式，
    **过滤前缀必须与 pushError 的 tag 逐字一致**。
 3. 若继续压 A 桶：显式拒绝优于假成功，**不要把任何拒绝改回沉默**（前端假成功
@@ -200,6 +205,13 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 29. relaxed-binding 属性（`crypto.key`、`multiplatform.webhook.secret.*` 等小写点分名）
     不以 `${大写}` 占位符出现在 yml 里，部署契约按「代码扫描出的大写占位符」推期望
     集合会误判多余——要按模块条件加白名单（`CRYPTO_KEY`/webhook 是仅有的两例）。
+30. **needs 被连带 skip 的 job 会藏红**（本班，run #194→#197 连环实测）：ci.yml docker job
+    `needs` 含 hygiene，hygiene 自 #194 恒红后 docker 被整体 skip——`Dry-run bake` 步骤
+    用的 `buildx bake --dry-run` 根本不存在（bake 无此标志，正确是 `--print`），一路「绿」了
+    4 个 run 无人知晓，直到 #196 hygiene 修绿、docker 第一次真执行才现形。教训：
+    **门禁链里「从未执行过」的步骤等于「没有验证」**——新增 workflow 步骤当班必须至少本地
+    跑一次原命令（`docker buildx bake --help` 一行就能戳穿标志不存在）；排查 CI 红时也要
+    把「被 skip 的下游 job」算进未验证面。
 
 ## 环境与边界（务必遵守）
 

@@ -80,3 +80,19 @@ auth-ok user=amzit@%  ver=8.0.46  ddl-ok
 CI 是否变绿要等下一次 run 的日志；匿名拉日志是 403，我**没有**读到。
 所以这里的结论边界是：**同一输入下的精确复现已被消除**（修前 1 → 修后 0，只差这一处代码），
 而不是「CI 已绿」。
+
+## 【2026-10-06 结案升级：run 元数据佐证】
+
+上述边界已可解除：run **#197**（HEAD `89c10f3`）11 个 job **全部 success**——含 `test`
+（`BareSqlBuiltSchemaFlywayStartIT` 的常驻执行位）与 `mysql-import`，#56 对应的 CI 红在
+远端确认消失。
+
+取证方式更新（本段实测）：job **日志 zip** 仍匿名 403，但 run/job **元数据 API** 匿名可读
+（`GET /repos/.../actions/runs`、`/runs/<id>/jobs`），conclusion、失败 job 名、失败 step 名
+都拿得到——「是否绿、红在哪个 job/step」已不需要 gh 认证，剩下的细节才靠本地逐字复现。
+
+同期 CI 历史（均与迁移顺序无关，#56 的因果结论不受影响）：#194（`c2993ee`）与 #195
+（`3fd1b12`）红在 hygiene `Release tool tests`——Flyway 迁移清点钉数 50 未随 58 个迁移
+文件更新（`ce8a360` 修复）；#196（`74e1842`）hygiene 转绿、docker `Dry-run bake` 红——
+`buildx bake` 没有 `--dry-run` 标志，正确干跑是 `--print`（`89c10f3` 修复；该步骤此前因
+hygiene 恒红、docker 被连带 skip，从未执行过，故一直「假绿」）。
