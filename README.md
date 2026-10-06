@@ -353,14 +353,14 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 
 | 命令 | 作用 | 当前实测 |
 |---|---|---|
-| `python apply_migrations.py --host 127.0.0.1 --port 3399 --user amz --reset` | 在 MySQL 8 上建 14 个库并应用 49 个 Flyway 迁移（真机导入的前置步骤；`--dry-run` 只看计划） | 14 库 / 49 迁移，failed=0 |
-| `python generate.py --tier demo --reset` | 生成 102 张表 / 14 个库的数据集 | demo 档 225,734 行；ci 档 25,484 行 |
+| `python apply_migrations.py --host 127.0.0.1 --port 3399 --user amz --reset` | 在 MySQL 8 上建 14 个库并应用 58 个 Flyway 迁移（真机导入的前置步骤；`--dry-run` 只看计划） | 14 库 / 58 迁移，failed=0 |
+| `python generate.py --tier demo --reset` | 生成 102 张表 / 14 个库的数据集 | demo 档 224,993 行；ci 档 25,188 行 |
 | `python verify.py --tier demo` | 结构 / 引用 / 标记 / 确定性 / DDL 快照校验 | PASS（229 文件两次生成字节一致） |
 | `python purge.py --tier demo --emit --registry` | 生成 `cleanup.sql`（102 条 DELETE，对应 102 张活表）与库级登记表 | exit 0，0 表遗漏 |
-| `python verify_cleanup.py --tier demo` | 在 SQLite 内实跑 `cleanup.sql` 证明能删干净 | 225,734 行删除、剩余 0 |
-| `python verify_schema_load.py --tier demo --cleanup` | 用真实 DDL 快照重建 14 库 / 113 表再灌数，验证类型/长度/精度/NOT NULL/日期/JSON/唯一键，并可跑 `cleanup.sql` 闭环 | demo 档 225,734/225,734 行灌入，0 错误；cleanup 后 113 DELETE / 0 剩余 |
-| `./load.ps1 -Tier demo -Container amz-mysql`（或 `./load.sh` / `-Server 127.0.0.1 -Port 3399 -User amz`） | 按库灌入 MySQL（支持远端 / 容器 / `-DryRun`） | 本机一次性 MySQL 8.0.39（端口 3399）：ci 档约 80s、demo 档约 7min，均 exit 0 |
-| `python verify_import.py --tier demo --host 127.0.0.1 --port 3399 --user amz --baseline out/ci/baseline.json` | 连真实 MySQL 8 核对 `基线 + manifest` 行数与 `amz_ops` 登记表，并可跑 `cleanup.sql` 闭环 | ci 25,574/25,574、demo 225,824/225,824；cleanup 删除 25,484 / 225,734 行，剩余回到基线 |
+| `python verify_cleanup.py --tier demo` | 在 SQLite 内实跑 `cleanup.sql` 证明能删干净 | 224,993 行删除、剩余 0 |
+| `python verify_schema_load.py --tier demo --cleanup` | 用真实 DDL 快照重建 14 库 / 102 表再灌数，验证类型/长度/精度/NOT NULL/日期/JSON/唯一键，并可跑 `cleanup.sql` 闭环 | demo 档 224,993/224,993 行灌入，0 错误；cleanup 后 102 DELETE / 0 剩余 |
+| `./load.ps1 -Tier demo -Container amz-mysql`（或 `./load.sh` / `-Server 127.0.0.1 -Port 3399 -User amz`） | 按库灌入 MySQL（支持远端 / 容器 / `-DryRun`） | 本机一次性 MySQL 容器（2026-10-06 重跑，8.0.46）：ci 档约 80s、demo 档约 7min，均 exit 0 |
+| `python verify_import.py --tier demo --host 127.0.0.1 --port 3399 --user amz --baseline out/ci/baseline.json` | 连真实 MySQL 8 核对 `基线 + manifest` 行数与 `amz_ops` 登记表，并可跑 `cleanup.sql` 闭环 | ci 25,275/25,275、demo 225,080/225,080（含 87 行迁移种子基线）；cleanup 删除 25,188 / 224,993 行，剩余回到基线 |
 
 标记方式：保留 ID 段 + `SYNTHETIC` 文本标记 + `amz_ops.amz_synthetic_dataset_registry(is_demo=1)`；schema 没有 `is_demo` 列，因此没有为演示去改 102 张表。完整步骤与安全规则见
 [`docs/superpowers/runbooks/mock-data-seed-and-cleanup-runbook.md`](docs/superpowers/runbooks/mock-data-seed-and-cleanup-runbook.md)。

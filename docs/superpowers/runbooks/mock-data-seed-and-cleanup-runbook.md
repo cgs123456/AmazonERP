@@ -8,14 +8,17 @@
 
 | 能力 | 状态 | 证据 |
 |---|---|---|
-| 生成器（确定性、113 张表） | 已有并本轮重跑 | `python generate.py --tier demo --reset` → 113/113 表、225,734 行；ci 档 25,484 行 |
+| 生成器（确定性、102 张表） | 已有并本轮重跑 | `python generate.py --tier demo --reset` → 102/102 表、224,993 行；ci 档 25,188 行 |
 | 结构 / 引用 / 标记 / 确定性 / manifest 校验 | 通过 | `verify.py --tier demo` → `structure/references/id types/markers/determinism/manifest/snapshot OK` |
 | DDL 漂移门禁 | 本轮修复（此前 FAIL） | 重跑 `snapshot_schema.py` 后 42→49 个迁移文件被纳入，`snapshot OK`；已加进 CI |
-| 可清理（cleanup.sql） | 本轮新增 | `purge.py --emit` → 113 条 DELETE；`verify_cleanup.py` 用 SQLite 实跑：删除 225,734 行、剩余 0 |
+| 可清理（cleanup.sql） | 本轮新增 | `purge.py --emit` → 102 条 DELETE；`verify_cleanup.py` 用 SQLite 实跑：删除 224,993 行、剩余 0 |
 | 库内"这是 demo 数据"登记 | 本轮新增 | `registry.sql` → `amz_ops.amz_synthetic_dataset_registry`（含 `is_demo=1`、ID 段、行数） |
 | 可重复加载 | 本轮新增 | `load.ps1`（远端/容器两种模式，`-DryRun` 可先演练） |
-| 真实 schema 可加载性 | 本轮新增 | `verify_schema_load.py --tier demo`：从 `schema-snapshot.json` 重建 14 库 / 113 表，225,734/225,734 行灌入，0 错误；`--cleanup` 后 113 DELETE / 0 剩余 |
-| 真实 MySQL 8 导入 | P1 实测 | 本机一次性 MySQL 8.0.39（端口 3399）：ci 25,574/25,574、demo 225,824/225,824（含 90 行迁移种子）；cleanup 删除 25,484 / 225,734 行，剩余回到基线。见 §8 |
+| 真实 schema 可加载性 | 本轮新增 | `verify_schema_load.py --tier demo`：从 `schema-snapshot.json` 重建 14 库 / 102 表，224,993/224,993 行灌入，0 错误；`--cleanup` 后 102 DELETE / 0 剩余 |
+| 真实 MySQL 8 导入 | P1 实测（2026-10-06 重跑） | 本机一次性 MySQL 容器（`mysql:8.0`，8.0.46，端口 3399）：ci 25,275/25,275、demo 225,080/225,080（含 87 行迁移种子）；cleanup 删除 25,188 / 224,993 行，剩余回到基线。见 §8 |
+
+> 注（2026-10-06）：本表与下文实测数字已刷新为死表清理（`832a4e5`，113→102 张表）后的重跑值；
+> 「第 89 轮」历史事件记录（如 42→49 迁移入库、6 张表标记守卫）保留当时口径，原始快照数字见 git 历史。
 
 ### 本轮修掉的真实缺陷（不是装饰）
 
@@ -34,10 +37,10 @@
 ```powershell
 cd C:\Users\Administrator\Desktop\AmazonERP\tools\synthetic-data
 
-# 演示档：9 店铺 / 3 marketplace / 10,000 订单，225,734 行
+# 演示档：9 店铺 / 3 marketplace / 10,000 订单，224,993 行
 python generate.py --tier demo --reset
 
-# CI 档（快）：4 店铺 / 2 marketplace / 1,000 订单，25,484 行
+# CI 档（快）：4 店铺 / 2 marketplace / 1,000 订单，25,188 行
 python generate.py --tier ci --reset
 
 # 自定义规模（压测用）
@@ -71,7 +74,7 @@ powershell -ExecutionPolicy Bypass -File .\load.ps1 -Dataset out\ci-reload -Cont
 
 ## 4. 标记与"这是模拟数据"的识别
 
-schema 里**没有** `is_demo` 列（113 张表只有 6 张有 `source/origin/data_source`），所以采用三层标记，而不是改 113 张表：
+schema 里**没有** `is_demo` 列（102 张表只有 5 张有 `source/origin/data_source`；死表清理前的旧文写 6 张，因为其中 `amz_logistics_quote` 已随 `832a4e5` DROP），所以采用三层标记，而不是改 102 张表：
 
 1. **保留 ID 段**：绝大多数表 `id >= 900000000000000000`；`amz_user` 用 `100000001+`、`amz_product` 用 `200000001+`（这两个是 INT 列限制下的小段）。
 2. **文本标记**：姓名/邮箱/密钥/单号全部 `SYNTHETIC…` / `SYN-…` / `1ZSYN…`，邮箱用 `example.invalid`，电话 555 段。
@@ -98,13 +101,13 @@ WHERE `id` NOT BETWEEN 900000000000700000 AND 900000000000709999;
 # 干跑：只出报告（cleanup-report.json 含每张表的行数/ID 段/校验 SELECT）
 python purge.py --tier demo
 
-# 生成 cleanup.sql（113 条 DELETE，按 ID 段 + 数据推导的标记前缀）
+# 生成 cleanup.sql（102 条 DELETE，按 ID 段 + 数据推导的标记前缀）
 python purge.py --tier demo --emit --registry
 
 # 离线证明它能删干净（SQLite 内实跑 cleanup.sql，不需要 MySQL）
 pip install sqlglot
 python verify_cleanup.py --tier demo
-# 期望：[verify-cleanup] OK: 113 DELETE statements, 225734 rows removed, 0 rows left in 113 tables
+# 期望：[verify-cleanup] OK: 102 DELETE statements, 224993 rows removed, 0 rows left in 102 tables
 ```
 
 删除顺序为子表优先（反向 manifest 顺序）。安全规则（fail-closed）：
@@ -126,7 +129,7 @@ python verify_cleanup.py --tier demo
 
 `verify_cleanup.py` 用的是「从 JSONL 推断出来的表结构」——列在 DDL 里根本不存在、值超过
 `VARCHAR(n)`、NOT NULL 列从未被写入，它都发现不了。`verify_schema_load.py` 补上这一层：
-它从 `schema-snapshot.json`（由 Flyway 迁移推导的真实 DDL）重建 14 个库 / 113 张表，再把
+它从 `schema-snapshot.json`（由 Flyway 迁移推导的真实 DDL）重建 14 个库 / 102 张表，再把
 JSONL 灌进去，并在 Python 侧执行 MySQL 8 STRICT 模式才会做的约束检查。
 
 ```powershell
@@ -136,8 +139,8 @@ python verify_schema_load.py --tier ci
 # 灌数 + 跑 cleanup.sql + 出报告（需要 sqlglot）
 pip install sqlglot
 python verify_schema_load.py --tier demo --cleanup --report out/demo/schema-load-report.json
-# 期望：[schema-load] OK: 113 tables / 14 databases ... 225734/225734 rows loaded
-#       [schema-load]    cleanup: 113 DELETE, 0 failure(s), 0 table(s) with rows left
+# 期望：[schema-load] OK: 102 tables / 14 databases ... 224993/224993 rows loaded
+#       [schema-load]    cleanup: 102 DELETE, 0 failure(s), 0 table(s) with rows left
 ```
 
 覆盖的检查：
@@ -157,23 +160,26 @@ python verify_schema_load.py --tier demo --cleanup --report out/demo/schema-load
 **已知偏差**：SQLite 没有 ENUM、无符号整型、`ON UPDATE CURRENT_TIMESTAMP`、生成列语义，
 自身也不做严格类型检查，所以上面的约束是 Python 侧执行的。它把证据从「SQL 文本合法」
 提升到「数据符合真实列定义」，**仍然不等于 mysqld 真的接受了这份 dump**；真 MySQL 导入
-必须按第 3 节实跑。另外 demo 档有 386,570 个值（217 个 DECIMAL 列）以字符串形式写入，
+必须按第 3 节实跑。另外 demo 档有 386,231 个值（209 个 DECIMAL 列）以字符串形式写入，
 MySQL 会做隐式转换（合法），JSONL 保留字符串是为了避免浮点舍入，工具记为 info 而非错误。
 
 ## 8. 真实 MySQL 8 导入验证（本机一次性实例）
 
 `verify_schema_load.py` 是 SQLite 仿真，不等于 mysqld 真的接受了这份数据。P1 在本机起了一个
-一次性 MySQL 8.0.39（实例在仓库外 `C:\tools\mysql8`，端口 3399，**不属于任何部署拓扑**），用
-`apply_migrations.py` 应用 49 个 Flyway 迁移建出 14 个库，再实跑导入与清理。
-基线本身也是可复现的：`--reset` 重建后重新采集，113 张表的种子行数与之前**逐表一致**（90 行）。
+一次性 MySQL（`docker run mysql:8.0 -p 3399:3306`，**不属于任何部署拓扑**；2026-10-06 重跑时
+镜像内为 8.0.46，实例在仓库外 `C:\tools\mysql8` 的 8.0.39 版已销毁），用全部 58 个 Flyway
+迁移建出 14 个库，再实跑导入与清理。
+基线本身也是可复现的：重建后重新采集，102 张表的种子行数与之前**逐表一致**（87 行）。
+种子从旧口径 90 行/16 表降到 87 行/15 表是真实下移：`amz_report_template` 的 3 行种子随
+`832a4e5` 的死表 DROP 一起删除（V1 有种子、V3 有 DROP），不是测量误差。
 
 ```powershell
-# 1) 建库 + 应用 Flyway 迁移（14 库 / 49 迁移，failed=0）
+# 1) 建库 + 应用 Flyway 迁移（14 库 / 58 迁移，failed=0）
 #    apply_migrations.py 现在就在 tools/synthetic-data/ 里，库名从各服务 application.yml 推导
 python apply_migrations.py --host 127.0.0.1 --port 3399 --user amz --reset
 python apply_migrations.py --dry-run    # 只想看会跑哪些迁移时用这个
 
-# 2) 采集「迁移自带的种子数据」基线：16 张表共 90 行
+# 2) 采集「迁移自带的种子数据」基线：15 张表共 87 行
 #    （bootstrap 用户、类目费率、模板、字段权限等），manifest 不含这些行
 python verify_import.py --tier ci --host 127.0.0.1 --port 3399 --user amz `
   --mysql-path 'C:\tools\mysql8\mysql-8.0.39-winx64\bin\mysql.exe' `
@@ -188,12 +194,12 @@ python verify_import.py --tier ci --host 127.0.0.1 --port 3399 --user amz `
   --report out/ci/import-cleanup-report.json
 ```
 
-实测（MySQL 8.0.39，`sql_mode` 含 `STRICT_TRANS_TABLES`）：
+实测（2026-10-06 重跑，MySQL 8.0.46，`sql_mode` 含 `STRICT_TRANS_TABLES`）：
 
 | 档位 | 行数核对 | cleanup 闭环 |
 |---|---|---|
-| ci | 25,574/25,574（25,484 合成 + 90 种子） | 删除 25,484 行，113 张表剩余回到基线 |
-| demo | 225,824/225,824（225,734 合成 + 90 种子） | 删除 225,734 行，113 张表剩余回到基线 |
+| ci | 25,275/25,275（25,188 合成 + 87 种子） | 删除 25,188 行，102 张表剩余回到基线 |
+| demo | 225,080/225,080（224,993 合成 + 87 种子） | 删除 224,993 行，102 张表剩余回到基线 |
 
 耗时参考：ci 档约 80s，demo 档约 7min（单连接、逐表 `SOURCE`）。
 
@@ -205,7 +211,7 @@ python verify_import.py --tier ci --host 127.0.0.1 --port 3399 --user amz `
 1. `verify_import.py` 的登记表查询用了 MySQL 8 保留字 `rows`（未加反引号），查询失败被
    `try/except` 静默吞掉，报告里 `registry` 恒为 `null`。已加反引号。
 2. `registry.sql` 的 upsert 唯一键是 `(dataset_id, seed)` 不含 `tier`，而 `ON DUPLICATE KEY UPDATE`
-   又没有刷新 `tier`：先灌 ci 再灌 demo 后，登记行是 `tier=ci` 却带着 `rows=225734` 的 demo 行数，
+   又没有刷新 `tier`：先灌 ci 再灌 demo 后，登记行是 `tier=ci` 却带着 `rows=224993` 的 demo 行数，
    审计记录自相矛盾。已把 `tier` / `generated_at` / `is_demo` 一并刷新，并补回归断言。
 3. 同一 upsert 用 `VALUES(col)`，MySQL 8.0.20+ 每次加载会报 6~7 条 deprecation（warning 1287）。
    已改为 MySQL 8.0.19+ 的行别名语法 `VALUES (...) AS new ... = new.col`。
@@ -224,7 +230,7 @@ python verify_import.py --tier ci --host 127.0.0.1 --port 3399 --user amz `
 会留下半迁移的库 + 一条失败的 `flyway_schema_history` 行。两条路都起不来，区别是 `false` 零副作用。
 
 因此脚本在裸 SQL 之后会调用 `ensure_flyway_baseline()`，补一条 `type='BASELINE'` 的历史行，
-版本打到**该模块最大版本**（ad=7、spapi=9 …），并打印 `flyway_schema_history baselined @ vN`。
+版本打到**该模块最大版本**（2026-10-06 时点：ad=9、spapi=10 …），并打印 `flyway_schema_history baselined @ vN`。
 该操作幂等（已有历史表则不动），正常执行后每个库应看到：
 
 ```sql
@@ -241,8 +247,8 @@ SELECT installed_rank, version, type, success FROM <db>.flyway_schema_history;
 
 ## 9. 已知限制（不要当成已经做完）
 
-1. **实机导入范围有限**：已在**本机一次性 MySQL 8.0.39 实例**（端口 3399，见 §8）完成 ci / demo 两档灌入、行数核对与 cleanup 闭环。这不是生产环境验证——实例无主从、无真实流量、未接入任何亚马逊凭证。生产库首次导入仍需在预发环境按 §3 + §8 实跑并保留 `mysql` 输出。
+1. **实机导入范围有限**：已在**本机一次性 MySQL 实例**（2026-10-06 重跑为 `mysql:8.0` 容器 8.0.46，端口 3399，见 §8；实例用完即删，不常驻）完成 ci / demo 两档灌入、行数核对与 cleanup 闭环。这不是生产环境验证——实例无主从、无真实流量、未接入任何亚马逊凭证。生产库首次导入仍需在预发环境按 §3 + §8 实跑并保留 `mysql` 输出。
 2. **走的是 SQL 批量灌数，不是应用 API 写入**：绕过了应用层校验/审计/租户钩子。小批量冒烟建议走 API；大批量压测才用本工具。
 3. `is_demo` 不是列级标记，而是"ID 段 + 文本标记 + 库级登记表"三层；任何新表若使用非保留段 ID，需要同步更新 `RESERVED_LOW_BANDS` 与本报告。
 4. 合成数据不校验业务一致性（例如财务结算与订单的金额对账），只保证结构/引用/类型/标记合法；做经营分析前需自行构造对账用例。
-5. `cleanup.sql` 只删 113 张业务表的合成行，`amz_ops.amz_synthetic_dataset_registry` 的登记行**按设计保留**（它是「此库装过模拟数据」的审计痕迹）。要彻底清空需额外执行：`DELETE FROM amz_ops.amz_synthetic_dataset_registry WHERE dataset_id='synthetic-amazon-erp-v1';`
+5. `cleanup.sql` 只删 102 张业务表的合成行，`amz_ops.amz_synthetic_dataset_registry` 的登记行**按设计保留**（它是「此库装过模拟数据」的审计痕迹）。要彻底清空需额外执行：`DELETE FROM amz_ops.amz_synthetic_dataset_registry WHERE dataset_id='synthetic-amazon-erp-v1';`
