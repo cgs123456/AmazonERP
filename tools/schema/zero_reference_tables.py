@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 CREATE_RE = re.compile(r"CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?", re.I)
+DROP_TABLE_RE = re.compile(r"(?i)\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z_][\w]*)`?")
 TABLE_NAME_RE = re.compile(r'@TableName\(\s*(?:value\s*=\s*)?"([^"]+)"')
 SQL_LITERAL_RE = re.compile(r'"([^"\n]{0,600})"')
 PLACEHOLDER = re.compile(r"\{(\d+)\}")
@@ -29,16 +30,31 @@ PLACEHOLDER = re.compile(r"\{(\d+)\}")
 
 def collect_tables(root: Path) -> dict[str, list[str]]:
     tables: dict[str, set[str]] = {}
-    for sql in sorted(root.rglob("db/migration/*.sql")):
+    drops: dict[str, str] = {}
+    for sql in sorted(root.rglob("db/migration/*.sql"), key=lambda f: migration_rank(f)):
         if "target" in sql.parts:
             continue
         text = sql.read_text(encoding="utf-8", errors="replace")
+        # 先剥行注释：回滚说明里的「DROP TABLE xxx」示例不许触发删除
+        text = re.sub(r"(?m)^\s*--.*$", "", text)
         for m in CREATE_RE.finditer(text):
             name = m.group(1)
             if name.lower().startswith("flyway") or name.lower() == "dual":
                 continue
             tables.setdefault(name, set()).add(sql.relative_to(root).as_posix())
+        for m in DROP_TABLE_RE.finditer(text):
+            drops.setdefault(m.group(1), sql.relative_to(root).as_posix())
+    # 重放 DROP：被后续迁移删除的表不再统计（死表清理后 created_in 还挂在 V1 会误导）
+    for name, src in drops.items():
+        tables.pop(name, None)
     return {k: sorted(v) for k, v in tables.items()}
+
+
+def migration_rank(path: Path) -> tuple:
+    m = re.search(r"(?:^|/)V(\d+(?:[._]\d+)*)__", path.as_posix())
+    if not m:
+        return (1, (), path.as_posix())
+    return (0, tuple(int(part) for part in re.split(r"[._]", m.group(1)) if part != ''), path.as_posix())
 
 
 def classify_reference(root: Path, table: str) -> dict[str, list[str]]:
