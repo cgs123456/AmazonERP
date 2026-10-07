@@ -41,6 +41,7 @@ run 元数据佐证。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
 | 文档清账 | `1d91183` | mock-data runbook 全篇 113→102、§8 真机数字换成本班重跑实测（含种子 90→87 归因说明、历史轮次记录保留当时口径的注记）；README 工具链表 6 行数字清账；`docs/examples/release-manifest.example.json` 按 phase0 plan 命令重生成（49→58 迁移 / 75→132 前端文件，不被测试消费、纯示例，故无门禁拦它） |
 | README 数字复核 | `0e93f51` | README 测试表 2002→2003（上班口径未折 spapi +1）、「20/20 模块」→19/19 reactor（与 Reactor Summary 实测一致） |
 | 真实数据模拟填充（用户点名） | `2d8aeec` | `PRODUCT_CATALOG` 24 个真实亚马逊类目（Electronics/Home & Kitchen/…真实 Listing 风格标题+真实价格带 7.99-149.99，品牌虚构不冒充商标）；ASIN 真格式 `B0+8 位`（原 B0SYN00001）；订单号真形态 3-10-7（原 S001-…）；quantity/final_price/item_price/tax(7.25%)/促销与商品价自洽；采购成本=售价×28-44%；竞品/BuyBox 价格扰动+bs_rank/review 真实区间。**识别机制不变**（标题 'SYN ' 前缀过 markers、ID 段/登记表全保留）。真实形态来源：SP-API Orders 官方模型样例 + Keepa product-object 文档。行数不变（demo 224,993 / ci 25,188） |
+| mock 财务样例真化 | `bfd03fb` | FinancesMockClient/ReportsMockClient 的 SKU-ALPHA 等占位 → 与生成器同风格（SYN-ELE-0101/合法 ASIN 字母表/3-10-7 订单号）；形状断言同步；mock profile fail-closed 边界不变。run #199（0e93f51）/#200（503de93，真机 MySQL 接受全部真实形态数据）/#201（bfd03fb）连续三绿 |
 
 ## 门禁基线与复跑命令
 
