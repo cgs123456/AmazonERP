@@ -15,6 +15,10 @@ run 元数据佐证。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
 （比上班 2002 多 1：`3fd1b12` 给 spapi 新增 node 一致契约方法，本班逐模块求和实测）、
 四把尺 + 漂移 + hygiene 全零、release-tools unittest **88/0F**、部署链三契约 17/17。
 覆盖率候选稳定 **33**（B 桶 20 缺凭据 / A 桶 13 刻意拒绝）。**无已知死代码。**
+本班另完成用户点名的**真实数据模拟填充**（`2d8aeec`）：演示库的商品标题/ASIN/订单号/
+价格/成本/竞品数据全部改为真实亚马逊形态（调研自 SP-API Orders 官方样例与 Keepa 文档），
+识别机制（SYN 标题前缀、ID 段、登记表）完整保留——**B 桶凭据仍是真代码+未接状态不变**，
+但缺凭据时的演示数据已从「SYN 占位」升级为「真实形态+可识别」。
 
 ## 本班任务与落地状态
 
@@ -22,6 +26,7 @@ run 元数据佐证。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
 | --- | --- |
 | 例行止损：整仓 mvn test 确认交班 commit 无回归 | ✅ 2003/0/0/17，BUILD SUCCESS（16 测试模块全绿） |
 | 例行止损：看一次新 CI run 日志验证新门禁 | ✅ **匿名 API 现可读 run 状态**（gh 仍无认证、日志 zip 仍 403）；run #195 抓到 1 真红 → 已修（见下） |
+| 用户点名：真实数据模拟填充（上网调研） | ✅ `2d8aeec`（见本节 commit 表）；商品/订单/竞品域按 SP-API Orders 官方样例 + Keepa 文档的真实形态生成，演示库数据不再是纯 SYN 占位 |
 | run #195 红修复：迁移清点钉数 50→58 | ✅ `ce8a360`；钉数锁步范围写进注释；ci.yml 三处过时口径同步；**run #196 hygiene 转绿确认** |
 | run #196 追红：docker `Dry-run bake` 用了不存在的 `--dry-run` 标志 | ✅ `89c10f3` 改 `--print`（本地实测 exit 0；该步骤被 hygiene 恒红连带 skip 从未执行过——坑 30） |
 | 下一步计划 #1 后半段：#56 结案升级「run 日志佐证」 | ✅ **run #197 全绿（11/11）**，归因文档追加「结案升级」段；取证改用匿名 run/job 元数据 API（日志 zip 仍 403） |
@@ -34,6 +39,8 @@ run 元数据佐证。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
 | CI 真红修复 | `ce8a360` | `test_current_flyway_inventory_contains_all_50_files` 钉数 50→58（死表 DROP +5、日期收敛 +2、宽度收敛 +1 打破了它）；ci.yml test 注释/mysql-import 注释/step 名三处 49/50→58；方法名+两处断言+锁步注释同改 |
 | CI 真红修复（追红） | `89c10f3` | docker job `Dry-run bake` 的 `buildx bake --dry-run` → `--print`（bake 无 --dry-run 标志；needs hygiene 被连带 skip 所以从未执行，run #196 转绿后首跑即红）；`#56 结案升级`：run #197 全绿佐证写入归因文档 |
 | 文档清账 | `1d91183` | mock-data runbook 全篇 113→102、§8 真机数字换成本班重跑实测（含种子 90→87 归因说明、历史轮次记录保留当时口径的注记）；README 工具链表 6 行数字清账；`docs/examples/release-manifest.example.json` 按 phase0 plan 命令重生成（49→58 迁移 / 75→132 前端文件，不被测试消费、纯示例，故无门禁拦它） |
+| README 数字复核 | `0e93f51` | README 测试表 2002→2003（上班口径未折 spapi +1）、「20/20 模块」→19/19 reactor（与 Reactor Summary 实测一致） |
+| 真实数据模拟填充（用户点名） | `2d8aeec` | `PRODUCT_CATALOG` 24 个真实亚马逊类目（Electronics/Home & Kitchen/…真实 Listing 风格标题+真实价格带 7.99-149.99，品牌虚构不冒充商标）；ASIN 真格式 `B0+8 位`（原 B0SYN00001）；订单号真形态 3-10-7（原 S001-…）；quantity/final_price/item_price/tax(7.25%)/促销与商品价自洽；采购成本=售价×28-44%；竞品/BuyBox 价格扰动+bs_rank/review 真实区间。**识别机制不变**（标题 'SYN ' 前缀过 markers、ID 段/登记表全保留）。真实形态来源：SP-API Orders 官方模型样例 + Keepa product-object 文档。行数不变（demo 224,993 / ci 25,188） |
 
 ## 门禁基线与复跑命令
 
