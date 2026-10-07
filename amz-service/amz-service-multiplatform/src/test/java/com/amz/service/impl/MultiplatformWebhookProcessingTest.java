@@ -27,6 +27,7 @@ import static org.mockito.Mockito.never;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
@@ -137,6 +138,19 @@ class MultiplatformWebhookProcessingTest {
                 () -> service.receiveWebhook("AMAZON", "ORDER_CREATED", "EV-5", "{}", 1L, sign("{}")));
         assertEquals("Webhook 验签失败：平台 AMAZON 未配置验签密钥（multiplatform.webhook.secret.amazon）",
                 ex.getMessage());
+        verify(webhookEventMapper, never()).insert(any(WebhookEvent.class));
+    }
+
+    @Test
+    @DisplayName("平台账号未录入且未传 shopId → 业务拒绝而非运行时异常（2026-10-07 回环验收发现）")
+    void noPlatformAccountRejectedAsBusinessError() {
+        when(webhookEventMapper.selectCount(any())).thenReturn(0L);
+        when(platformAccountMapper.selectOne(any())).thenReturn(null);
+
+        CodeErrorException ex = assertThrows(CodeErrorException.class,
+                () -> service.receiveWebhook("TEMU", "ORDER_CREATED", "EV-6", "{}", null, sign("{}")));
+        // 明确指向可修复原因（录入 amz_platform_account），而不是被兜底成「服务器内部错误」
+        assertTrue(ex.getMessage().contains("尚未录入任何店铺账号"), ex.getMessage());
         verify(webhookEventMapper, never()).insert(any(WebhookEvent.class));
     }
 }

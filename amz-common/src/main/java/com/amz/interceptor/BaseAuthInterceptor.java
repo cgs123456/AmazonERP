@@ -39,7 +39,13 @@ public class BaseAuthInterceptor implements HandlerInterceptor {
             // /actuator/** 为 k8s 存活/就绪探针端点（kubelet 请求不携带 JWT），
             // 必须放行，否则探针恒返回 401 导致 Pod 永远 NotReady。
             // 该端点仅在集群内 ClusterIP 暴露，网关未配置对应路由，不对外暴露。
-            "/actuator"
+            "/actuator",
+            // 平台回调（Temu/TikTok/Shein）不带用户 JWT：本端点的鉴权就是它自身的
+            // HMAC-SHA256 验签（X-Signature，缺头/错签/未配置密钥一律 fail-closed 拒绝
+            // 且不落库，见 MultiplatformWebhookProcessingTest）。白名单放行的只是
+            // 「不设 JWT 门槛」，不是免验证。2026-10-07 demo 档回环验收发现：不放行时
+            // 平台回调被本拦截器 401，永远走不到验签层（单元测试直调 service 探不到）。
+            "/multiplatform/webhook"
     );
 
     private final JwtUtil jwtUtil;

@@ -34,7 +34,11 @@ public class MyGlobalFilter implements GlobalFilter, Ordered {
             // /actuator/** 为 k8s 存活/就绪探针端点（kubelet 请求不携带 JWT），必须放行，
             // 否则网关自身探针恒返回 401 导致 Pod 永远 NotReady。
             // 网关未配置 /actuator/** 的 lb 路由，故不会转发到下游业务服务。
-            "/actuator"
+            "/actuator",
+            // 平台回调（Temu/TikTok/Shein）不带用户 JWT，鉴权靠端点自身的 HMAC-SHA256
+            // 验签（X-Signature fail-closed，无效签名不落库）。必须与服务层
+            // BaseAuthInterceptor.WHITE_LIST 同步（AuthWhitelistParityContractTest）。
+            "/multiplatform/webhook"
     );
 
     /**

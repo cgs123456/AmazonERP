@@ -482,7 +482,12 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             log.warn("Webhook 未传 shopId，已按 platform={} 反查 → shopId={}", platform, shopId);
         }
         if (shopId == null) {
-            throw new IllegalStateException("Webhook 无法确定归属店铺，拒绝落库");
+            // 2026-10-07 demo 档回环验收发现：这是可预期的业务状态（平台账号尚未录入，
+            // 生产首次接入即如此），此前抛 IllegalStateException 被全局处理器兜底成
+            // 「服务器内部错误」，回调方看不到真实原因。与验签拒绝同款走业务异常。
+            throw new CodeErrorException(
+                    "Webhook 无法确定归属店铺：平台 " + platform + " 尚未录入任何店铺账号"
+                    + "（amz_platform_account），拒绝落库");
         }
 
         WebhookEvent event = new WebhookEvent();
