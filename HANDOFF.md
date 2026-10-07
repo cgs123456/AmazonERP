@@ -11,7 +11,8 @@
 口径全部刷新，真机导入链在一次性容器上重跑出实测数。**追红连环**：#196（含钉数修复）hygiene
 转绿后 docker 首跑即红（`buildx bake` 不存在 `--dry-run` 标志，改 `--print`）→
 **run #197 全绿（11/11 job success）——本仓有 CI 记录以来第一次远端全绿**，#56 结案升级为
-run 元数据佐证。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
+run 元数据佐证。基线：整仓 `mvn test` **2004 / 0F / 0E / 17S**
+（班初 2003；webhook 回环验收修复新增归属拒绝单测 +1，本班末实测）
 （比上班 2002 多 1：`3fd1b12` 给 spapi 新增 node 一致契约方法，本班逐模块求和实测）、
 四把尺 + 漂移 + hygiene 全零、release-tools unittest **88/0F**、部署链三契约 17/17。
 覆盖率候选稳定 **33**（B 桶 20 缺凭据 / A 桶 13 刻意拒绝）。**无已知死代码。**
@@ -42,6 +43,7 @@ run 元数据佐证。基线：整仓 `mvn test` **2003 / 0F / 0E / 17S**
 | README 数字复核 | `0e93f51` | README 测试表 2002→2003（上班口径未折 spapi +1）、「20/20 模块」→19/19 reactor（与 Reactor Summary 实测一致） |
 | 真实数据模拟填充（用户点名） | `2d8aeec` | `PRODUCT_CATALOG` 24 个真实亚马逊类目（Electronics/Home & Kitchen/…真实 Listing 风格标题+真实价格带 7.99-149.99，品牌虚构不冒充商标）；ASIN 真格式 `B0+8 位`（原 B0SYN00001）；订单号真形态 3-10-7（原 S001-…）；quantity/final_price/item_price/tax(7.25%)/促销与商品价自洽；采购成本=售价×28-44%；竞品/BuyBox 价格扰动+bs_rank/review 真实区间。**识别机制不变**（标题 'SYN ' 前缀过 markers、ID 段/登记表全保留）。真实形态来源：SP-API Orders 官方模型样例 + Keepa product-object 文档。行数不变（demo 224,993 / ci 25,188） |
 | mock 财务样例真化 | `bfd03fb` | FinancesMockClient/ReportsMockClient 的 SKU-ALPHA 等占位 → 与生成器同风格（SYN-ELE-0101/合法 ASIN 字母表/3-10-7 订单号）；形状断言同步；mock profile fail-closed 边界不变。run #199（0e93f51）/#200（503de93，真机 MySQL 接受全部真实形态数据）/#201（bfd03fb）连续三绿 |
+| webhook demo 档回环验收（用户拍板 #4-b） | `9427e1a` | 一次性容器起真服务跑五场景 HTTP 回环（签名构造同 `MultiplatformWebhookProcessingTest.sign()`），抓到并修复两个部署形态缺陷：① `/multiplatform/webhook` 无 JWT 被服务层 401（白名单两侧同步放行，过 parity 契约）；②「平台账号未录入」抛 IllegalStateException 兜底成 500（改 CodeErrorException 点名原因）。终态整仓 2004/0/0/17 |
 
 ## 门禁基线与复跑命令
 
@@ -70,7 +72,8 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 # vue-tsc --noEmit、vitest run（必须在 amz-frontend/ 里跑）、playwright --workers=1。
 ```
 
-- 基线：整仓 **2003/0/0/17**（16 测试模块求和实测，含 `3fd1b12` 的 spapi node 契约 +1）；
+- 基线：整仓 **2004/0/0/17**（16 测试模块求和实测；班初 2003 含 `3fd1b12` 的 spapi
+  node 契约 +1，班末 webhook 回环验收修复新增归属拒绝单测 +1）；
   spapi 676/0F、multiplatform 101、logistics 153、customer 33、ops 36、user 19；
   vitest **479/479**、e2e 串行 40-44 全过；vue-tsc 0 错（tsconfig 开
   `noUnusedLocals`——前端孤儿 import 编译期即红，历轮 0 错即无孤儿之证）。
@@ -93,10 +96,17 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
   `2026-10-04-migration-order-ci-red-attribution.md`）。
 
 **需要产品/用户决策**
-- webhook 真实回调启用时机：密钥部署链已闭环（`.env` 填 `MULTIPLATFORM_WEBHOOK_SECRET_*`
-  即生效，空=回调拒绝），只差平台侧配置与验收。
+- ~~webhook 真实回调启用时机~~ **本班已拍板并完成 demo 档验收（`9427e1a`）**：一次性容器
+  起真服务跑通五场景回环（正确签名→落库 PROCESSED / 错签 / 未配平台 / 缺签名头→点名拒绝
+  不落库 / 幂等重发→仅一条）。抓到并修复两个部署形态缺陷：`/multiplatform/webhook`
+  未入免鉴权白名单（平台回调无 JWT，被服务层 401 永远走不到验签层，两侧同步放行过 parity
+  契约）、「平台账号未录入」抛 IllegalStateException 被兜底成「服务器内部错误」（改
+  CodeErrorException 点名原因）。**真实平台侧配置**仍待业务：各平台后台配回调 URL +
+  `.env` 填对应 `MULTIPLATFORM_WEBHOOK_SECRET_*` 即生效；启用前记得先录入
+  `amz_platform_account`（否则回环验收同款「未录入店铺账号」点名拒绝，属预期）。
 - `amz_order.coupon_id` 语义悬空：`amz_coupon` 表已删（死表），该列仍留在订单表。
-  留着无害（跨库无 FK、无代码读写）；彻底清理属订单域决策，本班未动。
+  留着无害（跨库无 FK、无代码读写）；**2026-10-07 用户拍板维持现状**，彻底清理待优惠券
+  功能立项时一并处置。
 
 **遗留改进（可做可不做，非阻塞）**
 - 多清空者两模式并存：9 视图已用「前缀过滤」（新模式，见 `CustomerService.vue`），
@@ -109,14 +119,15 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 
 ## 下一步计划（建议顺序）
 
-1. **例行止损闭环（本班已完成）**：整仓回归 2003/0/0/17、#195/#196 两个红修复、
-   #197 全绿、#56 结案升级——下一班接手时 **CI 基线是绿**，先确认后续 run 仍绿即可。
+1. **例行止损闭环（已完成）**：整仓回归 2003/0/0/17、#195/#196 两个红修复、
+   #197 全绿、#56 结案升级；webhook demo 档回环验收完成（`9427e1a`，终态 2004/0/0/17）。
+   下一班接手时 **CI 基线是绿**，先确认后续 run 仍绿即可。
 2. 若做多清空者统一：4 视图迁「前缀过滤」，抄 `CustomerService.vue` 的模式，
    **过滤前缀必须与 pushError 的 tag 逐字一致**。
 3. 若继续压 A 桶：显式拒绝优于假成功，**不要把任何拒绝改回沉默**（前端假成功
    上班已清零，后端同理）。
-4. webhook 启用时：先用 demo 档验签回环（签名构造抄
-   `MultiplatformWebhookProcessingTest.sign()`），再配真实密钥。
+4. ~~webhook 启用时：先用 demo 档验签回环~~ **已完成（`9427e1a`，见决策区）**；真实平台
+   侧配置时先录入 `amz_platform_account`，再各平台后台配回调 URL + `.env` 填密钥即生效。
 5. report.ts 利润明细现为全量读（后端无分页参数）；若表变大需要分页，先给后端
    加 size/cursor 再恢复 cursor 续读——两处契约要同步改。
 
@@ -220,6 +231,20 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
     **门禁链里「从未执行过」的步骤等于「没有验证」**——新增 workflow 步骤当班必须至少本地
     跑一次原命令（`docker buildx bake --help` 一行就能戳穿标志不存在）；排查 CI 红时也要
     把「被 skip 的下游 job」算进未验证面。
+31. **直调 service 层的单测探不到鉴权与异常兜底层**（2026-10-07 webhook 回环实测）：
+    `MultiplatformWebhookProcessingTest` 五场景全绿，但真 HTTP 回环抓到两个单测结构上
+    测不到的缺陷——拦截器 401（`/multiplatform/webhook` 不在白名单，请求根本没到
+    service）与 IllegalStateException 被全局处理器兜底成「服务器内部错误」（service
+    内抛什么异常类型，单测只看抛没抛、不看 HTTP 响应呈现）。教训：**凡「外部系统会真打
+    进来」的端点（webhook/回调/开放 API），验收必须走一次真 HTTP 链路**，白名单与异常
+    分类只有那条路径能覆盖。
+32. **relaxed-binding 密钥 env 名要按属性名推，别按注释里的别名**（坑 29 的实锤）：
+    服务注释与文档多写 `AMZ_CRYPTO_KEY`，但 `crypto.key` 属性对应的 env 实为
+    `CRYPTO_KEY`（我传 `AMZ_CRYPTO_KEY` 启动直接被 `IllegalStateException: crypto.key
+    未配置` 拒启）。`multiplatform.webhook.secret.temu` → `MULTIPLATFORM_WEBHOOK_SECRET_TEMU`
+    同理（点与下划线互换）。起服务前对着 yml 属性名推 env 名，别信记忆里的部署别名。
+    另：无 Redis 时 `/actuator/health` 显 DOWN 但业务链路照常工作——回环验收按端点行为判定，
+    别被探针误导。
 
 ## 环境与边界（务必遵守）
 

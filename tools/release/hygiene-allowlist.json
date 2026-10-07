@@ -14,7 +14,7 @@
     {
       "path": "amz-common/src/main/java/com/amz/interceptor/BaseAuthInterceptor.java",
       "rule": "secret-like-assignment",
-      "sha256": "84fc8d20ccc0529863a4f0440e26a4ea733b1a7e57c9c01f15052cee83b553e7"
+      "sha256": "d77ca859b3481e3ff7d0056654dae6e845560a65802c1d59f77251981619843d"
     },
     {
       "path": "amz-common/src/main/java/com/amz/lock/DistributedJobLock.java",
@@ -89,7 +89,7 @@
     {
       "path": "amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java",
       "rule": "secret-like-assignment",
-      "sha256": "323596cffbbbde2ce774c585b75f6942751072aadc0890148e7d80920ccef833"
+      "sha256": "e890003fb1eb4548bf32746812b2021150f038f010e2f22c71a174bb54df0fa4"
     },
     {
       "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java",
