@@ -1,19 +1,23 @@
-# HANDOFF — AmazonERP 真 CI run 止损 + 合成数据口径清账（2026-10-06 第二次交班）
+# HANDOFF — AmazonERP 止损清账 + 真实数据填充 + webhook 回环验收（2026-10-07 交班）
 
 工作树以本文件随交班 commit 推送为准，HEAD 以 `git log` 为准；全部已推送 `origin/master`。
 
 ## 一句话现状
 
-本班是**例行止损班**：上一班交班后按 HANDOFF「下一步计划 1」跑整仓回归 + 查真 CI run，
-抓到 `3fd1b12` 推上去的 **run #195 红**（hygiene job「Release tool tests」：迁移清点钉数
+本班从**例行止损**开始（上一班交班后跑整仓回归 + 查真 CI run，抓到 `3fd1b12` 推上去的
+**run #195 红**：hygiene job「Release tool tests」迁移清点钉数
 50 被 `832a4e5`/`6590ca4`/`6a7473c` 的 +8 个迁移文件打破），修复并把同类「交班漏同步数字」
 一次性清账：runbook/README/example manifest 的 113 表、90 行种子、225,734 行等死表清理前
 口径全部刷新，真机导入链在一次性容器上重跑出实测数。**追红连环**：#196（含钉数修复）hygiene
 转绿后 docker 首跑即红（`buildx bake` 不存在 `--dry-run` 标志，改 `--print`）→
 **run #197 全绿（11/11 job success）——本仓有 CI 记录以来第一次远端全绿**，#56 结案升级为
-run 元数据佐证。基线：整仓 `mvn test` **2004 / 0F / 0E / 17S**
-（班初 2003；webhook 回环验收修复新增归属拒绝单测 +1，本班末实测）
-（比上班 2002 多 1：`3fd1b12` 给 spapi 新增 node 一致契约方法，本班逐模块求和实测）、
+run 元数据佐证。随后按用户指令继续三块：**完整性 review**（活数字全量复核，抓到 README
+2002/「20/20 模块」两处残留 → `0e93f51`）、**真实数据模拟填充**（`2d8aeec`/`bfd03fb`，
+调研 SP-API Orders 官方样例 + Keepa 文档后改造生成器与 mock 样例，run #199/#200/#201
+三绿佐证）、**用户拍板落地**（webhook demo 档回环验收 `9427e1a`——抓到白名单缺项与
+异常兜底两个部署形态缺陷；coupon_id 维持现状；GH_TOKEN 待用户本人配置）。基线：整仓
+`mvn test` **2004 / 0F / 0E / 17S**
+（班初 2003 = 上班 2002 + `3fd1b12` spapi node 契约 1；本班末 webhook 归属拒绝单测 +1）、
 四把尺 + 漂移 + hygiene 全零、release-tools unittest **88/0F**、部署链三契约 17/17。
 覆盖率候选稳定 **33**（B 桶 20 缺凭据 / A 桶 13 刻意拒绝）。**无已知死代码。**
 本班另完成用户点名的**真实数据模拟填充**（`2d8aeec`）：演示库的商品标题/ASIN/订单号/
@@ -32,6 +36,9 @@ run 元数据佐证。基线：整仓 `mvn test` **2004 / 0F / 0E / 17S**
 | run #196 追红：docker `Dry-run bake` 用了不存在的 `--dry-run` 标志 | ✅ `89c10f3` 改 `--print`（本地实测 exit 0；该步骤被 hygiene 恒红连带 skip 从未执行过——坑 30） |
 | 下一步计划 #1 后半段：#56 结案升级「run 日志佐证」 | ✅ **run #197 全绿（11/11）**，归因文档追加「结案升级」段；取证改用匿名 run/job 元数据 API（日志 zip 仍 403） |
 | 合成数据口径随死表清理清账（runbook/README/example） | ✅ `1d91183`；113→102、90→87 种子（归因 `amz_report_template` 3 行随 V3 DROP）、225,734→224,993（demo）/25,484→25,188（ci）；真机链一次性容器重跑实测 ci 25,275/25,275、demo 225,080/225,080 |
+| 完整性 review（用户指令）：活数字全量复核 | ✅ 本班实测全部吻合；抓到 README 2002→2003、「20/20 模块」→19/19 reactor 两处残留（`0e93f51`） |
+| webhook demo 档回环验收（用户拍板 #4-b） | ✅ `9427e1a`；真 HTTP 五场景全过（正确签名→落库 PROCESSED、错签/未配平台/缺签名头→点名拒绝不落库、幂等重发→仅一条）；抓到并修复两个单测结构测不到的部署形态缺陷（坑 31） |
+| 待用户操作的拍板项 | ✅ #5 coupon_id 维持现状（拍板记录进决策区）；⏳ #2 GH_TOKEN——用户拍板「可以做」，但 token 须用户本人生成并配置（本机实测尚未就位，操作指引已写入卡住区） |
 
 ## 本班 commit 分组
 
@@ -92,6 +99,11 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
   与 `/runs/<id>/jobs`，200，能拿 conclusion、失败 job 名、失败 step 名）；**但 job 日志
   zip 仍 403**、gh 仍未认证。定位流程 = run→失败 job/step→ci.yml 找 run 行→本地逐字复现，
   本班走通两次（#195 钉数、#196 bake 标志）。#197 已全绿，#56 结案升级完成。
+  **2026-10-07 用户拍板「GH_TOKEN 可以做」，但 token 值只能用户本人生成**（本机实测
+  GH_TOKEN 尚未配置）：用户操作 = GitHub → Settings → Developer settings → Personal
+  access tokens（fine-grained，cgs123456/AmazonERP 只读）→ 生成后设为 Windows 用户级
+  环境变量 `GH_TOKEN`（别贴进对话）。配好后下一班即可直接拉日志与 artifact，CI 定位
+  从「元数据+复现」升级为「日志直读」；用户说一声「检查 token」即可验证。
 - deploy-it 脚本在仓库外：迁移数值序修复只能仓外核实（仓内证据见
   `2026-10-04-migration-order-ci-red-attribution.md`）。
 
