@@ -52,6 +52,75 @@ ID_BASE = 900000000000000000                # reserved synthetic band (BIGINT co
 ID_BAND = 100000000
 USER_ID_BASE = 100000001                    # small bands: amz_order.user_id is INT
 PRODUCT_ID_BASE = 200000001                 # amz_order.product_id is INT
+# Realistic catalog backing the synthetic products (2026-10-07): titles follow real
+# Amazon listing conventions and prices follow real marketplace bands per category
+# (researched from official SP-API Orders examples + Keepa product-object docs:
+# Keepa stores prices in cents with -1 = unavailable; Orders expose ASIN/SellerSKU/
+# Title/ItemPrice{CurrencyCode,Amount}).  The 'SYN ' title prefix keeps verify.py's
+# marker contract green (marker columns must start with syn*); asin/sku/brand/price/
+# category are NOT marker columns and therefore carry fully realistic shapes.
+# Brands are invented (never impersonate a real trademark); categories are real
+# Amazon browse-node names.
+PRODUCT_CATALOG = [
+    ('Wireless Earbuds Bluetooth 5.3 Headphones with Wireless Charging Case, IPX6 Waterproof',
+     'Elecom Audio', 'Electronics', (19.99, 45.99)),
+    ('Portable Charger 20000mAh Power Bank, USB-C Fast Charging Battery Pack',
+     'Voltway', 'Electronics', (21.99, 39.99)),
+    ('Phone Case Compatible with iPhone 16 Pro Max, Military Grade Drop Protection',
+     'SkyCabin', 'Electronics', (8.99, 18.99)),
+    ('Smart Watch Fitness Tracker with Heart Rate Sleep Monitor, 1.85 HD Touch Screen',
+     'Fitron Health', 'Electronics', (29.99, 59.99)),
+    ('Bluetooth Speaker Portable Waterproof for Outdoor Shower Travel',
+     'Elecom Audio', 'Electronics', (15.99, 34.99)),
+    ('LED Desk Lamp with Wireless Charger, Dimmable Eye-Caring Table Lamp',
+     'Lumenhaus', 'Office Products', (23.99, 42.99)),
+    ('Adjustable Laptop Stand Ergonomic Aluminum Notebook Riser',
+     'Deskline', 'Office Products', (18.99, 32.99)),
+    ('Dash Cam 1080P Car Driving Recorder with Night Vision Loop Recording',
+     'Roadvoy', 'Electronics', (32.99, 69.99)),
+    ('Insulated Water Bottle 32oz Stainless Steel Vacuum Flask Keeps Cold 24h',
+     'Aquarel', 'Sports & Outdoors', (12.99, 24.99)),
+    ('Yoga Mat Non Slip Thick Exercise Fitness Mat with Carrying Strap',
+     'Zenflow', 'Sports & Outdoors', (14.99, 29.99)),
+    ('Resistance Bands Set 5pcs Exercise Loops with Instruction Guide',
+     'Zenflow', 'Sports & Outdoors', (9.99, 19.99)),
+    ('Fascia Muscle Massage Gun Deep Tissue Percussion Massager Quiet',
+     'Fitron Health', 'Sports & Outdoors', (39.99, 89.99)),
+    ('Air Fryer Liners 100pcs Disposable Non-stick Perforated Parchment',
+     'GreenLeaf Kitchen', 'Home & Kitchen', (7.99, 14.99)),
+    ('Kitchen Food Scale Digital 0.1g Precision with LCD Backlit Display',
+     'GreenLeaf Kitchen', 'Home & Kitchen', (10.99, 19.99)),
+    ('Cool Mist Humidifier 2.5L Top Fill Ultrasonic with Auto Shut-off',
+     'Mistvale', 'Home & Kitchen', (24.99, 45.99)),
+    ('Aromatherapy Diffuser 300ml Essential Oil Ultrasonic with 7 LED Colors',
+     'Mistvale', 'Home & Kitchen', (18.99, 32.99)),
+    ('Vacuum Insulated Coffee Mug 14oz Leak-proof Travel Tumbler',
+     'Aquarel', 'Home & Kitchen', (11.99, 22.99)),
+    ('Dog Grooming Brush Self Cleaning Slicker for Shedding Pet Hair',
+     'Pawcuddle', 'Pet Supplies', (9.99, 17.99)),
+    ('Cat Water Fountain 2L Automatic Pet Water Dispenser with Filters',
+     'Pawcuddle', 'Pet Supplies', (26.99, 44.99)),
+    ('Blue Light Blocking Glasses Anti Eyestrain Computer Gaming Glasses',
+     'Clearvue', 'Health & Household', (11.99, 23.99)),
+    ('Compression Packing Cubes 6 Set Travel Luggage Organizer Bags',
+     'SkyCabin', 'Luggage & Travel Gear', (16.99, 31.99)),
+    ('Car Phone Mount Magnetic Dashboard Cell Phone Holder',
+     'Roadvoy', 'Automotive', (8.99, 16.99)),
+    ('Standing Desk Converter 32 inch Height Adjustable Sit Stand Riser',
+     'Deskline', 'Office Products', (79.99, 149.99)),
+    ('Under Desk Cable Management Tray Steel Wire Organizer Rack 2 Pack',
+     'Deskline', 'Office Products', (12.99, 24.99)),
+]
+# Confusion-free ASIN alphabet (no I/O/0/1): 8 deterministic chars -> 'B0XXXXXXXX'.
+ASIN_ALPHABET = 'ACDEFGHJKLMNPQRTUVWXY23456789'
+# SKU category abbreviations by brand (kept 'SYN-' prefix for identification).
+PRODUCT_SKU_TAG = {
+    'Elecom Audio': 'ELE', 'Voltway': 'ELE', 'SkyCabin': 'ELE', 'Fitron Health': 'ELE',
+    'Roadvoy': 'ELE', 'Lumenhaus': 'OFF', 'Deskline': 'OFF', 'Aquarel': 'HOM',
+    'Zenflow': 'SPT', 'GreenLeaf Kitchen': 'HOM', 'Mistvale': 'HOM', 'Pawcuddle': 'PET',
+    'Clearvue': 'HLT',
+}
+
 NAMESPACE = uuid.UUID('6f2d1f9a-0f1e-5c3a-9d4b-3a7c2e5b1d10')
 BATCH_ROWS = 200
 
@@ -474,9 +543,15 @@ class World(object):
         for shop in self.shops:
             for k in range(scale['products_per_shop_market']):
                 idx = len(self.products)
-                self.products.append(dict(idx=idx, product_id=PRODUCT_ID_BASE + idx, shop=shop,
-                                          asin='B0SYN%05d' % idx, sku='SYN-SKU-%06d' % idx,
-                                          title='SYNTHETIC PRODUCT %06d' % idx))
+                title, brand, category, (lo, hi) = PRODUCT_CATALOG[idx % len(PRODUCT_CATALOG)]
+                self.products.append(dict(
+                    idx=idx, product_id=PRODUCT_ID_BASE + idx, shop=shop,
+                    asin='B0' + ''.join(ASIN_ALPHABET[(idx * (7 + kk * 11) + kk * 3)
+                                                      % len(ASIN_ALPHABET)] for kk in range(8)),
+                    sku='SYN-%s-%04d' % (PRODUCT_SKU_TAG.get(brand, 'GEN'), idx % 10000),
+                    title='SYN %s (#%06d)' % (title, idx),
+                    brand=brand, category=category,
+                    price=round(lo + ((idx * 37) % 1000) / 1000.0 * (hi - lo), 2)))
         self.users = [dict(idx=u, user_id=USER_ID_BASE + u,
                            tenant=self.tenants[u % len(self.tenants)],
                            username='syn-user-%03d' % (u + 1),
@@ -527,7 +602,11 @@ class World(object):
             shop_products = self.products_by_shop[shop['idx']]
             product = shop_products[(i // len(self.shops)) % len(shop_products)]
             self.orders.append(dict(idx=i, order_id=ID_BASE + 700000 + i,
-                                    amazon_order_id='S%03d-%07d-%07d' % (shop['idx'], i // 10000, i),
+                                    # 真 AmazonOrderId 形态 3-10-7（官方 Orders 样例如
+                                    # 902-3159896-1390916）；第二段按 i//10 保证 ≤10 位
+                                    # （perf 档 10M 单也不溢出），第三段 i 全局唯一。
+                                    amazon_order_id='%03d-%010d-%07d' % (
+                                        101 + shop['idx'], 1700000000 + i // 10, i),
                                     shop=shop, marketplace=shop['marketplace'], product=product,
                                     user=self.users[i % len(self.users)],
                                     purchase_offset=i % 30))
@@ -878,6 +957,57 @@ class Generator(object):
             value = self.ref_value(name, REF_COLUMNS[name], ctx)
             if value is not None:
                 return value
+        # --- 商品域真实感（2026-10-07）：文案与价格来自 PRODUCT_CATALOG；标题保留
+        # 'SYN ' 前缀过 markers 门禁，asin/sku 由 ref_value 的池联动覆盖，无需在此处理。
+        product = ctx.get('product')
+        table_key = ctx.get('table')
+        if product is not None and table_key in (
+                'amz_product.amz_product', 'amz_product.amz_competitor_monitor',
+                'amz_product.amz_buy_box', 'amz_multiplatform.amz_platform_product'):
+            if name == 'title':
+                return product['title']
+            if name == 'brand':
+                return product['brand']
+            if name == 'category':
+                return product['category']
+            if name == 'competitor_title':
+                return 'SYN Competitor: %s' % product['title'][4:]
+            if name == 'price':
+                return product['price']
+            if name in ('buybox_price', 'our_price'):
+                return round(product['price'] * (0.85 + (idx % 8) * 0.04), 2)
+            if name in ('price_gap', 'price_change'):
+                return round((idx % 9 - 4) * 1.17, 2)
+            if name == 'bs_rank':
+                return 850 + (idx * 731) % 492000
+            if name == 'review_count':
+                return 12 + (idx * 197) % 8400
+            if name == 'review_rating':
+                return round(3.6 + (idx % 14) * 0.1, 1)
+        if product is not None and table_key in ('amz_order.amz_order_item',
+                                                 'amz_order.amz_order'):
+            # 订单明细对齐 SP-API getOrderItems 形态：ItemPrice = 单价 × 数量、
+            # ItemTax 按销售税近似、促销折扣偶发小值；订单主表 final_price 同口径。
+            if name == 'title':
+                return product['title']
+            if name == 'quantity':
+                return 1 + (idx % 3)
+            if name == 'item_price':
+                return round(product['price'] * (1 + idx % 3), 2)
+            if name == 'final_price':
+                return round(product['price'] * (1 + idx % 3), 2)
+            if name == 'item_tax':
+                return round(product['price'] * (1 + idx % 3) * 0.0725, 2)
+            if name == 'promotion_discount':
+                return round(product['price'] * (1 + idx % 3) * 0.05, 2) if idx % 4 == 0 else 0
+        if product is not None and table_key == 'amz_order.amz_product_cost':
+            # 采购成本口径：进货价 = 售价 × 28%-44% 毛利率区间，头程/关税小额。
+            if name == 'unit_cost':
+                return round(product['price'] * (0.28 + (idx % 5) * 0.04), 2)
+            if name == 'shipping_cost':
+                return round(2.3 + (idx % 7) * 0.9, 2)
+            if name == 'customs_cost':
+                return round(0.6 + (idx % 5) * 0.8, 2)
         if name == 'currency' and mp:
             return mp['currency']
         if name == 'region' and mp:
