@@ -50,30 +50,30 @@ public class FinancesMockClient implements FinancesClient {
         List<FinancialEvent> list = new ArrayList<>();
 
         // 订单一：正常销售（收入 + 佣金 + FBA 配送费）
-        list.add(event("INCOME:111-0000001-0000001:2026-09-02T12:00:00Z:Principal:29.99",
-                FinancialEvent.TYPE_INCOME, "111-0000001-0000001", "SKU-ALPHA", "B0ALPHA",
+        list.add(event("INCOME:111-1700000001-0000001:2026-09-02T12:00:00Z:Principal:29.99",
+                FinancialEvent.TYPE_INCOME, "111-1700000001-0000001", "SYN-ELE-0101", "B0AEHLPTW2",
                 "2026-09-02T12:00:00Z", "29.99", "Principal"));
-        list.add(event("FEE:111-0000001-0000001:2026-09-02T12:00:00Z:Commission:4.5",
-                FinancialEvent.TYPE_FEE, "111-0000001-0000001", "SKU-ALPHA", "B0ALPHA",
+        list.add(event("FEE:111-1700000001-0000001:2026-09-02T12:00:00Z:Commission:4.5",
+                FinancialEvent.TYPE_FEE, "111-1700000001-0000001", "SYN-ELE-0101", "B0AEHLPTW2",
                 "2026-09-02T12:00:00Z", "-4.50", "Commission"));
-        list.add(event("FEE:111-0000001-0000001:2026-09-02T12:00:00Z:FBAFulfillmentFee:5.03",
-                FinancialEvent.TYPE_FEE, "111-0000001-0000001", "SKU-ALPHA", "B0ALPHA",
+        list.add(event("FEE:111-1700000001-0000001:2026-09-02T12:00:00Z:FBAFulfillmentFee:5.03",
+                FinancialEvent.TYPE_FEE, "111-1700000001-0000001", "SYN-ELE-0101", "B0AEHLPTW2",
                 "2026-09-02T12:00:00Z", "-5.03", "FBAFulfillmentFee"));
 
         // 订单二：销售后全额退款
-        list.add(event("INCOME:111-0000002-0000002:2026-09-03T12:00:00Z:Principal:49.99",
-                FinancialEvent.TYPE_INCOME, "111-0000002-0000002", "SKU-BETA", "B0BETA",
+        list.add(event("INCOME:111-1700000002-0000002:2026-09-03T12:00:00Z:Principal:49.99",
+                FinancialEvent.TYPE_INCOME, "111-1700000002-0000002", "SYN-ELE-0102", "B0KMDRQTX7",
                 "2026-09-03T12:00:00Z", "49.99", "Principal"));
-        list.add(event("FEE:111-0000002-0000002:2026-09-03T12:00:00Z:Commission:7.5",
-                FinancialEvent.TYPE_FEE, "111-0000002-0000002", "SKU-BETA", "B0BETA",
+        list.add(event("FEE:111-1700000002-0000002:2026-09-03T12:00:00Z:Commission:7.5",
+                FinancialEvent.TYPE_FEE, "111-1700000002-0000002", "SYN-ELE-0102", "B0KMDRQTX7",
                 "2026-09-03T12:00:00Z", "-7.50", "Commission"));
-        list.add(event("REFUND:111-0000002-0000002:2026-09-05T12:00:00Z:Principal:49.99",
-                FinancialEvent.TYPE_REFUND, "111-0000002-0000002", "SKU-BETA", "B0BETA",
+        list.add(event("REFUND:111-1700000002-0000002:2026-09-05T12:00:00Z:Principal:49.99",
+                FinancialEvent.TYPE_REFUND, "111-1700000002-0000002", "SYN-ELE-0102", "B0KMDRQTX7",
                 "2026-09-05T12:00:00Z", "-49.99", "Principal"));
 
         // FBA 库存赔付（正向调整）—— 索赔闭环的关键形态
         list.add(event("ADJUSTMENT::2026-09-06T12:00:00Z:FBA Inventory Reimbursement:12.5",
-                FinancialEvent.TYPE_ADJUSTMENT, null, "SKU-GAMMA", "B0GAMMA",
+                FinancialEvent.TYPE_ADJUSTMENT, null, "SYN-HOM-0103", "B0JWPNVUC83",
                 "2026-09-06T12:00:00Z", "12.50", "FBA Inventory Reimbursement"));
 
         return List.copyOf(list);

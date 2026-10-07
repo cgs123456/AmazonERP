@@ -60,7 +60,7 @@ class SpApiFinanceMockClientsTest {
         List<String> lines = doc.lines().filter(l -> !l.isBlank()).collect(Collectors.toList());
         assertEquals(6, lines.size(), "expect 1 header + 5 data rows");
         assertTrue(lines.get(0).startsWith("settlement-id\t"), "header must be TSV with settlement-id first");
-        assertTrue(doc.contains("111-0000001-0000001"), "should contain the normal sale order");
+        assertTrue(doc.contains("111-1700000001-0000001"), "should contain the normal sale order");
         assertTrue(doc.contains("Refund"), "should contain a refund row");
         assertTrue(doc.contains("FBA Inventory Reimbursement"), "should contain a reimbursement row");
         // 每行字段数一致（10 列），避免下游按列号取值时错位

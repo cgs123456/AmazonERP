@@ -59,10 +59,10 @@ public class ReportsMockClient implements ReportsClient {
      */
     static final String SAMPLE_SETTLEMENT_TSV = String.join("\n",
             "settlement-id\tsettlement-start-date\tsettlement-end-date\tdeposit-date\tcurrency\ttransaction-type\torder-id\tsku\tamount-type\tamount",
-            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tOrder\t111-0000001-0000001\tSKU-ALPHA\tPrincipal\t29.99",
-            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tOrder\t111-0000001-0000001\tSKU-ALPHA\tCommission\t-4.50",
-            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tOrder\t111-0000001-0000001\tSKU-ALPHA\tFBAPerUnitFulfillmentFee\t-5.03",
-            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tRefund\t111-0000002-0000002\tSKU-BETA\tPrincipal\t-49.99",
-            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tAdjustment\t\tSKU-GAMMA\tFBA Inventory Reimbursement\t12.50",
+            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tOrder\t111-1700000001-0000001\tSYN-ELE-0101\tPrincipal\t29.99",
+            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tOrder\t111-1700000001-0000001\tSYN-ELE-0101\tCommission\t-4.50",
+            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tOrder\t111-1700000001-0000001\tSYN-ELE-0101\tFBAPerUnitFulfillmentFee\t-5.03",
+            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tRefund\t111-1700000002-0000002\tSYN-ELE-0102\tPrincipal\t-49.99",
+            "900001\t2026-09-01T00:00:00Z\t2026-09-07T23:59:59Z\t2026-09-08T00:00:00Z\tUSD\tAdjustment\t\tSYN-HOM-0103\tFBA Inventory Reimbursement\t12.50",
             "");
 }
