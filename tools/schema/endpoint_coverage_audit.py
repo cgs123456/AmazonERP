@@ -245,6 +245,26 @@ def sidebar_refs():
         re.findall(r"isActive\('([^']+)'\)", text))
 
 
+def is_catch_all(path: str) -> bool:
+    """`/:pathMatch(.*)*` 这类兜底路由不参与可达性比对：它匹配一切，也吞噬一切。"""
+    return '*' in path or '(' in path
+
+
+def route_prefix(pattern: str) -> str:
+    """动态路由的列表页前缀 = 第一个参数段之前的路径（/orders/:id -> /orders）。"""
+    segs = pattern.split('/')
+    idx = next((i for i, s in enumerate(segs) if s.startswith(':')), len(segs))
+    return '/'.join(segs[:idx]) or '/'
+
+
+def seg_match(pattern: str, path: str) -> bool:
+    """导航项是否命中路由模式：`:param` 段吃掉任意单个非空段，其余逐字相等。"""
+    ps, xs = pattern.split('/'), path.split('/')
+    if len(ps) != len(xs):
+        return False
+    return all(a == b or (a.startswith(':') and b) for a, b in zip(ps, xs))
+
+
 ANN_RUN = re.compile(r'^(?:@\w+(?:\s*\([^()]*(?:\([^()]*\)[^()]*)*\))?\s*)+')
 
 
@@ -375,6 +395,16 @@ if '--self-test' in sys.argv:
     check('带查询串的调用与不带的是同一条端点',
           shape('/ai/eval/run?mode=${mode}'), '/ai/eval/run')
 
+    # —— 动态路由可达性比对（2026-10-07，闭合 2026-10-04 文档第 4 条「只统计不比对」）——
+    check('动态路由前缀取第一个参数段之前', route_prefix('/orders/:id'), '/orders')
+    check('兜底路由被识别并不参与比对', is_catch_all('/:pathMatch(.*)*'), True)
+    check('普通动态路由不是兜底', is_catch_all('/orders/:id'), False)
+    check('段匹配：:param 吃一个非空段', seg_match('/orders/:id', '/orders/123'), True)
+    check('段匹配：缺段与多段都算断',
+          [seg_match('/orders/:id', '/orders'), seg_match('/orders/:id', '/orders/1/2')],
+          [False, False])
+    check('段匹配：静态段必须逐字相等', seg_match('/orders/:id', '/carts/123'), False)
+
     failed = [c for c in cases if not c[1]]
     for name, ok_flag, got, want in cases:
         print('%-56s %s (got=%s want=%s)' % (
@@ -432,13 +462,25 @@ if '--reverse' in sys.argv:
                    for c in cands for b in segs_by_shape.values()):
             stub_missing.append(ss)
 
-    static_routes = [p for p in routes if ':' not in p and p != '*']
+    static_routes = [p for p in routes if ':' not in p and not is_catch_all(p)]
+    dynamic_routes = [p for p in routes if ':' in p and not is_catch_all(p)]
     route_orphans = [p for p in static_routes if p not in nav]
-    nav_dead = [p for p in sorted(nav) if ':' not in p and p not in routes]
+    # 动态路由可达性口径（2026-10-07 闭合 2026-10-04 文档第 4 条「只统计不比对」）：
+    # 详情页（/orders/:id 形态）的入口是「从列表页点行」，不配自己的侧边栏项，
+    # 所以「模式能被某个导航项直接命中」或「列表页前缀是导航项」二者满足其一才算可达；
+    # 两者都落空才是真孤儿（详情页没有任何路径能到达）。兜底路由不参与（它会吞掉一切）。
+    dynamic_unreachable = [
+        p for p in dynamic_routes
+        if not any(seg_match(p, n) for n in nav) and route_prefix(p) not in nav
+    ]
+    nav_dead = [p for p in sorted(nav)
+                if ':' not in p and not is_catch_all(p) and p not in routes
+                and not any(seg_match(r, p) for r in dynamic_routes)]
     uncalled = feign_declared_uncalled()
 
-    print('reverse: backend-shapes=%d frontend-call-sites=%d e2e-stubs=%d routes=%d(static=%d) nav-refs=%d'
-          % (len(by_shape), len(calls), len(stubs), len(routes), len(static_routes), len(nav)))
+    print('reverse: backend-shapes=%d frontend-call-sites=%d e2e-stubs=%d routes=%d(static=%d dynamic=%d) nav-refs=%d'
+          % (len(by_shape), len(calls), len(stubs), len(routes), len(static_routes),
+             len(dynamic_routes), len(nav)))
     findings = 0
     if orphans:
         findings += len(orphans)
@@ -460,6 +502,12 @@ if '--reverse' in sys.argv:
         print('GATE RED static-route-without-sidebar-entry: %d' % len(route_orphans))
         for p in route_orphans:
             print('   %s' % p)
+    if dynamic_unreachable:
+        findings += len(dynamic_unreachable)
+        print('GATE RED dynamic-route-unreachable: %d' % len(dynamic_unreachable))
+        for p in dynamic_unreachable:
+            print('   %s（导航项命中不了该模式，且列表页前缀 %s 不在侧边栏）'
+                  % (p, route_prefix(p)))
     if nav_dead:
         findings += len(nav_dead)
         print('GATE RED sidebar-entry-without-route: %d' % len(nav_dead))
