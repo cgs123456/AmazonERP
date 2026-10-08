@@ -176,10 +176,11 @@ const call = async <T>(label: string, fn: () => Promise<ApiResponse<T>>, apply: 
   }
 }
 
-const loadOutbox = async (clearErrors = true) => {
+const loadOutbox = async () => {
   loadingOutbox.value = true
-  // 重放失败后也会刷新列表：那时不能顺手清空错误条，否则「重放未成功」这条信息就消失了
-  if (clearErrors) errors.value = []
+  // 只清本列表的错误（按「发件箱：」前缀）：重放后刷新列表时，「重放结果：」那条
+  // 未成功提示归它自己的前缀管，不会被这次刷新擦掉
+  errors.value = errors.value.filter((x) => !x.startsWith(`发件箱：`))
   try {
     const size = Number(limit.value)
     const res = await api.listOutbox({
@@ -225,7 +226,7 @@ const askReplay = (row: OutboxRecord) => {
       if (ok && replayResult.value && !replayResult.value.success) {
         pushError(`重放结果：${replayResult.value.outcome || '未成功'}`)
       }
-      await loadOutbox(false)
+      await loadOutbox()
     }
   }
 }
@@ -239,6 +240,8 @@ const runConfirm = async () => {
 
 const gotoTab = async (key: TabKey) => {
   tab.value = key
+  // 切 Tab 是整页入口：清一次全部错误，此后 loader 只按各自前缀追加/移除
+  errors.value = []
   if (key === 'outbox' && !outboxLoaded) {
     outboxLoaded = true
     await loadOutbox()

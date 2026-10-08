@@ -593,15 +593,15 @@ const loadList = async <T>(
   list: ListState<T>,
   label: string,
   fetcher: (cursor: string | undefined) => Promise<ApiResponse<T[]>>,
-  append: boolean,
-  clearErrors = true
+  append: boolean
 ) => {
   const shopId = shop()
   if (!shopId) return
   if (!append) {
     list.rows.value = []
     list.cursor.value = null
-    if (clearErrors) errors.value = []
+    // 只清本列表的错误（按「label：」前缀），并发 loader 与动作提示互不擦
+    errors.value = errors.value.filter((x) => !x.startsWith(`${label}：`))
   }
   list.loading.value = true
   try {
@@ -621,12 +621,12 @@ const loadList = async <T>(
   }
 }
 
-const loadRules = (append = false, clearErrors = true) => loadList(rules, '规则列表', (cursor) =>
+const loadRules = (append = false) => loadList(rules, '规则列表', (cursor) =>
   api.listRules(shop(), {
     ruleType: ruleType.value || undefined,
     size: 20,
     cursor
-  }), append, clearErrors)
+  }), append)
 
 const loadTerms = (append = false) => loadList(terms, '搜索词报表', (cursor) =>
   api.listSearchTerms(shop(), {
@@ -791,8 +791,8 @@ const askExecute = (r: AdAutoRule) => {
       if (data.appliedToAdAccount === true) {
         pushError('后端把 appliedToAdAccount 置为真：本页「仅建议」的说明已不成立，请核对执行链路')
       }
-      // 刷新「上次执行」时不能顺手清空错误条，否则上面那条越界警告会跟着列表一起消失
-      await loadRules(false, false)
+      // 刷新「上次执行」只清「规则列表：」前缀，上面那条无标签前缀的越界警告保留
+      await loadRules()
     }
   }
 }
@@ -883,6 +883,8 @@ const runConfirm = async () => {
 const loaded = new Set<TabKey>()
 const gotoTab = async (key: TabKey) => {
   tab.value = key
+  // 切 Tab 是整页入口：清一次全部错误，此后 loader 只按各自前缀追加/移除
+  errors.value = []
   if (!currentShopId || loaded.has(key)) return
   loaded.add(key)
   if (key === 'rules') await loadRules()

@@ -190,13 +190,14 @@ const call = async <T>(label: string, fn: () => Promise<ApiResponse<T>>, apply: 
   }
 }
 
-const loadOrders = async (append = false, clearErrors = true) => {
+const loadOrders = async (append = false) => {
   const shopId = shop()
   if (!shopId) return
   if (!append) {
     rows.rows.value = []
     rows.cursor.value = null
-    if (clearErrors) errors.value = []
+    // 只清本列表的错误（按「订单列表：」前缀），动作提示与并发 loader 互不擦
+    errors.value = errors.value.filter((x) => !x.startsWith(`订单列表：`))
   }
   rows.loading.value = true
   const cursor = append ? rows.cursor.value ?? undefined : undefined
@@ -274,8 +275,8 @@ const askShip = (o: UnifiedOrder) => {
       if (shipApplied.value === false) {
         pushError(`${o.platform} 未接受这次发货回传：本地订单状态未变，仍是 ${o.status || '未知'}`)
       }
-      // 读回真实状态，但不清错误条：否则上面那句「平台没接受」会跟着列表一起消失
-      await loadOrders(false, false)
+      // 读回真实状态：loadOrders 只清「订单列表：」前缀，上面那句平台未接受的提示保留
+      await loadOrders()
     }
   }
 }
@@ -290,6 +291,7 @@ const runConfirm = async () => {
 }
 
 onMounted(() => {
+  errors.value = []   // 整页入口清一次；loader 只按各自前缀追加/移除
   void loadOrders()
 })
 </script>

@@ -480,15 +480,15 @@ const loadList = async <T>(
   list: ListState<T>,
   label: string,
   fetcher: (cursor: string | undefined) => Promise<ApiResponse<T[]>>,
-  append: boolean,
-  clearErrors = true
+  append: boolean
 ) => {
   const shopId = shop()
   if (!shopId) return
   if (!append) {
     list.rows.value = []
     list.cursor.value = null
-    if (clearErrors) errors.value = []
+    // 只清本列表的错误（按「label：」前缀），并发 loader 与动作提示互不擦
+    errors.value = errors.value.filter((x) => !x.startsWith(`${label}：`))
   }
   list.loading.value = true
   try {
@@ -525,25 +525,25 @@ const run = async <T>(label: string, fn: () => Promise<ApiResponse<T>>): Promise
   }
 }
 
-const loadAccounts = (append = false, clearErrors = true) => loadList(accounts, '平台账号',
-  (cursor) => api.listAccounts(shop(), { size: 20, cursor }), append, clearErrors)
-const loadProducts = (append = false, clearErrors = true) => loadList(products, '商品列表',
+const loadAccounts = (append = false) => loadList(accounts, '平台账号',
+  (cursor) => api.listAccounts(shop(), { size: 20, cursor }), append)
+const loadProducts = (append = false) => loadList(products, '商品列表',
   (cursor) => api.listProducts(shop(), { platform: productPlatform.value || undefined, size: 20, cursor }),
-  append, clearErrors)
-const loadMessages = (append = false, clearErrors = true) => loadList(messages, '消息列表',
+  append)
+const loadMessages = (append = false) => loadList(messages, '消息列表',
   (cursor) => api.listMessages(shop(), {
     platform: messagePlatform.value || undefined,
     status: messageStatus.value || undefined,
     size: 20, cursor
-  }), append, clearErrors)
-const loadInventory = (append = false, clearErrors = true) => loadList(inventory, '库存列表',
+  }), append)
+const loadInventory = (append = false) => loadList(inventory, '库存列表',
   (cursor) => api.listInventory(shop(), { platform: inventoryPlatform.value || undefined, size: 20, cursor }),
-  append, clearErrors)
-const loadWebhooks = (append = false, clearErrors = true) => loadList(webhooks, 'Webhook 事件',
+  append)
+const loadWebhooks = (append = false) => loadList(webhooks, 'Webhook 事件',
   (cursor) => api.listWebhookEvents(shop(), { status: webhookStatus.value || undefined, size: 20, cursor }),
-  append, clearErrors)
-const loadApps = (append = false, clearErrors = true) => loadList(apps, 'ISV 应用',
-  (cursor) => api.listApps(shop(), { size: 20, cursor }), append, clearErrors)
+  append)
+const loadApps = (append = false) => loadList(apps, 'ISV 应用',
+  (cursor) => api.listApps(shop(), { size: 20, cursor }), append)
 
 const loadAggregate = async () => {
   const data = await run('库存汇总', () => api.aggregatedInventory(shop()))
@@ -610,7 +610,8 @@ const askDeleteAccount = (a: PlatformAccount) => {
       // 这时列表刷新后那行还在——不说明原因就会看起来像「删除失败但没报错」
       if (ok === false) pushError(`删除账号：后端没有删掉任何行（账号 #${a.id} 可能已不存在），本地状态未变`)
       if (accountForm.id === a.id) accountFormOpen.value = false
-      await loadAccounts(false, false)
+      // loadAccounts 只清「平台账号：」前缀，上面那条「删除账号：」警告保留
+      await loadAccounts()
     }
   }
 }
@@ -619,9 +620,9 @@ const askDeleteAccount = (a: PlatformAccount) => {
 const testAccount = async (a: PlatformAccount) => {
   const ok = await run(`${a.platform} 连接探测`, () => api.testAccountConnection(a.id as number))
   if (ok === null) return
-  // 结论写在状态列上，所以要重拉列表；clearErrors=false 否则这次刷新会把紧随其后
-  // push 的那条探测说明擦干净，页面看起来像「点了没反应」。
-  await loadAccounts(false, false)
+  // 结论写在状态列上，所以要重拉列表；loadAccounts 只清「平台账号：」前缀，
+  // 紧随其后 push 的「连接探测：」说明归自己的前缀管，不会被这次刷新擦掉。
+  await loadAccounts()
   if (ok === false) {
     pushError(`连接探测：${a.platform} 账号「${a.storeName || a.id}」没有回话，状态已标为 ERROR`
       + '（原因在后端日志：凭证未配置 / 签名被拒 / 网络不通）')
@@ -734,6 +735,8 @@ const runConfirm = async () => {
 const loaded = new Set<TabKey>()
 const gotoTab = async (key: TabKey) => {
   tab.value = key
+  // 切 Tab 是整页入口：清一次全部错误，此后 loader 只按各自前缀追加/移除
+  errors.value = []
   if (!currentShopId.value || loaded.has(key)) return
   loaded.add(key)
   if (key === 'accounts') await loadAccounts()
