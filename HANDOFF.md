@@ -454,6 +454,13 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
     **一键自证**：在**用户自己的普通终端**跑
     `mvn -pl amz-service/amz-service-product test "-Dtest=OrderServiceFeignDecodeIT"`——
     绿 = 沙箱问题坐实、本坑收口；红 = 真是本机 JDK/安全软件问题，再回头查。
+    **证据收口（本班加固，别再重查）**：① 报错签名与 OpenJDK **JDK-8312215**
+    （In Progress、无 fix 版本）完全吻合——该 bug 正是「沙箱化 Windows 进程
+    （重定向文件系统调用）里 Selector/HttpClient 建 loopback 失败」；
+    ② 本机 TCP 正常（`gh`/`curl` 真实联网成功），只有 AF_UNIX 这类**文件系统承载的
+    socket** 坏 → 与「沙箱重定向 FS 调用」自洽；③ 三条逃逸路线全部被拦死：
+    `Start-Process` 子进程（继承受限上下文）、`Register-ScheduledTask`（拒绝访问）、
+    `schtasks.exe`（Access denied）——**agent 侧无解，不要再试**。
 ## 环境与边界（务必遵守）
 
 - `zc-live-*`（mysql/redis/rabbit）与 `amz-p13-*` 是**别人在跑的栈**：不重启、不改
