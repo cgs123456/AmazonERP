@@ -171,6 +171,10 @@
             </table>
             <div class="table-pager">
               <span class="page-info">{{ pagerText(profitList) }}</span>
+              <div class="page-actions">
+                <button v-if="profitList.truncated.value" class="page-btn" :disabled="profitList.loading.value"
+                        @click="loadProfitDetails(true)">加载下一页</button>
+              </div>
             </div>
           </div>
         </div>
@@ -662,11 +666,11 @@ const loadOverview = async () => {
 }
 
 /* ---------- 利润明细 ---------- */
-// 后端 /report/v2/profit/list 无分页参数（全量返回），不做 cursor 续读，也没有「加载下一页」
-const loadProfitDetails = () =>
-  loadList(profitList, '利润明细', () => rpt.listProfitDetails(shop(), {
-    asin: pdAsin.value || undefined, startDate: pdStart.value || undefined, endDate: pdEnd.value || undefined
-  }), false)
+// 后端 /report/v2/profit/list 已有 size/cursor（2026-10-07），与快照列表同一 keyset 口径
+const loadProfitDetails = (append = false) =>
+  loadList(profitList, '利润明细', cursor => rpt.listProfitDetails(shop(), {
+    asin: pdAsin.value || undefined, startDate: pdStart.value || undefined, endDate: pdEnd.value || undefined, cursor
+  }), append)
 
 const loadAllProfit = async () => {
   await Promise.all([

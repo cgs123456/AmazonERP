@@ -4,6 +4,8 @@ import com.amz.model.BusinessOverview;
 import com.amz.model.InventoryTurnover;
 import com.amz.model.ProfitDetail;
 import com.amz.model.SalesDaily;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 
 import java.util.List;
 import java.util.Map;
@@ -20,8 +22,14 @@ public interface ReportUpgradeService {
     /** 保存利润明细 */
     ProfitDetail saveProfitDetail(ProfitDetail detail);
 
-    /** 查询利润明细列表 */
-    List<ProfitDetail> listProfitDetails(Long shopId, String asin, String startDate, String endDate);
+    /**
+     * 查询利润明细列表（keyset 游标分页）。
+     * <p>
+     * 2026-10-07 之前是全量返回：明细随聚合逐日增长，无上限读取迟早会把整表灌进一次响应。
+     * 分页口径与利润快照列表一致（(report_date,id) 复合游标 + 探测行判截断）。
+     */
+    PageResult<ProfitDetail> listProfitDetails(Long shopId, String asin, String startDate, String endDate,
+                                               PageRequest page);
 
     /** 利润汇总（按 ASIN 维度） */
     Map<String, Object> profitSummaryByAsin(Long shopId, String startDate, String endDate);

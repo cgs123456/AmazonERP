@@ -6,6 +6,7 @@ import com.amz.model.BusinessOverview;
 import com.amz.model.InventoryTurnover;
 import com.amz.model.ProfitDetail;
 import com.amz.model.SalesDaily;
+import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.ReportUpgradeService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,14 +43,22 @@ public class ReportUpgradeController {
         return Result.success(reportUpgradeService.saveProfitDetail(detail));
     }
 
-    /** 查询利润明细列表 */
+    /**
+     * 查询利润明细列表（keyset 游标分页）。
+     * <p>
+     * 2026-10-07 从无界全量读改为 size/cursor：明细表随聚合逐日增长，全量返回迟早
+     * 把整表灌进一次响应；分页口径与 /report/profit/snapshot/list 一致。
+     */
     @ShopScoped
     @GetMapping("/profit/list/{shopId}")
     public Result<List<ProfitDetail>> listProfit(@PathVariable Long shopId,
                                                    @RequestParam(required = false) String asin,
                                                    @RequestParam(required = false) String startDate,
-                                                   @RequestParam(required = false) String endDate) {
-        return Result.success(reportUpgradeService.listProfitDetails(shopId, asin, startDate, endDate));
+                                                   @RequestParam(required = false) String endDate,
+                                                   @RequestParam(required = false) Integer size,
+                                                   @RequestParam(required = false) String cursor) {
+        return Result.paged(reportUpgradeService.listProfitDetails(shopId, asin, startDate, endDate,
+                PageRequest.of(size, cursor)));
     }
 
     /** 利润汇总（按 ASIN 维度） */

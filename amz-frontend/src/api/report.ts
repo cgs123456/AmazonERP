@@ -245,7 +245,7 @@ export const SNAPSHOT_PLACEHOLDER_FIELDS = ['vatCost', 'refundCost', 'otherCost'
 /* ==================== /report/v2 ==================== */
 
 export const listProfitDetails = (shopId: number | string,
-                                  q: { asin?: string; startDate?: string; endDate?: string } = {}) =>
+                                  q: { asin?: string; startDate?: string; endDate?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<ProfitDetail[]>>(`/report/v2/profit/list/${shopId}`, { params: params(q) })
 
 export const profitSummary = (shopId: number | string, q: { startDate?: string; endDate?: string } = {}) =>

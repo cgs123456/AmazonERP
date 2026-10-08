@@ -8,6 +8,9 @@ import com.amz.model.BusinessOverview;
 import com.amz.model.InventoryTurnover;
 import com.amz.model.ProfitDetail;
 import com.amz.model.SalesDaily;
+import com.amz.exception.InvalidParamException;
+import com.amz.result.PageRequest;
+import com.amz.result.PageResult;
 import com.amz.service.ReportUpgradeService;
 import com.amz.util.MapArgUtils;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -37,6 +40,9 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
      * 利润率换算用的百分数。
      */
     private static final BigDecimal HUNDRED = new BigDecimal("100");
+
+    /** 利润明细复合游标的载荷分隔符，与 RealtimeProfitServiceImpl 同口径。 */
+    private static final String CURSOR_SEP = "|";
 
     @Autowired
     private ProfitDetailMapper profitDetailMapper;
@@ -72,7 +78,9 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
     }
 
     @Override
-    public List<ProfitDetail> listProfitDetails(Long shopId, String asin, String startDate, String endDate) {
+    public PageResult<ProfitDetail> listProfitDetails(Long shopId, String asin, String startDate,
+                                                      String endDate, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<ProfitDetail> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ProfitDetail::getShopId, shopId);
         if (asin != null && !asin.isBlank()) {
@@ -84,8 +92,49 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
         if (endDate != null) {
             wrapper.le(ProfitDetail::getReportDate, LocalDate.parse(endDate));
         }
-        wrapper.orderByDesc(ProfitDetail::getReportDate);
-        return profitDetailMapper.selectList(wrapper);
+        // 同一天有多 ASIN/SKU 的明细行，report_date 并列，单列 id 游标无法保证稳定顺序，
+        // 必须用 (report_date, id) 复合游标——与利润快照列表 (stat_time, id) 同一口径。
+        if (req.hasCursor()) {
+            Object[] key = decodeProfitCursor(req.payload());
+            wrapper.apply("(report_date < {0} OR (report_date = {0} AND id < {1}))", key[0], key[1]);
+        }
+        wrapper.orderByDesc(ProfitDetail::getReportDate)
+               .orderByDesc(ProfitDetail::getId);
+        // 探测行：多取 1 行判定 hasMore，不额外 COUNT(*)；LIMIT 由常量拼接，无注入面
+        wrapper.last("LIMIT " + req.probeSize());
+        List<ProfitDetail> rows = profitDetailMapper.selectList(wrapper);
+        PageResult<ProfitDetail> result = PageResult.of(rows, req.size(), this::profitCursor);
+        if (result.truncated()) {
+            log.warn("利润明细列表被分页截断：shopId={} asin={} size={}，请用 nextCursor 继续翻页",
+                    shopId, asin, req.size());
+        }
+        return result;
+    }
+
+    /** 由本页最后一行生成下一页游标：(report_date, id) 复合键。 */
+    private String profitCursor(ProfitDetail detail) {
+        return PageRequest.encodeCursor(detail.getReportDate().toString() + CURSOR_SEP + detail.getId());
+    }
+
+    /**
+     * 解析利润明细游标载荷 {@code reportDate|id}。
+     *
+     * @throws InvalidParamException 载荷格式不合法（篡改过的游标，或跨端点混用了别的游标）
+     */
+    private Object[] decodeProfitCursor(String payload) {
+        int sep = payload.lastIndexOf(CURSOR_SEP);
+        if (sep <= 0 || sep == payload.length() - 1) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        LocalDate reportDate;
+        long id;
+        try {
+            reportDate = LocalDate.parse(payload.substring(0, sep));
+            id = Long.parseLong(payload.substring(sep + 1));
+        } catch (RuntimeException e) {
+            throw new InvalidParamException("分页游标格式非法：" + payload);
+        }
+        return new Object[]{reportDate, id};
     }
 
     @Override

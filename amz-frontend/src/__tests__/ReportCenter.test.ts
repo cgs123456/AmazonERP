@@ -199,13 +199,23 @@ describe('ReportCenter 视图（经营报表）', () => {
     expect(wrapper.text()).toContain('CALC')
   })
 
-  it('利润明细是全量端点：不出现下一页入口，也不回传 cursor（后端无分页参数）', async () => {
+  it('利润明细已有游标分页（2026-10-07 全量读改 size/cursor）：未截断不给下一页入口，首页请求 cursor 为空', async () => {
     vi.mocked(rpt.listProfitDetails).mockResolvedValue(PROFIT_ROWS)
     const wrapper = await mountPage()
     await openTab(wrapper, '利润明细')
     expect(wrapper.text()).not.toContain('加载下一页')
     expect(rpt.listProfitDetails).toHaveBeenLastCalledWith('900000000000001000',
-      expect.not.objectContaining({ cursor: expect.anything() }))
+      expect.objectContaining({ cursor: undefined }))
+  })
+
+  it('利润明细服务端截断时给下一页入口并回传 cursor（与快照列表同口径）', async () => {
+    vi.mocked(rpt.listProfitDetails).mockResolvedValue(ok(PROFIT_ROWS.data, pageOf('djE6MjAyNi0wOS0yNnwyOQ')))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '利润明细')
+    expect(wrapper.text()).toContain('后端标记仍有下一页')
+    await clickBtn(wrapper, '加载下一页')
+    expect(rpt.listProfitDetails).toHaveBeenLastCalledWith('900000000000001000',
+      expect.objectContaining({ cursor: 'djE6MjAyNi0wOS0yNnwyOQ' }))
   })
 
   it('服务端截断时给下一页入口并回传 cursor（快照列表后端真有 size/cursor）', async () => {
