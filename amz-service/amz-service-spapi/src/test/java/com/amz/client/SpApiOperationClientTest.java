@@ -150,8 +150,8 @@ class SpApiOperationClientTest {
                 SHOP_ID, MARKETPLACE_ID, operation, Map.of(), Map.of(), null);
 
         assertTrue(result.get("synthetic").getAsBoolean());
-        assertEquals(operation.operationId(), result.get("operationId").getAsString());
-        assertEquals("notifications", result.get("family").getAsString());
+        // 官方 sandbox 形状：payload 顶层数组（Amazon 官方 sandbox static 响应）
+        assertTrue(result.has("payload"), "官方形状必须保留 payload 顶层数组");
 
         assertThrows(IllegalArgumentException.class,
                 () -> client.execute(SHOP_ID, MARKETPLACE_ID,

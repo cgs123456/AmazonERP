@@ -1,0 +1,9 @@
+{
+  "fixtureVersion": 1,
+  "generatedBy": "tools/contract-fixtures/generate_b_bucket_fixtures.py",
+  "sources": {
+    "shape": "OpenAI-compatible /chat/completions response schema (DeepSeek API docs follow it)",
+    "inRepoConsumer": "AiServiceImpl.extractContent (choices[0].message.content)"
+  },
+  "syntheticPolicy": "top-level synthetic=true plus SYNTHETIC content prefix; never send network traffic to DeepSeek without a real key."
+}

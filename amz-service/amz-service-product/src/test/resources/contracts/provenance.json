@@ -1,0 +1,15 @@
+{
+  "fixtureVersion": 1,
+  "generatedBy": "tools/contract-fixtures/generate_b_bucket_fixtures.py",
+  "sources": {
+    "shape": "Keepa product object documentation (products[].stats.current[] index layout)",
+    "indices": {
+      "1": "NEW price in cents (US$29.99 -> 2999)",
+      "3": "SalesRank",
+      "16": "ReviewCount",
+      "18": "RatingMilli (4500 = 4.50)"
+    },
+    "inRepoConsumer": "KeepaCompetitorScheduler.parseKeepaStats"
+  },
+  "syntheticPolicy": "top-level synthetic=true, title carries the SYN prefix used by the demo data recognizability system; values are deterministic placeholders in Keepa's official units (cents / milli-rating)."
+}
