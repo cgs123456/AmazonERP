@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Repository hygiene
@@ -79,7 +79,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Build deterministic manifest
@@ -218,7 +218,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: maven
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Smoke classifier tests (the gate must bite on a real crash log)
@@ -287,7 +287,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Schema snapshot freshness (DDL drift gate)
@@ -339,7 +339,7 @@ jobs:
           --health-retries=10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install the mysql client
@@ -395,7 +395,7 @@ jobs:
           --health-retries=10
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install the mysql client
@@ -417,7 +417,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Dry-run bake (no image built)
         run: |
           docker buildx bake --print --file docker-bake.hcl
