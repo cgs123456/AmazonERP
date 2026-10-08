@@ -33,9 +33,13 @@
         <springcloud-alibaba.version>2025.1.0.0</springcloud-alibaba.version>
         <mybatis.version>3.5.7</mybatis.version>
         <mybatis-core.version>3.5.16</mybatis-core.version>
+        <!-- netty-all 供 amz-common/amz-service-message 直接引用；版本必须跟随 Boot 4 BOM 的
+             netty.version（4.2.x）。Boot 3 时代的 4.1.x 覆盖会让 Reactor Netty 找不到
+             MultiThreadIoEventLoopGroup，gateway 起不来（run 37810255053 实测）。
+             Boot BOM 不托管 netty-all，只能手动对齐。 -->
+        <netty.version>4.2.17.Final</netty.version>
         <lombok.version>1.18.34</lombok.version>
         <lang3.version>3.14.0</lang3.version>
-        <netty.version>4.1.138.Final</netty.version>
         <!-- amqp-client 是 Boot 4.0.8 BOM 仍低于 CVE 修复线的显式覆盖；
              Tomcat 已由 Boot 4 BOM 升到 11.0.24，不能再沿用 Boot 3 的 10.1.x 覆盖。 -->
         <rabbit-amqp-client.version>5.36.0</rabbit-amqp-client.version>

@@ -117,6 +117,11 @@ class OrderServiceFeignDecodeIT {
             public java.util.Iterator<T> iterator() {
                 return List.of(value).iterator();
             }
+
+            @Override
+            public java.util.stream.Stream<T> stream() {
+                return List.of(value).stream();
+            }
         };
     }
 
@@ -130,6 +135,11 @@ class OrderServiceFeignDecodeIT {
             @Override
             public java.util.Iterator<T> iterator() {
                 return java.util.Collections.emptyIterator();
+            }
+
+            @Override
+            public java.util.stream.Stream<T> stream() {
+                return java.util.stream.Stream.empty();
             }
         };
     }
