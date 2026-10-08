@@ -39,6 +39,7 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 | 完整性 review（用户指令）：活数字全量复核 | ✅ 本班实测全部吻合；抓到 README 2002→2003、「20/20 模块」→19/19 reactor 两处残留（`0e93f51`） |
 | webhook demo 档回环验收（用户拍板 #4-b） | ✅ `9427e1a`；真 HTTP 五场景全过（正确签名→落库 PROCESSED、错签/未配平台/缺签名头→点名拒绝不落库、幂等重发→仅一条）；抓到并修复两个单测结构测不到的部署形态缺陷（坑 31） |
 | 待用户操作的拍板项 | ✅ #5 coupon_id 维持现状（拍板记录进决策区）；⏳ #2 GH_TOKEN——用户拍板「可以做」，但 token 须用户本人生成并配置（本机实测尚未就位，操作指引已写入卡住区） |
+| 多清空者统一（遗留改进 #6，按推荐当班执行） | ✅ `e39dafd`；4 视图迁前缀过滤模式、clearErrors 全仓归零；vue-tsc/vitest/e2e 全链复核（3 超时失败隔离重跑全过=坑 13） |
 
 ## 本班 commit 分组
 
@@ -121,10 +122,12 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
   功能立项时一并处置。
 
 **遗留改进（可做可不做，非阻塞）**
-- 多清空者两模式并存：9 视图已用「前缀过滤」（新模式，见 `CustomerService.vue`），
-  4 视图（AdBidSchedule/AdSearchTerms/ConnectorQueue/Multiplatform*）仍是
-  「`clearErrors` 参数」旧模式——旧模式默认 true，并发 loader 仍可能互擦。
-  统一迁到前缀模式即可（一次 commit 的事，回归只跑对应 e2e 套件）。
+- ~~多清空者两模式并存~~ **已完成（`e39dafd`，2026-10-07）**：AdSearchTerms /
+  ConnectorQueue / MultiplatformOrders / MultiplatformOps 四视图迁到「前缀过滤」新模式
+  （清单里原列的 AdBidSchedule 核对后发现早已是新模式——清单一处过时，一并更正）；
+  `clearErrors` 全仓归零，「删除/探测后重拉列表保住紧随其后的警告」从手工传参变成
+  前缀隔离结构性保证。回归：vue-tsc 0、vitest 479/479、e2e --workers=1 串行 101 用例
+  （3 个超时失败逐一隔离重跑全过=坑 13 dev server 抖动）。
 - 反向尺动态路由（`/orders/:id`）侧边栏可达性只统计不比对（2026-10-04 文档第 4 条）。
 - 参数名尺 not-comparable 4 条（函数体内条件拼装）：收它需真数据流分析，
   性价比低，建议接受为永久披露。
@@ -134,8 +137,10 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 1. **例行止损闭环（已完成）**：整仓回归 2003/0/0/17、#195/#196 两个红修复、
    #197 全绿、#56 结案升级；webhook demo 档回环验收完成（`9427e1a`，终态 2004/0/0/17）。
    下一班接手时 **CI 基线是绿**，先确认后续 run 仍绿即可。
-2. 若做多清空者统一：4 视图迁「前缀过滤」，抄 `CustomerService.vue` 的模式，
-   **过滤前缀必须与 pushError 的 tag 逐字一致**。
+2. ~~若做多清空者统一~~ **已完成（`e39dafd`）**：4 视图迁前缀模式，`clearErrors` 归零。
+   新模式要点（未来新列表照抄）：loader 非 append 时 `errors.value.filter(x =>
+   !x.startsWith(\`label：\`))`，**过滤前缀必须与 pushError 的 tag 逐字一致**；
+   整页入口（gotoTab/onMounted）`errors.value = []` 清一次。
 3. 若继续压 A 桶：显式拒绝优于假成功，**不要把任何拒绝改回沉默**（前端假成功
    上班已清零，后端同理）。
 4. ~~webhook 启用时：先用 demo 档验签回环~~ **已完成（`9427e1a`，见决策区）**；真实平台
