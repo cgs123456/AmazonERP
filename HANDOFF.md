@@ -1,3 +1,87 @@
+# HANDOFF — Boot 4 发版修复 + B 桶离线模拟落地（2026-10-09 更新）
+
+> **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
+> 本次更新截至 commit `49100e7`（B 桶离线模拟），其前 `3bdb80d`（Boot 4 残留修复）
+> 已由真 CI run `37813186031` 全绿验证。
+
+## 本班做了什么（两件事）
+
+### 1. Boot 4 迁移发版链修复（先处理发现的问题）
+
+背景：上一班把 Spring Boot 3.5.16 + 强叠 Spring 7.0.9 的错误组合迁移为 Boot 4.0.8
+（commit `b469354`），CI run `37810255053` 仍红，暴露两个 Boot 4 残留：
+
+| 问题 | 根因 | 修复（`3bdb80d`） |
+| --- | --- | --- |
+| runtime-smoke：gateway 起不来，`NoClassDefFoundError: io.netty.channel.MultiThreadIoEventLoopGroup` | root pom 仍钉 Boot 3 时代 `netty.version=4.1.138.Final`，与 Boot 4 BOM 管理的 netty 4.2.x 模块混装；Reactor Netty（WebFlux/Gateway 链路）找不到 4.2 才有的类 | `netty.version` 升到 `4.2.17.Final` 对齐 Boot BOM（Boot BOM 不托管 netty-all，必须手动对齐；pom 注释已写明） |
+| test：`OrderServiceFeignDecodeIT` 3 方法红 `Element access not supported - for custom ObjectProvider classes, implement stream()` | Spring 7 的 `ObjectProvider.orderedStream()` 默认实现改为委托 `stream()`；测试 stub 只重写了 `getObject/iterator` | 两个 stub `ObjectProvider` 补 `stream()` 实现 |
+
+**实测链**：本机全仓 `mvn clean test`（排除 3 个 AF_UNIX 环境类）2028/0F/0E/17S →
+真 CI run `37813186031` **11/11 job success**（含 test、runtime-smoke、docker）。
+Boot 4 迁移至此被真 CI 完整验证，**发版只剩打 tag**。
+
+### 2. B 桶离线模拟落地（`49100e7`）
+
+按用户指令（无真实凭据 → 用公开资料做离线模拟 + agent 实测），B 桶定位从
+「fail-closed 等凭据」升级为「离线模拟推进」。核心思路：**形状来源全部用官方已发布数据，
+不自造 JSON**：
+
+- **数据源发现**：仓内早已收编的 SP-API 官方 OpenAPI 快照
+  （`amz-service-spapi/src/test/resources/contracts/*.json`）里，Amazon 自己内嵌了
+  `x-amzn-api-sandbox.static[].response` —— 官方沙箱静态响应。64 个 catalog operation 中
+  42 个有官方沙箱响应（verbatim 采用），其余 22 个（主要是 fbaInbound 变更类 202/204）由
+  官方 response schema 推最小合法形状（`{operationId}` / 空对象）。
+- **统一生成器** `tools/contract-fixtures/generate_b_bucket_fixtures.py`（沿用 LWA fixture
+  生成器模式，带 provenance + sha256 溯源）产出三份：
+  1. `amz-service-spapi/src/main/resources/mock/fixtures.json` —— 64 个 operation 的
+     官方形状响应（mock profile 运行时加载）；
+  2. `amz-service-product/src/test/resources/contracts/keepa-product-stats.json` ——
+     Keepa 官方 `products[0].stats.current[]` 索引形状
+     （`[1]`=美分价、`[3]`=SalesRank、`[16]`=评论数、`[18]`=评分千分位）；
+  3. `amz-service-ai/src/test/resources/contracts/deepseek-chat-completion.json` ——
+     OpenAI 兼容 `choices[0].message.content` 形状。
+- **`MockSpApiOperationClient` 重写**：从生成器 fixture 按操作回放官方形状；
+  fixture 缺失或丢 synthetic 标记时**显性失败**（fail-closed，不再退回旧自造 envelope）。
+- **`KeepaMockClient` 重写**：随机自造形状 → 官方 product/stats 形状 + 确定性值 +
+  `synthetic=true` + SYN 标题前缀，demo 档从此与真实客户端共用
+  `KeepaCompetitorScheduler.parseKeepaStats` 同一条解析路径。
+- **TDD 过程**：先写形状测试证伪旧 mock（Keepa 3 例红：缺 products/stats/current、
+  随机不确定、无 synthetic 标记）→ 改 mock → 全绿。新增契约测试 11 例：
+  `MockSpApiOperationClientShapeTest`（64 operation 全量形状=fixture + 确定性 +
+  fail-closed）、`KeepaMockClientShapeTest`（官方索引 + fixture 同源钉死）、
+  `DeepSeekChatCompletionFixtureTest`（OpenAI 形状 + `extractContent` 真实解析路径）。
+
+**实测**：全仓 2039/0F/0E/17S（+11 = 新增 11 例契约测试）、checkstyle-critical 0、
+hygiene 0、release tools unittest 88/OK。
+
+### 诚实边界（模拟 ≠ 联调）
+
+- 以上全部是**离线模拟证据**，不是真实平台联调证据。DeepSeek/Keepa/SP-API 无真实凭据，
+  真实联调仍需 DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权（含视频核验），外部依赖不变。
+- 官方沙箱响应里的 `TEST_CASE_200_*` 等占位值是 Amazon 自己发布的沙箱值，verbatim 保留，
+  全部输出带 `synthetic=true`；不激活 prod profile；不冒充真实平台数据。
+- B 桶 fail-closed 断言（29 例）全部保留，mock 升级不削弱任何拒绝路径。
+
+## 下一步（按优先级）
+
+1. **等 CI run `37817212760`（`49100e7`）绿** → 打 `v0.1.5` tag（必须等绿再打；
+   `v0.1.4` 指向旧 `9f38564` 且发版失败，**不要移动已存在 tag**）→ 监控真实 Release run
+   （CVE gate / runtime-smoke / image / SBOM / cosign / manifest / checksums / GitHub Release）。
+2. Release 全链真实产出确认后，在 HANDOFF 记录发版证据（run id + 资产清单）。
+3. 凭据到位后（外部依赖）：按 first-deploy-bootstrap-runbook 录凭证 → 对照 B 桶断言
+   确认点名失败消失。离线模拟结果可作为联调时的形状对照基线。
+
+## 本机验证口径（延续）
+
+- 本机排除 3 个 AF_UNIX 环境类（`OrderServiceFeignDecodeIT`、
+  `AdvertisingApiRealClientContractTest`、`DeepSeekAgentConfigurationContractTest`），
+  其余整仓 `mvn clean test` 必须绿；这 3 类留给 CI 跑。
+- 注意：`OrderServiceFeignDecodeIT` 现在在 CI 也必须绿（本班修了它的 Boot 4 适配）；
+  若它再红就是真回归，不是环境问题。
+- 推送偶发 Connection reset，等 30-60 秒重试一次即可，不要连珠炮。
+
+---
+
 # HANDOFF — B 桶 fail-closed 收口（缺陷修复 + 断言补齐）+ GH_TOKEN 解决（2026-10-08 交班）
 
 工作树以本文件随交班 commit 推送为准，HEAD 以 `git log` 为准；全部已推送 `origin/master`。
