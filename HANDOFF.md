@@ -23,7 +23,8 @@
 | 零引用表 | `zero_reference_tables.py` | 102 表 / 0 零引用 |
 | release tools | 7 个 unittest 模块 | 88 / OK |
 | 端点清点 | `endpoint_coverage_audit.py` | 候选 33（60 controller / 50 无前端命名） |
-| 真 CI | `gh run view 37751983169` | **11/11 job success（含 docker 长跑）** |
+| 真 CI | `gh run view 37779600265` | HEAD `d32e1f9` **11/11 job success**（docker 12m0s） |
+| Release dry run | `gh run view 37780471101` | **3/3 job success**；release build-only 15m5s，Windows clean clone 8m34s |
 
 口径旁证（与 README/本文陈述一致）：活表 **102**、Flyway 迁移 **58**、AI Agent 工具 **29**
 （`ErpTools.java` 的 `@Tool` 计数）、方法级 REST 映射 **395**（"360+" 属保守表述）。
@@ -57,10 +58,15 @@ CI（Ubuntu + JDK17）不出现。**排除这 3 类后整仓 0F / 0E**，故 204
    **真 CI 复核（已闭环）**：run `37761703762`（大升级）与 `37762558546`（补齐 setup-python/
    buildx）均 **11/11 job success**；后者的 ANNOTATIONS 只剩一条**既有** javac 告警
    （`PlatformCredentialServiceTest.java#120`），Node20/action 弃用告警清零。
-    **发版专用动作（2026-10-08 静态升级）**：`docker/login-action@v3→v4`、
-    `docker/bake-action@v5→v7`、`softprops/action-gh-release@v2→v3`；契约测试已锁
-    major 版本。**运行期仍未验证**：release 例行不跑，下一次真实 tag / 手动 dry run 时需确认。
-    `sigstore/cosign-installer` 是 composite（不吃自身 node 运行时），无需动。
+    **发版专用动作（2026-10-08 已做 build-only dry run）**：`docker/login-action@v3→v4`、
+    `docker/bake-action@v5→v7`、`softprops/action-gh-release@v2→v3`；契约测试已锁 major 版本。
+    Release run `37780471101` **3/3 job success**：quality-gate 4m48s、release 15m5s、
+    verify-clean-clone-windows 8m34s。Windows 的 `bake --print` 探针已改 `Required=$false`
+    （`d32e1f9`），不再把 runner 特有 CLI 能力当必需契约。`sigstore/cosign-installer` 是
+    composite（不吃自身 node 运行时），无需动。
+    **仍未验证的是真实 tag 推送链**：login/push、digest、SBOM、CVE gate、cosign、
+    release manifest、checksums、GitHub Release、rollback drill 都被 `if push` 条件跳过；
+    下一次真实 tag 发布必须实测，不能把 build-only dry run 当成发布链全绿。
 2. **真实凭据（B 桶收口的唯一剩余门槛）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权
    （含证件 + 视频核验 + 审批）。**外部依赖 + 金钱成本 + 多周周期**，非代码可推进。
    代码侧已到技术上限，**不要再为 B 桶加新断言**。
@@ -70,6 +76,8 @@ CI（Ubuntu + JDK17）不出现。**排除这 3 类后整仓 0F / 0E**，故 204
    "当时口径"标注；README 构建要求改为「pom target=17，CI 用 JDK17，本机复核
    Temurin 21+Maven3.9.16」。
 4. **本机 loopback 环境问题** → 本班已定位到根因并处置，见本文件末尾「本班新坑 35」。
+5. **真实 tag 发版首验**：build-only dry run 已过；下一次真实 tag 必须完整走上面列出的
+   push-only 步骤，并确认 GHCR 镜像、release 资产和回滚计划真实产出。
 
 **P2**
 5. ~~仓库根垃圾日志~~ **已完成（本班）**：75 个根级 `*.log`（235.7MB，全部未跟踪 gitignored
@@ -465,7 +473,9 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
     `windows-2025-vs2026` runner 的 buildx 不认识 `--print`，`verify-clean-clone-windows`
     因此被这条可选探针拖红。修正：Windows 侧把该探针降为 `Required=$false`，证据仍记录；
     Linux release 的 `bake-action` 不受影响。**不要把 runner 特有的 docker CLI 能力当成
-    全平台契约**。
+    全平台契约**。修复后的 Release run `37780471101`（`d32e1f9`）3/3 job success，Windows
+    clean clone 不再被这条探针拖红。另注意：workflow_dispatch 是 **build-only**，会等到
+    production 环境审批；真实 tag 的 push-only 发布链仍未被这次 dry run 覆盖。
 
 ## 环境与边界（务必遵守）
 
