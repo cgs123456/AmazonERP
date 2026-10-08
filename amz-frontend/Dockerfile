@@ -36,7 +36,13 @@ FROM nginx:1.30.5-alpine
 # /usr/lib/nginx/modules/*.so 只是躺在磁盘上、不会被加载，所以 image-filter 对静态资源
 # 服务和 /api、/ws 反代都不起作用。nginx -t 写在同一条 RUN 里，一旦将来有人真的
 # load_module 了这个模块，构建会立刻失败，而不是让裁剪悄悄失效。
-RUN apk del nginx-module-image-filter libgd tiff && nginx -t
+# apk add --upgrade 升级基础镜像烘焙后被标高危的 OS 包（v0.1.7 release run 37830488051 实测：
+# pcre2 10.48-r0 CVE-2026-103111、libcrypto3/libssl3 3.5.8-r0 四个 HIGH CVE。
+# 本镜像基于 alpine v3.24：apk add 不带 -u 不会升级已装包（实测踩坑），
+# 带 --upgrade 后实测升级到 pcre2 10.49-r0 / libcrypto3+libssl3 3.5.9-r0）。
+# 只升级这三个被 flag 的包，不动 nginx 本体；zlib 1.3.2 无修复版，仍走豁免。
+RUN apk add --no-cache --upgrade pcre2 libcrypto3 libssl3 && \
+    apk del nginx-module-image-filter libgd tiff && nginx -t
 
 ARG VERSION=dev
 ARG VCS_REF=unknown
