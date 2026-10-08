@@ -147,6 +147,40 @@ class SpapiMissingCredentialFailClosedTest {
         assertEquals(LocalApiException.CODE_CREDENTIAL_MISSING, result.getError().getCode());
     }
 
+    @Test
+    @DisplayName("messaging getActions：client 抛 CREDENTIAL_MISSING → 400 + code")
+    void messagingActionsSurfacesCredentialMissing() {
+        com.amz.client.AmazonMessagingRealClient client =
+                mock(com.amz.client.AmazonMessagingRealClient.class);
+        when(client.getMessagingActionsForOrder(anyLong(), anyString(), anyString()))
+                .thenThrow(credentialMissing());
+        MessagingController controller = new MessagingController();
+        ReflectionTestUtils.setField(controller, "client", client);
+
+        Result<Map<String, Object>> result =
+                controller.getActions(SHOP, "111-0000000-0000000", MP);
+
+        assertEquals(400, result.getCode());
+        assertEquals(LocalApiException.CODE_CREDENTIAL_MISSING, result.getError().getCode());
+    }
+
+    @Test
+    @DisplayName("messaging getAttributes：client 抛 CREDENTIAL_MISSING → 400 + code")
+    void messagingAttributesSurfacesCredentialMissing() {
+        com.amz.client.AmazonMessagingRealClient client =
+                mock(com.amz.client.AmazonMessagingRealClient.class);
+        when(client.getOrderAttributes(anyLong(), anyString(), anyString()))
+                .thenThrow(credentialMissing());
+        MessagingController controller = new MessagingController();
+        ReflectionTestUtils.setField(controller, "client", client);
+
+        Result<Map<String, Object>> result =
+                controller.getAttributes(SHOP, "111-0000000-0000000", MP);
+
+        assertEquals(400, result.getCode());
+        assertEquals(LocalApiException.CODE_CREDENTIAL_MISSING, result.getError().getCode());
+    }
+
     // ---------------- POST /spapi/uploads ----------------
 
     @Test
