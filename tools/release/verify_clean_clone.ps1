@@ -157,7 +157,7 @@ $docker = Get-Command docker -ErrorAction SilentlyContinue
 if ($docker) {
   Push-Location $cloneDir
   try {
-    Invoke-Logged -Name 'docker-bake-print' -Command { & docker buildx bake --print -f docker-bake.hcl } | Out-Null
+    Invoke-Logged -Name 'docker-bake-print' -Command { & docker buildx bake --print -f docker-bake.hcl } -Required $false | Out-Null
   } finally {
     Pop-Location
   }

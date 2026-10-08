@@ -461,6 +461,12 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
     socket** 坏 → 与「沙箱重定向 FS 调用」自洽；③ 三条逃逸路线全部被拦死：
     `Start-Process` 子进程（继承受限上下文）、`Register-ScheduledTask`（拒绝访问）、
     `schtasks.exe`（Access denied）——**agent 侧无解，不要再试**。
+36. **`docker buildx bake --print` 不是全 runner 通用**（2026-10-08 release dry run 实测）：
+    `windows-2025-vs2026` runner 的 buildx 不认识 `--print`，`verify-clean-clone-windows`
+    因此被这条可选探针拖红。修正：Windows 侧把该探针降为 `Required=$false`，证据仍记录；
+    Linux release 的 `bake-action` 不受影响。**不要把 runner 特有的 docker CLI 能力当成
+    全平台契约**。
+
 ## 环境与边界（务必遵守）
 
 - `zc-live-*`（mysql/redis/rabbit）与 `amz-p13-*` 是**别人在跑的栈**：不重启、不改
