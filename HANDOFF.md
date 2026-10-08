@@ -57,10 +57,10 @@ CI（Ubuntu + JDK17）不出现。**排除这 3 类后整仓 0F / 0E**，故 204
    **真 CI 复核（已闭环）**：run `37761703762`（大升级）与 `37762558546`（补齐 setup-python/
    buildx）均 **11/11 job success**；后者的 ANNOTATIONS 只剩一条**既有** javac 告警
    （`PlatformCredentialServiceTest.java#120`），Node20/action 弃用告警清零。
-   **剩余后续（仅发版触发、CI 例行跑不到、无法当班验证）**：`docker/login-action@v3`、
-   `docker/bake-action@v5`、`softprops/action-gh-release@v2` 仍是 node20-era，下次真正
-   切 release 时顺手升（目标 v4 / v7 / v3，均已 node24）；`sigstore/cosign-installer`
-   是 composite（不吃自身 node 运行时），无需动。
+    **发版专用动作（2026-10-08 静态升级）**：`docker/login-action@v3→v4`、
+    `docker/bake-action@v5→v7`、`softprops/action-gh-release@v2→v3`；契约测试已锁
+    major 版本。**运行期仍未验证**：release 例行不跑，下一次真实 tag / 手动 dry run 时需确认。
+    `sigstore/cosign-installer` 是 composite（不吃自身 node 运行时），无需动。
 2. **真实凭据（B 桶收口的唯一剩余门槛）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权
    （含证件 + 视频核验 + 审批）。**外部依赖 + 金钱成本 + 多周周期**，非代码可推进。
    代码侧已到技术上限，**不要再为 B 桶加新断言**。

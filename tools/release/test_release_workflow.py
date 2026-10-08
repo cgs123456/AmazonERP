@@ -54,14 +54,15 @@ class TestReleaseWorkflow(unittest.TestCase):
 
     def test_required_actions(self):
         for action in [
-            "docker/setup-buildx-action",
-            "docker/login-action",
-            "docker/bake-action",
+            "docker/setup-buildx-action@v4",
+            "docker/login-action@v4",
+            "docker/bake-action@v7",
             "anchore/syft:latest",
             # gateway 的扫描从 anchore/scan-action 换成了 grype 镜像 + cve_gate：
             # scan-action 只能对 HIGH/CRITICAL 一律失败，没有豁免机制（见 test_scan_fails_build）。
             "anchore/grype:latest",
-            "sigstore/cosign-installer",
+            "sigstore/cosign-installer@v3",
+            "softprops/action-gh-release@v3",
         ]:
             self.assertIn(action, self.raw, f"missing action {action}")
 
