@@ -15,9 +15,11 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 2002/「20/20 模块」两处残留 → `0e93f51`）、**真实数据模拟填充**（`2d8aeec`/`bfd03fb`，
 调研 SP-API Orders 官方样例 + Keepa 文档后改造生成器与 mock 样例，run #199/#200/#201
 三绿佐证）、**用户拍板落地**（webhook demo 档回环验收 `9427e1a`——抓到白名单缺项与
-异常兜底两个部署形态缺陷；coupon_id 维持现状；GH_TOKEN 待用户本人配置）。基线：整仓
-`mvn test` **2004 / 0F / 0E / 17S**
-（班初 2003 = 上班 2002 + `3fd1b12` spapi node 契约 1；本班末 webhook 归属拒绝单测 +1）、
+异常兜底两个部署形态缺陷；coupon_id 维持现状；GH_TOKEN 待用户本人配置）。续做清单：
+多清空者统一（`e39dafd`）、动态路由可达性比对（`bdeb2af`）、利润明细分页（见 commit 表）。
+基线：整仓
+`mvn test` **2009 / 0F / 0E / 17S**
+（2004 + 利润明细分页契约 5；班初 2003 = 上班 2002 + `3fd1b12` spapi node 契约 1）、
 四把尺 + 漂移 + hygiene 全零、release-tools unittest **88/0F**、部署链三契约 17/17。
 覆盖率候选稳定 **33**（B 桶 20 缺凭据 / A 桶 13 刻意拒绝）。**无已知死代码。**
 本班另完成用户点名的**真实数据模拟填充**（`2d8aeec`）：演示库的商品标题/ASIN/订单号/
@@ -39,6 +41,10 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 | 完整性 review（用户指令）：活数字全量复核 | ✅ 本班实测全部吻合；抓到 README 2002→2003、「20/20 模块」→19/19 reactor 两处残留（`0e93f51`） |
 | webhook demo 档回环验收（用户拍板 #4-b） | ✅ `9427e1a`；真 HTTP 五场景全过（正确签名→落库 PROCESSED、错签/未配平台/缺签名头→点名拒绝不落库、幂等重发→仅一条）；抓到并修复两个单测结构测不到的部署形态缺陷（坑 31） |
 | 待用户操作的拍板项 | ✅ #5 coupon_id 维持现状（拍板记录进决策区）；⏳ #2 GH_TOKEN——用户拍板「可以做」，但 token 须用户本人生成并配置（本机实测尚未就位，操作指引已写入卡住区） |
+| 逐项 1-9（用户指令「逐项完成」）：#7 利润明细分页 | ✅ `bbbbef8`；无界全量读改 keyset 分页，前后端三处契约同步 + 5 例后端契约测试 + 视图契约翻转（整仓 2009、vitest 480） |
+| 逐项 1-9：#8 动态路由可达性比对 | ✅ `bdeb2af`；反向尺从「只统计」升级为「比对」，变异验证能红不误报 |
+| 逐项 1-9：#9 参数名尺 not-comparable | ✅ 实测已归零（`b750db6` 拆窄类型后六桶全零），HANDOFF「4 条永久披露」表述过时，已更正 |
+| 逐项 1-9：#1/#2/#3 需外部条件/用户操作 | #1 B 桶凭据（用户拍板暂缓，技术侧无阻塞）；#2 GH_TOKEN（待用户本人生成配置，指引在卡住区）；#3 deploy-it 仓外（全盘搜索未找到脚本，仓内排序契约已锁死，维持被动）——三项均非代码可推进，如实留档 |
 | 多清空者统一（遗留改进 #6，按推荐当班执行） | ✅ `e39dafd`；4 视图迁前缀过滤模式、clearErrors 全仓归零；vue-tsc/vitest/e2e 全链复核（3 超时失败隔离重跑全过=坑 13） |
 
 ## 本班 commit 分组
@@ -52,6 +58,9 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 | 真实数据模拟填充（用户点名） | `2d8aeec` | `PRODUCT_CATALOG` 24 个真实亚马逊类目（Electronics/Home & Kitchen/…真实 Listing 风格标题+真实价格带 7.99-149.99，品牌虚构不冒充商标）；ASIN 真格式 `B0+8 位`（原 B0SYN00001）；订单号真形态 3-10-7（原 S001-…）；quantity/final_price/item_price/tax(7.25%)/促销与商品价自洽；采购成本=售价×28-44%；竞品/BuyBox 价格扰动+bs_rank/review 真实区间。**识别机制不变**（标题 'SYN ' 前缀过 markers、ID 段/登记表全保留）。真实形态来源：SP-API Orders 官方模型样例 + Keepa product-object 文档。行数不变（demo 224,993 / ci 25,188） |
 | mock 财务样例真化 | `bfd03fb` | FinancesMockClient/ReportsMockClient 的 SKU-ALPHA 等占位 → 与生成器同风格（SYN-ELE-0101/合法 ASIN 字母表/3-10-7 订单号）；形状断言同步；mock profile fail-closed 边界不变。run #199（0e93f51）/#200（503de93，真机 MySQL 接受全部真实形态数据）/#201（bfd03fb）连续三绿 |
 | webhook demo 档回环验收（用户拍板 #4-b） | `9427e1a` | 一次性容器起真服务跑五场景 HTTP 回环（签名构造同 `MultiplatformWebhookProcessingTest.sign()`），抓到并修复两个部署形态缺陷：① `/multiplatform/webhook` 无 JWT 被服务层 401（白名单两侧同步放行，过 parity 契约）；②「平台账号未录入」抛 IllegalStateException 兜底成 500（改 CodeErrorException 点名原因）。终态整仓 2004/0/0/17 |
+| 多清空者统一（遗留改进 #6） | `e39dafd` | 4 视图（AdSearchTerms/ConnectorQueue/MultiplatformOrders/MultiplatformOps）迁前缀过滤模式，`clearErrors` 全仓归零；AdBidSchedule 核对早已是新（清单一处过时已更正）；回归 vue-tsc 0 / vitest 479 / e2e 101 串行（3 超时隔离重跑全过=坑 13） |
+| 动态路由可达性比对（遗留改进 #8） | `bdeb2af` | `--reverse` 新增 `dynamic-route-unreachable` 闸门（详情页经列表页前缀判可达、catch-all 不参与、nav_dead 升级为可命中动态模式）；self-test 19→25；变异验证注入 `/ghost-page/:id` 点名红、`/orders/:id` 不误报 |
+| 利润明细 keyset 分页（计划 #5） | `bbbbef8` | `/report/v2/profit/list` 无界全量读改 size/cursor，复刻快照列表 (report_date,id) 复合游标 + 探测行 + 非法游标 fail-closed；前后端三处契约同步（Controller Result.paged / api q 类型 / 视图 loadProfitDetails append + 下一页）；新增 ReportUpgradeProfitPagingTest 5 例、视图契约测试翻转（vitest 479→480） |
 
 ## 门禁基线与复跑命令
 
@@ -61,7 +70,7 @@ export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-21.0.12.101-hotspot"
 # 清点（正向=人读台账，不阻断）
 python tools/schema/endpoint_coverage_audit.py                    # 候选 33
 # 四把尺（CI 门禁：self-test + 闸门；任何「0 findings」先核对分母非空）
-python tools/schema/endpoint_coverage_audit.py --self-test .      # 19/19；--reverse 0 findings
+python tools/schema/endpoint_coverage_audit.py --self-test .      # 25/25（含动态路由比对 6 例）；--reverse 0 findings
 python tools/schema/stub_shape_audit.py --self-test .             # 20/20；闸门 0（140 注册 / 106 可比）
 python tools/schema/param_name_audit.py --self-test .             # 24/24；闸门 0（163 调用点全核验）
 python tools/schema/entity_column_drift.py --gate .               # 101 实体 / 0 漂移
@@ -80,10 +89,10 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 # vue-tsc --noEmit、vitest run（必须在 amz-frontend/ 里跑）、playwright --workers=1。
 ```
 
-- 基线：整仓 **2004/0/0/17**（16 测试模块求和实测；班初 2003 含 `3fd1b12` 的 spapi
-  node 契约 +1，班末 webhook 回环验收修复新增归属拒绝单测 +1）；
-  spapi 676/0F、multiplatform 101、logistics 153、customer 33、ops 36、user 19；
-  vitest **479/479**、e2e 串行 40-44 全过；vue-tsc 0 错（tsconfig 开
+- 基线：整仓 **2009/0/0/17**（16 测试模块求和实测；班初 2003 含 `3fd1b12` 的 spapi
+  node 契约 +1、webhook 归属拒绝 +1 = 2004，利润明细分页契约 5 = 2009）；
+  spapi 676/0F、multiplatform 101、logistics 153、customer 33、ops 36、user 19、report 71；
+  vitest **480/480**（利润契约翻转 +1）、e2e 串行 40-44 全过；vue-tsc 0 错（tsconfig 开
   `noUnusedLocals`——前端孤儿 import 编译期即红，历轮 0 错即无孤儿之证）。
 - 合成数据口径（本班 2026-10-06 全链重跑实测）：快照 102 表 / 14 库；demo 224,993 行、
   ci 25,188 行；purge/verify_cleanup 102 DELETE；schema-load 灌入 0 错误、notes 386,231/209 列；
@@ -106,7 +115,10 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
   环境变量 `GH_TOKEN`（别贴进对话）。配好后下一班即可直接拉日志与 artifact，CI 定位
   从「元数据+复现」升级为「日志直读」；用户说一声「检查 token」即可验证。
 - deploy-it 脚本在仓库外：迁移数值序修复只能仓外核实（仓内证据见
-  `2026-10-04-migration-order-ci-red-attribution.md`）。
+  `2026-10-04-migration-order-ci-red-attribution.md`）。**2026-10-07 全盘搜索**
+  （Desktop/c/tools/d 盘 maxdepth 4，含 `*deploy*it*`/`*.sh` 通配）本机未找到该脚本——
+  「被动处理」维持不变；核心排序逻辑已被仓内 `MigrationOrderingContractTest`（3 项，
+  变异验证可红）锁死，脚本本身腐化无自动防线，但也没有自动修复的必要。
 
 **需要产品/用户决策**
 - ~~webhook 真实回调启用时机~~ **本班已拍板并完成 demo 档验收（`9427e1a`）**：一次性容器
@@ -128,9 +140,14 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
   `clearErrors` 全仓归零，「删除/探测后重拉列表保住紧随其后的警告」从手工传参变成
   前缀隔离结构性保证。回归：vue-tsc 0、vitest 479/479、e2e --workers=1 串行 101 用例
   （3 个超时失败逐一隔离重跑全过=坑 13 dev server 抖动）。
-- 反向尺动态路由（`/orders/:id`）侧边栏可达性只统计不比对（2026-10-04 文档第 4 条）。
-- 参数名尺 not-comparable 4 条（函数体内条件拼装）：收它需真数据流分析，
-  性价比低，建议接受为永久披露。
+- ~~反向尺动态路由（`/orders/:id`）侧边栏可达性只统计不比对~~ **已完成（2026-10-07，见下）**：
+  `--reverse` 新增 `dynamic-route-unreachable` 闸门——动态路由可达 = 某导航项能按段匹配
+  （`:param` 吃一个非空段）或列表页前缀（首参段之前）在侧边栏；catch-all 不参与。
+  变异验证：注入 `/ghost-page/:id` 点名红、`/orders/:id`（经 /orders）不误报；
+  当前路由表无真动态路由（dynamic=0），闸门空转待命。self-test 19→25。
+- ~~参数名尺 not-comparable 4 条~~ **已过时（2026-10-07 实测归零）**：`b750db6` 拆窄类型后
+  六桶全零（实测 `not-comparable=0`），「建议接受为永久披露」随之作废——若未来重新出现
+  （新调用点用条件拼装传参），按披露处理不阻断，但先核实现状再写文档。
 
 ## 下一步计划（建议顺序）
 
@@ -145,8 +162,13 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
    上班已清零，后端同理）。
 4. ~~webhook 启用时：先用 demo 档验签回环~~ **已完成（`9427e1a`，见决策区）**；真实平台
    侧配置时先录入 `amz_platform_account`，再各平台后台配回调 URL + `.env` 填密钥即生效。
-5. report.ts 利润明细现为全量读（后端无分页参数）；若表变大需要分页，先给后端
-   加 size/cursor 再恢复 cursor 续读——两处契约要同步改。
+5. ~~report.ts 利润明细现为全量读（后端无分页参数）；若表变大需要分页，先给后端
+   加 size/cursor 再恢复 cursor 续读——两处契约要同步改。~~ **已完成（`bbbbef8`）**：
+   后端加 size/cursor 走 `Result.paged`（(report_date,id) 复合游标，复刻快照口径）、
+   前端 `loadProfitDetails` 恢复 append 续读 + truncated 出下一页、契约测试同步。
+   同域 `/report/v2` 其余列表端点（inventory-turnover/sales-daily/business-overview）
+   仍是无界全量读——若要一并收口，照 `bbbbef8` 的三处同步套路逐个来，
+   但那些表增长慢、无实测压力，非必做。
 
 ## 踩过的坑（勿重演；含本班新增）
 
