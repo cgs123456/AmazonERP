@@ -2,6 +2,73 @@
 
 工作树以本文件随交班 commit 推送为准，HEAD 以 `git log` 为准；全部已推送 `origin/master`。
 
+## 全方位 review 快照（2026-10-08，独立复核）
+
+> 本节由独立复核在 `35a9e2d` 之上**重跑门禁与全量测试**后写入，是**当前现状的单一入口**。
+> 本节以下的历史段落一律按「当时口径」读——其中出现的 2003 / 2004 / 2009 / 2012 等数字是
+> 各阶段快照，**不是当前基线**；当前基线见本节表格。
+
+### 已复现（本机重跑，命令 → 实测）
+
+| 项 | 命令 | 实测 |
+| --- | --- | --- |
+| 后端整仓 | `mvn clean test`（排除下表 3 个环境类） | **2028 / 0F / 0E / 17S**；+ 被环境阻塞的 13 个方法 = **2041** |
+| 前端单测 | `npx vitest run`（在 `amz-frontend/`） | **481 / 481（43 文件）** |
+| 前端类型 | `npx vue-tsc --noEmit` | 0 错 |
+| 端点尺 | `endpoint_coverage_audit.py --self-test .` / `--reverse .` | 25/25；reverse 0 findings |
+| 形状尺 | `stub_shape_audit.py --self-test .` / 闸门 | 20/20；0 findings |
+| 参数尺 | `param_name_audit.py --self-test .` / 闸门 | 24/24；163 可比 / 0 not-comparable |
+| 漂移 | `entity_column_drift.py --gate .` | 101 实体 / 0 漂移 |
+| 仓库卫生 | `repository_hygiene.py --root .` | 0 findings |
+| 零引用表 | `zero_reference_tables.py` | 102 表 / 0 零引用 |
+| release tools | 7 个 unittest 模块 | 88 / OK |
+| 端点清点 | `endpoint_coverage_audit.py` | 候选 33（60 controller / 50 无前端命名） |
+| 真 CI | `gh run view 37751983169` | **11/11 job success（含 docker 长跑）** |
+
+口径旁证（与 README/本文陈述一致）：活表 **102**、Flyway 迁移 **58**、AI Agent 工具 **29**
+（`ErpTools.java` 的 `@Tool` 计数）、方法级 REST 映射 **395**（"360+" 属保守表述）。
+
+### 不可本地原样复现（环境性，非代码缺陷）
+
+本机（Windows + Temurin 21）下，整仓全量有 **3 个测试类稳定失败**，均报
+`java.io.IOException: Unable to establish loopback connection`，根因
+`java.net.SocketException: Invalid argument: connect`（JDK 内部 `HttpServer` 建 loopback pipe 失败）：
+
+- `amz-service-product`：`OrderServiceFeignDecodeIT`（3 方法）
+- `amz-service-ad`：`AdvertisingApiRealClientContractTest`（7 方法）
+- `amz-service-ai`：`DeepSeekAgentConfigurationContractTest`（3 方法）
+
+CI（Ubuntu + JDK17）不出现。**排除这 3 类后整仓 0F / 0E**，故 2041/0F/0E 在健康环境成立。
+两个操作教训：
+1. 本机看到这 3 类红**先判环境**，不要当回归；
+2. **不要用 `-rf :amz-service-product` 续跑**——它绕过 reactor，让下游服务用到 `~/.m2` 里的
+   陈旧 `amz-common`（实测 finance 报 `NoClassDefFoundError: BatchInserts$RowOutcome`，纯属陈旧 jar；
+   本机 `~/.m2` 的 amz-common 停在 2026-09-28、没有 `batch` 包）。续跑要用 `mvn clean test` 全量。
+
+### 后续工作方向（按优先级）
+
+**P0 — 不推进会随时间变红/卡死**
+1. **CI 依赖升级**（本次 CI annotations 抓到，本文此前未记）：`actions/checkout@v4` 与
+   `actions/setup-java@v4` 已被强制跑在 Node24 并报弃用；`setup-java` 应升 `@v5`、`checkout`
+   升 `@v5`。另 `ubuntu-latest` 将于 **2026-10-19** 迁到 Ubuntu 26，需关注 runner 兼容。
+   属"不改则某天漂移/红"的定时项。
+2. **真实凭据（B 桶收口的唯一剩余门槛）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权
+   （含证件 + 视频核验 + 审批）。这是**外部依赖 + 金钱成本 + 多周周期**，决定"具备对接能力"
+   能否升级为"真接通"。代码侧已到技术上限，**不要再为 B 桶加新断言**。
+
+**P1 — 一致性收口**
+3. **文档数字收口**：README 测试表已由本次复核从 2012 修正为 2041；HANDOFF 历史段落内
+   2003/2004 等已加"当时口径"标注。**工具链口径待统一**：CI 用 JDK17、pom
+   `source/target=17`，本机复核用 Temurin 21 + Maven 3.9.16，而 README 旧文写
+   "Temurin 17.0.20 + Maven 3.9.9"——三处不一，属低风险但应择一写清。
+4. **本机 loopback 环境问题**：记录为已知环境限制（或排查本机代理/安全软件），避免每班误判。
+
+**P2 — 清理（不阻断）**
+5. 仓库根 **218 MB** 垃圾日志（`_r83_spapi_final_out.log` 等，已 gitignore、不进门禁，但占盘）；
+   未跟踪的 `.zcodeignore` 待定去留。
+6. Mockito inline mock maker 的 self-attach 告警（未来 JDK 会失效）——升级到 agent 方式。
+7. 4 个"真无界读"（聚合/完整性声明/无稳定序/恒空表）按设计接受，规模上来再动（见下"遗留改进"）。
+
 ## 一句话现状
 
 本班从**例行止损**开始（上一班交班后跑整仓回归 + 查真 CI run，抓到 `3fd1b12` 推上去的
@@ -191,7 +258,7 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 
 ## 下一步计划（建议顺序）
 
-1. **例行止损闭环（已完成）**：整仓回归 2003/0/0/17、#195/#196 两个红修复、
+1. **例行止损闭环（已完成，当时口径）**：整仓回归 2003/0/0/17（该数字为当时快照，**当前基线见文首「全方位 review 快照」**）、#195/#196 两个红修复、
    #197 全绿、#56 结案升级；webhook demo 档回环验收完成（`9427e1a`，终态 2004/0/0/17）。
    下一班接手时 **CI 基线是绿**，先确认后续 run 仍绿即可。
 2. ~~若做多清空者统一~~ **已完成（`e39dafd`）**：4 视图迁前缀模式，`clearErrors` 归零。
