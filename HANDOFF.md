@@ -1,3 +1,97 @@
+# HANDOFF — v0.1.12 发布闭环 + v0.1.11 容器实测盲区修复（2026-10-09 更新）
+
+> **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
+> 本次更新截至 commit `9c22df6`（v0.1.12 发布修复），其前 `a29797e`（v0.1.11 容器实测
+> 三连 Boot 4 修复）已由 master CI `37855052256` 全绿验证。
+
+## 项目现状一句话
+
+发版链已完全自动化且自验证（SBOM → CVE gate → cosign 签名+逐镜像验签 → manifest →
+rollback drill），v0.1.12 为当前最新成功发布（19 资产）；凭证导入链路已容器端到端实测
+闭环（录入→加密落库→带 DB 启动自检），真实凭据到位后仅需替换占位符重跑。
+
+## v0.1.11 容器实测：抓到三连 Boot 4 盲区（`a29797e`）
+
+按用户指令做无凭据数据模拟与实测：用一次性 MySQL 容器 + boot jar 实跑凭证导入
+runbook（docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md），结果 CI 11/11
+绿也测不出的问题在容器里连环爆：
+
+| 盲区 | 症状 | 修复 |
+| --- | --- | --- |
+| mybatis-plus 3.5.7 调 Boot 4 已删的 `PropertyMapper.alwaysApplyingWhenNonNull()` | 带 DB 启动必崩（CI runtime-smoke 无 DB 启动，mybatis 自动装配退避，永远测不到） | 升 **3.5.17**（3.5.15 起官方支持 Boot 4）；`PaginationInnerInterceptor` 拆独立构件，order 模块补 `mybatis-plus-jsqlparser` |
+| dynamic-datasource 4.3.1 与 Boot 4 不兼容 | 同上，带 DB 才炸 | 升 **4.5.0**（官方 Boot 4 支持） |
+| Boot 4 把 Flyway 自动装配拆到 `spring-boot-flyway` 模块 | 裸 `flyway-core` 让装配**静默失效**：无任何日志、空库不迁移 | 14 个模块换 `spring-boot-starter-flyway`（版本交 Boot BOM），删 root pom 10.20.0 pin |
+| `InventoryController`/`ReplenishmentController` 依赖 bootstrap 下排除的 scheduler bean | 导入 job context 必挂 | 加 `@Profile("!bootstrap")` |
+
+**容器端到端证据**：一次性 MySQL 容器 + boot jar，Flyway 10 迁移全应用、凭证行加密
+落库（`client_secret_encrypted` 为密文非明文）、启动自检通过、exit 0；临时凭证文件/密钥
+已删、容器/网络已清。CI 盲区根因：runtime-smoke 无 DB 启动；Flyway IT 全部编程式调用
+绕过 Spring 装配。
+
+## v0.1.11 tag 失败 → v0.1.12 修复发布（本班收口）
+
+**v0.1.11（tag 已存在，不移动不删除）**：release run `37853545917` ❌ quality-gate
+Full Maven Test——`MultiplatformServiceImplTest` 1F+2E，根因
+`MybatisPlusException: can not find lambda cache for this entity [UnifiedOrder]`：
+MP 3.5.17 起 lambda cache 严格依赖 mapper 注册时初始化的 TableInfo，单测 mock 掉
+mapper 后无人初始化，`LambdaQueryWrapper.in(UnifiedOrder::getPlatformOrderNo,...)`
+即抛。修复（`9c22df6`，+15 行）：测试加 `@BeforeAll` 手动
+`TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), UnifiedOrder.class)`
+（仓内既有先例 `FinanceListPagingContractTest` 同模式）。
+
+**v0.1.12 证据链（全部实测）**：
+- 本机修复后全仓：**2039/0F/0E/17S**（2024 由 *Test.txt 报告 + 7 个 IT 报告 15 个
+  skipped 对账，与基线一致）、checkstyle-critical 0、hygiene 0
+- master CI run `37855052256` ✅（含 3 个 AF_UNIX 类在 CI 实跑）
+- release run `37855797487` ✅：quality-gate 5m16s + release 16m9s（SBOM 17 份、
+  CVE gate 0 violations、**cosign 签名+逐镜像验签 ✅**、manifest+checksums）
+- GitHub Release v0.1.12 **19 资产** ✓（17 SPDX + release-manifest.json + checksums.sha256）
+- rollback drill：上一版解析到 v0.1.11（失败 tag、无 manifest）→ **显式跳过**（坑 39
+  同机制，输出写明原因）；v0.1.13 起恢复真实基线对比
+- `verify-clean-clone-windows` 在 tag-push run 中 skipped 属 by-design（`if:
+  workflow_dispatch`，v0.1.10 起即如此；dispatch dry-run 才实跑）
+
+## 新坑入档（42–45）
+
+42. **带数据源才暴露的不兼容，CI 测不到**：mybatis-plus/dynamic-datasource 这类
+   只在带 DB 启动时才走到的不兼容，runtime-smoke（无 DB）与编程式 Flyway IT（绕过
+   Spring 装配）都覆盖不了。发版前必须容器实跑一次带 DB 的启动（一次性 MySQL +
+   boot jar 十几分钟成本，换来真实装配路径验证）。
+43. **Boot 4 自动装配模块化拆分，裸依赖会静默失效**：`flyway-core` 裸依赖不再触发
+   Flyway 自动装配，无日志、空库不迁移——静默失败比崩溃危险。凡 Boot 拆出的 starter
+   （如 `spring-boot-starter-flyway`），必须用 starter 而非裸依赖。
+44. **`@Profile("!bootstrap")` 配对核查**：controller 依赖了 bootstrap 下被排除的
+   bean 时，导入 job context 必挂。新增/改动 profile 排除时要对 controller→service
+   依赖链做配对核查。
+45. **MP 3.5.17 lambda cache 与 mock mapper 不兼容**：lambda cache 由 mapper 注册时
+   初始化，mock 掉 mapper 的单测要用 `TableInfoHelper.initTableInfo` 手动注册（先例：
+   `FinanceListPagingContractTest`、`MultiplatformServiceImplTest`）。升级 MP 后凡
+   "can not find lambda cache" 报错先查测试是否 mock 了 mapper。
+
+## 下一步（按优先级）
+
+1. **发版链**：v0.1.12 后回归「tag 即发布」节奏；v0.1.13 的 rollback drill 将首次
+   对比真实基线（v0.1.12 manifest），注意 v0.1.11 失败 tag 会被排序解析为「上一版」
+   之外的干扰项——drill 已按版本语义排序取上一稳定版，失败 tag 无 manifest 时显式跳过，
+   行为正确无需修。
+2. **凭据**（外部依赖，非代码可推进）：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。
+   到位后按 runbook 录凭证 → 容器实跑导入 → 对照 B 桶断言确认点名失败消失。
+3. **可选加固**（不紧急）：考虑让 rollback drill 在上一版无 manifest 时继续向前找
+   最近一个有 manifest 的版本作为基线（当前显式跳过是诚实行为，连续失败发版后才触发）。
+
+## 本机验证口径（延续）
+
+- 本机排除 3 个 AF_UNIX 环境类（`OrderServiceFeignDecodeIT`、
+  `AdvertisingApiRealClientContractTest`、`DeepSeekAgentConfigurationContractTest`），
+  其余整仓 `mvn clean test` 必须绿；这 3 类留给 CI 跑。
+- 全仓报告对账口径：surefire `*Test.txt` 合计 + IT 报告（本地 graceful skip），
+  当前基线 **2039/0F/0E/17S**。
+- `mvn -B checkstyle:check "-Dcheckstyle.config.location=checkstyle-critical.xml"`
+  必须 0 违规；`python tools/release/repository_hygiene.py --root .` 必须 0 findings。
+- 推送偶发 Connection reset，等 30-60 秒重试一次即可，不要连珠炮。
+- tag 一旦推过不移动/不删除；失败 tag 保留（v0.1.4–v0.1.8、v0.1.11）。
+
+---
 # HANDOFF — Boot 4 发版修复 + B 桶离线模拟落地（2026-10-09 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
