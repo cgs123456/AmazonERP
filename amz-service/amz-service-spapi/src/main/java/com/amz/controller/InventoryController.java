@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.context.annotation.Profile;
 
 import java.util.List;
 
@@ -31,6 +32,7 @@ import java.util.List;
  * {@code /inventory/health}（查询参数）为不同签名的两个端点，Spring 按字面量优先
  * 匹配，不构成 Ambiguous mapping。
  */
+@Profile("!bootstrap")
 @RestController
 @RequestMapping("/spapi/inventory")
 public class InventoryController {

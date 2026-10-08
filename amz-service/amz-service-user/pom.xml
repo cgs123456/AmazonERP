@@ -39,9 +39,12 @@
         </dependency>
 
         <!-- Flyway 数据库迁移 -->
+        <!-- Boot 4 起 Flyway 自动装配拆分到 spring-boot-flyway 模块，必须用 starter 引入；
+             flyway-core 裸依赖会让自动装配静默失效（带数据源启动不迁移，本地容器实测）。
+            -->
         <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-core</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-flyway</artifactId>
         </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>

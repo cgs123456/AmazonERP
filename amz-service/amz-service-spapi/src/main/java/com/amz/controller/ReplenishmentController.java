@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.context.annotation.Profile;
 
 import java.util.List;
 
@@ -28,6 +29,7 @@ import java.util.List;
  * 类级映射使用 {@code /spapi/replenish} 而非 {@code /replenish}：网关仅配置了
  * {@code Path=/spapi/**} 路由到本服务，裸 {@code /replenish} 前缀外部不可达。
  */
+@Profile("!bootstrap")
 @RestController
 @RequestMapping("/spapi/replenish")
 public class ReplenishmentController {
