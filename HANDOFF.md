@@ -102,15 +102,31 @@ hygiene 0、release tools unittest 88/OK。
    v0.1.7 前已用 GitHub advisories DB 对全 reactor 265 个唯一依赖做过 affects
    预检（只剩 7 个 medium，低于 cutoff），这是 v0.1.9 一次过的底气。
 
+## 发版三件套收口（v0.1.10，2026-10-09）
+
+交班时留的三个动作全部实测闭环：
+
+1. **真实回滚基线**：v0.1.10 release run `37844566322` ✅，rollback drill 第一次用
+   真实上一版（v0.1.9）manifest 对比跑通：`回滚命令条数: 1 | 数据库动作: NONE`
+   （1 条 kubectl set image 回滚 gateway；两次发布间迁移无差异，无人工复核阻塞）。
+   顺带修掉打印键名 bug：旧代码读 `steps/images`（永远 0），实际 plan 键是 `commands`。
+2. **cosign 验签**：release.yml 新增 `Cosign verify every image digest` 步骤（签名后
+   立即跑）：keyless 验证 + `--certificate-identity-regexp` 钉死本仓 release.yml 的
+   tag 推送身份 + 逐镜像核对 digest。v0.1.10 全 17 镜像验签 ✅。为何放 CI 而不是本机：
+   gh keyring token 无 read:packages scope 且 GHCR 包是私有的（匿名 404、API 403 实测），
+   GITHUB_TOKEN 在 release job 里有 packages 权限；验签进了发布链意味着以后每次发布
+   篡改镜像/签名/透明日志任一环节都会红，比一次性本机检查更强。
+3. **真实凭据**：仍为外部依赖（DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权），
+   非代码可推进，维持诚实边界不变。
+
 ## 下一步（按优先级）
 
-1. ~~等 CI 绿 → 打 tag → 监控 Release~~ **已完成：v0.1.9 全链成功**。
-   下一次发布从 v0.1.10 开始，rollback drill 将第一次有真实基线可对比。
-2. **下一次发版前**：用 `cosign verify` 实际验签一张 GHCR 镜像（本机未装 cosign，
-   当班没有做——这是目前发版证据里唯一未亲手复核的环节，签名动作本身已由
-   release job 步骤绿覆盖）。
-3. 凭据到位后（外部依赖）：按 first-deploy-bootstrap-runbook 录凭证 → 对照 B 桶断言
+1. **发版链已完全自动化且自验证**：v0.1.10 之后每次发版默认包含 cosign 独立验签 +
+   真实基线回滚演练；唯一手工环节是 production 环境批准（坑 40 的 API 一行即可）。
+2. 凭据到位后（外部依赖）：按 first-deploy-bootstrap-runbook 录凭证 → 对照 B 桶断言
    确认点名失败消失。离线模拟结果可作为联调时的形状对照基线。
+3. 可选加固（不紧急）：给 GHCR 包开公开可见（若产品需要匿名拉取）；release
+   workflow 的 image manifest 逐镜像 digest 已在 manifest 内固定，无需额外动作。
 
 ## 本机验证口径（延续）
 
