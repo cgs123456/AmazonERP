@@ -45,29 +45,35 @@ CI（Ubuntu + JDK17）不出现。**排除这 3 类后整仓 0F / 0E**，故 204
    陈旧 `amz-common`（实测 finance 报 `NoClassDefFoundError: BatchInserts$RowOutcome`，纯属陈旧 jar；
    本机 `~/.m2` 的 amz-common 停在 2026-09-28、没有 `batch` 包）。续跑要用 `mvn clean test` 全量。
 
-### 后续工作方向（按优先级）
+### 后续工作方向（按优先级；本班处理状态见各项）
 
-**P0 — 不推进会随时间变红/卡死**
-1. **CI 依赖升级**（本次 CI annotations 抓到，本文此前未记）：`actions/checkout@v4` 与
-   `actions/setup-java@v4` 已被强制跑在 Node24 并报弃用；`setup-java` 应升 `@v5`、`checkout`
-   升 `@v5`。另 `ubuntu-latest` 将于 **2026-10-19** 迁到 Ubuntu 26，需关注 runner 兼容。
-   属"不改则某天漂移/红"的定时项。
+**P0**
+1. ~~CI 依赖升级~~ **已完成（本班，待真 CI 复核）**：`checkout@v4→v7`、`setup-java@v4→v6`、
+   `setup-node@v4→v7`、`upload-artifact@v4→v7`（四个动作的 node20→node24，弃用告警根除；
+   v5/v6/v7 的破坏性变更实测只是"升 node24"）；`runs-on: ubuntu-latest → ubuntu-24.04`
+   （把 2026-10-19 的 Ubuntu26 迁移变成一次显式决定）；`ReleaseGovernanceContractTest`
+   对 upload-artifact 改按 `@` 前缀匹配（升级不再要改契约）。本机已跑：spapi 四契约 22/22、
+   release workflow 25/25。**注意：Actions 无法本地执行，最终以推送后的 run 为准。**
 2. **真实凭据（B 桶收口的唯一剩余门槛）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权
-   （含证件 + 视频核验 + 审批）。这是**外部依赖 + 金钱成本 + 多周周期**，决定"具备对接能力"
-   能否升级为"真接通"。代码侧已到技术上限，**不要再为 B 桶加新断言**。
+   （含证件 + 视频核验 + 审批）。**外部依赖 + 金钱成本 + 多周周期**，非代码可推进。
+   代码侧已到技术上限，**不要再为 B 桶加新断言**。
 
-**P1 — 一致性收口**
-3. **文档数字收口**：README 测试表已由本次复核从 2012 修正为 2041；HANDOFF 历史段落内
-   2003/2004 等已加"当时口径"标注。**工具链口径待统一**：CI 用 JDK17、pom
-   `source/target=17`，本机复核用 Temurin 21 + Maven 3.9.16，而 README 旧文写
-   "Temurin 17.0.20 + Maven 3.9.9"——三处不一，属低风险但应择一写清。
-4. **本机 loopback 环境问题**：记录为已知环境限制（或排查本机代理/安全软件），避免每班误判。
+**P1**
+3. ~~文档数字收口~~ **已完成（本班）**：README 测试表 2012→2041；HANDOFF 历史段落加
+   "当时口径"标注；README 构建要求改为「pom target=17，CI 用 JDK17，本机复核
+   Temurin 21+Maven3.9.16」。
+4. **本机 loopback 环境问题** → 本班已定位到根因并处置，见本文件末尾「本班新坑 35」。
 
-**P2 — 清理（不阻断）**
-5. 仓库根 **218 MB** 垃圾日志（`_r83_spapi_final_out.log` 等，已 gitignore、不进门禁，但占盘）；
-   未跟踪的 `.zcodeignore` 待定去留。
-6. Mockito inline mock maker 的 self-attach 告警（未来 JDK 会失效）——升级到 agent 方式。
-7. 4 个"真无界读"（聚合/完整性声明/无稳定序/恒空表）按设计接受，规模上来再动（见下"遗留改进"）。
+**P2**
+5. ~~仓库根垃圾日志~~ **已完成（本班）**：75 个根级 `*.log`（235.7MB，全部未跟踪 gitignored
+   草稿）已清空为 0 字节；`docs/.../cosign-verify/` 下 17 个被跟踪 `.log` 证据文件**未动**。
+   `.zcodeignore` 核实为 ZCode 编辑器工具托管文件（从 .gitignore 同步生成）→ 已加入 `.gitignore`，
+   不再污染未跟踪列表。
+6. ~~Mockito self-attach 告警~~ **已完成（本班）**：根 pom 经 `maven-dependency-plugin:properties`
+   暴露 mockito-core 路径，surefire 加 `-javaagent:${org.mockito:mockito-core:jar} -Xshare:off`，
+   告警实测归零；gateway(无测试)/common(183)/order(83)/spapi 离线契约(22) 全绿，`-o` 离线可用。
+7. 4 个"真无界读"（聚合/完整性声明/无稳定序/恒空表）**按设计接受**，规模上来再动
+   （见下"遗留改进"）——不为不存在的问题上锁。
 
 ## 一句话现状
 
@@ -424,6 +430,23 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
     复用坑 14 的 `rg -r`：本班又两次用它读 Java 被吃成 `OrdernMapper`/`void n(`——
     **读代码一律 `rg -n` 不带 `r`**。
 
+35. **本机「loopback connection」失败 = 执行沙箱拦 AF_UNIX，不是 JDK/仓库缺陷**（本班）：
+    3 个测试类稳定报 `Unable to establish loopback connection`
+    （`Caused by: Invalid argument: connect` @ `UnixDomainSockets.connect0`）。本班最小化定位：
+    ① 单独跑 `Selector.open()`（不碰 HttpServer/Feign）同样失败 → 与被测代码无关；
+    ② 换 `java.io.tmpdir` 三档（默认短路径 / 长路径 / `C:\Temp`）全失败 → 不是路径问题；
+    ③ .NET 能 create+bind AF_UNIX，但 **Node `server.listen(path)` 直接
+       `EACCES: permission denied`**（TEMP 与工作区两处都拒）→ 普通文件可写、
+       **AF_UNIX socket 文件被拒**；④ 全机只有一个 JDK（21.0.12），没有第二个可对照。
+    结论：**AF_UNIX socket 创建被本 agent 执行 shell 的策略层拒绝**（与 `Remove-Item`
+    被拦同源）。JDK 的 `Selector` 内部 wakeup pipe 正是用 AF_UNIX，于是任何要开
+    `Selector` 的测试都红；CI（Ubuntu）与用户自己的普通终端不受影响。
+    **处置**：别在本机排障继续烧时间；本机验证用
+    `-Dtest='!OrderServiceFeignDecodeIT,!AdvertisingApiRealClientContractTest,!DeepSeekAgentConfigurationContractTest'`
+    （实测 2028/0F/0E/17S），被排除的 3 类共 13 个方法留给 CI 跑。
+    **一键自证**：在**用户自己的普通终端**跑
+    `mvn -pl amz-service/amz-service-product test "-Dtest=OrderServiceFeignDecodeIT"`——
+    绿 = 沙箱问题坐实、本坑收口；红 = 真是本机 JDK/安全软件问题，再回头查。
 ## 环境与边界（务必遵守）
 
 - `zc-live-*`（mysql/redis/rabbit）与 `amz-p13-*` 是**别人在跑的栈**：不重启、不改

@@ -297,7 +297,7 @@ docker-compose up -d
 
 启动顺序：Nacos → Gateway → User → 其他业务服务
 
-> 构建要求 JDK 17 + Maven 3.8+（`mvn -v` 确认；仓库无 wrapper，本机验证组合：Temurin 17.0.20 + Maven 3.9.9）
+> 构建要求 JDK 17 + Maven 3.8+（`mvn -v` 确认；仓库无 wrapper）。pom `source/target=17`；CI 固定 JDK 17，本机复核组合 Temurin 21（按 17 编译）+ Maven 3.9.16 —— 两者都以 Java 17 字节码为目标，升级 JDK 前先跑全量。
 
 ```bash
 # 默认 prod（真实客户端，fail-closed）；离线演示请显式指定 mock；不要混用 prod,mock

@@ -9,11 +9,11 @@ on:
 jobs:
   # Job 1: Phase 0 critical static gate
   checkstyle:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -23,12 +23,12 @@ jobs:
 
   # Informational complete style report; it must never be confused with the gate above.
   checkstyle-full:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -38,10 +38,10 @@ jobs:
 
   # Job 1.1: repository and deterministic release-tool gates
   hygiene:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -75,10 +75,10 @@ jobs:
 
   # Job 1.2: prove the manifest CLI works from the exact checked-in source.
   release-manifest:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -90,14 +90,14 @@ jobs:
         run: python tools/release/release_manifest.py build --root . --commit "$RELEASE_COMMIT" --version "0.0.0-ci" --image-ref "$RELEASE_IMAGE_REF" --image-digest "$RELEASE_IMAGE_DIGEST" --output release-manifest.json
       - name: Verify generated manifest
         run: python tools/release/release_manifest.py verify --manifest release-manifest.json --root .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-manifest
           path: release-manifest.json
 
   # Job 2: 测试 + 编译
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     services:
       mysql:
@@ -129,8 +129,8 @@ jobs:
         ports:
           - 5672:5672
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -209,11 +209,11 @@ jobs:
   # 因为它们只断言配置文本里有没有某个字符串，从不真的把进程跑起来。
   # 本 job 不做任何集成测试，只要求：无中间件条件下能启动到 Started，且日志里 %traceId 槽位被解析。
   runtime-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -243,18 +243,18 @@ jobs:
             --dump-log "$RUNNER_TEMP/runtime-smoke-gateway.log"
       - name: Upload boot logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: runtime-smoke-log
           path: ${{ runner.temp }}/runtime-smoke-*.log
 
   # Job 2.5: 前端类型检查 + 单元测试 + 构建
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -283,10 +283,10 @@ jobs:
 
   # Job 2.6: 模拟数据工具链（DDL 漂移门禁 / 确定性 / 清理产物）
   synthetic-data:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -313,7 +313,7 @@ jobs:
         working-directory: tools/synthetic-data
         run: |
           python verify_schema_load.py --tier ci --cleanup --report out/ci/schema-load-report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: schema-load-report
           path: tools/synthetic-data/out/ci/schema-load-report.json
@@ -323,7 +323,7 @@ jobs:
   # 这个 job 用 mysql:8.0 service 真跑一遍：建库 -> 应用 58 个 Flyway 迁移 -> 灌数
   # -> 行数核对（基线 + manifest）-> cleanup.sql 删除并回到基线。
   mysql-import:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
       mysql:
@@ -338,7 +338,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -366,7 +366,7 @@ jobs:
         run: |
           bash ./load.sh --tier ci --host 127.0.0.1 --port 3306 --user root --password ci_root_pass
           python verify_import.py --tier ci --host 127.0.0.1 --port 3306 --user root --baseline out/ci/baseline.json --cleanup --report out/ci/import-report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mysql-import-report
@@ -379,7 +379,7 @@ jobs:
   # rc=0 放行 / rc=2 命中 STOP / rc=1 脚本错误（fail-closed）。
   # 脚本用 V1-V6 建一次性库并在结束时 DROP，不执行 V7，不触碰任何生产对象。
   ad-v7-preflight-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       mysql:
@@ -394,7 +394,7 @@ jobs:
           --health-timeout=5s
           --health-retries=10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -412,10 +412,10 @@ jobs:
   docker:
     if: github.ref == 'refs/heads/master'
     needs: [ checkstyle, hygiene, release-manifest, test, runtime-smoke, frontend, synthetic-data, mysql-import, ad-v7-preflight-gate ]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Dry-run bake (no image built)

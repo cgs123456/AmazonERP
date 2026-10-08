@@ -99,10 +99,26 @@
                  于是里面的缺陷（列/值错位、唯一键断言写错）一直没人发现。
                  注意：CI 不得改用 -Dtest=AdMigrationMySqlIT 来触发，
                  CiWorkflowContractTest 把 -Dtest= 视为「收窄范围」并直接判红。 -->
+            <!-- 让 maven-dependency-plugin:properties 暴露 mockito-core 的本地路径，
+                 供 surefire 的 -javaagent 使用；否则 Mockito 5 的 inline mock maker 走
+                 自附加（self-attach），JDK 会在未来版本禁止。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>expose-test-agent-paths</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <argLine>-javaagent:${org.mockito:mockito-core:jar} -Xshare:off</argLine>
                     <includes>
                         <include>**/Test*.java</include>
                         <include>**/*Test.java</include>

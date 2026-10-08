@@ -179,7 +179,10 @@ class ReleaseGovernanceContractTest {
     private static List<String> uploadedArtifactPaths(Map<String, Object> jobs, String jobName) {
         List<String> paths = new ArrayList<>();
         for (Map<String, Object> step : steps(castMap(jobs.get(jobName)))) {
-            if ("actions/upload-artifact@v4".equals(stringOrNull(step.get("uses")))) {
+            // 只认 action 名前缀，不钉死主版本：upload-artifact 升级（v4 -> v7，node20 -> node24）
+            // 时本契约不需要跟着改；真正要守的是「该 job 的产物路径集合」不变。
+            String uses = stringOrNull(step.get("uses"));
+            if (uses != null && uses.startsWith("actions/upload-artifact@")) {
                 Map<String, Object> with = castMap(step.get("with"));
                 String path = stringOrNull(with.get("path"));
                 if (path != null) {
