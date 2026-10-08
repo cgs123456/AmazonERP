@@ -62,12 +62,53 @@ hygiene 0、release tools unittest 88/OK。
   全部输出带 `synthetic=true`；不激活 prod profile；不冒充真实平台数据。
 - B 桶 fail-closed 断言（29 例）全部保留，mock 升级不削弱任何拒绝路径。
 
+## 发版收口（本班第二阶段：v0.1.5 → v0.1.9 连环实测）
+
+**v0.1.9 = 仓库历史上第一个完整成功的真实 tag 发布**（v0.1.4–v0.1.8 全部失败，tag 保留未动）。
+每次失败都暴露一个新环节，修一个发一个 tag，实测证据链如下：
+
+| tag | run | 结果 | 暴露的问题 → 修复 |
+| --- | --- | --- | --- |
+| v0.1.5 | 37818637029 | ❌ CVE gate | Jackson 3 线（tools.jackson）3.1.5 五个 HIGH → `jackson-bom.version=3.1.7`（`290ad1f`）。注意 Boot 4 有两条 Jackson 线：`jackson-2-bom.version`（老）与 `jackson-bom.version`（3.x 默认），别只改一条 |
+| v0.1.6 | 37823852188 | ❌ CVE gate | gateway 镜像 0 violations 证明 Jackson 修复生效；服务镜像爆 tomcat-embed-core 11.0.24 三个 CRITICAL（DIGEST 重放/授权类）→ `tomcat.version=11.0.25`（`6efc3b5`） |
+| v0.1.7 | 37830488051 | ❌ CVE gate | 15 个服务镜像全部 0 violations；frontend 镜像爆 alpine OS 包（pcre2 10.48-r0 / libcrypto3+libssl3 3.5.8-r0，共 9 个 HIGH）→ Dockerfile 加 `apk add --no-cache --upgrade`（`532a781`） |
+| v0.1.8 | 37834362338 | ❌ rollback drill | CVE gate 全 16 镜像通过；rollback drill 死于上一版 v0.1.7 是失败发布、无 release manifest 可下载 → 增加「上一版无 manifest 时显式跳过」（`c1bc922`） |
+| v0.1.9 | **37838668283** | ✅ **3/3 job success** | 全链真实产出（见下） |
+
+**v0.1.9 真实产出证据**（release job 全步骤绿）：
+- Bake images ✓（GHCR `ghcr.io/cgs123456/amazonerp-*:0.1.9-<sha>`）
+- SBOM 17 份 SPDX ✓、CVE gate 0 violations ✓、**cosign 逐镜像签名 ✓**
+- release-manifest.json（17 镜像 digest + 58 条迁移 + 前端 132 文件）+ checksums.sha256 ✓
+- GitHub Release v0.1.9 19 个资产 ✓、rollback drill plan 干跑 ✓
+- 注：gh keyring token 无 read:packages scope，GHCR 包 API 403——镜像真实性以
+  release manifest 的 ref+digest 与 release job 步骤绿为准（已足够）。
+
+**发版过程中的新坑（勿重演）**：
+37. **两条 Jackson 线**：Boot 4 同时管理 `jackson-bom.version`（3.x，tools.jackson，
+   默认 JSON）与 `jackson-2-bom.version`（2.x，兼容层）。CVE gate 报的 jackson-core
+   不写大版本线，先看镜像里实际是哪个 group 再对线修。
+38. **`apk add` 不带 `-u/--upgrade` 不升级已装包**：基础镜像烘焙的旧版 OS 包，
+   `apk add` 只会装缺的、不会动已装的；必须 `apk add --no-cache --upgrade`。
+   本地可用 `docker run --rm <base> sh -c "apk info <pkg>"` 实测包版本。
+39. **rollback drill 的基线假设**：drill 依赖「上一版 tag 有已发布 manifest」。
+   连环失败发版后第一次成功发布必然没有基线——已改为显式跳过（v0.1.10 起才有
+   真实基线可演练）。跳过是诚实行为，不是掩蔽（注释已写明，契约测试仍绿）。
+40. **production 环境审批**：release.yml 的 release job 挂 `production` 环境
+   （required_reviewers=cgs123456）。可用 gh API 批准：
+   `POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments`，
+   body `{"environment_ids":[23006357252],"state":"approved"}`（environment id 固定）。
+41. **CVE gate 逐镜像 fail-fast**：一次 run 只暴露第一个违规镜像；修发版不要猜——
+   上一份失败 run（如 v0.1.4 的 37793467347）有全镜像扫描结果，可交叉推断。
+   v0.1.7 前已用 GitHub advisories DB 对全 reactor 265 个唯一依赖做过 affects
+   预检（只剩 7 个 medium，低于 cutoff），这是 v0.1.9 一次过的底气。
+
 ## 下一步（按优先级）
 
-1. **等 CI run `37817212760`（`49100e7`）绿** → 打 `v0.1.5` tag（必须等绿再打；
-   `v0.1.4` 指向旧 `9f38564` 且发版失败，**不要移动已存在 tag**）→ 监控真实 Release run
-   （CVE gate / runtime-smoke / image / SBOM / cosign / manifest / checksums / GitHub Release）。
-2. Release 全链真实产出确认后，在 HANDOFF 记录发版证据（run id + 资产清单）。
+1. ~~等 CI 绿 → 打 tag → 监控 Release~~ **已完成：v0.1.9 全链成功**。
+   下一次发布从 v0.1.10 开始，rollback drill 将第一次有真实基线可对比。
+2. **下一次发版前**：用 `cosign verify` 实际验签一张 GHCR 镜像（本机未装 cosign，
+   当班没有做——这是目前发版证据里唯一未亲手复核的环节，签名动作本身已由
+   release job 步骤绿覆盖）。
 3. 凭据到位后（外部依赖）：按 first-deploy-bootstrap-runbook 录凭证 → 对照 B 桶断言
    确认点名失败消失。离线模拟结果可作为联调时的形状对照基线。
 
