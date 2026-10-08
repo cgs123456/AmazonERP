@@ -15,7 +15,8 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 2002/「20/20 模块」两处残留 → `0e93f51`）、**真实数据模拟填充**（`2d8aeec`/`bfd03fb`，
 调研 SP-API Orders 官方样例 + Keepa 文档后改造生成器与 mock 样例，run #199/#200/#201
 三绿佐证）、**用户拍板落地**（webhook demo 档回环验收 `9427e1a`——抓到白名单缺项与
-异常兜底两个部署形态缺陷；coupon_id 维持现状；GH_TOKEN 待用户本人配置）。续做清单：
+异常兜底两个部署形态缺陷；coupon_id 维持现状；GH_TOKEN 已于 2026-10-08 解决——复用本机
+GCM 已有凭据落成 gh keyring 登录，CI 日志可直读）。续做清单：
 多清空者统一（`e39dafd`）、动态路由可达性比对（`bdeb2af`）、利润明细分页（见 commit 表）。
 基线：整仓
 `mvn test` **2012 / 0F / 0E / 17S**
@@ -40,13 +41,13 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 | 合成数据口径随死表清理清账（runbook/README/example） | ✅ `1d91183`；113→102、90→87 种子（归因 `amz_report_template` 3 行随 V3 DROP）、225,734→224,993（demo）/25,484→25,188（ci）；真机链一次性容器重跑实测 ci 25,275/25,275、demo 225,080/225,080 |
 | 完整性 review（用户指令）：活数字全量复核 | ✅ 本班实测全部吻合；抓到 README 2002→2003、「20/20 模块」→19/19 reactor 两处残留（`0e93f51`） |
 | webhook demo 档回环验收（用户拍板 #4-b） | ✅ `9427e1a`；真 HTTP 五场景全过（正确签名→落库 PROCESSED、错签/未配平台/缺签名头→点名拒绝不落库、幂等重发→仅一条）；抓到并修复两个单测结构测不到的部署形态缺陷（坑 31） |
-| 待用户操作的拍板项 | ✅ #5 coupon_id 维持现状（拍板记录进决策区）；⏳ #2 GH_TOKEN——用户拍板「可以做」，但 token 须用户本人生成并配置（本机实测尚未就位，操作指引已写入卡住区） |
+| 待用户操作的拍板项 | ✅ #5 coupon_id 维持现状（拍板记录进决策区）；✅ #2 GH_TOKEN **已解决（2026-10-08）**——见卡住区：复用 GCM 已有凭据落成 gh keyring 登录，`gh run view --job <id> --log` 可直读 CI 日志（此前匿名 403），无需用户再手工建 token |
 | 逐项 1-9（用户指令「逐项完成」）：#7 利润明细分页 | ✅ `bbbbef8`（profit）+ `0eefe6f`（其余三个 /v2 列表收口）；无界全量读改 keyset 分页，前后端契约同步 + 后端 8 例分页契约（四端点方向分别钉死）+ 视图三表转 CursorList（整仓 2012、vitest 481）|
 | 逐项 1-9：#8 动态路由可达性比对 | ✅ `bdeb2af`；反向尺从「只统计」升级为「比对」，变异验证能红不误报 |
 | 逐项 1-9：#9 参数名尺 not-comparable | ✅ 实测已归零（`b750db6` 拆窄类型后六桶全零），HANDOFF「4 条永久披露」表述过时，已更正 |
-| 逐项 1-9：#1/#2/#3 需外部条件/用户操作 | #1 B 桶凭据（用户拍板暂缓，技术侧无阻塞）；#2 GH_TOKEN（待用户本人生成配置，指引在卡住区）；#3 deploy-it 仓外（全盘搜索未找到脚本，仓内排序契约已锁死，维持被动）——三项均非代码可推进，如实留档 |
+| 逐项 1-9：#1/#2/#3 需外部条件/用户操作 | #1 B 桶凭据（用户拍板暂缓，技术侧无阻塞）；✅ #2 GH_TOKEN **已解决**（2026-10-08，复用本机 GCM 凭据落成 gh 登录，CI 日志可直读）；#3 deploy-it 仓外（全盘搜索未找到脚本，仓内排序契约已锁死，维持被动）——#1/#3 非代码可推进，如实留档 |
 | 遗留项收口 + 第二轮 review（用户指令「先解决遗留，再 review 整理清单」） | ✅ 遗留项=`0eefe6f`（/v2 四列表分页统一，run #207 绿、整仓 2012）；✅ review：ReportCenter 转换自查干净（无孤儿符号/事件传参安全/筛选重置走 append=false/诚实文案到位）、全仓无界读扫描三版迭代+人工甄别出候选清单（见遗留改进，含 capRead 与 keyset 两种保护先例）；run #208（文档）绿 |
-| 逐项完成待做清单（用户指令「逐项完成」，第三轮） | ✅ P1 无界读候选清单逐项核实收口（直接读 service 体，纠出 endpoint 扫描器漏看 service cap 的假阳性；结论：绝大多数已保护，剩 4 个「真无界但硬 cap 会撒谎/无稳定序/表恒空」不塞半 cap，见遗留改进）；GH_TOKEN 复查仍 ABSENT；run #209（文档）待绿 |
+| 逐项完成待做清单（用户指令「逐项完成」，第三轮） | ✅ P1 无界读候选清单逐项核实收口（直接读 service 体，纠出 endpoint 扫描器漏看 service cap 的假阳性；结论：绝大多数已保护，剩 4 个「真无界但硬 cap 会撒谎/无稳定序/表恒空」不塞半 cap，见遗留改进）；✅ #2 GH_TOKEN 已解决（`6d7f0e5` 后本轮，见卡住区）；run #209 绿 |
 | 多清空者统一（遗留改进 #6，按推荐当班执行） | ✅ `e39dafd`；4 视图迁前缀过滤模式、clearErrors 全仓归零；vue-tsc/vitest/e2e 全链复核（3 超时失败隔离重跑全过=坑 13） |
 
 ## 本班 commit 分组
@@ -88,6 +89,9 @@ mvn -pl amz-service/amz-service-spapi -o test -Dtest='CiWorkflowContractTest,Pla
 python tools/synthetic-data/snapshot_schema.py --check            # 102 表基线
 cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && python verify.py --tier ci --dataset out/ci
 # 真机口径变了才需重跑：起一次性容器全链见 runbook §8（docker exec 包装法见本班坑 4）
+# CI 日志直读（gh 已登录，2026-10-08 起）——先看哪个 job 红，再拉该 job 日志正文：
+#   gh run list --limit 3 && gh run view <runId>
+#   gh run view --job <jobId> --log | rg -a "FAILED|AssertionError|Error|Process completed"
 # 前端：node 在 /c/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3；
 # vue-tsc --noEmit、vitest run（必须在 amz-frontend/ 里跑）、playwright --workers=1。
 ```
@@ -108,15 +112,15 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 **需要外部条件（做不了，别在原地重试）**
 - B 桶 20 条：`DEEPSEEK_API_KEY`（4）、Keepa token（3）、店铺 SP-API 凭证（13）。
   代码路径是真代码、未配置即点名失败，没有凭据只能保持未接。
-- CI run **结论可匿名读**：run/job 元数据 API 本班实测可用（`GET /repos/.../actions/runs`
-  与 `/runs/<id>/jobs`，200，能拿 conclusion、失败 job 名、失败 step 名）；**但 job 日志
-  zip 仍 403**、gh 仍未认证。定位流程 = run→失败 job/step→ci.yml 找 run 行→本地逐字复现，
-  本班走通两次（#195 钉数、#196 bake 标志）。#197 已全绿，#56 结案升级完成。
-  **2026-10-07 用户拍板「GH_TOKEN 可以做」，但 token 值只能用户本人生成**（本机实测
-  GH_TOKEN 尚未配置）：用户操作 = GitHub → Settings → Developer settings → Personal
-  access tokens（fine-grained，cgs123456/AmazonERP 只读）→ 生成后设为 Windows 用户级
-  环境变量 `GH_TOKEN`（别贴进对话）。配好后下一班即可直接拉日志与 artifact，CI 定位
-  从「元数据+复现」升级为「日志直读」；用户说一声「检查 token」即可验证。
+- ~~CI 日志外部不可读~~ **已解决（2026-10-08）**：本机 git push 一直成功 = GCM 里早有可用
+  凭据。用 `git credential fill`（stdin 读、不回显）取出那个 `gho_` token，`gh auth login
+  --with-token`（token 走 stdin，不进 argv）落成 gh 凭据，存 **Windows keyring**（非明文文件）。
+  实测能力：`gh run list` / `gh run view <id>`（job 列表+annotations）/ **`gh run view --job
+  <jobId> --log` 拉完整日志正文**（此前匿名 403）——历史红 run #195 的
+  `AssertionError: 50 != 58` + `FAILED (failures=1)` + exit 1 已直读复现。账号 cgs123456，
+  scopes `repo,workflow,gist,read:org`。**下一班定位 CI 红：`gh run view <id>` 看哪个 job 红
+  → `gh run view --job <jid> --log | rg -a "FAILED|Error|assert"` 直接读根因，不必再靠本地复现猜。**
+  临时凭据文件已删；token 未写入任何环境变量或仓库文件（只在 keyring）。
 - deploy-it 脚本在仓库外：迁移数值序修复只能仓外核实（仓内证据见
   `2026-10-04-migration-order-ci-red-attribution.md`）。**2026-10-07 全盘搜索**
   （Desktop/c/tools/d 盘 maxdepth 4，含 `*deploy*it*`/`*.sh` 通配）本机未找到该脚本——
