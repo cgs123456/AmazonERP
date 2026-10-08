@@ -302,6 +302,24 @@ jobs:
             DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
             cosign sign --yes "${REF%:*}@${DIGEST}"
           done
+      # 签名后立即独立验签：keyless 证书身份必须来自本仓 release.yml 的 tag 推送，
+      # 且逐镜像核对 digest。verify 失败 = 镜像/签名/透明日志任一环节被篡改，发布必须红。
+      - name: Cosign verify every image digest
+        if: github.event_name == 'push'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for name in ${RELEASE_IMAGES}; do
+            REF="${REGISTRY}/${OWNER}/amazonerp-${name}:${IMAGE_TAG}"
+            DIGEST=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}')
+            cosign verify \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity-regexp "^https://github\\.com/${REPO}/\\.github/workflows/release\\.yml@refs/tags/v[0-9]+\\.[0-9]+\\.[0-9]+$" \
+              "${REF%:*}@${DIGEST}" > /dev/null
+            echo "cosign verified ${REF%:*}@${DIGEST}"
+          done
       - name: Generate release manifest
         if: github.event_name == 'push'
         run: |
@@ -362,7 +380,7 @@ jobs:
           fi
           gh release download "$prev_tag" --pattern 'release-manifest.json' --output previous-manifest.json
           python tools/release/rollback_drill.py plan             --current ./release-manifest.json             --previous ./previous-manifest.json             --namespace "$ROLLBACK_NAMESPACE"             --output ./rollback-plan.json
-          python -c "import json,io;plan=json.load(io.open('rollback-plan.json',encoding='utf-8'));print('回滚计划条目数:',len(plan.get('steps',plan.get('images',[]))))"
+          python -c "import json,io;plan=json.load(io.open('rollback-plan.json',encoding='utf-8'));print('回滚命令条数:',len(plan.get('commands',[])),'| 数据库动作:',plan.get('databaseAction'))"
 
   # verify_clean_clone.ps1 是 PowerShell：只在 windows runner 上有意义。
   # 手动触发（workflow_dispatch 时 quality-gate/release 也会跑，本作业仅额外验证干净克隆复现）。
