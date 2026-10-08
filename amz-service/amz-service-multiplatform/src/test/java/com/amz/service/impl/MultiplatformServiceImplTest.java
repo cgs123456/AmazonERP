@@ -8,7 +8,11 @@ import com.amz.exception.AttrIsNullException;
 import com.amz.finance.PlatformCurrencyConverter;
 import com.amz.mapper.UnifiedOrderMapper;
 import com.amz.model.UnifiedOrder;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,6 +68,17 @@ class MultiplatformServiceImplTest {
      * 所以这里给出一个「已授权店铺 1 的 OPERATOR」上下文；
      * 越权与空列表分支由 {@code MultiplatformOrderControlTest} 覆盖。
      */
+    /**
+     * MP 3.5.17 起 lambda cache 严格依赖 mapper 注册时初始化的 TableInfo；
+     * 单测 mock 掉 mapper 后无人初始化，LambdaQueryWrapper 解析实体列会抛
+     * "can not find lambda cache"。这里手动注册，与真实运行时 mapper 解析等效。
+     */
+    @BeforeAll
+    static void initMybatisTableInfo() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, UnifiedOrder.class);
+    }
+
     @BeforeEach
     void authenticate() {
         UserContext.setUserId(7);
