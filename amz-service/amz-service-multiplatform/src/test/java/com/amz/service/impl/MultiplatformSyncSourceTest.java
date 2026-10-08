@@ -88,6 +88,16 @@ class MultiplatformSyncSourceTest {
     }
 
     @Test
+    @DisplayName("站内信客户端未实现时向上抛出，且一行都不写（与商品同口径）")
+    void unimplementedMessagesDoesNotWrite() {
+        when(temuClient.fetchMessages(7L))
+                .thenThrow(new UnsupportedOperationException("TEMU 平台的站内信接口尚未接入"));
+
+        assertThrows(UnsupportedOperationException.class, () -> service.syncMessages(7L, "TEMU"));
+        verify(platformMessageMapper, never()).insert(any(PlatformMessage.class));
+    }
+
+    @Test
     @DisplayName("库存：客户端抛错时绝不删除上一轮快照")
     void inventoryFailureKeepsPreviousSnapshot() {
         when(temuClient.fetchInventory(7L))
