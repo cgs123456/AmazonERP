@@ -75,6 +75,9 @@
              Boot 4 BOM 的 Jackson 2 线为 2.21.5，落在 GHSA-q4xh-88c3-wmh7 修复区间前；
              这里覆盖 jackson-2-bom.version 到 2.21.7。 -->
         <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
+        <!-- Jackson 3（tools.jackson，Boot 4 默认 JSON 线）：Boot 4.0.8 BOM 自带 3.1.5，
+             落在 5 个 HIGH（GHSA-7hhh/cxp5/p6pp/q4xh/wv8q）修复区间内；官方修复版 3.1.7。 -->
+        <jackson-bom.version>3.1.7</jackson-bom.version>
         <!-- Tika parses PDF/HTML via jsoup; pin the patched 1.23.2 release to clear CVE gate. -->
         <jsoup.version>1.23.2</jsoup.version>
         <!-- BouncyCastle 不在 spring-boot-dependencies 中管理，需显式钉住；1.85 为 Grype 修复线。 -->
