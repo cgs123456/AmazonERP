@@ -18,7 +18,7 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 异常兜底两个部署形态缺陷；coupon_id 维持现状；GH_TOKEN 待用户本人配置）。续做清单：
 多清空者统一（`e39dafd`）、动态路由可达性比对（`bdeb2af`）、利润明细分页（见 commit 表）。
 基线：整仓
-`mvn test` **2009 / 0F / 0E / 17S**
+`mvn test` **2012 / 0F / 0E / 17S**
 （2004 + 利润明细分页契约 5；班初 2003 = 上班 2002 + `3fd1b12` spapi node 契约 1）、
 四把尺 + 漂移 + hygiene 全零、release-tools unittest **88/0F**、部署链三契约 17/17。
 覆盖率候选稳定 **33**（B 桶 20 缺凭据 / A 桶 13 刻意拒绝）。**无已知死代码。**
@@ -41,7 +41,7 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 | 完整性 review（用户指令）：活数字全量复核 | ✅ 本班实测全部吻合；抓到 README 2002→2003、「20/20 模块」→19/19 reactor 两处残留（`0e93f51`） |
 | webhook demo 档回环验收（用户拍板 #4-b） | ✅ `9427e1a`；真 HTTP 五场景全过（正确签名→落库 PROCESSED、错签/未配平台/缺签名头→点名拒绝不落库、幂等重发→仅一条）；抓到并修复两个单测结构测不到的部署形态缺陷（坑 31） |
 | 待用户操作的拍板项 | ✅ #5 coupon_id 维持现状（拍板记录进决策区）；⏳ #2 GH_TOKEN——用户拍板「可以做」，但 token 须用户本人生成并配置（本机实测尚未就位，操作指引已写入卡住区） |
-| 逐项 1-9（用户指令「逐项完成」）：#7 利润明细分页 | ✅ `bbbbef8`；无界全量读改 keyset 分页，前后端三处契约同步 + 5 例后端契约测试 + 视图契约翻转（整仓 2009、vitest 480） |
+| 逐项 1-9（用户指令「逐项完成」）：#7 利润明细分页 | ✅ `bbbbef8`（profit）+ `0eefe6f`（其余三个 /v2 列表收口）；无界全量读改 keyset 分页，前后端契约同步 + 后端 8 例分页契约（四端点方向分别钉死）+ 视图三表转 CursorList（整仓 2012、vitest 481）|
 | 逐项 1-9：#8 动态路由可达性比对 | ✅ `bdeb2af`；反向尺从「只统计」升级为「比对」，变异验证能红不误报 |
 | 逐项 1-9：#9 参数名尺 not-comparable | ✅ 实测已归零（`b750db6` 拆窄类型后六桶全零），HANDOFF「4 条永久披露」表述过时，已更正 |
 | 逐项 1-9：#1/#2/#3 需外部条件/用户操作 | #1 B 桶凭据（用户拍板暂缓，技术侧无阻塞）；#2 GH_TOKEN（待用户本人生成配置，指引在卡住区）；#3 deploy-it 仓外（全盘搜索未找到脚本，仓内排序契约已锁死，维持被动）——三项均非代码可推进，如实留档 |
@@ -61,6 +61,7 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 | 多清空者统一（遗留改进 #6） | `e39dafd` | 4 视图（AdSearchTerms/ConnectorQueue/MultiplatformOrders/MultiplatformOps）迁前缀过滤模式，`clearErrors` 全仓归零；AdBidSchedule 核对早已是新（清单一处过时已更正）；回归 vue-tsc 0 / vitest 479 / e2e 101 串行（3 超时隔离重跑全过=坑 13） |
 | 动态路由可达性比对（遗留改进 #8） | `bdeb2af` | `--reverse` 新增 `dynamic-route-unreachable` 闸门（详情页经列表页前缀判可达、catch-all 不参与、nav_dead 升级为可命中动态模式）；self-test 19→25；变异验证注入 `/ghost-page/:id` 点名红、`/orders/:id` 不误报 |
 | 利润明细 keyset 分页（计划 #5） | `bbbbef8` | `/report/v2/profit/list` 无界全量读改 size/cursor，复刻快照列表 (report_date,id) 复合游标 + 探测行 + 非法游标 fail-closed；前后端三处契约同步（Controller Result.paged / api q 类型 / 视图 loadProfitDetails append + 下一页）；新增 ReportUpgradeProfitPagingTest 5 例、视图契约测试翻转（vitest 479→480） |
+| /v2 四列表分页统一收口（#5 遗留观察项） | `0eefe6f` | inventory-turnover/sales-daily/business-overview 一并改 keyset 分页；游标辅助函数泛化（dateIdCursor/decodeDateIdCursor 四端点共用）；sales-daily 升序取 `report_date >` 下界（唯一方向差异，单列测试钉死）；契约测试更名 ReportUpgradeListPagingTest（5→8 例、report 71→74）；前端三表转 CursorList（裸 ref 数组→makeList+loadList 累积、truncated 出下一页）、周转 KPI「本页合计」→「已加载合计」；listTurnover 调用形状 (shopId,asin)→(shopId,q) 翻转旧断言同步（vitest 480→481、整仓 2009→2012） |
 
 ## 门禁基线与复跑命令
 
@@ -89,10 +90,10 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 # vue-tsc --noEmit、vitest run（必须在 amz-frontend/ 里跑）、playwright --workers=1。
 ```
 
-- 基线：整仓 **2009/0/0/17**（16 测试模块求和实测；班初 2003 含 `3fd1b12` 的 spapi
-  node 契约 +1、webhook 归属拒绝 +1 = 2004，利润明细分页契约 5 = 2009）；
-  spapi 676/0F、multiplatform 101、logistics 153、customer 33、ops 36、user 19、report 71；
-  vitest **480/480**（利润契约翻转 +1）、e2e 串行 40-44 全过；vue-tsc 0 错（tsconfig 开
+- 基线：整仓 **2012/0/0/17**（16 测试模块求和实测；班初 2003 含 `3fd1b12` 的 spapi
+  node 契约 +1、webhook 归属拒绝 +1 = 2004，利润明细分页契约 +5 = 2009，四列表收口 +3 = 2012）；
+  spapi 676/0F、multiplatform 101、logistics 153、customer 33、ops 36、user 19、report 74；
+  vitest **481/481**（利润契约翻转 +1、周转下一页 +1）、e2e 串行 40-44 全过；vue-tsc 0 错（tsconfig 开
   `noUnusedLocals`——前端孤儿 import 编译期即红，历轮 0 错即无孤儿之证）。
 - 合成数据口径（本班 2026-10-06 全链重跑实测）：快照 102 表 / 14 库；demo 224,993 行、
   ci 25,188 行；purge/verify_cleanup 102 DELETE；schema-load 灌入 0 错误、notes 386,231/209 列；
@@ -166,9 +167,11 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
    加 size/cursor 再恢复 cursor 续读——两处契约要同步改。~~ **已完成（`bbbbef8`）**：
    后端加 size/cursor 走 `Result.paged`（(report_date,id) 复合游标，复刻快照口径）、
    前端 `loadProfitDetails` 恢复 append 续读 + truncated 出下一页、契约测试同步。
-   同域 `/report/v2` 其余列表端点（inventory-turnover/sales-daily/business-overview）
-   仍是无界全量读——若要一并收口，照 `bbbbef8` 的三处同步套路逐个来，
-   但那些表增长慢、无实测压力，非必做。
+   同域 `/report/v2` 其余三个列表端点（inventory-turnover/sales-daily/business-overview）
+   **已一并收口（`0eefe6f`）**——四端点共用 (report_date,id) 载荷与 decode，
+   sales-daily 是唯一升序列表（游标取 `report_date >` 下界，方向已分别钉死）；
+   周转 KPI「本页合计」文案改「已加载合计」，防止分页后还拿已读页求全量。
+   `/report/v2` 全部列表端点已无界读清零。
 
 ## 踩过的坑（勿重演；含本班新增）
 
