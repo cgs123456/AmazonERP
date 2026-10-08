@@ -95,7 +95,7 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
         // 同一天有多 ASIN/SKU 的明细行，report_date 并列，单列 id 游标无法保证稳定顺序，
         // 必须用 (report_date, id) 复合游标——与利润快照列表 (stat_time, id) 同一口径。
         if (req.hasCursor()) {
-            Object[] key = decodeProfitCursor(req.payload());
+            Object[] key = decodeDateIdCursor(req.payload());
             wrapper.apply("(report_date < {0} OR (report_date = {0} AND id < {1}))", key[0], key[1]);
         }
         wrapper.orderByDesc(ProfitDetail::getReportDate)
@@ -113,15 +113,21 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
 
     /** 由本页最后一行生成下一页游标：(report_date, id) 复合键。 */
     private String profitCursor(ProfitDetail detail) {
-        return PageRequest.encodeCursor(detail.getReportDate().toString() + CURSOR_SEP + detail.getId());
+        return dateIdCursor(detail.getReportDate(), detail.getId());
+    }
+
+    /** (report_date, id) 复合游标的统一编码，四个 /v2 列表端点共用载荷格式。 */
+    private String dateIdCursor(LocalDate reportDate, Long id) {
+        return PageRequest.encodeCursor(reportDate.toString() + CURSOR_SEP + id);
     }
 
     /**
-     * 解析利润明细游标载荷 {@code reportDate|id}。
+     * 解析 (report_date, id) 复合游标载荷 {@code reportDate|id}——
+     * /v2 四个列表端点（利润明细/周转/日销/概览）共用同一载荷格式。
      *
      * @throws InvalidParamException 载荷格式不合法（篡改过的游标，或跨端点混用了别的游标）
      */
-    private Object[] decodeProfitCursor(String payload) {
+    private Object[] decodeDateIdCursor(String payload) {
         int sep = payload.lastIndexOf(CURSOR_SEP);
         if (sep <= 0 || sep == payload.length() - 1) {
             throw new InvalidParamException("分页游标格式非法：" + payload);
@@ -221,14 +227,30 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
     }
 
     @Override
-    public List<InventoryTurnover> listInventoryTurnover(Long shopId, String asin) {
+    public PageResult<InventoryTurnover> listInventoryTurnover(Long shopId, String asin, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<InventoryTurnover> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(InventoryTurnover::getShopId, shopId);
         if (asin != null && !asin.isBlank()) {
             wrapper.eq(InventoryTurnover::getAsin, asin);
         }
-        wrapper.orderByDesc(InventoryTurnover::getReportDate);
-        return inventoryTurnoverMapper.selectList(wrapper);
+        // 同日多 ASIN 行 report_date 并列，(report_date,id) 复合游标，与利润明细同口径（降序取下界）。
+        if (req.hasCursor()) {
+            Object[] key = decodeDateIdCursor(req.payload());
+            wrapper.apply("(report_date < {0} OR (report_date = {0} AND id < {1}))", key[0], key[1]);
+        }
+        wrapper.orderByDesc(InventoryTurnover::getReportDate)
+               .orderByDesc(InventoryTurnover::getId);
+        // 探测行判 hasMore，不额外 COUNT(*)；LIMIT 由常量拼接，无注入面
+        wrapper.last("LIMIT " + req.probeSize());
+        List<InventoryTurnover> rows = inventoryTurnoverMapper.selectList(wrapper);
+        PageResult<InventoryTurnover> result = PageResult.of(rows, req.size(),
+                t -> dateIdCursor(t.getReportDate(), t.getId()));
+        if (result.truncated()) {
+            log.warn("库存周转列表被分页截断：shopId={} asin={} size={}，请用 nextCursor 继续翻页",
+                    shopId, asin, req.size());
+        }
+        return result;
     }
 
     @Override
@@ -281,7 +303,9 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
     }
 
     @Override
-    public List<SalesDaily> listSalesDaily(Long shopId, String asin, String startDate, String endDate) {
+    public PageResult<SalesDaily> listSalesDaily(Long shopId, String asin, String startDate,
+                                                 String endDate, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<SalesDaily> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SalesDaily::getShopId, shopId);
         if (asin != null && !asin.isBlank()) {
@@ -293,8 +317,23 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
         if (endDate != null) {
             wrapper.le(SalesDaily::getReportDate, LocalDate.parse(endDate));
         }
-        wrapper.orderByAsc(SalesDaily::getReportDate);
-        return salesDailyMapper.selectList(wrapper);
+        // 日销展示按日期升序（趋势图从旧到新），游标方向随之取 (report_date,id) 上界——
+        // 排序键与其余三个降序列表相同，只是翻页方向相反，载荷格式仍通用。
+        if (req.hasCursor()) {
+            Object[] key = decodeDateIdCursor(req.payload());
+            wrapper.apply("(report_date > {0} OR (report_date = {0} AND id > {1}))", key[0], key[1]);
+        }
+        wrapper.orderByAsc(SalesDaily::getReportDate)
+               .orderByAsc(SalesDaily::getId);
+        wrapper.last("LIMIT " + req.probeSize());
+        List<SalesDaily> rows = salesDailyMapper.selectList(wrapper);
+        PageResult<SalesDaily> result = PageResult.of(rows, req.size(),
+                d -> dateIdCursor(d.getReportDate(), d.getId()));
+        if (result.truncated()) {
+            log.warn("日销明细列表被分页截断：shopId={} asin={} size={}，请用 nextCursor 继续翻页",
+                    shopId, asin, req.size());
+        }
+        return result;
     }
 
     @Override
@@ -366,7 +405,9 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
     }
 
     @Override
-    public List<BusinessOverview> listBusinessOverview(Long shopId, String startDate, String endDate) {
+    public PageResult<BusinessOverview> listBusinessOverview(Long shopId, String startDate,
+                                                             String endDate, PageRequest page) {
+        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<BusinessOverview> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(BusinessOverview::getShopId, shopId);
         if (startDate != null) {
@@ -375,8 +416,22 @@ public class ReportUpgradeServiceImpl implements ReportUpgradeService {
         if (endDate != null) {
             wrapper.le(BusinessOverview::getReportDate, LocalDate.parse(endDate));
         }
-        wrapper.orderByDesc(BusinessOverview::getReportDate);
-        return businessOverviewMapper.selectList(wrapper);
+        // 每日概览一天一行，(report_date,id) 里 id 恒不并列，但保持与其余端点同一载荷格式。
+        if (req.hasCursor()) {
+            Object[] key = decodeDateIdCursor(req.payload());
+            wrapper.apply("(report_date < {0} OR (report_date = {0} AND id < {1}))", key[0], key[1]);
+        }
+        wrapper.orderByDesc(BusinessOverview::getReportDate)
+               .orderByDesc(BusinessOverview::getId);
+        wrapper.last("LIMIT " + req.probeSize());
+        List<BusinessOverview> rows = businessOverviewMapper.selectList(wrapper);
+        PageResult<BusinessOverview> result = PageResult.of(rows, req.size(),
+                o -> dateIdCursor(o.getReportDate(), o.getId()));
+        if (result.truncated()) {
+            log.warn("经营概览列表被分页截断：shopId={} size={}，请用 nextCursor 继续翻页",
+                    shopId, req.size());
+        }
+        return result;
     }
 
     @Override

@@ -271,16 +271,30 @@ describe('ReportCenter 视图（经营报表）', () => {
     expect(wrapper.find('.error-zone').text()).toContain('请先填 SKU')
   })
 
-  it('滞销与周转分别走两个端点，前端不自己判定滞销', async () => {
+  it('滞销与周转分别走两个端点，前端不自己判定滞销；周转已有游标分页（cursor 透传）', async () => {
     const wrapper = await mountPage()
     await openTab(wrapper, '库存周转与滞销')
-    expect(rpt.listTurnover).toHaveBeenCalledWith('900000000000001000', undefined)
+    expect(rpt.listTurnover).toHaveBeenCalledWith('900000000000001000',
+      expect.objectContaining({ cursor: undefined }))
     expect(rpt.deadStock).toHaveBeenCalledWith('900000000000001000')
     const panel = wrapper.find('[data-panel="turnover"]')
     expect(panel.text()).toContain('滞销 SKU 数')
     // 滞销数字来自专门的 dead-stock 端点，而不是前端从周转表里挑出来的
     expect(panel.text()).toContain('滞销库存价值')
     expect(panel.text()).toContain('800')
+    // 未截断时不该出现下一页入口（TURNOVER 桩的 _page 是 null）
+    expect(panel.text()).not.toContain('加载下一页')
+  })
+
+  it('周转服务端截断时给下一页入口并回传 cursor（keyset 分页收口后）', async () => {
+    vi.mocked(rpt.listTurnover).mockResolvedValue(ok(TURNOVER.data, pageOf('djE6MjAyNi0wOS0yNnwyOQ')))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '库存周转与滞销')
+    expect(wrapper.find('[data-panel="turnover"]').text()).toContain('后端标记仍有下一页')
+    // 本页只有周转表一个下一页按钮（滞销明细表不分页），clickBtn 按文案唯一命中
+    await clickBtn(wrapper, '加载下一页')
+    expect(rpt.listTurnover).toHaveBeenLastCalledWith('900000000000001000',
+      expect.objectContaining({ cursor: 'djE6MjAyNi0wOS0yNnwyOQ' }))
   })
 
   it('同期对比把上期/本期与增长率并排显示，增长为负时标红', async () => {

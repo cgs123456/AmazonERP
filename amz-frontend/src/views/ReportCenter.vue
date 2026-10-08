@@ -63,7 +63,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="o in overview" :key="`${o.reportDate}`">
+                <tr v-for="o in overviewRows" :key="`${o.reportDate}`">
                   <td class="mono">{{ o.reportDate }}</td>
                   <td>{{ o.totalSales }}</td>
                   <td>{{ o.totalOrders }}</td>
@@ -77,9 +77,16 @@
                   <td>{{ o.refundRate }}</td>
                   <td>{{ o.negativeReviews }}</td>
                 </tr>
-                <tr v-if="!overview.length"><td colspan="12" class="empty-row">该店铺没有每日概览数据</td></tr>
+                <tr v-if="!overviewRows.length"><td colspan="12" class="empty-row">该店铺没有每日概览数据</td></tr>
               </tbody>
             </table>
+            <div class="table-pager">
+              <span class="page-info">{{ pagerText(overviewList) }}</span>
+              <div class="page-actions">
+                <button v-if="overviewList.truncated.value" class="page-btn" :disabled="overviewList.loading.value"
+                        @click="loadOverviewList(true)">加载下一页</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -196,12 +203,12 @@
               <div class="kpi-label">滞销库存价值</div>
             </div>
             <div class="kpi-card">
-              <div class="kpi-value">{{ turnover.length }}</div>
-              <div class="kpi-label">本页周转记录</div>
+              <div class="kpi-value">{{ turnoverRows.length }}</div>
+              <div class="kpi-label">已加载周转记录</div>
             </div>
             <div class="kpi-card">
               <div class="kpi-value">{{ stockoutTotal }}</div>
-              <div class="kpi-label">本页断货次数合计</div>
+              <div class="kpi-label">已加载断货次数合计</div>
             </div>
           </div>
 
@@ -215,7 +222,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="t in turnover" :key="t.id">
+                <tr v-for="t in turnoverRows" :key="t.id">
                   <td class="mono">{{ t.asin }}</td>
                   <td class="mono">{{ t.sku || '-' }}</td>
                   <td class="mono">{{ t.reportDate }}</td>
@@ -227,9 +234,16 @@
                   <td>{{ t.overstockDays ?? 0 }}</td>
                   <td>{{ t.deadStockValue ?? 0 }}</td>
                 </tr>
-                <tr v-if="!turnover.length"><td colspan="10" class="empty-row">没有周转数据（周转由报表聚合任务写入）</td></tr>
+                <tr v-if="!turnoverRows.length"><td colspan="10" class="empty-row">没有周转数据（周转由报表聚合任务写入）</td></tr>
               </tbody>
             </table>
+            <div class="table-pager">
+              <span class="page-info">{{ pagerText(turnoverList) }}</span>
+              <div class="page-actions">
+                <button v-if="turnoverList.truncated.value" class="page-btn" :disabled="turnoverList.loading.value"
+                        @click="loadTurnoverList(true)">加载下一页</button>
+              </div>
+            </div>
           </div>
 
           <div class="table-card">
@@ -254,10 +268,10 @@
         <!-- ==================== 日销与销售对比 ==================== -->
         <div v-if="tab === 'sales'" class="tab-panel" data-panel="sales">
           <div class="filter-row">
-            <label class="filter">ASIN<input v-model="sdAsin" @keyup.enter="loadSales" /></label>
+            <label class="filter">ASIN<input v-model="sdAsin" @keyup.enter="loadSalesList()" /></label>
             <label class="filter">起<input type="date" v-model="sdStart" /></label>
             <label class="filter">止<input type="date" v-model="sdEnd" /></label>
-            <button class="action-btn" @click="loadSales">查询日销</button>
+            <button class="action-btn" @click="loadSalesList()">查询日销</button>
             <label class="filter">对比天数<input class="cell-input" type="number" min="1" max="365" v-model="cmpDays" /></label>
             <button class="action-btn" @click="runComparison">同期对比</button>
           </div>
@@ -283,7 +297,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="s in sales" :key="s.id">
+                <tr v-for="s in salesRows" :key="s.id">
                   <td class="mono">{{ s.reportDate }}</td>
                   <td class="mono">{{ s.asin }}</td>
                   <td class="mono">{{ s.sku || '-' }}</td>
@@ -297,9 +311,16 @@
                   <td>{{ s.conversionRate ?? '-' }}</td>
                   <td>{{ s.buyBoxPercentage ?? '-' }}</td>
                 </tr>
-                <tr v-if="!sales.length"><td colspan="12" class="empty-row">该区间没有日销数据</td></tr>
+                <tr v-if="!salesRows.length"><td colspan="12" class="empty-row">该区间没有日销数据</td></tr>
               </tbody>
             </table>
+            <div class="table-pager">
+              <span class="page-info">{{ pagerText(salesList) }}</span>
+              <div class="page-actions">
+                <button v-if="salesList.truncated.value" class="page-btn" :disabled="salesList.loading.value"
+                        @click="loadSalesList(true)">加载下一页</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -531,7 +552,7 @@ const errors = ref<string[]>([])
 const busy = ref(false)
 
 const dash = ref<ShopDashboard | null>(null)
-const overview = ref<BusinessOverview[]>([])
+const overviewList = makeList<BusinessOverview>()
 
 const profitList = makeList<ProfitDetail>()
 const pSummary = ref<ProfitSummaryReport | null>(null)
@@ -539,11 +560,11 @@ const pdAsin = ref('')
 const pdStart = ref('')
 const pdEnd = ref('')
 
-const turnover = ref<InventoryTurnover[]>([])
+const turnoverList = makeList<InventoryTurnover>()
 const dead = ref<DeadStockReport | null>(null)
 const toAsin = ref('')
 
-const sales = ref<SalesDaily[]>([])
+const salesList = makeList<SalesDaily>()
 const cmp = ref<SalesComparison | null>(null)
 const sdAsin = ref('')
 const sdStart = ref('')
@@ -658,12 +679,18 @@ const shop = () => {
 }
 
 /* ---------- 概览 ---------- */
+// 每日概览一天一行也会逐年累积；分页与 /v2 其余列表同口径
+const loadOverviewList = (append = false) =>
+  loadList(overviewList, '每日概览', cursor => rpt.listBusinessOverview(shop(), { cursor }), append)
+
 const loadOverview = async () => {
   await Promise.all([
     call('经营看板', () => rpt.shopDashboard(shop()), (d) => { dash.value = d }),
-    call('每日概览', () => rpt.listBusinessOverview(shop()), (d) => { overview.value = d || [] })
+    loadOverviewList()
   ])
 }
+
+const overviewRows = computed(() => overviewList.rows.value)
 
 /* ---------- 利润明细 ---------- */
 // 后端 /report/v2/profit/list 已有 size/cursor（2026-10-07），与快照列表同一 keyset 口径
@@ -684,20 +711,28 @@ const loadAllProfit = async () => {
 const profitRows = computed(() => profitList.rows.value)
 
 /* ---------- 周转 ---------- */
+const loadTurnoverList = (append = false) =>
+  loadList(turnoverList, '库存周转', cursor => rpt.listTurnover(shop(), {
+    asin: toAsin.value || undefined, cursor
+  }), append)
+
 const loadTurnover = async () => {
   await Promise.all([
-    call('库存周转', () => rpt.listTurnover(shop(), toAsin.value || undefined), (d) => { turnover.value = d || [] }),
+    loadTurnoverList(),
     call('滞销分析', () => rpt.deadStock(shop()), (d) => { dead.value = d })
   ])
 }
-const stockoutTotal = computed(() => turnover.value.reduce((sum, t) => sum + asNumber(t.stockoutCount), 0))
+const turnoverRows = computed(() => turnoverList.rows.value)
+const stockoutTotal = computed(() =>
+  turnoverRows.value.reduce((sum, t) => sum + asNumber(t.stockoutCount), 0))
 
 /* ---------- 日销 ---------- */
-const loadSales = async () => {
-  await call('日销明细', () => rpt.listSalesDaily(shop(), {
-    asin: sdAsin.value || undefined, startDate: sdStart.value || undefined, endDate: sdEnd.value || undefined
-  }), (d) => { sales.value = d || [] })
-}
+const loadSalesList = (append = false) =>
+  loadList(salesList, '日销明细', cursor => rpt.listSalesDaily(shop(), {
+    asin: sdAsin.value || undefined, startDate: sdStart.value || undefined, endDate: sdEnd.value || undefined, cursor
+  }), append)
+
+const salesRows = computed(() => salesList.rows.value)
 
 const runComparison = async () => {
   await call('同期对比', () => rpt.salesComparison(shop(), {
@@ -840,7 +875,7 @@ const TAB_LOADERS: Record<TabKey, () => Promise<unknown>> = {
   overview: loadOverview,
   profit: loadAllProfit,
   turnover: loadTurnover,
-  sales: loadSales,
+  sales: () => loadSalesList(),
   snapshot: async () => { await Promise.all([loadAllSnapshot(), loadImportShipments()]) }
 }
 

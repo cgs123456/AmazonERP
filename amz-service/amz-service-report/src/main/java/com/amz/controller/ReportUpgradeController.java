@@ -80,12 +80,17 @@ public class ReportUpgradeController {
         return Result.success(reportUpgradeService.saveInventoryTurnover(turnover));
     }
 
-    /** 查询库存周转列表 */
+    /**
+     * 查询库存周转列表（keyset 游标分页，2026-10-07 随 /v2 列表统一收口）。
+     */
     @ShopScoped
     @GetMapping("/inventory-turnover/list/{shopId}")
     public Result<List<InventoryTurnover>> listTurnover(@PathVariable Long shopId,
-                                                         @RequestParam(required = false) String asin) {
-        return Result.success(reportUpgradeService.listInventoryTurnover(shopId, asin));
+                                                         @RequestParam(required = false) String asin,
+                                                         @RequestParam(required = false) Integer size,
+                                                         @RequestParam(required = false) String cursor) {
+        return Result.paged(reportUpgradeService.listInventoryTurnover(shopId, asin,
+                PageRequest.of(size, cursor)));
     }
 
     /** 呆滞库存分析 */
@@ -105,14 +110,19 @@ public class ReportUpgradeController {
         return Result.success(reportUpgradeService.saveSalesDaily(salesDaily));
     }
 
-    /** 查询销售趋势 */
+    /**
+     * 查询销售趋势（keyset 游标分页；展示按日期升序，游标取上界，载荷格式与其余列表一致）。
+     */
     @ShopScoped
     @GetMapping("/sales-daily/list/{shopId}")
     public Result<List<SalesDaily>> listSalesDaily(@PathVariable Long shopId,
                                                     @RequestParam(required = false) String asin,
                                                     @RequestParam(required = false) String startDate,
-                                                    @RequestParam(required = false) String endDate) {
-        return Result.success(reportUpgradeService.listSalesDaily(shopId, asin, startDate, endDate));
+                                                    @RequestParam(required = false) String endDate,
+                                                    @RequestParam(required = false) Integer size,
+                                                    @RequestParam(required = false) String cursor) {
+        return Result.paged(reportUpgradeService.listSalesDaily(shopId, asin, startDate, endDate,
+                PageRequest.of(size, cursor)));
     }
 
     /** 销售环比/同比 */
@@ -135,13 +145,18 @@ public class ReportUpgradeController {
         return Result.success(reportUpgradeService.saveBusinessOverview(overview));
     }
 
-    /** 查询经营概览 */
+    /**
+     * 查询经营概览（keyset 游标分页）。
+     */
     @ShopScoped
     @GetMapping("/business-overview/list/{shopId}")
     public Result<List<BusinessOverview>> listOverview(@PathVariable Long shopId,
                                                         @RequestParam(required = false) String startDate,
-                                                        @RequestParam(required = false) String endDate) {
-        return Result.success(reportUpgradeService.listBusinessOverview(shopId, startDate, endDate));
+                                                        @RequestParam(required = false) String endDate,
+                                                        @RequestParam(required = false) Integer size,
+                                                        @RequestParam(required = false) String cursor) {
+        return Result.paged(reportUpgradeService.listBusinessOverview(shopId, startDate, endDate,
+                PageRequest.of(size, cursor)));
     }
 
     /** 店铺综合看板 */

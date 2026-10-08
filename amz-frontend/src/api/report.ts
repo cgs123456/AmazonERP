@@ -251,21 +251,23 @@ export const listProfitDetails = (shopId: number | string,
 export const profitSummary = (shopId: number | string, q: { startDate?: string; endDate?: string } = {}) =>
   request.get<void, ApiResponse<ProfitSummaryReport>>(`/report/v2/profit/summary/${shopId}`, { params: params(q) })
 
-export const listTurnover = (shopId: number | string, asin?: string) =>
+export const listTurnover = (shopId: number | string,
+                             q: { asin?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<InventoryTurnover[]>>(`/report/v2/inventory-turnover/list/${shopId}`,
-    { params: params({ asin }) })
+    { params: params(q) })
 
 export const deadStock = (shopId: number | string) =>
   request.get<void, ApiResponse<DeadStockReport>>(`/report/v2/inventory-turnover/dead-stock/${shopId}`)
 
 export const listSalesDaily = (shopId: number | string,
-                              q: { asin?: string; startDate?: string; endDate?: string } = {}) =>
+                              q: { asin?: string; startDate?: string; endDate?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<SalesDaily[]>>(`/report/v2/sales-daily/list/${shopId}`, { params: params(q) })
 
 export const salesComparison = (shopId: number | string, q: { asin?: string; currentDate?: string; compareDays?: number } = {}) =>
   request.get<void, ApiResponse<SalesComparison>>(`/report/v2/sales-daily/comparison/${shopId}`, { params: params(q) })
 
-export const listBusinessOverview = (shopId: number | string, q: { startDate?: string; endDate?: string } = {}) =>
+export const listBusinessOverview = (shopId: number | string,
+                                      q: { startDate?: string; endDate?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<BusinessOverview[]>>(`/report/v2/business-overview/list/${shopId}`, { params: params(q) })
 
 export const shopDashboard = (shopId: number | string) =>

@@ -39,8 +39,11 @@ public interface ReportUpgradeService {
     /** 保存库存周转数据 */
     InventoryTurnover saveInventoryTurnover(InventoryTurnover turnover);
 
-    /** 查询库存周转列表 */
-    List<InventoryTurnover> listInventoryTurnover(Long shopId, String asin);
+    /**
+     * 查询库存周转列表（keyset 游标分页，2026-10-07 随 /v2 列表统一收口，见
+     * {@link #listProfitDetails} 的注释）。
+     */
+    PageResult<InventoryTurnover> listInventoryTurnover(Long shopId, String asin, PageRequest page);
 
     /** 呆滞库存分析 */
     Map<String, Object> deadStockAnalysis(Long shopId);
@@ -50,8 +53,12 @@ public interface ReportUpgradeService {
     /** 保存销售日报 */
     SalesDaily saveSalesDaily(SalesDaily salesDaily);
 
-    /** 查询销售趋势 */
-    List<SalesDaily> listSalesDaily(Long shopId, String asin, String startDate, String endDate);
+    /**
+     * 查询销售趋势（keyset 游标分页）。展示口径保持日期升序不变，
+     * 因此游标条件与降序列表方向相反（取 (report_date,id) 之上界）。
+     */
+    PageResult<SalesDaily> listSalesDaily(Long shopId, String asin, String startDate, String endDate,
+                                          PageRequest page);
 
     /** 销售环比/同比 */
     Map<String, Object> salesComparison(Long shopId, String asin, String currentDate, Integer compareDays);
@@ -61,8 +68,11 @@ public interface ReportUpgradeService {
     /** 保存经营概览 */
     BusinessOverview saveBusinessOverview(BusinessOverview overview);
 
-    /** 查询经营概览 */
-    List<BusinessOverview> listBusinessOverview(Long shopId, String startDate, String endDate);
+    /**
+     * 查询经营概览（keyset 游标分页）。
+     */
+    PageResult<BusinessOverview> listBusinessOverview(Long shopId, String startDate, String endDate,
+                                                      PageRequest page);
 
     /** 店铺综合看板（聚合多维度数据） */
     Map<String, Object> shopDashboard(Long shopId);
