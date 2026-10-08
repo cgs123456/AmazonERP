@@ -46,6 +46,7 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 | 逐项 1-9：#9 参数名尺 not-comparable | ✅ 实测已归零（`b750db6` 拆窄类型后六桶全零），HANDOFF「4 条永久披露」表述过时，已更正 |
 | 逐项 1-9：#1/#2/#3 需外部条件/用户操作 | #1 B 桶凭据（用户拍板暂缓，技术侧无阻塞）；#2 GH_TOKEN（待用户本人生成配置，指引在卡住区）；#3 deploy-it 仓外（全盘搜索未找到脚本，仓内排序契约已锁死，维持被动）——三项均非代码可推进，如实留档 |
 | 遗留项收口 + 第二轮 review（用户指令「先解决遗留，再 review 整理清单」） | ✅ 遗留项=`0eefe6f`（/v2 四列表分页统一，run #207 绿、整仓 2012）；✅ review：ReportCenter 转换自查干净（无孤儿符号/事件传参安全/筛选重置走 append=false/诚实文案到位）、全仓无界读扫描三版迭代+人工甄别出候选清单（见遗留改进，含 capRead 与 keyset 两种保护先例）；run #208（文档）绿 |
+| 逐项完成待做清单（用户指令「逐项完成」，第三轮） | ✅ P1 无界读候选清单逐项核实收口（直接读 service 体，纠出 endpoint 扫描器漏看 service cap 的假阳性；结论：绝大多数已保护，剩 4 个「真无界但硬 cap 会撒谎/无稳定序/表恒空」不塞半 cap，见遗留改进）；GH_TOKEN 复查仍 ABSENT；run #209（文档）待绿 |
 | 多清空者统一（遗留改进 #6，按推荐当班执行） | ✅ `e39dafd`；4 视图迁前缀过滤模式、clearErrors 全仓归零；vue-tsc/vitest/e2e 全链复核（3 超时失败隔离重跑全过=坑 13） |
 
 ## 本班 commit 分组
@@ -136,19 +137,23 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
   功能立项时一并处置。
 
 **遗留改进（可做可不做，非阻塞）**
-- **其他域的无界列表读（本轮 review 扫描新发现，候选清单非确证缺口）**：三版脚本迭代
-  （naive 正则有跨方法配对假阳性，方法锚定+反向配对版剩 38 项）+ 人工甄别：
-  `getOrderList`（OrderController，selectList(eq userId) 无界，OrderList.vue B2C 场景消费；
-  同 controller 已有规范分页的 `/list/{shopId}` 并存）、`history/{userId}`（AgentMemory）、
-  `WarehouseController list`、`MultiWarehouse alert/list`、`OrderAudit rule|split-log list`、
-  `Procurement supplier/by-sku + plan/{id}/approvals`、`Replenishment list|urgent`、
-  `Knowledge search`、`LogisticsDashboard trend|carrier-performance|alerts`、`Ops rank/trend`、
-  `Search getHistoryList`、`Spapi inventory/replenish` 等。
-  **已排除**：ListingMonitor 5 个（有 `capRead` 单读上限 + 截断 log.warn，按设计有界——
-  该模式是另一个可复用先例）、POST 输入驱动 4 个、观测小表若干。
-  处理时逐个先核「是否真有增长压力/内部截断」，保护模式二选一照抄：
-  `capRead`（有界读取+显式截断警告，ListingMonitorServiceImpl 先例）或 keyset 分页
-  （ReportUpgradeListPagingTest 的 0eefe6f 四端点套路）；别拿本清单直接当待办量。
+- **其他域无界列表读——已逐项核实收口（2026-10-07 第二轮 review）**：候选清单 38 项
+  经「直接读 service 方法体」逐条甄别（endpoint 扫描器只读 controller，漏看 service 里的
+  cap，是假阳性主源；本核查自己也三度踩 naive 扫描坑，见坑 13/14 变体）。结论：
+  **绝大多数已有保护**——ListingMonitor 5 个 `capRead`、ProductMaster 2 个 `READ_CAP=500`、
+  Ops rank/trend `MAX_RANK_TREND_POINTS`、Ops 告警 keyset 分页（`OpsAlertPagingContractTest`）、
+  knowledge search `normalizeTopN`+`MAX_RECALL=30`、finance events 日期窗输入、
+  agent memory history UI 传 `limit`、connectors outbox 后端 `int limit=50`、
+  POST 输入驱动 4 个、仓/预警规则/路由等物理小表。**剩 4 个「真无界但都不该硬 cap」**：
+  ① `LogisticsDashboardServiceImpl.loadByShop`（alerts/carrierPerformance 整店货件读进内存做聚合）
+  ——cap 会让聚合数变小撒谎，是「聚合即全扫」的设计问题，真修需预聚合/窗口，非一行；
+  ② `getOrderListByUserId`（B2C 自单，`/order/list` 已分页、这条是未分页兄弟，但 UI 显示
+  `{{length}} 行` 完整性声明，静默 cap 会撒谎，且自单量小）；③ `getHistoryList`（实体无 id
+  排序列 + 写入按 (user,keyword) 去重，硬 LIMIT 无稳定序）；④ `listSplitLogs`（表**全仓零插入点**，
+  当前恒空，UI 自己也写了「拆分日志为空是真实状态」——加了插入点才需要 cap）。
+  → 均记录为「按现状可接受 / 需真设计时再动」，不塞半 cap（避免制造「改一半」新坑）。
+  复用先例备忘：cap（`capRead` / `READ_CAP`+`last("LIMIT")`）或 keyset（`0eefe6f` /
+  `OpsAlertPagingContractTest`），按「UI 是浏览列表(分页) 还是 聚合/钻取(有界读+截断警告)」二选一。
 - ~~多清空者两模式并存~~ **已完成（`e39dafd`，2026-10-07）**：AdSearchTerms /
   ConnectorQueue / MultiplatformOrders / MultiplatformOps 四视图迁到「前缀过滤」新模式
   （清单里原列的 AdBidSchedule 核对后发现早已是新模式——清单一处过时，一并更正）；
@@ -301,6 +306,18 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
     同理（点与下划线互换）。起服务前对着 yml 属性名推 env 名，别信记忆里的部署别名。
     另：无 Redis 时 `/actuator/health` 显 DOWN 但业务链路照常工作——回环验收按端点行为判定，
     别被探针误导。
+33. **「无界读」要读 service 体判定，且 cap 不是万能药**（2026-10-07 第三轮逐项收口实测）：
+    按端点签名扫（只看 controller `Result.success(service.list…)`）会**漏看 service 方法体里
+    的 cap**——`capRead`（ListingMonitor）、`READ_CAP=500`（ProductMaster）、
+    `MAX_RANK_TREND_POINTS`（Ops）、`normalizeTopN+MAX_RECALL`（knowledge）全在 service 层，
+    扫出来的 38 项里大半是假阳性。正确判定必须**逐条读 service 方法体**。更反直觉的是：
+    **剩下的「真无界」不一定该 cap**——① 聚合端点（dashboard 整店货件读进内存算 KPI）cap 会让
+    统计数变小**撒谎**；② UI 显示「{{N}} 行 / 共 N 条」完整性声明的，静默 cap 也是撒谎；
+    ③ 实体无 id/时间排序列的（search history）硬 LIMIT 返回不稳定任意行；④ 表全仓零插入点
+    （split-log）当前恒空，cap 是给不存在的问题上锁。**cap 前先问「这端点是浏览列表(该分页)
+    还是聚合/钻取(该有界读+截断警告)还是本就小/空」**，别无脑套先例。本核查自己也三度踩
+    naive 扫描坑（跨方法配对假阳性、`rg -rn` 吃掉命中、controller-vs-service body 错配，
+    坑 13/14 变体）——**扫描器给的是候选，不是结论；结论只能来自直接读代码。**
 
 ## 环境与边界（务必遵守）
 
