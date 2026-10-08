@@ -354,6 +354,12 @@ jobs:
             echo "没有上一版 tag，跳过回滚演练（首次发布）"
             exit 0
           fi
+          # 上一版 tag 可能是发布失败的（没有 GitHub Release / 没有 manifest 资产）。
+          # 没有基线就无法演练：显式跳过并说明原因，下一次发布会有真实上一版 manifest。
+          if ! gh release view "$prev_tag" --json assets --jq '.assets[].name' | grep -q '^release-manifest\.json$'; then
+            echo "上一版 $prev_tag 没有已发布的 release-manifest.json（该次发布未完成），跳过回滚演练"
+            exit 0
+          fi
           gh release download "$prev_tag" --pattern 'release-manifest.json' --output previous-manifest.json
           python tools/release/rollback_drill.py plan             --current ./release-manifest.json             --previous ./previous-manifest.json             --namespace "$ROLLBACK_NAMESPACE"             --output ./rollback-plan.json
           python -c "import json,io;plan=json.load(io.open('rollback-plan.json',encoding='utf-8'));print('回滚计划条目数:',len(plan.get('steps',plan.get('images',[]))))"
