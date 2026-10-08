@@ -28,11 +28,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- Boot 4 默认 JSON 是 Jackson 3；工程契约仍是 Jackson 2，显式引入 Jackson2 自动配置。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-jackson2</artifactId>
+        </dependency>
 
         <!-- AOP：支持 OperLogAspect 切面拦截 @OperLog 注解方法 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-aop</artifactId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
         </dependency>
 
         <!-- Actuator：提供 /actuator/health/{liveness,readiness} 探针端点。

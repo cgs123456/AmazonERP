@@ -1,6 +1,9 @@
 server:
   port: 8096
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
   # 默认 prod（fail-closed）：未显式设置时启用真实客户端，缺凭证会显式失败，
   # 而不是静默返回样例数据（P0-57）。离线开发请显式设置 SPRING_PROFILES_ACTIVE=mock。
   profiles:

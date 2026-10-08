@@ -1,6 +1,9 @@
 server:
   port: 8099
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
   application:
     name: amz-service-customer
   cloud:

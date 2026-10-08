@@ -1,6 +1,9 @@
 server:
   port: 8103
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
   application:
     name: amz-service-finance
   # 默认 prod：金蝶配置缺失时同步操作显式失败，绝不降级为 Mock 或伪造成功。

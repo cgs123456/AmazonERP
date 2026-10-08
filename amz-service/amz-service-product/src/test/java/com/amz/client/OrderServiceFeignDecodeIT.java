@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpExchange;
 import feign.Feign;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.http.converter.autoconfigure.ClientHttpMessageConvertersCustomizer;
+import org.springframework.cloud.openfeign.support.FeignHttpMessageConverters;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.autoconfigure.http.HttpMessageConverters;
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConverters;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.cloud.openfeign.support.SpringDecoder;
@@ -92,12 +95,43 @@ class OrderServiceFeignDecodeIT {
 
         MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter(
                 Jackson2ObjectMapperBuilder.json().build());
-        HttpMessageConverters converters = new HttpMessageConverters(converter);
+        ClientHttpMessageConvertersCustomizer customizer = builder ->
+                builder.registerDefaults().withJsonConverter(converter);
+        FeignHttpMessageConverters converters = new FeignHttpMessageConverters(
+                provider(customizer), emptyProvider());
 
         client = Feign.builder()
                 .contract(new SpringMvcContract())
-                .decoder(new SpringDecoder(() -> converters))
+                .decoder(new SpringDecoder(provider(converters)))
                 .target(OrderServiceFeignClient.class, baseUrl);
+    }
+
+    private static <T> ObjectProvider<T> provider(T value) {
+        return new ObjectProvider<T>() {
+            @Override
+            public T getObject() {
+                return value;
+            }
+
+            @Override
+            public java.util.Iterator<T> iterator() {
+                return List.of(value).iterator();
+            }
+        };
+    }
+
+    private static <T> ObjectProvider<T> emptyProvider() {
+        return new ObjectProvider<T>() {
+            @Override
+            public T getObject() {
+                throw new java.util.NoSuchElementException();
+            }
+
+            @Override
+            public java.util.Iterator<T> iterator() {
+                return java.util.Collections.emptyIterator();
+            }
+        };
     }
 
     @AfterAll

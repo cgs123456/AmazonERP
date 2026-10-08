@@ -1,6 +1,9 @@
 server:
   port: 8101
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
   application:
     name: amz-service-ops
   cloud:

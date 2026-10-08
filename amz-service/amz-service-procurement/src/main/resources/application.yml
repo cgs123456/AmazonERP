@@ -1,6 +1,9 @@
 server:
   port: 8098
 spring:
+  http:
+    converters:
+      preferred-json-mapper: jackson2
   application:
     name: amz-service-procurement
   # 默认 prod（fail-closed）：未显式设置时启用真实客户端，缺凭证会显式失败，
