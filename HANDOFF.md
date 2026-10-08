@@ -1,4 +1,4 @@
-# HANDOFF — AmazonERP 止损清账 + 真实数据填充 + webhook 回环验收（2026-10-07 交班）
+# HANDOFF — B 桶 fail-closed 收口（缺陷修复 + 断言补齐）+ GH_TOKEN 解决（2026-10-08 交班）
 
 工作树以本文件随交班 commit 推送为准，HEAD 以 `git log` 为准；全部已推送 `origin/master`。
 
@@ -19,10 +19,16 @@ run 元数据佐证。随后按用户指令继续三块：**完整性 review**�
 GCM 已有凭据落成 gh keyring 登录，CI 日志可直读）。续做清单：
 多清空者统一（`e39dafd`）、动态路由可达性比对（`bdeb2af`）、利润明细分页（见 commit 表）。
 基线：整仓
-`mvn test` **2012 / 0F / 0E / 17S**
-（2004 + 利润明细分页契约 5；班初 2003 = 上班 2002 + `3fd1b12` spapi node 契约 1）、
+`mvn test` **2041 / 0F / 0E / 17S**
+（2012 → B 桶缺陷修复测试 +5 → 断言补齐 +24，共 +29）、
 四把尺 + 漂移 + hygiene 全零、release-tools unittest **88/0F**、部署链三契约 17/17。
 覆盖率候选稳定 **33**（B 桶 20 缺凭据 / A 桶 13 刻意拒绝）。**无已知死代码。**
+本班三块：**#2 GH_TOKEN 解决**（复用本机 GCM 凭据落成 gh keyring 登录，CI 日志直读）、
+**#1 B 桶推进到技术上限**（agent 逐端点核对发现 2 个静默假成功缺陷——review/analyze 缺
+key 假 200、inventory/sync 缺凭证 success(0)——均已改点名失败并配测试；其余「代码已
+fail-closed 仅缺断言」的 10+ 端点补齐 24 例契约测试，加修复批共 29 例，变异验证能红）、
+**#3 deploy-it 维持被动**（仓内零引用、本机全盘无此脚本、核心已由仓内契约锁死）。
+真实凭据仍需业务侧提供（DeepSeek 充值/Keepa 订阅/SP-API 授权），非代码可推进。
 本班另完成用户点名的**真实数据模拟填充**（`2d8aeec`）：演示库的商品标题/ASIN/订单号/
 价格/成本/竞品数据全部改为真实亚马逊形态（调研自 SP-API Orders 官方样例与 Keepa 文档），
 识别机制（SYN 标题前缀、ID 段、登记表）完整保留——**B 桶凭据仍是真代码+未接状态不变**，
@@ -48,6 +54,8 @@ GCM 已有凭据落成 gh keyring 登录，CI 日志可直读）。续做清单�
 | 逐项 1-9：#1/#2/#3 需外部条件/用户操作 | #1 B 桶凭据（用户拍板暂缓，技术侧无阻塞）；✅ #2 GH_TOKEN **已解决**（2026-10-08，复用本机 GCM 凭据落成 gh 登录，CI 日志可直读）；#3 deploy-it 仓外（全盘搜索未找到脚本，仓内排序契约已锁死，维持被动）——#1/#3 非代码可推进，如实留档 |
 | 遗留项收口 + 第二轮 review（用户指令「先解决遗留，再 review 整理清单」） | ✅ 遗留项=`0eefe6f`（/v2 四列表分页统一，run #207 绿、整仓 2012）；✅ review：ReportCenter 转换自查干净（无孤儿符号/事件传参安全/筛选重置走 append=false/诚实文案到位）、全仓无界读扫描三版迭代+人工甄别出候选清单（见遗留改进，含 capRead 与 keyset 两种保护先例）；run #208（文档）绿 |
 | 逐项完成待做清单（用户指令「逐项完成」，第三轮） | ✅ P1 无界读候选清单逐项核实收口（直接读 service 体，纠出 endpoint 扫描器漏看 service cap 的假阳性；结论：绝大多数已保护，剩 4 个「真无界但硬 cap 会撒谎/无稳定序/表恒空」不塞半 cap，见遗留改进）；✅ #2 GH_TOKEN 已解决（`6d7f0e5` 后本轮，见卡住区）；run #209 绿 |
+| B 桶凭据推进（用户指令「解决 B 桶」→「补齐只缺测试清单」，本班第四轮） | ✅ **#1 推进到技术上限**：agent 逐端点核对 B 桶候选，直接读代码复核发现 **2 个静默假成功缺陷**（`/ai/review/analyze` 缺 key 假 200 + 合成 0 分、`/spapi/inventory/sync` 缺凭证 `success(0)`）——均改点名失败并配测试（`75994bf`）；其余「代码已 fail-closed、仅缺断言」的 10+ 端点补齐契约测试（`5c8824b`+`43f3163`，B 桶相关共 29 例），变异验证能红（吞成功/并码两种退化各测一次）；真实凭据仍需业务侧提供，非代码可推进 |
+| #3 deploy-it 处置 | ✅ 维持被动（仓内 `.github`/`scripts`/`tools` 零引用、本机全盘 maxdepth4 搜索无此脚本；核心数值序已被 `MigrationOrderingContractTest`+`BareSqlBuiltSchemaFlywayStartIT` 双锁） |
 | 多清空者统一（遗留改进 #6，按推荐当班执行） | ✅ `e39dafd`；4 视图迁前缀过滤模式、clearErrors 全仓归零；vue-tsc/vitest/e2e 全链复核（3 超时失败隔离重跑全过=坑 13） |
 
 ## 本班 commit 分组
@@ -65,6 +73,8 @@ GCM 已有凭据落成 gh keyring 登录，CI 日志可直读）。续做清单�
 | 动态路由可达性比对（遗留改进 #8） | `bdeb2af` | `--reverse` 新增 `dynamic-route-unreachable` 闸门（详情页经列表页前缀判可达、catch-all 不参与、nav_dead 升级为可命中动态模式）；self-test 19→25；变异验证注入 `/ghost-page/:id` 点名红、`/orders/:id` 不误报 |
 | 利润明细 keyset 分页（计划 #5） | `bbbbef8` | `/report/v2/profit/list` 无界全量读改 size/cursor，复刻快照列表 (report_date,id) 复合游标 + 探测行 + 非法游标 fail-closed；前后端三处契约同步（Controller Result.paged / api q 类型 / 视图 loadProfitDetails append + 下一页）；新增 ReportUpgradeProfitPagingTest 5 例、视图契约测试翻转（vitest 479→480） |
 | /v2 四列表分页统一收口（#5 遗留观察项） | `0eefe6f` | inventory-turnover/sales-daily/business-overview 一并改 keyset 分页；游标辅助函数泛化（dateIdCursor/decodeDateIdCursor 四端点共用）；sales-daily 升序取 `report_date >` 下界（唯一方向差异，单列测试钉死）；契约测试更名 ReportUpgradeListPagingTest（5→8 例、report 71→74）；前端三表转 CursorList（裸 ref 数组→makeList+loadList 累积、truncated 出下一页）、周转 KPI「本页合计」→「已加载合计」；listTurnover 调用形状 (shopId,asin)→(shopId,q) 翻转旧断言同步（vitest 480→481、整仓 2009→2012） |
+| B 桶两个静默假成功修复（#1） | `75994bf` | agent 逐端点核对 + 直接读码复核：① `InventorySyncScheduler.syncShopInventory` 缺凭证/缺站点从 `return 0`（HTTP 入口包成 success(0)，与真 0 条不可区分）改抛 `LocalApiException(CREDENTIAL_MISSING/MARKETPLACE_MISSING)`，对齐 syncOrders 口径，失败仍记 InventorySyncLog；② `ReviewAnalysisServiceImpl.analyze` 缺 key 从合成「0 分+空列表」假成功改抛 `CodeErrorException` 点名 DEEPSEEK_API_KEY（ErpToolExecutor 调用点已有 catch 不受影响）。配 InventorySyncCredentialFailClosedTest 2 例 + ReviewAnalysisFailClosedTest 3 例（两文件此前零覆盖） |
+| B 桶「仅缺断言」清单补齐（#1 续） | `5c8824b` `43f3163` | AI：chat/agentChat 缺 key 断言（区分缺 key 与 messages 空）、memory/chat 编排「LLM 失败原样上抛、assistant 假回复绝不写记忆」；Multiplatform：message/sync 未接入不写库、generateToken 六分支（App 不存在/停用/密钥不匹配/未初始化/跨店/scope 空）、guarded() 包装层契约（未接入→业务失败、其它异常继续上抛不伪装）；SP-API：feeds/syncOrders（两 code 可区分）/messaging send+actions+attributes/uploads/operations 八端点「缺凭证→400+code+不落成功载荷」。变异验证两例（uploads 吞成 success→红、marketplace code 并码→红）证明断言非空转。修复+补齐共 29 例，整仓 2012→2041（2012→2039 修复+首批、→2041 messaging 两 GET 追加）|
 
 ## 门禁基线与复跑命令
 
@@ -96,10 +106,10 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 # vue-tsc --noEmit、vitest run（必须在 amz-frontend/ 里跑）、playwright --workers=1。
 ```
 
-- 基线：整仓 **2012/0/0/17**（16 测试模块求和实测；班初 2003 含 `3fd1b12` 的 spapi
-  node 契约 +1、webhook 归属拒绝 +1 = 2004，利润明细分页契约 +5 = 2009，四列表收口 +3 = 2012）；
-  spapi 676/0F、multiplatform 101、logistics 153、customer 33、ops 36、user 19、report 74；
-  vitest **481/481**（利润契约翻转 +1、周转下一页 +1）、e2e 串行 40-44 全过；vue-tsc 0 错（tsconfig 开
+- 基线：整仓 **2041/0/0/17**（16 测试模块求和实测；2012 + B 桶修复测试 5 + 断言补齐
+  24 = 2041）；
+  spapi 686/0F、multiplatform 114、ai 131、logistics 153、customer 33、ops 36、user 19、report 74；
+  vitest **481/481**、e2e 串行 40-44 全过；vue-tsc 0 错（tsconfig 开
   `noUnusedLocals`——前端孤儿 import 编译期即红，历轮 0 错即无孤儿之证）。
 - 合成数据口径（本班 2026-10-06 全链重跑实测）：快照 102 表 / 14 库；demo 224,993 行、
   ci 25,188 行；purge/verify_cleanup 102 DELETE；schema-load 灌入 0 错误、notes 386,231/209 列；
@@ -112,6 +122,12 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 **需要外部条件（做不了，别在原地重试）**
 - B 桶 20 条：`DEEPSEEK_API_KEY`（4）、Keepa token（3）、店铺 SP-API 凭证（13）。
   代码路径是真代码、未配置即点名失败，没有凭据只能保持未接。
+  **2026-10-08 本班推进到技术上限**（`75994bf`/`5c8824b`/`43f3163`）：agent 逐端点核对
+  「缺凭据时的真实行为」→ 直接读码复核 → 修掉 2 个**静默假成功缺陷**（review/analyze
+  缺 key 返回 0 分假 200、inventory/sync 缺凭证 `success(0)`），其余「代码已对、仅缺断言」
+  的 10+ 端点补齐契约测试（B 桶相关共 29 例，变异验证能红）。**剩下的就是真实凭据**：
+  DeepSeek（充值即用）、Keepa（订阅）、SP-API（需企业证件+视频核验+审批，见
+  §1.9 API-Ready 与 first-deploy-bootstrap-runbook），纯业务决策。
 - ~~CI 日志外部不可读~~ **已解决（2026-10-08）**：本机 git push 一直成功 = GCM 里早有可用
   凭据。用 `git credential fill`（stdin 读、不回显）取出那个 `gho_` token，`gh auth login
   --with-token`（token 走 stdin，不进 argv）落成 gh 凭据，存 **Windows keyring**（非明文文件）。
@@ -195,6 +211,12 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
    sales-daily 是唯一升序列表（游标取 `report_date >` 下界，方向已分别钉死）；
    周转 KPI「本页合计」文案改「已加载合计」，防止分页后还拿已读页求全量。
    `/report/v2` 全部列表端点已无界读清零。
+6. ~~B 桶凭据推进~~ **本班已推进到技术上限（`75994bf`/`5c8824b`/`43f3163`）**：2 个静默
+   假成功缺陷已改点名失败，10+ 端点的缺凭证 fail-closed 断言已补齐（29 例，变异验证能红）。
+   **剩下的只有真实凭据**（DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权），纯业务决策。
+   凭据到位后：先按 first-deploy-bootstrap-runbook 录凭证 → 用 `gh run view --job <jid>
+   --log` 对照 B 桶断言确认点名失败消失（即链路真接通）。**别再为 B 桶加新断言**（已补齐，
+   重复投资）。
 
 ## 踩过的坑（勿重演；含本班新增）
 
@@ -322,6 +344,18 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
     还是聚合/钻取(该有界读+截断警告)还是本就小/空」**，别无脑套先例。本核查自己也三度踩
     naive 扫描坑（跨方法配对假阳性、`rg -rn` 吃掉命中、controller-vs-service body 错配，
     坑 13/14 变体）——**扫描器给的是候选，不是结论；结论只能来自直接读代码。**
+34. **补测试时「测试自己的输入错」比「生产代码错」更常见**（2026-10-08 B 桶断言补齐实测）：
+    给 fail-closed 端点补断言时三个用例红了，全是测试输入臆造——messaging 的 action 我写
+    `"CONFIRMATION"`（枚举里根本没有，真值是 `INVOICE`/`CONFIRM_ORDER_DETAILS` 等）、
+    operations 用 `"getOrders"`（不在 `SpApiOperationCatalog`，会先被 INVALID_REQUEST 拦、
+    到不了 client，真值形如 `notifications.getSubscriptions`）、feeds 的 submit 需要先
+    `UserContext.setShops(...)` 否则被越权校验先拦成 FORBIDDEN。教训：**写断言前先把枚举值/
+    catalog 注册名/前置校验读全**，别按直觉造；红了先怀疑测试输入再怀疑生产代码（本班生产
+    代码一行没为测试改过，改的全是输入）。**另：给 B 桶这类"已有 fail-closed"的端点补
+    断言，必须配变异验证证明能红**（本班：把 uploads catch 改成 `Result.success`→对应例红、
+    把 syncOrders 两 code 并成一个→对应例红），否则「绿」可能只是断言写得比代码还松。
+    复用坑 14 的 `rg -r`：本班又两次用它读 Java 被吃成 `OrdernMapper`/`void n(`——
+    **读代码一律 `rg -n` 不带 `r`**。
 
 ## 环境与边界（务必遵守）
 
