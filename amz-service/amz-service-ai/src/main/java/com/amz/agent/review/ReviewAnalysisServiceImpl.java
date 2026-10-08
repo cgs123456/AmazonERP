@@ -1,5 +1,6 @@
 package com.amz.agent.review;
 
+import com.amz.exception.CodeErrorException;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -58,6 +59,13 @@ public class ReviewAnalysisServiceImpl implements ReviewAnalysisService {
 
         String prompt = buildPrompt(reviews);
         String llmResponse = callDeepSeek(prompt);
+        if (llmResponse == null || llmResponse.isBlank()) {
+            // 缺 DeepSeek key 时 callDeepSeek 返回 null。旧实现把它喂给 parseResult，
+            // 合成 sentimentScore=0.0 + 空痛点/建议 + 「LLM 分析失败」文案，再由 controller
+            // 包成 Result.success —— 0.0 被读成「中性情绪」、空列表被读成「没有痛点」，属假成功。
+            // 这里点名失败，与 AiServiceImpl「DeepSeek 未配置」同一口径（显式拒绝优于假成功）。
+            throw new CodeErrorException("评论分析失败：DeepSeek 未配置或调用失败，请设置 DEEPSEEK_API_KEY");
+        }
         return parseResult(llmResponse, reviews);
     }
 

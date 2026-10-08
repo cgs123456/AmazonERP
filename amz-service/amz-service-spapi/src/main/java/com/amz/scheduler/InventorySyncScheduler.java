@@ -3,6 +3,7 @@ package com.amz.scheduler;
 import com.amz.analytics.InventoryHealthAnalyzer;
 import com.amz.client.FbaInventoryClient;
 import com.amz.connector.SpApiEndpointResolver;
+import com.amz.connector.LocalApiException;
 import com.amz.credential.ShopCredential;
 import com.amz.credential.ShopCredentialStore;
 import com.amz.lock.DistributedJobLock;
@@ -139,9 +140,18 @@ public class InventorySyncScheduler {
         }
         ShopCredential credential = shopCredentialStore.get(shopId);
         if (credential == null || credential.getMarketplaceId() == null) {
-            log.warn("syncShopInventory skip shopId={}: credential or marketplaceId missing", shopId);
-            recordLog(shopId, STATUS_FAILED, 0, "credential or marketplaceId missing");
-            return 0;
+            // 缺凭证/缺 marketplace 不能 return 0：HTTP 入口会把 0 包成 Result.success(0)，
+            // 与「真同步到 0 条」不可区分，调用方读不出「这家店根本没配凭证」。
+            // 对齐 SpapiController.syncOrders 的口径点名失败；定时路径已按店铺 try/catch，
+            // 抛出不中断其它店铺同步。
+            boolean credentialMissing = credential == null;
+            String detail = credentialMissing ? "credential missing" : "marketplaceId missing";
+            log.warn("syncShopInventory failed shopId={}: {}", shopId, detail);
+            recordLog(shopId, STATUS_FAILED, 0, detail);
+            throw LocalApiException.of(
+                    credentialMissing ? LocalApiException.CODE_CREDENTIAL_MISSING
+                            : LocalApiException.CODE_MARKETPLACE_MISSING,
+                    "inventory sync " + detail + " for shopId=" + shopId);
         }
         String marketplaceId = credential.getMarketplaceId();
         LocalDateTime startTime = LocalDateTime.now();
