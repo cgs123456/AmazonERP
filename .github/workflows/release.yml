@@ -394,6 +394,7 @@ jobs:
           # tee：bootstrap 全量输出进 job log——失败时不再只有一行 exit code 可猜
           docker run --rm --name amz-smoke-spapi-bootstrap --network "$SMOKE_NET" \
             "${SMOKE_ENV[@]}" \
+            -e SPRING_PROFILES_ACTIVE=bootstrap \
             -e SPAPI_BOOTSTRAP_CREDENTIAL_FILE=/run/secrets/spapi-credentials.json \
             -v "$RUNNER_TEMP/smoke/spapi-credentials.json:/run/secrets/spapi-credentials.json:ro" \
             "${IMAGE_PREFIX}spapi:${IMAGE_TAG}" 2>&1 | tee "$RUNNER_TEMP/smoke/bootstrap.log"
