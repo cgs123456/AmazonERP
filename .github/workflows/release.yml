@@ -402,7 +402,7 @@ jobs:
           grep -qE "SpapiCredentialBootstrapRunner.* 2 " "$RUNNER_TEMP/smoke/bootstrap.log"
           echo "bootstrap 导入 2 条凭证 OK"
           # 2) spapi prod：启动自检（逐条校验凭证）+ Started
-          docker run -d --name amz-smoke-spapi-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" "${IMAGE_PREFIX}spapi:${IMAGE_TAG}"
+          docker run -d --name amz-smoke-spapi-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" -e SPRING_PROFILES_ACTIVE=prod "${IMAGE_PREFIX}spapi:${IMAGE_TAG}"
           boot_wait amz-smoke-spapi-prod "启动自检通过：activeProfiles=[prod]"
           boot_wait amz-smoke-spapi-prod "已加载店铺凭证=2 条"
           boot_wait amz-smoke-spapi-prod "Started AmzServiceSpapiApplication"
