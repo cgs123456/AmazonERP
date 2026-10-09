@@ -191,6 +191,11 @@ jobs:
           PROFIT_ORDER_COUNT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
           PROFIT_ORDER_COUNT_IT_USER: root
           PROFIT_ORDER_COUNT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # TRANSLATION_L2_REDIS_IT_*：翻译 L2 缓存改 StringRedisTemplate 后（坑 46）的行为级
+          # 守卫——真 redis:7.2 service 上验证读写/TTL/命中短路。自带 @EnabledIfEnvironmentVariable
+          # 守卫，没设变量整类跳过（本地无 Redis 不受影响）。
+          TRANSLATION_L2_REDIS_IT_HOST: '127.0.0.1'
+          TRANSLATION_L2_REDIS_IT_PORT: '6379'
         run: mvn -B test -fae
       - name: Verify clean checkout
         if: always()

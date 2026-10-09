@@ -162,7 +162,8 @@ public class TranslationService {
         writeToRedis(key, translated);
     }
 
-    private String readFromRedis(String key) {
+    // package-private：TranslationL2RedisIT 直接驱动 L2 读写路径（真 Redis），私有则只能靠源码形状断言。
+    String readFromRedis(String key) {
         if (redisTemplate == null) {
             return null;
         }
@@ -174,7 +175,7 @@ public class TranslationService {
         }
     }
 
-    private void writeToRedis(String key, String value) {
+    void writeToRedis(String key, String value) {
         if (redisTemplate == null) {
             return;
         }
