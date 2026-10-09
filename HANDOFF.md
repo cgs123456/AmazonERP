@@ -132,7 +132,8 @@ drift 门禁 101→**100 实体/0 漂移**，hygiene 0，release 契约测试 26
 release image」——syft 拉 `amazonerp-procurement` 镜像层时报
 `oci-registry: failed to fetch layer 12 ... stream error: stream ID 27; PROTOCOL_ERROR; received from peer`。
 同一个 run 里它前面 12 个镜像的 SBOM 全部成功，是 GHCR/网络瞬时抖动（与用户此前遇到的 502 同类）。
-处置：`gh run rerun 37919810558 --failed` 重跑失败 job，不新建 tag、不改代码。
+处置：`gh run rerun 37919810558 --failed` 重跑失败 job，不新建 tag、不改代码——
+重跑后 release job **24/24 步骤全绿**，GitHub Release **v0.1.22 已发布（19 资产）**。
 
 ## 新坑入档（47–50）
 
