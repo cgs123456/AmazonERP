@@ -375,7 +375,8 @@ jobs:
           fi
           # AMZ_CRYPTO_KEY：spapi/user 的 application.yml 显式映射；
           # CRYPTO_KEY：其余服务的宽松绑定（两者都给，见 first-deploy-bootstrap-runbook 5.5）
-          SMOKE_ENV=(-e SPRING_PROFILES_ACTIVE=prod -e MYSQL_HOST=amz-smoke-mysql -e MYSQL_PORT=3306 -e DB_USERNAME=root -e DB_PASSWORD="$SMOKE_DB_PASSWORD" -e AMZ_CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e JWT_SECRET_KEY="$SMOKE_JWT_SECRET" -e REDIS_HOST=amz-smoke-redis -e REDIS_PASSWORD="$SMOKE_REDIS_PASSWORD" -e RABBITMQ_PASSWORD="$SMOKE_RABBIT_PASSWORD" -e SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false)
+          # JAVA_TOOL_OPTIONS：JDK17 容器默认 charset 是 ASCII，中文日志会变 ? 破坏 grep 断言
+          SMOKE_ENV=(-e SPRING_PROFILES_ACTIVE=prod -e JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -e MYSQL_HOST=amz-smoke-mysql -e MYSQL_PORT=3306 -e DB_USERNAME=root -e DB_PASSWORD="$SMOKE_DB_PASSWORD" -e AMZ_CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e JWT_SECRET_KEY="$SMOKE_JWT_SECRET" -e REDIS_HOST=amz-smoke-redis -e REDIS_PASSWORD="$SMOKE_REDIS_PASSWORD" -e RABBITMQ_PASSWORD="$SMOKE_RABBIT_PASSWORD" -e SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false)
           IMAGE_PREFIX="${REGISTRY}/${OWNER}/amazonerp-"
           boot_wait() {
             container="$1"; marker="$2"; found=""
@@ -390,12 +391,14 @@ jobs:
             fi
           }
           # 1) spapi bootstrap：凭证导入（整批校验→加密落库→exit 0）
+          # tee：bootstrap 全量输出进 job log——失败时不再只有一行 exit code 可猜
           docker run --rm --name amz-smoke-spapi-bootstrap --network "$SMOKE_NET" \
             "${SMOKE_ENV[@]}" \
             -e SPAPI_BOOTSTRAP_CREDENTIAL_FILE=/run/secrets/spapi-credentials.json \
             -v "$RUNNER_TEMP/smoke/spapi-credentials.json:/run/secrets/spapi-credentials.json:ro" \
-            "${IMAGE_PREFIX}spapi:${IMAGE_TAG}" > "$RUNNER_TEMP/smoke/bootstrap.log"
-          grep -q "已导入并加密落库 2 条店铺凭证" "$RUNNER_TEMP/smoke/bootstrap.log"
+            "${IMAGE_PREFIX}spapi:${IMAGE_TAG}" 2>&1 | tee "$RUNNER_TEMP/smoke/bootstrap.log"
+          # 成功行钉 ASCII 锚点（logger 名 + 条数），防编码漂移；容器 exit 0 本身已由 set -e 把关
+          grep -qE "SpapiCredentialBootstrapRunner.* 2 " "$RUNNER_TEMP/smoke/bootstrap.log"
           echo "bootstrap 导入 2 条凭证 OK"
           # 2) spapi prod：启动自检（逐条校验凭证）+ Started
           docker run -d --name amz-smoke-spapi-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" "${IMAGE_PREFIX}spapi:${IMAGE_TAG}"
