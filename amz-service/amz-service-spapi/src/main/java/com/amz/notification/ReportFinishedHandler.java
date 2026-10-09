@@ -1,6 +1,6 @@
 package com.amz.notification;
 
-import com.amz.client.ReportsRealClient;
+import com.amz.client.ReportsClient;
 import com.amz.client.dto.ReportInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +14,11 @@ import org.springframework.stereotype.Component;
  * <p>
  * 边界声明：本 Handler 只做「下载并核对字节数」，不做报表内容解析入库。
  * 报表解析要对接具体 reportType 的表结构，属于独立需求，不在此链路硬塞。
+ * <p>
+ * 依赖的是 {@link ReportsClient} 接口而非 {@code ReportsRealClient} 具体类：
+ * 真实/模拟客户端靠 {@code @Profile} 切换（{@code ReportsRealClient} 是 {@code !mock}、
+ * {@code ReportsMockClient} 是 {@code mock}），绑具体类会让 mock profile 下整个 spapi
+ * 因 NoSuchBeanDefinition 起不来（2026-09-30 实测；见 {@code ReportFinishedHandlerTest}）。
  */
 @Slf4j
 @Component
@@ -32,9 +37,9 @@ public class ReportFinishedHandler implements NotificationEventHandler {
     /** 下载失败（通常可重试）。 */
     public static final String ERR_DOWNLOAD_FAILED = "REPORT_DOWNLOAD_FAILED";
 
-    private final ReportsRealClient reportsClient;
+    private final ReportsClient reportsClient;
 
-    public ReportFinishedHandler(ReportsRealClient reportsClient) {
+    public ReportFinishedHandler(ReportsClient reportsClient) {
         this.reportsClient = reportsClient;
     }
 
