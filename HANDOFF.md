@@ -7,7 +7,8 @@
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 上遗留的 4 个 codex/* worktree 已全部收编/清理。
+后端 19 个 Maven 模块可编译可测；master 上遗留的 4 个 codex/* worktree 已全部收编/清理，5 个 codex/* 本地分支已删，工作区干净、
+与 origin/master 同步（HEAD 98419b3）。
 本轮从这些陈旧 worktree 里捞出两个真实启动期缺陷（report 的 Redis 未接线、spapi 报表处理器绑具体
 客户端导致 mock profile 起不来）并修掉，同时把上一轮 loadtest 收编遗留的 CI hygiene 红灯修绿。
 仍未闭环的是「真实外部凭据」（DeepSeek/Keepa/SP-API）与 Nacos 配置中心，两者都不是代码能推进的。
@@ -86,6 +87,9 @@ CI run `37940008909` 的 hygiene job 因此红。这两处是扫描器误报（�
 - `repository_hygiene.py --root .`：**0 findings**；`tools.release.test_repository_hygiene` **7 OK**；
   release tools 全套 **89 OK**
 - 容器 A/B：report 在可达 Redis 下 health **200 UP**、不可达下 **503 DOWN**（见 §C）
+- **2026-10-09 收口复跑**：`git push origin master` 成功（`3fa0803..98419b3`）；`git status --short --branch`
+  显示 `## master...origin/master`（无 ahead/behind）；`git worktree list` 只剩主仓库；本地分支只剩 `master`；
+  `repository_hygiene.py --root .` 复跑 **0 findings**
 
 ## 后续工作方向（按优先级）
 
@@ -102,12 +106,32 @@ CI run `37940008909` 的 hygiene job 因此红。这两处是扫描器误报（�
 5. **冒烟的两处噪声/覆盖缺口**（非阻断）：SkyWalking agent 在冒烟网络里没有 OAP（`Failed to resolve host
    skywalking-oap`）；冒烟只建 `amz_spapi/amz_order/amz_product` 三个库，`FieldPermissionService` 查
    `amz_user` 失败后降级「全部可见」。
-6. **recovery 快照目录**（`AmazonERP-recovery-20260928-092159`，桌面上还有若干同类）：是某个 `codex/*`
-   分支在 `3c8f21e` 的**工作区快照**（无 `.git`，10.1 MB / 337 文件）。SHA 比对：327 个未跟踪文件里
-   132 个与 master 相同、123 个是更旧版本、72 个 master 没有——其中 71 个是一次性 agent 脚本，
-   **只有 1 个是有意删除的交付物**（`ProductServiceImplSearchPagingTest`，见
-   `docs/superpowers/evidence/2026-10-03-endpoint-coverage-v14-ledger.md:151`）。建议**保留**（体积小、
-   不可再生）；若要清理，先确认没有别的东西只存在于快照里。
+6. **recovery 快照目录**（`AmazonERP-recovery-20260928-092159`）：分支 `codex/api-ready-connectors`
+   在 `3c8f21e` 时的工作区快照（无 `.git`，10.1 MB / 337 文件）。**2026-10-09 全量核对桌面目录，
+   同类目录只有这一个**，不是"桌面上很多"。按 Git 归一化口径复算 327 个未跟踪文件：
+   **130 个与 master 字节相同、71 个仅换行符差异、29 个仅文件末尾换行差异、25 个实质差异、72 个 master 没有**。
+   25 个实质差异逐个回溯，**全部命中某个历史提交的旧版本**（`7d933f2` / `d2b7619`，均早于 2026-10-03），
+   即无 master 未收编的独有成果；72 个 master 没有的文件里 71 个是一次性 agent 脚本/探针产物
+   （`_r82_*.py`、`.patch_*.py`、`round33-*.json` 等），只有 1 个是有意删除的交付物
+   （`ProductServiceImplSearchPagingTest`，见 `docs/superpowers/evidence/2026-10-03-endpoint-coverage-v14-ledger.md:151`）。
+   **但该目录含 `_r82_tokens.txt`（本地签发的真实 JWT，非生产凭据）**，属敏感材料，不宜长期散落在桌面。
+   **建议处置：清理**（内容无独有信息，JWT 留着反而是暴露面）；如要留档，先删掉 token 文件再保留。
+   注意：按**原始字节**比较会得到 130/125/72，那是换行符口径造成的假差异，不能据此判断内容新旧。
+
+7. **`%TEMP%` 下的 phase0 残留（50.9 MB / 11 个目录，2026-10-09 实测）**：是 2026-09-29～09-30
+   做「clean-clone 验证 / release 演练」时留下的残缺 clone（只有 `.git/objects`，无 HEAD/config/工作树）。
+   逐个比对对象库后确认：
+   - `amazonerp-phase0-commit-rehearsal-20260929-130209` 含 **7 个主仓库从未出现过的 blob**，
+     来自一个未推送的 commit `4ac9bd6`（"chore(phase0): harden production release baseline"，
+     2026-09-29 13:02）。它与后来真正入库的 `c87a847`（同日 17:34）**内容不同**，且整体更旧
+     （master 比它多 446 行、少 57 行）。差异只集中在 release workflow / Dockerfile / 三个 docs /
+     三个 release 测试脚本。**判定：无需抢救**（已被 `c87a847` 及其后 `d32e1f9` 取代），
+     但删除前应先确认 `c87a847` 确实覆盖了它的意图——已核对，是。
+   - `amazonerp-phase0-final18-rehearsal-20260929-171724` 含 1 个主仓库没有的 commit 对象
+     `ad1b005`，其 tree 与 `c87a847` **完全相同**（`2e591a7`），只是 author/时间不同，**纯重复**。
+   - 其余 9 个目录（`final15/16/17/18-01`、`materialise-probe`、`final12/13`、`p2-perf-mysql`、`actionlint`）
+     的对象**主仓库全部已有**，无独有内容。
+   **建议处置：可全部清理**（共 50.9 MB）；若要保守，先保留 `commit-rehearsal` 一个再删其余。
 
 ## 新坑入档（51–52）
 
