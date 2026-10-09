@@ -179,6 +179,23 @@
                 <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
                 <version>${mybatis.version}</version>
             </dependency>
+
+            <!-- Boot 4 专用变体（3.5.17 起官方发布）：plain spring.datasource 的服务必须用它。
+
+                 实测（2026-10-09，容器 prod 启动）：boot3-starter 的 MybatisPlusAutoConfiguration 在
+
+                 无 dynamic-datasource 的上下文里被 Boot 4 整体忽略（不进条件评估报告），mapper 全部
+
+                 缺 sqlSessionFactory 启动即崩；boot4-starter 修复该装配。 -->
+
+            <dependency>
+
+                <groupId>com.baomidou</groupId>
+
+                <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+                <version>${mybatis.version}</version>
+
+            </dependency>
             <!-- 3.5.9 起分页拦截器拆到独立构件：order 的 MybatisPlusConfig 需要 -->
             <dependency>
                 <groupId>com.baomidou</groupId>
