@@ -134,6 +134,11 @@ jobs:
           PROFIT_ORDER_COUNT_IT_URL: 'jdbc:mysql://127.0.0.1:3306/amz_ad_it?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC'
           PROFIT_ORDER_COUNT_IT_USER: root
           PROFIT_ORDER_COUNT_IT_PASSWORD: ${{ secrets.DB_PASSWORD || 'ci_root_pass' }}
+          # TRANSLATION_L2_REDIS_IT_*：翻译 L2 缓存改 StringRedisTemplate 后（坑 46）的行为级
+          # 守卫——真 redis:7.2 service 上验证读写/TTL/命中短路。自带 @EnabledIfEnvironmentVariable
+          # 守卫，没设变量整类跳过（本地无 Redis 不受影响）。
+          TRANSLATION_L2_REDIS_IT_HOST: '127.0.0.1'
+          TRANSLATION_L2_REDIS_IT_PORT: '6379'
         run: mvn -B -ntp test -fae
       - name: Frontend Install
         working-directory: amz-frontend
@@ -320,6 +325,90 @@ jobs:
               "${REF%:*}@${DIGEST}" > /dev/null
             echo "cosign verified ${REF%:*}@${DIGEST}"
           done
+      # Prod-profile 带 DB/Redis 启动冒烟（坑 42/46 的自动化门禁）：
+      # runtime-smoke 只起无库服务，mybatis-plus 自动装配（boot4-starter 之前的 Boot 4 缺口）、
+      # dynamic-datasource、redisson 这类"带数据源/中间件才暴露"的问题在 CI 全绿下也会漏——
+      # 唯一把关方式是把刚烘焙的镜像对着真 MySQL/Redis 以 prod profile 启动一次。
+      # spapi 顺带覆盖 bootstrap 凭证导入链路（加密落库 + ConnectorStartupCheck）。
+      # 凭证为 SYN- 前缀合成数据，非真实凭据；nacos 在冒烟中显式关闭（部署面由 compose/k8s 供给）。
+      - name: Prod-profile boot smoke (with DB and Redis)
+        if: github.event_name == 'push'
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SMOKE_DB_PASSWORD: smoke_db_pw
+          SMOKE_JWT_SECRET: smoke-jwt-secret-for-boot-smoke-0123456789abcdef
+          SMOKE_REDIS_PASSWORD: smoke_redis_pw
+          SMOKE_RABBIT_PASSWORD: smoke_rabbit_pw
+          SMOKE_MONGO_PASSWORD: smoke_mongo_pw
+        run: |
+          set -euo pipefail
+          export SMOKE_CRYPTO_KEY="$(openssl rand -base64 32)"
+          export SMOKE_NET="boot-smoke-${GITHUB_RUN_ID}"
+          docker network create "$SMOKE_NET"
+          cleanup() {
+            docker ps -aq --filter "name=amz-smoke-" | xargs -r docker rm -f
+            docker network rm "$SMOKE_NET"
+          }
+          trap cleanup EXIT
+          mkdir -p "$RUNNER_TEMP/smoke"
+          cat > "$RUNNER_TEMP/smoke/spapi-credentials.json" <<'JSON'
+          [
+            {"shopId": 9101, "clientId": "amzn1.application-oa2-client.SYN-CLIENT-SMOKE", "clientSecret": "SYN-SECRET-SMOKE-0123456789", "refreshToken": "Atzr|SYN-REFRESH-SMOKE-0123456789", "region": "NA", "marketplaceId": "ATVPDKIKX0DER", "sellerId": "SYN-SELLER-SMOKE"},
+            {"shopId": 9102, "clientId": "amzn1.application-oa2-client.SYN-CLIENT-SMOKE-2", "clientSecret": "SYN-SECRET-SMOKE-9876543210", "refreshToken": "Atzr|SYN-REFRESH-SMOKE-9876543210", "region": "EU", "marketplaceId": "A1PA6795UKMFR9", "sellerId": "SYN-SELLER-SMOKE-2"}
+          ]
+          JSON
+          docker run -d --name amz-smoke-mysql --network "$SMOKE_NET" -e MYSQL_ROOT_PASSWORD="$SMOKE_DB_PASSWORD" mysql:8.0
+          docker run -d --name amz-smoke-redis --network "$SMOKE_NET" redis:7 redis-server --requirepass "$SMOKE_REDIS_PASSWORD"
+          mysql_ready=""
+          for i in $(seq 1 30); do
+            if docker exec amz-smoke-mysql mysqladmin ping -uroot -p"$SMOKE_DB_PASSWORD" --silent; then mysql_ready=yes; break; fi
+            sleep 2
+          done
+          if [ -z "$mysql_ready" ]; then
+            docker logs --tail 50 amz-smoke-mysql
+            echo "MySQL 未在 60 秒内就绪"
+            exit 1
+          fi
+          docker exec amz-smoke-mysql mysql -uroot -p"$SMOKE_DB_PASSWORD" -e "CREATE DATABASE amz_spapi; CREATE DATABASE amz_order; CREATE DATABASE amz_product;"
+          # AMZ_CRYPTO_KEY：spapi/user 的 application.yml 显式映射；
+          # CRYPTO_KEY：其余服务的宽松绑定（两者都给，见 first-deploy-bootstrap-runbook 5.5）
+          SMOKE_ENV=(-e SPRING_PROFILES_ACTIVE=prod -e MYSQL_HOST=amz-smoke-mysql -e MYSQL_PORT=3306 -e DB_USERNAME=root -e DB_PASSWORD="$SMOKE_DB_PASSWORD" -e AMZ_CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e JWT_SECRET_KEY="$SMOKE_JWT_SECRET" -e REDIS_HOST=amz-smoke-redis -e REDIS_PASSWORD="$SMOKE_REDIS_PASSWORD" -e RABBITMQ_PASSWORD="$SMOKE_RABBIT_PASSWORD" -e SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false)
+          IMAGE_BASE="${REGISTRY}/${OWNER}/amazonerp"
+          boot_wait() {
+            container="$1"; marker="$2"; found=""
+            for i in $(seq 1 45); do
+              if docker logs "$container" 2>&1 | grep -q "$marker"; then found=yes; break; fi
+              sleep 2
+            done
+            if [ -z "$found" ]; then
+              docker logs --tail 100 "$container"
+              echo "$container 未在 90 秒内出现启动标记: $marker"
+              exit 1
+            fi
+          }
+          # 1) spapi bootstrap：凭证导入（整批校验→加密落库→exit 0）
+          docker run --rm --name amz-smoke-spapi-bootstrap --network "$SMOKE_NET" \
+            "${SMOKE_ENV[@]}" \
+            -e SPAPI_BOOTSTRAP_CREDENTIAL_FILE=/run/secrets/spapi-credentials.json \
+            -v "$RUNNER_TEMP/smoke/spapi-credentials.json:/run/secrets/spapi-credentials.json:ro" \
+            "${IMAGE_BASE}/spapi:${IMAGE_TAG}" > "$RUNNER_TEMP/smoke/bootstrap.log"
+          grep -q "已导入并加密落库 2 条店铺凭证" "$RUNNER_TEMP/smoke/bootstrap.log"
+          echo "bootstrap 导入 2 条凭证 OK"
+          # 2) spapi prod：启动自检（逐条校验凭证）+ Started
+          docker run -d --name amz-smoke-spapi-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" "${IMAGE_BASE}/spapi:${IMAGE_TAG}"
+          boot_wait amz-smoke-spapi-prod "启动自检通过：activeProfiles=[prod]"
+          boot_wait amz-smoke-spapi-prod "已加载店铺凭证=2 条"
+          boot_wait amz-smoke-spapi-prod "Started AmzServiceSpapiApplication"
+          docker rm -f amz-smoke-spapi-prod
+          # 3) order prod
+          docker run -d --name amz-smoke-order-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" "${IMAGE_BASE}/order:${IMAGE_TAG}"
+          boot_wait amz-smoke-order-prod "Started AmzServiceOrderApplication"
+          docker rm -f amz-smoke-order-prod
+          # 4) product prod（需要 MONGO_PASSWORD 占位符）
+          docker run -d --name amz-smoke-product-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" -e MONGO_PASSWORD="$SMOKE_MONGO_PASSWORD" "${IMAGE_BASE}/product:${IMAGE_TAG}"
+          boot_wait amz-smoke-product-prod "Started AmzServiceProductApplication"
+          docker rm -f amz-smoke-product-prod
+          echo "prod-profile boot smoke 全部通过（spapi bootstrap+prod / order prod / product prod）"
       - name: Generate release manifest
         if: github.event_name == 'push'
         run: |
@@ -367,15 +456,21 @@ jobs:
           # 失败掩蔽写法（两个竖线接 true）已被契约测试列为禁词，注释里都不能出现
           # --sort=-creatordate 用的是 tag 对象创建时间，本地提前建 tag 或同秒批量建时排序可能与发布顺序不符；
           # --sort=-v:refname 用版本号语义排序（v1.2.3 < v1.2.4），保证取到上一版稳定 tag。
-          prev_tag="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | sed -n 2p)"
+          # 上一版解析：按版本号语义从新到旧，取第一个（当前 tag 之外的）带
+          # release-manifest.json 的 tag——中间夹着发布失败的 tag（如 v0.1.11）时，
+          # 不再整体跳过，而是继续向前找最近的真实基线；一个都没有才显式跳过。
+          prev_tag=""
+          for t in $(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname); do
+            if [ "$t" = "${GITHUB_REF_NAME}" ]; then
+              continue
+            fi
+            if gh release view "$t" --json assets --jq '.assets[].name' | grep -q '^release-manifest\.json$'; then
+              prev_tag="$t"
+              break
+            fi
+          done
           if [ -z "$prev_tag" ]; then
-            echo "没有上一版 tag，跳过回滚演练（首次发布）"
-            exit 0
-          fi
-          # 上一版 tag 可能是发布失败的（没有 GitHub Release / 没有 manifest 资产）。
-          # 没有基线就无法演练：显式跳过并说明原因，下一次发布会有真实上一版 manifest。
-          if ! gh release view "$prev_tag" --json assets --jq '.assets[].name' | grep -q '^release-manifest\.json$'; then
-            echo "上一版 $prev_tag 没有已发布的 release-manifest.json（该次发布未完成），跳过回滚演练"
+            echo "历史 tag 里没有带 release-manifest.json 的版本，跳过回滚演练（无可用基线）"
             exit 0
           fi
           gh release download "$prev_tag" --pattern 'release-manifest.json' --output previous-manifest.json
