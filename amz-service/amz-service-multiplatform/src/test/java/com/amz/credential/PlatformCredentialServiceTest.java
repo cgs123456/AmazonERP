@@ -117,7 +117,7 @@ class PlatformCredentialServiceTest {
     @Test
     @DisplayName("全局也未命中 → 返回空凭证")
     void testResolveGlobalMissReturnsEmpty() {
-        when(mapper.selectOne(any())).thenReturn(null, null);
+        when(mapper.selectOne(any())).thenReturn(null).thenReturn(null);
 
         PlatformCredential result = service.resolve(1L, "UNKNOWN_PLATFORM");
 

@@ -4,7 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializer;
 
 import java.util.LinkedHashMap;
@@ -34,8 +34,8 @@ class RedisTemplatesTest {
         assertSame(factory, template.getConnectionFactory(), "连接工厂必须由调用方传入并原样设置");
         assertEquals(RedisSerializer.string(), template.getKeySerializer());
         assertEquals(RedisSerializer.string(), template.getHashKeySerializer());
-        assertTrue(template.getValueSerializer() instanceof GenericJackson2JsonRedisSerializer);
-        assertTrue(template.getHashValueSerializer() instanceof GenericJackson2JsonRedisSerializer);
+        assertTrue(template.getValueSerializer() instanceof GenericJacksonJsonRedisSerializer);
+        assertTrue(template.getHashValueSerializer() instanceof GenericJacksonJsonRedisSerializer);
     }
 
     @Test

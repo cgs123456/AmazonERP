@@ -2,7 +2,7 @@ package com.amz.redis;
 
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
+import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializer;
 
 /**
@@ -22,7 +22,9 @@ public final class RedisTemplates {
     }
 
     /**
-     * key/hashKey 用 String 序列化，value/hashValue 用 JSON —— 与原 4 份副本一致。
+     * key/hashKey 用 String 序列化，value/hashValue 用 JSON（Jackson 3：Boot 4 的 spring-data-redis
+     * 4.x 把 Jackson 2 版标为 deprecated-for-removal，GenericJacksonJsonRedisSerializer 是官方等价替代；
+     * 带类型往返契约由 RedisTemplatesTest 钉死）。
      * 不调用 {@code afterPropertiesSet()}：交给 Spring 在 Bean 初始化阶段做，
      * 与原 {@code @Bean} 方法的时序保持相同。
      */
@@ -30,7 +32,9 @@ public final class RedisTemplates {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
-        GenericJackson2JsonRedisSerializer jsonRedisSerializer = new GenericJackson2JsonRedisSerializer();
+        GenericJacksonJsonRedisSerializer jsonRedisSerializer = GenericJacksonJsonRedisSerializer.builder()
+                .enableUnsafeDefaultTyping()
+                .build();
         template.setKeySerializer(RedisSerializer.string());
         template.setHashKeySerializer(RedisSerializer.string());
         template.setValueSerializer(jsonRedisSerializer);
