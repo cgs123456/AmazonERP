@@ -34,6 +34,7 @@ const NAV = [
   { path: '/inventory', linkText: '库存监控' },
   { path: '/warehouse', linkText: '海外仓' },
   { path: '/warehouse-alerts', linkText: '海外仓预警' },
+  { path: '/logistics', linkText: '物流看板' },
   { path: '/ads', linkText: '广告管理' },
   { path: '/profit', linkText: '利润报表' },
   { path: '/finance', linkText: '财务管理' },

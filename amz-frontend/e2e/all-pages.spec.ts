@@ -198,7 +198,17 @@ test.describe('Warehouse', () => {
   })
 })
 
-// ═══ 9. 消息通知 ═══
+// ═══ 9. 物流看板 ═══
+test.describe('Logistics', () => {
+  test('应渲染物流看板页面', async ({ page }) => {
+    await page.goto('/logistics')
+    await page.waitForTimeout(2000)
+    await expect(page.locator('.logistics-page')).toBeVisible()
+    await expect(page.locator('.hero-title')).toContainText('物流看板')
+  })
+})
+
+// ═══ 10. 消息通知 ═══
 test.describe('Notifications', () => {
   test('消息中心不再摆硬编码示例：空态 + 不持久化说明（该页无 REST 端点）', async ({ page }) => {
     await page.goto('/notifications')
@@ -213,7 +223,7 @@ test.describe('Notifications', () => {
   })
 })
 
-// ═══ 10. 404 页面 ═══
+// ═══ 11. 404 页面 ═══
 test.describe('404', () => {
   test('访问不存在路径应显示 404 页面', async ({ page }) => {
     await page.goto('/this-path-does-not-exist-12345')
@@ -222,7 +232,7 @@ test.describe('404', () => {
   })
 })
 
-// ═══ 11. 路由守卫 ═══
+// ═══ 12. 路由守卫 ═══
 test.describe('Route Guard', () => {
   test('受保护路由在无 token 时应重定向到首页', async ({ browser }) => {
     // 自建干净上下文确保无 token
