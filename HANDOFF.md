@@ -1,3 +1,117 @@
+# HANDOFF — v0.1.20 发版门禁首次全绿 + Seata「默认关闭」落地（2026-10-09 更新）
+
+> **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
+> 本次更新截至 commit `e0c6c6d` / tag **v0.1.21**；其前 `5520065` / tag **v0.1.20**
+> 已由真 release run `37909617071` 验证：**3/3 job success，含 Prod-profile boot smoke**。
+
+## 项目现状一句话
+
+发版链恢复「tag 即发布」，并且**第一次真的把「带 DB/Redis 的 prod profile 启动」跑成了门禁**：
+v0.1.20 是仓库历史上第一个 release job 全步骤绿的版本（19 资产）；v0.1.13–v0.1.19 的五连红
+根因是冒烟脚本自己的两个 shell 陷阱，**不是应用缺陷**。v0.1.21 在其上修掉 Seata「默认关闭」
+只写在死配置里的缺陷。发布已不再需要人工审批（见坑 50）。
+
+## 本班三件事
+
+### 1. 五连红根因：boot_wait 的两个 shell 陷阱（`5520065` / v0.1.20）
+
+v0.1.13–v0.1.19 每次都死在 `Prod-profile boot smoke`，报「未在 180 秒内出现启动标记」。
+逐字复现后确认**标记一直在日志里**，是判据本身永远不可能成立：
+
+| 陷阱 | 机理 | 为什么一直没被看穿 |
+| --- | --- | --- |
+| `set -o pipefail` + `docker logs … \| grep -q` | grep -q 命中首行即退出 → docker logs 继续写已关闭的管道 → SIGPIPE(141) → pipefail 把这个非零状态当整条管道的结果 → `if` 永远走 else | 容器其实已启动并在 8096 上正常应答 HTTP；失败时只 `--tail 300`，看不到启动段 |
+| grep 默认 BRE 把 `[prod]` 当字符类 | 标记 `启动自检通过：activeProfiles=[prod]` 里的 `[prod]` 是正则字符类，字面量永远匹配不上 | 断言"看起来"是精确匹配，实际是正则 |
+
+修复：先把 `docker logs` 落到文件，再用 `grep -qF --` 匹配文件（无管道、无 SIGPIPE、无正则解释）；
+失败时改为打印**全量**日志而不是 tail 300。rollback drill 里同类的 `gh … | grep -q` 一并改掉
+（gh 输出小，所以它一直是潜伏的）。新增契约测试
+`test_boot_smoke_marker_match_is_pipefail_and_regex_safe` 钉死两半，并对修复前的 workflow
+做过变异验证（必红）。
+
+**证据链**：① 本机用从 GHCR 拉下来的 v0.1.19 真实镜像跑完整冒烟（bootstrap 导入 2 条 →
+spapi prod 标记+条数+Started → order prod Started → product prod Started）**四段全过**；
+② 真 CI run `37909617071` 的 release job 19 步全绿，步骤 13（Prod-profile boot smoke）首次 success；
+③ GitHub Release v0.1.20 **19 资产**。
+
+### 2. Seata「默认关闭」是假的（`e0c6c6d` / v0.1.21）
+
+`amz-common/src/main/resources/seata-default.yml` 写着 `seata.enabled: ${SEATA_ENABLED:false}`，
+但这个文件既不是 `application*.yml`，全仓也没有任何 `spring.config.import` 引用它——**死配置**。
+于是 `seata.enabled` 运行期根本不存在，而 Seata 自己的 `SeataAutoConfiguration` 上是
+`@ConditionalOnProperty(..., matchIfMissing = true)`——**属性缺失 = 启用**。后果：每个服务无条件
+拉起 GlobalTransactionScanner，在没有 TC 的环境里每 10 秒刷一条
+`ConfigNotFoundException: service.vgroupMapping.default_tx_group configuration item is required`，
+与 README「条件启用 SEATA_ENABLED=true」的说法相反；唯一的 `@GlobalTransactional`
+（`OrderServiceImpl.syncAmazonOrder`）背后也没有可用的 TC。
+
+修复：新增 `SeataDefaultsEnvironmentPostProcessor`，把这份文件作为**最低优先级**属性源挂进
+Environment（`addLast` + `LOWEST_PRECEDENCE`），文件从此真正生效，而显式 `SEATA_ENABLED=true`
+或 yml 里的值仍然优先。选择在 amz-common 做而不是往 16 份服务 yml 里写占位符，是为了不触发
+Compose/K8s/.env 三处同步（坑 28）。
+
+**容器对照实测**（同一 MySQL/Redis、同一份合成凭证，唯一变量是新旧代码）：
+
+| 运行对象 | 启动标记 | Started | NettyClientChannelManager 报错 | ConfigNotFoundException |
+| --- | --- | --- | --- | --- |
+| v0.1.19 镜像（对照） | 有 | 有 | 6 | 2 |
+| 新 jar（修复后） | 有 | 有 | **0** | **0** |
+
+（v0.1.20 的真 CI 冒烟日志里同样是 6 / 2，与本地对照一致。）
+
+### 3. 发布审批按用户要求取消（坑 50）
+
+`production` 环境原有 required_reviewers=cgs123456，导致每个 tag 都要人工点批准。
+按用户指令移除该保护规则（`PUT /repos/{owner}/{repo}/environments/production`，
+body `{"reviewers":[]}`；环境本身保留）。**副作用要说清**：以后任何 tag 推送都会直接走完整个
+发布链并创建 GitHub Release，不再有人工闸门。workflow 里的 `environment: production` 仍在
+（契约测试 `test_release_job_requires_production_environment` 要求如此），只是它不再要求审批。
+
+## 新坑入档（47–50）
+
+47. **`set -o pipefail` + `cmd | grep -q` 是"命中也判失败"**：grep -q 一命中就退出，生产者继续写
+    管道拿 SIGPIPE(141)，pipefail 把这个非零状态当整条管道的结果。要判"日志里有没有某行"，
+    先落盘再 `grep -qF --` 匹配文件。生产端输出很小（如 `gh … --jq`）时，这个坑是潜伏的。
+48. **判据里的字面量必须用 `grep -F`**：`activeProfiles=[prod]` 在 BRE 里是字符类，"精确匹配"
+    的断言会永远为假，而且报错方向完全误导（报"标记未出现"，实际是匹配语法错）。
+49. **Boot 4 同时存在两个 `EnvironmentPostProcessor` 接口**：`org.springframework.boot.EnvironmentPostProcessor`
+    （新，`META-INF/spring.factories` 的键认这个）与 `org.springframework.boot.env.EnvironmentPostProcessor`
+    （旧，方法签名一模一样）。实现旧接口 → 启动直接
+    `IllegalArgumentException: Class [...] is not assignable to factory type [...]`，连环境都准备不了。
+    契约测试要断言"注册键解析出的接口 `isAssignableFrom` 实现类"，只查字符串的版本是绿的。
+50. **GitHub `production` 环境的 required_reviewers 是 tag 发布的人工闸门**：表现为 run 停在
+    "Waiting for approval"（jobs 里 release 处于 waiting）。可用 API 增删：
+    `PUT /repos/{owner}/{repo}/environments/{name}`，body `{"reviewers":[{...}]}` 设置、
+    `{"reviewers":[]}` 清空。取消后 tag 即推即发，是"用户明确要求"的取舍，不是默认建议。
+
+## 后续工作方向（按优先级）
+
+1. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。
+   到位后按 `docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md` 录凭证 → 容器实跑导入 →
+   对照 B 桶断言确认点名失败消失。**别再为 B 桶加新断言**（已补齐，重复投资）。
+2. **Seata 若要真正启用**（当前是显式降级为本地事务）：需要 Seata Server + 配置中心 +
+   `vgroupMapping`，然后给 order 注入 `SEATA_ENABLED=true`（全仓唯一的 `@GlobalTransactional`
+   消费方）。TC 就绪前不要打开。
+3. **同类死配置还有两处未修**（本次只修了 seata，别以为同类问题都清了）：
+   - `amz-common/src/main/resources/jwt-config.yml`：全仓引用点 0，JWT 属性实际由各服务
+     `application.yml` 提供——要么删，要么照 seata 的方式接上；
+   - 16 份 `bootstrap.yml`：无 `spring-cloud-starter-bootstrap`、无 `spring.config.import`，
+     在 Spring Cloud 2023.0.x 下不生效（spec P0-25(b) 未闭环），当前 Nacos 注册/配置拉取实际
+     只靠环境变量。
+4. **冒烟的两处噪声/覆盖缺口**（非阻断，别当失败去追）：
+   - SkyWalking agent 由 Dockerfile 内置，冒烟网络里没有 OAP → `Failed to resolve host
+     skywalking-oap`（v0.1.20 日志 12 条）；要清掉需在冒烟里显式禁用 agent；
+   - 冒烟只建 `amz_spapi/amz_order/amz_product` 三个库，`FieldPermissionService` 查
+     `amz_user.amz_field_permission` 失败 → 降级「全部可见」（v0.1.20 日志各 1 条）；
+     要在冒烟里覆盖该路径需补建库 + 迁移。
+5. **本机验证口径**（延续旧节，不重复）：本机排除 3 个 AF_UNIX 环境类后整仓 `mvn clean test`
+   必须绿（旧基线 2039/0F/0E/17S；本次新增 5 例 Seata 契约测试，全仓数由 v0.1.21 的
+   quality-gate 复核）；`checkstyle-critical` 0；`repository_hygiene.py --root .` 0。
+   本次实跑：amz-common 单模块 188/0F/0E、checkstyle-critical 0、hygiene 0、
+   `python -m unittest tools.release.test_release_workflow` 26 OK、release tools 89 OK。
+
+---
+
 # HANDOFF — v0.1.12 发布闭环 + v0.1.11 容器实测盲区修复（2026-10-09 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
