@@ -1,82 +1,104 @@
-# Amazon-ERP JMeter 压测说明
+# AmazonERP performance test assets
 
-本目录包含基于 Apache JMeter 5.6+ 的订单接口压测计划。
+These assets target the **gateway origin directly** (default `http://127.0.0.1:10010`).
+The gateway authenticates with the `token` header and does not expose a generic
+`/api/**` route. Do not add a frontend `/api` prefix unless you are testing the
+frontend nginx configuration itself.
 
-## 压测场景
+## Read-path baseline
 
-| 场景 | 接口 | 并发用户 | 持续时间 | 说明 |
-| --- | --- | --- | --- | --- |
-| 订单同步 | `POST /api/order/sync` | 1000 | 5 分钟 | 60s 爬坡，吞吐量 600/min |
-| 利润计算 | `GET  /api/finance/profit/calc` | 500 | 100 次循环 | 30s 爬坡 |
-| Agent 聊天 | `POST /api/ai/agent/chat` | 100 | 20 次循环 | 20s 爬坡，超时 120s（含 LLM 延迟） |
+The recommended first pass is the dependency-free runner:
 
-## 前置准备
-
-1. 安装 JDK 17+
-2. 下载并解压 [Apache JMeter 5.6.3](https://jmeter.apache.org/download_jmeter.cgi)
-3. 将 `bin/` 加入 `PATH`，或使用全路径调用 `jmeter` / `jmeter.bat`
-4. 准备好可用的 JWT Token（通过登录接口获取），用于 `auth.token` 参数
-
-## 执行命令
-
-### GUI 模式（调试用，不要用于正式压测）
-
-```bash
-jmeter -t order-api-stress-test.jmx
+```powershell
+$env:AUTH_TOKEN = "<JWT>"
+$env:SHOP_ID = "900000000000001000"
+python loadtest/scripts/bench.py `
+  --base-url http://127.0.0.1:10010 `
+  --scenario order-list `
+  --concurrency 10 `
+  --requests 100 `
+  --output .\loadtest-results\order-list.json
 ```
 
-### 非 GUI 模式（推荐，正式压测）
+It reports success/error counts, TPS, and P50/P95/P99 latency. The runner uses
+`token: <JWT>` and the real gateway paths:
 
-```bash
-# 使用默认配置（host=erp.amz.local, port=80）
-jmeter -n -t order-api-stress-test.jmx \
-  -l result.jtl \
-  -e -o ./report \
-  -Jauth.token=eyJhbGciOiJIUzI1NiJ9.xxx.yyy
+| Scenario | Method and path |
+| --- | --- |
+| `order-list` | `GET /order/list?shopId=<id>&page=1&size=20` |
+| `report-dashboard` | `GET /report/dashboard/<id>?dateRange=7d` |
+| `finance-profit` | `GET /finance/profit/sku/<id>?depositAfter=...&depositBefore=...` |
+| `inventory-health` | `GET /spapi/inventory/health/<id>` |
+| `ai-agent` | `POST /ai/agent/chat` with `messages[]` |
+| `spapi-sync` | `POST /spapi/sync/orders?shopId=<id>` (write path, opt-in only) |
 
-# 自定义目标主机与端口
-jmeter -n -t order-api-stress-test.jmx \
-  -l result-$(date +%Y%m%d-%H%M).jtl \
-  -e -o ./report-$(date +%Y%m%d-%H%M) \
-  -Jhost=192.168.1.100 \
-  -Jport=30100 \
-  -Jprotocol=http \
-  -Jauth.token=eyJhbGciOiJIUzI1NiJ9.xxx.yyy
-```
+`spapi-sync` and `ai-agent` are not valid general read-path baselines:
+`spapi-sync` requires OPERATOR/ADMIN and a real or mock SP-API boundary; with no
+`DEEPSEEK_API_KEY`, `ai-agent` exercises the failure path only.
 
-### 参数说明（命令行 `-J` 覆盖）
+## JMeter
 
-| 参数 | 默认值 | 说明 |
+`order-api-stress-test.jmx` is the JMeter 5.6+ equivalent. Override the
+following properties with `-J`:
+
+| Property | Default | Meaning |
 | --- | --- | --- |
-| `host` | `erp.amz.local` | 目标主机（域名/IP） |
-| `port` | `80` | 目标端口（K8s NodePort 时改为 30100） |
-| `protocol` | `http` | 协议（http/https） |
-| `context` | `/api` | 接口上下文路径 |
-| `auth.token` | 空 | JWT Bearer Token |
+| `host` | `127.0.0.1` | Gateway host |
+| `port` | `10010` | Gateway port |
+| `protocol` | `http` | `http` or `https` |
+| `context` | empty | Leave empty for direct gateway access |
+| `shopId` | empty | Required for `@ShopScoped` endpoints |
+| `auth.token` | empty | JWT sent as `token: <JWT>` |
+| `users.order` | `50` | Order-list users |
+| `users.report` | `25` | Report users |
+| `users.finance` | `25` | Finance users |
+| `users.inventory` | `25` | Inventory users |
+| `users.chat` | `0` | AI is opt-in; enable the disabled AI thread group only with a real key |
 
-## 结果查看
+Example:
 
-- **HTML 报告**：`-e -o ./report` 生成的目录，浏览器打开 `index.html`
-- **JTL 文件**：原始结果数据，可后续用 `jmeter -g result.jtl -o report/` 重新生成 HTML 报告
-- **关键指标**：
-  - Throughput（TPS）—— 每秒事务数
-  - Response Time（P95/P99）—— 95/99 分位响应时间
-  - Error % —— 错误率
-  - Active Threads —— 活跃线程数
+```bash
+jmeter -n -t order-api-stress-test.jmx \
+  -l result.jtl -e -o ./report \
+  -Jhost=127.0.0.1 -Jport=10010 -Jprotocol=http \
+  -JshopId=900000000000001000 \
+  -Jauth.token="$AUTH_TOKEN"
+```
 
-## 性能基线参考
+The write-path thread group is disabled by default. Enable it only after
+confirming the role, shop scope, idempotency, and SP-API boundary. The
+`ai-agent` thread group is also disabled by default; enable it only when a real
+`DEEPSEEK_API_KEY` is configured, otherwise it would measure a failure path.
+Each enabled sampler asserts both HTTP 200 and the gateway response
+`$.code == 200`.
 
-| 接口 | 目标 TPS | P95 响应时间 | 错误率 |
+## Gatling
+
+`ErpStressTest.scala` is the Gatling 3.9+/Scala 2.13 equivalent. It requires
+`target.token` and `target.shopId`; `target.context` defaults to empty.
+
+## Target values (not measured)
+
+The numbers below are **target values only**. They are not results, are not a
+capacity commitment, and are **not a measured baseline**:
+
+| Interface | Target TPS | Target P95 | Target error rate |
 | --- | --- | --- | --- |
-| 订单同步 | ≥ 50 | ≤ 5s | < 1% |
-| 利润计算 | ≥ 100 | ≤ 2s | < 0.5% |
-| Agent 聊天 | ≥ 5 | ≤ 30s | < 5% |
+| Order list | >= 50 | <= 5s | < 1% |
+| Report / profit read | >= 100 | <= 2s | < 0.5% |
+| Inventory health | >= 50 | <= 2s | < 1% |
+| Agent chat (real key required) | >= 5 | <= 30s | < 5% |
 
-## 注意事项
+A real baseline must include the hardware, JVM parameters, dataset size,
+concurrency/ramp, duration, error rate, TPS, P50/P95/P99, and service/DB/Redis
+resource observations.
 
-1. **不要在 GUI 模式下做正式压测**，GUI 模式开销大，结果不准
-2. 压测客户端机器需要足够资源（1000 并发约需 4C8G）
-3. 压测前请确认目标环境容量，避免压垮生产环境
-4. 压测期间关注：DB 连接池、Redis 连接数、JVM GC、网络带宽
-5. Agent 聊天场景涉及 LLM 调用，外部 API 速率限制可能成为瓶颈
-6. 如需分布式压测，参考 [JMeter Distributed Testing](https://jmeter.apache.org/usermanual/jmeter_distributed_testing_step_by_step.html)
+## Prerequisites and limits
+
+- Use a deterministic synthetic dataset and record its tier/count.
+- Keep the gateway, services, MySQL, Redis, and the load generator on the same
+  host only for smoke; it is not a production capacity test.
+- A failed AI request with an empty `DEEPSEEK_API_KEY` is not an LLM latency
+  measurement.
+- Run `python -m unittest loadtest.tests.test_loadtest_contracts -v` before
+  trusting any performance asset.

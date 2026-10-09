@@ -222,6 +222,11 @@
       "sha256": "ca1ee9439c7d671d1675aaccb1875a818036d54c2893aef05be2f96c989027ab"
     },
     {
+      "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesUpgradeFlywayMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "sha256": "b294fd58adc532b900b07b06cee8040e4405027e9c5f6362e6fe6ffd68a11193"
+    },
+    {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/BareSqlBuiltSchemaFlywayStartIT.java",
       "rule": "secret-like-assignment",
       "sha256": "44e42e738425640bf1f6756fc42a75a0584f8dae3ddd81d6aa58a581ffc87537"
@@ -284,12 +289,12 @@
     {
       "path": "loadtest/gatling/ErpStressTest.scala",
       "rule": "secret-like-assignment",
-      "sha256": "cb96c88eebc0d139887c32acd29d9344d27bb7b28770d34842f5ae6f4b05bb18"
+      "sha256": "0440d3e34fe460aefa36dadf9122a1b1ce3edf980c5864e63d13b57e6d4e9fd4"
     },
     {
       "path": "loadtest/jmeter/README.md",
       "rule": "secret-like-assignment",
-      "sha256": "263c98e26c31846df6ca017fc8a7dfe3ade51d1507f5c85607fc6090f64f7cb6"
+      "sha256": "7a669fc393983fbfdb6878710ccd63ebe3c1822b2733e60a42014bbab84e73e1"
     },
     {
       "path": "tools/connector-acceptance/acceptance_runner.py",
