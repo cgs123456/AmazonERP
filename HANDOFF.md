@@ -140,7 +140,7 @@ CI run `37940008909` 的 hygiene job 因此红。这两处是扫描器误报（�
 `repository_hygiene.py --root .` 与 `--include-untracked` 均 **0 findings**；
 `tools.release.test_repository_hygiene` **7 OK**；
 `mvn -B -o -pl spapi,report -am -DskipTests test-compile` **BUILD SUCCESS**。
-## 新坑入档（51–52）
+## 新坑入档（51–53）
 
 51. **`git diff --no-index` 的 `<`/`>` 与「谁新谁旧」无关**：`git diff --no-index -- A B` 里 `<` 是 A、
     `>` 是 B；把它当成「减号=旧、加号=新」会读反。判定陈旧 worktree 里某文件是不是「修复」必须做
@@ -149,6 +149,12 @@ CI run `37940008909` 的 hygiene job 因此红。这两处是扫描器误报（�
     `spring-boot-starter-data-redis` 而不写 `spring.data.redis.host`，服务在容器里会连 `localhost:6379`
     并把 `/actuator/health` 拖成 DOWN，进而让 compose/k8s 的健康检查恒失败——**不报错、不崩溃，只是探针
     永远不健康**。新增任何带外部依赖的 starter 都要同时回答「配置从哪来、两条部署路径都供了吗」。
+
+53. **删除 git 目录前先清只读属性**：`[System.IO.Directory]::Delete($p,$true)` 对 git 松散对象会报
+    `Access to the path '<sha>' is denied.`——`clone` 出来的对象文件带只读属性。必须先递归把文件
+    `IsReadOnly=$false`、子目录 `Attributes='Normal'`，再删。本轮第一轮直接删，11 个目录只成功 2 个。
+    另外：判断残缺 clone「有没有独有内容」要看**主仓库全历史 blob 集合**（`git rev-list --objects --all`），
+    不能只看当前 `cat-file --batch-all-objects`（后者是当前对象库，可能漏掉历史版本里已 gc 的）。
 
 ---
 
