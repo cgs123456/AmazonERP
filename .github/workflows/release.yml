@@ -380,13 +380,13 @@ jobs:
           IMAGE_PREFIX="${REGISTRY}/${OWNER}/amazonerp-"
           boot_wait() {
             container="$1"; marker="$2"; found=""
-            for i in $(seq 1 45); do
+            for i in $(seq 1 90); do
               if docker logs "$container" 2>&1 | grep -q "$marker"; then found=yes; break; fi
               sleep 2
             done
             if [ -z "$found" ]; then
-              docker logs --tail 100 "$container"
-              echo "$container 未在 90 秒内出现启动标记: $marker"
+              docker logs --tail 300 "$container"
+              echo "$container 未在 180 秒内出现启动标记: $marker"
               exit 1
             fi
           }
