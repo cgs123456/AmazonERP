@@ -871,6 +871,9 @@ services:
       - NACOS_ADDR=nacos:8848
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD_required}
       - JWT_ISSUER=${JWT_ISSUER:-amz-erp}
       - JWT_AUDIENCE=${JWT_AUDIENCE:-amz-erp-client}
       - DB_USERNAME=${DB_USERNAME:-root}

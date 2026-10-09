@@ -21,6 +21,22 @@ spring:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/amz_report?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
+  # ====== Redis 基线（与 user/search 等模块同口径）======
+  # 本模块声明了 spring-boot-starter-data-redis，Boot 的 DataRedisAutoConfiguration 会无条件
+  # 建一个默认指向 localhost:6379 的 LettuceConnectionFactory，健康指示器随之注册。容器内没有
+  # 本机 Redis，/actuator/health 聚合为 DOWN，compose 的 healthcheck 恒判不健康（2026-10-09 复核）。
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
   # ====== Flyway 基线（P0-58）======
   # 表结构的唯一事实源是 classpath:db/migration；Compose 与 k8s 只负责建空库。
   # baseline-on-migrate=false（P0-58 / 2026-09-30 修正）：非空库且无 flyway_schema_history 时，

@@ -66,8 +66,11 @@ spec:
             - { name: NACOS_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } } }
             - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }
             - { name: MYSQL_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_PORT } } }
+            - { name: REDIS_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_HOST } } }
+            - { name: REDIS_PORT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: REDIS_PORT } } }
             - { name: DB_USERNAME, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_USERNAME } } }
             - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: DB_PASSWORD } } }
+            - { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: REDIS_PASSWORD } } }
             - { name: JWT_SECRET_KEY, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: JWT_SECRET_KEY } } }
             - { name: JWT_ISSUER, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_ISSUER } } }
             - { name: JWT_AUDIENCE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: JWT_AUDIENCE } } }
