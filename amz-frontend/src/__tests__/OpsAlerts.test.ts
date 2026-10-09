@@ -55,6 +55,9 @@ const happy = () => {
   vi.mocked(api.listReviewAlerts).mockResolvedValue(ok(REVIEWS))
   vi.mocked(api.listHijackAlerts).mockResolvedValue(ok(HIJACKS))
   vi.mocked(api.handleReviewAlert).mockResolvedValue(ok(true))
+  vi.mocked(api.ignoreReviewAlert).mockResolvedValue(ok(true))
+  vi.mocked(api.handleHijackAlert).mockResolvedValue(ok(true))
+  vi.mocked(api.ignoreHijackAlert).mockResolvedValue(ok(true))
   vi.mocked(api.getRankTrend).mockResolvedValue(ok(TREND))
 }
 
@@ -118,22 +121,23 @@ describe('运营预警台', () => {
     expect(wrapper.find('[data-panel="reviews"]').exists()).toBe(false)
   })
 
-  it('说明区把三条边界讲清楚：扫描是造数、跟卖只读、处理只是本地状态', async () => {
+  it('说明区把边界讲清楚：扫描是造数、处置只是本地状态、IGNORED 不抑制后续扫描', async () => {
     const wrapper = await mountPage()
     const note = wrapper.find('.notice-zone').text()
     expect(note).toContain('ThreadLocalRandom')
     expect(note).toContain('mock profile')
-    expect(note).toContain('跟卖告警只读')
     expect(note).toContain('不会联系买家')
     expect(note).toContain('IGNORED')
+    // IGNORED 落地后必须讲明它「不」做什么，否则运营会以为选了就不再报
+    expect(note).toContain('不等于')
   })
 
-  it('三个造数入口和跟卖的假「已处理」在页面上必须不存在', async () => {
+  it('三个造数入口在页面上必须不存在（跟卖的处置端点已补齐，不再是假「已处理」）', async () => {
     const wrapper = await mountPage()
     await openTab(wrapper, '跟卖告警')
-    // 跟卖面板一个写操作都没有（后端没有写入口），断言要在这页可见时做
+    // 2026-10-10 起跟卖真的有 handle/ignore 端点，按钮就该在；这里守的是「不能有扫描按钮」
     expect(wrapper.find('[data-panel="hijacks"]').findAll('button')
-      .filter((b: any) => b.text() === '标记已处理').length).toBe(0)
+      .filter((b: any) => b.text() === '标记已处理').length).toBe(2)
     await openTab(wrapper, '关键词排名')
     const labels = ['扫描差评', '扫描跟卖', '抓取排名', '触发扫描', '忽略告警', '标记已忽略']
     for (const label of labels) {
@@ -223,7 +227,7 @@ describe('运营预警台', () => {
     expect(vi.mocked(api.listReviewAlerts).mock.calls.length).toBe(1)
   })
 
-  it('跟卖行显示报价与 Buy Box 三态，并声明本页只读', async () => {
+  it('跟卖行显示报价与 Buy Box 三态，并声明处置只是本地状态', async () => {
     const wrapper = await mountPage()
     await openTab(wrapper, '跟卖告警')
     const panel = panelText(wrapper, 'hijacks')
@@ -231,8 +235,56 @@ describe('运营预警台', () => {
     expect(panel).toContain('Competitor Seller')
     expect(panel).toContain('已被抢走')
     expect(panel).toContain('未知')
-    expect(panel).toContain('本页只读')
+    expect(panel).toContain('处置只改本地状态')
     expect(wrapper.find('[data-panel="hijacks"] tbody tr:nth-child(1) td.neg').text()).toBe('已被抢走')
+  })
+
+  it('跟卖告警可以标记已处理：确认框说明不会对跟卖方动作，成功后刷新', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '跟卖告警')
+    await rowBtn(wrapper, 'hijacks', 0, '标记已处理')
+    const text = confirmText(wrapper)
+    expect(text).toContain('NEW 改成 HANDLED')
+    expect(text).toContain('不会对跟卖方发起任何动作')
+    await clickBtn(wrapper, '确认执行')
+
+    expect(api.handleHijackAlert).toHaveBeenCalledWith(91)
+    expect(vi.mocked(api.listHijackAlerts).mock.calls.length).toBe(2)
+    expect(wrapper.find('.error-zone').exists()).toBe(false)
+  })
+
+  it('跟卖告警可以忽略，且确认框说明不会阻止后扫描重建', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '跟卖告警')
+    await rowBtn(wrapper, 'hijacks', 0, '忽略')
+    const text = confirmText(wrapper)
+    expect(text).toContain('NEW 改成 IGNORED')
+    expect(text).toContain('不会阻止后续扫描')
+    await clickBtn(wrapper, '确认执行')
+
+    expect(api.ignoreHijackAlert).toHaveBeenCalledWith(91)
+  })
+
+  it('差评告警可以忽略：走 IGNORED 而不是假的处理记录', async () => {
+    const wrapper = await mountPage()
+    await rowBtn(wrapper, 'reviews', 0, '忽略')
+    const text = confirmText(wrapper)
+    expect(text).toContain('NEW 改成 IGNORED')
+    expect(text).toContain('判定为无需处理')
+    await clickBtn(wrapper, '确认执行')
+
+    expect(api.ignoreReviewAlert).toHaveBeenCalledWith(81)
+    expect(api.handleReviewAlert).not.toHaveBeenCalled()
+  })
+
+  it('已处于终态的跟卖告警两个按钮都禁用', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '跟卖告警')
+    // 第二行的 status 是 IGNORED
+    const rows = wrapper.find('[data-panel="hijacks"]').findAll('tbody tr')
+    for (const b of rows[1].findAll('button')) {
+      expect(b.attributes('disabled')).toBeDefined()
+    }
   })
 
   it('排名趋势必须两个条件都填才发请求，ASIN 按后端口径转大写', async () => {

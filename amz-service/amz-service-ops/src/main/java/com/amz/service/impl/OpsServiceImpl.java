@@ -107,26 +107,48 @@ public class OpsServiceImpl implements OpsService {
 
     @Override
     public boolean handleNegativeReviewAlert(Long alertId) {
-        NegativeReviewAlert alert = reviewAlertMapper.selectById(alertId);
-        // 不存在与越权同一句文案：这条端点只有 alertId，能区分两者就成了告警 ID 探针。
-        if (alert == null) {
-            throw new CodeErrorException("差评告警不存在或无权访问");
-        }
-        // V1 DDL 是 shop_id BIGINT NOT NULL，出现 null 就是脏数据；原来的
-        // 「shopId != null && !isShopAllowed」把脏数据当成免检，等于谁都能改。
-        // 这条端点上也没有 @ShopScoped（alertId 不是 shopId，切面解析不到），
-        // 所以服务内的逐行严格判定是唯一一道防线。
-        if (!UserContext.isShopAllowedStrict(alert.getShopId())) {
-            log.warn("差评告警处理越权拦截：alertId={}, alertShopId={}, 已授权店铺={}",
-                    alertId, alert.getShopId(), UserContext.getShops());
-            throw new CodeErrorException("差评告警不存在或无权访问");
-        }
-        if (!"NEW".equals(alert.getStatus())) {
-            throw new CodeErrorException("该告警已经是 " + alert.getStatus() + "，没有再次处理");
-        }
+        NegativeReviewAlert alert = loadReviewAlertForDisposition(alertId);
+        assertStillNew(alert.getStatus());
         alert.setStatus("HANDLED");
         reviewAlertMapper.updateById(alert);
         return true;
+    }
+
+    @Override
+    public boolean ignoreNegativeReviewAlert(Long alertId) {
+        NegativeReviewAlert alert = loadReviewAlertForDisposition(alertId);
+        assertStillNew(alert.getStatus());
+        alert.setStatus("IGNORED");
+        reviewAlertMapper.updateById(alert);
+        return true;
+    }
+
+    /**
+     * 差评告警处置前的所有权校验，三个处置动作共用。
+     * <p>
+     * 不存在与越权同一句文案：这条端点只有 alertId，能区分两者就成了告警 ID 探针。
+     * V1 DDL 是 {@code shop_id BIGINT NOT NULL}，出现 null 就是脏数据；早先的
+     * 「shopId != null && !isShopAllowed」把脏数据当成免检，等于谁都能改。
+     * 这条端点上也没有 {@code @ShopScoped}（alertId 不是 shopId，切面解析不到），
+     * 所以服务内的逐行严格判定是唯一一道防线。
+     */
+    private NegativeReviewAlert loadReviewAlertForDisposition(Long alertId) {
+        NegativeReviewAlert alert = reviewAlertMapper.selectById(alertId);
+        if (alert == null) {
+            throw new CodeErrorException("差评告警不存在或无权访问");
+        }
+        if (!UserContext.isShopAllowedStrict(alert.getShopId())) {
+            log.warn("差评告警处置越权拦截：alertId={}, alertShopId={}, 已授权店铺={}",
+                    alertId, alert.getShopId(), UserContext.getShops());
+            throw new CodeErrorException("差评告警不存在或无权访问");
+        }
+        return alert;
+    }
+
+    private static void assertStillNew(String status) {
+        if (!"NEW".equals(status)) {
+            throw new CodeErrorException("该告警已经是 " + status + "，没有再次处理");
+        }
     }
 
     @Override
@@ -147,6 +169,42 @@ public class OpsServiceImpl implements OpsService {
         alert.setStatus("NEW");
         hijackAlertMapper.insert(alert);
         return 1;
+    }
+
+    @Override
+    public boolean handleHijackAlert(Long alertId) {
+        HijackAlert alert = loadHijackAlertForDisposition(alertId);
+        assertStillNew(alert.getStatus());
+        alert.setStatus("HANDLED");
+        hijackAlertMapper.updateById(alert);
+        return true;
+    }
+
+    @Override
+    public boolean ignoreHijackAlert(Long alertId) {
+        HijackAlert alert = loadHijackAlertForDisposition(alertId);
+        assertStillNew(alert.getStatus());
+        alert.setStatus("IGNORED");
+        hijackAlertMapper.updateById(alert);
+        return true;
+    }
+
+    /**
+     * 跟卖告警处置前的所有权校验。与差评同口径：端点只有 alertId，
+     * 无 {@code @ShopScoped} 可依赖，逐行严格判定是唯一防线；
+     * 不存在与越权返回同一句文案，不退化成告警 ID 的存在性探针。
+     */
+    private HijackAlert loadHijackAlertForDisposition(Long alertId) {
+        HijackAlert alert = hijackAlertMapper.selectById(alertId);
+        if (alert == null) {
+            throw new CodeErrorException("跟卖告警不存在或无权访问");
+        }
+        if (!UserContext.isShopAllowedStrict(alert.getShopId())) {
+            log.warn("跟卖告警处置越权拦截：alertId={}, alertShopId={}, 已授权店铺={}",
+                    alertId, alert.getShopId(), UserContext.getShops());
+            throw new CodeErrorException("跟卖告警不存在或无权访问");
+        }
+        return alert;
     }
 
     @Override

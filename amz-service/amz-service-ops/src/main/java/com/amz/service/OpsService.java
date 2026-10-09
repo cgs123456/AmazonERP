@@ -31,6 +31,15 @@ public interface OpsService {
     boolean handleNegativeReviewAlert(Long alertId);
 
     /**
+     * 标记差评告警已忽略（NEW → IGNORED）。
+     * <p>
+     * 与 {@link #handleNegativeReviewAlert(Long)} 共用同一套归属与终态判定：
+     * 不存在、越权、已处于终态都抛业务错误，且不存在与越权同文案。
+     * IGNORED 表示「判定为无需处理并关闭」，不负责扫描侧的去重抑制。
+     */
+    boolean ignoreNegativeReviewAlert(Long alertId);
+
+    /**
      * 扫描跟卖，返回新增告警数。
      */
     int scanHijackers(Long shopId);
@@ -39,6 +48,19 @@ public interface OpsService {
      * 查询跟卖告警列表（keyset 分页，按 id 倒序）。
      */
     PageResult<HijackAlert> listHijackAlerts(Long shopId, String status, PageRequest page);
+
+    /**
+     * 标记跟卖告警已处理（NEW → HANDLED）。
+     * <p>
+     * 归属判定与差评告警同口径：这条端点只有 alertId，没有 {@code @ShopScoped}，
+     * 服务内逐行严格判定是唯一防线。
+     */
+    boolean handleHijackAlert(Long alertId);
+
+    /**
+     * 标记跟卖告警已忽略（NEW → IGNORED）。
+     */
+    boolean ignoreHijackAlert(Long alertId);
 
     /**
      * 抓取关键词排名快照，返回抓取记录数。

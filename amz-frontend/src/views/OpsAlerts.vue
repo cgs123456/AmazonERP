@@ -19,9 +19,9 @@
         三条边界：<b>①「扫描」按钮本页不提供</b>——差评扫描、跟卖扫描、排名抓取的实现是
         ThreadLocalRandom 造数，并且只有 mock profile 才放行（生产环境直接返回 0）。
         所以这里的告警行都来自「曾经写入」，本页不能声称它们是刚采到的。
-        <b>② 跟卖告警只读</b>：后端没有 handle/ignore 的写入端点，所以这一栏没有「已处理」按钮。
-        <b>③ 差评的「标记已处理」只是本地状态 NEW → HANDLED</b>：不会联系买家、不会发起申诉；
-        DDL 里还有 IGNORED 这一档，但没有对应端点，本页也不替它编一个按钮。
+        <b>② 差评与跟卖都只能 NEW → HANDLED 或 NEW → IGNORED</b>：两条都是本地状态迁移，
+        不会联系买家、不会发起申诉、也不会对跟卖方做任何动作；已处于终态的告警再点会被后端拒绝。
+        <b>③ IGNORED 不等于「以后别再报」</b>：当前扫描是 mock 造数，后续扫描仍可能产生新的告警行。
       </div>
 
       <div class="tabs">
@@ -61,7 +61,9 @@
                   <td><span class="status-tag" :class="alertClass(r.status)">{{ r.status || '-' }}</span></td>
                   <td class="row-actions">
                     <button class="action-btn" :disabled="busy || r.status !== 'NEW'"
-                            @click="askHandle(r)">标记已处理</button>
+                            @click="askReview(r, 'HANDLED')">标记已处理</button>
+                    <button class="action-btn" :disabled="busy || r.status !== 'NEW'"
+                            @click="askReview(r, 'IGNORED')">忽略</button>
                   </td>
                 </tr>
                 <tr v-if="!reviews.loading.value && !reviews.rows.value.length">
@@ -88,12 +90,12 @@
               <button class="action-btn" :disabled="hijacks.loading.value" @click="loadHijacks()">刷新</button>
               <button v-if="hijacks.truncated.value" class="action-btn"
                       :disabled="hijacks.loading.value" @click="loadHijacks(true)">下一页</button>
-              <span class="muted">{{ pagerText(hijacks) }}；本页只读，后端没有跟卖告警的处理端点</span>
+              <span class="muted">{{ pagerText(hijacks) }}；处置只改本地状态，不会对跟卖方做任何动作</span>
             </div>
             <table class="data-table">
               <thead>
                 <tr><th>落库时间</th><th>被跟卖 ASIN</th><th>跟卖卖家</th><th>卖家 ID</th>
-                  <th>对方报价</th><th>Buy Box</th><th>状态</th></tr>
+                  <th>对方报价</th><th>Buy Box</th><th>状态</th><th>操作</th></tr>
               </thead>
               <tbody>
                 <tr v-for="h in hijacks.rows.value" :key="h.id">
@@ -104,9 +106,15 @@
                   <td>{{ h.hijackPrice ?? '-' }}</td>
                   <td :class="{ neg: h.buyBoxTaken === true }">{{ buyBoxText(h.buyBoxTaken) }}</td>
                   <td><span class="status-tag" :class="alertClass(h.status)">{{ h.status || '-' }}</span></td>
+                  <td class="row-actions">
+                    <button class="action-btn" :disabled="busy || h.status !== 'NEW'"
+                            @click="askHijack(h, 'HANDLED')">标记已处理</button>
+                    <button class="action-btn" :disabled="busy || h.status !== 'NEW'"
+                            @click="askHijack(h, 'IGNORED')">忽略</button>
+                  </td>
                 </tr>
                 <tr v-if="!hijacks.loading.value && !hijacks.rows.value.length">
-                  <td colspan="7" class="empty-row">这家店没有跟卖告警行（同上：没有采集器写入过就是空）。</td>
+                  <td colspan="8" class="empty-row">这家店没有跟卖告警行（同上：没有采集器写入过就是空）。</td>
                 </tr>
               </tbody>
             </table>
@@ -189,7 +197,8 @@ import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
 import type { ApiResponse } from '@/api/types'
 import {
-  ALERT_STATUSES, getRankTrend, handleReviewAlert, listHijackAlerts, listReviewAlerts
+  ALERT_STATUSES, getRankTrend, handleHijackAlert, handleReviewAlert,
+  ignoreHijackAlert, ignoreReviewAlert, listHijackAlerts, listReviewAlerts
 } from '@/api/opsAlerts'
 import type { HijackAlert, KeywordRankRecord, NegativeReviewAlert } from '@/api/opsAlerts'
 
@@ -330,15 +339,43 @@ const clearTrend = () => {
   trendLoaded.value = false
 }
 
-const askHandle = (r: NegativeReviewAlert) => {
+/** 差评告警处置：HANDLED=已介入，IGNORED=判定为无需处理。两者互斥且都只接受 NEW。 */
+const askReview = (r: NegativeReviewAlert, next: 'HANDLED' | 'IGNORED') => {
+  const verb = next === 'HANDLED' ? '标记已处理' : '忽略'
   confirmBox.value = {
-    title: `标记差评告警 #${r.id} 已处理`,
-    detail: `只会把这条告警在本地从 NEW 改成 HANDLED，不会联系买家、不会发起申诉，`
-      + `也不会改动 ${r.asin} 的评论。改完之后再点一次会被后端拒绝。`,
+    title: `${verb}差评告警 #${r.id}`,
+    detail: next === 'HANDLED'
+      ? `只会把这条告警在本地从 NEW 改成 HANDLED，不会联系买家、不会发起申诉，`
+        + `也不会改动 ${r.asin} 的评论。改完之后再点一次会被后端拒绝。`
+      : `只会把这条告警在本地从 NEW 改成 IGNORED，表示「判定为无需处理」。`
+        + `不会联系买家、不会发起申诉，也不会阻止后续扫描为 ${r.asin} 再产生新的告警行。`
+        + `改完之后再点一次会被后端拒绝。`,
     run: async () => {
-      const ok = await run('标记已处理', () => handleReviewAlert(r.id as number))
+      const ok = await run(verb, () => next === 'HANDLED'
+        ? handleReviewAlert(r.id as number)
+        : ignoreReviewAlert(r.id as number))
       if (ok === null) return
       await loadReviews()
+    }
+  }
+}
+
+/** 跟卖告警处置：与差评同口径的本地状态迁移，不会对跟卖方做任何动作。 */
+const askHijack = (h: HijackAlert, next: 'HANDLED' | 'IGNORED') => {
+  const verb = next === 'HANDLED' ? '标记已处理' : '忽略'
+  confirmBox.value = {
+    title: `${verb}跟卖告警 #${h.id}`,
+    detail: next === 'HANDLED'
+      ? `只会把这条告警在本地从 NEW 改成 HANDLED。不会对跟卖方发起任何动作，`
+        + `也不代表已申诉或已交涉——这里记录的只是本店的处置状态。`
+      : `只会把这条告警在本地从 NEW 改成 IGNORED，表示「判定为无需处理」。`
+        + `同样不会对跟卖方做任何动作，也不会阻止后续扫描为 ${h.asin} 再产生新的告警行。`,
+    run: async () => {
+      const ok = await run(verb, () => next === 'HANDLED'
+        ? handleHijackAlert(h.id as number)
+        : ignoreHijackAlert(h.id as number))
+      if (ok === null) return
+      await loadHijacks()
     }
   }
 }

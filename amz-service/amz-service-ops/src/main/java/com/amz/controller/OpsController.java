@@ -66,6 +66,19 @@ public class OpsController {
         return Result.success(opsService.handleNegativeReviewAlert(alertId));
     }
 
+    /**
+     * 标记差评告警已忽略（NEW → IGNORED）。
+     * POST /ops/review/{alertId}/ignore
+     *
+     * <p>DDL 的 status 注释是 NEW/HANDLED/IGNORED，但此前 IGNORED 没有任何写入路径，
+     * 运营只能把「不打算处理」的告警标成 HANDLED，等于在库里留下一个假的处理记录。
+     * 这条端点把第三态接上；与 handle 共用同一套归属与终态判定。
+     */
+    @PostMapping("/review/{alertId}/ignore")
+    public Result<Boolean> ignoreReviewAlert(@PathVariable Long alertId) {
+        return Result.success(opsService.ignoreNegativeReviewAlert(alertId));
+    }
+
     // ========== 跟卖监控 ==========
 
     /**
@@ -79,10 +92,29 @@ public class OpsController {
     }
 
     /**
+     * 标记跟卖告警已处理（NEW → HANDLED）。
+     * POST /ops/hijack/{alertId}/handle
+     *
+     * <p>与差评的 handle 同形态：没有 {@code @ShopScoped}（只有 alertId），
+     * 归属判定在 service 内逐行严格做。
+     */
+    @PostMapping("/hijack/{alertId}/handle")
+    public Result<Boolean> handleHijackAlert(@PathVariable Long alertId) {
+        return Result.success(opsService.handleHijackAlert(alertId));
+    }
+
+    /**
+     * 标记跟卖告警已忽略（NEW → IGNORED）。
+     * POST /ops/hijack/{alertId}/ignore
+     */
+    @PostMapping("/hijack/{alertId}/ignore")
+    public Result<Boolean> ignoreHijackAlert(@PathVariable Long alertId) {
+        return Result.success(opsService.ignoreHijackAlert(alertId));
+    }
+
+    /**
      * 查询跟卖告警列表。
      * GET /ops/hijack/list/{shopId}?status=&size=&cursor=
-     *
-     * <p>跟卖只有读端点：后端没有 handle/ignore 的写入路径，页面也就不能摆「已处理」按钮。
      */
     @ShopScoped
     @GetMapping("/hijack/list/{shopId}")
