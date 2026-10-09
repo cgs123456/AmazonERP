@@ -246,6 +246,26 @@ class TestReleaseWorkflow(unittest.TestCase):
             ci_cmd = release_tool_test_commands(fh.read())
         self.assertEqual(release_cmd, ci_cmd, "ci.yml and release.yml must run identical release tool tests")
 
+    def test_boot_smoke_marker_match_is_pipefail_and_regex_safe(self):
+        # v0.1.13-v0.1.19: five consecutive release runs died in the prod boot
+        # smoke with "\u672a\u5728 180 \u79d2\u5185\u51fa\u73b0\u542f\u52a8\u6807\u8bb0" while the marker was
+        # in the log the whole time. Two independent shell traps:
+        #
+        # 1) pipefail + SIGPIPE: `docker logs ... | grep -q PATTERN` is judged
+        #    FAILED even on a hit. grep -q exits at the first match, docker logs
+        #    keeps writing into a closed pipe, takes SIGPIPE (exit 141), and
+        #    `set -o pipefail` promotes that non-zero status to the pipeline's,
+        #    so the `if` never takes the success branch.
+        # 2) BRE bracket: the prod marker is `...activeProfiles=[prod]`; a plain
+        #    `grep` reads `[prod]` as a character class, so the literal line can
+        #    never match no matter how long it waits.
+        #
+        # The fix is structural: land the log in a file, then match the file
+        # with a fixed-string grep. Neither the pipe nor the regex may come back.
+        self.assertNotIn("| grep -q", self.raw)
+        self.assertIn('grep -qF -- "$marker" "$logf"', self.raw)
+        self.assertIn('docker logs "$container" > "$logf" 2>&1', self.raw)
+
 
 if __name__ == "__main__":
     unittest.main()

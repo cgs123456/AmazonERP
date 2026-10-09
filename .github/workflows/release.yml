@@ -378,14 +378,21 @@ jobs:
           # JAVA_TOOL_OPTIONS：JDK17 容器默认 charset 是 ASCII，中文日志会变 ? 破坏 grep 断言
           SMOKE_ENV=(-e SPRING_PROFILES_ACTIVE=prod -e JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -e MYSQL_HOST=amz-smoke-mysql -e MYSQL_PORT=3306 -e DB_USERNAME=root -e DB_PASSWORD="$SMOKE_DB_PASSWORD" -e AMZ_CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e JWT_SECRET_KEY="$SMOKE_JWT_SECRET" -e REDIS_HOST=amz-smoke-redis -e REDIS_PASSWORD="$SMOKE_REDIS_PASSWORD" -e RABBITMQ_PASSWORD="$SMOKE_RABBIT_PASSWORD" -e SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false)
           IMAGE_PREFIX="${REGISTRY}/${OWNER}/amazonerp-"
+          # 启动等待有两个不能想当然的 shell 语义（v0.1.13–v0.1.19 五连红的根因，误报为“启动标记未出现”）：
+          # 1) 把 docker logs 直接管道给 `grep -q`，在 `set -o pipefail` 下“命中也判失败”：
+          #    grep -q 命中首行即退出，docker logs 继续写日志拿 SIGPIPE（exit 141），
+          #    pipefail 把这个非零状态当整条管道的结果，if 永远走 else。
+          # 2) 启动标记含 `[prod]`，grep 默认 BRE 把方括号当字符类，字面量永远匹配不上。
+          # 因此：先把日志落盘，再用 `grep -qF --` 匹配文件（无管道、无 SIGPIPE、无正则解释）。
           boot_wait() {
-            container="$1"; marker="$2"; found=""
+            container="$1"; marker="$2"; found=""; logf="$RUNNER_TEMP/smoke/${container}.log"
             for i in $(seq 1 90); do
-              if docker logs "$container" 2>&1 | grep -q "$marker"; then found=yes; break; fi
+              docker logs "$container" > "$logf" 2>&1
+              if grep -qF -- "$marker" "$logf"; then found=yes; break; fi
               sleep 2
             done
             if [ -z "$found" ]; then
-              docker logs --tail 300 "$container"
+              cat "$logf"
               echo "$container 未在 180 秒内出现启动标记: $marker"
               exit 1
             fi
@@ -471,7 +478,8 @@ jobs:
             if [ "$t" = "${GITHUB_REF_NAME}" ]; then
               continue
             fi
-            if gh release view "$t" --json assets --jq '.assets[].name' | grep -q '^release-manifest\.json$'; then
+            # 同上：不能把 gh 的输出接管道给 `grep -q`（pipefail + SIGPIPE），改成命令替换式 + here-string。
+            if grep -qxF -- 'release-manifest.json' <<< "$(gh release view "$t" --json assets --jq '.assets[].name')"; then
               prev_tag="$t"
               break
             fi
