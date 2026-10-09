@@ -9,13 +9,12 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import org.redisson.api.RedissonClient;
-import org.redisson.client.codec.StringCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.io.IOException;
 import java.net.URI;
@@ -73,8 +72,13 @@ public class TranslationService {
     @Autowired
     private TranslationCacheMapper translationCacheMapper;
 
+    /**
+     * L2 翻译缓存。原用 Redisson RBucket；Redisson starter 已整体移除
+     * （官方未支持 Spring Boot 4，prod 启动即 ClassNotFoundException，容器实测），
+     * 改用 StringRedisTemplate 读写，行为语义（TTL + 容错跳过）不变。
+     */
     @Autowired(required = false)
-    private RedissonClient redissonClient;
+    private StringRedisTemplate redisTemplate;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -159,12 +163,11 @@ public class TranslationService {
     }
 
     private String readFromRedis(String key) {
-        if (redissonClient == null) {
+        if (redisTemplate == null) {
             return null;
         }
         try {
-            org.redisson.api.RBucket<String> bucket = redissonClient.getBucket(key, StringCodec.INSTANCE);
-            return bucket.get();
+            return redisTemplate.opsForValue().get(key);
         } catch (Exception e) {
             log.warn("Redis read failed, skip L2: {}", e.getMessage());
             return null;
@@ -172,12 +175,11 @@ public class TranslationService {
     }
 
     private void writeToRedis(String key, String value) {
-        if (redissonClient == null) {
+        if (redisTemplate == null) {
             return;
         }
         try {
-            redissonClient.getBucket(key, StringCodec.INSTANCE)
-                    .set(value, REDIS_TTL_MINUTES, TimeUnit.MINUTES);
+            redisTemplate.opsForValue().set(key, value, REDIS_TTL_MINUTES, TimeUnit.MINUTES);
         } catch (Exception e) {
             log.warn("Redis write failed, skip L2: {}", e.getMessage());
         }

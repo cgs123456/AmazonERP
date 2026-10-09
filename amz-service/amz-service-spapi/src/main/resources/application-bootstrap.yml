@@ -8,9 +8,6 @@
 spring:
   main:
     web-application-type: none
-  autoconfigure:
-    exclude:
-      - org.redisson.spring.starter.RedissonAutoConfigurationV2
   cloud:
     nacos:
       discovery:

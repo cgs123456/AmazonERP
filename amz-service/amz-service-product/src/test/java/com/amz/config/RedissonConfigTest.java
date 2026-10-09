@@ -20,7 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Task 9：Redis / Redisson 配置基线（P0-31）——本模块删掉自带 Redisson 配置，改由 starter 装配。
+ * Task 9：Redis / Redisson 配置基线（P0-31）——本模块删掉自带 Redisson 配置；
+ * 2026-10-09 起 {@code redisson-spring-boot-starter} 亦整体移除（Redisson 官方尚未支持
+ * Spring Boot 4，最新 3.50.0 仍引用 Boot 3 已迁移的 RedisProperties，prod 启动即
+ * {@code ClassNotFoundException}，容器实测）。
  * <p>
  * <b>为什么可以删：</b>原 {@code RedissonConfig} 读 {@code ${spring.redis.host:公网 Redis 地址（P0-31，旧值见 git 历史）}}
  * （第三方公网地址，且该键在 Spring Boot 3 下已改名、全仓无法覆盖，实测 45,292 ms 后连不上）。
@@ -28,8 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code @Autowired(required = false)} 并在使用前判空——Redisson 缺失时降级为「只查 DB 缓存」，
  * 不是崩溃。因此删除自定义 Bean 后：
  * <ul>
- *   <li>有 Redis：{@code redisson-spring-boot-starter} 的 {@code RedissonAutoConfigurationV2}
- *       按 {@code spring.data.redis.*} 装配，行为不变；</li>
+ *   <li>有 Redis：Redis 模板走 {@code spring.data.redis.*}（starter 移除不影响）；
+ *       {@code RedissonClient} 恒为 null，走判空降级分支；</li>
  *   <li>无 Redis：字段为 null，走原有的判空分支。</li>
  * </ul>
  * 配置来源因此只剩 {@code spring.data.redis.*} 一处。
@@ -94,15 +97,15 @@ class RedissonConfigTest {
     }
 
     @Test
-    @DisplayName("TranslationService 的 Redisson 仍为可选依赖且判空（删 Bean 后必须仍能降级）")
-    void translationServiceKeepsOptionalRedisson() {
+    @DisplayName("TranslationService 的 Redis L2 缓存仍为可选注入且判空（Redisson 移除后必须仍能降级）")
+    void translationServiceKeepsOptionalRedis() {
         Path impl = MAIN_JAVA.resolve("com/amz/service/TranslationService.java");
         assertTrue(Files.exists(impl), "缺少 TranslationService，无法断言");
         String text = read(impl);
         assertTrue(text.contains("@Autowired(required = false)"),
-                "RedissonClient 必须是可选注入：删掉自定义 Bean 后若无 starter 装配，缺 Redis 不应让启动失败");
-        assertTrue(text.contains("redissonClient == null"),
-                "使用 Redisson 前必须判空；否则 Redis 不可达时翻译链路会直接抛异常（缓存不该成为硬依赖）");
+                "Redis 模板必须是可选注入：无 Redis 自动装配时应用不应启动失败");
+        assertTrue(text.contains("redisTemplate == null"),
+                "使用 Redis 前必须判空；否则 Redis 不可达时翻译链路会直接抛异常（缓存不该成为硬依赖）");
     }
 
     /** 主代码 + 主配置中参与扫描的文件（.java / .yml / .yaml）。 */

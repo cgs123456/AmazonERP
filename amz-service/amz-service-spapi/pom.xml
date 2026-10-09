@@ -127,18 +127,6 @@
             <version>1.0-SNAPSHOT</version>
         </dependency>
 
-        <!-- Redisson：调度任务分布式锁，防止多实例部署时定时任务双跑（重复消耗 SP-API 配额） -->
-        <dependency>
-            <groupId>org.redisson</groupId>
-            <artifactId>redisson-spring-boot-starter</artifactId>
-            <version>${redisson.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
-        </dependency>
-
         <!-- ====== SP-API 通知入站（SQS）====== -->
         <!-- 版本由根 pom 的 software.amazon.awssdk:bom 统一管理，此处不写 version。
              只用 sqs（同步客户端）与 auth（凭证链 / STS AssumeRole）。

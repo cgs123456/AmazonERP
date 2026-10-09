@@ -30,10 +30,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 零消费者的依赖不该留，因此处置是<b>删除</b>而非「改成读 spring.data.redis」。
  * <p>
  * 幂等去重真正依赖的是 {@code RedisTemplate}（{@code OrderServiceImpl} 的 {@code setIfAbsent}），
- * 走 {@code spring.data.redis.*}；Redisson 由 {@code redisson-spring-boot-starter} 的
- * {@code RedissonAutoConfigurationV2}（Spring Boot 3 走
- * {@code META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports}）
- * 按同一套键装配——配置来源因此只剩一个。
+ * 走 {@code spring.data.redis.*}。2026-10-09 起 {@code redisson-spring-boot-starter} 已从本模块
+ * 整体移除：Redisson 官方尚未支持 Spring Boot 4（最新 3.50.0 仍引用 Boot 3 已迁移的
+ * {@code org.springframework.boot.autoconfigure.data.redis.RedisProperties}，prod 启动即
+ * {@code ClassNotFoundException}，容器实测），且本模块零消费者——配置来源只剩
+ * {@code spring.data.redis.*} 一处。
  * <p>
  * <b>证据类型 E1（自证）</b>：断言对象是本模块源码与配置文本，不连 Redis、不起 Spring 上下文。
  * 它防的是复发，不是「证明线上 Redis 通」。
