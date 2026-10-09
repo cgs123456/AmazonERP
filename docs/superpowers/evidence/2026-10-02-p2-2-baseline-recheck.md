@@ -9,8 +9,8 @@
 HTTP/网关/Feign 路径、并发与连接池——§3 的比值因此是**下限**而不是端到端结论，
 且换不了"上线后 p95/p99 是多少"这类问题（那仍只能等机器独占时按 §1 的命令跑一次）。
 
-参考基线：`AmazonERP-p2-performance/docs/superpowers/evidence/2026-09-30-p2-perf-baseline/bench-read-c10-r100.json`
-（**另一 agent 的未提交产物**，c10×r100 三场景，打的是它那套栈的 gateway `127.0.0.1:10010`）。
+参考基线：`docs/superpowers/evidence/2026-09-30-p2-perf-baseline/bench-read-c10-r100.json`
+（**另一 agent 的未提交产物，已随 2026-10-09 worktree 收编一并入库**；c10×r100 三场景，打的是它那套栈的 gateway `127.0.0.1:10010`）。
 
 ---
 

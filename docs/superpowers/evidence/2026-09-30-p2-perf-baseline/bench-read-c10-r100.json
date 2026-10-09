@@ -1,0 +1,120 @@
+{
+  "base_url": "http://127.0.0.1:10010",
+  "shop_id": "900000000000001000",
+  "token_configured": true,
+  "concurrency": 10,
+  "requests_per_scenario": 100,
+  "timeout_seconds": 30.0,
+  "warmup_requests_per_scenario": 3,
+  "started_at_utc": "2026-09-29T16:54:55.779326+00:00",
+  "finished_at_utc": "2026-09-29T16:56:16.125768+00:00",
+  "scenarios": [
+    {
+      "scenario": "order-list",
+      "method": "GET",
+      "path": "/order/list?shopId=900000000000001000&page=1&size=20",
+      "requests": 100,
+      "success_count": 98,
+      "failure_count": 2,
+      "error_rate": 0.02,
+      "requests_per_second": 4.5261340223016475,
+      "duration_seconds": 22.093910500057973,
+      "latency_ms": {
+        "min": 24.450000026263297,
+        "mean": 814.6395180060063,
+        "p50": 46.014699968509376,
+        "p95": 5680.684369959636,
+        "p99": 21065.106594084067,
+        "max": 21992.567699984647
+      },
+      "status_counts": {
+        "200": 98,
+        "0": 2
+      },
+      "sample_errors": [
+        "TimeoutError: [WinError 10060] \u7531\u4e8e\u8fde\u63a5\u65b9\u5728\u4e00\u6bb5\u65f6\u95f4\u540e\u6ca1\u6709\u6b63\u786e\u7b54\u590d\u6216\u8fde\u63a5\u7684\u4e3b\u673a\u6ca1\u6709\u53cd\u5e94\uff0c\u8fde\u63a5\u5c1d\u8bd5\u5931\u8d25\u3002",
+        "ConnectionResetError: [WinError 10054] \u8fdc\u7a0b\u4e3b\u673a\u5f3a\u8feb\u5173\u95ed\u4e86\u4e00\u4e2a\u73b0\u6709\u7684\u8fde\u63a5\u3002"
+      ]
+    },
+    {
+      "scenario": "report-dashboard",
+      "method": "GET",
+      "path": "/report/dashboard/900000000000001000?dateRange=7d",
+      "requests": 100,
+      "success_count": 100,
+      "failure_count": 0,
+      "error_rate": 0.0,
+      "requests_per_second": 98.42306564265182,
+      "duration_seconds": 1.0160219999961555,
+      "latency_ms": {
+        "min": 36.52019996661693,
+        "mean": 97.70009100087918,
+        "p50": 86.94700000341982,
+        "p95": 200.30698506161565,
+        "p99": 247.18145703547637,
+        "max": 249.20670001301914
+      },
+      "status_counts": {
+        "200": 100
+      },
+      "sample_errors": []
+    },
+    {
+      "scenario": "finance-profit",
+      "method": "GET",
+      "path": "/finance/profit/sku/900000000000001000?depositAfter=2026-01-01&depositBefore=2026-12-31",
+      "requests": 100,
+      "success_count": 97,
+      "failure_count": 3,
+      "error_rate": 0.03,
+      "requests_per_second": 2.778593858517538,
+      "duration_seconds": 35.989426699932665,
+      "latency_ms": {
+        "min": 31.092399964109063,
+        "mean": 1396.272575998446,
+        "p50": 210.6305499910377,
+        "p95": 4897.97351496525,
+        "p99": 21160.15367304447,
+        "max": 33952.83200009726
+      },
+      "status_counts": {
+        "200": 97,
+        "0": 3
+      },
+      "sample_errors": [
+        "ConnectionResetError: [WinError 10054] \u8fdc\u7a0b\u4e3b\u673a\u5f3a\u8feb\u5173\u95ed\u4e86\u4e00\u4e2a\u73b0\u6709\u7684\u8fde\u63a5\u3002",
+        "TimeoutError: [WinError 10060] \u7531\u4e8e\u8fde\u63a5\u65b9\u5728\u4e00\u6bb5\u65f6\u95f4\u540e\u6ca1\u6709\u6b63\u786e\u7b54\u590d\u6216\u8fde\u63a5\u7684\u4e3b\u673a\u6ca1\u6709\u53cd\u5e94\uff0c\u8fde\u63a5\u5c1d\u8bd5\u5931\u8d25\u3002",
+        "ConnectionResetError: [WinError 10054] \u8fdc\u7a0b\u4e3b\u673a\u5f3a\u8feb\u5173\u95ed\u4e86\u4e00\u4e2a\u73b0\u6709\u7684\u8fde\u63a5\u3002"
+      ]
+    },
+    {
+      "scenario": "inventory-health",
+      "method": "GET",
+      "path": "/spapi/inventory/health/900000000000001000",
+      "requests": 100,
+      "success_count": 47,
+      "failure_count": 53,
+      "error_rate": 0.53,
+      "requests_per_second": 295.4888892694919,
+      "duration_seconds": 0.33842220006044954,
+      "latency_ms": {
+        "min": 6.559800007380545,
+        "mean": 32.3008680017665,
+        "p50": 30.082750075962394,
+        "p95": 73.7280850240495,
+        "p99": 78.46182299428621,
+        "max": 80.10750007815659
+      },
+      "status_counts": {
+        "200": 100
+      },
+      "sample_errors": [
+        "business code 400",
+        "business code 400",
+        "business code 400",
+        "business code 400",
+        "business code 400"
+      ]
+    }
+  ]
+}

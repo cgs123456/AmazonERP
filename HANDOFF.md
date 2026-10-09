@@ -21,11 +21,17 @@
 | `AmazonERP-p1-db-audit` | 内容已合并（`a2e48af`），无未提交改动 | 移除 |
 | `AmazonERP-p1-frontend-e2e` | 内容已合并（`992c223`），无未提交改动 | 移除 |
 | `AmazonERP-p2-observability` | 5 个提交的成果已在 master 以**更好形式**存在（16 份 yml 都有 `management/prometheus`；master 的 `ObservabilityExposureContractTest` 15 个方法 vs 分支 5 个）；分支唯一的独有测试 `alertRulesDoNotReferenceUnprovisionedExporterMetrics` 断言的是 master **后来否定的方向**（master 选择补 rabbitmq/node-exporter exporter，而不是删告警规则） | **不合并**，移除 |
-| `AmazonERP-p2-performance` | 含 master 从未收到的 loadtest 重写（已收编为 `3fa0803`）+ 两个真实缺陷 | 收编后移除 |
+| `AmazonERP-p2-performance` | 含 master 从未收到的 loadtest 重写（已收编为 `3fa0803`）+ 两个真实缺陷；另有一份被 master 文档引用、却从未入库的基线 JSON | 收编后移除 |
 
 **判 diff 方向的教训**：`git diff --no-index -- <wt> <master>` 里 `<` 是 worktree、`>` 是 master。
 最初读反了，误判 worktree 在「回退 master 的修复」；实际相反。**判定谁新谁旧必须以文件内容与共同基点
 三方比对为准，不能只看 diff 的加减号**（见坑 51）。
+
+**额外捞出的一件**：`2026-10-02-p2-2-baseline-recheck.md`（master 已提交）在 §开头引用了
+`AmazonERP-p2-performance/docs/superpowers/evidence/2026-09-30-p2-perf-baseline/bench-read-c10-r100.json`，
+但该 JSON 只存在于 worktree 的未跟踪文件里——**master 的引用一直是断的**。本轮把它复制进
+`docs/superpowers/evidence/2026-09-30-p2-perf-baseline/` 并把引用改成本仓路径（同时注明它是
+另一 agent 的未提交产物），删 worktree 前先把这条引用接上。
 
 ### B. 缺陷 1：`ReportFinishedHandler` 绑具体客户端 → mock profile 下 spapi 起不来
 
