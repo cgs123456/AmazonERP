@@ -8,7 +8,8 @@
 
 发版链已完全自动化且自验证（SBOM → CVE gate → cosign 签名+逐镜像验签 → manifest →
 rollback drill），v0.1.12 为当前最新成功发布（19 资产）；凭证导入链路已容器端到端实测
-闭环（录入→加密落库→带 DB 启动自检），真实凭据到位后仅需替换占位符重跑。
+闭环两轮（导入→加密落库→prod 启动自检→应用 Started 持续运行），真实凭据到位后仅需
+替换占位符重跑。第二轮实测抓到并修复 Redisson 与 Boot 4 的兼容缺口（坑 46）。
 
 ## v0.1.11 容器实测：抓到三连 Boot 4 盲区（`a29797e`）
 
@@ -51,7 +52,39 @@ mapper 后无人初始化，`LambdaQueryWrapper.in(UnifiedOrder::getPlatformOrde
 - `verify-clean-clone-windows` 在 tag-push run 中 skipped 属 by-design（`if:
   workflow_dispatch`，v0.1.10 起即如此；dispatch dry-run 才实跑）
 
-## 新坑入档（42–45）
+## 第二轮 runbook 实测（v0.1.12 之后）：抓到 Redisson Boot 4 缺口（`16e00c2`）
+
+按用户指令「你来实测」在 v0.1.12 发布后重跑 first-deploy-bootstrap-runbook（合成凭证
+SYN- 前缀 + 随机 32 字节 key，全部仓库外临时目录）。两轮实测证据链：
+
+**第一轮（发现两件事）**：
+1. 缺 `JWT_SECRET_KEY` 时 bootstrap 起不来——`InternalServiceTokenService` fail-closed
+   拒绝启动，**符合设计**（runbook 5.1 本就要求该变量；补齐即过）。
+2. 导入成功后跑 prod profile 抓到**新盲区**：`ClassNotFoundException:
+   org.springframework.boot.autoconfigure.data.redis.RedisProperties`——Boot 4 把
+   data-redis 自动配置模块化拆分，`RedissonAutoConfigurationV2` 仍引用 Boot 3 类路径。
+   **为什么 CI 全绿**：bootstrap profile 显式 exclude 了 Redisson 自动装配（掩盖），
+   runtime-smoke 不起 spapi prod——只有「prod + Redis starter」路径会炸。
+   **验尸**：下载 Redisson 最新 3.50.0 jar 检查常量池，仍引用旧类路径——官方尚未支持
+   Boot 4，升级无用。
+
+**修复（`16e00c2`，-49/+27 行）**：spapi/order/product 三模块移除
+`redisson-spring-boot-starter`（spapi/order 零消费者；product 唯一消费者
+`TranslationService` 的 L2 翻译缓存改用 `StringRedisTemplate`，TTL+容错语义不变，
+`required=false`+判空降级保留），root pom 删 `<redisson.version>`，bootstrap yml 删
+死 exclude。product 的 `RedissonConfigTest` 断言随新形状更新。
+
+**第二轮（全绿闭环）**：fresh MySQL 容器 → bootstrap 导入 exit 0（2 店铺 9001/9002、
+Flyway 10 迁移、`client_secret_encrypted` 80 字符 base64 密文、明文不在库）→ prod
+`ConnectorStartupCheck 启动自检通过：已加载店铺凭证=2 条` → `Started in 21.9s` →
+补 Redis 容器后持续运行无错误。期间 `DataSourceValidator` 因 Redis/Rabbit 密码为空
+拒绝启动——也是**设计内 fail-closed**（有专门契约测试守它），补齐环境变量即过。
+
+**本地门禁**：全仓 2039/0F/0E/17S、checkstyle-critical 0、hygiene 0。
+
+**遗留（无敏感物）**：%TEMP%\spapi-boot-e2e 残留 SYN 合成凭证文件与已失效 e2e 密钥
+（沙箱策略拦截 Temp 区递归删除）；无真实敏感数据，建议用户手动删该目录。
+## 新坑入档（42–46）
 
 42. **带数据源才暴露的不兼容，CI 测不到**：mybatis-plus/dynamic-datasource 这类
    只在带 DB 启动时才走到的不兼容，runtime-smoke（无 DB）与编程式 Flyway IT（绕过
@@ -67,6 +100,13 @@ mapper 后无人初始化，`LambdaQueryWrapper.in(UnifiedOrder::getPlatformOrde
    初始化，mock 掉 mapper 的单测要用 `TableInfoHelper.initTableInfo` 手动注册（先例：
    `FinanceListPagingContractTest`、`MultiplatformServiceImplTest`）。升级 MP 后凡
    "can not find lambda cache" 报错先查测试是否 mock 了 mapper。
+46. **Redisson 与 Boot 4：官方未支持，且 profile 级 exclude 会掩盖 prod 必炸**：
+   Boot 4 把 data-redis 自动配置拆到独立模块，Redisson 最新 3.50.0 仍引用 Boot 3 的
+   `org.springframework.boot.autoconfigure.data.redis.RedisProperties`（jar 常量池
+   验尸证实），prod 起即 `ClassNotFoundException`；bootstrap 靠显式 exclude 掩盖了它。
+   修复：移除 starter（消费面盘点后零/低消费），L2 缓存改 StringRedisTemplate。
+   教训：profile 级自动装配 exclude 是双刃剑——排查启动兼容问题时必须检查每个 profile
+   的 exclude 清单是否掩盖了其他 profile 的必炸路径。
 
 ## 下一步（按优先级）
 
