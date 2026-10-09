@@ -359,17 +359,20 @@ jobs:
           JSON
           docker run -d --name amz-smoke-mysql --network "$SMOKE_NET" -e MYSQL_ROOT_PASSWORD="$SMOKE_DB_PASSWORD" mysql:8.0
           docker run -d --name amz-smoke-redis --network "$SMOKE_NET" redis:7 redis-server --requirepass "$SMOKE_REDIS_PASSWORD"
+          # 就绪判据必须是"真能建库"而不是 mysqladmin ping：mysql:8 首启有
+          # 临时 server → init → 正式 server 的重启窗口，ping 能在窗口内误报就绪
+          # （v0.1.13 发布 run 实测：ping 过了、建库撞 socket 断开）。
+          # IF NOT EXISTS 幂等，重试循环天然覆盖重启窗口。
           mysql_ready=""
-          for i in $(seq 1 30); do
-            if docker exec amz-smoke-mysql mysqladmin ping -uroot -p"$SMOKE_DB_PASSWORD" --silent; then mysql_ready=yes; break; fi
+          for i in $(seq 1 45); do
+            if docker exec amz-smoke-mysql mysql -uroot -p"$SMOKE_DB_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS amz_spapi; CREATE DATABASE IF NOT EXISTS amz_order; CREATE DATABASE IF NOT EXISTS amz_product;" 2>/dev/null; then mysql_ready=yes; break; fi
             sleep 2
           done
           if [ -z "$mysql_ready" ]; then
             docker logs --tail 50 amz-smoke-mysql
-            echo "MySQL 未在 60 秒内就绪"
+            echo "MySQL 未在 90 秒内就绪（建库失败）"
             exit 1
           fi
-          docker exec amz-smoke-mysql mysql -uroot -p"$SMOKE_DB_PASSWORD" -e "CREATE DATABASE amz_spapi; CREATE DATABASE amz_order; CREATE DATABASE amz_product;"
           # AMZ_CRYPTO_KEY：spapi/user 的 application.yml 显式映射；
           # CRYPTO_KEY：其余服务的宽松绑定（两者都给，见 first-deploy-bootstrap-runbook 5.5）
           SMOKE_ENV=(-e SPRING_PROFILES_ACTIVE=prod -e MYSQL_HOST=amz-smoke-mysql -e MYSQL_PORT=3306 -e DB_USERNAME=root -e DB_PASSWORD="$SMOKE_DB_PASSWORD" -e AMZ_CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e JWT_SECRET_KEY="$SMOKE_JWT_SECRET" -e REDIS_HOST=amz-smoke-redis -e REDIS_PASSWORD="$SMOKE_REDIS_PASSWORD" -e RABBITMQ_PASSWORD="$SMOKE_RABBIT_PASSWORD" -e SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false)
