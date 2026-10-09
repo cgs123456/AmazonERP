@@ -1,7 +1,8 @@
 # HANDOFF — v0.1.20 发版门禁首次全绿 + Seata「默认关闭」落地（2026-10-09 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新截至 commit `e0c6c6d` / tag **v0.1.21**；其前 `5520065` / tag **v0.1.20**
+> 本次更新截至 commit `e7ea961` / tag **v0.1.22**；其前 `e0c6c6d` / tag **v0.1.21**、
+> `5520065` / tag **v0.1.20**
 > 已由真 release run `37909617071` 验证：**3/3 job success，含 Prod-profile boot smoke**。
 
 ## 项目现状一句话
@@ -11,7 +12,7 @@ v0.1.20 是 v0.1.13 引入 Prod-profile boot smoke 后**该步骤首次真正通
 根因是冒烟脚本自己的两个 shell 陷阱，**不是应用缺陷**。v0.1.21 在其上修掉 Seata「默认关闭」
 只写在死配置里的缺陷。发布已不再需要人工审批（见坑 50）。
 
-## 本班三件事
+## 本班四件事
 
 ### 1. 五连红根因：boot_wait 的两个 shell 陷阱（`5520065` / v0.1.20）
 
@@ -67,6 +68,44 @@ body `{"reviewers":[]}`；环境本身保留）。**副作用要说清**：以�
 发布链并创建 GitHub Release，不再有人工闸门。workflow 里的 `environment: production` 仍在
 （契约测试 `test_release_job_requires_production_environment` 要求如此），只是它不再要求审批。
 
+### 4. 仓库与临时产物清理（`e7ea961`）
+
+**临时目录**：`%TEMP%` 下 10 项 `amz-*` 已清 8 项（构建上下文 2、compose override、
+token、Dockerfile、JSON 日志 2、release 日志 1）。剩 2 个 `amz-unix-*.sock`（0 字节，
+9/24 的 AF_UNIX 探针残留）**任何用户态 API 都删不掉**：`File.Delete` / `Remove-Item` /
+`\\?\` 前缀全部返回 "系统无法访问此文件"（`fsutil reparsepoint query` → Error 1920）。
+这是孤儿 AF_UNIX 重解析点的已知行为，重启后自行消失——不是权限或路径问题，别再试。
+顺带纠正一条我先前说错的结论：Temp 区递归删除**不是**被沙箱拦死，
+`[System.IO.Directory]::Delete($p, $true)` 可以正常删（`Remove-Item -Recurse` 才会被拦）。
+注意 `amz-erp-p2-*` 属于**另一 agent 仍在跑的 P2-2 基线栈**（`amz-mysql/redis/rabbitmq`
+Up 9 天），本次只删了它已失效的临时文件，容器一个没动。
+
+**仓库根**：删掉 82 个陈旧 `.log`（2.39 MB，全部命中 `.gitignore` 的 `*.log`、从未入库）
++ `.ci-smoke/` + `.ci-artifacts-smoke-20261008/` + 空目录 `logs/` + 根目录误建的
+`node_modules/`（只有一个 vitest 缓存，是坑 18「vitest 必须在 amz-frontend 里跑」的产物）。
+删除前逐条核对过引用：其中 30 余个被 `docs/superpowers/evidence/2026-09-28-hygiene-baseline.json`
+与若干 spec/plan 提及，但**它们全都是 0 字节**，删掉不损失任何证据内容。
+`.zcodeignore` **保留**——它是 ZCode 编辑器托管文件（HANDOFF 旧节已核实），不是残留。
+
+**死共享配置（同类缺陷的另外两处，本次一并清掉）**：
+
+| 文件 | 为什么是死的 | 处置 |
+| --- | --- | --- |
+| 16 份 `bootstrap.yml`（1 网关 + 15 服务） | 依赖树里**没有** `spring-cloud-starter-bootstrap`，Spring Cloud 2020+ 默认不读该文件 → `spring.cloud.nacos.config.*` 从未生效（spec P0-25(b)）；而 `discovery.server-addr` 在各自 `application.yml` 里另有一份（那份才生效） | 删除 |
+| `amz-common/src/main/resources/jwt-config.yml` | 不是 `application*.yml`、全仓 `spring.config.import` 引用点 0；它声明的 4 个默认值与 `JwtUtil` 的 `@Value` 默认值逐字重复 | 删除 |
+
+TDD 顺序：先写 `DeadSharedConfigContractTest`（4 例）→ 对删除前的树**确认红**（2 红：
+bootstrap.yml ×16、jwt-config.yml 仍在）→ 删文件 → 绿。同时把 `NacosAddressContractTest`
+的扫描对象从 `bootstrap.yml` 改成**真正生效的** `application.yml`（仍是 17 份，
+「默认不得是公网 IP + 必须读 `NACOS_ADDR`」两条断言不变），覆盖面没缩水、指向变准。
+新契约还钉了两条防回潮：任何 pom 不得出现 `spring-cloud-starter-bootstrap`（它一旦出现，
+那 16 份就该按真实需求重建，而不是让测试继续绿）；每份 `application.yml` 必须仍声明
+`${NACOS_ADDR:...}`（证明删 bootstrap.yml 没把注册能力一起删掉）。
+
+验证：amz-common **192/0F/0E**、spapi deploy 契约 **37/0F/0E**（含
+`PlaceholderCoverageContractTest` 2/2，它同样扫描 `bootstrap.yml`，删后仍绿）、
+checkstyle-critical 0、hygiene 0。
+
 ## 新坑入档（47–50）
 
 47. **`set -o pipefail` + `cmd | grep -q` 是"命中也判失败"**：grep -q 一命中就退出，生产者继续写
@@ -92,12 +131,12 @@ body `{"reviewers":[]}`；环境本身保留）。**副作用要说清**：以�
 2. **Seata 若要真正启用**（当前是显式降级为本地事务）：需要 Seata Server + 配置中心 +
    `vgroupMapping`，然后给 order 注入 `SEATA_ENABLED=true`（全仓唯一的 `@GlobalTransactional`
    消费方）。TC 就绪前不要打开。
-3. **同类死配置还有两处未修**（本次只修了 seata，别以为同类问题都清了）：
-   - `amz-common/src/main/resources/jwt-config.yml`：全仓引用点 0，JWT 属性实际由各服务
-     `application.yml` 提供——要么删，要么照 seata 的方式接上；
-   - 16 份 `bootstrap.yml`：无 `spring-cloud-starter-bootstrap`、无 `spring.config.import`，
-     在 Spring Cloud 2023.0.x 下不生效（spec P0-25(b) 未闭环），当前 Nacos 注册/配置拉取实际
-     只靠环境变量。
+3. ~~同类死配置还有两处未修~~ **已完成（`e7ea961`）**：`jwt-config.yml` 与 16 份
+   `bootstrap.yml` 均已删除，并补了 `DeadSharedConfigContractTest` 防回潮、把
+   `NacosAddressContractTest` 指向真正生效的 `application.yml`。**仍未闭环的是能力本身**：
+   Nacos 注册/配置拉取目前只靠环境变量 + `application.yml` 的 discovery 段，配置中心
+   （`spring.cloud.nacos.config.*`）从来没有接上过——要接需先加 `spring-cloud-starter-bootstrap`
+   或改用 `spring.config.import`，届时按新契约的提示重建。
 4. **冒烟的两处噪声/覆盖缺口**（非阻断，别当失败去追）：
    - SkyWalking agent 由 Dockerfile 内置，冒烟网络里没有 OAP → `Failed to resolve host
      skywalking-oap`（v0.1.20 日志 12 条）；要清掉需在冒烟里显式禁用 agent；
