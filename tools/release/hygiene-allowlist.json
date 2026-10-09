@@ -287,6 +287,11 @@
       "sha256": "9457c544955b74839068cefe50e937653d8a014147cd8d5de3bbeba233541dce"
     },
     {
+      "path": "loadtest/scripts/bench.py",
+      "rule": "secret-like-assignment",
+      "sha256": "7eefb8720f9b2111505be7139fecc0a6c26d08c96c2dd0b3909de071c3b88c81"
+    },
+    {
       "path": "loadtest/gatling/ErpStressTest.scala",
       "rule": "secret-like-assignment",
       "sha256": "0440d3e34fe460aefa36dadf9122a1b1ce3edf980c5864e63d13b57e6d4e9fd4"

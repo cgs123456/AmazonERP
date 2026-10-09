@@ -1,16 +1,122 @@
-# HANDOFF — 发版门禁首次全绿 + Seata「默认关闭」落地 + 死代码清理（2026-10-09 更新）
+# HANDOFF — worktree 收编 + 两处启动期缺陷修复 + 门禁回绿（2026-10-09 第二轮更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新截至 commit `b5040a3`（死代码清理，见 §5）；发布链截至 tag **v0.1.22**（`92ab882`），
-> 其前 `e0c6c6d` / tag **v0.1.21**、`5520065` / tag **v0.1.20**
+> 本次更新覆盖 worktree 收编与 Redis/mock 两处启动期缺陷（见 §A–§D）；
+> 发布链截至 tag **v0.1.22**（`92ab882`），其前 `e0c6c6d` / tag **v0.1.21**、`5520065` / tag **v0.1.20**
 > 已由真 release run `37909617071` 验证：**3/3 job success，含 Prod-profile boot smoke**。
 
 ## 项目现状一句话
 
-发版链恢复「tag 即发布」，并且**第一次真的把「带 DB/Redis 的 prod profile 启动」跑成了门禁**：
-v0.1.20 是 v0.1.13 引入 Prod-profile boot smoke 后**该步骤首次真正通过**的版本（19 资产；之前的 v0.1.9/0.1.10/0.1.12 也是全绿，但那时还没有这个步骤）；v0.1.13–v0.1.19 的五连红
-根因是冒烟脚本自己的两个 shell 陷阱，**不是应用缺陷**。v0.1.21 在其上修掉 Seata「默认关闭」
-只写在死配置里的缺陷。发布已不再需要人工审批（见坑 50）。
+后端 19 个 Maven 模块可编译可测；master 上遗留的 4 个 codex/* worktree 已全部收编/清理。
+本轮从这些陈旧 worktree 里捞出两个真实启动期缺陷（report 的 Redis 未接线、spapi 报表处理器绑具体
+客户端导致 mock profile 起不来）并修掉，同时把上一轮 loadtest 收编遗留的 CI hygiene 红灯修绿。
+仍未闭环的是「真实外部凭据」（DeepSeek/Keepa/SP-API）与 Nacos 配置中心，两者都不是代码能推进的。
+
+## 本班（第二轮）做了什么
+
+### A. worktree 收编与清理（4 个 codex/* 分支）
+
+| worktree | 判定 | 处置 |
+| --- | --- | --- |
+| `AmazonERP-p1-db-audit` | 内容已合并（`a2e48af`），无未提交改动 | 移除 |
+| `AmazonERP-p1-frontend-e2e` | 内容已合并（`992c223`），无未提交改动 | 移除 |
+| `AmazonERP-p2-observability` | 5 个提交的成果已在 master 以**更好形式**存在（16 份 yml 都有 `management/prometheus`；master 的 `ObservabilityExposureContractTest` 15 个方法 vs 分支 5 个）；分支唯一的独有测试 `alertRulesDoNotReferenceUnprovisionedExporterMetrics` 断言的是 master **后来否定的方向**（master 选择补 rabbitmq/node-exporter exporter，而不是删告警规则） | **不合并**，移除 |
+| `AmazonERP-p2-performance` | 含 master 从未收到的 loadtest 重写（已收编为 `3fa0803`）+ 两个真实缺陷 | 收编后移除 |
+
+**判 diff 方向的教训**：`git diff --no-index -- <wt> <master>` 里 `<` 是 worktree、`>` 是 master。
+最初读反了，误判 worktree 在「回退 master 的修复」；实际相反。**判定谁新谁旧必须以文件内容与共同基点
+三方比对为准，不能只看 diff 的加减号**（见坑 51）。
+
+### B. 缺陷 1：`ReportFinishedHandler` 绑具体客户端 → mock profile 下 spapi 起不来
+
+`ReportsRealClient` 是 `@Profile("!mock")`、`ReportsMockClient` 是 `@Profile("mock")`，两者都实现
+`ReportsClient` 接口。但 `ReportFinishedHandler` 是**无 profile 限制**的 `@Component`，构造函数却直接要
+`ReportsRealClient` —— `SPRING_PROFILES_ACTIVE=mock` 下容器里没有该 Bean，整个 spapi 因
+`NoSuchBeanDefinition` 起不来。这条路径不是边角：**`tools/ci/runtime_smoke.py` 的默认 profile 就是 mock**。
+
+修复（TDD）：先落 `ReportFinishedHandlerTest`（6 例，含「构造函数只接受 `ReportsClient` 接口」与 mock Bean
+可装配），对修复前代码**确认编译期即红**（`ReportsMockClient cannot be converted to ReportsRealClient`）
+→ 把依赖类型改成 `ReportsClient` 接口 → 绿。
+
+### C. 缺陷 2：report 声明了 Redis starter 却没接线 → `/actuator/health` 恒 DOWN
+
+`amz-service-report` 的 pom 声明了 `spring-boot-starter-data-redis`（15 个业务模块里唯一一个既声明
+starter、又**没有** `spring.data.redis.host` 的）。Boot 的 `DataRedisAutoConfiguration` 在 classpath 有
+starter 时无条件建一个默认指向 `localhost:6379` 的 `LettuceConnectionFactory`，
+`DataRedisHealthContributorAutoConfiguration` 随之注册 redis 健康指示器。容器里没有本机 Redis →
+`/actuator/health` 聚合为 DOWN → compose 的 `healthcheck`（`grep -q "status":"UP"`）**恒判不健康**。
+它不像启动失败那样响亮，所以一直没人发现。
+
+修复（TDD）：先落 `RedisWiringContractTest`（2 例，跨 pom/yml/compose/k8s 四份文件），对修复前代码确认红
+（唯一 offender 就是 report，compose 与 k8s 各缺 3 个键）→ 三处补齐：yml 加 `spring.data.redis` 块、
+compose 的 report 段加 `REDIS_HOST/REDIS_PORT/REDIS_PASSWORD`、k8s 清单加同样三个 env（只加进业务容器，
+未污染 initContainer）→ 绿。
+
+**容器 A/B 实测**（同一 jar，同一 MySQL，唯一变量是 REDIS_HOST 能否连通）：
+
+| REDIS_HOST 指向 | `/actuator/health` |
+| --- | --- |
+| 可达的 `amz-verify-redis` | **HTTP 200 `{"status":"UP"}`** |
+| 容器内不可达的 `127.0.0.1:6379` | **HTTP 503（DOWN）** |
+
+### D. 门禁回绿：上一轮收编 loadtest 时留下的 hygiene 红灯
+
+上一轮 `3fa0803` 的提交信息写「hygiene 0 findings」，**是错的**：它新收编的 `loadtest/scripts/bench.py` 里
+`if token:` 与「把 args 上的 token 传给 run_scenario」两行触发 `secret-like-assignment` 启发式（把标识符 `token` 当密钥名），
+CI run `37940008909` 的 hygiene job 因此红。这两处是扫描器误报（不是真密钥），按仓内既有先例（同一规则的
+`loadtest/gatling`、`loadtest/jmeter/README.md` 都已进白名单）为 `bench.py` 补一条**内容哈希精确**的
+白名单条目（path+rule+sha256，任何字节变动即失效），而不是放宽规则。
+
+**教训**：提交信息里的「已通过」必须当次真跑命令；`3fa0803` 当时把「本地没跑」写成了「0 findings」。
+（另：哈希用 `_sha256_file` 的 **CRLF/CR→LF 归一化**结果，直接对原始字节取 sha256 会得到不匹配的值。）
+
+## 本轮验证记录
+
+- 全仓 `mvn -B -o -DskipTests compile test-compile`：**19/19 BUILD SUCCESS**
+- `amz-service-spapi` 全量单测：**706 / 0F / 0E / 12S**，BUILD SUCCESS
+- `amz-service-report` 全量单测：**74 / 0F / 0E / 3S**，BUILD SUCCESS
+- spapi `com.amz.deploy.*` 部署契约：**86 / 0F / 0E**（含新增 `RedisWiringContractTest` 2 例）
+- `mvn checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml`：**0 violations**
+- `repository_hygiene.py --root .`：**0 findings**；`tools.release.test_repository_hygiene` **7 OK**；
+  release tools 全套 **89 OK**
+- 容器 A/B：report 在可达 Redis 下 health **200 UP**、不可达下 **503 DOWN**（见 §C）
+
+## 后续工作方向（按优先级）
+
+1. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。到位后按
+   `docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md` 录凭证 → 容器实跑导入 → 对照 B 桶断言
+   确认点名失败消失。**别再为 B 桶加新断言**（已补齐，重复投资）。
+2. **陈旧 worktree 里的「旧代码」不要回流**：`AmazonERP-p2-performance` 的 HEAD `136cec0` 停在
+   2026-09-30，其 `docker-compose.yml` / `report/application.yml` 比 master 旧，**不要**用它覆盖 master。
+   本轮已确认其中真正有价值的两处（接口依赖、Redis 接线）均已按 master 口径独立修好。
+3. **Seata 若要真正启用**（当前显式降级为本地事务）：需要 Seata Server + 配置中心 + `vgroupMapping`，
+   然后给 order 注入 `SEATA_ENABLED=true`（全仓唯一 `@GlobalTransactional` 消费方）。TC 就绪前不要打开。
+4. **Nacos 配置中心从未接上**：注册/配置拉取目前只靠环境变量 + `application.yml` 的 discovery 段。
+   要接需先加 `spring-cloud-starter-bootstrap` 或改用 `spring.config.import`。
+5. **冒烟的两处噪声/覆盖缺口**（非阻断）：SkyWalking agent 在冒烟网络里没有 OAP（`Failed to resolve host
+   skywalking-oap`）；冒烟只建 `amz_spapi/amz_order/amz_product` 三个库，`FieldPermissionService` 查
+   `amz_user` 失败后降级「全部可见」。
+6. **recovery 快照目录**（`AmazonERP-recovery-20260928-092159`，桌面上还有若干同类）：是某个 `codex/*`
+   分支在 `3c8f21e` 的**工作区快照**（无 `.git`，10.1 MB / 337 文件）。SHA 比对：327 个未跟踪文件里
+   132 个与 master 相同、123 个是更旧版本、72 个 master 没有——其中 71 个是一次性 agent 脚本，
+   **只有 1 个是有意删除的交付物**（`ProductServiceImplSearchPagingTest`，见
+   `docs/superpowers/evidence/2026-10-03-endpoint-coverage-v14-ledger.md:151`）。建议**保留**（体积小、
+   不可再生）；若要清理，先确认没有别的东西只存在于快照里。
+
+## 新坑入档（51–52）
+
+51. **`git diff --no-index` 的 `<`/`>` 与「谁新谁旧」无关**：`git diff --no-index -- A B` 里 `<` 是 A、
+    `>` 是 B；把它当成「减号=旧、加号=新」会读反。判定陈旧 worktree 里某文件是不是「修复」必须做
+    **三方比对**（worktree vs 共同基点 vs master）：本班差点据反读的 diff 把两个真修复当成「回退」丢弃。
+52. **「classpath 上有 starter」= Boot 会建连接工厂 + 注册健康指示器**：只加
+    `spring-boot-starter-data-redis` 而不写 `spring.data.redis.host`，服务在容器里会连 `localhost:6379`
+    并把 `/actuator/health` 拖成 DOWN，进而让 compose/k8s 的健康检查恒失败——**不报错、不崩溃，只是探针
+    永远不健康**。新增任何带外部依赖的 starter 都要同时回答「配置从哪来、两条部署路径都供了吗」。
+
+---
+
+## 历史段落（按当时口径读）
+# HANDOFF — 发版门禁首次全绿 + Seata「默认关闭」落地 + 死代码清理（2026-10-09 上一轮，按当时口径读）
 
 ## 本班四件事
 
