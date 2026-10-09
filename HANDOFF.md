@@ -1,8 +1,8 @@
-# HANDOFF — v0.1.20 发版门禁首次全绿 + Seata「默认关闭」落地（2026-10-09 更新）
+# HANDOFF — 发版门禁首次全绿 + Seata「默认关闭」落地 + 死代码清理（2026-10-09 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新截至 commit `e7ea961` / tag **v0.1.22**；其前 `e0c6c6d` / tag **v0.1.21**、
-> `5520065` / tag **v0.1.20**
+> 本次更新截至 commit `b5040a3`（死代码清理，见 §5）；发布链截至 tag **v0.1.22**（`92ab882`），
+> 其前 `e0c6c6d` / tag **v0.1.21**、`5520065` / tag **v0.1.20**
 > 已由真 release run `37909617071` 验证：**3/3 job success，含 Prod-profile boot smoke**。
 
 ## 项目现状一句话
@@ -105,6 +105,34 @@ bootstrap.yml ×16、jwt-config.yml 仍在）→ 删文件 → 绿。同时把 `
 验证：amz-common **192/0F/0E**、spapi deploy 契约 **37/0F/0E**（含
 `PlaceholderCoverageContractTest` 2/2，它同样扫描 `bootstrap.yml`，删后仍绿）、
 checkstyle-critical 0、hygiene 0。
+
+### 5. 死代码清理 + v0.1.22 发布瞬时失败（`b5040a3`）
+
+**死代码**：判据是「类名在全仓（java + xml/yml/sql/ts/md）只出现一次、且文档/规格零提及」。
+1133 个 Java 文件里扫出 74 个零引用类，其中 65 个是测试类（本就不被别处引用），
+真正的主代码死件 9 个，已删：
+
+| 文件 | 为什么是死的 |
+| --- | --- |
+| `amz-common/.../util/{DealTimeUtil,DiffDayUtil,IsExpireUtil}.java` | 三个静态工具类，全仓 0 引用 |
+| `amz-service-order/.../model/dto/BuyDto.java` | 0 引用 |
+| `amz-service-finance/.../client/dto/RemoteInventoryBatch.java` | 被 `RemoteBatchCostSummary` 取代（`ProcurementCostClient` 现在只取聚合值，不再拉批次明细） |
+| `amz-service-search/.../config/EsConfig.java` | 空壳 `@Configuration`，无任何 `@Bean` |
+| `amz-service-ad/.../mapper/AdCampaignMapper.java` | 无人注入（`AdCampaign` model 本身保留——它是广告 API 客户端的 DTO） |
+| `amz-service-spapi/.../mapper/ProductSalesStatsMapper.java` + `model/ProductSalesStats.java` | 一对孤立的 mapper+entity；表 `amz_product_sales_stats` 与其 Flyway DDL 未动 |
+
+**保留判定（重要）**：`@Configuration` / `@Controller` 即使类名零引用也**不能删**——Spring 靠注解
+装配。本次核对后保留：`OpenApiConfig`（出 OpenAPI Bean）、`OperLogConfig`（出 `amzAsyncExecutor`
+并 `@EnableAsync`）、`VoucherExchangeConfig`（出 `voucherExchange`）、`SkuProfitController` /
+`ProductMasterController`（有真实路由，endpoint 审计里各记 1 / 5 个端点）。
+验证：全仓 `mvn -B -o -DskipTests compile test-compile` **19/19 SUCCESS**（main+test 都编），
+drift 门禁 101→**100 实体/0 漂移**，hygiene 0，release 契约测试 26 OK。
+
+**v0.1.22 发布失败是瞬时的，不是缺陷**：run `37919810558` 红在步骤 7「Generate SBOM for every
+release image」——syft 拉 `amazonerp-procurement` 镜像层时报
+`oci-registry: failed to fetch layer 12 ... stream error: stream ID 27; PROTOCOL_ERROR; received from peer`。
+同一个 run 里它前面 12 个镜像的 SBOM 全部成功，是 GHCR/网络瞬时抖动（与用户此前遇到的 502 同类）。
+处置：`gh run rerun 37919810558 --failed` 重跑失败 job，不新建 tag、不改代码。
 
 ## 新坑入档（47–50）
 
