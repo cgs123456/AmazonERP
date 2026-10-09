@@ -26,7 +26,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <b>实测发现的缺陷链（2026-09-24 第 53 轮）</b>：
  * <ol>
  *   <li>16 份 {@code bootstrap.yml} + {@code amz-common/seata-default.yml} 把默认值写成
- *       {@code ${NACOS_ADDR:<第三方公网地址>:8848}}——服务在<b>没有注入该变量时</b>会去连一台不属于使用者的机器；</li>
+ *       {@code ${NACOS_ADDR:<第三方公网地址>:8848}}——服务在<b>没有注入该变量时</b>会去连一台不属于使用者的机器；
+ *       <b>2026-10-09 更新</b>：那 16 份 {@code bootstrap.yml} 已确认是死配置（依赖树里没有
+ *       {@code spring-cloud-starter-bootstrap}，Spring Cloud 2020+ 默认不读该文件），已全部删除；
+ *       本测试改为盯<b>真正生效</b>的 16 份 {@code application.yml}，覆盖面不变、指向变准。</li>
  *   <li>{@code docker-compose.yml} 与 15 份 k8s service 清单注入的变量名是 {@code NACOS_SERVER_ADDR}，
  *       而代码读的是 {@code NACOS_ADDR}——<b>注入了也读不到</b>，于是 16 个服务全部走默认值；</li>
  *   <li>{@code .env.example} 根本没有 {@code NACOS_ADDR} 这一项——按模板填出来的 {@code .env}
@@ -44,7 +47,7 @@ class NacosAddressContractTest {
     /** 1 个网关 + 15 个业务服务 = 16 个需要注册中心的进程。 */
     private static final int SERVICE_COUNT = 16;
 
-    /** 16 份 bootstrap.yml + amz-common 的 seata-default.yml。 */
+    /** 16 份 application.yml（生效的那份）+ amz-common 的 seata-default.yml。 */
     private static final int NACOS_CONFIG_FILES = SERVICE_COUNT + 1;
 
     private static final Pattern IPV4 = Pattern.compile("\\b(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\b");
@@ -57,7 +60,7 @@ class NacosAddressContractTest {
     void nacosDefaultsAreLocalAndReadTheCodeVariable() {
         List<Path> files = nacosConfigFiles();
         assertEquals(NACOS_CONFIG_FILES, files.size(),
-                "Nacos 配置文件数量变化：新增服务必须同步补 bootstrap.yml，且本断言需同步更新");
+                "Nacos 配置文件数量变化：新增服务必须同步补 application.yml，且本断言需同步更新");
         for (Path file : files) {
             String text = read(file);
             assertTrue(text.contains("${" + CODE_VAR + ":"),
@@ -130,7 +133,7 @@ class NacosAddressContractTest {
         List<Path> files = new ArrayList<>();
         Path root = repoRoot();
         for (String relative : List.of(
-                "amz-gateway/src/main/resources/bootstrap.yml",
+                "amz-gateway/src/main/resources/application.yml",
                 "amz-common/src/main/resources/seata-default.yml")) {
             Path p = root.resolve(relative);
             assertTrue(Files.exists(p), "缺少配置文件（路径失效会让断言假通过）：" + relative);
@@ -140,7 +143,7 @@ class NacosAddressContractTest {
         try (Stream<Path> walk = Files.walk(services)) {
             walk.filter(Files::isRegularFile)
                     .filter(NacosAddressContractTest::notBuildOutput)
-                    .filter(p -> p.getFileName().toString().equals("bootstrap.yml"))
+                    .filter(p -> p.getFileName().toString().equals("application.yml"))
                     .forEach(files::add);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
