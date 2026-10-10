@@ -1,21 +1,60 @@
-# HANDOFF — 运营告警三态补齐 + 关键词目录 + 死表清理（2026-10-10 更新）
+# HANDOFF — 字段权限缓存对账 + 运营告警三态 + 关键词目录 + 死表清理（2026-10-10 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新覆盖 ops 模块两项业务补齐与一处死表清理（见 §A–§C），以及随之而来的三处 CI 红修复；
-> 上一轮的 worktree 收编与 Redis/mock 启动期缺陷见 §历史段。
+> 本次更新覆盖一处字段权限缓存缺陷修复（见 §0）、ops 模块两项业务补齐与一处死表清理（见 §A–§C），
+> 以及随之而来的三处 CI 红修复；上一轮的 worktree 收编与 Redis/mock 启动期缺陷见 §历史段。
 > 发布链截至 tag **v0.1.22**（`92ab882`），其前 `e0c6c6d` / tag **v0.1.21**、`5520065` / tag **v0.1.20**
 > 已由真 release run `37909617071` 验证：**3/3 job success，含 Prod-profile boot smoke**。
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；工作区干净、与 origin/master 同步（HEAD `508048d`）；**CI 11/11 job 全绿**
-（run `38013273102`，含真实 MySQL 8 上 59 个迁移回放）。
-本轮做了三件业务侧的事：① 补齐运营告警的三态终态机（`IGNORED` 此前只存在于 DDL 注释，
-跟卖告警连处置端点都没有）；② 新增「本店被追踪关键词」目录端点，趋势查询不再只能凭记忆手输；
-③ 清掉 102 张活表里唯一一张零引用死表（`amz_product_sales_stats`，102→101 表）。
-仍未闭环的是「真实外部凭据」（DeepSeek/Keepa/SP-API）与 Nacos 配置中心，两者都不是代码能推进的。
+后端 19 个 Maven 模块可编译可测；工作区干净、与 origin/master 同步；**CI 11/11 job 全绿**
+（最近一次 run `38015620421`，HEAD `7aae15c`，含真实 MySQL 8 上 59 个迁移回放）。
+本轮做了四件事：① 修掉字段权限缓存「只增不删」导致**撤销权限永久不生效**的缺陷（§0）；
+② 补齐运营告警的三态终态机（`IGNORED` 此前只存在于 DDL 注释，跟卖告警连处置端点都没有）；
+③ 新增「本店被追踪关键词」目录端点，趋势查询不再只能凭记忆手输；
+④ 清掉 102 张活表里唯一一张零引用死表（`amz_product_sales_stats`，102→101 表）。
+仍未闭环的是「真实外部凭据」（DeepSeek/Keepa/SP-API）、Nacos 配置中心，以及
+**字段权限的 fail-open 降级语义（P0-09，本轮只修了「撤销不生效」，没改降级方向）**；
+前两项不是代码能推进的，第三项是能推进但需要一次明确决策。
 
 ## 本班（2026-10-10）做了什么
+
+### 0. 字段权限缓存「只增不删」：撤销权限永久不生效（本轮新发现）
+
+`FieldPermissionServiceImpl.loadPermissions()` 原本只做 `SADD`：把 DB 里 `visible=0` 的规则
+写进 Redis，**从不删除 member，也从不删除 key**。而 `getHiddenFields()` 优先读 Redis 且
+「非空即返回」，于是：
+
+- 库里把某条隐藏规则撤销（`visible` 改回 1）→ Redis 里旧 member 还在 → **该字段被无限期隐藏**；
+- 整行删除规则 → 整个 Redis key 还在 → 同样永不失效；
+- 而 Redis 这些 key **没有 TTL**，重启服务才会重新加载一次——但重新加载同样只加不删，
+  所以**重启也修不好**，只能手工 `DEL`。
+
+这是「缓存覆盖了事实源」方向的错，与 P0-09 的 fail-open 是**两个不同的问题**（见后续方向 0）。
+影响面：`@FieldPermission` 标注的字段分布在 order（`Order`/`ProfitReport`/`ProductCost`）、
+procurement（`PurchaseOrder`）、finance（`AccountingVoucher`）、ad（`AdCampaign`）四域。
+
+**修法**：`loadPermissions()` 改为「先整体替换内存快照，再对账 Redis」——
+删没有 DB 规则支撑的孤儿 key、删已撤销的 member、补新增 member。
+
+- **不做「先清空再重建」**：清空瞬间的并发读会退化成「无规则 = 全部可见」，
+  对字段权限来说这正是要避免的方向；增量对账没有这个窗口。
+- **内存快照整体替换引用（`volatile`）**：并发读到的要么是旧快照、要么是新快照，
+  都是某个时刻的真实规则，不会看到「清到一半」的中间态。
+- **DB 加载失败时保留上一次成功快照**，不再清空成「全部可见」（原实现会 `memoryCache.clear()`）。
+- 对账用 **`SCAN` 而非 `KEYS`**：`KEYS` 是 O(N) 阻塞命令，会把 Redis 单线程卡住；
+  且逐 key 删除，避免多 key `DEL` 在 Redis Cluster 上跨 slot 失败。
+- Redis 对账失败只降级到内存兜底，不影响本次 DB 结果生效。
+
+**新增测试** `FieldPermissionServiceImplTest`（5 例）：撤销 member / 删除孤儿 key /
+新增规则 / Redis 失败回退内存 / 无 `JdbcTemplate` 跳过。
+**反证**：把「移除过期 member」与「删除孤儿 key」两处逻辑注释掉，**2 例立刻红**——
+证明这组断言确实在观察被修的行为，不是恒真。
+
+**连带清理**：删掉 `loaded` 字段。它只写不读，注释却自称「避免无规则表时反复尝试 DB 查询」，
+实际上既没有跳过加载、也没有自动刷新——属于会让读代码的人误判存在节流的注释性死代码。
+
 
 ### A. 运营告警三态终态机：`IGNORED` 从注释变成真端点
 
@@ -95,6 +134,11 @@
    fixture（与 `OPS_TREND` 同源，避免「目录里选了却查不到趋势」的自相矛盾）。
 ## 本轮验证记录（2026-10-10）
 
+- **字段权限修复**：`amz-common` 全量 **197 / 0F / 0E**（原 192 + 新增 5）；
+  `FieldPermissionServiceImplTest` 先红后绿（修前 5 例中 2 例红）；
+  变异反证（注释掉移除/删除逻辑）**2 例立刻红**；单模块 `checkstyle-critical` **0 violations**；
+  全仓 `mvn -B -o -DskipTests compile test-compile` **19/19 BUILD SUCCESS**
+- **真 CI（字段权限修复）**：run `38015620421`（HEAD `7aae15c`）**11/11 job success**
 - 全仓 `mvn -B -o -DskipTests compile test-compile`：**19/19 BUILD SUCCESS**
 - `amz-service-ops` 全量单测：**57 / 0F / 0E**（原 36 + 新增 21：告警处置 15 + 关键词目录 6）
 - `amz-service-spapi` 全量单测：**706 / 0F / 0E / 12S**（含部署契约 96 例）
@@ -113,27 +157,36 @@
   **118 passed / 8 flaky / 0 failed**。失败与 flaky 分散在 agent-eval / profit / notifications /
   customer / order-audit / product-search / ad-bid / multiplatform 等**与本轮改动无关**的用例上，
   单独重跑即过；`playwright.config.ts` 注释已记录 dev server 冷启动抖动是**既有开放项**
-- **真 CI**：run `38013273102`（HEAD `508048d`）**11/11 job success**，含
+- **真 CI**：run `38013890639`（HEAD `895dfdc`）**11/11 job success**，含
   `mysql-import` 在真实 MySQL 8 上 `TOTAL migrations=59 failed=0`——**V11 的 DROP 已真机验证**
 ## 后续工作方向（按优先级）
 
-0. **`IGNORED` 若要变成「以后别再报」需要加扫描侧去重**（当前语义只是「本次不处理」）：
+0. **字段权限的 fail-open 降级语义（P0-09，本轮只修了一半）**：本轮修的是「撤销不生效」，
+   **没有**改「权限服务不可用时放行全部字段」的方向。当前仍有三条 fail-open 路径：
+   `getHiddenFields` 在 Redis 异常时回退内存、内存也没命中就返回空集（=全部可见）；
+   `FieldPermissionAspect` 在 `UserContext.role == null` 时**直接不过滤**；
+   `isFieldVisible` 在 role/entity/field 任一为 null 时**返回 true**。
+   三条都是刻意为之的「不阻断业务」，改成 fail-closed 会让「上下文没建起来」从「字段不隐藏」
+   变成「敏感字段全部消失」，**属于产品决策而不是缺陷修复**，需要先定：
+   哪些字段算敏感、上下文缺失时是 500/空值还是照常返回。改动前不要只改一条路径——
+   三条不一致本身就是风险。
+1. **`IGNORED` 若要变成「以后别再报」需要加扫描侧去重**（当前语义只是「本次不处理」）：
    扫描现在仍是 mock 造数，接真实数据源时应一并决定是否按 `(shop_id, asin)` 抑制已 IGNORED 的
    组合重建告警。放在扫描侧而不是处置侧，是因为处置侧无法验证这个行为、且会和造数逻辑打架。
-1. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。到位后按
+2. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。到位后按
    `docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md` 录凭证 → 容器实跑导入 → 对照 B 桶断言
    确认点名失败消失。**别再为 B 桶加新断言**（已补齐，重复投资）。
-2. **陈旧 worktree 里的「旧代码」不要回流**：`AmazonERP-p2-performance` 的 HEAD `136cec0` 停在
+3. **陈旧 worktree 里的「旧代码」不要回流**：`AmazonERP-p2-performance` 的 HEAD `136cec0` 停在
    2026-09-30，其 `docker-compose.yml` / `report/application.yml` 比 master 旧，**不要**用它覆盖 master。
    本轮已确认其中真正有价值的两处（接口依赖、Redis 接线）均已按 master 口径独立修好。
-3. **Seata 若要真正启用**（当前显式降级为本地事务）：需要 Seata Server + 配置中心 + `vgroupMapping`，
+4. **Seata 若要真正启用**（当前显式降级为本地事务）：需要 Seata Server + 配置中心 + `vgroupMapping`，
    然后给 order 注入 `SEATA_ENABLED=true`（全仓唯一 `@GlobalTransactional` 消费方）。TC 就绪前不要打开。
-4. **Nacos 配置中心从未接上**：注册/配置拉取目前只靠环境变量 + `application.yml` 的 discovery 段。
+5. **Nacos 配置中心从未接上**：注册/配置拉取目前只靠环境变量 + `application.yml` 的 discovery 段。
    要接需先加 `spring-cloud-starter-bootstrap` 或改用 `spring.config.import`。
-5. **冒烟的两处噪声/覆盖缺口**（非阻断）：SkyWalking agent 在冒烟网络里没有 OAP（`Failed to resolve host
+6. **冒烟的两处噪声/覆盖缺口**（非阻断）：SkyWalking agent 在冒烟网络里没有 OAP（`Failed to resolve host
    skywalking-oap`）；冒烟只建 `amz_spapi/amz_order/amz_product` 三个库，`FieldPermissionService` 查
    `amz_user` 失败后降级「全部可见」。
-6. **recovery 快照目录**（`AmazonERP-recovery-20260928-092159`）——**2026-10-09 已删除**。
+7. **recovery 快照目录**（`AmazonERP-recovery-20260928-092159`）——**2026-10-09 已删除**。
    原是分支 `codex/api-ready-connectors` 在 `3c8f21e` 时的工作区快照（无 `.git`，10.1 MB / 337 文件）。
    桌面实测**只有这一个**同类目录，不是"桌面上很多"。
    按 Git 归一化口径复算 327 个未跟踪文件：**130 字节相同 / 71 仅换行符差异 / 29 仅末尾换行差异 /
@@ -147,7 +200,7 @@
    另发现该目录含 `_r82_tokens.txt`（本地签发的真实 JWT），是删除的额外理由。
    注意：按**原始字节**比较会得到 130/125/72，那是换行符口径造成的假差异，不能据此判断内容新旧。
 
-7. **`%TEMP%` 下的 phase0 残留——2026-10-09 已删除**（11 个目录 / 50.9 MB，2026-09-29～09-30 的
+8. **`%TEMP%` 下的 phase0 残留——2026-10-09 已删除**（11 个目录 / 50.9 MB，2026-09-29～09-30 的
    残缺 clone，只有 `.git/objects`，无 HEAD/config/工作树）。逐个比对对象库后确认：
    - `amazonerp-phase0-commit-rehearsal-20260929-130209`：含 **7 个主仓库从未出现过的 blob**，来自未推送的
      commit `4ac9bd6`（"chore(phase0): harden production release baseline"，2026-09-29 13:02）。
@@ -328,10 +381,19 @@ release image」——syft 拉 `amazonerp-procurement` 镜像层时报
 
 ## 后续工作方向（按优先级）
 
-0. **`IGNORED` 若要变成「以后别再报」需要加扫描侧去重**（当前语义只是「本次不处理」）：
+0. **字段权限的 fail-open 降级语义（P0-09，本轮只修了一半）**：本轮修的是「撤销不生效」，
+   **没有**改「权限服务不可用时放行全部字段」的方向。当前仍有三条 fail-open 路径：
+   `getHiddenFields` 在 Redis 异常时回退内存、内存也没命中就返回空集（=全部可见）；
+   `FieldPermissionAspect` 在 `UserContext.role == null` 时**直接不过滤**；
+   `isFieldVisible` 在 role/entity/field 任一为 null 时**返回 true**。
+   三条都是刻意为之的「不阻断业务」，改成 fail-closed 会让「上下文没建起来」从「字段不隐藏」
+   变成「敏感字段全部消失」，**属于产品决策而不是缺陷修复**，需要先定：
+   哪些字段算敏感、上下文缺失时是 500/空值还是照常返回。改动前不要只改一条路径——
+   三条不一致本身就是风险。
+1. **`IGNORED` 若要变成「以后别再报」需要加扫描侧去重**（当前语义只是「本次不处理」）：
    扫描现在仍是 mock 造数，接真实数据源时应一并决定是否按 `(shop_id, asin)` 抑制已 IGNORED 的
    组合重建告警。放在扫描侧而不是处置侧，是因为处置侧无法验证这个行为、且会和造数逻辑打架。
-1. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。
+2. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。
    到位后按 `docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md` 录凭证 → 容器实跑导入 →
    对照 B 桶断言确认点名失败消失。**别再为 B 桶加新断言**（已补齐，重复投资）。
 2. **Seata 若要真正启用**（当前是显式降级为本地事务）：需要 Seata Server + 配置中心 +
