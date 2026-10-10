@@ -2,7 +2,7 @@
 
 基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务业务闭环，内置 AI 运营 Agent（29 工具）与可观测性三栈。
 
-> ⚠️ **当前状态（2026-09-26 复核）**：本仓库**仍不能按现状视为可直接生产部署**。审计基线最初列出 **32 条 P0**，后续轮次继续追加到 **P0-58**；其中部分已修复、部分仅登记，**未重新逐项复核前不把编号总数当作剩余开放数**。P0-57 的默认 mock/部署 profile 问题已修复；第 74 轮新增 `ProductionProfileGuard`：默认 `prod`、离线演示必须显式 `mock`，`prod,mock` 混用会拒绝启动；第 75 轮新增 `DataSourceValidator`：`prod` 下已配置为空的密码，以及 `CHANGE_ME_*`、`your_*` 等占位密码，都会拒绝启动。但 SP-API 凭证、权限、端点和字段契约仍需真实沙箱/生产联调。
+> ⚠️ **当前状态（2026-10-10 更新）**：工程侧可发布基线已收口——发布链至 **v0.1.23**（release run `38029198461` 3/3 success，含 prod-profile 四腿 boot smoke），master CI **12/12 全绿**（run `38031922658`）。`prod,mock` 混用拒绝启动（`ProductionProfileGuard`）、占位密码拒绝启动（`DataSourceValidator`）、字段权限 fail-closed（`FieldPermissionServiceContractTest` 11 例先红后绿）均已落地并有契约测试守卫；无凭据场景的契约级验收走 `tools/connector-acceptance`（selftest 65/65 PASS）。**SP-API / Ads / DeepSeek / Keepa 等真实凭据仍未配置**——「可直接生产部署」仍以完成沙箱/生产联调（E4/E5）为前提，模块与端点描述均指代码路径已具备，不代表外部平台已真实对接。
 > **“有 API 凭据”不等于“即插即用”**：当前主链路的工程证据最高仍是 **E2/E3**（进程内桩 + 官方 OpenAPI 快照），不是 **E4 沙箱联调**或 **E5 生产联调**。真实接通还需要 LWA client id/secret + refresh token、SP-API 应用授权/订阅/角色权限、marketplaceId/region、官方端点版本与 usage plan 对账、字段契约验证，以及沙箱/生产联调。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
 > 上文「业务闭环」指**模块与代码路径已具备**，不代表外部平台已完成真实对接或沙箱联调；当前复核仍未发现主代码 `*RealClient` 返回硬编码 `MOCK_*` 假成功，但 1688 签名/token、金蝶多币种字段、SP-API 权限与字段契约、多平台签名等仍未取得 E4/E5 联调证据，`ConnectorRegistry` 当前为 90 条已实现 / 0 条未实现：26 条来自既有类型化客户端，64 条来自统一 `SpApiOperationCatalog` + `SpApiOperationClient`，官方快照 15 份、Usage Plan 106 条；已实现清单与调用点双向一致。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
 
@@ -54,12 +54,12 @@ amz-service-logistics       — 物流（全子域看板 + 双入口取数 + 商
 amz-service-ops             — 运营工具（差评/跟卖/关键词监控）
 amz-service-report          — 数据报表（利润/周转/经营看板）
 amz-service-finance         — 业财一体（复式记账 + 金蝶 + VAT）
-amz-service-multiplatform   — 多平台（Shopify/eBay/Walmart/Shopee/Lazada）
+amz-service-multiplatform   — 多平台订单/消息/库存同步（Temu / TikTok Shop / SHEIN 三家已实现；更多平台按需接入）
 # 公共模块
 amz-common               —        — 公共（Result/UserContext/AOP/GlobalExceptionHandler/Flyway）
 ```
 
-> 共 101 张表（Flyway 迁移重放后的活表集合，2026-10-10 死表清理后实测）、360+ REST 端点（方法注解实测）、AI Agent 29 工具
+> 共 101 张表（Flyway 迁移重放后的活表集合，2026-10-10 死表清理后实测）、357 个 REST 端点（60 个 Controller 方法注解实测）、AI Agent 29 工具
 
 ## 🤖 AI 运营 Agent（29 工具）
 
@@ -291,7 +291,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-> `docker-compose.yml` 实测包含 **31 个 service**（基础设施 + 网关 + 业务服务 + 前端；2026-09-24 以文件为准，旧口径「17 服务」已过期）。注意：Compose 已为 16 个 Spring 服务逐段注入 `SPRING_PROFILES_ACTIVE`（缺省值 `prod`，离线演示可设为 `mock`；`prod,mock` 混用会被公共启动守卫拒绝）、`REDIS_HOST` 全域缺失、`MYSQL_HOST` 仅 spapi 有值，直接 `up -d` 只能用于本地演示，不能作为部署基线。
+> `docker-compose.yml` 实测包含 **40 个顶层条目**（15 个基础设施 + 16 个 Spring 服务 + 前端 + 8 个数据卷；2026-10-10 以文件为准，旧口径「31 服务 / 17 服务」已过期）。Compose 已为 16 个 Spring 服务逐段注入 `SPRING_PROFILES_ACTIVE`（缺省值 `prod`，离线演示可设为 `mock`；`prod,mock` 混用会被公共启动守卫拒绝），`MYSQL_HOST` / `REDIS_HOST` 已在各业务服务段显式注入；业务表由各服务 Flyway 自建（`docker/init-sql` 只建 14 个空库）。直接 `up -d` 可用于本地演示；生产部署仍以 `.env` + first-deploy-bootstrap-runbook 为准。
 
 ### 4. 启动业务服务
 
@@ -338,11 +338,11 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（2026-10-08 fresh；`mvn test`） | 2041（0 失败 / 0 错误 / 17 跳过） | 19/19 reactor `BUILD SUCCESS`（16 模块含测试） |
+| 后端 JUnit 5（2026-10-10 fresh；`mvn test`） | 2149（0 失败 / 0 错误 / 6 跳过） | 19/19 reactor `BUILD SUCCESS`（16 模块含测试） |
 | 前端 Vitest（2026-10-07 fresh；`npm run test:run`） | 481（0 失败） | 43/43 文件通过 |
 | 前端 Playwright 全交互 E2E（2026-10-05 串行复跑） | 40+（受影响套件） | 全过 |
 
-> 最新整仓数字以 HANDOFF.md 为准（2026-10-08 复核基线 2041 tests / 0F / 0E / 17S，BUILD SUCCESS；本机 Windows 需排除 3 个 loopback 环境类后以 2028/0F/0E 复现，见 HANDOFF「全方位 review 快照」）。
+> 最新整仓数字以 HANDOFF.md 为准（2026-10-10 基线 2149 / 0F / 0E / 6S，16 上报模块 BUILD SUCCESS；早期 2041/17S 等为各阶段快照，历史段落按当时口径读）。
 
 > 早期轮次（第 79~87 轮）的分模块计数（如 SP-API 428、Surefire 1134）为当时快照，已随功能增长过时；**全仓与前端最新数字一律以上表及 HANDOFF.md 为准**。
 

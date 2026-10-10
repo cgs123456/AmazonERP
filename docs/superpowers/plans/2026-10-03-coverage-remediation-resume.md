@@ -3,11 +3,12 @@
 用途：目标被自动暂停后，下一轮（或换人）从这里接着做，不需要重读整段会话。
 所有数字都是本节内实测过的，标注了取数命令。
 
-## 1. 已落地（master；`0865772` 这一条的 CI 未取到结论）
+## 1. 已落地（master；`0865772` CI 结论已于 2026-10-10 补取 = success）
 
 > 收线时点复核：本机 `git status` 干净、master 与 origin 同步到 `0865772`；
 > 前面 5 个含代码的提交逐个查过 CI conclusion=success，最后这条只改文档，
-> 查它时匿名 API 触发 403 rate limit，**结论未知**。下一轮先看这个提交的红/绿再看别的。
+> 当时匿名 API 触发 403 rate limit 未取到结论。
+> **2026-10-10 补取（gh 已登录）：run `37089281742` = success（12/12 job 全绿），本清单前提闭环。**
 
 （下表 commit 列即为已确认绿的范围）
 
@@ -102,9 +103,13 @@ CI：`test / hygiene / frontend / runtime-smoke / mysql-import / checkstyle*` �
   换 8.0 后 root 口令没生效（Access denied）——那次「Communications link failure」
   是我的探针自己死了，不是被测物失败，不能记为 V10 的问题。
 
-下一轮取结论只需一条命令（需带 token 的 gh）：
-`gh run view --log-failed --job <test-job-id> <run-id for a70558b> | grep -E "Tests run|ERROR\]" | head`，
-或在任意可达的 MySQL 8 上设 `FLYWAY_ALL_IT_*` 后跑那两个 IT。
+**2026-10-10 结论已补取（gh 已登录，run `37097801658`）：`test` 红的唯一失败是
+`BareSqlBuiltSchemaFlywayStartIT` 报 `Table amz_spapi_bsit.amz_replenishment_suggestion does not exist`
+——根因是该 IT 用 `Files.list().sorted()` 字典序重放迁移，`V10__...` 排到了 `V2__...` 之前
+（`_` 0x5F > `0` 0x30），V10 引用的列尚未建出。V10 的 SQL 本身没有错（同 run 的
+`AllModulesFlywayMySqlIT` 走真 Flyway 全绿）。已由 `db8346d`（迁移重放改版本号数值排序 +
+`MigrationOrderingContractTest` 3 例锁死）修复，该提交 run `37188506627` **12/12 全绿**，
+`#56` 结案。**
 
 ### 更正：不要往 init-sql-legacy 补列（我上一条建议是错的）
 

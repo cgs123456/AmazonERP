@@ -1,21 +1,88 @@
-# HANDOFF — v0.1.23 收尾 + 发布收口补丁（2026-10-10 最新更新）
+# HANDOFF — v0.1.23 收尾 + 交班清理（2026-10-10 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > 本次更新：① `tools/connector-acceptance` 自检 **65/65 PASS**（exit 0，未配置真实凭据时的
 > 契约验收兜底已可执行）；② 发布冒烟唯一遗留 WARN（bootstrap 腿「加载字段权限规则失败」）
 > 已修——`bootstrap` profile 跳过字段权限预热（commit `2c7f5e5`，TDD 4 例先红后绿，
 > master CI `38031922658` **12/12 全绿**）；③ v0.1.23 已发布且 release run **3/3 success**
-> （run `38029198461`，tag `6daff31`，19 资产）。
+> （run `38029198461`，tag `6daff31`，19 资产）；④ 交班收尾班（§S6）：删除 6 个已失效文档 +
+> `org/` 编译残渣 + allowlist 死条目，修正 README 三处过时宣称（多平台平台清单、测试基线
+> 2041→2149、compose「31 service」→40 条目、REST 357），并把 coverage-remediation-resume
+> 里两条历史 CI 悬案补取结论（`0865772` = success / `a70558b` 红已由 `db8346d` 修复结案）。
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步（HEAD `2c7f5e5`）；CI **12/12 全绿**
-（run `38031922658`）；发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步（HEAD 见 `git log -1`，本班 §S6
+只含文档与未跟踪垃圾清理，代码基线仍是 `2c7f5e5`）；CI **12/12 全绿**（run `38031922658`）；
+发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
 发布冒烟已是 4 腿（spapi bootstrap+prod / user prod / order / product），`amz_user` 建库 +
 「加载字段权限规则 N 条」成功行断言在位；本班把 bootstrap 腿的唯一 1 条预热 WARN 消除。
 无凭据场景的验收路径 = `tools/connector-acceptance`（selftest 65/65 PASS）。
 后续主线：**等用户提供真实凭据 → 跑 runbook §3 端到端验收 → 解锁外部 API 实测**；
 代码侧无遗留阻塞项。
+
+## S6. 交班收尾：无用文件清理 + README 事实修正 + 历史 CI 悬案补账（本次会话）
+
+本班无代码改动；只做「让仓库可信」的收尾：删失效文档、删编译残渣、把 README 三处
+过时/不实宣称修正，并把上一班留下的两条「CI 结论未知」补取结案。全部判定逐条给依据。
+
+### S6.1 删除的 6 个失效文档（git 历史仍可 `git show <commit>:<path>` 找回）
+
+| 文件 | 判定依据 |
+| --- | --- |
+| `docs/erp-improvement-plan-2026-08-17.md` | 生产设计 spec **附录 G.3 判其「全部完成」与代码事实矛盾**（1688 骨架自述未实现、多平台签名未校准），明确「不得作为整改基线」；其结论早已被 spec 吸收并纠错 |
+| `docs/item7-shopid-audit-report.md` | spec **附录 G.1 判其核心结论已失效**（报告称守卫全覆盖，实测 328 端点中 82 个无注解）；缺口后续已逐项收口，报告只余误导 |
+| `docs/item6b-key-externalization-plan.md` | 2026-08-18 的 Nacos 密钥外部化方案：方案一 `@NacosValue` 全仓 **0 处实施**（无 `spring-cloud-starter-bootstrap`、无 `spring.config.import`），前提「nacos.config 已配置」与现状不符（只配了 discovery）；Nacos 配置中心已按用户决策**本次不处理** |
+| `docs/es-native-rrf-check.md` | spec G.2 判其为「验证前置条件，不是既成事实」：ES 官方镜像无 IK 分词器、`amz_product` 索引无建索引路径、embedding 未配置——文档里的 A/B 实验在当前仓库**永远跑不起来** |
+| `docs/amazon-ai-agent-benchmark-gap-2026-09-15.html` | 外部对标快照，关键建议（补 Reports/Finances/Fees 客户端）**已全部实现**，同类项目调研表已被 spec §1.5 吸收 |
+| `docs/amazon-ai-agent-execution-plan-2026-09-16.html` | 28 项执行计划已全部落地或被超越（Agent 现 29 工具）；进度看板存 localStorage（spec 已判「不能作为完成度证据」） |
+
+spec 附录 G 对这些文件的**行号引用属历史审计记录**（记录「当时错在哪」），文件删除后引用对象
+移入 git 历史，spec 文字本身不需要改——它是 2026-09-24 的审计快照，不是活文档。
+
+### S6.2 删除 `org/` 编译残渣（未跟踪 + gitignored）
+
+`org/springframework/boot/data/redis/**` 下 **58 个 `.class`**（约 166 KB）——某次解包
+Spring Boot Redis 自动配置类的残渣，与 `*.class` gitignore 规则匹配、全仓零引用。
+已确认解析路径在仓库内后整树删除。
+
+### S6.3 hygiene-allowlist 死条目同步清理
+
+`docs/item6b-key-externalization-plan.md`（secret-like-assignment，line 63 示例密文）随文件
+删除后成为 allowlist 死条目，已同步移除（66→65）。验证：release tools 7 模块 unittest
+**91/91 OK**（hygiene 契约含 allowlist 加载逻辑），`repository_hygiene.py` 两种模式
+（跟踪 / 含未跟踪）均 **0 findings**。
+
+### S6.4 README 事实修正（全部按文件实测）
+
+| 位置 | 旧（错/过时） | 新（实测） |
+| --- | --- | --- |
+| 模块清单 multiplatform 行 | 多平台（Shopify/eBay/Walmart/Shopee/Lazada）——spec G.2 判「不实宣称」，代码里只有 TEMU/TIKTOK/SHEIN 三个 case | 多平台订单/消息/库存同步（Temu / TikTok Shop / SHEIN 三家已实现；更多平台按需接入） |
+| 顶部状态块（2026-09-26 口径） | 「仍不能按现状视为可直接生产部署」+ P0-57/74/75 进度流水 | 2026-10-10 口径：v0.1.23 已发布 + CI 全绿 + fail-closed 已落地；真实凭据未配置、E4/E5 联调仍是大前提 |
+| 测试表 | 2026-10-08 fresh 2041（17S） | 2026-10-10 fresh **2149（0F/0E/6S，16 上报模块）** |
+| compose service 数 | 「31 个 service；REDIS_HOST 全域缺失、MYSQL_HOST 仅 spapi 有值」——两处均已过时（实测 MYSQL_HOST/REDIS_HOST 各 14 处已注入） | **40 个顶层条目**（15 基础设施 + 16 Spring 服务 + 前端 + 8 卷）；Flyway 自建表、init-sql 只建空库 |
+| REST 端点数 | 「360+」（实测 Controller 路由 357，360+ 不成立） | **357**（60 个 Controller 方法注解实测） |
+
+### S6.5 历史 CI 悬案补账（coverage-remediation-resume.md）
+
+- `0865772`（2026-10-03 收线时「匿名 API 403 结论未知」）→ 补取 **run `37089281742` = success**
+  （12/12 job 全绿）；
+- `a70558b` 的 `test` 红（run `37097801658`）→ 唯一失败 `BareSqlBuiltSchemaFlywayStartIT`
+  报表不存在：根因是该 IT **字典序重放迁移**（`V10__` 排到 `V2__` 前），V10 的 SQL 没错；
+  已由 `db8346d`（数值序排序 + `MigrationOrderingContractTest`）修复，该提交
+  **run `37188506627` 12/12 全绿**，`#56` 结案。原文档两处「下一轮取结论」已更新为结论。
+
+### S6.6 有意不删
+
+`.start-backend-final.bat` / `.start-vite.bat` / `.start-mysql.bat`：README 已标注
+「作者机器专用、不是部署入口」，属作者本机日常脚本，不判废——保留，仅在此记录判定理由。
+
+### S6.7 本班验证
+
+- `python tools/release/repository_hygiene.py --root .`（含 `--include-untracked`）→ **0 findings**；
+- release tools 7 模块 unittest → **91/91 OK**；
+- 本班改动 = 6 个文档删除 + allowlist 1 条 + README 6 行 + coverage-remediation-resume 补账
+  + 本段落；代码零改动，代码基线仍以 CI run `38031922658` 为准。
 
 ## S4. 发布收口补丁：bootstrap 跳过字段权限预热（commit `2c7f5e5`）
 

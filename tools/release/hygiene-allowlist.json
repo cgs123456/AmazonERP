@@ -257,11 +257,6 @@
       "sha256": "a1443e41cc0eaa69e6f6e49b334f4f750fd02dd8adbbfe4f6f6f82d36f5ef2d2"
     },
     {
-      "path": "docs/item6b-key-externalization-plan.md",
-      "rule": "secret-like-assignment",
-      "sha256": "676e331fe7710d932edbe79cb6118b6710aa3c2b339c591dc3dcb8aee9edce60"
-    },
-    {
       "path": "docs/superpowers/plans/2026-09-28-production-hardening-phase0.md",
       "rule": "secret-like-assignment",
       "sha256": "2cd3f82a5c45c45a63c60453c5a7609af8a4279591a60a589915b89a831a2550"
