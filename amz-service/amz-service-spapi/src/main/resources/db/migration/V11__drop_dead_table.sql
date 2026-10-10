@@ -1,0 +1,13 @@
+-- Flyway Migration V11: 清理零引用死表
+-- Service: amz-service-spapi
+--
+-- Why：amz_product_sales_stats 建于 V1__init.sql，全仓无任何读写——
+--   没有 mapper、没有 entity、没有 service/controller 引用它，也没有任何
+--   Flyway 之外的建表路径之外的消费者。tools/schema/zero_reference_tables.py
+--   在 102 张活表里把它列为**唯一**一张零引用表。
+--   销量统计的真实口径由 amz_sales_history 承担，这张表从未被写入过。
+--
+-- 不改 V1：V1__init.sql 已在存量库执行过，改写它会让 Flyway 校验失败
+--   （checksum mismatch）。按既有先例（ai/V3、ad/V9、product/V5、customer/V2）
+--   新增一条 DROP 迁移。
+DROP TABLE IF EXISTS amz_product_sales_stats;

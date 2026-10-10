@@ -626,13 +626,13 @@ hygiene 0、release tools unittest 88/OK。
 | 参数尺 | `param_name_audit.py --self-test .` / 闸门 | 24/24；163 可比 / 0 not-comparable |
 | 漂移 | `entity_column_drift.py --gate .` | 101 实体 / 0 漂移 |
 | 仓库卫生 | `repository_hygiene.py --root .` | 0 findings |
-| 零引用表 | `zero_reference_tables.py` | 102 表 / 0 零引用 |
+| 零引用表 | `zero_reference_tables.py` | **101 表 / 0 零引用**（2026-10-10 清理 `amz_product_sales_stats` 后） |
 | release tools | 7 个 unittest 模块 | 88 / OK |
 | 端点清点 | `endpoint_coverage_audit.py` | 候选 33（60 controller / 50 无前端命名） |
 | 真 CI | `gh run view 37779600265` | HEAD `d32e1f9` **11/11 job success**（docker 12m0s） |
 | Release dry run | `gh run view 37780471101` | **3/3 job success**；release build-only 15m5s，Windows clean clone 8m34s |
 
-口径旁证（与 README/本文陈述一致）：活表 **102**、Flyway 迁移 **58**、AI Agent 工具 **29**
+口径旁证（与 README/本文陈述一致）：活表 **101**（2026-10-10 起）、Flyway 迁移 **59**（spapi V11 DROP）、AI Agent 工具 **29**
 （`ErpTools.java` 的 `@Tool` 计数）、方法级 REST 映射 **395**（"360+" 属保守表述）。
 
 ### 不可本地原样复现（环境性，非代码缺陷）
@@ -783,14 +783,14 @@ python tools/schema/stub_shape_audit.py --self-test .             # 20/20；闸�
 python tools/schema/param_name_audit.py --self-test .             # 24/24；闸门 0（163 调用点全核验）
 python tools/schema/entity_column_drift.py --gate .               # 101 实体 / 0 漂移
 python tools/release/repository_hygiene.py --root .               # 以退出码为准，别 grep 文本
-python tools/schema/zero_reference_tables.py                      # 102 表 / 0 零引用
+python tools/schema/zero_reference_tables.py                      # 101 表 / 0 零引用
 # 【本班新增·必跑】ci.yml hygiene job 的 Release tool tests 逐字复跑——
 # 上一班清单漏了这串，run #195 因此红：
 python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_verify_clean_clone   # 88/0F
 # 部署链三契约（改 workflow/compose/k8s/env 模板前后必跑，含 node 版本三方一致）
 mvn -pl amz-service/amz-service-spapi -o test -Dtest='CiWorkflowContractTest,PlaceholderCoverageContractTest,DeploymentManifestContractTest'
 # synthetic-data（改 DDL/迁移后必跑；工作目录 tools/synthetic-data）
-python tools/synthetic-data/snapshot_schema.py --check            # 102 表基线
+python tools/synthetic-data/snapshot_schema.py --check            # 101 表基线
 cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && python verify.py --tier ci --dataset out/ci
 # 真机口径变了才需重跑：起一次性容器全链见 runbook §8（docker exec 包装法见本班坑 4）
 # CI 日志直读（gh 已登录，2026-10-08 起）——先看哪个 job 红，再拉该 job 日志正文：

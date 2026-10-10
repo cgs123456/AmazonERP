@@ -310,7 +310,10 @@ describe('运营预警台', () => {
     const options = select.findAll('option')
     // 第一项是「— 从目录里选一个 —」占位
     expect(options.length).toBe(3)
-    await options[1].setSelected()
+    // setSelected 在 @vue/test-utils 里是私有 API（tsc 会报 TS2341），直接操作原生 select
+    const el = select.element as HTMLSelectElement
+    el.value = '0'
+    el.dispatchEvent(new Event('change'))
     await flushPromises()
 
     const inputs = wrapper.find('[data-panel="rank"] .form-card').findAll('input')

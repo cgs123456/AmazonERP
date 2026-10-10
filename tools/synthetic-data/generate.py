@@ -226,7 +226,6 @@ LAYOUTS = {
     'amz_spapi.amz_fba_inventory': ['shop', 'marketplace', 'product'],
     'amz_spapi.amz_inventory_sync_log': ['shop', 'day3', 'day'],
     'amz_spapi.amz_sales_history': ['shop', 'skus5', 'day3'],
-    'amz_spapi.amz_product_sales_stats': ['shop', 'skus5', 'day3'],
     'amz_spapi.amz_replenishment_suggestion': ['shop', 'skus5', 'day3'],
     'amz_spapi.amz_promotion_calendar': ['category'],
     'amz_spapi.amz_seasonal_index': ['category', 'month'],

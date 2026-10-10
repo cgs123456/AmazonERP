@@ -31,19 +31,6 @@ CREATE TABLE IF NOT EXISTS amz_fba_inventory (
     INDEX idx_shop (shop_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='FBA 库存主表';
 
-CREATE TABLE IF NOT EXISTS amz_product_sales_stats (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    shop_id BIGINT NOT NULL,
-    sku VARCHAR(50) NOT NULL,
-    stat_date DATE NOT NULL COMMENT '统计日期',
-    qty_1_day INT DEFAULT 0 COMMENT '当日销量',
-    qty_7_days INT DEFAULT 0 COMMENT '7 天累计',
-    qty_30_days INT DEFAULT 0 COMMENT '30 天累计',
-    qty_90_days INT DEFAULT 0 COMMENT '90 天累计',
-    UNIQUE KEY uk_shop_sku_date (shop_id, sku, stat_date),
-    INDEX idx_date (stat_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品销量统计';
-
 CREATE TABLE IF NOT EXISTS amz_inventory_sync_log (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
     shop_id BIGINT NOT NULL,
