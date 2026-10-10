@@ -182,8 +182,11 @@ runner 按契约 exit 2，不伪造通过。
 
 - **无真实 Amazon SP-API / Ads / DeepSeek / Keepa 凭证**——这是唯一有效的下一步阻塞。
   没凭证不能产 A5/E4/E5，不能取证 401/403/404/429 语义，不能做 A4 两店隔离。
-- 共享库未决决策：`2026-10-03-coverage-remediation-resume.md` 尾部
-  `amz_replenishment_suggestion` V10 三列，需用户点头才能动共享库。
+- **共享库未决决策（仅剩环境侧只读核实）**：`2026-10-03-coverage-remediation-resume.md` 尾部
+  记录了 `amz_replenishment_suggestion` V10 三列的收尾状态——**代码侧修复已完成**（V10 迁移 + 排序修复 `db8346d`），
+  **不要再往 `init-sql-legacy` 补列**（已被两个契约测试否决）；真正悬而未决的只有**环境侧**：
+  某个已存在的库若无 `flyway_schema_history`，服务会 fail-fast 拒绝启动（P0-58 刻意语义）。文件末尾给了三条只读 SQL，
+  需在目标环境执行一次才能定论；在那之前不要改共享库/baseline。
 - Nacos 配置中心：用户已定“本次不处理”。
 
 **下一步计划**：
