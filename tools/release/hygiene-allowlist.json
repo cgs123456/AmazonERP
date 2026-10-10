@@ -274,7 +274,7 @@
     {
       "path": "docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md",
       "rule": "secret-like-assignment",
-      "sha256": "95ad73b1e5959c2eb6ea052c6e6cbc1ef0b0ba8a260ec80d11baad0853c2b168"
+      "sha256": "64b493bb68e63e23cffe2d7477e804f48f21423cfaade215ded9451596af1e63"
     },
     {
       "path": "k8s/jobs/amz-service-spapi-credential-bootstrap.yaml",

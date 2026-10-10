@@ -662,7 +662,7 @@ Expected: PASS（既有 527 用例不回退）
 > **进度（第 48 轮，2026-09-24）：P0-52c / P0-52d 已落地，runbook §3 的命令现已可执行。**
 新增 `tools/connector-acceptance/`（`acceptance_runner.py` + `run.ps1` + `run.sh` + 桩 `fake-service.py`）与 `amz-service-spapi` 的 `connector/ConnectorSelfDescription.java`（`GET /spapi/status` 现返回 `{service, connector, profile, mockClientsActive, startupCheckRan, startupRequireCredentials, loadedCredentialCount}`，使 runbook 硬约束 C1 在**进程外**可核验；`data` 由字符串变对象属响应结构变更，本仓已核对无调用方依赖）。
 两道闸门：①C1 不满足 → 退出码 2 且**不产出记录**；②桩自描述 `stub=true` 默认拒绝，须显式 `--allow-stub` 且 A5 封顶 E2。
-**诚实边界**：以上只在**本地桩**上实测（runner 自检 38 条断言全绿、桩端到端 `RC=1`；补齐 operator attestation 后 A1–A4/A6/A8 达标，只剩 A5 与 A7）——**从未对真实 `amz-service-spapi` 跑过**。第 42 轮的历史标注（“命令不存在”）在 §3.4 保留不改。该段记录的“P0-52b 未修复”是截至第 48 轮的历史状态；第 59 轮已修复，见 A.13。
+**诚实边界**：以上只在**本地桩**上实测（runner 自检 38 条断言全绿、桩端到端 `RC=1`；补齐 operator attestation 后 A1–A4/A6/A8 达标，只剩 A5 与 A7）——**从未对真实 `amz-service-spapi` 跑过**（2026-10-10 追记：已对真实服务做**无凭证前置探测**——prod 缺凭证启动 fail-closed（exit 1）、runner 前置探测 exit 2 不产记录（HANDOFF §S6.10）；仅将“服务从未被探测过”降级为“已探测、前置失败”，**仍未产出 A5 联调记录**。第 42 轮的历史标注（“命令不存在”）在 §3.4 保留不改。该段记录的“P0-52b 未修复”是截至第 48 轮的历史状态；第 59 轮已修复，见 A.13。
 
 > **进度（第 49 轮，2026-09-24）：P0-54 已修复——Reports 路径版本号 `2021-09-01` 从未由 Amazon 发布。**
 > 三源核实：① 官方模型仓库 `models/reports-api-model/` 只有 `reports_2020-09-04.md`（158 B 废弃指针）与
@@ -699,8 +699,8 @@ Expected: PASS（既有 527 用例不回退）
 - [ ] **不得跳过**：真实 SP-API 沙箱或生产联调（A5）；本地无凭证时该项必须留白并显式标记"未验证"。
 - [ ] 取证基线：端点覆盖仅非生产生效且 prod 拒绝（`SpApiEndpointOverrideSafetyTest`）；`SpApiRequiredHeaderContractTest`（每请求都带合法 `user-agent`、≤500 字符）与 `MarketplaceRegistryTest`（23 条逐条断言 + 未知 ID 抛错）通过；`LwaTokenExchangeContractTest` 通过；`SpApiConditionalSigningTest`（无 AWS 密钥时不含 `Authorization`，且永不出现 `Credential=null`）通过；`ConnectorEvidencePolicyTest` 通过；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。SigV4 KAT 为**可选项**（spec §1.9.2），若保留签名器则夹具必须含来源与 sha256。
 > 第 42 轮实测：`SpApiEndpointOverrideSafetyTest` **12 例**、`SpApiProtocolStubTest` **6 例**、`ConnectorEvidencePolicyTest` **10 例**、`ReportsFieldContractTest` **3 例**、`ReportsRealClientStubTest` **3 例**、`LwaTokenExchangeContractTest` **11 例**均已落地且全绿；`grep -rn 'getOrDefault(marketplaceId' amz-service/amz-service-spapi/src/main` 命中 **0**。本行其余项（CI 不可 skip 等）需在 CI 配置落地后勾选。
-- [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘（**第 42 轮已落盘**）且可执行（**代码层已满足**：runbook §1.3 的 P0-52a/b/c/d 已修复，§3.4 可执行；但从未对真实服务执行）；另本项要求的 `GET /api/connectors`（Task 6）**尚未实现**。
-> 第 48 轮更新：本行前半句的「`connector-acceptance-runbook.md` 可执行」**已满足**（§3.4 现可直接取用 `run.ps1` / `run.sh`；实测见 runbook §7.1），且 P0-52d 让 C1 可在进程外核验；但 `GET /api/connectors`（Task 6）**仍未实现**，且命令从未对真实服务执行过，故本行保持未勾选。
+- [ ] 证据透明：`GET /api/connectors` 返回 `evidenceLevel`；证据 < E4 不得显示“已接通”；`connector-acceptance-runbook.md` 落盘（**第 42 轮已落盘**）且可执行（**代码层已满足**：runbook §1.3 的 P0-52a/b/c/d 已修复，§3.4 可执行；2026-10-10 已对真实服务执行一次前置探测，exit 2，不产记录）；另本项要求的 `GET /api/connectors`（Task 6）**已实现**（网关 `amz-gateway/src/main/resources/application.yml` 将 `/api/connectors/**` 重写到 `/spapi/connectors/**`；`ConnectorController` 映射 `/spapi/connectors` 并在响应中返回 `evidenceLevel`）；**证据 < E4 不得显示“已接通”也已在前端落地**（`amz-frontend/src/api/connectors.ts` 走网关别名；`views/ConnectorCenter.vue` 对 `evidenceLevel` 做分级文案并拒绝将未达标者当“已接通”处理）。**本行仍保持未勾选的理由已变**：不再是“Task 6 未实现”，而是本 DoD 组整体以 A1–A8 真实联调证据为准（见下两条），在拿到真实凭证完成 A5 前不宜宣称本项完成。
+> 第 48 轮更新：本行前半句的「`connector-acceptance-runbook.md` 可执行」**已满足**（§3.4 现可直接取用 `run.ps1` / `run.sh`；实测见 runbook §7.1），且 P0-52d 让 C1 可在进程外核验；2026-10-10 补记：`GET /api/connectors`（Task 6）**已实现**（网关别名 + `ConnectorController`），命令已对真实服务做无凭证前置探测（exit 2）；但无凭证不产 A5，故本行在 A5 完成前保持未勾选（理由已从“Task 6 未实现”移为“缺真实联调证据”）。
 
 ## 未验证与风险（诚实记录）
 
@@ -1045,7 +1045,7 @@ Expected: PASS（既有 527 用例不回退）
 | **定向回归（fresh）** | 2026-09-25 12:47:51 +08:00：`DeploymentManifestContractTest` **8/8**、`PlaceholderCoverageContractTest` **2/2**、`ConnectorControllerGuardTest` **5/5**，合计 **15 例 / 0F / 0E / 0S**，`BUILD SUCCESS`。runner `--selftest` **38 项全绿**，两个 Python 脚本 `py_compile` 通过。 |
 | **模块/全仓回归（fresh）** | SP-API：**280 例 / 0F / 0E / 2S**（278 → 280，+2）；全仓 19 模块全部 `SUCCESS`，Surefire XML 汇总 **767 例 / 0F / 0E / 2S**（765 → 767）。2 个跳过仍为真实网络 `SpApiIntegrationTest`。 |
 | **配置卫生复核** | `k8s/configmap.yaml` 已无 `AWS_LWA_ENDPOINT` 死键；当前键为 `SPAPI_LWA_ENDPOINT_OVERRIDE: ''`。旧文档中“死键未清理”的结论已更新。 |
-| **未证明（第 64 轮历史边界）** | 网关别名尚未在真实 Nacos 服务发现 + Spring Cloud Gateway 运行期验证；runner 仍未对真实 `amz-service-spapi` 进程执行（P0-52c 的核心承诺仍待闭环）；前端尚未改为读取能力清单。A7 Outbox/DLQ 重放已在第 65 轮实现，真实 429/5xx 重放联调仍待办。 |
+| **未证明（第 64 轮历史边界）** | 网关别名尚未在真实 Nacos 服务发现 + Spring Cloud Gateway 运行期验证；runner 已对真实 `amz-service-spapi` 进程路径执行无凭证前置探测（exit 2，不产记录），但带真实凭证的 A5 联调仍待闭环（P0-52c 的最终承诺未完成）；前端尚未改为读取能力清单。A7 Outbox/DLQ 重放已在第 65 轮实现，真实 429/5xx 重放联调仍待办。 |
 | **提交状态** | 本轮相关改动仍在工作区，未提交、未推送；禁止 `git add .`，临时脚本不得入库。 |
 
 
