@@ -5,6 +5,7 @@ import com.amz.mapper.KeywordRankRecordMapper;
 import com.amz.mapper.NegativeReviewAlertMapper;
 import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
+import com.amz.model.TrackedKeyword;
 import com.amz.model.NegativeReviewAlert;
 import com.amz.context.UserContext;
 import com.amz.exception.CodeErrorException;
@@ -23,6 +24,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -41,6 +43,14 @@ public class OpsServiceImpl implements OpsService {
      * 抓取是反复追加的，不设上限时一次趋势查询会随运行时长越来越贵。
      */
     static final int MAX_RANK_TREND_POINTS = 200;
+
+    /**
+     * 关键词目录一次最多扫多少行排名记录。
+     * <p>
+     * 抓取是反复追加的，没有上限时这个「列一下追踪了哪些词」的端点会随运行时长越来越贵，
+     * 最终比趋势查询本身还重。上限内的行按 id 倒序取，即最近抓取的那些。
+     */
+    static final int MAX_TRACKED_KEYWORD_SCAN = 2000;
 
     @Autowired
     private NegativeReviewAlertMapper reviewAlertMapper;
@@ -246,6 +256,36 @@ public class OpsServiceImpl implements OpsService {
             rankMapper.insert(r);
         }
         return keywords.length;
+    }
+
+    @Override
+    public List<TrackedKeyword> listTrackedKeywords(Long shopId) {
+        LambdaQueryWrapper<KeywordRankRecord> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(KeywordRankRecord::getShopId, shopId)
+                .orderByDesc(KeywordRankRecord::getId)
+                .last("LIMIT " + MAX_TRACKED_KEYWORD_SCAN);
+        List<KeywordRankRecord> rows = rankMapper.selectList(wrapper);
+
+        // rows 已按 id 倒序，先遇到的就是该组合的最新点；LinkedHashMap 保住这个顺序，
+        // 页面拿到的目录因此是「最近抓取过的组合」在前。
+        LinkedHashMap<String, TrackedKeyword> byPair = new LinkedHashMap<>();
+        for (KeywordRankRecord r : rows) {
+            String key = r.getKeyword() + "\u0000" + r.getAsin();
+            TrackedKeyword entry = byPair.get(key);
+            if (entry == null) {
+                entry = new TrackedKeyword();
+                entry.setKeyword(r.getKeyword());
+                entry.setAsin(r.getAsin());
+                entry.setPointCount(0);
+                // 最新点：此刻先写入，后面不再覆盖（rows 是倒序的）
+                entry.setLatestRank(r.getRank());
+                entry.setLastCaptureTime(r.getCaptureTime());
+                entry.setMarketplace(r.getMarketplace());
+                byPair.put(key, entry);
+            }
+            entry.setPointCount(entry.getPointCount() + 1);
+        }
+        return new ArrayList<>(byPair.values());
     }
 
     @Override

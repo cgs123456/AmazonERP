@@ -129,9 +129,25 @@
               <label class="field">关键词 *<input v-model="rankQuery.keyword" placeholder="wireless earbuds" /></label>
               <label class="field">ASIN *<input v-model="rankQuery.asin" placeholder="B0123456789" /></label>
             </div>
+            <div v-if="catalog.length" class="pick-row">
+              <label class="filter">已追踪的组合
+                <select @change="pickTracked($event)">
+                  <option value="">— 从目录里选一个 —</option>
+                  <option v-for="(k, i) in catalog" :key="k.keyword + k.asin" :value="String(i)">
+                    {{ k.keyword }} · {{ k.asin }}（{{ k.pointCount ?? 0 }} 点，最新第 {{ k.latestRank ?? '-' }} 名）
+                  </option>
+                </select>
+              </label>
+              <span class="muted">目录来自 amz_keyword_rank 表本身：只有抓过的组合才在。选一个会填进下面两个框。</span>
+            </div>
+            <div v-else-if="catalogLoaded" class="pick-row">
+              <span class="muted">
+                这家店还没有任何排名记录，目录是空的——所以下面只能手填。
+                填出来的「没有记录」是真的没有，不是输错了词。
+              </span>
+            </div>
             <p class="muted form-hint">
-              后端要求两个条件都填：没有「列出本店所有被追踪关键词」的端点，所以这里不是列表页。
-              返回的是最近 {{ MAX_TREND_POINTS }} 个点，按抓取时间升序。
+              后端要求两个条件都填。返回的是最近 {{ MAX_TREND_POINTS }} 个点，按抓取时间升序。
             </p>
             <div class="form-actions">
               <button class="page-btn" :disabled="busy || !rankQueryReady" @click="loadTrend()">查询趋势</button>
@@ -198,9 +214,11 @@ import { useShopGuard } from '@/composables/useShopGuard'
 import type { ApiResponse } from '@/api/types'
 import {
   ALERT_STATUSES, getRankTrend, handleHijackAlert, handleReviewAlert,
-  ignoreHijackAlert, ignoreReviewAlert, listHijackAlerts, listReviewAlerts
+  ignoreHijackAlert, ignoreReviewAlert, listHijackAlerts, listReviewAlerts, listTrackedKeywords
 } from '@/api/opsAlerts'
-import type { HijackAlert, KeywordRankRecord, NegativeReviewAlert } from '@/api/opsAlerts'
+import type {
+  HijackAlert, KeywordRankRecord, NegativeReviewAlert, TrackedKeyword
+} from '@/api/opsAlerts'
 
 type TabKey = 'reviews' | 'hijacks' | 'rank'
 const TABS: Array<{ key: TabKey; label: string }> = [
@@ -223,6 +241,8 @@ const hijacks = mkList<HijackAlert>()
 const reviewStatus = ref('')
 const hijackStatus = ref('')
 const rankQuery = reactive<{ keyword: string; asin: string }>({ keyword: '', asin: '' })
+const catalog = ref<TrackedKeyword[]>([])
+const catalogLoaded = ref(false)
 const trend = ref<KeywordRankRecord[]>([])
 const trendLoaded = ref(false)
 
@@ -321,6 +341,22 @@ const loadReviews = (append = false) => loadList(reviews, '差评告警',
 const loadHijacks = (append = false) => loadList(hijacks, '跟卖告警',
   (cursor) => listHijackAlerts(shop(), { status: hijackStatus.value || undefined, size: 20, cursor }), append)
 
+/** 从目录选一个组合：直接填进两个输入框，避免手输时字面不一致查不到。 */
+const pickTracked = (e: Event) => {
+  const idx = Number((e.target as HTMLSelectElement).value)
+  if (Number.isNaN(idx) || !catalog.value[idx]) return
+  rankQuery.keyword = catalog.value[idx].keyword
+  rankQuery.asin = catalog.value[idx].asin
+}
+
+const loadCatalog = async () => {
+  const shopId = shop()
+  if (!shopId) return
+  const rows = await run('关键词目录', () => listTrackedKeywords(shopId))
+  catalog.value = Array.isArray(rows) ? rows : []
+  catalogLoaded.value = true
+}
+
 const loadTrend = async () => {
   const keyword = rankQuery.keyword.trim()
   const asin = rankQuery.asin.trim().toUpperCase()
@@ -392,11 +428,12 @@ const gotoTab = async (key: TabKey) => {
   tab.value = key
   // 切 Tab 是整页入口：清一次全部错误，此后 loader 只按各自前缀追加/移除
   errors.value = []
-  // 排名 Tab 没有「默认查哪个词」，所以不自动查
-  if (key === 'rank' || !currentShopId.value || loaded.has(key)) return
+  if (!currentShopId.value || loaded.has(key)) return
   loaded.add(key)
+  // 排名 Tab 没有「默认查哪个词」，所以不自动查趋势；但目录要拉，否则只能手填
   if (key === 'reviews') await loadReviews()
   if (key === 'hijacks') await loadHijacks()
+  if (key === 'rank') await loadCatalog()
 }
 
 onMounted(() => {
@@ -434,6 +471,7 @@ onMounted(() => {
 .metric-value { font-size: 1.125rem; color: var(--color-on-surface); }
 .aggregate-note { padding: 0.5rem 1rem 0; margin: 0; line-height: 1.5; }
 .row-actions { white-space: nowrap; }
+.pick-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 0 0; flex-wrap: wrap; }
 .status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; white-space: nowrap; }
 .status-tag.healthy { background: var(--color-primary-light); color: var(--color-success); }
 .status-tag.urgent { background: var(--color-light-red); color: var(--color-error); }

@@ -3,6 +3,7 @@ package com.amz.controller;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
+import com.amz.model.TrackedKeyword;
 import com.amz.model.NegativeReviewAlert;
 import com.amz.result.PageRequest;
 import com.amz.result.Result;
@@ -136,6 +137,20 @@ public class OpsController {
     @PostMapping("/rank/capture/{shopId}")
     public Result<Integer> captureRanks(@PathVariable Long shopId) {
         return Result.success(opsService.captureKeywordRanks(shopId));
+    }
+
+    /**
+     * 列出本店被追踪的 (关键词, ASIN) 组合。
+     * GET /ops/rank/keywords/{shopId}
+     *
+     * <p>{@code /ops/rank/trend} 要求 keyword 与 asin 都必填，而此前没有端点能列出
+     * 「本店追踪了哪些组合」，运营只能凭记忆输入字面完全一致的关键词——输错一个空格
+     * 就是「没有记录」，和「真的没抓过」在界面上无法区分。这条端点把可选项从表里读出来。
+     */
+    @ShopScoped
+    @GetMapping("/rank/keywords/{shopId}")
+    public Result<List<TrackedKeyword>> listTrackedKeywords(@PathVariable Long shopId) {
+        return Result.success(opsService.listTrackedKeywords(shopId));
     }
 
     /**

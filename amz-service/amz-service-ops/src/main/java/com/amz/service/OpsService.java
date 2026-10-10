@@ -3,6 +3,7 @@ package com.amz.service;
 import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
 import com.amz.model.NegativeReviewAlert;
+import com.amz.model.TrackedKeyword;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 
@@ -71,4 +72,12 @@ public interface OpsService {
      * 查询某关键词+ASIN 的排名趋势：返回最近若干个点，按抓取时间升序。
      */
     List<KeywordRankRecord> getRankTrend(Long shopId, String keyword, String asin);
+
+    /**
+     * 列出本店被追踪的 (关键词, ASIN) 组合，供趋势页选择而不是手输。
+     * <p>
+     * 数据来源只有 {@code amz_keyword_rank} 表本身，每组给出点数与最后一次抓取的排名。
+     * 不另建「追踪清单」表：那会多出一个必须维护、却无法验证是否与真实抓取一致的真相源。
+     */
+    List<TrackedKeyword> listTrackedKeywords(Long shopId);
 }

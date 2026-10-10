@@ -60,6 +60,16 @@ export interface KeywordRankRecord {
   captureTime?: string | null
 }
 
+/** 被追踪的 (关键词, ASIN) 组合：趋势查询的可选项 */
+export interface TrackedKeyword {
+  keyword: string
+  asin: string
+  pointCount?: number | null
+  latestRank?: number | null
+  lastCaptureTime?: string | null
+  marketplace?: string | null
+}
+
 interface ListQuery {
   size?: number
   cursor?: string | null
@@ -96,9 +106,21 @@ export const ignoreHijackAlert = (alertId: number) =>
   request.post<void, ApiResponse<boolean>>(`/ops/hijack/${alertId}/ignore`)
 
 /**
+ * 本店被追踪的 (关键词, ASIN) 组合目录。
+ *
+ * 2026-10-10 新增：此前趋势查询要求 keyword 与 asin 都必填，而没有任何端点能列出
+ * 「本店追踪了哪些组合」，运营只能凭记忆输入字面完全一致的关键词——输错一个空格
+ * 就是「没有记录」，和「真的没抓过」在界面上无法区分。这个目录把可选项从表里读出来。
+ *
+ * 数据来源只有 amz_keyword_rank 表本身：只有抓过的组合才存在，不另建追踪清单。
+ */
+export const listTrackedKeywords = (shopId: number | string) =>
+  request.get<void, ApiResponse<TrackedKeyword[]>>(`/ops/rank/keywords/${shopId}`)
+
+/**
  * 关键词排名趋势：后端返回「最近若干个点」并按抓取时间升序。
- * keyword 与 asin 都是必填——没有「列出本店所有被追踪关键词」的端点，
- * 所以页面必须先让人填这两项，不能假装这是一个列表。
+ * keyword 与 asin 都是必填，但页面应先从 listTrackedKeywords 的目录里选，
+ * 手输只是目录为空时的兜底。
  */
 export const getRankTrend = (shopId: number | string, keyword: string, asin: string) =>
   request.get<void, ApiResponse<KeywordRankRecord[]>>('/ops/rank/trend', {

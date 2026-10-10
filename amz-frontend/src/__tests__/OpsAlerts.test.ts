@@ -49,6 +49,11 @@ const TREND = [
   { id: 7, shopId: 1, keyword: 'wireless earbuds', asin: 'B0123456789', rank: 31, marketplace: null, captureTime: null }
 ]
 
+const CATALOG = [
+  { keyword: 'wireless earbuds', asin: 'B01', pointCount: 3, latestRank: 12, lastCaptureTime: '2026-10-03 09:00:00', marketplace: 'US' },
+  { keyword: 'noise cancelling', asin: 'B01', pointCount: 1, latestRank: 7, lastCaptureTime: '2026-10-03 09:00:00', marketplace: 'US' }
+]
+
 const stubs = { stubs: { AppHeader: { template: '<div />' }, AppSidebar: { template: '<div />' }, Icon: true } }
 
 const happy = () => {
@@ -59,6 +64,7 @@ const happy = () => {
   vi.mocked(api.handleHijackAlert).mockResolvedValue(ok(true))
   vi.mocked(api.ignoreHijackAlert).mockResolvedValue(ok(true))
   vi.mocked(api.getRankTrend).mockResolvedValue(ok(TREND))
+  vi.mocked(api.listTrackedKeywords).mockResolvedValue(ok(CATALOG))
 }
 
 const mountPage = async () => {
@@ -285,6 +291,44 @@ describe('运营预警台', () => {
     for (const b of rows[1].findAll('button')) {
       expect(b.attributes('disabled')).toBeDefined()
     }
+  })
+
+  it('进排名 Tab 会拉关键词目录，不再要求凭记忆手输', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '关键词排名')
+    expect(api.listTrackedKeywords).toHaveBeenCalledWith('1')
+    const panel = panelText(wrapper, 'rank')
+    expect(panel).toContain('已追踪的组合')
+    expect(panel).toContain('wireless earbuds')
+    expect(panel).toContain('noise cancelling')
+  })
+
+  it('从目录选一个组合会把关键词与 ASIN 填进输入框', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '关键词排名')
+    const select = wrapper.find('[data-panel="rank"] .pick-row select')
+    const options = select.findAll('option')
+    // 第一项是「— 从目录里选一个 —」占位
+    expect(options.length).toBe(3)
+    await options[1].setSelected()
+    await flushPromises()
+
+    const inputs = wrapper.find('[data-panel="rank"] .form-card').findAll('input')
+    expect((inputs[0].element as HTMLInputElement).value).toBe('wireless earbuds')
+    expect((inputs[1].element as HTMLInputElement).value).toBe('B01')
+
+    await clickBtn(wrapper, '查询趋势')
+    expect(api.getRankTrend).toHaveBeenCalledWith('1', 'wireless earbuds', 'B01')
+  })
+
+  it('目录为空时明确说明只能手填，不假装是列表页', async () => {
+    vi.mocked(api.listTrackedKeywords).mockResolvedValue(ok([]))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '关键词排名')
+    const panel = panelText(wrapper, 'rank')
+    expect(panel).toContain('目录是空的')
+    expect(panel).toContain('下面只能手填')
+    expect(wrapper.find('[data-panel="rank"] .pick-row select').exists()).toBe(false)
   })
 
   it('排名趋势必须两个条件都填才发请求，ASIN 按后端口径转大写', async () => {
