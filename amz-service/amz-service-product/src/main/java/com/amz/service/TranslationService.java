@@ -128,11 +128,21 @@ public class TranslationService {
             return cached.getTranslatedText();
         }
 
-        // 三级均未命中 → 调用 DeepSeek
+        // 三级均未命中 → 调用 DeepSeek。
+        // 只有「拿译文」这一步失败才降级返回原文；写缓存失败必须单独处理（见下），
+        // 否则并发撞唯一键这类缓存问题会连译文一起丢掉。
+        String translated;
         try {
-            String translated = callDeepSeek(sourceText, sourceLang, targetLang);
+            translated = callDeepSeek(sourceText, sourceLang, targetLang);
+        } catch (Exception e) {
+            log.warn("DeepSeek translation failed, degrade to source text: {}", e.getMessage());
+            return sourceText;
+        }
 
-            // 写回 L3（持久化）
+        // 写回 L3（持久化）。缓存是加速层，不是正确性的一部分：
+        // 落库失败（最典型是并发下同一 hash 撞唯一键 uk_hash_langs）只降级为「本次不缓存」，
+        // 绝不能让已经成功拿到的译文退回原文——那等于用户付了一次 LLM 调用却拿到未翻译文本。
+        try {
             TranslationCache cache = new TranslationCache();
             cache.setSourceTextHash(hash);
             cache.setSourceLang(sourceLang);
@@ -141,17 +151,17 @@ public class TranslationService {
             cache.setTranslatedText(translated);
             cache.setCreateTime(LocalDateTime.now());
             translationCacheMapper.insert(cache);
-
-            // 写回 L2 / L1
-            writeBack(key, translated);
-
-            log.info("Translation done {}->{} hash={} len={}", sourceLang, targetLang, hash,
-                    translated.length());
-            return translated;
         } catch (Exception e) {
-            log.warn("DeepSeek translation failed, degrade to source text: {}", e.getMessage());
-            return sourceText;
+            log.warn("L3 翻译缓存写入失败，本次不缓存（译文仍返回）：{}->{} hash={} reason={}",
+                    sourceLang, targetLang, hash, e.getMessage());
         }
+
+        // 写回 L2 / L1（内部各自容错，失败不影响返回值）
+        writeBack(key, translated);
+
+        log.info("Translation done {}->{} hash={} len={}", sourceLang, targetLang, hash,
+                translated.length());
+        return translated;
     }
 
     /**
@@ -189,7 +199,10 @@ public class TranslationService {
     /**
      * 调用 DeepSeek chat/completions 接口完成翻译。
      */
-    private String callDeepSeek(String sourceText, String sourceLang, String targetLang) throws IOException, InterruptedException {
+    // package-private：单元测试通过覆写本方法注入固定译文，把被测点收敛到「写回失败」这条路径，
+    // 避免为了测一个缓存写失败去起真实 HTTP。与 readFromRedis / writeToRedis 同一可见性约定。
+    String callDeepSeek(String sourceText, String sourceLang, String targetLang)
+            throws IOException, InterruptedException {
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("model", modelName);
 
