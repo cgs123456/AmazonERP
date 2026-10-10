@@ -365,7 +365,7 @@ jobs:
           # IF NOT EXISTS 幂等，重试循环天然覆盖重启窗口。
           mysql_ready=""
           for i in $(seq 1 45); do
-            if docker exec amz-smoke-mysql mysql -uroot -p"$SMOKE_DB_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS amz_spapi; CREATE DATABASE IF NOT EXISTS amz_order; CREATE DATABASE IF NOT EXISTS amz_product;" 2>/dev/null; then mysql_ready=yes; break; fi
+            if docker exec amz-smoke-mysql mysql -uroot -p"$SMOKE_DB_PASSWORD" -e "CREATE DATABASE IF NOT EXISTS amz_spapi; CREATE DATABASE IF NOT EXISTS amz_order; CREATE DATABASE IF NOT EXISTS amz_product; CREATE DATABASE IF NOT EXISTS amz_user;" 2>/dev/null; then mysql_ready=yes; break; fi
             sleep 2
           done
           if [ -z "$mysql_ready" ]; then
@@ -376,7 +376,11 @@ jobs:
           # AMZ_CRYPTO_KEY：spapi/user 的 application.yml 显式映射；
           # CRYPTO_KEY：其余服务的宽松绑定（两者都给，见 first-deploy-bootstrap-runbook 5.5）
           # JAVA_TOOL_OPTIONS：JDK17 容器默认 charset 是 ASCII，中文日志会变 ? 破坏 grep 断言
-          SMOKE_ENV=(-e SPRING_PROFILES_ACTIVE=prod -e JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -e MYSQL_HOST=amz-smoke-mysql -e MYSQL_PORT=3306 -e DB_USERNAME=root -e DB_PASSWORD="$SMOKE_DB_PASSWORD" -e AMZ_CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e JWT_SECRET_KEY="$SMOKE_JWT_SECRET" -e REDIS_HOST=amz-smoke-redis -e REDIS_PASSWORD="$SMOKE_REDIS_PASSWORD" -e RABBITMQ_PASSWORD="$SMOKE_RABBIT_PASSWORD" -e SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false)
+          # SW_AGENT_COLLECTOR_BACKEND_SERVICES：冒烟网络没有 SkyWalking OAP，
+          # 不覆盖会让每条腿都刷 "Failed to resolve host skywalking-oap"（185s 实测 7 条）。
+          # 指到 127.0.0.1:11800 是无解析黑洞：agent 仍挂载、不再刷 DNS 噪声；
+          # 故意不清空 SW_AGENT_OPTS，那会让冒烟失去对「agent 挂载」这条链路的观察力。
+          SMOKE_ENV=(-e SPRING_PROFILES_ACTIVE=prod -e JAVA_TOOL_OPTIONS=-Dfile.encoding=UTF-8 -e MYSQL_HOST=amz-smoke-mysql -e MYSQL_PORT=3306 -e DB_USERNAME=root -e DB_PASSWORD="$SMOKE_DB_PASSWORD" -e AMZ_CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e CRYPTO_KEY="$SMOKE_CRYPTO_KEY" -e JWT_SECRET_KEY="$SMOKE_JWT_SECRET" -e REDIS_HOST=amz-smoke-redis -e REDIS_PASSWORD="$SMOKE_REDIS_PASSWORD" -e RABBITMQ_PASSWORD="$SMOKE_RABBIT_PASSWORD" -e SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false -e SW_AGENT_COLLECTOR_BACKEND_SERVICES=127.0.0.1:11800)
           IMAGE_PREFIX="${REGISTRY}/${OWNER}/amazonerp-"
           # 启动等待有两个不能想当然的 shell 语义（v0.1.13–v0.1.19 五连红的根因，误报为“启动标记未出现”）：
           # 1) 把 docker logs 直接管道给 `grep -q`，在 `set -o pipefail` 下“命中也判失败”：
@@ -414,15 +418,39 @@ jobs:
           boot_wait amz-smoke-spapi-prod "已加载店铺凭证=2 条"
           boot_wait amz-smoke-spapi-prod "Started AmzServiceSpapiApplication"
           docker rm -f amz-smoke-spapi-prod
-          # 3) order prod
+          # 3) user prod：先跑一条 user 腿让 Flyway 把 amz_user.amz_field_permission
+          # 建出来+灌入种子规则。order/product 腿的 amz-common 都带着
+          # FieldPermissionService，启动时就会查这张表；不先建表会打
+          # "bad SQL grammar" 并降级成「全部可见」（字段权限在冒烟里静默失效）。
+          # 本机实测：只建空库不够（表不存在仍报错），必须真跑一次 user 服务。
+          docker run -d --name amz-smoke-user-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" "${IMAGE_PREFIX}user:${IMAGE_TAG}"
+          boot_wait amz-smoke-user-prod "Started AmzServiceUserApplication"
+          # 只等 Started 不够：加载失败只是 warn、服务照常起来，降级「全部可见」会静默通过。
+          # 成功行形态固定为 "加载字段权限规则 8 条"（logger FieldPermissionServiceImpl），
+          # 失败行是 "加载字段权限规则失败"，grep -E 的空格+数字形态可以区分两者。
+          for i in $(seq 1 30); do
+            docker logs amz-smoke-user-prod > "$RUNNER_TEMP/smoke/fieldperm.log" 2>&1
+            if grep -qE "加载字段权限规则 [0-9]+ 条" "$RUNNER_TEMP/smoke/fieldperm.log"; then break; fi
+            if grep -qE "加载字段权限规则失败" "$RUNNER_TEMP/smoke/fieldperm.log"; then
+              echo "字段权限规则加载失败（降级全部可见），冒烟判定失败"
+              exit 1
+            fi
+            sleep 2
+          done
+          grep -qE "加载字段权限规则 [0-9]+ 条" "$RUNNER_TEMP/smoke/fieldperm.log" || {
+            echo "user 腿未在 60 秒内确认字段权限规则加载"
+            exit 1
+          }
+          docker rm -f amz-smoke-user-prod
+          # 4) order prod（此后启动的所有腿都能查到 amz_field_permission）
           docker run -d --name amz-smoke-order-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" "${IMAGE_PREFIX}order:${IMAGE_TAG}"
           boot_wait amz-smoke-order-prod "Started AmzServiceOrderApplication"
           docker rm -f amz-smoke-order-prod
-          # 4) product prod（需要 MONGO_PASSWORD 占位符）
+          # 5) product prod（需要 MONGO_PASSWORD 占位符）
           docker run -d --name amz-smoke-product-prod --network "$SMOKE_NET" "${SMOKE_ENV[@]}" -e MONGO_PASSWORD="$SMOKE_MONGO_PASSWORD" "${IMAGE_PREFIX}product:${IMAGE_TAG}"
           boot_wait amz-smoke-product-prod "Started AmzServiceProductApplication"
           docker rm -f amz-smoke-product-prod
-          echo "prod-profile boot smoke 全部通过（spapi bootstrap+prod / order prod / product prod）"
+          echo "prod-profile boot smoke 全部通过（spapi bootstrap+prod / user prod / order prod / product prod）"
       - name: Generate release manifest
         if: github.event_name == 'push'
         run: |

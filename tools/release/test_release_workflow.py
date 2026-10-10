@@ -267,7 +267,76 @@ class TestReleaseWorkflow(unittest.TestCase):
         self.assertIn('docker logs "$container" > "$logf" 2>&1', self.raw)
 
 
+
+    def _boot_smoke_block(self):
+        """The single `Prod-profile boot smoke` step body, isolated from the rest of the workflow."""
+        marker = "- name: Prod-profile boot smoke (with DB and Redis)"
+        start = self.raw.index(marker)
+        rest = self.raw[start + len(marker):]
+        # the step ends at the next top-level `- name:` step
+        nxt = rest.find("\n      - name: ")
+        return rest if nxt < 0 else rest[:nxt]
+
+    def test_boot_smoke_silences_skywalking_agent_without_a_collector(self):
+        # 动因（2026-10-10 本机实测，order v0.1.19 真实镜像）：
+        # Dockerfile 把 SW_AGENT_COLLECTOR_BACKEND_SERVICES 默认成 skywalking-oap:11800，
+        # 而冒烟网络里根本没有这个容器/别名 —— 每次启动都刷
+        # "Failed to resolve host skywalking-oap"（185s 内 7 条），把启动日志淹成噪声。
+        # 这是纯噪声、不阻断启动，所以五连红之后一直被当成"别去追的东西"留了下来；
+        # 但噪声本身是 bug 的藏身处：真正让 boot_wait 判失败的 ERROR 混在里面更难看见。
+        #
+        # 实测三种消噪法（order v0.1.19，185s）：
+        #   默认 skywalking-oap   -> resolve-fail 7 条
+        #   SW_AGENT_OPTS 置空     -> agent 根本不挂（SnifferConfigInitializer 0 行），
+        #                             冒烟就不再覆盖"agent 挂在 ENTRYPOINT 上"这条链路
+        #   collector=127.0.0.1:*  -> resolve-fail 0 条、agent 仍挂载
+        # 因此正确做法是显式把 collector 指到本地黑洞地址，而不是把 agent 摘掉——
+        # 摘掉 agent 会让冒烟对 SkyWalkingIdentityContractTest 守的那条接线失去观察力。
+        block = self._boot_smoke_block()
+        self.assertIn("SW_AGENT_COLLECTOR_BACKEND_SERVICES=127.0.0.1:11800", block,
+                      "冒烟必须把 SkyWalking collector 显式指到本地黑洞地址，"
+                      "否则每次启动都刷 'Failed to resolve host' 噪声（185s 实测 7 条）")
+        # 覆盖必须写在所有腿共用的 SMOKE_ENV 里，不能只加在某一条腿上——
+        # 否则后加的腿会退回镜像默认地址，噪声又回来。
+        self.assertIn("SMOKE_ENV=(", block)
+        env_line = [ln for ln in block.splitlines() if "SMOKE_ENV=(" in ln][0]
+        self.assertIn("SW_AGENT_COLLECTOR_BACKEND_SERVICES=127.0.0.1:11800", env_line,
+                      "collector 覆盖必须在 SMOKE_ENV 里，四条腿才会一致生效")
+        # 不能靠"把 agent 摘掉"来消噪：那会让冒烟不再覆盖 agent 挂载这条链路。
+        self.assertNotIn("SW_AGENT_OPTS=", block,
+                         "不得用清空 SW_AGENT_OPTS 的方式消噪：那等于让冒烟不再覆盖 agent 挂载")
+
+    def test_boot_smoke_creates_amz_user_and_runs_a_user_boot_leg(self):
+        # 动因（2026-10-10 本机实测）：
+        # FieldPermissionService 的事实源是 amz_user.amz_field_permission，但它被 amz-common
+        # 编进每一个服务，于是 order/product 等腿启动时都会去查这张表。冒烟只建了
+        # amz_spapi/amz_order/amz_product 三个库 —— amz_user 库不存在，SQL 直接
+        # "bad SQL grammar" 报错，服务降级成「全部可见」：
+        #   FieldPermissionService: 加载字段权限规则失败…（从未成功加载过则为「全部可见」）
+        # 实测两种"建了库但没建表"的中间态都不够：
+        #   amz_user 库不存在          -> bad SQL grammar（表都不存在）
+        #   amz_user 库存在但为空      -> bad SQL grammar（表不存在）
+        # 只有跑过一次 user 服务（Flyway 把 V1/V2 建表+种子规则灌进去）之后，
+        # order 腿才会打出 "加载字段权限规则 8 条" 而不是降级 warn。
+        # 所以缺口要同时补两半：建库 + 一条 user 服务启动腿。
+        block = self._boot_smoke_block()
+        self.assertIn("amz_user", block,
+                      "冒烟必须建 amz_user 库：FieldPermissionService 的事实源在它里面")
+        # 必须真跑一条 user 服务腿：Flyway 才会把 amz_field_permission 建出来。
+        # 实测：库存在但表不存在时 order 腿仍然报 bad SQL grammar 并降级「全部可见」。
+        self.assertIn("Started AmzServiceUserApplication", block,
+                      "冒烟必须跑一条 user 服务腿，让 Flyway 把 amz_field_permission 建出来")
+        # 顺序是契约：user 腿必须先于 order/product 腿，否则后启动的腿查表仍失败。
+        self.assertLess(block.index("amz-smoke-user-prod"), block.index("amz-smoke-order-prod"),
+                        "user 腿必须先于 order 腿：order 启动时就要查 amz_field_permission")
+        # 只断言"进程起来了"不够：FieldPermissionService 加载失败只是 warn、服务照常 Started，
+        # 降级「全部可见」会静默通过。成功行是「加载字段权限规则 N 条」，
+        # 失败行是「加载字段权限规则失败…」，固定串区分不了，所以这里钉正则形态。
+        self.assertIn("加载字段权限规则", block,
+                      "user 腿必须断言字段权限真的加载成功，而不是只要进程起来就算过")
+        self.assertIn('grep -qE "加载字段权限规则 [0-9]+ 条', block,
+                      "user 腿的加载成功断言必须是 grep -qE 的『加载成功』形态")
+
+
 if __name__ == "__main__":
     unittest.main()
-
-

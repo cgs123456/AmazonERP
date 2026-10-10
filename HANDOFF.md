@@ -1,3 +1,159 @@
+# HANDOFF — 冒烟补 user 腿与 SkyWalking 消噪 + 五项决策落地（2026-10-10 最新更新）
+
+> **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
+> 本次更新：① 修掉发布冒烟的两处缺口（SkyWalking DNS 噪声 + `amz_user` 缺失导致字段权限静默失效），
+> 见 §S1；② 对上一轮列的五项后续方向给出决策与落地记录，见 §五项决策。
+> 此前的「两处缓存写失败丢业务结果 + ops 三态 + 关键词目录 + 死表清理」见下方历史段（标题保留 2026-10-10 更新字样）。
+> 发布链截至 tag **v0.1.22**（`92ab882`），真 release run `37909617071` **3/3 job success**。
+
+## 项目现状一句话
+
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步；CI 11/11 全绿（最近一次 run `38019098901`）。
+本轮收口：**发布冒烟此前只覆盖 spapi/order/product 三条腿、且缺 `amz_user` 库——字段权限在冒烟里
+一直静默降级「全部可见」，SkyWalking 也每条腿刷 7 条 DNS 失败噪声**。现已补第四条 user 腿
+（Flyway 建表 + 断言「加载字段权限规则 N 条」成功行）并把 collector 指向本地黑洞地址；
+本机用当前 HEAD 真实镜像把新冒烟全流程跑通（§S1 实测记录）。
+五项待办决策：① P0-09 定「注解即默认隐藏」+ 分层放行；② 真实凭据**仍然必需**、当前可用
+契约验收兜底；③ `IGNORED` 去重定案**本次不做**；④ Nacos 配置中心**暂不接**、仅保留注册发现；
+⑤ 冒烟两处缺口**已修复**。
+
+## S1. 发布冒烟的两处缺口（已修复，TDD 先红后绿）
+
+### S1.1 缺口 A：SkyWalking agent 在冒烟网络里刷 DNS 失败噪声
+
+`Dockerfile:144` 把 `SW_AGENT_COLLECTOR_BACKEND_SERVICES` 默认成 `skywalking-oap:11800`，
+而冒烟网络里没有这个容器/别名 → 每条腿每次启动都刷 `Failed to resolve host skywalking-oap`
+（order v0.1.19 真实镜像、185 秒实测 **7 条**）。纯噪声、不阻断启动，但会把真正的启动 ERROR 淹掉。
+
+**实测三种消噪法（order v0.1.19 镜像）**：
+
+| 方案 | resolve-fail | agent 挂载 | 结论 |
+| --- | --- | --- | --- |
+| 默认 `skywalking-oap` | 7 条/185s | 挂载 | 噪声来源 |
+| `SW_AGENT_OPTS` 置空 | 0 | **不挂载** | 冒烟失去「agent 挂载」观察力，弃用 |
+| `collector=127.0.0.1:11800` | **0** | 挂载 | **采用** |
+
+**修法**：在四条腿共用的 `SMOKE_ENV` 里加
+`-e SW_AGENT_COLLECTOR_BACKEND_SERVICES=127.0.0.1:11800`。不碰 Dockerfile、不影响真实部署面；
+`SW_AGENT_OPTS` 故意不动（见上表）。本地验证：user/order 两条腿 185 秒日志 **0 条** resolve 噪声。
+
+### S1.2 缺口 B：冒烟缺 `amz_user` 库 → 字段权限静默降级「全部可见」
+
+`FieldPermissionServiceImpl` 的 SQL 直接写死跨库查询 `amz_user.amz_field_permission`，而这张表
+被 `amz-common` 带进**每一个服务**（order/product 腿启动时就会查）。冒烟原来只建
+`amz_spapi/amz_order/amz_product` 三个库，于是每条腿启动都打：
+
+```
+FieldPermissionService: 加载字段权限规则失败，沿用上一次成功快照（从未成功加载过则为「全部可见」）。
+  原因: StatementCallback; bad SQL grammar [SELECT ... FROM amz_user.amz_field_permission ...]
+```
+
+**本机实测（当前 HEAD 真实容器）**：只建空库**不够**——`amz_user` 库存在但表不存在时，
+order 腿照样报 bad SQL grammar 并降级；只有先跑一次 user 服务（Flyway 执行 V1/V2，
+建表 + 灌入 8 条 VIEWER 种子规则）之后，后续腿才会打 `加载字段权限规则 8 条`。
+
+**修法（两层）**：
+1. 建库清单补 `amz_user`（幂等）；
+2. 在 spapi 之后、order/product 之前**新增 user prod 启动腿**，并断言日志出现
+   `加载字段权限规则 [0-9]+ 条`（成功行）——只等 `Started` 不够，因为加载失败只是 warn、
+   服务照样 Started，降级会静默通过。若日志出现 `加载字段权限规则失败` 则冒烟直接判失败。
+
+**实测记录（`amazonerp-user:smoketest` / `amazonerp-order:smoketest`，本地 HEAD 构建）**：
+user 腿 24 秒出现 `Started AmzServiceUserApplication` + `加载字段权限规则 8 条，覆盖角色 1 个，Redis key 3 个`；
+随后 order 腿同样打出 `加载字段权限规则 8 条` + `Started`，SkyWalking 噪声 0 条。
+**注意**：release.yml 的完整端到端验证仍需一次真 release run（打 tag 触发），本地是等效复现。
+
+### S1.3 契约测试（防回潮）
+
+`tools/release/test_release_workflow.py` 新增 2 例（先红后绿）：
+- `test_boot_smoke_silences_skywalking_agent_without_a_collector`：钉「collector 必须显式指本地地址 +
+  必须写在 SMOKE_ENV（所有腿一致生效）+ 禁止清空 `SW_AGENT_OPTS` 来消噪」；
+- `test_boot_smoke_creates_amz_user_and_runs_a_user_boot_leg`：钉「建 `amz_user` + 真跑 user 腿 +
+  user 腿先于 order 腿 + 断言 `grep -qE "加载字段权限规则 [0-9]+ 条"` 成功形态」。
+
+**验证记录（本机实测）**：
+- `python -m unittest tools.release.test_release_workflow` → **28/28 OK**（原 26 + 新增 2）；
+- release tools 全套 7 模块 `python -m unittest ...` → **91 tests OK**；
+- `repository_hygiene.py --root .` → **0 findings**；
+- `amz-service-spapi` 全量单测 → **706/0F/0E/12S**（含部署契约 96 例；改 release.yml 不破任何契约）；
+- 冒烟等效复现：4 腿全过、字段权限成功行与 SkyWalking 消噪均实测（见 S1.2）。
+
+## 五项决策（上一轮遗留五问，本班定案）
+
+### 1. P0-09 字段权限 fail-open → 决策建议（定「注解即默认隐藏」+ 分层放行）
+
+**现状事实**（全部实测核对）：三条 fail-open 路径都真实存在——
+`getHiddenFields` 在 Redis/内存都未命中时返回空集（=全部可见）；
+`FieldPermissionAspect` 在 `UserContext.role == null` 时直接不过滤；
+`isFieldVisible` 任一参数为 null 时返回 true。
+同一仓库里 `ShopIdGuardAspect` 已经是 fail-closed（切面异常即拦截），两个安全切面方向不一致。
+
+**建议（产品语义，不是纯代码修正）**：以「注解即敏感」为缺省——
+凡 `@FieldPermission` 标注的字段，在**上下文异常**（role 缺失、权限源不可用）时一律按隐藏处理；
+上下文正常（role 有值）时按 DB 规则放行。配套三点：
+1. **规则完备性测试**：`@FieldPermission` 清单（当前 11 处）必须能映射到 DB 规则或
+   「默认隐藏」兜底，缺规则行不再是「全部可见」而是「按注解敏感级隐藏」
+   （`Order.buyerName` / `ProductCost.unitCost` / `AdCampaign.dailyBudget` 现状就是没规则行）；
+2. **只改方向、不改可用性**：正常登录路径不受影响（VIEWER/OPERATOR/ADMIN 的种子规则已全），
+   只有异常路径从「露出」变「隐藏」；
+3. **三条路径一起改**：`getHiddenFields` 异常返回「注解敏感集合」、aspect 缺 role 时对
+   `Result.data` 里的注解字段统一置 null、`isFieldVisible` null 参数返回 false。
+   成本提示：前端展示会多一层 `***`；若 product 决策者不能接受异常时隐藏，则至少要把
+   `role==null` 与「无注解字段」区分开（有注解必须隐藏）。**本次未动代码，等确认后一次改齐三条路径。**
+
+### 2. 真实凭据：为什么需要（用户质疑必要性）
+
+**结论：真实凭据不是「可选装饰」，是三类功能的开关；但当前并非阻塞项**。
+
+没有它时「空壳」的边界（B 桶 20 条缺口）：
+- **DeepSeek key**（4 条）：AI 翻译/文案会走降级（返回原文或 mock），LLM 能力实际不可用；
+- **Keepa 订阅**（3 条）：价格/排名历史抓不到，相关报表没有真实数据源；
+- **SP-API 企业授权**（13 条）：订单/商品同步拉不到真实店铺数据，`/spapi/*` 只能对合成凭证跑通
+  **启动与导入链路**，业务数据是空的。
+
+当前已具备的无凭据替代：
+- `/spapi/credentials` 凭证录入入口已接线、`ConnectorCenter` 自检面板已显示凭证状态；
+- `tools/connector-acceptance/`（acceptance runner + fake-service）可做**契约级验收**，
+  不需要真账号即可验证请求形态、重试、限流、签名等行为。
+
+**建议**：继续按原计划把「真实凭据」列为外部依赖（用户去找 DeepSeek/Keepa/SP-API 拿号），
+代码侧不再加断言（避免重复投资）；在拿到凭据前，用 connector-acceptance 保持行为契约绿。
+若近期要向最终用户演示「真实数据」，最小集是 **SP-API 授权 + DeepSeek key**（Keepa 可后补）。
+
+### 3. `IGNORED` 扫描侧去重：定案「本次不处理」
+
+定案按原语义执行：`IGNORED` 仅表示「人工判定无需处理并关闭本次告警」，
+**不抑制**后续扫描再建同类告警。理由与原文一致——扫描侧还是 mock 造数，
+现在去重没有可验证的真实数据源；接真实数据源时再决策，且归扫描侧而不是处置侧。
+HANDOFF 旧段落按「已定案」归档，不再列为待办。
+
+### 4. Nacos 配置中心：是什么、为什么需要、当前怎么处理
+
+**是什么**：Nacos 有两个角色。本仓现在只用了第一个——**服务注册/发现**
+（`spring.cloud.nacos.discovery.*`，服务互相找地址）。第二个是**配置中心**
+（`spring.cloud.nacos.config.*`）：把各服务的 `application.yml` 抽到 Nacos 服务端统一管理，
+支持运行时改配置、多环境隔离、灰度发布、变更审计。
+
+**为什么「看起来需要」**：当初删掉 16 份 `bootstrap.yml` 时，`spring.cloud.nacos.config.*` 从未生效
+（依赖树里根本没有 bootstrap starter），所以「配置中心」是个**从未接线的能力**，不是被删坏的。
+当前配置真实来源是：环境变量（compose/k8s 注入）+ 各服务自己的 `application.yml`。
+
+**决策：本次不接**。理由：
+- 现有配置面已经被两条部署路径（compose/k8s）+ 契约测试钉住
+  （`.env.example` ↔ compose ↔ ConfigMap 三方一致性、`NacosAddressContractTest`、
+  `DeadSharedConfigContractTest` 防回潮）；
+- 引入配置中心会新增「Nacos 可用性」这个运行时依赖（配置拉不到 = 服务起不来），
+  与现有 fail-closed 启动校验叠加后，运维成本大于当前收益；
+- 真正会从配置中心获益的场景（多环境动态调参、敏感配置统一轮转）目前都还没有真实运维需求。
+若将来要接：用 `spring.config.import: nacos:...`（不必回退 bootstrap 方案），
+并先补「拉不到配置时拒绝启动还是降级」的产品决策。
+
+### 5. 冒烟两处缺口：已修复（见 §S1）
+
+原两处缺口——SkyWalking 无 OAP 噪声、冒烟只建 3 个库导致 `FieldPermissionService` 降级——
+均已在本班修复并有本机实测记录（§S1.1 / §S1.2）。该项从「后续方向」移入「已完成」。
+
+
 # HANDOFF — 两处「缓存写失败连业务结果一起丢」+ 运营告警三态 + 关键词目录 + 死表清理（2026-10-10 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
