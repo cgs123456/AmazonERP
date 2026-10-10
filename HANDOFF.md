@@ -99,6 +99,20 @@ Spring Boot Redis 自动配置类的残渣，与 `*.class` gitignore 规则匹�
 2. 本机与 CI 的数字差只来自门控 IT 的跳过/执行，0F/0E 一致——交班清理（6 文档删除 +
    allowlist 死条目 + `org/` 残渣）对后端**零影响**实证成立。
 
+### S6.9 push 通道复核与「代理关停」推断更正（同日晚）
+
+交班后 `gh run watch` 两次网络中断（一次直连超时、一次 `proxyconnect tcp: 127.0.0.1:7897
+connectex` 失败），我据此推断「代理可能已关停」——**实测该推断错误，撤回**：
+
+- `Test-NetConnection 127.0.0.1 -Port 7897` → **True**；经该代理 `Invoke-WebRequest
+  https://api.github.com/rate_limit` → **200**；
+- 直连 `github.com:443` → **True**（与坑 54 当时的「直连必失败」不同，两条通道现在都通）；
+- `git ls-remote origin HEAD`（走仓库本地 `http.proxy=127.0.0.1:7897`）→ 秒回，**push 通道可用**。
+
+结论：两次中断是两条通道各自的**瞬时抖动**，不是代理关停；「watch 断了就怀疑代理死了」
+是过度推断，正确动作是 `gh run view` 直查 run 结论（本轮即如此收回 success）。另记：
+`gh` 不读 git 的本地 `http.proxy`，走代理要临时 `HTTPS_PROXY` 环境变量，直连可用时不必设。
+
 ## S4. 发布收口补丁：bootstrap 跳过字段权限预热（commit `2c7f5e5`）
 
 **问题**：v0.1.23 真发布的 release run（`38029198461`）里，spapi **bootstrap 腿**
