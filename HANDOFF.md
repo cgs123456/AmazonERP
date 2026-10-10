@@ -13,7 +13,7 @@
 一直静默降级「全部可见」，SkyWalking 也每条腿刷 7 条 DNS 失败噪声**。现已补第四条 user 腿
 （Flyway 建表 + 断言「加载字段权限规则 N 条」成功行）并把 collector 指向本地黑洞地址；
 本机用当前 HEAD 真实镜像把新冒烟全流程跑通（§S1 实测记录）。
-五项待办决策：① P0-09 定「注解即默认隐藏」+ 分层放行；② 真实凭据**仍然必需**、当前可用
+五项待办决策：① P0-09 **已落地 fail-closed**（见 §S2）；② 真实凭据**仍然必需**、当前可用
 契约验收兜底；③ `IGNORED` 去重定案**本次不做**；④ Nacos 配置中心**暂不接**、仅保留注册发现；
 ⑤ 冒烟两处缺口**已修复**。
 
@@ -78,6 +78,37 @@ user 腿 24 秒出现 `Started AmzServiceUserApplication` + `加载字段权限�
 - `amz-service-spapi` 全量单测 → **706/0F/0E/12S**（含部署契约 96 例；改 release.yml 不破任何契约）；
 - 冒烟等效复现：4 腿全过、字段权限成功行与 SkyWalking 消噪均实测（见 S1.2）。
 
+
+## S2. P0-09 字段权限 fail-closed（2026-10-10 定案后落地，commit `2a96bf8`）
+
+定案：**异常路径宁可多藏、不可露出**。三条 fail-open 路径一次改齐（TDD 先红后绿，
+`FieldPermissionServiceContractTest` 修前 6 例红）：
+
+| 路径 | 旧行为 | 新行为 |
+| --- | --- | --- |
+| `getHiddenFields` 无规则行/未命中 | 空集 = 全部可见 | 按注解敏感级缺省（`ConfidentialLevel` javadoc 本来就写明但从未实现）：**CONFIDENTIAL 仅 ADMIN、INTERNAL 仅 OPERATOR+ADMIN、PUBLIC 全可见** |
+| `FieldPermissionAspect` role 缺失 | 直接不过滤 | 内部可信服务身份（`BaseAuthInterceptor` 校验过服务令牌）放行；否则按 **VIEWER 最小权限**走等级缺省 |
+| `isFieldVisible` 参数缺失 | 返回 true | **返回 false** |
+
+关键语义：**显式 DB 规则仍最高优先**——缓存命中（`loadPermissions` 成功）时完全按规则执行，
+等级缺省只在「缓存与内存都未命中」时兜底。这保住了 VIEWER 8 条种子规则与运营侧撤销/放行的
+管理能力，只收紧了「缺规则/缺上下文」的漏洞方向（此前 `Order.buyerName`、`ProductCost.unitCost`、
+`AdCampaign.dailyBudget` 有注解无规则 → 任何角色可见，现在按等级自动隐藏）。
+
+实现要点：
+- `FieldPermissionServiceImpl` 新增 `gradedEntities`（entity → field → 等级映射），
+  由切面在第一次遇到实体时调用 `registerGradedEntity`（幂等、运行时反射读注解、无启动扫描）；
+- 切面 role 缺失时区分「可信服务身份」（放行，与 `@InternalServiceAccess` 双信任边界一致）
+  和「无上下文」（按 VIEWER 最小权限）；
+- 未注册实体（无注解类型）保持「无规则 = 全可见」，不影响非敏感 DTO。
+
+**验证（本机实测）**：
+- 新契约 11 例先红后绿（修前 6 红：CONFIDENTIAL 对 VIEWER 可见、role 缺失不过滤、null 参数可见）；
+- `amz-common` 全量 **208/0F/0E**（原 197 + 新增 11）；
+- 全仓 16 上报模块 `mvn -B -o -fae test` 合计 **2149 tests / 0F / 0E / 6S**，BUILD SUCCESS
+  （order 83、procurement+finance+ad+ops 189、spapi 706、product 214 等，全绿）；
+- checkstyle-critical 全仓 **0 violations**；
+- **真 CI**：run `38028490247`（HEAD `2a96bf8`）**11/11 job success**。
 ## 五项决策（上一轮遗留五问，本班定案）
 
 ### 1. P0-09 字段权限 fail-open → 决策建议（定「注解即默认隐藏」+ 分层放行）
