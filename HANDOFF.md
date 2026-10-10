@@ -1,21 +1,48 @@
-# HANDOFF — 冒烟补 user 腿与 SkyWalking 消噪 + 五项决策落地（2026-10-10 最新更新）
+# HANDOFF — v0.1.23 收尾 + 发布收口补丁（2026-10-10 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新：① 修掉发布冒烟的两处缺口（SkyWalking DNS 噪声 + `amz_user` 缺失导致字段权限静默失效），
-> 见 §S1；② 对上一轮列的五项后续方向给出决策与落地记录，见 §五项决策。
-> 此前的「两处缓存写失败丢业务结果 + ops 三态 + 关键词目录 + 死表清理」见下方历史段（标题保留 2026-10-10 更新字样）。
-> 发布链截至 tag **v0.1.22**（`92ab882`），真 release run `37909617071` **3/3 job success**。
+> 本次更新：① `tools/connector-acceptance` 自检 **65/65 PASS**（exit 0，未配置真实凭据时的
+> 契约验收兜底已可执行）；② 发布冒烟唯一遗留 WARN（bootstrap 腿「加载字段权限规则失败」）
+> 已修——`bootstrap` profile 跳过字段权限预热（commit `2c7f5e5`，TDD 4 例先红后绿，
+> master CI `38031922658` **12/12 全绿**）；③ v0.1.23 已发布且 release run **3/3 success**
+> （run `38029198461`，tag `6daff31`，19 资产）。
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步；CI 11/11 全绿；发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
-本轮收口：**发布冒烟此前只覆盖 spapi/order/product 三条腿、且缺 `amz_user` 库——字段权限在冒烟里
-一直静默降级「全部可见」，SkyWalking 也每条腿刷 7 条 DNS 失败噪声**。现已补第四条 user 腿
-（Flyway 建表 + 断言「加载字段权限规则 N 条」成功行）并把 collector 指向本地黑洞地址；
-本机用当前 HEAD 真实镜像把新冒烟全流程跑通（§S1 实测记录）。
-五项待办决策：① P0-09 **已落地 fail-closed**（见 §S2）；② 真实凭据**仍然必需**、当前可用
-契约验收兜底；③ `IGNORED` 去重定案**本次不做**；④ Nacos 配置中心**暂不接**、仅保留注册发现；
-⑤ 冒烟两处缺口**已修复**。
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步（HEAD `2c7f5e5`）；CI **12/12 全绿**
+（run `38031922658`）；发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
+发布冒烟已是 4 腿（spapi bootstrap+prod / user prod / order / product），`amz_user` 建库 +
+「加载字段权限规则 N 条」成功行断言在位；本班把 bootstrap 腿的唯一 1 条预热 WARN 消除。
+无凭据场景的验收路径 = `tools/connector-acceptance`（selftest 65/65 PASS）。
+后续主线：**等用户提供真实凭据 → 跑 runbook §3 端到端验收 → 解锁外部 API 实测**；
+代码侧无遗留阻塞项。
+
+## S4. 发布收口补丁：bootstrap 跳过字段权限预热（commit `2c7f5e5`）
+
+**问题**：v0.1.23 真发布的 release run（`38029198461`）里，spapi **bootstrap 腿**
+（06:23:02）打了 1 条 `加载字段权限规则失败` WARN——bootstrap 是一次性导入器，
+启动时 `amz_user` 规则表还没建，预热必然失败；预期行为，但属于冒烟唯一噪声。
+
+**修法**：`FieldPermissionConfig.init()` 注入 `Environment`，active profile 含 `bootstrap`
+时跳过 `loadPermissions()`。安全性依据：bootstrap 禁用 Web 类型、导入后退出、无请求面；
+user 腿（prod profile）不受影响，照常预热并打成功行。TDD：`FieldPermissionConfigTest`
+4 例（bootstrap 单独/混合跳过、prod/无 profile 照常加载），先红后绿；
+`mvn -B -o -pl amz-common test` → **212/0F/0E/0S**；checkstyle 0 违规；
+master CI `38031922658` **12/12 全绿**。
+
+## S5. 无凭据场景的验收路径：connector-acceptance selftest（本班实测）
+
+- 工具位置：`tools/connector-acceptance/`（`run.ps1` 封装 `acceptance_runner.py`）。
+- 用途：真实凭据缺失时，对 connector 层做**契约级验收**——校验报文结构、幂等约束、
+  outbox/A7 契约、脱敏、判定三态（api-ready / reachable-only / capable-only）。
+- 本班实测：`.\tools\connector-acceptance\run.ps1 -Selftest` → **65/65 PASS，exit 0**。
+- **何时用**：拿到真实凭据后，按 runbook §3 对在线服务跑
+  `.\tools\connector-acceptance\run.ps1 -DryRun -ServiceUrl <URL> -ShopId <ID>`；
+  退出码 0=达标 / 1=有缺项 / 2=前置不满足。
+
+---
+
+# 以下为历史段落（按当时口径读）
 
 ## S1. 发布冒烟的两处缺口（已修复，TDD 先红后绿）
 
@@ -1463,3 +1490,5 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 - 写文档（含本文件）也要过 `repository_hygiene.py --root .` 再提交。
 - 交班必跑清单**新增一项**：ci.yml hygiene job 的 release-tools unittest 逐字串
   （本班 run #195 教训——上班清单缺它，四把尺+三契约全绿仍被真 CI 抓红）。
+
+
