@@ -1,7 +1,7 @@
-# HANDOFF — 字段权限缓存对账 + 运营告警三态 + 关键词目录 + 死表清理（2026-10-10 更新）
+# HANDOFF — 两处「缓存写失败连业务结果一起丢」+ 运营告警三态 + 关键词目录 + 死表清理（2026-10-10 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新覆盖一处字段权限缓存缺陷修复（见 §0）、ops 模块两项业务补齐与一处死表清理（见 §A–§C），
+> 本次更新覆盖两处「缓存/写回失败连业务结果一起丢」的缺陷修复（见 §0、§0b）、ops 模块两项业务补齐与一处死表清理（见 §A–§C），
 > 以及随之而来的三处 CI 红修复；上一轮的 worktree 收编与 Redis/mock 启动期缺陷见 §历史段。
 > 发布链截至 tag **v0.1.22**（`92ab882`），其前 `e0c6c6d` / tag **v0.1.21**、`5520065` / tag **v0.1.20**
 > 已由真 release run `37909617071` 验证：**3/3 job success，含 Prod-profile boot smoke**。
@@ -10,10 +10,13 @@
 
 后端 19 个 Maven 模块可编译可测；工作区干净、与 origin/master 同步；**CI 11/11 job 全绿**
 （最近一次 run `38015620421`，HEAD `7aae15c`，含真实 MySQL 8 上 59 个迁移回放）。
-本轮做了四件事：① 修掉字段权限缓存「只增不删」导致**撤销权限永久不生效**的缺陷（§0）；
-② 补齐运营告警的三态终态机（`IGNORED` 此前只存在于 DDL 注释，跟卖告警连处置端点都没有）；
-③ 新增「本店被追踪关键词」目录端点，趋势查询不再只能凭记忆手输；
-④ 清掉 102 张活表里唯一一张零引用死表（`amz_product_sales_stats`，102→101 表）。
+本轮做了五件事：① 修掉字段权限缓存「只增不删」导致**撤销权限永久不生效**的缺陷（§0）；
+② 修掉翻译服务「L3 写回失败把已成功的译文一起丢掉」的缺陷（§0b）；
+③ 补齐运营告警的三态终态机（`IGNORED` 此前只存在于 DDL 注释，跟卖告警连处置端点都没有）；
+④ 新增「本店被追踪关键词」目录端点，趋势查询不再只能凭记忆手输；
+⑤ 清掉 102 张活表里唯一一张零引用死表（`amz_product_sales_stats`，102→101 表）。
+两处缺陷的共同形状：**把「缓存/写回的失败」和「业务本身的失败」用了同一个错误分支**，
+于是缓存出问题会伪装成业务出问题。这类形状值得在后续 review 里继续专门搜。
 仍未闭环的是「真实外部凭据」（DeepSeek/Keepa/SP-API）、Nacos 配置中心，以及
 **字段权限的 fail-open 降级语义（P0-09，本轮只修了「撤销不生效」，没改降级方向）**；
 前两项不是代码能推进的，第三项是能推进但需要一次明确决策。
@@ -56,7 +59,42 @@ procurement（`PurchaseOrder`）、finance（`AccountingVoucher`）、ad（`AdCa
 实际上既没有跳过加载、也没有自动刷新——属于会让读代码的人误判存在节流的注释性死代码。
 
 
-### A. 运营告警三态终态机：`IGNORED` 从注释变成真端点
+### 0b. 翻译 L3 写回失败：已成功的译文被一起丢掉（本轮新发现）
+
+`TranslationService.translate()` 原本把两件事放进**同一个 `try`、共用一个 `catch`**：
+
+```java
+try {
+    String translated = callDeepSeek(...);   // 调 LLM
+    translationCacheMapper.insert(cache);    // 写回 L3
+    writeBack(key, translated);              // 写回 L2/L1
+    return translated;
+} catch (Exception e) {
+    return sourceText;                       // ← 两类失败共用这一个动作
+}
+```
+
+后果：L3 `insert` 失败会被当成「LLM 调用失败」，**返回原文**。最典型的触发是并发——
+`amz_translation_cache` 有唯一键 `uk_hash_langs (source_text_hash, source_lang, target_lang)`，
+两个请求同时翻译同一段文本时，后到的那条 `insert` 抛 `DuplicateKeyException`，
+于是它**明明已经拿到了译文却把译文扔掉**。用户看到的是「同一个请求有时翻译、有时原样返回」，
+而且因为走的是 `warn` 日志、接口仍是 200，前端不会有任何错误提示。
+
+这条路径上的成本是真实的：LLM 调用按 token 计费，白付一次；用户拿到未翻译文本去发布 listing，
+是业务事故而不是降级。
+
+**修法**：按「哪一步失败」拆开错误分支——
+- 只有 `callDeepSeek` 失败才 `return sourceText`（这才是「LLM 不可用」）；
+- L3 `insert` 失败只 `warn` 并降级为「本次不缓存」，**译文照常返回**；
+- L2/L1 写回本来就在各自的 `try` 内，失败同样不影响返回值。
+
+原则一句话：**缓存是加速层，不是正确性的一部分。写缓存失败最多是「这次没缓存」，不能是「这次不算数」。**
+
+**测试**：新增 `TranslationCacheWriteFailureTest`（2 例）——撞唯一键、DB 不可用两种写失败。
+**修前 2 例皆红**（`expected: <TRANSLATED:hello world> but was: <hello world>`），修后绿。
+`callDeepSeek` 由 `private` 改 `package-private` 以便测试覆写注入固定译文，
+与同类 `readFromRedis` / `writeToRedis` 的可见性约定一致，不改运行时行为。
+
 
 `amz-service-ops` 的两张告警表（`amz_negative_review_alert`、`amz_hijack_alert`）在 V1 DDL 里把
 `status` 声明为 `NEW/HANDLED/IGNORED`，但 `IGNORED` **只出现在列注释与实体 javadoc**，代码零写入：
@@ -134,6 +172,8 @@ procurement（`PurchaseOrder`）、finance（`AccountingVoucher`）、ad（`AdCa
    fixture（与 `OPS_TREND` 同源，避免「目录里选了却查不到趋势」的自相矛盾）。
 ## 本轮验证记录（2026-10-10）
 
+- **翻译写回修复**：`amz-service-product` 全量 **78 / 0F / 0E / 7S**；
+  `TranslationCacheWriteFailureTest` 先红后绿（修前 2 例皆红）；模块 checkstyle-critical **0 violations**
 - **字段权限修复**：`amz-common` 全量 **197 / 0F / 0E**（原 192 + 新增 5）；
   `FieldPermissionServiceImplTest` 先红后绿（修前 5 例中 2 例红）；
   变异反证（注释掉移除/删除逻辑）**2 例立刻红**；单模块 `checkstyle-critical` **0 violations**；
