@@ -16,9 +16,9 @@
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步（本班内容 commit `a422807`；本班 §S6 只含文档、证据快照与
-allowlist 哈希签字，代码基线仍是 `2c7f5e5`）；CI **11/11 全绿**（本班 run
-`38054458019`@`a422807`；代码基线 run `38031922658`；本机整仓回归 2124/0F/0E/29S 见 §S6.8）；
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步（本班三个提交 `a422807`→`d60496d`→`ad89428` 均为
+文档/证据清理，代码基线仍是 `2c7f5e5`）；CI **11/11 全绿**（本班最新 run
+`38055320252`@`ad89428`；代码基线 run `38031922658`；本机整仓回归 2124/0F/0E/29S 见 §S6.8）。
 发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
 发布冒烟已是 4 腿（spapi bootstrap+prod / user prod / order / product），`amz_user` 建库 +
 「加载字段权限规则 N 条」成功行断言在位；本班把 bootstrap 腿的唯一 1 条预热 WARN 消除。
@@ -26,6 +26,9 @@ allowlist 哈希签字，代码基线仍是 `2c7f5e5`）；CI **11/11 全绿**�
 真实 spapi 无凭证 prod 启动 fail-closed、runner 前置探测 exit 2。
 后续主线：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）→ 解锁外部 API 实测**；
 代码侧无遗留阻塞项。
+
+> 注：上段的 SHA/run 号是**快照**，每次改 HANDOFF 都会推进一步。判定“当前 CI 是否全绿”以
+> `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
 
 ## S6. 交班收尾：无用文件清理 + README 事实修正 + 历史 CI 悬案补账（本次会话）
 
