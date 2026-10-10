@@ -50,8 +50,6 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
      */
     private volatile Map<String, Map<String, Set<String>>> memoryCache = new ConcurrentHashMap<>();
 
-    /** 标记是否已成功加载过权限规则（避免无规则表时反复尝试 DB 查询）。 */
-    private volatile boolean loaded = false;
 
     /**
      * Redis 可选注入：amz-common 单元测试或独立运行时可能缺失。
@@ -102,7 +100,6 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
             }
             // 先换内存快照：即使下面的 Redis 对账失败，本次 DB 结果也已经生效。
             memoryCache = rebuilt;
-            loaded = true;
 
             RedisTemplate<String, Object> redis = redis();
             if (redis != null) {
@@ -117,7 +114,6 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
                     ruleCount, rebuilt.size(), desiredRedis.size());
         } catch (EmptyResultDataAccessException e) {
             memoryCache = new ConcurrentHashMap<>();
-            loaded = true;
             log.info("FieldPermissionService: amz_field_permission 表无 visible=0 规则，全部字段可见。");
         } catch (Exception e) {
             // 降级：不阻断启动。保留上一次成功的内存快照（若有），而不是清空成「全部可见」。
