@@ -8,7 +8,7 @@
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步；CI 11/11 全绿（最近一次 run `38025290251`，HEAD `1fb2c5e`）。
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步；CI 11/11 全绿；发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
 本轮收口：**发布冒烟此前只覆盖 spapi/order/product 三条腿、且缺 `amz_user` 库——字段权限在冒烟里
 一直静默降级「全部可见」，SkyWalking 也每条腿刷 7 条 DNS 失败噪声**。现已补第四条 user 腿
 （Flyway 建表 + 断言「加载字段权限规则 N 条」成功行）并把 collector 指向本地黑洞地址；
@@ -109,6 +109,34 @@ user 腿 24 秒出现 `Started AmzServiceUserApplication` + `加载字段权限�
   （order 83、procurement+finance+ad+ops 189、spapi 706、product 214 等，全绿）；
 - checkstyle-critical 全仓 **0 violations**；
 - **真 CI**：run `38028490247`（HEAD `2a96bf8`）**11/11 job success**。
+
+## S3. v0.1.23 真发布：新冒烟首次端到端验证（release run `38029198461`）
+
+tag `v0.1.23` 指向 `6daff31`（P0-09 fail-closed + 冒烟修复 + HANDOFF）。发布 run
+`38029198461`：quality-gate success → release success，**19 个资产**（GitHub Release
+`v0.1.23` assets=19），镜像 tag `0.1.23-6daff311…`。
+
+**Prod-profile boot smoke 首次以「四腿 + 字段权限成功行断言」运行**，时间线（job log 实测）：
+
+| 时刻 (UTC) | 事件 |
+| --- | --- |
+| 06:23:02 | spapi **bootstrap** 腿（一次性导入器）启动时打 1 条字段权限 WARN——预期行为：此时 `amz_user` 表尚未由 user 腿创建，`amz-common` 预热查询失败仅 warn 降级，导入器功能不受影响（随后正常导入 2 条凭证） |
+| 06:23:05 | `bootstrap 导入 2 条凭证 OK` |
+| 06:23:33 | user-prod 腿启动；`boot_wait Started` + `grep 加载字段权限规则 [0-9]+ 条` 均通过（无失败行、60s 内出现成功行） |
+| 06:23:52 | user-prod 移除（腿通过） |
+| 06:24:20 | order-prod 移除（腿通过，此时 amz_user 表已就绪） |
+| 06:24:50 | product-prod 移除 + `prod-profile boot smoke 全部通过（spapi bootstrap+prod / user prod / order prod / product prod）` |
+
+**SkyWalking 噪声**：整个 release job 中容器应用日志 **0 条** `Failed to resolve host skywalking-oap`
+（唯一命中的 1 行是 workflow 注释原文）。消噪修复实测生效。
+
+**P0-09 fail-closed 随发布生效**：v0.1.23 镜像内 `Order.buyerName` / `ProductCost.unitCost` /
+`AdCampaign.dailyBudget` 等注解字段在无规则行时按等级隐藏；CI quality-gate 全量测试
+（含 `FieldPermissionServiceContractTest` 11 例）在发布前再次全绿。
+
+**遗留观测点**（非缺陷）：spapi bootstrap 腿的字段权限 WARN 属于「预热早于建表」的既有次序，
+一次导入器无需权限规则；若想让日志零 WARN，可让 bootstrap profile 跳过 FieldPermission 预热，
+属后续可选清理项。
 ## 五项决策（上一轮遗留五问，本班定案）
 
 ### 1. P0-09 字段权限 fail-open → 决策建议（定「注解即默认隐藏」+ 分层放行）
