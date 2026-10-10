@@ -12,10 +12,10 @@
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步（HEAD `3d42e6b`，本班 §S6 只含
-文档与未跟踪垃圾清理，代码基线仍是 `2c7f5e5`）；CI **12/12 全绿**（最近 run `38043642917`
-= 交班清理 commit；代码基线 run `38031922658`）；发布链至 **v0.1.23**（release run
-`38029198461` 3/3 job success，19 资产）。
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步（HEAD `7a498c7`，本班 §S6 只含
+文档与未跟踪垃圾清理，代码基线仍是 `2c7f5e5`）；CI **12/12 全绿**（最近 run
+`38044759053`；代码基线 run `38031922658`；本机整仓回归 2124/0F/0E/29S 见 §S6.8）；
+发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
 发布冒烟已是 4 腿（spapi bootstrap+prod / user prod / order / product），`amz_user` 建库 +
 「加载字段权限规则 N 条」成功行断言在位；本班把 bootstrap 腿的唯一 1 条预热 WARN 消除。
 无凭据场景的验收路径 = `tools/connector-acceptance`（selftest 65/65 PASS）。
