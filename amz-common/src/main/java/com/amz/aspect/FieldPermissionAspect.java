@@ -51,9 +51,15 @@ public class FieldPermissionAspect {
         Object result = pjp.proceed();
         try {
             String role = UserContext.getRole();
-            if (role == null) {
-                // 拦截器未注入角色（如白名单路径或未走 BaseAuthInterceptor 的服务），跳过过滤。
+            if (role == null && UserContext.getInternalService() != null) {
+                // 可信服务身份（BaseAuthInterceptor 校验过服务令牌）：服务间调用不做用户字段过滤。
                 return result;
+            }
+            if (role == null) {
+                // P0-09 fail-closed：role 缺失不再「直接不过滤」。按 VIEWER 最小权限走
+                // 注解等级缺省（CONFIDENTIAL 仅 ADMIN、INTERNAL 仅 OPERATOR/ADMIN、
+                // PUBLIC 全可见）。白名单端点返回数据里的敏感字段同样隐藏。
+                role = "VIEWER";
             }
             if (result instanceof Result<?> r) {
                 Object data = r.getData();
@@ -106,6 +112,11 @@ public class FieldPermissionAspect {
         List<Field> annotatedFields = FIELD_CACHE.computeIfAbsent(clazz, this::collectAnnotatedFields);
         if (annotatedFields.isEmpty()) {
             return applied;
+        }
+        // P0-09：把实体注解等级登记给 FieldPermissionService，供「无 DB 规则行」时按等级缺省。
+        // 幂等：重复注册同一实体只覆盖同一份映射。测试注入的 mock 不受影响。
+        if (fieldPermissionService instanceof com.amz.service.impl.FieldPermissionServiceImpl impl) {
+            impl.registerGradedEntity(clazz);
         }
         Set<String> hidden = fieldPermissionService.getHiddenFields(role, clazz.getSimpleName());
         if (hidden.isEmpty()) {

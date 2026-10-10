@@ -1,6 +1,8 @@
 package com.amz.service.impl;
 
+import com.amz.annotation.FieldPermission;
 import com.amz.constant.RedisConstant;
+import com.amz.enums.ConfidentialLevel;
 import com.amz.service.FieldPermissionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,6 +13,7 @@ import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -49,6 +52,16 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
      * 而整体替换是原子的，读到的要么是旧快照、要么是新快照，都是某个时刻的真实规则。
      */
     private volatile Map<String, Map<String, Set<String>>> memoryCache = new ConcurrentHashMap<>();
+
+
+    /**
+     * P0-09 fail-closed：entity 简单名 -> (field 名 -> 敏感级)。
+     * 由切面在运行时注册（见 FieldPermissionAspect.collectAnnotatedFields），
+     * 「无 DB 规则行」时按注解等级缺省（ConfidentialLevel javadoc 早已写明的语义：
+     * CONFIDENTIAL 仅 ADMIN、INTERNAL 仅 OPERATOR/ADMIN、PUBLIC 全可见）。
+     * 显式 DB 规则命中时完全按规则执行，本表不参与。
+     */
+    private final Map<String, Map<String, ConfidentialLevel>> gradedEntities = new ConcurrentHashMap<>();
 
 
     /**
@@ -123,7 +136,27 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
     }
 
     /**
-     * 让 Redis 与 DB 结果对账：删掉没有 DB 规则支撑的孤儿 key、删掉已撤销的 member、补上新增的 member。
+     * 注册实体的注解等级映射（幂等；运行时由切面第一次遇到实体时调用）。
+     * amz-common 内部 API，无反射扫描开销。
+     */
+    public void registerGradedEntity(Class<?> clazz) {
+        Map<String, ConfidentialLevel> levels = new ConcurrentHashMap<>();
+        Class<?> c = clazz;
+        while (c != null && c != Object.class) {
+            for (Field f : c.getDeclaredFields()) {
+                FieldPermission a = f.getAnnotation(FieldPermission.class);
+                if (a != null) {
+                    levels.put(f.getName(), a.sensitiveLevel());
+                }
+            }
+            c = c.getSuperclass();
+        }
+        if (!levels.isEmpty()) {
+            gradedEntities.put(clazz.getSimpleName(), levels);
+        }
+    }
+
+    /** 让 Redis 与 DB 结果对账：删掉没有 DB 规则支撑的孤儿 key、删掉已撤销的 member、补上新增的 member。
      * <p>
      * 存在动因（2026-10-10）：原实现只 {@code SADD}、从不删除。隐藏规则一旦在库里被撤销
      * （{@code visible} 改回 1 或整行删除），Redis 里的旧 member 会永久残留；而
@@ -197,17 +230,49 @@ public class FieldPermissionServiceImpl implements FieldPermissionService {
         }
         // 回退内存兜底
         Map<String, Set<String>> entityMap = memoryCache.get(role);
-        if (entityMap == null) {
+        if (entityMap != null) {
+            Set<String> hidden = entityMap.get(entityName);
+            if (hidden != null) {
+                return Collections.unmodifiableSet(hidden);
+            }
+            // 缓存里有该角色但该实体无规则行：DB 明确「无隐藏规则」→ 全可见。
             return Collections.emptySet();
         }
-        Set<String> hidden = entityMap.get(entityName);
-        return hidden == null ? Collections.emptySet() : Collections.unmodifiableSet(hidden);
+        // 缓存与内存都未命中：按注解等级缺省（P0-09 fail-closed）。
+        // CONFIDENTIAL 仅 ADMIN、INTERNAL 仅 OPERATOR/ADMIN、PUBLIC 全可见；
+        // 未知角色按 VIEWER 最小权限。显式规则命中时根本不会走到这里。
+        Map<String, ConfidentialLevel> levels = gradedEntities.get(entityName);
+        if (levels == null || levels.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Set<String> hidden = new java.util.LinkedHashSet<>();
+        boolean admin = "ADMIN".equalsIgnoreCase(role);
+        boolean operator = "OPERATOR".equalsIgnoreCase(role);
+        for (Map.Entry<String, ConfidentialLevel> e : levels.entrySet()) {
+            ConfidentialLevel level = e.getValue();
+            boolean visible = switch (level) {
+                case PUBLIC -> true;
+                case INTERNAL -> admin || operator;
+                case CONFIDENTIAL -> admin;
+            };
+            if (!visible) {
+                hidden.add(e.getKey());
+            }
+        }
+        return Collections.unmodifiableSet(hidden);
     }
 
+    /**
+     * P0-09 fail-closed（2026-10-10 定案：异常路径宁可多藏、不可露出）。
+     * <p>
+     * 参数缺失不再默认「可见」：任一参数为 null 时返回 false（宁可多藏）。
+     * 未知实体/未注册实体保持「无规则=全可见」语义（无法判级时不误伤）。
+     * INTERNAL 仅 OPERATOR/ADMIN、PUBLIC 全可见）。
+     */
     @Override
     public boolean isFieldVisible(String role, String entityName, String fieldName) {
         if (role == null || entityName == null || fieldName == null) {
-            return true;
+            return false;
         }
         return !getHiddenFields(role, entityName).contains(fieldName);
     }
