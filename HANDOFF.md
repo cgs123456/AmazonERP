@@ -1,100 +1,125 @@
-# HANDOFF — worktree 收编 + 两处启动期缺陷修复 + 门禁回绿（2026-10-09 第二轮更新）
+# HANDOFF — 运营告警三态补齐 + 关键词目录 + 死表清理（2026-10-10 更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新覆盖 worktree 收编与 Redis/mock 两处启动期缺陷（见 §A–§D）；
+> 本次更新覆盖 ops 模块两项业务补齐与一处死表清理（见 §A–§C），以及随之而来的三处 CI 红修复；
+> 上一轮的 worktree 收编与 Redis/mock 启动期缺陷见 §历史段。
 > 发布链截至 tag **v0.1.22**（`92ab882`），其前 `e0c6c6d` / tag **v0.1.21**、`5520065` / tag **v0.1.20**
 > 已由真 release run `37909617071` 验证：**3/3 job success，含 Prod-profile boot smoke**。
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 上遗留的 4 个 codex/* worktree 已全部收编/清理，5 个 codex/* 本地分支已删，仓库外的两处历史残留（桌面 recovery 快照 10.1 MB、`%TEMP%` phase0 残缺 clone 50.9 MB）已核实无独有内容后删除，工作区干净、
-与 origin/master 同步（HEAD `8faa77e`）。
-本轮从这些陈旧 worktree 里捞出两个真实启动期缺陷（report 的 Redis 未接线、spapi 报表处理器绑具体
-客户端导致 mock profile 起不来）并修掉，同时把上一轮 loadtest 收编遗留的 CI hygiene 红灯修绿。
+后端 19 个 Maven 模块可编译可测；工作区干净、与 origin/master 同步（HEAD `508048d`）；**CI 11/11 job 全绿**
+（run `38013273102`，含真实 MySQL 8 上 59 个迁移回放）。
+本轮做了三件业务侧的事：① 补齐运营告警的三态终态机（`IGNORED` 此前只存在于 DDL 注释，
+跟卖告警连处置端点都没有）；② 新增「本店被追踪关键词」目录端点，趋势查询不再只能凭记忆手输；
+③ 清掉 102 张活表里唯一一张零引用死表（`amz_product_sales_stats`，102→101 表）。
 仍未闭环的是「真实外部凭据」（DeepSeek/Keepa/SP-API）与 Nacos 配置中心，两者都不是代码能推进的。
 
-## 本班（第二轮）做了什么
+## 本班（2026-10-10）做了什么
 
-### A. worktree 收编与清理（4 个 codex/* 分支）
+### A. 运营告警三态终态机：`IGNORED` 从注释变成真端点
 
-| worktree | 判定 | 处置 |
-| --- | --- | --- |
-| `AmazonERP-p1-db-audit` | 内容已合并（`a2e48af`），无未提交改动 | 移除 |
-| `AmazonERP-p1-frontend-e2e` | 内容已合并（`992c223`），无未提交改动 | 移除 |
-| `AmazonERP-p2-observability` | 5 个提交的成果已在 master 以**更好形式**存在（16 份 yml 都有 `management/prometheus`；master 的 `ObservabilityExposureContractTest` 15 个方法 vs 分支 5 个）；分支唯一的独有测试 `alertRulesDoNotReferenceUnprovisionedExporterMetrics` 断言的是 master **后来否定的方向**（master 选择补 rabbitmq/node-exporter exporter，而不是删告警规则） | **不合并**，移除 |
-| `AmazonERP-p2-performance` | 含 master 从未收到的 loadtest 重写（已收编为 `3fa0803`）+ 两个真实缺陷；另有一份被 master 文档引用、却从未入库的基线 JSON | 收编后移除 |
+`amz-service-ops` 的两张告警表（`amz_negative_review_alert`、`amz_hijack_alert`）在 V1 DDL 里把
+`status` 声明为 `NEW/HANDLED/IGNORED`，但 `IGNORED` **只出现在列注释与实体 javadoc**，代码零写入：
 
-**判 diff 方向的教训**：`git diff --no-index -- <wt> <master>` 里 `<` 是 worktree、`>` 是 master。
-最初读反了，误判 worktree 在「回退 master 的修复」；实际相反。**判定谁新谁旧必须以文件内容与共同基点
-三方比对为准，不能只看 diff 的加减号**（见坑 51）。
+- 差评告警只有 `handle`（NEW→HANDLED），没有「忽略」；
+- 跟卖告警连处置端点都没有，只有造数 `insert` 与只读 `list`——运营在界面上看得见却管不了。
 
-**额外捞出的一件**：`2026-10-02-p2-2-baseline-recheck.md`（master 已提交）在 §开头引用了
-`AmazonERP-p2-performance/docs/superpowers/evidence/2026-09-30-p2-perf-baseline/bench-read-c10-r100.json`，
-但该 JSON 只存在于 worktree 的未跟踪文件里——**master 的引用一直是断的**。本轮把它复制进
-`docs/superpowers/evidence/2026-09-30-p2-perf-baseline/` 并把引用改成本仓路径（同时注明它是
-另一 agent 的未提交产物），删 worktree 前先把这条引用接上。
+后果不只是「少个按钮」：想关闭一个不打算处理的告警，只能标成 `HANDLED`，**等于在库里留一条假的
+处理记录**。前端 `opsAlerts.ts` 的注释当时已写明「页面不能替它编一个按钮」。
 
-### B. 缺陷 1：`ReportFinishedHandler` 绑具体客户端 → mock profile 下 spapi 起不来
+新增四个端点，归属判定复用 `handle` 既有的严格档（不新造防线）：
 
-`ReportsRealClient` 是 `@Profile("!mock")`、`ReportsMockClient` 是 `@Profile("mock")`，两者都实现
-`ReportsClient` 接口。但 `ReportFinishedHandler` 是**无 profile 限制**的 `@Component`，构造函数却直接要
-`ReportsRealClient` —— `SPRING_PROFILES_ACTIVE=mock` 下容器里没有该 Bean，整个 spapi 因
-`NoSuchBeanDefinition` 起不来。这条路径不是边角：**`tools/ci/runtime_smoke.py` 的默认 profile 就是 mock**。
-
-修复（TDD）：先落 `ReportFinishedHandlerTest`（6 例，含「构造函数只接受 `ReportsClient` 接口」与 mock Bean
-可装配），对修复前代码**确认编译期即红**（`ReportsMockClient cannot be converted to ReportsRealClient`）
-→ 把依赖类型改成 `ReportsClient` 接口 → 绿。
-
-### C. 缺陷 2：report 声明了 Redis starter 却没接线 → `/actuator/health` 恒 DOWN
-
-`amz-service-report` 的 pom 声明了 `spring-boot-starter-data-redis`（15 个业务模块里唯一一个既声明
-starter、又**没有** `spring.data.redis.host` 的）。Boot 的 `DataRedisAutoConfiguration` 在 classpath 有
-starter 时无条件建一个默认指向 `localhost:6379` 的 `LettuceConnectionFactory`，
-`DataRedisHealthContributorAutoConfiguration` 随之注册 redis 健康指示器。容器里没有本机 Redis →
-`/actuator/health` 聚合为 DOWN → compose 的 `healthcheck`（`grep -q "status":"UP"`）**恒判不健康**。
-它不像启动失败那样响亮，所以一直没人发现。
-
-修复（TDD）：先落 `RedisWiringContractTest`（2 例，跨 pom/yml/compose/k8s 四份文件），对修复前代码确认红
-（唯一 offender 就是 report，compose 与 k8s 各缺 3 个键）→ 三处补齐：yml 加 `spring.data.redis` 块、
-compose 的 report 段加 `REDIS_HOST/REDIS_PORT/REDIS_PASSWORD`、k8s 清单加同样三个 env（只加进业务容器，
-未污染 initContainer）→ 绿。
-
-**容器 A/B 实测**（同一 jar，同一 MySQL，唯一变量是 REDIS_HOST 能否连通）：
-
-| REDIS_HOST 指向 | `/actuator/health` |
+| 端点 | 语义 |
 | --- | --- |
-| 可达的 `amz-verify-redis` | **HTTP 200 `{"status":"UP"}`** |
-| 容器内不可达的 `127.0.0.1:6379` | **HTTP 503（DOWN）** |
+| `POST /ops/review/{alertId}/ignore` | 差评 NEW → IGNORED |
+| `POST /ops/hijack/{alertId}/handle` | 跟卖 NEW → HANDLED |
+| `POST /ops/hijack/{alertId}/ignore` | 跟卖 NEW → IGNORED |
 
-### D. 门禁回绿：上一轮收编 loadtest 时留下的 hygiene 红灯
+两处共有逻辑抽成 `loadXxxAlertForDisposition` + `assertStillNew`，避免四条处置路径各自漂移。
 
-上一轮 `3fa0803` 的提交信息写「hygiene 0 findings」，**是错的**：它新收编的 `loadtest/scripts/bench.py` 里
-`if token:` 与「把 args 上的 token 传给 run_scenario」两行触发 `secret-like-assignment` 启发式（把标识符 `token` 当密钥名），
-CI run `37940008909` 的 hygiene job 因此红。这两处是扫描器误报（不是真密钥），按仓内既有先例（同一规则的
-`loadtest/gatling`、`loadtest/jmeter/README.md` 都已进白名单）为 `bench.py` 补一条**内容哈希精确**的
-白名单条目（path+rule+sha256，任何字节变动即失效），而不是放宽规则。
+**`IGNORED` 的语义（写进断言，避免后续被误读）**：
+- 表示「判定为无需处理并关闭」，与 HANDLED 互斥；已处于终态的告警再处置报错；
+- **不做扫描侧的去重抑制**——扫描目前是 mock 造数，接真实数据源后是否按 `(shop_id, asin)` 抑制
+  重建属于扫描侧职责，塞进处置侧现在无法验证、将来还会和造数逻辑打架。UI 文案明确写出
+  「不会阻止后续扫描再产生新的告警行」。
 
-**教训**：提交信息里的「已通过」必须当次真跑命令；`3fa0803` 当时把「本地没跑」写成了「0 findings」。
-（另：哈希用 `_sha256_file` 的 **CRLF/CR→LF 归一化**结果，直接对原始字节取 sha256 会得到不匹配的值。）
+### B. 「本店被追踪关键词」目录：趋势查询从填空题变选择题
 
-## 本轮验证记录
+`GET /ops/rank/trend` 要求 `shopId`+`keyword`+`asin` 三者都填，而全仓**没有端点能列出本店追踪了
+哪些组合**——运营只能凭记忆输入字面完全一致的关键词，输错一个空格或大小写就是「没有记录」，
+与「这个关键词真的没抓过」在界面上无法区分。
+
+新增 `GET /ops/rank/keywords/{shopId}`，按 `(keyword, asin)` 聚合，每组给出点数、最后一次抓取的
+排名与时刻。口径：
+- 唯一数据来源是 `amz_keyword_rank` 表本身，只有抓过的组合才存在。**不另建「追踪清单」表**——
+  那会多出一个必须维护、却无法验证是否与真实抓取一致的真相源；
+- `latestRank` 取最后一次抓取的点，**不是最好值也不是最差值**（两种错答都有断言钉住）；
+- 扫描量设 `MAX_TRACKED_KEYWORD_SCAN=2000` 上限：抓取是反复追加的，不设上限时这个
+  「列一下追踪了哪些词」的端点会随运行时长越来越贵，最终比趋势查询本身还重；
+- 仍按 `shop_id` 过滤：目录暴露了本店追踪哪些竞品 ASIN，不能让别人列走。
+
+### C. 清理零引用死表 `amz_product_sales_stats`（102→101 表）
+
+`zero_reference_tables.py` 在 102 张活表里把它列为**唯一**一张零引用表：没有 mapper、没有 entity、
+没有 service/controller 引用，销量统计的真实口径由 `amz_sales_history` 承担，这张表从未被写入过。
+
+**不改 V1__init.sql**——它已在存量库执行过，改写会让 Flyway 校验失败（checksum mismatch）。
+按既有先例（ai/V3、ad/V9、product/V5、customer/V2）新增 `V11__drop_dead_table.sql`；数值序下它排
+最后，DROP 在所有 CREATE/ALTER 之后执行（已核对重放顺序，CI 亦实测通过）。
+
+连带清理三处，避免留下「建了又删」的孤儿口径：`docker/init-sql-legacy/09-*.sql`（Compose 初始化
+路径）、`tools/synthetic-data/generate.py`（种子配置）、schema 快照三件套（重生成）。
+
+基线数字随本机重跑实测更新：**101 表 / demo 224,858 行 / ci 25,128 行**（原 224,993 / 25,188，
+差额全部来自被删表的种子）。runbook §8 的真机 MySQL 数字（ci 25,275、demo 225,080）是 2026-10-06
+一次性容器实测、本机未重跑，**保留当时口径并加注记**说明差额来源，不凭空改写。
+
+### D. 随之而来的三处 CI 红（run `38008968977`）
+
+提交 C 后 CI 三个 job 红，**全部是本轮改动引起、且都能本地复现**：
+
+| Job | 根因 | 修复 |
+| --- | --- | --- |
+| hygiene | `AssertionError 58 != 59`：迁移清点钉数没随 V11 更新 | 同步四处（方法名+两处断言+ci.yml 三条注解），重生成 example manifest |
+| checkstyle | `TrackedKeyword.java` 末尾缺换行（新建文件时漏了） | 补换行 |
+| frontend | E2E 断言「忽略按钮不存在」「跟卖本页只读」——正是本轮有意改掉的行为 | 同步新契约，保留「禁止造数扫描入口」的真实意图 |
+
+**两条必须记住的教训**：
+1. `test_release_manifest.py` 的注释**原文就写着**「新增/删除 `db/migration/V*__*.sql` 时必须逐处
+   同步…交班前逐字复跑 ci.yml 卫生 job 的 release-tools unittest（勿凭 HANDOFF 清单的记忆）」。
+   提交 C 时只跑了 `test_repository_hygiene`，没跑完整的 7 模块串——**规则就写在被改的那个文件里，
+   属于流程疏漏而非意外**。
+2. E2E stub 里的**假绿**：新增的 4 个端点没登记 stub，会落到 `EMPTY_PAGE` 兜底返回对象而非数组，
+   页面显示「后端返回非 200」。E2E 当时不红但那是假绿。已补 stub 与 `OPS_TRACKED_KEYWORDS`
+   fixture（与 `OPS_TREND` 同源，避免「目录里选了却查不到趋势」的自相矛盾）。
+## 本轮验证记录（2026-10-10）
 
 - 全仓 `mvn -B -o -DskipTests compile test-compile`：**19/19 BUILD SUCCESS**
-- `amz-service-spapi` 全量单测：**706 / 0F / 0E / 12S**，BUILD SUCCESS
-- `amz-service-report` 全量单测：**74 / 0F / 0E / 3S**，BUILD SUCCESS
-- spapi `com.amz.deploy.*` 部署契约：**86 / 0F / 0E**（含新增 `RedisWiringContractTest` 2 例）
-- `mvn checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml`：**0 violations**
-- `repository_hygiene.py --root .`：**0 findings**；`tools.release.test_repository_hygiene` **7 OK**；
-  release tools 全套 **89 OK**
-- 容器 A/B：report 在可达 Redis 下 health **200 UP**、不可达下 **503 DOWN**（见 §C）
-- **2026-10-09 收口复跑**：`git push origin master` 成功（`3fa0803..98419b3`）；`git status --short --branch`
-  显示 `## master...origin/master`（无 ahead/behind）；`git worktree list` 只剩主仓库；本地分支只剩 `master`；
-  `repository_hygiene.py --root .` 复跑 **0 findings**
-- **2026-10-09 删除后复跑**：`git fsck` 无对象损坏；hygiene（含 `--include-untracked`）**0 findings**；
-  `tools.release.test_repository_hygiene` **7 OK**；`mvn -B -o -pl spapi,report -am -DskipTests test-compile` **BUILD SUCCESS**
-
+- `amz-service-ops` 全量单测：**57 / 0F / 0E**（原 36 + 新增 21：告警处置 15 + 关键词目录 6）
+- `amz-service-spapi` 全量单测：**706 / 0F / 0E / 12S**（含部署契约 96 例）
+- `mvn checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml`：**0 violations**（全仓）
+- 前端：`vue-tsc --noEmit` **0 错**；`vitest run` **488 / 488**（原 481 + 新增 7）
+- `repository_hygiene.py --root .`：**0 findings**；release tools 全套 **89 OK**
+- `snapshot_schema.py --check`：**101 表 / 14 库一致**；`zero_reference_tables.py`：**101 表 / 0 零引用**
+- synthetic-data：`generate` demo **101/101 表 224,858 行**、ci **25,128 行**；
+  `verify_cleanup` **101 DELETE / 0 剩余**；`verify_schema_load` **224,858/224,858 灌入 0 错误**；
+  unittest **18 OK**
+- 四把尺：endpoint `--self-test` 25/25 + `--reverse` **0 findings**；stub-shape **0 findings**；
+  param-name 163 可比 / **0 RED**；entity/column drift **0 漂移**
+- **反证（证明新测试不是假绿）**：临时把趋势页目录的 `<option>` 渲染去掉，前端 **2 条测试立刻红**；
+  已还原
+- Playwright 全量：非 CI 模式（`retries=0`）**124 passed / 2 failed**；CI 模式（`retries=1`）
+  **118 passed / 8 flaky / 0 failed**。失败与 flaky 分散在 agent-eval / profit / notifications /
+  customer / order-audit / product-search / ad-bid / multiplatform 等**与本轮改动无关**的用例上，
+  单独重跑即过；`playwright.config.ts` 注释已记录 dev server 冷启动抖动是**既有开放项**
+- **真 CI**：run `38013273102`（HEAD `508048d`）**11/11 job success**，含
+  `mysql-import` 在真实 MySQL 8 上 `TOTAL migrations=59 failed=0`——**V11 的 DROP 已真机验证**
 ## 后续工作方向（按优先级）
 
+0. **`IGNORED` 若要变成「以后别再报」需要加扫描侧去重**（当前语义只是「本次不处理」）：
+   扫描现在仍是 mock 造数，接真实数据源时应一并决定是否按 `(shop_id, asin)` 抑制已 IGNORED 的
+   组合重建告警。放在扫描侧而不是处置侧，是因为处置侧无法验证这个行为、且会和造数逻辑打架。
 1. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。到位后按
    `docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md` 录凭证 → 容器实跑导入 → 对照 B 桶断言
    确认点名失败消失。**别再为 B 桶加新断言**（已补齐，重复投资）。
@@ -303,6 +328,9 @@ release image」——syft 拉 `amazonerp-procurement` 镜像层时报
 
 ## 后续工作方向（按优先级）
 
+0. **`IGNORED` 若要变成「以后别再报」需要加扫描侧去重**（当前语义只是「本次不处理」）：
+   扫描现在仍是 mock 造数，接真实数据源时应一并决定是否按 `(shop_id, asin)` 抑制已 IGNORED 的
+   组合重建告警。放在扫描侧而不是处置侧，是因为处置侧无法验证这个行为、且会和造数逻辑打架。
 1. **真实凭据（外部依赖，非代码可推进）**：DeepSeek 充值 / Keepa 订阅 / SP-API 企业授权。
    到位后按 `docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md` 录凭证 → 容器实跑导入 →
    对照 B 桶断言确认点名失败消失。**别再为 B 桶加新断言**（已补齐，重复投资）。
