@@ -138,7 +138,11 @@ procurement（`PurchaseOrder`）、finance（`AccountingVoucher`）、ad（`AdCa
   `FieldPermissionServiceImplTest` 先红后绿（修前 5 例中 2 例红）；
   变异反证（注释掉移除/删除逻辑）**2 例立刻红**；单模块 `checkstyle-critical` **0 violations**；
   全仓 `mvn -B -o -DskipTests compile test-compile` **19/19 BUILD SUCCESS**
-- **真 CI（字段权限修复）**：run `38015620421`（HEAD `7aae15c`）**11/11 job success**
+- **真 CI（字段权限修复）**：run `38015620421`（HEAD `7aae15c`）**11/11 job success**；
+  文档提交后 run `38016438348`（HEAD `bf9ab47`）同样 **11/11 job success**
+- **全仓回归（2026-10-10 本机实测）**：`mvn -B -o -fae test` → **BUILD SUCCESS**，
+  16 个上报模块合计 **Tests run 2107 / 0F / 0E / 29 skipped**
+  （本机无 MySQL，两个 DB 门控 IT 跳过属预期，真实 MySQL 路径由 CI `mysql-import` 覆盖）
 - 全仓 `mvn -B -o -DskipTests compile test-compile`：**19/19 BUILD SUCCESS**
 - `amz-service-ops` 全量单测：**57 / 0F / 0E**（原 36 + 新增 21：告警处置 15 + 关键词目录 6）
 - `amz-service-spapi` 全量单测：**706 / 0F / 0E / 12S**（含部署契约 96 例）
@@ -218,7 +222,18 @@ procurement（`PurchaseOrder`）、finance（`AccountingVoucher`）、ad（`AdCa
 `repository_hygiene.py --root .` 与 `--include-untracked` 均 **0 findings**；
 `tools.release.test_repository_hygiene` **7 OK**；
 `mvn -B -o -pl spapi,report -am -DskipTests test-compile` **BUILD SUCCESS**。
-## 新坑入档（51–53）
+## 新坑入档（51–54）
+
+54. **`git push` 反复 "Connection was reset / Failed to connect to github.com port 443" 不是 GitHub 抖，是本机有代理而 git 没走**。
+   2026-10-10 实测：`Test-NetConnection github.com -Port 443` 报失败、直连 `git push` 连续两次超时，
+   但同一条命令走 `-c http.proxy=http://127.0.0.1:7897` **3.7 秒推完**。
+   系统代理（`HKCU:\...\Internet Settings` 的 `ProxyEnable=1 / ProxyServer=127.0.0.1:7897`）
+   只被 WinINET/浏览器类客户端读取，**git for Windows 默认不读它**（`git config --get http.proxy` 当时为空，
+   `netsh winhttp show proxy` 也是 Direct）。判据：`Invoke-WebRequest https://github.com -Proxy http://127.0.0.1:7897`
+   返回 200 而直连失败。已在本地仓库设 `git config --local http.proxy`，后续 push 不再需要每次带 `-c`。
+   教训：**连续两次同类网络失败就该换一条通道验证，而不是第三次原样重试**；"偶发抖动"这个解释本身
+   要能被"换个代理立刻成功"证伪。
+
 
 51. **`git diff --no-index` 的 `<`/`>` 与「谁新谁旧」无关**：`git diff --no-index -- A B` 里 `<` 是 A、
     `>` 是 B；把它当成「减号=旧、加号=新」会读反。判定陈旧 worktree 里某文件是不是「修复」必须做
