@@ -8,18 +8,21 @@
 > （run `38029198461`，tag `6daff31`，19 资产）；④ 交班收尾班（§S6）：删除 6 个已失效文档 +
 > `org/` 编译残渣 + allowlist 死条目，修正 README 三处过时宣称（多平台平台清单、测试基线
 > 2041→2149、compose「31 service」→40 条目、REST 357），并把 coverage-remediation-resume
-> 里两条历史 CI 悬案补取结论（`0865772` = success / `a70558b` 红已由 `db8346d` 修复结案）。
+> 里两条历史 CI 悬案补取结论（`0865772` = success / `a70558b` 红已由 `db8346d` 修复结案）；
+> ⑤ §S6.10 对真实 spapi 做无凭证 prod 启动与 runner 前置探测——A3 fail-closed 与 exit-2
+> 闸门已实测，但不产 A5 记录、不改变「真实凭证联调未完成」的现状。
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步（HEAD `7a498c7`，本班 §S6 只含
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步（HEAD `7839596`，本班 §S6 只含
 文档与未跟踪垃圾清理，代码基线仍是 `2c7f5e5`）；CI **12/12 全绿**（最近 run
-`38044759053`；代码基线 run `38031922658`；本机整仓回归 2124/0F/0E/29S 见 §S6.8）；
+`38045518772`；代码基线 run `38031922658`；本机整仓回归 2124/0F/0E/29S 见 §S6.8）；
 发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
 发布冒烟已是 4 腿（spapi bootstrap+prod / user prod / order / product），`amz_user` 建库 +
 「加载字段权限规则 N 条」成功行断言在位；本班把 bootstrap 腿的唯一 1 条预热 WARN 消除。
-无凭据场景的验收路径 = `tools/connector-acceptance`（selftest 65/65 PASS）。
-后续主线：**等用户提供真实凭据 → 跑 runbook §3 端到端验收 → 解锁外部 API 实测**；
+无凭据场景的验收路径 = `tools/connector-acceptance`（selftest 65/65 PASS），§S6.10 已实测
+真实 spapi 无凭证 prod 启动 fail-closed、runner 前置探测 exit 2。
+后续主线：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）→ 解锁外部 API 实测**；
 代码侧无遗留阻塞项。
 
 ## S6. 交班收尾：无用文件清理 + README 事实修正 + 历史 CI 悬案补账（本次会话）
@@ -112,6 +115,38 @@ connectex` 失败），我据此推断「代理可能已关停」——**实测�
 结论：两次中断是两条通道各自的**瞬时抖动**，不是代理关停；「watch 断了就怀疑代理死了」
 是过度推断，正确动作是 `gh run view` 直查 run 结论（本轮即如此收回 success）。另记：
 `gh` 不读 git 的本地 `http.proxy`，走代理要临时 `HTTPS_PROXY` 环境变量，直连可用时不必设。
+
+### S6.10 runbook §3 无凭据边界实测（A3 fail-closed + runner 前置闸门，2026-10-10）
+
+**目标与边界**：本步不是 A5 联调，也产不出验收 JSON；只把 runbook 中「真实服务从未被
+runner 探测过」的未知降到「已探测、前置失败」的明确事实。无真实凭证，因此 C1 无法全绿，
+runner 按契约 exit 2，不伪造通过。
+
+**实测链路**：
+
+1. 启动一次性本地依赖（随后均已删除）：Docker `amz-accept-mysql` / `amz-accept-redis` /
+   `amz-accept-rabbit`（MySQL 空库 `amz_spapi`，Flyway 正常迁移）。
+2. 以 `SPRING_PROFILES_ACTIVE=prod`、`SPAPI_REQUIRE_CREDENTIALS=true` 启动仓库内
+   `amz-service/amz-service-spapi/target/amz-service-spapi-1.0-SNAPSHOT.jar`，**不注入任何
+   Amazon 平台凭证**；只使用本机一次性 MySQL/Redis/Rabbit 参数和一次性本地加密/JWT 参数。
+3. 服务启动 **exit 1**；stdout 明确含
+   `IllegalStateException: 生产启动自检失败：spapi.startup.require-credentials=true，但未从表
+   amz_shop_credential 加载到任何店铺凭证…activeProfiles=[prod]`。这是 §4.1 步骤 1 的
+   A3 fail-closed 证据。
+4. 对真实服务目标执行 runbook §3.1（`GET /spapi/status` 前置）：`pwsh -File
+   tools/connector-acceptance/run.ps1 -ServiceUrl http://127.0.0.1:8096 -Connector spapi
+   -ShopId 1001 -MarketplaceId ATVPDKIKX0DER -Operations
+   orders,inventory,feeds,reports,finances,fees -OutDir .\acceptance-out` → **exit 2**
+   （连接拒绝/服务不可达），**不产 JSON/SHA256 记录**；符合「C1 不满足不产记录」。
+5. 临时容器 `amz-accept-*` 已用 `docker rm -f` 删除；本机日志保留在 gitignored
+   `acceptance-out/spapi-prod-nocreds.stdout.log` 与 `acceptance-out/runner-precondition.log`，
+   未提交。
+
+**结论**：A3 fail-closed 与 runner 前置闸门已在真实服务进程/端口路径上复验。仍缺少：
+真实平台凭证、C1 全绿在线服务、每个 operation 的真实 2xx 与 401/403/404/429、A4 两店
+隔离、A7/A8 真实回放与限流语义。证据等级仍为 E1/E2/E3 局部，**没有 A5/E4/E5**。
+文档更新后复跑：runner selftest **65/65 PASS（exit 0）**；repository hygiene
+（跟踪 / 含未跟踪）均 **0 findings**。
 
 ## S4. 发布收口补丁：bootstrap 跳过字段权限预热（commit `2c7f5e5`）
 

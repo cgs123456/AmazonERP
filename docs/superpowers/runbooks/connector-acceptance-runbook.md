@@ -57,7 +57,7 @@ $env:SPAPI_APP_VERSION = '<发布版本>'
 | P0-52c 【**已修复（第 48 轮）**】 | **不存在验收 runner** | 修复前：全仓 `rg -i acceptance` 命中 0（仅文档引用，见 §3.4） | 落点 `tools/connector-acceptance/`（与 `tools/synthetic-data/` 同风格：Python + `.ps1`/`.sh` 包装）：`acceptance_runner.py` + `run.ps1` + `run.sh` + 桩 `fake-service.py`。两道闸门：①C1 不满足 → 退出码 2 **且不产出记录**；②桩自描述 `stub=true` 默认拒绝，须显式 `--allow-stub` 且 **A5 封顶 E2** |
 | P0-52d 【**已修复（第 48 轮）**】 | **连接器自描述缺失**：`GET /spapi/status` 只回固定串 `"SP-API service running"`，C1 的四条硬约束（prod / 非 mock / 自检已跑 / 凭证 ≥1）在**进程外无法核验** | 修复前 mock profile 下 `ReportsMockClient`/`FinancesMockClient`/`FeesMockClient` 返回离线样例，「成功样例」是假证据 | 落点 `connector/ConnectorSelfDescription.java` + `SpapiController.status()`：返回 `{service, connector, profile, mockClientsActive, startupCheckRan, startupRequireCredentials, loadedCredentialCount}`（启动快照优先；未跑自检时如实写 `startupCheckRan=false`、`loadedCredentialCount=-1`；**不含任何机密**）；`ConnectorSelfDescriptionTest` 6 例锁死键集合。**副作用**：`data` 由字符串变对象，接入方若有外部消费者需同步 |
 
-> a/b/c/d 均已在代码层落地（a 的机器可读结构在第 60/61 轮补齐），并决定「凭证到位当天能否一条命令出报告」。计划 DoD 中「`connector-acceptance-runbook.md` 落盘且可执行」自第 48 轮起前后半句均已满足；b 的限流观测出口于第 59 轮补齐。但「可执行」目前仍是在**本地桩**上验证的（§7.1），真实服务仍未跑过。
+> a/b/c/d 均已在代码层落地（a 的机器可读结构在第 60/61 轮补齐），并决定「凭证到位当天能否一条命令出报告」。计划 DoD 中「`connector-acceptance-runbook.md` 落盘且可执行」自第 48 轮起前后半句均已满足；b 的限流观测出口于第 59 轮补齐。2026-10-10 已对真实 `amz-service-spapi` 做无凭证前置验证：prod 缺凭证启动被拒绝，§3.1 runner 前置探测 exit 2；这证明 fail-closed 与 runner 闸门，不构成 A5，也不能替代凭证联调。
 
 ### 1.4 P0-53：预签名 S3 URL 经错误文本外泄（**已修复（第 45 轮）**）
 
@@ -234,7 +234,7 @@ pwsh -File tools/connector-acceptance/run.ps1 -Selftest   # 只自检，不连�
 pwsh -File tools/connector-acceptance/run.ps1 -DryRun     # 只打印计划，不建 socket
 ```
 
-**仍未被证明的**：这两条命令**从未对真实 `amz-service-spapi` 跑过**（§7.1 的全部实测都对着本地桩）。因此「一条命令出**真实联调**报告」仍是待验证承诺；已被验证的是「夹具上机械正确 + 闸门能拦住假证据」。
+**2026-10-10 现状**：已对真实 `amz-service-spapi` 目标执行 §4.1 步骤 1 与 §3.1。无凭证 prod 实例启动被 fail-closed 拒绝（日志含 `amz_shop_credential` 缺凭证原因），runner 对 8096 的前置探测 exit 2 且不产记录。仍未证明的是真实凭证、C1 全绿在线服务和 A5 联调记录；§7.1 桩验证仍只是 E2 级证据。
 
 ---
 
@@ -712,7 +712,7 @@ $m = "$env:USERPROFILE\.cache\codex-tools\apache-maven-3.9.11\bin\mvn.cmd"
 
 ## 8. 未验证与风险（诚实清单）
 
-1. **runner 已存在，但从未对真实服务跑过**（P0-52c 第 48 轮修复）→ §3 的命令现在可执行，且**只有 C1 全绿才会产出记录**；但迄今所有执行都对着**本地桩**（`stub=true` + `--allow-stub`，A5 封顶 E2），因此「一条命令出**真实联调**报告」**仍是待验证承诺**，不是现状。
+1. **runner 已存在；2026-10-10 已对真实服务做无凭证前置验证，但尚未在 C1 全绿在线服务上产出 A5 记录**（P0-52c 第 48 轮修复）→ §3 的命令现在可执行，且**只有 C1 全绿才会产出记录**；迄今所有成功执行仍对着**本地桩**（`stub=true` + `--allow-stub`，A5 封顶 E2），因此「一条命令出**真实联调**报告」**仍是待验证承诺**，不是现状。
 2. **结构化错误出口已全量覆盖，但真实平台字段仍未闭环**（P0-52a 第 45/60/61/62 轮）→ 8 个 controller 的 42 个 `Result.failure` 出口均返回 `Result.error={code,platformStatus,platformCode,platformMessage,requestId}`，并区分 `SPAPI_CALL_FAILED`、`CREDENTIAL_MISSING`、`PRESIGNED_URL_INVALID`、`INVALID_REQUEST`、`MARKETPLACE_MISSING`、`FORBIDDEN`、`CONNECTOR_NOT_FOUND`、`FILE_TOO_LARGE`、`SPAPI_UNKNOWN_MARKETPLACE`、`SPAPI_UNSUPPORTED_REGION` 与未知 `UPSTREAM_ERROR`；但真实 401/403/404/429 尚未取证，requestId 只从响应头提取。E1 源码守卫证明“出口结构齐全”，不证明完整认证链路中的可达性或 HTTP 状态码映射。
 3. **限流头结构化出口已存在，但平台语义未证明**（P0-52b 第 59 轮修复）→ 可从 `GET /spapi/connectors/rate-limits` 与 `spapi.ratelimit.limit` Gauge 取证；当前只证明出口和本地封顶逻辑，尚未证明真实平台头单位、精度、缺失/恢复语义，也尚未在完整应用中实际抓取 `/actuator/prometheus`。
 4. **沙箱覆盖范围未联网复核**：第 22 轮结论为「官方仅说明覆盖 2xx 与 400」；凭证到位当天须以官方文档确认，若沙箱实际不覆盖目标错误码，则 401/403/404/429 必须改到生产（需用户书面确认）。
