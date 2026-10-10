@@ -85,6 +85,20 @@ Spring Boot Redis 自动配置类的残渣，与 `*.class` gitignore 规则匹�
 - 本班改动 = 6 个文档删除 + allowlist 1 条 + README 6 行 + coverage-remediation-resume 补账
   + 本段落；代码零改动，代码基线仍以 CI run `38031922658` 为准。
 
+### S6.8 整仓后端回归实测（Windows 本机，HEAD `a68d48c`）
+
+`mvn -B -o -fae test` 全 reactor → **BUILD SUCCESS，0F / 0E**；16 个含测试模块共 **2124 例**，
+跳过 **29**（spapi 12 / product 7 / finance 6 / report 3 / ad 1，全部为 DB/Redis 门控 IT——
+本机无 MySQL/Redis service 自动跳过；CI 带 service 时真跑，对应 CI 口径 2149/6S）。
+两点修正旧口径：
+
+1. **2026-10-08 快照的 3 个 loopback 环境类本轮全部通过**（`OrderServiceFeignDecodeIT` /
+   `AdvertisingApiRealClientContractTest` / `DeepSeekAgentConfigurationContractTest`）——
+   Windows loopback 问题已被 tmpdir 处置解决，**不再是本机常红项**，旧的「先判环境」豁免
+   清单作废；
+2. 本机与 CI 的数字差只来自门控 IT 的跳过/执行，0F/0E 一致——交班清理（6 文档删除 +
+   allowlist 死条目 + `org/` 残渣）对后端**零影响**实证成立。
+
 ## S4. 发布收口补丁：bootstrap 跳过字段权限预热（commit `2c7f5e5`）
 
 **问题**：v0.1.23 真发布的 release run（`38029198461`）里，spapi **bootstrap 腿**
