@@ -180,9 +180,13 @@ try {
   全仓 `mvn -B -o -DskipTests compile test-compile` **19/19 BUILD SUCCESS**
 - **真 CI（字段权限修复）**：run `38015620421`（HEAD `7aae15c`）**11/11 job success**；
   文档提交后 run `38016438348`（HEAD `bf9ab47`）同样 **11/11 job success**
-- **全仓回归（2026-10-10 本机实测）**：`mvn -B -o -fae test` → **BUILD SUCCESS**，
-  16 个上报模块合计 **Tests run 2107 / 0F / 0E / 29 skipped**
+- **全仓回归（2026-10-10 本机实测，两处修复之后）**：`mvn -B -o -fae test` → **BUILD SUCCESS**，
+  16 个上报模块合计 **Tests run 2109 / 0F / 0E / 29 skipped**
   （本机无 MySQL，两个 DB 门控 IT 跳过属预期，真实 MySQL 路径由 CI `mysql-import` 覆盖）
+- **四把尺（修复后复跑）**：endpoint `--self-test` **25/25** + `--reverse` **0 findings**；
+  entity/column drift gate **0 漂移 / 0 豁免**；stub-shape **0 findings**；
+  param-name **163 可比 / 0 RED**；zero-reference **101 表 / 0 零引用**
+- **前端（修复后复跑）**：`vue-tsc --noEmit` **0 错**；`vitest run` **488 / 488（43 files）**
 - 全仓 `mvn -B -o -DskipTests compile test-compile`：**19/19 BUILD SUCCESS**
 - `amz-service-ops` 全量单测：**57 / 0F / 0E**（原 36 + 新增 21：告警处置 15 + 关键词目录 6）
 - `amz-service-spapi` 全量单测：**706 / 0F / 0E / 12S**（含部署契约 96 例）
