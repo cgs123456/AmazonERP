@@ -8,7 +8,7 @@
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步；CI 11/11 全绿（最近一次 run `38019098901`）。
+后端 19 个 Maven 模块可编译可测；master 与 origin 同步；CI 11/11 全绿（最近一次 run `38025290251`，HEAD `1fb2c5e`）。
 本轮收口：**发布冒烟此前只覆盖 spapi/order/product 三条腿、且缺 `amz_user` 库——字段权限在冒烟里
 一直静默降级「全部可见」，SkyWalking 也每条腿刷 7 条 DNS 失败噪声**。现已补第四条 user 腿
 （Flyway 建表 + 断言「加载字段权限规则 N 条」成功行）并把 collector 指向本地黑洞地址；
