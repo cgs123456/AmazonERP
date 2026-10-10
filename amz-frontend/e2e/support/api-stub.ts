@@ -918,6 +918,15 @@ const OPS_HIJACKS = [
   }
 ]
 
+// 本店被追踪的 (关键词, ASIN) 组合目录：趋势页的选择项，2026-10-10 新增端点。
+// 与 OPS_TREND 保持同源——目录里选一个就应该能查到趋势，否则页面会自相矛盾。
+const OPS_TRACKED_KEYWORDS = [
+  {
+    keyword: 'wireless earbuds', asin: 'B0123456789',
+    pointCount: 3, latestRank: 12, lastCaptureTime: '2026-10-02 09:00:00', marketplace: 'US'
+  }
+]
+
 const OPS_TREND = [
   { id: 5, shopId: 1, keyword: 'wireless earbuds', asin: 'B0123456789', rank: 42, marketplace: 'US', captureTime: '2026-10-01 09:00:00' },
   { id: 6, shopId: 1, keyword: 'wireless earbuds', asin: 'B0123456789', rank: 12, marketplace: 'US', captureTime: '2026-10-02 09:00:00' },
@@ -1288,8 +1297,13 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   // 变成「对象而不是数组」，页面会报「后端返回非 200」而不是安静地显示假数据。
   { match: /^\/ops\/review\/list\//, data: OPS_REVIEWS, page: FULL_PAGE(OPS_REVIEWS.length) },
   { match: /^\/ops\/review\/\d+\/handle$/, data: true },
+  // 2026-10-10 补齐：IGNORED 终态与跟卖处置端点。三个 scan 端点仍刻意不登记（见上）。
+  { match: /^\/ops\/review\/\d+\/ignore$/, data: true },
+  { match: /^\/ops\/hijack\/\d+\/handle$/, data: true },
+  { match: /^\/ops\/hijack\/\d+\/ignore$/, data: true },
   { match: /^\/ops\/hijack\/list\//, data: OPS_HIJACKS, page: FULL_PAGE(OPS_HIJACKS.length) },
   { match: /^\/ops\/rank\/trend$/, data: OPS_TREND },
+  { match: /^\/ops\/rank\/keywords\//, data: OPS_TRACKED_KEYWORDS },
 
   // ===== 助手记忆 /agent-memory（user_preference + conversation_memory 真实表）=====
   // POST /ai/agent/memory/chat 刻意不登记：它要求真实 deepseek.api-key，页面也没有入口。

@@ -1174,7 +1174,7 @@ test.describe('ProfitReport 交互（利润报表与下钻）', () => {
 })
 
 test.describe('OpsAlerts 交互（运营预警台）', () => {
-  test('差评告警渲染真实列，已处理的行不给按钮，三个扫描入口都不存在', async ({ page }) => {
+  test('差评告警渲染真实列，终态行不给按钮，三个造数扫描入口都不存在', async ({ page }) => {
     await page.goto('/ops-alerts')
     const panel = page.locator('[data-panel="reviews"]')
     await expect(panel.locator('tbody tr')).toHaveCount(2)
@@ -1184,20 +1184,29 @@ test.describe('OpsAlerts 交互（运营预警台）', () => {
     await expect(page.locator('.notice-zone')).toContainText('ThreadLocalRandom')
     await expect(page.locator('.notice-zone')).toContainText('不会联系买家')
 
-    // 只有 NEW 那行有可用的「标记已处理」
+    // NEW 那行两个处置按钮都可用，已处理那行两个都禁用（终态互斥）
     const newRow = panel.locator('tbody tr', { hasText: 'B0REVIEW01' })
     const handledRow = panel.locator('tbody tr', { hasText: 'B0REVIEW02' })
     await expect(newRow.locator('button', { hasText: '标记已处理' })).toBeEnabled()
+    await expect(newRow.locator('button', { hasText: '忽略' })).toBeEnabled()
     await expect(handledRow.locator('button', { hasText: '标记已处理' })).toBeDisabled()
+    await expect(handledRow.locator('button', { hasText: '忽略' })).toBeDisabled()
 
-    for (const label of ['扫描', '抓取', '忽略']) {
+    // 2026-10-10 起「忽略」是真端点，不再是禁止项；这里守的仍是不能有造数扫描入口
+    for (const label of ['扫描', '抓取']) {
       await expect(page.locator('.tab-panel button', { hasText: label })).toHaveCount(0)
     }
     await page.locator('.tab', { hasText: '跟卖告警' }).click()
     const hijack = page.locator('[data-panel="hijacks"]')
     await expect(hijack).toContainText('已被抢走')
-    await expect(hijack).toContainText('本页只读')
-    await expect(hijack.locator('button', { hasText: '标记已处理' })).toHaveCount(0)
+    // 跟卖不再只读：两个处置按钮都要在。文案也从「本页只读」改成说明处置只改本地状态
+    await expect(hijack).toContainText('处置只改本地状态')
+    await expect(hijack.locator('button', { hasText: '标记已处理' })).toHaveCount(2)
+    await expect(hijack.locator('button', { hasText: '忽略' })).toHaveCount(2)
+    // 已处于终态（IGNORED）的那行两个按钮都禁用
+    const ignoredRow = hijack.locator('tbody tr', { hasText: 'B0HIJACK02' })
+    await expect(ignoredRow.locator('button', { hasText: '标记已处理' })).toBeDisabled()
+    await expect(ignoredRow.locator('button', { hasText: '忽略' })).toBeDisabled()
   })
 
   test('标记已处理要先确认，确认后才发那个 POST', async ({ page }) => {
