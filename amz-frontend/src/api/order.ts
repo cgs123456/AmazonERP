@@ -21,6 +21,8 @@ export interface OrderItem {
   carrierName?: string
   shipmentConfirmed?: boolean
   shipConfirmedAt?: string
+  /** 已配货出库（ALLOCATED） */
+  stockAllocated?: boolean
   /** 发货单打印用（列表接口暂不返回标题/ASIN/买家，缺失时打印显示「—」） */
   title?: string
   asin?: string
@@ -117,6 +119,7 @@ export const mapOrderRow = (row: OrderRow, shopName: string): OrderItem => {
     carrierCode: row.carrierCode,
     carrierName: row.carrierName,
     shipmentConfirmed: row.fulfillmentStatus === 'CONFIRMED',
+    stockAllocated: row.fulfillmentStatus === 'ALLOCATED',
     shipConfirmedAt: (row.shipConfirmedAt || '').slice(0, 16).replace('T', ' '),
     buyerName: row.buyerName,
     shipServiceLevel: row.shipServiceLevel,
@@ -231,3 +234,17 @@ export const confirmShipment = (
 /** 订单是否已回传 Amazon（前端展示用） */
 export const isShipmentConfirmed = (row: OrderRow): boolean =>
   row?.fulfillmentStatus === 'CONFIRMED'
+
+/**
+ * 配货出库（P2.1，仅 MFN）：从本地仓按订单明细扣减库存并标记 ALLOCATED。
+ * <p>
+ * 后端语义：两步履约的前一步——只动本地库存，<b>不</b>向 Amazon 确认发货；
+ * 库存不足时点名 SKU 且一个都不扣。落账后走 confirmShipment 通知 Amazon。
+ *
+ * @param orderId     本地订单主键
+ * @param warehouseId 出货仓库 ID
+ */
+export const allocateOrderStock = (orderId: number, warehouseId: number | string) =>
+  request.post<void, ApiResponse<OrderRow>>(`/order/${orderId}/allocate`, null, {
+    params: { warehouseId }
+  })

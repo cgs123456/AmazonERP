@@ -48,8 +48,8 @@ class LogisticsControllerGuardTest {
         }
 
         assertFalse(writeEndpoints.isEmpty(), "必须扫描到物流写接口，扫到 0 个会使测试假通过");
-        assertEquals(39, writeEndpoints.size(),
-                "当前有 39 个物流写接口（新增 StocktakeController 的 4 个写端点）；新增接口必须同步声明 @RequireRole 并更新本断言");
+        assertEquals(42, writeEndpoints.size(),
+                "当前有 42 个物流写接口（新增 FulfillmentController 的 check/outbound + batch-receive）（新增 StocktakeController 的 4 个写端点）；新增接口必须同步声明 @RequireRole 并更新本断言");
 
         for (Method method : writeEndpoints) {
             RequireRole requireRole = method.getAnnotation(RequireRole.class);

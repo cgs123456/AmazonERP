@@ -9,8 +9,8 @@
 | 来源分组 | 文件数 | CREATE TABLE 数 |
 |---|---|---|
 | `compose-init-sql` | 1 | 0 |
-| `flyway-migration` | 68 | 119 |
-| **去重并集** | 69 个文件 | **106** 张表 |
+| `flyway-migration` | 70 | 121 |
+| **去重并集** | 71 个文件 | **108** 张表 |
 
 数据库（14 个）：`amz_ad`、`amz_ai`、`amz_customer`、`amz_finance`、`amz_logistics`、`amz_multiplatform`、`amz_ops`、`amz_order`、`amz_procurement`、`amz_product`、`amz_report`、`amz_search`、`amz_spapi`、`amz_user`
 

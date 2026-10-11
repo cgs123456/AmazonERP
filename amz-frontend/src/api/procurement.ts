@@ -426,3 +426,43 @@ export const batchCostSummary = (shopId: number | string, sku: string) =>
 export const fifoOutbound = (shopId: number | string, sku: string, quantity: number) =>
   request.post<void, ApiResponse<Array<Record<string, unknown>>>>('/procurement/batch/fifo-outbound', null,
     { params: { shopId, sku, quantity } })
+
+/* ==================== 供应商付款（P2.2 三单匹配） ==================== */
+
+export interface SupplierPaymentRow {
+  id?: number
+  shopId?: number
+  paymentNo?: string
+  purchaseOrderId?: number
+  purchaseNo?: string
+  amount?: number | string
+  currency?: string
+  method?: string
+  status?: string
+  poAmountSnapshot?: number | string
+  createTime?: string
+}
+
+/**
+ * 供应商付款（三单匹配）：后端校验「货已收（RECEIVED/COMPLETED/QC_PASSED）
+ * + 金额容差 1%」后落付款单并把 PO 推进为 PAID。失败会点名三方金额。
+ */
+export const payPurchaseOrder = (
+  purchaseOrderId: number,
+  amount: number,
+  method?: string,
+  remark?: string
+) =>
+  request.post<void, ApiResponse<SupplierPaymentRow>>('/procurement/payment', null, {
+    params: { purchaseOrderId, amount, ...(method ? { method } : {}), ...(remark ? { remark } : {}) }
+  })
+
+/** 取消付款（ADMIN，管理性纠错）：PO 状态回退 RECEIVED */
+export const cancelSupplierPayment = (id: number, reason?: string) =>
+  request.post<void, ApiResponse<SupplierPaymentRow>>(`/procurement/payment/${id}/cancel`, null, {
+    params: reason ? { reason } : {}
+  })
+
+/** 付款单列表 */
+export const listSupplierPayments = (shopId: number | string) =>
+  request.get<void, ApiResponse<SupplierPaymentRow[]>>(`/procurement/payment/list/${shopId}`)

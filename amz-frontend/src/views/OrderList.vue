@@ -69,6 +69,12 @@
                 <div class="row-actions">
                   <button class="row-btn" @click="printSlip(order)">发货单</button>
                   <button
+                    class="row-btn"
+                    :disabled="!canAllocate(order)"
+                    :title="allocateTitle(order)"
+                    @click="allocate(order)"
+                  >{{ order.stockAllocated ? '已配货' : '配货出库' }}</button>
+                  <button
                     class="row-btn primary"
                     :disabled="!canConfirm(order)"
                     :title="confirmTitle(order)"
@@ -139,7 +145,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import { getOrderList, confirmShipment } from '@/api/order'
+import { getOrderList, confirmShipment, allocateOrderStock } from '@/api/order'
 import type { OrderItem } from '@/api/order'
 import { getShops, type ShopOption } from '@/utils/shop'
 import { openPackingSlip } from '@/utils/packingSlip'
@@ -276,6 +282,31 @@ const confirmValid = computed(() => {
 
 /** 已回传的订单不允许再次回传（后端也会拒绝，这里提前把按钮禁掉，避免无谓请求） */
 const canConfirm = (order: OrderItem): boolean => !order.shipmentConfirmed
+
+/** 配货出库（仅 MFN 且未配货）：本地仓扣库存，之后走「确认发货」通知 Amazon */
+const allocating = ref<number | null>(null)
+const canAllocate = (order: OrderItem): boolean =>
+  !order.stockAllocated && order.fulfillmentChannel === 'MFN' && !order.shipmentConfirmed
+const allocateTitle = (order: OrderItem): string =>
+  order.stockAllocated ? '已配货出库' : '从本地仓按明细扣减库存'
+const allocate = async (order: OrderItem) => {
+  if (!canAllocate(order)) return
+  const warehouseId = window.prompt('配货出库仓库 ID（本地仓）')
+  if (!warehouseId) return
+  allocating.value = order.id
+  try {
+    const res = await allocateOrderStock(order.id, warehouseId)
+    if (res?.code === 200) {
+      await loadOrders()
+    } else {
+      loadErrors.value = [res?.message || '配货出库失败']
+    }
+  } catch (e) {
+    loadErrors.value = [e instanceof Error ? e.message : '配货出库失败']
+  } finally {
+    allocating.value = null
+  }
+}
 const confirmLabel = (order: OrderItem): string => (order.shipmentConfirmed ? '已回传' : '确认发货')
 const confirmTitle = (order: OrderItem): string =>
   order.shipmentConfirmed ? `已于 ${order.shipConfirmedAt || ''} 回传 Amazon` : '向 Amazon 回传承运商与运单号'

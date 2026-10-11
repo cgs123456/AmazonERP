@@ -345,7 +345,10 @@
                 <td><input class="cell-input" :value="m.sizeTier" @input="patch[m.id as number] = {...(patch[m.id as number] || {}), sizeTier: ($event.target as HTMLInputElement).value}" /></td>
                 <td><input class="cell-input" type="number" :value="m.weightG" @input="patch[m.id as number] = {...(patch[m.id as number] || {}), weightG: Number(($event.target as HTMLInputElement).value)}" /></td>
                 <td>{{ m.status || '-' }}</td>
-                <td><button class="page-btn" :disabled="!patch[m.id as number] || masterBusy" @click="saveMaster(m)">保存</button></td>
+                <td class="row-actions">
+                  <button class="page-btn" :disabled="!patch[m.id as number] || masterBusy" @click="saveMaster(m)">保存</button>
+                  <button class="page-btn" @click="printLabel(m)">标签</button>
+                </td>
               </tr>
               <tr v-if="!masters.length">
                 <td colspan="9" class="empty-row">
@@ -401,6 +404,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { usePagination } from '@/composables/usePagination'
+import { renderLabelHtml } from '@/utils/packingSlip'
 import {
   getListingSummary, getListingHealthList, getRankings, getCompetitors,
   getBuyBoxList, getChangeLogs, estimateFees, severityClass, emptySummary,
@@ -432,6 +436,7 @@ const competitors = ref<CompetitorRow[]>([])
 const buybox = ref<BuyBoxRow[]>([])
 const changeLogs = ref<Array<Record<string, unknown>>>([])
 const errors = ref<string[]>([])
+const masterErrors = ref<string[]>([])
 const masters = ref<MasterRow[]>([])
 const masterKeyword = ref('')
 const patch = ref<Record<number, Partial<MasterRow>>>({})
@@ -618,6 +623,27 @@ const saveMaster = async (row: MasterRow) => {
   } finally {
     masterBusy.value = false
   }
+}
+
+/** 打印商品标签（P2.3）：SKU/ASIN/FNSKU，仓内贴标用；弹窗被拦截时显式提示 */
+const printLabel = (m: { sku?: string; asin?: string | null; title?: string | null; fnSku?: string | null }) => {
+  if (!m.sku) return
+  const win = window.open('', '_blank', 'width=460,height=360')
+  if (!win) {
+    masterErrors.value = ['浏览器拦截了打印窗口，请允许本站弹出窗口后重试']
+    return
+  }
+  win.document.open()
+  win.document.write(renderLabelHtml({ sku: m.sku, asin: m.asin ?? undefined, title: m.title ?? undefined, fnSku: m.fnSku ?? undefined }))
+  win.document.close()
+  win.focus()
+  setTimeout(() => {
+    try {
+      win.print()
+    } catch {
+      // 用户取消：窗口已展示内容
+    }
+  }, 50)
 }
 
 const createMasterRow = async () => {

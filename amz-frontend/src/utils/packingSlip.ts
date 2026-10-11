@@ -126,6 +126,50 @@ export const renderPackingSlipHtml = (data: PackingSlipData): string => {
 </html>`
 }
 
+/** 商品标签数据（打印规格：SKU/ASIN 条码区 + 品名） */
+export interface ProductLabelData {
+  sku: string
+  asin?: string
+  title?: string
+  fnSku?: string
+}
+
+/**
+ * 生成商品标签 HTML（P2.3）：仓内贴标用，含 SKU/ASIN/FNSKU。
+ * 同样不是承运商面单；条码区用等宽文本呈现（不引条码库，避免新依赖——
+ * 扫描枪可直接识别 Code39 格式的等宽 SKU 文本）。
+ */
+export const renderLabelHtml = (label: ProductLabelData): string => {
+  const esc = escapeHtml
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>商品标签 ${esc(label.sku)}</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 8px; }
+  .label { border: 2px solid #111; padding: 12px; width: 340px; }
+  .sku { font-family: "Libre Barcode 39", ui-monospace, Consolas, monospace; font-size: 28px; letter-spacing: 2px; margin: 6px 0; }
+  .meta { font-size: 12px; color: #333; margin-top: 6px; }
+  .meta div { display: flex; gap: 6px; }
+  .meta .k { color: #666; min-width: 52px; }
+  .title { font-size: 13px; font-weight: 600; word-break: break-all; }
+</style>
+</head>
+<body>
+  <div class="label">
+    <div class="title">${esc(label.title || label.sku)}</div>
+    <div class="sku">*${esc(label.sku)}*</div>
+    <div class="meta">
+      <div><span class="k">SKU</span><span>${esc(label.sku)}</span></div>
+      <div><span class="k">ASIN</span><span>${esc(label.asin || '—')}</span></div>
+      <div><span class="k">FNSKU</span><span>${esc(label.fnSku || '—')}</span></div>
+    </div>
+  </div>
+</body>
+</html>`
+}
+
 /**
  * 打开打印窗口并触发打印。
  * <p>

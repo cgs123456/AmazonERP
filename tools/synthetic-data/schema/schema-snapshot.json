@@ -679,6 +679,36 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 2290,
+      "lines": 37,
+      "sha256": "f5d8617d1c0458c417035da67adae745aa8f003c08711586f8f63df770b81ebd",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_procurement",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1617,
+      "lines": 30,
+      "sha256": "d22f405ba71549076911b180dd556a0bfa9e4d0fbb3d19d3649de069859ed524",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_procurement",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 8658,
       "lines": 192,
       "sha256": "e1f2627709a2779b2c32f20641ef2ada0c9f88023f5c6fb869caf329f38aa4d3",
@@ -1045,11 +1075,11 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 68,
-        "tables": 119
+        "files": 70,
+        "tables": 121
       }
     },
-    "union_table_count": 106,
+    "union_table_count": 108,
     "databases": [
       "amz_ad",
       "amz_ai",
@@ -22748,6 +22778,229 @@
       ]
     },
     {
+      "key": "amz_procurement.amz_bom",
+      "database": "amz_procurement",
+      "name": "amz_bom",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "composite_sku",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "组合 SKU",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "child_sku",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "子品 SKU（本地仓备货粒度）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "child_qty",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "1",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "单份组合包含的子品数量",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "remark",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "update_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": true,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ],
+        "composite_sku": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ],
+        "child_sku": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ],
+        "child_qty": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ],
+        "remark": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ],
+        "update_time": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [
+        {
+          "name": "uk_composite_child",
+          "columns": [
+            "shop_id",
+            "composite_sku",
+            "child_sku"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shop_composite",
+          "columns": [
+            "shop_id",
+            "composite_sku"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "c8edc138db60ff3e94c41032e81aa0f0ae05101fdfced8bc75bea90d49a44842",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V8__bom.sql",
+          "line": 18,
+          "group": "flyway-migration",
+          "hash": "c8edc138db60ff3e94c41032e81aa0f0ae05101fdfced8bc75bea90d49a44842"
+        }
+      ]
+    },
+    {
       "key": "amz_procurement.amz_fba_shipment",
       "database": "amz_procurement",
       "name": "amz_fba_shipment",
@@ -26472,6 +26725,365 @@
           "line": 53,
           "group": "flyway-migration",
           "hash": "fdcbbf9143533ee95ed08ecda8ce122fa69f52ea250220d309e3bd98f3bf1aa7"
+        }
+      ]
+    },
+    {
+      "key": "amz_procurement.amz_supplier_payment",
+      "database": "amz_procurement",
+      "name": "amz_supplier_payment",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "payment_no",
+          "type": "VARCHAR",
+          "args": "40",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "付款单号（PAY + 时间戳 + 随机数）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "purchase_order_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "采购单 ID",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "purchase_no",
+          "type": "VARCHAR",
+          "args": "40",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "采购单号（冗余，便于对账）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "amount",
+          "type": "DECIMAL",
+          "args": "14,2",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "付款金额",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "currency",
+          "type": "VARCHAR",
+          "args": "8",
+          "unsigned": false,
+          "nullable": true,
+          "default": "'CNY'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "币种",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "method",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": true,
+          "default": "'OFFLINE'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "付款方式：OFFLINE/ALIBABA/BANK",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'PAID'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "状态：PAID/CANCELLED",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "po_amount_snapshot",
+          "type": "DECIMAL",
+          "args": "14,2",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "付款时 PO 金额快照（容差核对证据）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "operator_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "操作人用户 ID",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "remark",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "update_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": true,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "payment_no": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "purchase_order_id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "purchase_no": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "amount": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "currency": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "method": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "status": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "po_amount_snapshot": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "operator_id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "remark": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ],
+        "update_time": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [
+        {
+          "name": "uk_payment_no",
+          "columns": [
+            "payment_no"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shop_status",
+          "columns": [
+            "shop_id",
+            "status"
+          ]
+        },
+        {
+          "name": "idx_po",
+          "columns": [
+            "purchase_order_id"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "a59c88c69228b995f74936f868c6ffd60bca3a2d6cbd6c2e7c6a8ced6c7f375c",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V7__supplier_payment.sql",
+          "line": 18,
+          "group": "flyway-migration",
+          "hash": "a59c88c69228b995f74936f868c6ffd60bca3a2d6cbd6c2e7c6a8ced6c7f375c"
         }
       ]
     },

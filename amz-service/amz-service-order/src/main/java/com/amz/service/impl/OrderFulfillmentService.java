@@ -204,8 +204,167 @@ public class OrderFulfillmentService {
         return order != null && STATUS_CONFIRMED.equals(order.getFulfillmentStatus());
     }
 
+    /**
+     * 组合装展开：逐行查 BOM，有子品的替换为子品需求，无子品的原样保留。
+     * <p>
+     * BOM 通道未装配（未配置）或调用失败时<b>不</b>把组合行当叶子继续——
+     * 「展开失败」与「真的没有 BOM」必须区分：前者中止（可重试），
+     * 后者才继续。仅当 procurement 明确返回空展开结果（所有行都是叶子）时才走原样路径。
+     */
+    private List<OrderItem> expandBomIfNeeded(Long shopId, List<OrderItem> items) {
+        if (procurementBomClient == null || items.isEmpty()) {
+            return items;
+        }
+        boolean anyCompositePossible = items.stream()
+                .anyMatch(i -> i.getSellerSku() != null);
+        if (!anyCompositePossible) {
+            return items;
+        }
+        try {
+            List<java.util.Map<String, Object>> requests = new ArrayList<>();
+            for (OrderItem i : items) {
+                java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+                row.put("sku", i.getSellerSku() == null ? "" : i.getSellerSku());
+                row.put("quantity", i.getQuantity() == null ? 0 : i.getQuantity());
+                requests.add(row);
+            }
+            com.amz.result.Result<java.util.List<java.util.Map<String, Object>>> expanded =
+                    procurementBomClient.expand(shopId, requests);
+            if (expanded == null || expanded.getCode() != 200) {
+                // 展开失败 ≠ 无 BOM：中止配货（可重试），不假装继续
+                throw new CodeErrorException("BOM 展开失败，配货中止："
+                        + (expanded == null ? "无响应" : expanded.getMessage()));
+            }
+            List<OrderItem> result = new ArrayList<>();
+            for (java.util.Map<String, Object> row : expanded.getData()) {
+                OrderItem line = new OrderItem();
+                line.setShopId(shopId);
+                line.setAmazonOrderId(items.get(0).getAmazonOrderId());
+                line.setSellerSku(String.valueOf(row.get("sku")));
+                line.setQuantity(((Number) row.get("quantity")).intValue());
+                result.add(line);
+            }
+            log.info("BOM 展开：{} 行明细 → {} 行子品需求 shopId={}",
+                    items.size(), result.size(), shopId);
+            return result;
+        } catch (CodeErrorException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new CodeErrorException("BOM 展开异常，配货中止：" + e.getMessage());
+        }
+    }
+
     /** 回传时间用系统时区展示时的默认偏移（仅用于日志/展示，不参与持久化）。 */
     static ZoneOffset defaultOffset() {
         return ZoneOffset.systemDefault().getRules().getOffset(java.time.Instant.now());
+    }
+
+    // ==================== 配货出库（P2.1，本地仓履约） ====================
+
+    @Autowired(required = false)
+    private com.amz.client.LogisticsFulfillmentClient logisticsFulfillmentClient;
+
+    /** BOM 展开（可选注入）：组合装售出 1 个组合 SKU，实际出库 N 个子品。 */
+    @Autowired(required = false)
+    private com.amz.client.ProcurementBomClient procurementBomClient;
+
+    /**
+     * 配货出库：MFN 订单从本地仓出库（检查库存 → 出库执行 → 标记 ALLOCATED）。
+     * <p>
+     * <b>两步语义</b>：本方法只负责「本地仓扣减」（fulfillment_status=ALLOCATED），
+     * <b>不</b>自动向 Amazon 确认发货——确认发货需要真实承运商与运单号，
+     * 由运营在出库后走 {@link #confirmShipment}。把两步合一会造成
+     * 「Amazon 已受理但本地扣减失败」的分布式回滚难题。
+     * <p>
+     * AFN（FBA）订单不走本方法：FBA 履约由 Amazon 完成，本地仓无货可扣。
+     */
+    public Order allocateStock(Long orderId, Long warehouseId) {
+        if (orderId == null || warehouseId == null) {
+            throw new CodeErrorException("订单 ID 与仓库 ID 均不能为空");
+        }
+        Order order = orderMapper.selectById(orderId);
+        if (order == null) {
+            throw new CodeErrorException("订单不存在：id=" + orderId);
+        }
+        if (!UserContext.isShopAllowedStrict(order.getShopId())) {
+            throw new CodeErrorException("订单不存在或无权访问");
+        }
+        if (!"MFN".equalsIgnoreCase(order.getFulfillmentChannel())) {
+            throw new CodeErrorException("仅自发货（MFN）订单可本地配货，当前履约渠道="
+                    + order.getFulfillmentChannel() + "（FBA 由 Amazon 履约）");
+        }
+        if ("ALLOCATED".equals(order.getFulfillmentStatus())) {
+            throw new CodeErrorException("该订单已配货（" + order.getShipConfirmedAt() + "），无需重复操作");
+        }
+        if (spApiShipmentClient == null || logisticsFulfillmentClient == null) {
+            throw new CodeErrorException("配货通道不可用（Feign 客户端未装配）");
+        }
+        if (!StringUtils.hasText(order.getAmazonOrderId())) {
+            throw new CodeErrorException("订单缺少 Amazon 订单号，无法配货");
+        }
+        List<OrderItem> items = loadOrderItems(order);
+        if (items.isEmpty()) {
+            throw new CodeErrorException("订单没有明细行，无法配货（Amazon 要求逐行履约）");
+        }
+
+        // ① BOM 展开（P2.4）：组合装售出 1 个组合 SKU，实际出库 N 个子品；
+        // 本地仓按子品备货，组合 SKU 没有库存行。展开失败即中止——
+        // 把「展开失败」当「无 BOM」继续扣，会去扣一个不存在的组合行。
+        List<OrderItem> effectiveItems = expandBomIfNeeded(order.getShopId(), items);
+
+        // ② 库存检查（不扣减）：不足则点名 SKU，一个都不扣。
+        // 本地仓按 sellerSku 备货——检查与出库都用 sellerSku；
+        // 明细行的 orderItemId 是 Amazon 行 ID，只在确认发货时用于 Amazon 侧
+        java.util.Map<String, Object> checkRequest = new java.util.LinkedHashMap<>();
+        checkRequest.put("shopId", order.getShopId());
+        checkRequest.put("warehouseId", warehouseId);
+        List<java.util.Map<String, Object>> checkItems = new ArrayList<>();
+        for (OrderItem i : effectiveItems) {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("sku", i.getSellerSku() == null ? "" : i.getSellerSku());
+            row.put("quantity", i.getQuantity() == null ? 0 : i.getQuantity());
+            checkItems.add(row);
+        }
+        checkRequest.put("items", checkItems);
+        com.amz.result.Result<java.util.List<java.util.Map<String, Object>>> check =
+                logisticsFulfillmentClient.checkStock(checkRequest);
+        if (check == null || check.getCode() != 200 || check.getData() == null) {
+            throw new CodeErrorException("库存检查失败："
+                    + (check == null ? "无响应" : check.getMessage()));
+        }
+        List<String> insufficient = check.getData().stream()
+                .filter(row -> !Boolean.TRUE.equals(row.get("sufficient")))
+                .map(row -> String.valueOf(row.get("sku")))
+                .toList();
+        if (!insufficient.isEmpty()) {
+            throw new CodeErrorException("以下 SKU 本地仓库存不足，未扣减任何库存：" + insufficient);
+        }
+
+        // ② 出库执行（logistics 整体事务：失败即回滚，无半扣减中间态）
+        java.util.Map<String, Object> outboundRequest = new java.util.LinkedHashMap<>();
+        outboundRequest.put("shopId", order.getShopId());
+        outboundRequest.put("warehouseId", warehouseId);
+        outboundRequest.put("referenceNo", order.getAmazonOrderId());
+        List<java.util.Map<String, Object>> outboundItems = new ArrayList<>();
+        for (OrderItem i : effectiveItems) {
+            java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("sku", i.getSellerSku() == null ? "" : i.getSellerSku());
+            row.put("quantity", i.getQuantity() == null ? 0 : i.getQuantity());
+            outboundItems.add(row);
+        }
+        outboundRequest.put("items", outboundItems);
+        com.amz.result.Result<java.util.Map<String, Object>> outbound =
+                logisticsFulfillmentClient.executeOutbound(outboundRequest);
+        if (outbound == null || outbound.getCode() != 200 || outbound.getData() == null) {
+            throw new CodeErrorException("配货出库失败："
+                    + (outbound == null ? "无响应" : outbound.getMessage()));
+        }
+
+        // ③ 标记已配货
+        order.setFulfillmentStatus("ALLOCATED");
+        orderMapper.updateById(order);
+        log.info("配货出库完成 shopId={} orderId={} outboundNo={}",
+                order.getShopId(), order.getAmazonOrderId(), outbound.getData().get("outboundNo"));
+        return order;
     }
 }

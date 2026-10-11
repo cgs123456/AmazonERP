@@ -33,6 +33,27 @@ public class OrderFulfillmentController {
     private OrderFulfillmentService orderFulfillmentService;
 
     /**
+     * 配货出库（P2.1，仅 MFN）：从本地仓按订单明细扣减库存并标记 ALLOCATED。
+     * <p>
+     * 与「确认发货」是两步：本端点只动本地库存；确认发货（需真实承运商+运单号）
+     * 在此之后由运营触发。库存不足时点名 SKU，一个都不扣。
+     *
+     * @param warehouseId 出货仓库 ID
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @ShopScoped
+    @OperLog(module = "订单发货", action = "配货", description = "从本地仓配货出库")
+    @PostMapping("/{orderId}/allocate")
+    public Result<Order> allocate(@PathVariable Long orderId, @RequestParam Long warehouseId) {
+        try {
+            return Result.success(orderFulfillmentService.allocateStock(orderId, warehouseId));
+        } catch (Exception e) {
+            log.warn("配货出库失败 orderId={}: {}", orderId, e.getMessage());
+            return Result.failure(e.getMessage());
+        }
+    }
+
+    /**
      * 确认发货：向 Amazon 回传承运商与运单号，成功后才回写本地订单。
      *
      * @param orderId        本地订单主键

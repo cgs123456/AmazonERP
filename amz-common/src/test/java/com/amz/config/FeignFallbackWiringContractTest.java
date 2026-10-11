@@ -43,7 +43,7 @@ class FeignFallbackWiringContractTest {
     @DisplayName("扫描确实覆盖到声明 fallbackFactory 的模块（防空扫假绿）")
     void scanFindsModulesWithFallbackFactories() throws IOException {
         assertEquals(10, modulesWithFallbackDeclared().size(),
-                "声明 fallbackFactory 的模块数变了（新增 amz-service-message 的 UserNotificationClient），需逐模块复核熔断装配是否齐全");
+                "声明 fallbackFactory 的模块数变了（order 模块新增履约/BOM 两个客户端，模块数不变），需逐模块复核熔断装配是否齐全");
     }
 
     @Test
