@@ -14,6 +14,13 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_ADDR:localhost:8848}
+    # fallbackFactory 只有在装好熔断实现并显式打开后才会被 Feign 装配；
+    # 本模块新增 SpApiReportsClient（FBA 退货报表三段式）声明了 fallbackFactory，
+    # 不打开这个开关兜底就是死代码（Feign 会静默忽略）。
+    # 口径与 finance / ops / order / product / report / procurement 一致。
+    openfeign:
+      circuitbreaker:
+        enabled: true
   # ====== Flyway 基线（P0-58）======
   # 表结构的唯一事实源是 classpath:db/migration；Compose 与 k8s 只负责建空库。
   # baseline-on-migrate=false（P0-58 / 2026-09-30 修正）：非空库且无 flyway_schema_history 时，
@@ -139,3 +146,10 @@ management:
       enabled: true
     readinessstate:
       enabled: true
+
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 10000

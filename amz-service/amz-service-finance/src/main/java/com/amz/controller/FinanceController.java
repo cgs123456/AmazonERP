@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.dto.KingdeeSyncResult;
@@ -35,6 +36,7 @@ public class FinanceController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务凭证", action = "生成", description = "由订单生成会计凭证")
     @PostMapping("/voucher/order")
     public Result<AccountingVoucher> generateOrderVoucher(
             @RequestParam Long shopId,
@@ -53,6 +55,7 @@ public class FinanceController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务凭证", action = "生成", description = "由采购单补齐采购凭证")
     @PostMapping("/voucher/procurement")
     public Result<ProcurementVoucherReport> generateProcurementVouchers(@RequestParam Long shopId) {
         ProcurementVoucherReport report = financeService.generateProcurementVouchers(shopId);
@@ -74,6 +77,7 @@ public class FinanceController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务凭证", action = "生成", description = "由结算行补齐费用/退款凭证")
     @PostMapping("/voucher/from-settlement")
     public Result<com.amz.dto.SettlementVoucherReport> generateSettlementVouchers(@RequestParam Long shopId) {
         return Result.success(financeService.generateSettlementVouchers(shopId));
@@ -86,6 +90,7 @@ public class FinanceController {
      * RBAC：写操作要求 OPERATOR 及以上；店铺归属在服务层校验。
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务凭证", action = "同步金蝶", description = "推送凭证到外部总账")
     @PostMapping("/voucher/{voucherId}/sync")
     public Result<KingdeeSyncResult> syncToKingdee(@PathVariable Long voucherId) {
         KingdeeSyncResult syncResult = financeService.syncToKingdee(voucherId);

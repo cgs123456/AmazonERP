@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.Warehouse;
@@ -34,6 +35,7 @@ public class WarehouseController {
      * POST /logistics/warehouse
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "仓储", action = "新增", description = "创建仓库")
     @PostMapping
     public Result<Warehouse> create(@RequestBody Warehouse warehouse) {
         return Result.success(warehouseService.createWarehouse(warehouse));
@@ -44,6 +46,7 @@ public class WarehouseController {
      * PUT /logistics/warehouse
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "仓储", action = "修改", description = "更新仓库信息")
     @PutMapping
     public Result<Warehouse> update(@RequestBody Warehouse warehouse) {
         return Result.success(warehouseService.updateWarehouse(warehouse));
@@ -80,6 +83,7 @@ public class WarehouseController {
      * PUT /logistics/warehouse/inventory/{inventoryId}/location?locationCode=A-01-02
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "库存", action = "调整", description = "库位调整")
     @PutMapping("/inventory/{inventoryId}/location")
     public Result<WarehouseInventory> updateLocation(@PathVariable Long inventoryId,
                                                      @RequestParam String locationCode) {

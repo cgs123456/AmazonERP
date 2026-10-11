@@ -2,6 +2,7 @@ package com.amz.controller;
 
 import com.amz.dto.BatchCostSummary;
 import com.amz.dto.ReceiptShortage;
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.FbaShipment;
@@ -60,6 +61,7 @@ public class ProcurementController {
     /** 创建供应商 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "新增", description = "创建供应商")
     @PostMapping("/supplier")
     public Result<Supplier> createSupplier(@RequestBody Supplier supplier) {
         return Result.success(supplierService.createSupplier(supplier));
@@ -68,6 +70,7 @@ public class ProcurementController {
     /** 更新供应商 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "修改", description = "更新供应商")
     @PutMapping("/supplier/{id}")
     public Result<Supplier> updateSupplier(@PathVariable Long id, @RequestBody Supplier supplier) {
         supplier.setId(id);
@@ -96,6 +99,7 @@ public class ProcurementController {
     /** 更新供应商状态（启用/禁用/拉黑） */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "启停", description = "启用或停用供应商")
     @PostMapping("/supplier/{id}/status")
     public Result<Boolean> updateSupplierStatus(@PathVariable Long id, @RequestParam String status) {
         return Result.success(supplierService.updateSupplierStatus(id, status));
@@ -104,6 +108,7 @@ public class ProcurementController {
     /** 添加供应商-SKU 关联 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "新增", description = "维护供货价")
     @PostMapping("/supplier/product")
     public Result<SupplierProduct> addSupplierProduct(@RequestBody SupplierProduct sp) {
         return Result.success(supplierService.addSupplierProduct(sp));
@@ -137,6 +142,7 @@ public class ProcurementController {
     /** 创建采购计划 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购计划", action = "新增", description = "创建补货采购计划")
     @PostMapping("/plan")
     public Result<PurchasePlan> createPlan(@RequestBody PurchasePlan plan) {
         return Result.success(purchasePlanService.createPlan(plan));
@@ -145,6 +151,7 @@ public class ProcurementController {
     /** 提交采购计划审批 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购计划", action = "提交", description = "提交计划进入审批")
     @PostMapping("/plan/{planId}/submit")
     public Result<PurchasePlan> submitPlan(@PathVariable Long planId) {
         return Result.success(purchasePlanService.submitForApproval(planId));
@@ -153,6 +160,7 @@ public class ProcurementController {
     /** 审批采购计划 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购计划", action = "审批", description = "审批通过或驳回（影响后续采购金额）")
     @PostMapping("/plan/{planId}/approve")
     public Result<PurchasePlan> approvePlan(@PathVariable Long planId,
                                             @RequestParam String operator,
@@ -171,6 +179,7 @@ public class ProcurementController {
     /** 采购计划转为采购订单 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购计划", action = "转单", description = "审批通过后转为采购单")
     @PostMapping("/plan/{planId}/convert")
     public Result<Map<String, Object>> convertPlan(@PathVariable Long planId) {
         return Result.success(purchasePlanService.convertToOrder(planId));
@@ -193,6 +202,7 @@ public class ProcurementController {
     /** 取消采购计划 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购计划", action = "取消", description = "取消采购计划")
     @PostMapping("/plan/{planId}/cancel")
     public Result<Boolean> cancelPlan(@PathVariable Long planId) {
         return Result.success(purchasePlanService.cancelPlan(planId));
@@ -202,6 +212,7 @@ public class ProcurementController {
 
     /** 创建采购单 */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购单", action = "新增", description = "创建采购单")
     @PostMapping("/order")
     public Result<PurchaseOrder> createOrder(@RequestBody PurchaseOrder order) {
         return Result.success(procurementService.createPurchaseOrder(order));
@@ -209,6 +220,7 @@ public class ProcurementController {
 
     /** 提交采购单到 1688 */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购单", action = "提交", description = "提交到 1688 下单")
     @PostMapping("/order/{orderId}/submit")
     public Result<PurchaseOrder> submitTo1688(@PathVariable Long orderId) {
         return Result.success(procurementService.submitTo1688(orderId));
@@ -216,6 +228,7 @@ public class ProcurementController {
 
     /** 同步 1688 订单状态 */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "同步", description = "同步 1688 采购单状态")
     @PostMapping("/order/{orderId}/sync")
     public Result<PurchaseOrder> syncStatus(@PathVariable Long orderId) {
         return Result.success(procurementService.syncOrderStatus(orderId));
@@ -223,6 +236,7 @@ public class ProcurementController {
 
     /** 取消采购单 */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购单", action = "取消", description = "取消采购单")
     @PostMapping("/order/{orderId}/cancel")
     public Result<Boolean> cancelOrder(@PathVariable Long orderId) {
         return Result.success(procurementService.cancelPurchaseOrder(orderId));
@@ -262,6 +276,7 @@ public class ProcurementController {
 
     /** 提交质检结果 */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "质检", description = "提交质检结果")
     @PostMapping("/qc/{purchaseOrderId}")
     public Result<QualityCheck> submitQualityCheck(
             @PathVariable Long purchaseOrderId,
@@ -278,6 +293,7 @@ public class ProcurementController {
     /** 创建 FBA 货件 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "FBA货件", action = "新增", description = "创建 FBA 发货计划")
     @PostMapping("/fba/shipment")
     public Result<FbaShipment> createShipment(@RequestBody FbaShipment shipment) {
         return Result.success(fbaShipmentService.createShipment(shipment));
@@ -286,6 +302,7 @@ public class ProcurementController {
     /** 更新 FBA 货件 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "修改", description = "更新 FBA 货件")
     @PutMapping("/fba/shipment/{id}")
     public Result<FbaShipment> updateShipment(@PathVariable Long id, @RequestBody FbaShipment shipment) {
         shipment.setId(id);
@@ -295,6 +312,7 @@ public class ProcurementController {
     /** 添加货件明细 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "新增", description = "添加货件明细")
     @PostMapping("/fba/shipment/{shipmentId}/item")
     public Result<FbaShipmentItem> addShipmentItem(@PathVariable Long shipmentId,
                                                     @RequestBody FbaShipmentItem item) {
@@ -334,6 +352,7 @@ public class ProcurementController {
     /** 更新货件状态 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "状态变更", description = "推进货件状态")
     @PostMapping("/fba/shipment/{id}/status")
     public Result<FbaShipment> updateShipmentStatus(@PathVariable Long id, @RequestParam String status) {
         return Result.success(fbaShipmentService.updateShipmentStatus(id, status));
@@ -342,6 +361,7 @@ public class ProcurementController {
     /** 确认发货 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "FBA货件", action = "发货", description = "标记货件已发运")
     @PostMapping("/fba/shipment/{id}/ship")
     public Result<FbaShipment> confirmShipment(@PathVariable Long id,
                                                 @RequestParam String carrier,
@@ -352,6 +372,7 @@ public class ProcurementController {
     /** 头程费用分摊 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "采购供应链", action = "分摊", description = "货件成本分摊")
     @PostMapping("/fba/shipment/{shipmentId}/allocate")
     public Result<Map<String, Object>> allocateCosts(@PathVariable Long shipmentId) {
         return Result.success(fbaShipmentService.allocateCosts(shipmentId));
@@ -360,6 +381,7 @@ public class ProcurementController {
     /** FBA 签收处理 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "FBA货件", action = "签收", description = "货件签收并回补批次库存")
     @PostMapping("/fba/shipment/{shipmentId}/receive")
     public Result<Map<String, Object>> processReceipt(@PathVariable Long shipmentId,
                                                        @RequestBody List<Map<String, Object>> receivedItems) {
@@ -404,11 +426,24 @@ public class ProcurementController {
     /** FIFO 出库 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "库存批次", action = "出库", description = "FIFO 批次出库扣减")
     @PostMapping("/batch/fifo-outbound")
     public Result<List<Map<String, Object>>> fifoOutbound(@RequestParam Long shopId,
                                                           @RequestParam String sku,
                                                           @RequestParam Integer quantity) {
         return Result.success(fbaShipmentService.fifoOutbound(shopId, sku, quantity));
+    }
+
+    /** FIFO 回补（退货/冲回，与出库对称） */
+    @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "库存批次", action = "回补", description = "FIFO 批次回补（退货冲回）")
+    @PostMapping("/batch/fifo-return")
+    public Result<List<Map<String, Object>>> fifoReturn(@RequestParam Long shopId,
+                                                        @RequestParam String sku,
+                                                        @RequestParam Integer quantity,
+                                                        @RequestParam(required = false) String originalBatchNo) {
+        return Result.success(fbaShipmentService.fifoReturn(shopId, sku, quantity, originalBatchNo));
     }
 
     // ==================== 促销方案（供 Agent 工具调用） ====================

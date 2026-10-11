@@ -94,6 +94,11 @@ const router = createRouter({
             component: () => import('../views/LogisticsDashboard.vue')
         },
         {
+            path: '/returns',
+            name: 'Returns',
+            component: () => import('../views/ReturnOrder.vue')
+        },
+        {
             path: '/connector-queue',
             name: 'ConnectorQueue',
             component: () => import('../views/ConnectorQueue.vue')

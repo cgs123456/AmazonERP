@@ -788,4 +788,99 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
 
         return outboundDetails;
     }
+
+    /**
+     * FIFO 回补：把退货/冲回的件数还回批次可用库存。
+     * <p>
+     * <b>存在动因</b>：{@link #fifoOutbound} 此前只有出库、没有对称的回补，
+     * 售出成本因此永远虚高——退货回来了，批次可用量却不恢复。
+     * <p>
+     * <b>回补策略</b>：
+     * <ol>
+     *   <li>给了 {@code originalBatchNo} 且能定位到该批次 → 优先冲回原批次（成本口径最准）；</li>
+     *   <li>否则按 {@code inboundDate} 降序（最新批次优先）回补，避免把退货塞进早已耗尽的旧批次；</li>
+     *   <li>批次全部不存在时明确失败，不静默丢弃（丢件会让库存与账都对不上）。</li>
+     * </ol>
+     * 回补走 {@code reactivateBatch + increaseAvailableQuantityAtomic} 两条原子语句：
+     * 先把 DEPLETED 恢复成 ACTIVE，再加量。
+     *
+     * @param shopId          店铺
+     * @param sku             SKU
+     * @param quantity        回补件数（正数）
+     * @param originalBatchNo 原出库批次号（可空）
+     * @return 逐批次的回补明细
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public List<Map<String, Object>> fifoReturn(Long shopId, String sku, Integer quantity,
+                                                String originalBatchNo) {
+        if (quantity == null) {
+            throw new AttrIsNullException("回补数量不能为空");
+        }
+        if (quantity <= 0) {
+            throw new CodeErrorException("回补数量必须大于0");
+        }
+
+        List<InventoryBatch> batches;
+        if (originalBatchNo != null && !originalBatchNo.isBlank()) {
+            LambdaQueryWrapper<InventoryBatch> q = new LambdaQueryWrapper<>();
+            q.eq(InventoryBatch::getShopId, shopId)
+                    .eq(InventoryBatch::getSku, sku)
+                    .eq(InventoryBatch::getBatchNo, originalBatchNo.trim());
+            batches = inventoryBatchMapper.selectList(q);
+            if (batches.isEmpty()) {
+                throw new CodeErrorException("原批次不存在，无法回补：shopId=" + shopId
+                        + ", sku=" + sku + ", batchNo=" + originalBatchNo);
+            }
+        } else {
+            // 无原批次：按入库日期降序（最新优先）回补
+            LambdaQueryWrapper<InventoryBatch> q = new LambdaQueryWrapper<>();
+            q.eq(InventoryBatch::getShopId, shopId)
+                    .eq(InventoryBatch::getSku, sku)
+                    .orderByDesc(InventoryBatch::getInboundDate)
+                    .orderByDesc(InventoryBatch::getId);
+            batches = inventoryBatchMapper.selectList(q);
+            if (batches.isEmpty()) {
+                throw new CodeErrorException("该 SKU 无任何批次，无法回补：shopId=" + shopId + ", sku=" + sku);
+            }
+        }
+
+        List<Map<String, Object>> details = new ArrayList<>();
+        int remaining = quantity;
+        for (InventoryBatch batch : batches) {
+            if (remaining <= 0) {
+                break;
+            }
+            int addQty = remaining;
+            // 先恢复状态（DEPLETED → ACTIVE），再加可用量；两条语句顺序不可颠倒（见 mapper 注释）
+            int reactivated = inventoryBatchMapper.reactivateBatch(batch.getId(), shopId, sku);
+            if (reactivated != 1) {
+                throw new CodeErrorException("回补批次归属校验失败，事务已回滚：shopId=" + shopId
+                        + ", sku=" + sku + ", batchNo=" + batch.getBatchNo());
+            }
+            int affected = inventoryBatchMapper.increaseAvailableQuantityAtomic(
+                    batch.getId(), shopId, sku, addQty);
+            if (affected != 1) {
+                throw new CodeErrorException("回补并发冲突，事务已回滚：shopId=" + shopId
+                        + ", sku=" + sku + ", batchNo=" + batch.getBatchNo());
+            }
+
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("batchNo", batch.getBatchNo());
+            detail.put("sku", batch.getSku());
+            detail.put("quantity", addQty);
+            detail.put("unitCost", batch.getUnitCost());
+            detail.put("inboundDate", batch.getInboundDate());
+            details.add(detail);
+
+            remaining -= addQty;
+            // 单批次即可容纳全部回补：一个退货单只对应一个来源批次，不跨批次摊
+            break;
+        }
+
+        if (remaining > 0) {
+            throw new CodeErrorException("回补未完成，剩余 " + remaining + " 件无处可补，事务已回滚");
+        }
+        return details;
+    }
 }

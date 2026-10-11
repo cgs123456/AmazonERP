@@ -91,6 +91,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/returns') }"
+        @click="navigateTo('/returns')"
+        role="button"
+        aria-label="退货管理"
+        tabindex="0"
+      >
+        <Icon icon="mdi:package-variant-remove" class="nav-icon" width="24" />
+        <span class="nav-text">退货管理</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/ads') }"
         @click="navigateTo('/ads')"
         role="button"

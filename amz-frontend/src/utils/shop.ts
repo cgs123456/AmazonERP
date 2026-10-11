@@ -61,3 +61,38 @@ export const getShops = (): ShopOption[] => {
 export const setShops = (shops: ShopOption[]): void => {
   localStorage.setItem(SHOPS_KEY, JSON.stringify(shops))
 }
+
+/**
+ * 历史占位店铺的识别模式。
+ * <p>
+ * 在本仓库的某个阶段，{@code main.ts} 会把「Shop A (US) / Shop B (UK) / Shop C (DE)」
+ * 三个写死的示例店铺塞进 localStorage，而 axios 拦截器会把选中的 id 当 shopId 请求头
+ * 发给网关——等于用编造的店铺 ID 去撞店铺隔离这条边界。后端补上
+ * {@code GET /user/shop/list} 与 {@code UserVo.shops} 之后，这三个值必须被清掉。
+ */
+const LEGACY_PLACEHOLDER_PATTERN = /^Shop [ABC] \((US|UK|DE)\)$/
+
+/**
+ * 清理历史遗留的占位店铺缓存（启动时调用一次）。
+ * <p>
+ * 只清「能确认是占位值」的那一份：真实店铺名不会命中该模式，
+ * 因此老用户的既有数据不会被误删。命中时连当前选中项一起清，
+ * 否则会残留一个指向不存在店铺的 current_shop_id。
+ */
+export const purgeLegacyPlaceholderShops = (): void => {
+  const raw = localStorage.getItem(SHOPS_KEY)
+  if (!raw) return
+  try {
+    const parsed = JSON.parse(raw) as Array<{ id?: unknown; name?: unknown }>
+    const hasPlaceholder = parsed.some(
+      (s) => typeof s?.name === 'string' && LEGACY_PLACEHOLDER_PATTERN.test(s.name)
+    )
+    if (hasPlaceholder) {
+      localStorage.removeItem(SHOPS_KEY)
+      localStorage.removeItem(CURRENT_SHOP_KEY)
+    }
+  } catch {
+    // 解析不了就当作没有店铺数据，交由登录流程重新写入
+    localStorage.removeItem(SHOPS_KEY)
+  }
+}

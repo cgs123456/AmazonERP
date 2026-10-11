@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.dto.FeeDiscrepancyScanReport;
@@ -39,6 +40,7 @@ public class FeeDiscrepancyController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "费用差异", action = "扫描", description = "扫描费用差异候选")
     @PostMapping("/scan")
     public Result<FeeDiscrepancyScanReport> scan(@RequestParam Long shopId,
                                                  @RequestParam(required = false) String marketplaceId) {
@@ -57,6 +59,7 @@ public class FeeDiscrepancyController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "费用差异", action = "登记", description = "登记入库短收")
     @PostMapping("/inbound-shortage")
     public Result<Long> intakeInboundShortage(@RequestParam Long shopId,
                                               @RequestBody InboundShortageRequest request) {
@@ -112,6 +115,7 @@ public class FeeDiscrepancyController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "费用差异", action = "忽略", description = "忽略差异候选")
     @PostMapping("/{id}/dismiss")
     public Result<Boolean> dismiss(@PathVariable Long id, @RequestParam Long shopId) {
         try {

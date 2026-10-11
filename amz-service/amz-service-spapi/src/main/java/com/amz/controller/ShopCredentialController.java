@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.connector.ErrorSummary;
 import com.amz.connector.LocalApiException;
@@ -42,6 +43,7 @@ public class ShopCredentialController {
         return Result.success(service.status(shopId));
     }
 
+    @OperLog(module = "店铺凭证", action = "写入", description = "新增或覆盖店铺 SP-API 凭证（加密落库）")
     @PutMapping("/shop/{shopId}")
     @RequireRole({"ADMIN"})
     public Result<ShopCredentialStatus> upsert(@PathVariable("shopId") Long shopId,
@@ -59,6 +61,7 @@ public class ShopCredentialController {
         }
     }
 
+    @OperLog(module = "店铺凭证", action = "删除", description = "删除店铺 SP-API 凭证")
     @DeleteMapping("/shop/{shopId}")
     @RequireRole({"ADMIN"})
     public Result<ShopCredentialStatus> delete(@PathVariable("shopId") Long shopId) {

@@ -114,7 +114,9 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
             if (d.getReferralFee() != null) referralFee = referralFee.add(d.getReferralFee());
             if (d.getAdvertisingCost() != null) advertisingCost = advertisingCost.add(d.getAdvertisingCost());
             if (d.getStorageFee() != null) storageFee = storageFee.add(d.getStorageFee());
-            // ProfitDetail 无退款字段，退款从 otherFees 中按业务规则拆分，此处暂置为 0
+            // 退款金额从明细聚合（V2 补列）。此前恒为 0，注释自认「暂置为 0」——
+            // 后果是净利公式里的退款扣减永远不生效，净利系统性偏高、退款损失看不到。
+            if (d.getRefundCost() != null) refundCost = refundCost.add(d.getRefundCost());
         }
 
         snapshot.setSalesAmount(salesAmount);

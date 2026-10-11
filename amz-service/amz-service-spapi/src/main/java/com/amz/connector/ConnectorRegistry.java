@@ -32,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * <b>解决：</b>一张静态能力表 + 一条机器判定：
  * <ul>
- *   <li>{@link #spapiOperations()}：90 条已实现 operation（与 client 包真实调用点同源）；</li>
+ *   <li>{@link #spapiOperations()}：91 条已实现 operation（与 client 包真实调用点同源）；</li>
  *   <li>{@link #spapiEvidence()}：A1–A8 的逐条证据声明，交给
  *       {@link ConnectorEvidencePolicy#evaluate} 出唯一结论，不在这里自行判定。</li>
  * </ul>
@@ -209,7 +209,8 @@ public class ConnectorRegistry {
     /**
      * SP-API 能力表（权威清单）。
      * <p>
-     * 90 条已实现 operation = 26 条既有客户端调用点 + 64 条统一 operation 目录。
+     * 91 条已实现 operation = 26 条既有客户端调用点 + 65 条统一 operation 目录
+     * （新增 orders.confirmShipment，发货回传）。
      * 能力清单必须与 client 包真实调用点同源，否则前端与运维会拿到错误事实。
      *
      * @return 不可变列表
@@ -221,6 +222,9 @@ public class ConnectorRegistry {
                 Status.IMPLEMENTED, "OrdersClient.fetchOrders"));
         operations.add(new Operation("orders.getOrderItems", "/orders/v0/orders/{orderId}/orderItems",
                 Status.IMPLEMENTED, "OrdersClient.fetchOrderItems"));
+        operations.add(new Operation("orders.confirmShipment",
+                "/orders/v0/orders/{orderId}/shipmentConfirmation", Status.IMPLEMENTED,
+                "ShipmentConfirmationService（FBM 确认发货，官方成功码 204）"));
         operations.add(new Operation("fbaInventory.getInventorySummaries", "/fba/inventory/v1/summaries",
                 Status.IMPLEMENTED, "FbaInventoryClient.fetchAllInventory"));
         operations.add(new Operation("feeds.createFeedDocument", "/feeds/2021-06-30/documents",

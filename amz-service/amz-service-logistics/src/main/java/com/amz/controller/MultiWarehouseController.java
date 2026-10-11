@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.InventoryAlert;
@@ -34,6 +35,7 @@ public class MultiWarehouseController {
     /** 保存/更新库存快照 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "库存", action = "入账", description = "多仓库存入账")
     @PostMapping("/stock")
     public Result<WarehouseStock> saveStock(@RequestBody WarehouseStock stock) {
         return Result.success(multiWarehouseService.saveStock(stock));
@@ -71,6 +73,7 @@ public class MultiWarehouseController {
     /** 创建预警规则 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "库存预警", action = "新增", description = "创建库存预警规则")
     @PostMapping("/alert")
     public Result<InventoryAlert> createAlert(@RequestBody InventoryAlert alert) {
         return Result.success(multiWarehouseService.createAlert(alert));
@@ -87,6 +90,7 @@ public class MultiWarehouseController {
     /** 启用/禁用预警规则 */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "库存预警", action = "启停", description = "启用或停用预警规则")
     @PostMapping("/alert/{id}/toggle")
     public Result<Boolean> toggleAlert(@PathVariable Long id, @RequestParam boolean enabled) {
         multiWarehouseService.toggleAlert(id, enabled);

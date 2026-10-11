@@ -15,6 +15,18 @@ export interface OrderItem {
   status: string
   statusClass: string
   date: string
+  /** 发货回传相关（V6）；未回传时为 undefined/false */
+  trackingNumber?: string
+  carrierCode?: string
+  carrierName?: string
+  shipmentConfirmed?: boolean
+  shipConfirmedAt?: string
+  /** 发货单打印用（列表接口暂不返回标题/ASIN/买家，缺失时打印显示「—」） */
+  title?: string
+  asin?: string
+  buyerName?: string
+  shipServiceLevel?: string
+  fulfillmentChannel?: string
 }
 
 // 订单列表查询参数
@@ -48,6 +60,17 @@ export interface OrderRow {
   amazonOrderId?: string
   orderStatus?: string
   purchaseDate?: string
+  /** 以下为 V6 发货回传字段（FBM 确认发货） */
+  trackingNumber?: string
+  carrierCode?: string
+  carrierName?: string
+  /** NOT_CONFIRMED / CONFIRMED */
+  fulfillmentStatus?: string
+  shipConfirmedAt?: string
+  buyerName?: string
+  fulfillmentChannel?: string
+  shipServiceLevel?: string
+  marketplaceId?: string
 }
 
 // Amazon 订单状态 → 前端展示状态（statusClass 复用全局 .status-tag 样式类）
@@ -89,7 +112,15 @@ export const mapOrderRow = (row: OrderRow, shopName: string): OrderItem => {
     profit: 0,
     status,
     statusClass,
-    date
+    date,
+    trackingNumber: row.trackingNumber,
+    carrierCode: row.carrierCode,
+    carrierName: row.carrierName,
+    shipmentConfirmed: row.fulfillmentStatus === 'CONFIRMED',
+    shipConfirmedAt: (row.shipConfirmedAt || '').slice(0, 16).replace('T', ' '),
+    buyerName: row.buyerName,
+    shipServiceLevel: row.shipServiceLevel,
+    fulfillmentChannel: row.fulfillmentChannel
   }
 }
 
@@ -166,3 +197,37 @@ export const saveB2cOrder = (draft: B2cOrderDraft) =>
 /** 我这个登录账号提交出来的订单（后端按认证上下文读，没有分页） */
 export const getMyB2cOrders = () =>
   request.get<void, ApiResponse<B2cOrderRow[]>>('/order/getOrderList')
+
+/* ==================== 发货回传（FBM 确认发货） ==================== */
+
+/**
+ * 向 Amazon 确认发货（POST /order/{orderId}/confirm-ship）。
+ * <p>
+ * 后端语义：只有 Amazon 受理后才回写本地运单号与状态；未受理会返回业务失败，
+ * 本地订单保持未回传。因此调用方拿到失败时**不要**自行把界面改成「已发货」。
+ *
+ * @param orderId        本地订单主键（不是 amazonOrderId）
+ * @param carrierCode    承运商代码（必填；Amazon 要求所有站点必填）
+ * @param trackingNumber 运单号（必填）
+ * @param carrierName    承运商名称（carrierCode=Other 时必填）
+ * @param shipDate       发货时间，ISO-8601 带偏移，可空（空则由后端取当前 UTC）
+ */
+export const confirmShipment = (
+  orderId: number,
+  carrierCode: string,
+  trackingNumber: string,
+  carrierName?: string,
+  shipDate?: string
+) =>
+  request.post<void, ApiResponse<OrderRow>>(`/order/${orderId}/confirm-ship`, null, {
+    params: {
+      carrierCode,
+      trackingNumber,
+      ...(carrierName ? { carrierName } : {}),
+      ...(shipDate ? { shipDate } : {})
+    }
+  })
+
+/** 订单是否已回传 Amazon（前端展示用） */
+export const isShipmentConfirmed = (row: OrderRow): boolean =>
+  row?.fulfillmentStatus === 'CONFIRMED'

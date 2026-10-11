@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.dto.ReimbursementClaimSummary;
@@ -40,6 +41,7 @@ public class ReimbursementClaimController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务索赔", action = "生成", description = "由费用差异候选生成索赔单")
     @PostMapping("/from-discrepancy")
     public Result<Long> createFromDiscrepancy(@RequestParam Long shopId,
                                               @RequestParam Long discrepancyId) {
@@ -58,6 +60,7 @@ public class ReimbursementClaimController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务索赔", action = "提交", description = "CANDIDATE → SUBMITTED")
     @PostMapping("/{id}/submit")
     public Result<ReimbursementClaim> submit(@PathVariable Long id, @RequestParam Long shopId) {
         return advance(() -> reimbursementClaimService.submit(shopId, id));
@@ -68,6 +71,7 @@ public class ReimbursementClaimController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务索赔", action = "受理", description = "SUBMITTED → ACCEPTED")
     @PostMapping("/{id}/accept")
     public Result<ReimbursementClaim> accept(@PathVariable Long id, @RequestParam Long shopId) {
         return advance(() -> reimbursementClaimService.accept(shopId, id));
@@ -78,6 +82,7 @@ public class ReimbursementClaimController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务索赔", action = "赔付", description = "ACCEPTED → REIMBURSED，生成追回凭证")
     @PostMapping("/{id}/reimburse")
     public Result<ReimbursementClaim> reimburse(@PathVariable Long id,
                                                 @RequestParam Long shopId,
@@ -90,6 +95,7 @@ public class ReimbursementClaimController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "财务索赔", action = "驳回", description = "SUBMITTED/ACCEPTED → REJECTED")
     @PostMapping("/{id}/reject")
     public Result<ReimbursementClaim> reject(@PathVariable Long id,
                                              @RequestParam Long shopId,

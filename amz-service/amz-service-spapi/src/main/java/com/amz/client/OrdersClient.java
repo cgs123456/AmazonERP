@@ -122,6 +122,15 @@ public class OrdersClient {
     private static final String OP_GET_ORDER_ITEMS = "orders.getOrderItems";
 
     /**
+     * {@code orders.confirmShipment}：FBM 卖家确认发货。官方 2 req/s、burst 10。
+     * <p>
+     * 官方成功状态是 <b>204 No Content</b>（不是 200），空体由网关转为空 JSON 对象。
+     * 路径与成功码依据 {@code contracts/ordersV0.json} 的
+     * {@code /orders/v0/orders/{orderId}/shipmentConfirmation}。
+     */
+    public static final String OP_CONFIRM_SHIPMENT = "orders.confirmShipment";
+
+    /**
      * 订单行级接口路径前缀（/orders/v0/orders/{orderId}/orderItems）。
      */
     private static final String ORDER_ITEMS_PATH = "/orders/v0/orders/";
@@ -153,6 +162,27 @@ public class OrdersClient {
             }
         }
         return items;
+    }
+
+    /**
+     * 向 Amazon 确认发货（FBM）：提交承运商与运单号，Amazon 受理后订单变为已发货。
+     * <p>
+     * <b>成功状态是 204（无响应体）</b>，不是 200——官方快照明示。这里显式传 204，
+     * 不用「任意 2xx 都算成功」的宽松判断：宽松判断会把 202（异步受理，需轮询）
+     * 也当成发货完成。
+     *
+     * @param shopId         店铺 ID
+     * @param marketplaceId  站点 ID
+     * @param amazonOrderId  Amazon 订单号
+     * @param body           已构造好的官方 ConfirmShipmentRequest JSON
+     * @return 空 JSON 对象（204 无体）
+     */
+    public JsonObject confirmShipment(Long shopId, String marketplaceId,
+                                      String amazonOrderId, JsonObject body) {
+        SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
+        String path = ORDERS_PATH + "/" + amazonOrderId.trim() + "/shipmentConfirmation";
+        return gateway.callJsonWithStatus("POST", shop, OP_CONFIRM_SHIPMENT, path, null,
+                body == null ? null : body.toString(), 204);
     }
 
     /**

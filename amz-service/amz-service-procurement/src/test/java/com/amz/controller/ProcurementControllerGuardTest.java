@@ -44,8 +44,8 @@ class ProcurementControllerGuardTest {
         }
 
         assertFalse(writeEndpoints.isEmpty(), "反射必须扫到写接口，扫到 0 个会使测试假通过");
-        assertEquals(22, writeEndpoints.size(),
-                "当前有 22 个写接口；新增接口必须同步声明 @RequireRole 并更新本断言");
+        assertEquals(23, writeEndpoints.size(),
+                "当前有 23 个写接口（新增 batch/fifo-return）；新增接口必须同步声明 @RequireRole 并更新本断言");
 
         for (Method method : writeEndpoints) {
             RequireRole requireRole = method.getAnnotation(RequireRole.class);

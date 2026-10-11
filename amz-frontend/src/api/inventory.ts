@@ -165,6 +165,44 @@ export const recalcReplenishment = (shopId: number | string) => {
   return request.post<void, ApiResponse<number>>(`/spapi/replenish/calc/${shopId}`)
 }
 
+/* ==================== FBA 入库计划（补货建议 → Amazon 真实入库计划） ==================== */
+
+/** 发货地址（官方 CreateInboundPlanRequest.sourceAddress 必填，无合理默认值） */
+export interface InboundSourceAddress {
+  name: string
+  addressLine1: string
+  addressLine2?: string
+  city: string
+  districtOrCounty?: string
+  stateOrProvinceCode?: string
+  /** 两位 ISO 3166-1，如 US/CN */
+  countryCode: string
+  postalCode: string
+}
+
+export interface InboundItem {
+  msku: string
+  quantity: number
+  /** SELLER / AMAZON（官方必填） */
+  prepOwner: string
+  labelOwner: string
+}
+
+/**
+ * 由补货建议在 Amazon 侧创建真实入库计划（POST /procurement/fba/inbound-plan）。
+ * <p>
+ * 后端语义：请求形状按官方快照构造，成功返回含 {@code inboundPlanId} 的响应；
+ * spapi 不可用时<b>明确失败</b>，绝不返回伪造的计划 ID（否则后续装箱/贴标会指向
+ * 一个 Amazon 不认识的对象）。因此调用方拿到失败时不要本地记一个计划号。
+ */
+export const createFbaInboundPlan = (payload: {
+  shopId: number | string
+  marketplaceId: string
+  name?: string
+  sourceAddress: InboundSourceAddress
+  items: InboundItem[]
+}) => request.post<void, ApiResponse<Record<string, unknown>>>('/procurement/fba/inbound-plan', payload)
+
 // 获取库存健康度（由 health 行派生计数，与列表口径一致；与 getInventoryList 共享在途请求）
 export const getInventoryHealth = async (shopId: number | string) => {
   const res = await fetchHealth(shopId)

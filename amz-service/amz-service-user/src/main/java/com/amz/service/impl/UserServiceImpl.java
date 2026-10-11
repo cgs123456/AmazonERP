@@ -9,8 +9,11 @@ import com.amz.exception.UserNoExistException;
 import com.amz.mapper.UserMapper;
 import com.amz.model.dto.UserEditDto;
 import com.amz.model.pojo.User;
+import com.amz.model.vo.ShopOptionVo;
+import com.amz.model.vo.ShopVo;
 import com.amz.model.vo.UserVo;
 import com.amz.result.Result;
+import com.amz.service.ShopService;
 import com.amz.service.UserService;
 import com.amz.util.OssUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +34,29 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private OssUtil ossUtil;
 
+    /** 店铺服务可选注入：查询失败时 getInfo 仍要能返回（店铺只是选择器数据）。 */
+    @Autowired(required = false)
+    private ShopService shopService;
+
+    /**
+     * 组装用户可见的店铺选项。
+     * <p>
+     * ADMIN 走全量店铺（他可能还没被分配到某店，但必须能看见并管理它）；
+     * 普通用户只返回 {@code amz_user_shop} 里已绑定的，顺序按店铺 id 稳定排列。
+     */
+    private java.util.List<ShopOptionVo> resolveShopOptions(Integer userId) {
+        if (shopService == null || userId == null) {
+            return java.util.List.of();
+        }
+        java.util.List<ShopVo> shops = shopService.listMyShops();
+        java.util.List<ShopOptionVo> options = new java.util.ArrayList<>();
+        for (ShopVo shop : shops) {
+            String name = shop.getShopName() != null ? shop.getShopName() : ("店铺 " + shop.getId());
+            options.add(new ShopOptionVo(shop.getId(), name));
+        }
+        return options;
+    }
+
     @Override
     public Result<UserVo> getInfo() {
         // 1.获取登录用户信息
@@ -44,6 +70,14 @@ public class UserServiceImpl implements UserService {
         // 2.设置userVo
         UserVo userVo = new UserVo();
         userVo.setUser(user);
+        // 2b.附带授权店铺：前端店铺选择器此前没有任何真实来源（只能写死 Shop A/B/C），
+        //     登录 → getInfo → 写 localStorage 这条链路补全后，店铺切换才建立在真数据上。
+        //     查询失败不阻断登录——拿不到店铺只影响选择器，不该让用户连系统都进不去。
+        try {
+            userVo.setShops(resolveShopOptions(userId));
+        } catch (Exception e) {
+            log.warn("查询用户授权店铺失败 userId={}，本次不返回 shops。原因: {}", userId, e.getMessage());
+        }
         // 3.根据生日生成年龄
         if (!StringUtils.isBlank(user.getBirthday())) {
             try {

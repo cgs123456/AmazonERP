@@ -424,6 +424,51 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 3633,
+      "lines": 57,
+      "sha256": "8bc9a9846207fe3ce21a8efe3e22ef8cd55c4b80b920ee1195c0e9121c188e82",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_logistics",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 3087,
+      "lines": 45,
+      "sha256": "9cc7df94665579f43a952dbdb4b57d225bfaa5588098f44f9329291b8748be6b",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_logistics",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1732,
+      "lines": 27,
+      "sha256": "4dcbd3df13e80d9930f88f13a0a0d54ae06ab8ae432d625e52c13997fb0330e0",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_logistics",
+      "alter_table_statements": 1,
+      "add_column_statements": 1,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V9__return_order_external_key.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 9521,
       "lines": 165,
       "sha256": "46bdd504f8bff99b91134bdb017b024bb11da82cb27ad2e2d8d5f15a030332b6",
@@ -559,6 +604,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 2598,
+      "lines": 36,
+      "sha256": "8bad59753d88de052f92f4783c1a83cf5be650220d2583ec673cc458894a02dc",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_order",
+      "alter_table_statements": 1,
+      "add_column_statements": 4,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-order/src/main/resources/db/migration/V6__order_fulfillment.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 13152,
       "lines": 243,
       "sha256": "93413f09780d80789753dec4ddac2a3e5075d0de1c8afc70e44468eaf5c80dd1",
@@ -690,6 +750,21 @@
       "mysql8_incompatible_add_column": 0,
       "db_source": "application.yml",
       "path": "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1285,
+      "lines": 20,
+      "sha256": "db4e9f26c180bfc7ae783590dbfe7a8220c00df5bec262dbcb937abdf640d242",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_report",
+      "alter_table_statements": 1,
+      "add_column_statements": 2,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-report/src/main/resources/db/migration/V2__profit_refund_columns.sql",
       "dynamic_ddl": 0
     },
     {
@@ -901,6 +976,21 @@
       "db_source": "application.yml",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V2__drop_dead_tables.sql",
       "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 2802,
+      "lines": 43,
+      "sha256": "aebfd936f1a38672edca4d0d6ee4e189b0ec530b78a297a2429c3de695cee73c",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V3__oper_log.sql",
+      "dynamic_ddl": 0
     }
   ],
   "stats": {
@@ -910,11 +1000,11 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 59,
-        "tables": 113
+        "files": 65,
+        "tables": 116
       }
     },
-    "union_table_count": 101,
+    "union_table_count": 103,
     "databases": [
       "amz_ad",
       "amz_ai",
@@ -940,9 +1030,9 @@
     ],
     "tables_with_conditional_columns": [],
     "conditional_columns_total": 0,
-    "alter_table_statements": 41,
-    "add_column_statements": 22,
-    "applied_alter_operations": 51,
+    "alter_table_statements": 44,
+    "add_column_statements": 29,
+    "applied_alter_operations": 58,
     "unapplied_alter_operations": 0,
     "renamed_columns": [
       [
@@ -11441,6 +11531,396 @@
       ]
     },
     {
+      "key": "amz_logistics.amz_inventory_movement",
+      "database": "amz_logistics",
+      "name": "amz_inventory_movement",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "warehouse_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "仓库 ID（FIFO 批次变更可为空）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "sku",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "卖家 SKU",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "batch_no",
+          "type": "VARCHAR",
+          "args": "64",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "批次号（批次变更时填写）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "qty_before",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "变更前数量",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "qty_after",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "变更后数量",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "qty_delta",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "变更量（正数入库、负数出库）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "movement_type",
+          "type": "VARCHAR",
+          "args": "30",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "业务动作：RETURN_INBOUND/INBOUND_RECEIVE/OUTBOUND_SHIP/FIFO_OUTBOUND/FIFO_RETURN/TRANSFER_OUT/TRANSFER_IN",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "source_type",
+          "type": "VARCHAR",
+          "args": "30",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "来源单据类型：RETURN_ORDER/INBOUND_ORDER/OUTBOUND_ORDER/FBA_SHIPMENT/TRANSFER",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "source_no",
+          "type": "VARCHAR",
+          "args": "64",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "来源单号",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "unit_cost",
+          "type": "DECIMAL",
+          "args": "14,4",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "单位成本（批次变更时填写）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "operator_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "操作人用户 ID",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "remark",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "备注",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "warehouse_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "sku": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "batch_no": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "qty_before": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "qty_after": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "qty_delta": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "movement_type": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "source_type": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "source_no": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "unit_cost": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "operator_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "remark": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [],
+      "indexes": [
+        {
+          "name": "idx_shop_sku",
+          "columns": [
+            "shop_id",
+            "sku"
+          ]
+        },
+        {
+          "name": "idx_shop_create",
+          "columns": [
+            "shop_id",
+            "create_time"
+          ]
+        },
+        {
+          "name": "idx_source",
+          "columns": [
+            "shop_id",
+            "source_type",
+            "source_no"
+          ]
+        },
+        {
+          "name": "idx_movement_type",
+          "columns": [
+            "shop_id",
+            "movement_type"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "f3e18a5b59fd7fc938e395595e1dddbb7278bf65d103f03a73a8b0278808197d",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V8__inventory_movement.sql",
+          "line": 23,
+          "group": "flyway-migration",
+          "hash": "f3e18a5b59fd7fc938e395595e1dddbb7278bf65d103f03a73a8b0278808197d"
+        }
+      ]
+    },
+    {
       "key": "amz_logistics.amz_inventory_transfer",
       "database": "amz_logistics",
       "name": "amz_inventory_transfer",
@@ -12182,6 +12662,527 @@
           "line": 103,
           "group": "flyway-migration",
           "hash": "558d4c5b2cb1aeb509a77aaf2d805ebde1f3ba0b52c4eb1d8bddb227c3926e48"
+        }
+      ]
+    },
+    {
+      "key": "amz_logistics.amz_return_order",
+      "database": "amz_logistics",
+      "name": "amz_return_order",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "return_no",
+          "type": "VARCHAR",
+          "args": "40",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "退货单号（RET + 时间戳 + 随机数）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "amazon_order_id",
+          "type": "VARCHAR",
+          "args": "30",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "Amazon 订单号（退款不退货时也可能为空）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "sku",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "卖家 SKU",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "asin",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "ASIN",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "warehouse_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "收货仓库 ID（收货时确定）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "quantity",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "退货数量",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "disposition",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "处置：GOOD/DEFECTIVE/SCRAP（收货时确定）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "source",
+          "type": "VARCHAR",
+          "args": "30",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'MANUAL'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "来源：AMAZON_FBA/AMAZON_FBM/MANUAL",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "return_reason",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "退货原因",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "refund_amount",
+          "type": "DECIMAL",
+          "args": "14,2",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "关联退款金额（对账参考，可空）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "currency",
+          "type": "VARCHAR",
+          "args": "8",
+          "unsigned": false,
+          "nullable": true,
+          "default": "'USD'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "币种",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'PENDING'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "状态：PENDING/RECEIVING/RECEIVED/CLOSED/CANCELLED",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "settlement_row_key",
+          "type": "VARCHAR",
+          "args": "64",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "关联结算行指纹（amz_settlement_detail.row_key）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "operator_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "操作人用户 ID",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "received_at",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "收货时间",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "closed_at",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "结案时间",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "update_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": true,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "external_key",
+          "type": "VARCHAR",
+          "args": "128",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "外部幂等键（店铺|来源|业务指纹）；手工建单为 NULL，Amazon 导入必填",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "return_no": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "amazon_order_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "sku": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "asin": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "warehouse_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "quantity": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "disposition": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "source": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "return_reason": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "refund_amount": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "currency": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "status": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "settlement_row_key": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "operator_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "received_at": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "closed_at": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "update_time": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ],
+        "external_key": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [
+        {
+          "name": "uk_return_no",
+          "columns": [
+            "return_no"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shop_status",
+          "columns": [
+            "shop_id",
+            "status"
+          ]
+        },
+        {
+          "name": "idx_shop_order",
+          "columns": [
+            "shop_id",
+            "amazon_order_id"
+          ]
+        },
+        {
+          "name": "idx_shop_sku",
+          "columns": [
+            "shop_id",
+            "sku"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "c5719e414d9701d2c81e7f1083faf1fe436123514053c738552afb7e6591179e",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V7__return_order.sql",
+          "line": 29,
+          "group": "flyway-migration",
+          "hash": "c5719e414d9701d2c81e7f1083faf1fe436123514053c738552afb7e6591179e"
         }
       ]
     },
@@ -18900,6 +19901,82 @@
           ],
           "conditional": false,
           "conflicts": []
+        },
+        {
+          "name": "carrier_code",
+          "type": "VARCHAR",
+          "args": "50",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "承运商代码（Amazon confirmShipment 的 carrierCode）",
+          "sources": [
+            "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "carrier_name",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "承运商名称（carrierCode=Other 时必填）",
+          "sources": [
+            "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "ship_confirmed_at",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "向 Amazon 回传发货的时间",
+          "sources": [
+            "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "fulfillment_status",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": true,
+          "default": "'NOT_CONFIRMED'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "回传状态：NOT_CONFIRMED/CONFIRMED（与 order_status 语义不同，见迁移注释）",
+          "sources": [
+            "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
         }
       ],
       "column_sources": {
@@ -18956,6 +20033,18 @@
         ],
         "sync_status": [
           "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "carrier_code": [
+          "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "carrier_name": [
+          "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "ship_confirmed_at": [
+          "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "fulfillment_status": [
+          "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql"
         ]
       },
       "conditional_columns": [],
@@ -18987,13 +20076,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "d1787c91ee55c7a864b103d550f68d6acd7f99821c4b7ce45b45665b332b4de7",
+      "table_hash": "db65f7d72c4e470917121e9e14e7c4ad0ebb0a7dee15835c3fb940bb6725fae5",
       "definitions": [
         {
           "path": "amz-service/amz-service-order/src/main/resources/db/migration/V1__init.sql",
           "line": 19,
           "group": "flyway-migration",
-          "hash": "d1787c91ee55c7a864b103d550f68d6acd7f99821c4b7ce45b45665b332b4de7"
+          "hash": "db65f7d72c4e470917121e9e14e7c4ad0ebb0a7dee15835c3fb940bb6725fae5"
         }
       ]
     },
@@ -29622,6 +30711,44 @@
           ],
           "conditional": false,
           "conflicts": []
+        },
+        {
+          "name": "refund_cost",
+          "type": "DECIMAL",
+          "args": "12,2",
+          "unsigned": false,
+          "nullable": true,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "退款金额（正数表示损失）",
+          "sources": [
+            "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "refunded_units",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "退款件数（用于冲减 COGS）",
+          "sources": [
+            "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
         }
       ],
       "column_sources": {
@@ -29699,6 +30826,12 @@
         ],
         "create_time": [
           "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "refund_cost": [
+          "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "refunded_units": [
+          "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql"
         ]
       },
       "conditional_columns": [],
@@ -29730,13 +30863,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "402a6e4cea8d7ca84ec4b0c78645dc07cbc8316c56b046cd58e5e184d89cd906",
+      "table_hash": "bf842827c414228a906d69bd5be44f0ccd373508f1506b11ab993905e941f196",
       "definitions": [
         {
           "path": "amz-service/amz-service-report/src/main/resources/db/migration/V1__init.sql",
           "line": 8,
           "group": "flyway-migration",
-          "hash": "402a6e4cea8d7ca84ec4b0c78645dc07cbc8316c56b046cd58e5e184d89cd906"
+          "hash": "bf842827c414228a906d69bd5be44f0ccd373508f1506b11ab993905e941f196"
         }
       ]
     },
@@ -36401,6 +37534,55 @@
       "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V6__date_type_convergence.sql"
     },
     {
+      "table": "amz_return_order",
+      "add_columns": [
+        {
+          "column": "external_key",
+          "if_not_exists": false,
+          "definition": {
+            "name": "external_key",
+            "type": "VARCHAR",
+            "args": "128",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "外部幂等键（店铺|来源|业务指纹）；手工建单为 NULL，Amazon 导入必填"
+          }
+        }
+      ],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "add_column",
+          "column": "external_key",
+          "if_not_exists": false,
+          "definition": {
+            "name": "external_key",
+            "type": "VARCHAR",
+            "args": "128",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "外部幂等键（店铺|来源|业务指纹）；手工建单为 NULL，Amazon 导入必填"
+          }
+        }
+      ],
+      "line": 22,
+      "database": "amz_logistics",
+      "sql": "ALTER TABLE amz_return_order ADD COLUMN external_key VARCHAR(128) DEFAULT NULL COMMENT '外部幂等键（店铺|来源|业务指纹）；手工建单为 NULL，Amazon 导入必填'",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V9__return_order_external_key.sql"
+    },
+    {
       "table": "amz_unified_order",
       "add_columns": [
         {
@@ -36621,6 +37803,166 @@
       "database": "amz_order",
       "sql": "ALTER TABLE amz_order DROP INDEX uk_amazon_order, DROP INDEX idx_shop, ADD UNIQUE KEY uk_shop_market_order (shop_id, marketplace_id, amazon_order_id), ADD INDEX idx_shop_purchase_date (shop_id, purchase_date)",
       "path": "amz-service/amz-service-order/src/main/resources/db/migration/V4__order_shop_scoped_identity.sql"
+    },
+    {
+      "table": "amz_order",
+      "add_columns": [
+        {
+          "column": "carrier_code",
+          "if_not_exists": false,
+          "definition": {
+            "name": "carrier_code",
+            "type": "VARCHAR",
+            "args": "50",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "承运商代码（Amazon confirmShipment 的 carrierCode）"
+          }
+        },
+        {
+          "column": "carrier_name",
+          "if_not_exists": false,
+          "definition": {
+            "name": "carrier_name",
+            "type": "VARCHAR",
+            "args": "100",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "承运商名称（carrierCode=Other 时必填）"
+          }
+        },
+        {
+          "column": "ship_confirmed_at",
+          "if_not_exists": false,
+          "definition": {
+            "name": "ship_confirmed_at",
+            "type": "DATETIME",
+            "args": "",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "向 Amazon 回传发货的时间"
+          }
+        },
+        {
+          "column": "fulfillment_status",
+          "if_not_exists": false,
+          "definition": {
+            "name": "fulfillment_status",
+            "type": "VARCHAR",
+            "args": "20",
+            "unsigned": false,
+            "nullable": true,
+            "default": "'NOT_CONFIRMED'",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "回传状态：NOT_CONFIRMED/CONFIRMED（与 order_status 语义不同，见迁移注释）"
+          }
+        }
+      ],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "add_column",
+          "column": "carrier_code",
+          "if_not_exists": false,
+          "definition": {
+            "name": "carrier_code",
+            "type": "VARCHAR",
+            "args": "50",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "承运商代码（Amazon confirmShipment 的 carrierCode）"
+          }
+        },
+        {
+          "kind": "add_column",
+          "column": "carrier_name",
+          "if_not_exists": false,
+          "definition": {
+            "name": "carrier_name",
+            "type": "VARCHAR",
+            "args": "100",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "承运商名称（carrierCode=Other 时必填）"
+          }
+        },
+        {
+          "kind": "add_column",
+          "column": "ship_confirmed_at",
+          "if_not_exists": false,
+          "definition": {
+            "name": "ship_confirmed_at",
+            "type": "DATETIME",
+            "args": "",
+            "unsigned": false,
+            "nullable": true,
+            "default": "NULL",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "向 Amazon 回传发货的时间"
+          }
+        },
+        {
+          "kind": "add_column",
+          "column": "fulfillment_status",
+          "if_not_exists": false,
+          "definition": {
+            "name": "fulfillment_status",
+            "type": "VARCHAR",
+            "args": "20",
+            "unsigned": false,
+            "nullable": true,
+            "default": "'NOT_CONFIRMED'",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "回传状态：NOT_CONFIRMED/CONFIRMED（与 order_status 语义不同，见迁移注释）"
+          }
+        }
+      ],
+      "line": 28,
+      "database": "amz_order",
+      "sql": "ALTER TABLE amz_order ADD COLUMN carrier_code VARCHAR(50) DEFAULT NULL COMMENT '承运商代码（Amazon confirmShipment 的 carrierCode）', ADD COLUMN carrier_name VARCHAR(100) DEFAULT NULL COMMENT '承运商名称（carrierCode=Other 时必填）', ADD COLUMN ship_confirme",
+      "path": "amz-service/amz-service-order/src/main/resources/db/migration/V6__order_fulfillment.sql"
     },
     {
       "table": "amz_inventory_batch",
@@ -36986,6 +38328,92 @@
       "database": "amz_product",
       "sql": "ALTER TABLE amz_listing_copy_task MODIFY COLUMN status VARCHAR(20) DEFAULT 'PENDING' COMMENT 'PENDING/PROCESSING/SUBMITTED/SUCCESS/PARTIAL/FAILED/TIMEOUT'",
       "path": "amz-service/amz-service-product/src/main/resources/db/migration/V4__listing_copy_partial_status.sql"
+    },
+    {
+      "table": "amz_profit_detail",
+      "add_columns": [
+        {
+          "column": "refund_cost",
+          "if_not_exists": false,
+          "definition": {
+            "name": "refund_cost",
+            "type": "DECIMAL",
+            "args": "12,2",
+            "unsigned": false,
+            "nullable": true,
+            "default": "0",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "退款金额（正数表示损失）"
+          }
+        },
+        {
+          "column": "refunded_units",
+          "if_not_exists": false,
+          "definition": {
+            "name": "refunded_units",
+            "type": "INT",
+            "args": "",
+            "unsigned": false,
+            "nullable": true,
+            "default": "0",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "退款件数（用于冲减 COGS）"
+          }
+        }
+      ],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "add_column",
+          "column": "refund_cost",
+          "if_not_exists": false,
+          "definition": {
+            "name": "refund_cost",
+            "type": "DECIMAL",
+            "args": "12,2",
+            "unsigned": false,
+            "nullable": true,
+            "default": "0",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "退款金额（正数表示损失）"
+          }
+        },
+        {
+          "kind": "add_column",
+          "column": "refunded_units",
+          "if_not_exists": false,
+          "definition": {
+            "name": "refunded_units",
+            "type": "INT",
+            "args": "",
+            "unsigned": false,
+            "nullable": true,
+            "default": "0",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "退款件数（用于冲减 COGS）"
+          }
+        }
+      ],
+      "line": 17,
+      "database": "amz_report",
+      "sql": "ALTER TABLE amz_profit_detail ADD COLUMN refund_cost DECIMAL(12,2) DEFAULT 0 COMMENT '退款金额（正数表示损失）', ADD COLUMN refunded_units INT DEFAULT 0 COMMENT '退款件数（用于冲减 COGS）'",
+      "path": "amz-service/amz-service-report/src/main/resources/db/migration/V2__profit_refund_columns.sql"
     },
     {
       "table": "amz_replenishment_suggestion",

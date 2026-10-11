@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.dto.SettlementIngestReport;
@@ -36,6 +37,7 @@ public class SettlementController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "结算", action = "同步", description = "拉取并解析平台结算报表")
     @PostMapping("/sync")
     public Result<SettlementIngestReport> sync(@RequestParam Long shopId,
                                                @RequestParam(required = false) String marketplaceId,

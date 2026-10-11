@@ -7,6 +7,7 @@ import com.amz.exception.InvalidParamException;
 import com.amz.exception.UserNoExistException;
 import com.amz.result.Result;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 import java.util.stream.Collectors;
 
@@ -77,18 +79,28 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 处理运行时异常（不暴露内部信息）
+     * 处理运行时异常（不暴露内部信息）。
+     * <p>
+     * <b>HTTP 500</b>：这是「我们这边出错了」，不是「你的请求有问题」。
+     * 此前它和业务异常一样返回 HTTP 200 + {@code code=400}，第三方系统无法按状态码区分
+     * 「请求被拒」与「服务端故障」，只能解析 body——而 body 契约不是所有调用方都会看。
+     * <p>
+     * 只把<b>系统级兜底</b>映射成 5xx：业务校验失败与「无权限操作」保持 HTTP 200 + code=400，
+     * 因为前端有 60+ 处按 {@code code === 200} 判断、契约测试也有 30 处断言 HTTP 200，
+     * 全面改成 4xx/5xx 是一次全站契约变更，风险与收益不成比例（见 HANDOFF 决策）。
      */
     @ExceptionHandler(RuntimeException.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<String> runtimeException(RuntimeException e) {
         log.error("运行时异常", e);
         return Result.failure("服务器内部错误");
     }
 
     /**
-     * 处理系统异常（最终兜底，不暴露内部信息）
+     * 处理系统异常（最终兜底，不暴露内部信息）。HTTP 500，理由同上。
      */
     @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<String> exception(Exception e) {
         log.error("系统异常", e);
         return Result.failure("服务器内部错误");

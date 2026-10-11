@@ -188,10 +188,75 @@ export interface UserVo {
     role?: string
 }
 
+/**
+ * 店铺下拉选项（后端 UserVo.shops / GET /user/shop/list 的元素形状）。
+ * 只带 id 与 name：后端刻意不返回凭证或卖家身份信息，前端也不要在这里扩展。
+ */
+export interface ShopOption {
+    id: number | string
+    name: string
+}
+
+/** 店铺管理页用的完整店铺项（GET /user/shop/list）。 */
+export interface ShopListItem extends ShopOption {
+    marketplaceId?: string
+    region?: string
+    sellerId?: string
+    /** 1=已授权 0=未授权 -1=授权过期 */
+    status?: number
+    statusText?: string
+    /** 是否在 spapi 登记过凭证（来自 amz_shop_credential，不是本店明文列） */
+    credentialConfigured?: boolean
+    role?: string
+}
+
 export interface UserInfoResponse {
     user: UserVo
     age?: number | null
+    /**
+     * 当前用户被授权的店铺（真实来源）。
+     * 此前前端拿不到任何店铺数据，只能在 main.ts 写死 Shop A/B/C；
+     * 后端补上该字段后，登录 → getInfo → setShops() 成为完整链路。
+     * 登录成功但这里为空 = 该账号确实没被分配店铺，前端提示联系管理员。
+     */
+    shops?: ShopOption[]
 }
+
+/** 我的店铺列表（含凭证与角色状态；ADMIN 可见全部店铺） */
+export const getMyShops = () => {
+    return request.get<void, ApiResponse<ShopListItem[]>>('/user/shop/list')
+}
+
+/** 创建店铺（ADMIN） */
+export const createShop = (payload: {
+    shopName: string
+    marketplaceId: string
+    region?: string
+    sellerId?: string
+    status?: number
+}) => request.post<void, ApiResponse<ShopListItem>>('/user/shop', payload)
+
+/** 更新店铺主数据（ADMIN）；null 字段表示不修改 */
+export const updateShop = (
+    shopId: number | string,
+    payload: { shopName?: string; marketplaceId?: string; region?: string; sellerId?: string; status?: number }
+) => request.put<void, ApiResponse<ShopListItem>>(`/user/shop/${shopId}`, payload)
+
+/** 更新店铺授权状态（ADMIN）：1=已授权 0=未授权 -1=授权过期 */
+export const updateShopStatus = (shopId: number | string, status: number) =>
+    request.post<void, ApiResponse<ShopListItem>>(`/user/shop/${shopId}/status`, null, { params: { status } })
+
+/** 分配用户到店铺（ADMIN）；role 默认 VIEWER */
+export const assignShopUser = (shopId: number | string, userId: number | string, role?: string) =>
+    request.post<void, ApiResponse<boolean>>(`/user/shop/${shopId}/assign`, null, {
+        params: { userId, ...(role ? { role } : {}) }
+    })
+
+/** 解除用户-店铺绑定（ADMIN） */
+export const unassignShopUser = (shopId: number | string, userId: number | string) =>
+    request.post<void, ApiResponse<boolean>>(`/user/shop/${shopId}/assign/remove`, null, {
+        params: { userId }
+    })
 
 // 发送验证码
 export const sendVerifyCode = (phone: string) => {

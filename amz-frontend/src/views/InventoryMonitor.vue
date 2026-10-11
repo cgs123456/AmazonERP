@@ -53,6 +53,7 @@
         <span>{{ errors.join('；') }}</span>
       </div>
       <p v-if="planMsg" class="plan-msg" role="status">{{ planMsg }}</p>
+      <p v-if="inboundMsg" class="plan-msg" role="status">{{ inboundMsg }}</p>
 
       <!-- 补货重算：建议量是后端算出来的，页面上没有"手填建议量"的入口 -->
       <div class="recalc-row">
@@ -99,6 +100,11 @@
                           @click="makePlan(item)">
                     {{ planBusy === item.sku ? '生成中...' : '生成采购计划' }}
                   </button>
+                  <button class="plan-btn secondary" :disabled="!dataLive || inboundBusy === item.sku"
+                          :title="dataLive ? '在 Amazon 侧创建真实 FBA 入库计划（需发货地址）' : '当前显示的不是本店铺真实数据，不能据此建入库计划'"
+                          @click="openInbound(item)">
+                    {{ inboundBusy === item.sku ? '提交中...' : '创建FBA入库计划' }}
+                  </button>
                 </template>
                 <template v-else>-</template>
               </td>
@@ -123,6 +129,68 @@
       </div>
       </template>
     </main>
+
+    <!-- FBA 入库计划对话框（补货建议 → Amazon 真实入库计划） -->
+    <div v-if="inboundTarget" class="dialog-mask" @click.self="inboundTarget = null">
+      <div class="dialog" role="dialog" aria-modal="true" aria-label="创建 FBA 入库计划">
+        <h3 class="dialog-title">创建 FBA 入库计划</h3>
+        <p class="dialog-sub">SKU {{ inboundTarget.sku }}，建议量 {{ inboundTarget.suggestQty }} 件。
+          将在 <b>Amazon 侧</b>创建真实入库计划；失败不会本地记计划号（那样后续装箱/贴标会指向
+          Amazon 不认识的对象）。装箱、贴标、预约后续需到卖家后台继续。</p>
+        <div class="dialog-field">
+          <label>目的站点 marketplaceId *</label>
+          <input v-model="inboundForm.marketplaceId" class="dialog-input" placeholder="如 ATVPDKIKX0DER（美国站）" />
+        </div>
+        <div class="dialog-field">
+          <label>计划名称</label>
+          <input v-model="inboundForm.name" class="dialog-input" />
+        </div>
+        <div class="dialog-field">
+          <label>发货方名称 *</label>
+          <input v-model="inboundForm.addressName" class="dialog-input" />
+        </div>
+        <div class="dialog-field">
+          <label>地址行 *</label>
+          <input v-model="inboundForm.addressLine1" class="dialog-input" />
+        </div>
+        <div class="dialog-field">
+          <label>城市 *</label>
+          <input v-model="inboundForm.city" class="dialog-input" />
+        </div>
+        <div class="dialog-field">
+          <label>省/州代码</label>
+          <input v-model="inboundForm.stateOrProvinceCode" class="dialog-input" />
+        </div>
+        <div class="dialog-field">
+          <label>国家代码（两位）*</label>
+          <input v-model="inboundForm.countryCode" class="dialog-input" maxlength="2" />
+        </div>
+        <div class="dialog-field">
+          <label>邮编 *</label>
+          <input v-model="inboundForm.postalCode" class="dialog-input" />
+        </div>
+        <div class="dialog-field">
+          <label>贴标准备方 prepOwner / labelOwner</label>
+          <div class="owner-row">
+            <select v-model="inboundForm.prepOwner" class="dialog-input">
+              <option value="SELLER">SELLER（卖家）</option>
+              <option value="AMAZON">AMAZON</option>
+            </select>
+            <select v-model="inboundForm.labelOwner" class="dialog-input">
+              <option value="SELLER">SELLER（卖家）</option>
+              <option value="AMAZON">AMAZON</option>
+            </select>
+          </div>
+        </div>
+        <p v-if="inboundError" class="dialog-error">{{ inboundError }}</p>
+        <div class="dialog-actions">
+          <button class="plan-btn" :disabled="!!inboundBusy" @click="inboundTarget = null">取消</button>
+          <button class="plan-btn" :disabled="!!inboundBusy" @click="submitInbound">
+            {{ inboundBusy ? '提交中…' : '创建入库计划' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -131,7 +199,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import { getInventoryList, getInventoryHealth, recalcReplenishment } from '@/api/inventory'
+import { getInventoryList, getInventoryHealth, recalcReplenishment, createFbaInboundPlan } from '@/api/inventory'
 import type { InventoryItem, InventoryHealth } from '@/api/inventory'
 import { createPlan } from '@/api/procurement'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -141,6 +209,24 @@ const loading = ref(false)
 const planBusy = ref('')
 const planMsg = ref('')
 const errors = ref<string[]>([])
+
+/* ===== FBA 入库计划（补货建议 → Amazon 真实入库计划） ===== */
+const inboundTarget = ref<InventoryItem | null>(null)
+const inboundBusy = ref('')
+const inboundError = ref('')
+const inboundMsg = ref('')
+const inboundForm = ref({
+  marketplaceId: 'ATVPDKIKX0DER',
+  name: '',
+  addressName: '',
+  addressLine1: '',
+  city: '',
+  stateOrProvinceCode: '',
+  countryCode: 'CN',
+  postalCode: '',
+  prepOwner: 'SELLER',
+  labelOwner: 'SELLER'
+})
 /**
  * 列表与健康度都拿到真实数据才算 live。
  * 旧实现在接口失败时直接展示页面里写死的 7 个 SKU——那既不是这家店的库存，
@@ -211,6 +297,72 @@ const makePlan = async (item: InventoryItem) => {
     pushError(`生成采购计划：${e instanceof Error ? e.message : '调用失败'}`)
   } finally {
     planBusy.value = ''
+  }
+}
+
+/**
+ * 打开 FBA 入库计划对话框。
+ * <p>
+ * 与「生成采购计划」的区别：那个落的是本地草稿采购单；这个调 Amazon 的
+ * fbaInbound.createInboundPlan，在平台侧创建**真实**入库计划——需要发货地址，
+ * 且失败时不能本地记一个计划号（Amazon 不认识它）。
+ */
+const openInbound = (item: InventoryItem) => {
+  inboundTarget.value = item
+  inboundError.value = ''
+  inboundMsg.value = ''
+  inboundForm.value.name = `补货-${item.sku}`
+}
+
+const submitInbound = async () => {
+  const target = inboundTarget.value
+  const shopId = refreshShop()
+  if (!target || !shopId || !dataLive.value) return
+  const f = inboundForm.value
+  if (!f.marketplaceId.trim() || !f.addressName.trim() || !f.addressLine1.trim()
+      || !f.city.trim() || !f.postalCode.trim()) {
+    inboundError.value = '站点、地址名称、地址行、城市、邮编均必填'
+    return
+  }
+  if (f.countryCode.trim().length !== 2) {
+    inboundError.value = '国家代码必须是两位（如 CN/US）'
+    return
+  }
+  inboundBusy.value = target.sku
+  inboundError.value = ''
+  try {
+    const res = await createFbaInboundPlan({
+      shopId,
+      marketplaceId: f.marketplaceId.trim(),
+      name: f.name.trim() || undefined,
+      sourceAddress: {
+        name: f.addressName.trim(),
+        addressLine1: f.addressLine1.trim(),
+        city: f.city.trim(),
+        stateOrProvinceCode: f.stateOrProvinceCode.trim() || undefined,
+        countryCode: f.countryCode.trim().toUpperCase(),
+        postalCode: f.postalCode.trim()
+      },
+      items: [{
+        msku: target.sku,
+        quantity: target.suggestQty,
+        prepOwner: f.prepOwner,
+        labelOwner: f.labelOwner
+      }]
+    })
+    if (res?.code === 200) {
+      const planId = (res.data as Record<string, unknown> | undefined)?.inboundPlanId
+      inboundTarget.value = null
+      inboundMsg.value = planId
+        ? `已在 Amazon 创建入库计划 ${planId}（异步受理，后续装箱/贴标请到卖家后台继续）`
+        : 'Amazon 已受理入库计划（未返回 planId，请到卖家后台核对）'
+    } else {
+      inboundError.value = res?.message || '创建失败'
+    }
+  } catch (e) {
+    inboundError.value = e instanceof Error ? e.message : '调用失败'
+  } finally {
+    inboundBusy.value = ''
   }
 }
 
@@ -286,6 +438,19 @@ onMounted(reloadData)
 /* 页面基础 */
 .plan-btn { margin-left: 0.5rem; padding: 0.2rem 0.5rem; border: none; border-radius: var(--radius-sm); background: var(--color-primary-light); color: var(--color-primary); font-size: 0.75rem; cursor: pointer; }
 .plan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.plan-btn.secondary { background: var(--color-surface); color: var(--color-on-surface-muted); border: 1px solid var(--color-border); }
+/* FBA 入库计划对话框 */
+.dialog-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.dialog { background: var(--color-surface); border-radius: var(--radius-lg); padding: 1.25rem; width: min(480px, 92vw); max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+.dialog-title { margin: 0 0 0.375rem; font-size: 1.0625rem; }
+.dialog-sub { margin: 0 0 1rem; font-size: 0.8125rem; color: var(--color-on-surface-muted); line-height: 1.5; }
+.dialog-field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.625rem; }
+.dialog-field label { font-size: 0.8125rem; color: var(--color-on-surface-muted); }
+.dialog-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); }
+.owner-row { display: flex; gap: 0.5rem; }
+.owner-row .dialog-input { flex: 1; }
+.dialog-error { margin: 0 0 0.75rem; font-size: 0.8125rem; color: var(--color-error); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .plan-msg { font-size: 0.8125rem; color: var(--color-success); margin: 0 0 0.75rem; }
 .recalc-row { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .recalc-btn { padding: 0.3rem 0.75rem; border: 1px solid var(--color-primary); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-primary); font-size: 0.8125rem; cursor: pointer; }

@@ -49,6 +49,13 @@ public class SkuProfitServiceImpl implements SkuProfitService {
     @Autowired
     private ProcurementCostClient procurementCostClient;
 
+    /**
+     * 退货件数客户端（可选注入）：finance→logistics 此前无任何通道，
+     * 这是补上的第一条边。缺席（未装配/单测）时不冲减 COGS，只说明。
+     */
+    @Autowired(required = false)
+    private com.amz.client.LogisticsReturnClient logisticsReturnClient;
+
     @Override
     public SkuProfitReport compute(Long shopId, String depositAfter, String depositBefore, String sku) {
         if (shopId == null) {
@@ -265,14 +272,38 @@ public class SkuProfitServiceImpl implements SkuProfitService {
 
         BigDecimal avgUnitCost = summary.getTotalBatchCost()
                 .divide(BigDecimal.valueOf(summary.getTotalQuantity()), 4, RoundingMode.HALF_UP);
-        BigDecimal cogs = avgUnitCost.multiply(BigDecimal.valueOf(profit.getUnitsSold()))
+
+        // 退货冲减：已收货的良品退货件数应从「售出件数」里扣掉，否则 COGS 按全部售出件计、
+        // 售出成本永远虚高（此前退款只冲收入不冲成本）。取不到退货件数时不冲减（保守：
+        // 宁可成本偏高，也不因查不到就假设退了货），并在 notes 里说明。
+        int returnedUnits = 0;
+        String returnNote = "";
+        if (logisticsReturnClient == null) {
+            returnNote = "；退货件数通道未装配，本次未冲减退货成本";
+        } else {
+            try {
+                Result<Integer> returned = logisticsReturnClient.returnedGoodUnits(shopId, profit.getSku());
+                if (returned != null && returned.getCode() == 200 && returned.getData() != null) {
+                    returnedUnits = Math.max(0, returned.getData());
+                } else {
+                    returnNote = "；退货件数服务不可用，本次未冲减退货成本";
+                }
+            } catch (Exception e) {
+                returnNote = "；查询退货件数异常（" + e.getMessage() + "），本次未冲减退货成本";
+            }
+        }
+        int billableUnits = Math.max(0, profit.getUnitsSold() - returnedUnits);
+
+        BigDecimal cogs = avgUnitCost.multiply(BigDecimal.valueOf(billableUnits))
                 .setScale(2, RoundingMode.HALF_UP);
 
         profit.setAvgUnitCost(avgUnitCost);
         profit.setCogs(cogs);
         profit.setCostMissing(false);
         profit.getDataNotes().add("成本 = 批次加权平均单位成本 " + avgUnitCost.toPlainString()
-                + " × 售出 " + profit.getUnitsSold() + " 件（FIFO 近似）");
+                + " × 计费件数 " + billableUnits + " 件（售出 " + profit.getUnitsSold()
+                + (returnedUnits > 0 ? " - 良品退货 " + returnedUnits : "") + "，FIFO 近似）"
+                + returnNote);
         finishProfit(profit, true);
     }
 

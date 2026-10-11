@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 
@@ -34,6 +35,7 @@ public class InboundController {
      * POST /logistics/inbound
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "入库单", action = "新增", description = "创建入库单")
     @PostMapping
     public Result<InboundOrder> create(@RequestBody InboundOrder order) {
         return Result.success(inboundService.createInboundOrder(order));
@@ -58,6 +60,7 @@ public class InboundController {
      * POST /logistics/inbound/{id}/transit
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "入库单", action = "在途", description = "入库单标记在途")
     @PostMapping("/{id}/transit")
     public Result<InboundOrder> transit(@PathVariable Long id) {
         return Result.success(inboundService.transitInbound(id));
@@ -68,6 +71,7 @@ public class InboundController {
      * POST /logistics/inbound/{id}/receive
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "入库单", action = "签收", description = "入库验收并回补库存")
     @PostMapping("/{id}/receive")
     public Result<InboundOrder> receive(@PathVariable Long id,
                                         @RequestBody List<WarehouseInventory> items) {
@@ -79,6 +83,7 @@ public class InboundController {
      * POST /logistics/inbound/{id}/cancel
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "入库单", action = "取消", description = "取消入库单")
     @PostMapping("/{id}/cancel")
     public Result<InboundOrder> cancel(@PathVariable Long id) {
         return Result.success(inboundService.cancelInbound(id));

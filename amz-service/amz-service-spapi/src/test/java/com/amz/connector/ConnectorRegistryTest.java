@@ -144,7 +144,7 @@ class ConnectorRegistryTest {
         String sources = mainSources();
         List<Operation> implemented = ConnectorRegistry.spapiOperations().stream()
                 .filter(Operation::implemented).toList();
-        assertEquals(90, implemented.size(), "已实现 operation 数量必须与 client 包真实调用点一致");
+        assertEquals(91, implemented.size(), "已实现 operation 数量必须与 client 包真实调用点一致");
         for (Operation operation : implemented) {
             assertTrue(sources.contains("\"" + operation.id() + "\""),
                     "已实现 operation " + operation.id() + " 必须在 src/main/java 中找到同名 operationId 字面量；"
@@ -167,7 +167,7 @@ class ConnectorRegistryTest {
         assertEquals(clientIds, registryIds,
                 "client 包中的 operationId 与能力台账必须双向一致；client-only="
                         + clientOnly + " registry-only=" + registryOnly);
-        assertEquals(90, registryIds.size(), "当前源码实际出站 operationId 共 90 条");
+        assertEquals(91, registryIds.size(), "当前源码实际出站 operationId 共 91 条（新增 orders.confirmShipment）");
     }
 
     @Test
@@ -241,14 +241,14 @@ class ConnectorRegistryTest {
     }
 
     @Test
-    @DisplayName("能力视图：90 已实现 / 0 未实现 / 未知 code 返回 null / 凭证来源只可能是 db 或 none")
+    @DisplayName("能力视图：91 已实现 / 0 未实现 / 未知 code 返回 null / 凭证来源只可能是 db 或 none")
     void capabilityViewIsConsistent() {
         Capability capability = registryWith(0).describe(ConnectorRegistry.SPAPI);
         assertNotNull(capability);
         assertEquals(ConnectorRegistry.SPAPI, capability.code());
-        assertEquals(90, capability.implementedCount());
+        assertEquals(91, capability.implementedCount());
         assertEquals(0, capability.notImplementedCount());
-        assertEquals(90, capability.operations().size());
+        assertEquals(91, capability.operations().size());
         assertTrue(capability.enabled(), "本进程内 SP-API 连接器已装配");
         assertEquals(ConnectorRegistry.SOURCE_NONE, capability.credentialSource());
         assertEquals(0, capability.credentialCount());

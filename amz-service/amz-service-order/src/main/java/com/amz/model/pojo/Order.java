@@ -93,4 +93,25 @@ public class Order {
 
     @TableField("sync_status")
     private Integer syncStatus;             // 0=未同步 1=已同步本地 2=已上传跟踪号 3=已完成
+
+    // ===== 发货回传（V6，FBM 确认发货）=====
+
+    @TableField("carrier_code")
+    private String carrierCode;             // 承运商代码（Amazon confirmShipment 必填）
+
+    @TableField("carrier_name")
+    private String carrierName;             // 承运商名称（carrierCode=Other 时必填）
+
+    @TableField("ship_confirmed_at")
+    private LocalDateTime shipConfirmedAt;  // 向 Amazon 回传发货的时间
+
+    /**
+     * 回传状态：NOT_CONFIRMED / CONFIRMED。
+     * <p>
+     * 与 {@code orderStatus}（Amazon 侧订单状态，由同步拉取写入）语义不同：
+     * 本字段由本地回传动作推进。混用两者会让「Amazon 说已发货」与
+     * 「我们已通知 Amazon 发货」无法区分。
+     */
+    @TableField("fulfillment_status")
+    private String fulfillmentStatus;
 }

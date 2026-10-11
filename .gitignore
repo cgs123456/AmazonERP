@@ -52,6 +52,8 @@ playwright-report/
 
 # ZCode editor local ignore file (synced from .gitignore; tool-managed, never commit)
 .zcodeignore
+# ZCode editor session-local workspace (plans / cache; tool-managed, never commit)
+.zcode/
 
 # Environment
 .env

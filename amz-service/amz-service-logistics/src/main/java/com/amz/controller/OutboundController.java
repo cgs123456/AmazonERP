@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 
@@ -34,6 +35,7 @@ public class OutboundController {
      * POST /logistics/outbound
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "出库单", action = "新增", description = "创建出库单")
     @PostMapping
     public Result<OutboundOrder> create(@RequestBody OutboundOrder order) {
         return Result.success(outboundService.createOutboundOrder(order));
@@ -58,6 +60,7 @@ public class OutboundController {
      * POST /logistics/outbound/{id}/pick
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "出库单", action = "拣货", description = "出库拣货")
     @PostMapping("/{id}/pick")
     public Result<OutboundOrder> pick(@PathVariable Long id) {
         return Result.success(outboundService.pickOutbound(id));
@@ -68,6 +71,7 @@ public class OutboundController {
      * POST /logistics/outbound/{id}/pack
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "出库单", action = "打包", description = "出库打包")
     @PostMapping("/{id}/pack")
     public Result<OutboundOrder> pack(@PathVariable Long id) {
         return Result.success(outboundService.packOutbound(id));
@@ -78,6 +82,7 @@ public class OutboundController {
      * POST /logistics/outbound/{id}/ship
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "出库单", action = "发货", description = "出库发运并扣减库存")
     @PostMapping("/{id}/ship")
     public Result<OutboundOrder> ship(@PathVariable Long id,
                                       @RequestParam(required = false) String carrier,
@@ -91,6 +96,7 @@ public class OutboundController {
      * POST /logistics/outbound/{id}/cancel
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "出库单", action = "取消", description = "取消出库单")
     @PostMapping("/{id}/cancel")
     public Result<OutboundOrder> cancel(@PathVariable Long id) {
         return Result.success(outboundService.cancelOutbound(id));

@@ -1,34 +1,163 @@
-# HANDOFF — v0.1.23 收尾 + 交班清理（2026-10-10 最新更新）
+# HANDOFF — 业务齐全度五项推进 + 退货自动对接（2026-10-11 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新：① `tools/connector-acceptance` 自检 **65/65 PASS**（exit 0，未配置真实凭据时的
-> 契约验收兜底已可执行）；② 发布冒烟唯一遗留 WARN（bootstrap 腿「加载字段权限规则失败」）
-> 已修——`bootstrap` profile 跳过字段权限预热（commit `2c7f5e5`，TDD 4 例先红后绿，
-> master CI `38031922658` **12/12 全绿**）；③ v0.1.23 已发布且 release run **3/3 success**
-> （run `38029198461`，tag `6daff31`，19 资产）；④ 交班收尾班（§S6）：删除 6 个已失效文档 +
-> `org/` 编译残渣 + allowlist 死条目，修正 README 三处过时宣称（多平台平台清单、测试基线
-> 2041→2149、compose「31 service」→40 条目、REST 357），并把 coverage-remediation-resume
-> 里两条历史 CI 悬案补取结论（`0865772` = success / `a70558b` 红已由 `db8346d` 修复结案）；
-> ⑤ §S6.10 对真实 spapi 做无凭证 prod 启动与 runner 前置探测——A3 fail-closed 与 exit-2 闸门已实测，
-> 但不产 A5 记录、不改变「真实凭证联调未完成」的现状；
-> ⑥ 本次会话收尾（§S6.11）：写入交接文档、修正三处过时文档（Task 6 已实现、runner 已对真实服务
-> 跑过一次前置探测），并清理 14 个无引用/重复的端点覆盖快照，展开留存 + 删除清单备查。
+> 本次更新（§S7，六大项一次完成）：① **操作审计落库**——`amz_oper_log` 表重建（user V3，
+> V2 曾当死表删除）、切面「先文件后落库」、`amzAuditExecutor` 专用池、45 个敏感写端点
+> `@OperLog` + 覆盖契约锁（漏标即红）；② **店铺体系**——user 服务新增 6 个店铺端点
+> （此前全仓零店铺端点），`UserVo.shops`，前端删掉写死的 Shop A/B/C 改消费后端；
+> ③ **Amazon 发货回传**——`OrdersClient.confirmShipment`（官方成功码 204）+
+> `POST /order/{orderId}/confirm-ship`（平台受理才回写本地）+ 本地发货单打印；
+> ④ **退货闭环**——退货单 + 库存流水账（只增不改）+ FIFO 对称回补 +
+> 利润修正（`refundCost` 从写死 0 改真实聚合、按良品退货件冲减 COGS），
+> 新增 finance→logistics 首条通道；⑤ **补货→FBA 入库 + 参数校验 + HTTP 500**——
+> `fbaInbound.createInboundPlan` 业务接线、amz-common 引入 validation starter、
+> 系统级兜底映射 500（业务 400 保持 200，保守）；⑥ **FBA 退货自动对接**——
+> Reports API `GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA` 三段式拉取 + 幂等导入
+> （external_key 唯一索引）。**FBM 无平台退货报表，只能手工登记**（已写进注释/页面/迁移）。
+> 诚实边界不变：Amazon 侧能力仍是 API-ready（未联调），无 A5/E4/E5。
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；master 与 origin 同步（本班三个提交 `a422807`→`d60496d`→`ad89428` 均为
-文档/证据清理，代码基线仍是 `2c7f5e5`）；CI **11/11 全绿**（本班最新 run
-`38055320252`@`ad89428`；代码基线 run `38031922658`；本机整仓回归 2124/0F/0E/29S 见 §S6.8）。
-发布链至 **v0.1.23**（release run `38029198461` 3/3 job success，19 资产）。
-发布冒烟已是 4 腿（spapi bootstrap+prod / user prod / order / product），`amz_user` 建库 +
-「加载字段权限规则 N 条」成功行断言在位；本班把 bootstrap 腿的唯一 1 条预热 WARN 消除。
-无凭据场景的验收路径 = `tools/connector-acceptance`（selftest 65/65 PASS），§S6.10 已实测
-真实 spapi 无凭证 prod 启动 fail-closed、runner 前置探测 exit 2。
-后续主线：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）→ 解锁外部 API 实测**；
-代码侧无遗留阻塞项。
+后端 19 个 Maven 模块可编译可测；本机整仓回归 **2211/0F/0E/35S**（§S7.8），前端 vue-tsc 0 错 +
+vitest **506/506**；迁移 **65** 个（钉数已同步）、Flyway 活表 **116** 张、
+实体 102 / 0 漂移、零引用表 0、hygiene 0 findings（两种模式）、release tools 91/91、
+schema 快照 103 表/14 库一致；fallbackFactory **23** 个 / 声明模块 **9** 个（全部接线熔断+超时）。
+新增能力面：审计落库、店铺管理、发货回传、退货单+流水账+FIFO 回补、COGS 退货冲减、
+FBA 入库计划、FBA 退货自动导入、HTTP 500 语义。
+后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
+业务侧剩余待做见 §S7.9（面单=Shipping API、退货自动对接=FBM 缺报表、报表导出/盘点/三单匹配等）。
 
-> 注：上段的 SHA/run 号是**快照**，每次改 HANDOFF 都会推进一步。判定“当前 CI 是否全绿”以
+> 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
+
+## S7. 业务齐全度推进（2026-10-11，六大项）
+
+### S7.1 操作审计落库
+
+- `amz-service-user/src/main/resources/db/migration/V3__oper_log.sql`：重建审计表（V1 建→V2 删→V3 重建，
+  `FlywayBaselineContractTest` 显式登记这个「建-删-重建」例外并断言 V2 的 DROP 仍在）。
+- `OperLogAspect` 两段式：同步阶段抓全上下文（userId/shopId/IP/traceId，ThreadLocal 不跨线程），
+  异步阶段先写 `oper-log` 文件再落库（落库失败不丢文件审计）。
+- `amzAuditExecutor` 专用池：core 2/max 4/队列 500 + **AbortPolicy**——刻意不用
+  `amzAsyncExecutor` 的 CallerRunsPolicy（DB 写比文件 IO 慢一个量级，回压业务线程），
+  也躲开 product 服务 `taskExecutor`（core 2/max 5）的默认抢占。
+- `OperLogServiceImpl` 跨库写 `amz_user.amz_oper_log`（与 FieldPermissionServiceImpl 读
+  `amz_user.amz_field_permission` 同一先例）；三条硬约束：不抛异常、无数据源跳过、表缺失只 WARN 一次。
+- 45 个敏感写端点 `@OperLog`（财务凭证/索赔/结算/差异、采购全链、库存/物流/仓储、店铺凭证）；
+  新增 `OperLogCoverageContractTest`：以**方法级**判定「敏感域写端点必须带注解」，
+  第一版的行级分块误判（`@Autowired` 字段、方法体残行）已修正为「以方法起始行为锚点的注解区」判定。
+- 真机验证：一次性 MySQL 8.0.46 跑 V1→V2→V3 建表成功；`OperLogAuditMySqlIT`（env 门控
+  `AUDIT_IT_URL`）真机落库可读回。变异验证：删掉 writer.record 调用 → 3 例红。
+
+### S7.2 店铺体系（多店铺 ERP 的立身之本）
+
+- 后端此前**零店铺端点**（前端只能写死 Shop A/B/C，axios 拦截器拿编造的 shopId 撞网关隔离边界）。
+  新增 `ShopController` 6 端点 + `ShopService`/`ShopMapper`；`UserVo` 加 `shops`（getInfo 直接返回）。
+- 关键取舍：**店铺管理接口拒绝接收凭证字段**（唯一入口是 spapi 的 `/spapi/credentials`），
+  `amz_shop` 的 `spapi_refresh_token/client_id/client_secret` 三列标注废弃但不删列（不破坏启动自检）。
+- 前端：删 `main.ts` 硬编码店铺；`purgeLegacyPlaceholderShops()` 清理历史缓存（识别模式放
+  utils/shop.ts，main.ts 不出现任何店铺名字面量——契约测试直接读源码断言）；
+  `AppHeader.syncShopsFromServer` 全站唯一写入口，后端返回空数组也写入（回收后不残留旧店）。
+- 已知限制（写进注释）：JWT shops claim 24h 内不刷新，分配/解绑后需重新登录。
+
+### S7.3 Amazon 发货回传 + 发货单打印
+
+- `OrdersClient.confirmShipment`：类型化客户端（与 orders.getOrders 同先例），**官方成功码 204**
+  （不是 200；宽松的「任意 2xx」会把 202 异步受理当成发货完成）。
+- 决策修正：confirmShipment 不进统一 operation 目录——目录契约测试要求「目录条数==五份官方快照
+  解析数」，塞进去要连带补 mock fixture/改计数/改控制器顺序断言；那是把展示面当业务载体。
+- `POST /spapi/shipment/confirm`（双信任：用户 JWT + order 服务令牌）；
+  order 域 `OrderFulfillmentService` + `POST /order/{orderId}/confirm-ship`：
+  **只有 Amazon 受理才回写本地** tracking/carrier/fulfillment_status/sync_status=2
+  （不变量照抄 markShipped；sync_status 的「2=已上传跟踪号」在 V1 注释里写了但从未被写过，本轮建立写入路径）。
+- `V6__order_fulfillment.sql`：carrier_code/carrier_name/ship_confirmed_at/fulfillment_status + 索引。
+- Feign `SpApiShipmentClient` **fail-closed 降级**（返回 false，本地不动）——与凭证降级的
+  「静默跳过」不同：发货状态标错会直接导致账号绩效问题。
+- 前端 `utils/packingSlip.ts` 本地发货单打印（HTML 转义/数量合计/空值「—」占位）；
+  **边界：不是 Amazon 面单**——面单属独立 Shipping API（仓库官方快照无任何 shipping/label 模型）。
+  顺带修掉订单页筛选栏同样写死的 Shop A/B/C。
+
+### S7.4 退货退款闭环（跨 finance/logistics/procurement/report 四域）
+
+- 「钱的那半条链」此前已通（结算报表 Refund → settlement_detail → REFUND 凭证 → SkuProfit 减收入）；
+  「货的那半条链」完全不存在。本批补齐：
+- **退货单**：logistics V7 `amz_return_order`（状态机 PENDING→RECEIVED→CLOSED/CANCELLED 白名单，
+  处置 GOOD/DEFECTIVE/SCRAP 收货时确定；**只有良品回补可售库存**，残次/报废只留流水——
+  把残次算进可售会让补货建议虚高）。
+- **库存流水账**：V8 `amz_inventory_movement`（只增不改，qty_before/qty_after/操作人/关联单号；
+  此前全仓零流水表，库存变更不可追溯）。delta 由 before/after 推导，不由调用方传。
+- **FIFO 对称回补**（procurement）：`reactivateBatch` + `increaseAvailableQuantityAtomic`——
+  与扣减**赋值顺序相反**（扣减时 status 必须先算 CASE，回补拆两条语句先激活再加量），注释已写明。
+- **利润修正**：report V2 给 `amz_profit_detail` 补 `refund_cost/refunded_units`，
+  `RealtimeProfitServiceImpl.refundCost` 从写死 0（注释自认「暂置为 0」）改为真实聚合；
+  `SkuProfitServiceImpl` 按良品退货件冲减 COGS（计费件数下限 0，不因负数变负成本）。
+- **新增 finance→logistics 首条通道** `LogisticsReturnClient`：降级返回**失败而非 0**
+  （0 会让「查不到退货」与「真的没有退货」不可区分，利润偏高）。
+- 前端新增「退货管理」页（路由 /returns + 侧边栏）。
+
+### S7.5 补货→FBA 入库 + 参数校验 + HTTP 500
+
+- `FbaInboundPlanService`：补货建议 → `fbaInbound.createInboundPlan`（官方形状：
+  destinationMarketplaces 恰好 1 个 + items 的 labelOwner/msku/prepOwner/quantity 必填 +
+  sourceAddress 必填——**不提供默认地址，编造地址会让货发错地方**）；成功 202。
+  spapi 失败时明确抛错，**不伪造本地 planId**（后续装箱/贴标会指向 Amazon 不认识的对象）。
+- 新增 `SpApiFbaInboundClient`（procurement→spapi 统一 operation 执行器）。
+- 参数校验：amz-common 引入 `spring-boot-starter-validation`（Boot 4 web 不再传递；
+  此前全仓 0 依赖、GlobalExceptionHandler 两个 handler 是死代码），
+  新端点（退货单创建）加 `@Valid` + 实体约束。Service 内手写判空仍是主校验，注解只做结构校验。
+- HTTP 状态码（保守，按用户拍板）：**只有** RuntimeException/Exception 兜底映射
+  `@ResponseStatus(500)`；业务异常与参数校验保持 HTTP 200 + code=400
+  （30 处 `status().isOk()` 契约断言 + 前端 62 处 `code===200` + E2E stub 统一 200，全面改是全站契约变更）。
+  `GlobalExceptionHandlerContractTest` 用反射钉住「只有兜底带 500」。
+
+### S7.6 FBA 退货自动对接
+
+- 事实核查（官方文档确认）：**SP-API 只有 FBA 客户退货报表
+  `GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA`（13 列），没有 FBM 报表**——FBM 退货地址是
+  卖家自己的，平台不留档。因此本轮实现 FBA 自动拉取，FBM 保持手工登记
+  （三处写明：解析器/页面提示/迁移注释）；**没有**用 Finances REFUND 事件伪造 FBM 退货
+  （退款≠退货，「退款不退货」场景会造假）。
+- 解析器按表头名定位列（与 SettlementParser 同纪律）；**处置映射保守**：只认官方
+  `SELLABLE` 为良品，其余一律 DEFECTIVE（本仓无官方 disposition 枚举快照，不确证的可售性
+  宁可不进补货建议）。幂等键 = `来源|return-date|order-id|sku`，**刻意不含
+  disposition/status**（随 Amazon 处理进展变化，进指纹会把「同一笔退货的更新」当成新行）。
+- V9 `external_key` + 唯一索引；`importAmazonReturn` 先查后写 + 唯一键兜底并发，重复即跳过。
+- `AmazonReturnSyncService`：三段式 + 轮询**次数/挂钟双上限**，超时**明确报错不返回空报表**
+  （「没拉到」≠「本期无退货」）；FATAL/CANCELLED 不下载；DONE 缺 documentId 报错。
+- `AmazonReturnSyncScheduler`：默认关闭；店铺清单**必须显式配置**（不因某店有历史手工退货单
+  就去拉它报表）；cron 默认 04:00 错开结算同步；`DistributedJobLock` + 调度线程显式填 UserContext。
+- spapi 侧新增 `/spapi/reports/*`（白名单只放行 logistics）——**不复用 finance 报表通道**：
+  借道会顺带获得财务报表取数权，违背最小权限。
+- 手动触发端点 `POST /logistics/return/sync/{shopId}`；前端退货页加同步按钮（显示计数）。
+- 过程中抓到的真 bug：`LocalDateTime.format(ISO_INSTANT)` 抛
+  `UnsupportedTemporalTypeException`（ISO_INSTANT 需要带偏移）——自己的测试先红才暴露，已改 `Instant`。
+
+### S7.7 门禁/契约同步（每处都是「新端点必须同步」的门禁在咬）
+
+迁移钉数 60→**65**（test_release_manifest + ci.yml 三处）；Flyway 表集合 113→**116**
+（V3 例外登记）；spapi Result.failure 出口 62→**70**；FallbackFactory 19→**23**、
+声明模块 7→**9**；procurement/logistics 写接口守卫计数；`CiWorkflowContractTest` 抓到
+两个新 IT 是「env 门控但没接进 CI」（永久静默跳过比红更危险）→ 接进 test job 并用**等同 CI
+的环境**（127.0.0.1:3306 + ci_root_pass）实跑 6/6。坑 11 复现多次：改被 allowlist 哈希钉住的
+文件必须重签字（`FeignFallbackWiringContractTest` 还抓到 procurement/logistics 声明了
+fallbackFactory 但没开熔断开关/没实现依赖——兜底是死代码，已补配置与依赖）。
+
+### S7.8 验证记录（本机实测）
+
+- 后端全量 `mvn -B -o -fae test`：**2211 / 0F / 0E / 35S** BUILD SUCCESS（35S=本机无 DB/Redis 的门控 IT）；
+- 前端：vue-tsc 0 错；vitest **506/506**（46 文件）；
+- 门禁：hygiene **0 findings**（跟踪/含未跟踪）、drift **0**（102 实体）、零引用 **103 表/0**、
+  反向接线 0、stub-shape 0、param-name 0、release tools **91/91 OK**、
+  schema 快照 **103 表/14 库一致**（加表/列后重生成）；
+- 真机验证（一次性容器 `amz-audit-verify`/`amz-ci-sim`，用完已删）：V3 审计表建表+落库可读回、
+  店铺服务读写/归属隔离/分配幂等；变异验证共 7 处（审计落库、覆盖锁、店铺空绑定/ADMIN 校验、
+  发货回传平台失败写本地、残次回补、退货幂等、超时返空）全部能红；
+- 未 commit 前的最后状态以本节为准。
+
+### S7.9 业务功能待做清单（本班收尾时的完整盘点）
+
+见「§S10 业务功能待做清单」——按「缺整块能力 / 流程单向 / 数据源为 mock / 依赖外部」四档分级。
+
 
 ## S6. 交班收尾：无用文件清理 + README 事实修正 + 历史 CI 悬案补账（本次会话）
 
@@ -1710,3 +1839,75 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
   （本班 run #195 教训——上班清单缺它，四把尺+三契约全绿仍被真 CI 抓红）。
 
 
+
+---
+
+# §S10 业务功能待做清单（2026-10-11，基于全仓实测盘点）
+
+> 分四档：**A 缺整块能力**（标准 ERP 有、本仓完全没有）/ **B 流程单向**（走到一半缺终态或缺联动）/
+> **C 数据源为 mock**（功能在、上游是假的）/ **D 依赖外部**（代码就绪等凭据/联调）。
+> 每条给「现状证据 → 建议动作 → 依赖」。「按现状可接受」的项也列出，防止后人当遗漏重复排查。
+
+## A. 缺整块能力（标准商用 ERP 的标配，代码层面不存在）
+
+| # | 能力 | 现状证据 | 建议动作 | 依赖 |
+|---|---|---|---|---|
+| A1 | **物流面单打印（Shipping label）** | 全仓无任何 shipping/label 模型（官方快照 0 命中）；S7.3 只做了本地发货单（拣货单） | 若目标客户用 Amazon Buy Shipping：新增 Shipping API 客户端骨架（Mock/Real 双客户端 + fail-closed），真实调用需独立凭证；若不用 Buy Shipping：保持本地发货单 | Shipping API 独立凭证（D 类） |
+| A2 | **库存盘点（stocktake）** | 全仓零实现；`amz_warehouse_inventory` 只有快照，无盘点单/差异表 | 新增盘点单（建单→录入实盘→差异审核→按差异写流水调整库存），复用 S7.4 的流水账 | 无（可立即做） |
+| A3 | **采购三单匹配**（PO-收货-发票）与 **供应商付款** | `amz_purchase_order` 状态枚举有 PAID 但全仓无写入点；无发票表；spec §3.3 目标态未落地 | 付款单/发票表 + 三单匹配校验 + 与 finance 凭证联动（凭证源端点已有） | 无（可立即做，量大） |
+| A4 | **报表/单据导出**（Excel/CSV） | 全仓 0 处导出端点、前端 0 处下载 | 按「浏览列表」先例逐报表加导出（服务端 CSV 流式 + `produces=text/csv`）；先做利润/订单/库存三个高频报表 | 无（可立即做） |
+| A5 | **促销/优惠券管理** | `amz_coupon` 已当死表删除（V5），订单表残留悬空 `coupon_id`；全仓无促销端点 | 立项时一并处置：要么重建促销域（活动/折扣/叠加规则），要么清理悬空列 | 产品决策 |
+| A6 | **批量 Excel 导入**（商品/库存/价格） | 仅物流有 JSON 粘贴导入 | 加通用 CSV 导入框架（模板校验 + 行级报告，复用 SettlementParser 的行级容错先例） | 无（可立即做） |
+| A7 | **用户/角色管理页面** | 店铺管理已做（S7.2），但**角色管理端点仍为零**（`amz_user.role` 只能 SQL 改）；无用户列表/禁用端点 | 沿 S7.2 的 ShopController 模式补 user/role 管理端点 + 页面；注意 JWT role 24h 不刷新 | 无（可立即做） |
+| A8 | **多平台订单并入统一经营视图** | `amz_unified_order` 有表有同步，但 order/report 服务对它**零引用**——Temu/TikTok/Shein 订单进不了利润与报表 | 报表聚合把 unified_order 纳入（或明确声明「报表只覆盖 Amazon」并在页面披露） | 无（可立即做） |
+
+## B. 流程单向（有头无尾 / 缺联动）
+
+| # | 流程 | 现状证据 | 建议动作 |
+|---|---|---|---|
+| B1 | **客服工单无终态** | `CustomerServiceImpl` 只有 PENDING→REPLIED 两处 setStatus，无关闭端点 | 加 `/{id}/close`（REPLIED→CLOSED），复用现有处置端点模式 |
+| B2 | **差评挽回无终态** | CustomerEmailController 只有创建/匹配/跟进，无「已解决」 | 同上补终态端点 |
+| B3 | **RMA 无 Amazon 侧对接** | RMA 表在但纯手工；FBA 退货自动导入（S7.6）已覆盖大部分场景 | 评估：FBA 退货报表落地后，RMA 是否仅剩 FBM 场景（手工登记即可）——若是，RMA 可保持现状并在页面披露 |
+| B4 | **调拨收货不联动库存账** | README 已知限制自述；`receiveTransfer` 只推进单据状态 | 收货时按流水账（S7.4）写 TRANSFER_OUT/TRANSFER_IN 并调库存增减——流水表已就绪，这是最短路径 |
+| B5 | **入库/出库未写流水** | S7.4 的流水表已建，但 InboundController.receive / OutboundController.ship 尚未接入 | 在两个 service 的变更点调 `InventoryMovementService.record`（before/after 已可取） |
+| B6 | **销售/采购退货双口径并存** | logistics `amz_fba_receipt_discrepancy`（签收差异）与 finance `inbound-shortage`（入库短收）各自建模 | 收口到一个域或明确各自边界（前者管货、后者管钱），文档写清 |
+| B7 | **Amazon 退货自动收货** | S7.6 导入的退货单是 PENDING，处置按报表预填但状态机仍需人工收货 | 评估：`status=Unit returned to inventory` 的行是否可自动置 RECEIVED（涉及「货在 Amazon FC ≠ 本地仓」语义，需产品拍板） |
+| B8 | **FBA 报废/移除订单（removal order）** | 全仓无移除单模型；FBA 滞销处理只能靠卖家后台 | 若目标客户有需求：接 fbaInbound 的 removal 相关报表或手工登记 |
+
+## C. 数据源为 mock（功能在、上游是假的；均已有 fail-closed 门禁不伪装）
+
+| # | 域 | 现状 | 真实数据源选项 |
+|---|---|---|---|
+| C1 | 运营差评扫描 | 非 mock 直接抛「未接入真实数据源」 | SP-API Reviews API 不存在；可选 Keepa 评论监控或第三方（需外部凭据） |
+| C2 | 跟卖扫描 | 同上 | 无官方 API；第三方监控服务 |
+| C3 | 关键词排名抓取 | 同上 | Keepa（已有客户端与凭据开关，等 token） |
+| C4 | 选品分析 | 播种随机模拟，页面已披露 | SP-API Brand Analytics（需授权角色）或 Helium 10（外部凭据） |
+| C5 | AI Agent 竞品价格工具 | 提示「需接入 SP-API Pricing API」——**口径已过时**：productPricing 2 条早已 API-ready | 把工具改为调用 productPricing operation（代码就绪，等凭证联调） |
+| C6 | 消息中心不落库 | message 服务无 DB，WebSocket 通知刷新即丢 | 加通知表 + 历史查询端点（量小可立即做） |
+| C7 | 邮件未接 SMTP | 非 mock 环境处理队列直接标 FAILED | 接 SMTP/SES（外部凭据） |
+
+## D. 依赖外部（代码就绪等凭据/联调；诚实边界不变）
+
+| # | 项 | 状态 |
+|---|---|---|
+| D1 | SP-API 全链路真实联调（A5/E4/E5） | 主线不变：凭证到位 → first-deploy-bootstrap-runbook → runbook §3 |
+| D2 | Amazon Buy Shipping / 面单 | 需独立凭证（A1 的前置） |
+| D3 | Keepa（关键词排名/竞品）/ DeepSeek（AI）/ SMTP | 等对应凭据 |
+| D4 | 1688 / 金蝶 / Temu/TikTok/Shein RealClient | 未校准 best-effort，等沙箱/生产联调 |
+
+## 按「已核实为按现状可接受」保留（勿重复排查）
+
+- 4 个「真无界读」（聚合/完整性声明/无稳定序/恒空表）——见历史段「遗留改进」，cap 会撒谎。
+- `IGNORED` 告警不做扫描侧去重（等真实数据源时在扫描侧决策）。
+- Nacos 配置中心「本次不处理」（用户已拍板）。
+- 成本口径 FIFO 近似、`coupon_id` 悬空列维持现状（历史拍板）。
+
+## 建议优先序（若继续推进业务齐全度）
+
+1. **B4+B5 流水接入**（调拨/出入库写流水）——流水表已就绪，改动小、闭环「账实可对」；
+2. **A2 库存盘点**——WMS 标配，复用流水账；
+3. **A7 角色/用户管理**——把 S7.2 补完（RBAC 的最后一块）；
+4. **A4 报表导出**——高频刚需，逐报表渐进；
+5. **B1/B2 工单终态**——小改动；
+6. **A3 三单匹配/付款**——大件，建议单独立项；
+7. **A8 多平台入报表**——需先定口径（合并展示 or 分平台）。

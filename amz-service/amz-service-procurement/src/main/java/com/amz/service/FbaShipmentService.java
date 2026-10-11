@@ -84,4 +84,12 @@ public interface FbaShipmentService {
      * @return 出库明细（批次号/数量/单位成本/小计）
      */
     List<Map<String, Object>> fifoOutbound(Long shopId, String sku, Integer quantity);
+
+    /**
+     * FIFO 回补：把退货/冲回的件数还回批次可用库存（与 fifoOutbound 对称）。
+     *
+     * @param originalBatchNo 原出库批次号（可空；给了就优先冲回原批次，否则按最新批次回补）
+     * @return 回补明细（批次号/数量/单位成本）
+     */
+    List<Map<String, Object>> fifoReturn(Long shopId, String sku, Integer quantity, String originalBatchNo);
 }

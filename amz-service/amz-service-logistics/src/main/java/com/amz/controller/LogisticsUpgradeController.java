@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.CarrierQuote;
@@ -48,6 +49,7 @@ public class LogisticsUpgradeController {
     /** 保存物流商报价 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "物流运营", action = "新增", description = "录入承运商报价")
     @PostMapping("/quote")
     public Result<CarrierQuote> saveQuote(@RequestBody CarrierQuote quote) {
         return Result.success(logisticsUpgradeService.saveQuote(quote));
@@ -83,6 +85,7 @@ public class LogisticsUpgradeController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "物流运营", action = "收口", description = "过期报价批量置失效")
     @PostMapping("/quote/expire-outdated/{shopId}")
     public Result<Integer> expireOutdatedQuotes(@PathVariable Long shopId) {
         return Result.success(logisticsUpgradeService.expireOutdatedQuotes(shopId));
@@ -93,6 +96,7 @@ public class LogisticsUpgradeController {
     /** 创建调拨单 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "物流运营", action = "新增", description = "创建调拨单")
     @PostMapping("/transfer")
     public Result<InventoryTransfer> createTransfer(@RequestBody InventoryTransfer transfer) {
         return Result.success(logisticsUpgradeService.createTransfer(transfer));
@@ -101,6 +105,7 @@ public class LogisticsUpgradeController {
     /** 审批调拨单 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "调拨单", action = "审批", description = "审批调拨单")
     @PostMapping("/transfer/{id}/approve")
     public Result<InventoryTransfer> approveTransfer(@PathVariable Long id, @RequestParam boolean approved) {
         return Result.success(logisticsUpgradeService.approveTransfer(id, approved));
@@ -109,6 +114,7 @@ public class LogisticsUpgradeController {
     /** 确认调拨发出 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "调拨单", action = "发运", description = "调拨发运")
     @PostMapping("/transfer/{id}/ship")
     public Result<InventoryTransfer> shipTransfer(@PathVariable Long id,
                                                    @RequestParam String carrier,
@@ -119,6 +125,7 @@ public class LogisticsUpgradeController {
     /** 确认调拨到货 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "调拨单", action = "收货", description = "调拨收货")
     @PostMapping("/transfer/{id}/receive")
     public Result<InventoryTransfer> receiveTransfer(@PathVariable Long id) {
         return Result.success(logisticsUpgradeService.receiveTransfer(id));
@@ -150,6 +157,7 @@ public class LogisticsUpgradeController {
     /** 按分摊方法计算头程费用 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "物流运营", action = "分摊", description = "头程成本分摊计算")
     @PostMapping("/freight/{shipmentId}/calculate")
     public Result<Map<String, Object>> calculateFreight(@PathVariable Long shipmentId,
                                                          @RequestParam(defaultValue = "WEIGHT") String method,
@@ -164,6 +172,7 @@ public class LogisticsUpgradeController {
     /** 保存签收差异 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "物流运营", action = "新增", description = "登记签收差异")
     @PostMapping("/discrepancy")
     public Result<FbaReceiptDiscrepancy> saveDiscrepancy(@RequestBody FbaReceiptDiscrepancy discrepancy) {
         return Result.success(logisticsUpgradeService.saveDiscrepancy(discrepancy));
@@ -183,6 +192,7 @@ public class LogisticsUpgradeController {
     /** 将签收差异转入核查中 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "物流运营", action = "核查", description = "签收差异开始核查")
     @PostMapping("/discrepancy/{id}/investigate")
     public Result<FbaReceiptDiscrepancy> startInvestigating(@PathVariable Long id) {
         return Result.success(logisticsUpgradeService.startInvestigating(id));
@@ -191,6 +201,7 @@ public class LogisticsUpgradeController {
     /** 处理签收差异 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "签收差异", action = "结案", description = "签收差异结案")
     @PostMapping("/discrepancy/{id}/resolve")
     public Result<FbaReceiptDiscrepancy> resolveDiscrepancy(@PathVariable Long id, @RequestParam String resolution) {
         return Result.success(logisticsUpgradeService.resolveDiscrepancy(id, resolution));

@@ -86,15 +86,29 @@ class FlywayBaselineContractTest {
                 tableCounts.merge(matcher.group(1).toLowerCase(), 1, Integer::sum);
             }
         }
-        // 113 = 112（V6-V8 新增 3 张通知表后的基线）+ 1（V5__order_item_table.sql 新增
-        // amz_order_item）。改动这个数字前先确认新增表确实只由 Flyway 建立：
+        // 114 = 112（V6-V8 新增 3 张通知表后的基线）+ 1（V5__order_item_table.sql 新增
+        // amz_order_item）+ 1（user V3__oper_log.sql 重建操作日志审计表）。
+        // 改动这个数字前先确认新增表确实只由 Flyway 建立：
         // amz_order 只有 product_id/quantity/final_price 一组单商品列，存不下多商品订单，
         // 而同库 amz_profit_report 的唯一键已经是 (shop_id, amazon_order_id, sku)，
         // 即利润层按「订单 + SKU」建模，订单侧却没有明细行。改数而不补表是掩盖缺口。
-        assertEquals(113, tableCounts.size(),
-                "Flyway 唯一表集合必须保持 113 张（112 基线 + V5 新增 amz_order_item）");
-        assertEquals(113, tableCounts.values().stream().mapToInt(Integer::intValue).sum(),
-                "Flyway 迁移不得重复建表");
+        // amz_oper_log 在 V1 建过、V2 删过、V3 重建过，因此 CREATE 出现 2 次而唯一表只有 1 张。
+        // 这不是重复建表，是「删了又建」的历史；下面两条断言分别钉住唯一表数与这个例外，
+        // 免得将来有人把 V1 改掉（checksum 不可变，改了会让存量库启动失败）。
+        assertEquals(116, tableCounts.size(),
+                "Flyway 唯一表集合必须保持 116 张（114 + logistics V7 amz_return_order + V8 amz_inventory_movement）");
+        int duplicated = (int) tableCounts.values().stream().filter(v -> v > 1).count();
+        assertEquals(1, duplicated,
+                "只允许 amz_oper_log 一个「建-删-重建」例外；出现新的重复建表说明有人绕过了 V2 的清理");
+        assertEquals("amz_oper_log", tableCounts.entrySet().stream()
+                .filter(e -> e.getValue() > 1).map(Map.Entry::getKey).findFirst().orElse(null),
+                "重复建表的必须是 amz_oper_log（V1 建 / V2 删 / V3 重建）");
+
+        String userV2 = Files.readString(ROOT.resolve(
+                "amz-service/amz-service-user/src/main/resources/db/migration/V2__drop_dead_tables.sql"),
+                StandardCharsets.UTF_8);
+        assertTrue(userV2.contains("DROP TABLE IF EXISTS amz_oper_log;"),
+                "V3 重建的前提是 V2 确实删过该表；若这条 DROP 被移除，V3 的 CREATE 会与 V1 撞车");
 
         String composeSql = Files.readString(ROOT.resolve("docker/init-sql/01-init-databases.sql"),
                 StandardCharsets.UTF_8);

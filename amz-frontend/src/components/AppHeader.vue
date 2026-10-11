@@ -77,7 +77,7 @@ import LoginModal from './LoginModal.vue'
 import { getUserInfo, type UserVo } from '../api/auth'
 import { setUserRole, clearUserRole } from '../utils/identity'
 import { websocketManager } from '../utils/websocket'
-import { getShops, getCurrentShopId, setCurrentShopId, type ShopOption } from '../utils/shop'
+import { getShops, getCurrentShopId, setCurrentShopId, setShops, type ShopOption } from '../utils/shop'
 
 const router = useRouter()
 const showLoginModal = ref(false)
@@ -90,6 +90,33 @@ const currentShopId = ref('')
 
 const refreshShops = () => {
   shops.value = getShops()
+  currentShopId.value = getCurrentShopId()
+}
+
+/**
+ * 用后端返回的店铺覆盖本地缓存（全站唯一写入口）。
+ * <p>
+ * 空数组也要写入：后端明确「该账号没有店铺」时，继续留着上一次的旧列表
+ * 会让用户以为还能访问已被回收的店（而请求会被网关按 shopId 越权拒绝，
+ * 表现为大片「不在授权范围」报错，比直接显示「无可用店铺」更难排查）。
+ * 当前选中店铺若已不在新列表里，一并清掉并回退到第一家。
+ */
+const syncShopsFromServer = (serverShops?: ShopOption[]) => {
+  if (!Array.isArray(serverShops)) {
+    // 后端未返回该字段（老版本后端）：不动本地，交给 getMyShops 兜底
+    refreshShops()
+    return
+  }
+  setShops(serverShops)
+  shops.value = getShops()
+  const stillValid = shops.value.some((s) => String(s.id) === String(getCurrentShopId()))
+  if (!stillValid) {
+    if (shops.value.length > 0) {
+      setCurrentShopId(String(shops.value[0].id))
+    } else {
+      localStorage.removeItem('current_shop_id')
+    }
+  }
   currentShopId.value = getCurrentShopId()
 }
 
@@ -123,7 +150,10 @@ const loadUserInfo = async () => {
       userInfo.value = response.data.user
       // 角色随用户信息一起落到 localStorage：这是全站唯一的角色来源（后端响应一直带 role）
       setUserRole(response.data.user.role)
-      refreshShops()
+      // 店铺来自后端而不是本地占位：此前 main.ts 写死 Shop A/B/C，而 axios 拦截器
+      // 会把选中的 id 当 shopId 头发给网关——等于用编造的 ID 去撞店铺隔离边界。
+      // 后端返回空数组 = 该账号确实没被分配店铺，此时清空而不是保留旧值。
+      syncShopsFromServer(response.data.shops)
     } else if (response.code === 401) {
       // 明确的鉴权失败才清除凭证
       clearCredentials()

@@ -36,4 +36,35 @@ public class OperLogConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * 审计落库专用执行器：与 {@link #amzAsyncExecutor()} 分开，避免两类相互拖累。
+     * <p>
+     * 分开的三个原因：
+     * <ol>
+     *   <li><b>拒绝策略必须不同</b>：{@code amzAsyncExecutor} 用 CallerRunsPolicy
+     *       （任务不丢失，宁可降速）。但审计落库是 DB 写，比纯文件 IO 慢一个量级，
+     *       队列满时让业务线程自己去写库会直接把接口响应时间拖垮——
+     *       <b>审计让位于业务</b>，故本池用 AbortPolicy：队列满即丢弃并计数。</li>
+     *   <li><b>product 服务的 taskExecutor 抢占</b>：该模块自命名 taskExecutor
+     *       （core 2 / max 5），默认 {@code @Async} 会落到这个 5 线程的池，
+     *       被 listing 复制这类长任务挤占。审计必须显式按名引用本 Bean 才躲得开。</li>
+     *   <li><b>可独立观测</b>：审计写失败/丢弃需要单独计数告警，混在通用池里看不出来。</li>
+     * </ol>
+     * 丢弃是可接受的：审计是旁路留痕，业务成功但审计丢失 ≠ 业务数据错误，
+     * 且 oper-log.log 文件仍在（切面先写文件再写库，两者独立）。
+     */
+    @Bean
+    public ThreadPoolTaskExecutor amzAuditExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(4);
+        executor.setQueueCapacity(500);
+        executor.setKeepAliveSeconds(60);
+        executor.setThreadNamePrefix("amz-audit-");
+        // 队列满即丢弃（由切面捕获 RejectedExecutionException 并计数），绝不回压业务线程
+        executor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        return executor;
+    }
 }

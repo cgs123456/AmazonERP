@@ -39,6 +39,10 @@ public class ProfitDetail implements Serializable {
     private BigDecimal advertisingCost;
     private BigDecimal vatTax;
     private BigDecimal otherFees;
+    /** 退款金额（正数表示损失）。V2 新增：此前无此列，快照的 refundCost 因此恒为 0。 */
+    private BigDecimal refundCost;
+    /** 退款件数（用于冲减 COGS）。V2 新增。 */
+    private Integer refundedUnits;
     private BigDecimal grossProfit;
     private BigDecimal netProfit;
     private BigDecimal margin;

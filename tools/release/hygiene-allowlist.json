@@ -49,7 +49,7 @@
     {
       "path": "amz-frontend/src/api/auth.ts",
       "rule": "secret-like-assignment",
-      "sha256": "0ccb056bdd251adebb6d0504236cdf46d130248ac3995be4c4c3c23595601a25"
+      "sha256": "081759c5a63046d434ee24537bd6c74f95afa17f171eb5ee68341bf72e69c0d7"
     },
     {
       "path": "amz-frontend/src/components/AgentChat.vue",
@@ -59,7 +59,7 @@
     {
       "path": "amz-frontend/src/components/AppHeader.vue",
       "rule": "secret-like-assignment",
-      "sha256": "5bbbba3ae64a9c30f30e46192e9bc147f57d58d9c25b8f748cb50838c5d3a6cf"
+      "sha256": "88ade4534bdaadda8f5c41f89218846f9c33fad0581ed41175d7109e602d4621"
     },
     {
       "path": "amz-frontend/src/components/LoginModal.vue",
@@ -69,12 +69,12 @@
     {
       "path": "amz-frontend/src/main.ts",
       "rule": "secret-like-assignment",
-      "sha256": "1ec4284284c86e42158e5eba752c47e54ebe2036c5c9ceb65848c214b071e23d"
+      "sha256": "8b9d348f5c3ff8f789d22ef3001ef4c12b1b905756319955732d12566bc59fc3"
     },
     {
       "path": "amz-frontend/src/router/index.ts",
       "rule": "secret-like-assignment",
-      "sha256": "bb022fbdd743213d2b256a687ebf958d438d1047a72a1c29c4373836e5155b44"
+      "sha256": "265d62cfe2b101c571e6d9be4c7c898ce15ad44b25172cad4b079fed8f996087"
     },
     {
       "path": "amz-frontend/src/utils/websocket.ts",
@@ -204,7 +204,7 @@
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/ConnectorRegistryTest.java",
       "rule": "secret-like-assignment",
-      "sha256": "37fb4320d90d74a3636d86766462de5b566651dff873e72b65685d249a8fa3cb"
+      "sha256": "42e50c0f333752728af8f0294b83dcd38dc4114f83a6906f4d98125c1d723ef9"
     },
     {
       "path": "amz-service/amz-service-spapi/src/test/java/com/amz/connector/ErrorSummaryTest.java",
@@ -257,9 +257,19 @@
       "sha256": "a1443e41cc0eaa69e6f6e49b334f4f750fd02dd8adbbfe4f6f6f82d36f5ef2d2"
     },
     {
+      "path": "amz-service/amz-service-user/src/test/java/com/amz/migration/OperLogAuditMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "sha256": "62a7f16dd0451f5259286f24451aaaedb02db41ac82f61919cf9ff1ef774353a"
+    },
+    {
+      "path": "amz-service/amz-service-user/src/test/java/com/amz/service/impl/ShopServiceMySqlIT.java",
+      "rule": "secret-like-assignment",
+      "sha256": "9f2eefa4a449c8e1b4bc8e57b9e47fbb1576cc143c1f153e3601b9cd250acdfe"
+    },
+    {
       "path": "docs/superpowers/plans/2026-09-28-production-hardening-phase0.md",
       "rule": "secret-like-assignment",
-      "sha256": "2cd3f82a5c45c45a63c60453c5a7609af8a4279591a60a589915b89a831a2550"
+      "sha256": "a32400f6481d221e2ae5a3bcf4373f1d7953304da44e7e26e25ca71cf8920b2f"
     },
     {
       "path": "docs/superpowers/runbooks/amazon-ads-api-onboarding-runbook.md",
@@ -282,11 +292,6 @@
       "sha256": "9457c544955b74839068cefe50e937653d8a014147cd8d5de3bbeba233541dce"
     },
     {
-      "path": "loadtest/scripts/bench.py",
-      "rule": "secret-like-assignment",
-      "sha256": "7eefb8720f9b2111505be7139fecc0a6c26d08c96c2dd0b3909de071c3b88c81"
-    },
-    {
       "path": "loadtest/gatling/ErpStressTest.scala",
       "rule": "secret-like-assignment",
       "sha256": "0440d3e34fe460aefa36dadf9122a1b1ce3edf980c5864e63d13b57e6d4e9fd4"
@@ -295,6 +300,11 @@
       "path": "loadtest/jmeter/README.md",
       "rule": "secret-like-assignment",
       "sha256": "7a669fc393983fbfdb6878710ccd63ebe3c1822b2733e60a42014bbab84e73e1"
+    },
+    {
+      "path": "loadtest/scripts/bench.py",
+      "rule": "secret-like-assignment",
+      "sha256": "7eefb8720f9b2111505be7139fecc0a6c26d08c96c2dd0b3909de071c3b88c81"
     },
     {
       "path": "tools/connector-acceptance/acceptance_runner.py",
