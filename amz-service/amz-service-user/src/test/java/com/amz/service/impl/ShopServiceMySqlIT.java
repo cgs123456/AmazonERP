@@ -88,7 +88,11 @@ class ShopServiceMySqlIT {
                     + " sex VARCHAR(10),"
                     + " birthday VARCHAR(20),"
                     + " address VARCHAR(200),"
-                    + " role VARCHAR(50) NOT NULL DEFAULT 'VIEWER')"
+                    + " role VARCHAR(50) NOT NULL DEFAULT 'VIEWER',"
+                    // 必须与 user 服务迁移保持同步：V4 新增 status（账号启用/禁用），
+                    // 手写 DDL 漏列会让 User 实体查询报 Unknown column（2026-10-11 CI 红）。
+                    // 这类漂移的根治方向是让 IT 直接应用 db/migration 而非手写 DDL，暂按同步处理。
+                    + " status TINYINT NOT NULL DEFAULT 1)"
                     + " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
             st.execute("CREATE TABLE amz_shop ("
                     + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"

@@ -10,10 +10,6 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_ADDR:localhost:8848}
-    # 通知落库经 Feign 调 user 服务；声明了 fallbackFactory，熔断开关必须打开（契约测试守卫）
-    openfeign:
-      circuitbreaker:
-        enabled: true
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
@@ -61,10 +57,3 @@ management:
       enabled: true
     readinessstate:
       enabled: true
-
-feign:
-  client:
-    config:
-      default:
-        connect-timeout: 3000
-        read-timeout: 10000

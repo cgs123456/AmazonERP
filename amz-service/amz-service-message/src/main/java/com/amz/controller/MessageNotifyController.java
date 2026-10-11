@@ -90,27 +90,15 @@ public class MessageNotifyController {
     }
 
     /**
-     * 通知落库（P1.6）。经 Feign 写 user 服务的 amz_notification；
-     * 失败只记 warn（旁路语义），无 client（未装配）时跳过。
+     * 通知落库（P1.6）。写 user 服务的 amz_notification；
+     * 失败只记 warn（旁路语义），客户端未装配时跳过。
      */
     private void persistNotification(NotifyRequest req) {
         if (userNotificationClient == null) {
             return;
         }
-        try {
-            java.util.Map<String, Object> row = new LinkedHashMap<>();
-            row.put("userId", req.getUserId());
-            row.put("type", req.getType() == null ? 0 : req.getType());
-            row.put("title", "运营通知");
-            row.put("content", req.getContent());
-            com.amz.result.Result<Boolean> result = userNotificationClient.save(row);
-            if (result == null || result.getCode() != 200) {
-                log.warn("通知落库失败（推送不受影响）userId={}: {}",
-                        req.getUserId(), result == null ? "无响应" : result.getMessage());
-            }
-        } catch (Exception e) {
-            log.warn("通知落库异常（推送不受影响）userId={}: {}", req.getUserId(), e.getMessage());
-        }
+        // 客户端自身已把失败降级为 false + warn，这里不再重复包 try/catch 记日志
+        userNotificationClient.save(req.getUserId(), req.getType(), "运营通知", req.getContent());
     }
 
     /**

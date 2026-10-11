@@ -294,8 +294,14 @@ class ProcurementServiceImplTest {
     @Test
     @DisplayName("取消采购单 - 未提交 1688 → 仅更新状态")
     void testCancelPurchaseOrderWithoutAlibaba() {
+        // 显式设置授权上下文：该测试此前隐式依赖「UserContext 未设置 → isShopAllowed(null) 放行」，
+        // 一旦被同 JVM 内其它测试残留的 userId 污染，就退化为 isShopAllowedStrict(null)=false，
+        // 报「无权操作该店铺」。测试不该依赖执行顺序，这里显式给店铺授权。
+        com.amz.context.UserContext.clear();
+        com.amz.context.UserContext.setShops(java.util.List.of(9001L));
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(9001L);
         order.setAlibabaOrderNo(null);
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
 

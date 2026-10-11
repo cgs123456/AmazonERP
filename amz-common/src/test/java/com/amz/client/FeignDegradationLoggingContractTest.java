@@ -58,10 +58,12 @@ class FeignDegradationLoggingContractTest {
         // 退货自动对接新增 SpApiReportsClientFallbackFactory（logistics→spapi 报表三段式）到 23；
         // P1 消息落库新增 UserNotificationClientFallbackFactory（message→user 通知落库）到 24；
         // P2 履约新增 LogisticsFulfillmentClientFallbackFactory（order→logistics 出库执行）到 25；
-        // BOM 展开新增 ProcurementBomClientFallbackFactory（order→procurement）到 26。
+        // BOM 展开新增 ProcurementBomClientFallbackFactory（order→procurement）到 26；
+        // 随后 message 的 UserNotificationClientFallbackFactory 因启动回归被移除
+        // （改 DiscoveryClient+ResilientHttpClient，不用 Feign）回到 25。
         // 数量仍需钉死：新增 factory 不纳入本契约要红，无谓删除也要红。
-        assertEquals(26, factories.size(),
-                "FallbackFactory 数量变了（当前应为 26）：新增的要同步纳入本契约，删除的要更新断言");
+        assertEquals(25, factories.size(),
+                "FallbackFactory 数量变了（当前应为 25）：新增的要同步纳入本契约，删除的要更新断言");
         for (Path factory : factories) {
             String text = read(factory);
             assertTrue(LOG_WITH_THROWABLE.matcher(text).find(),

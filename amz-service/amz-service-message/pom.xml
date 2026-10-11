@@ -26,16 +26,12 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
-        <!-- P1.6 消息落库：通知持久化经 Feign 调 user 服务（本服务刻意无数据库）。
-             声明了 fallbackFactory，故熔断实现与开关必须同时就位（FeignFallbackWiringContractTest）。 -->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-openfeign</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
-        </dependency>
+        <!-- P1.6 消息落库：通知持久化调 user 服务（本服务刻意无数据库）。
+             刻意不用 Feign：@FeignClient 会把 amz-common 的 GlobalAuthWebMvcConfig 拉进
+             实例化链，触发 jwtUtil 的 JWT_SECRET_KEY 强校验——message 是无 datasource 的
+             轻模块，CI runtime-smoke 以「无中间件、无环境变量」启动它作为启动门禁，
+             引入 Feign 会让该腿直接红（2026-10-11 实测）。改用 DiscoveryClient +
+             amz-common ResilientHttpClient（自带熔断/重试），不新增任何依赖。 -->
 
         <dependency>
             <groupId>io.netty</groupId>
