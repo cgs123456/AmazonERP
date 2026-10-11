@@ -31,7 +31,7 @@ class ControllerFailureContractTest {
     private static final Path CONTROLLER_DIR = Paths.get("src/main/java/com/amz/controller");
 
     @Test
-    @DisplayName("70 个 Result.failure 出口均有本地或上游错误分类")
+    @DisplayName("80 个 Result.failure 出口均有本地或上游错误分类")
     void everyFailureCarriesStructuredError() throws IOException {
         assertTrue(Files.isDirectory(CONTROLLER_DIR), "找不到 controller 源码目录：" + CONTROLLER_DIR);
 
@@ -66,9 +66,10 @@ class ControllerFailureContractTest {
         }
 
         // 62 → 66：ShipmentConfirmationController（发货回传）4 个失败出口；
-        // 66 → 70：ReportsController（logistics 报表三段式）4 个失败出口
-        // （reportType 空 / 报表请求失败 / 状态查询失败 / 文档下载失败），全部携带结构化 error。
-        assertEquals(70, failureCount,
+        // 66 → 70：ReportsController（logistics 报表三段式）4 个失败出口；
+        // 70 → 80：P3/P4 新增端点（绩效同步 / Listing 调价规则 CRUD+执行 / AI 广告托管）
+        // 的失败出口，全部携带结构化 error。
+        assertEquals(80, failureCount,
                 "Result.failure 数量变化必须重新审查；新增失败分支也必须携带结构化 error");
         assertTrue(violations.isEmpty(), "发现未结构化的失败出口：\n" + String.join("\n", violations));
     }

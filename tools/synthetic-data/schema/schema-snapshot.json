@@ -859,6 +859,36 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 1681,
+      "lines": 30,
+      "sha256": "ae851f9d154514dee633a22401fe61867f0ed646f73a218d2b67517d0eb55405",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_spapi",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1882,
+      "lines": 32,
+      "sha256": "bd373fa101b5b558e06fa4e16c183ed9e11db6651fabf75504db3b3ff96c935d",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_spapi",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 5321,
       "lines": 114,
       "sha256": "e75b149658d289b3c0c73f4299c9a1d580139ba5777261e74ac19fb1b38bc51f",
@@ -1075,11 +1105,11 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 70,
-        "tables": 121
+        "files": 72,
+        "tables": 123
       }
     },
-    "union_table_count": 108,
+    "union_table_count": 110,
     "databases": [
       "amz_ad",
       "amz_ai",
@@ -34003,6 +34033,361 @@
       ]
     },
     {
+      "key": "amz_spapi.amz_listing_price_rule",
+      "database": "amz_spapi",
+      "name": "amz_listing_price_rule",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "marketplace_id",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "站点",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "sku",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "卖家 SKU（listingsItems 定位键）",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "rule_type",
+          "type": "VARCHAR",
+          "args": "30",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'MANUAL_SCHEDULE'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "规则类型：MANUAL_SCHEDULE（预留 TRACK_COMPETITOR 等）",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "target_price",
+          "type": "DECIMAL",
+          "args": "14,2",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "目标价（与 adjust_pct 二选一）",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "adjust_pct",
+          "type": "DECIMAL",
+          "args": "6,4",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "调整幅度（0.05 = -5%，负数降价）",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "enabled",
+          "type": "TINYINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "1",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "是否启用",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "last_executed_at",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "最近一次执行时间",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "last_result",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "最近一次执行结果摘要",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "remark",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "operator_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "update_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": true,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "marketplace_id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "sku": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "rule_type": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "target_price": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "adjust_pct": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "enabled": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "last_executed_at": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "last_result": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "remark": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "operator_id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ],
+        "update_time": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [
+        {
+          "name": "uk_shop_marketplace_sku",
+          "columns": [
+            "shop_id",
+            "marketplace_id",
+            "sku"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shop_enabled",
+          "columns": [
+            "shop_id",
+            "enabled"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "ef388707cbe839ff9192c010cddc48b48032358c0cddcb7ed7f021f10977d9ce",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V13__listing_price_rule.sql",
+          "line": 13,
+          "group": "flyway-migration",
+          "hash": "ef388707cbe839ff9192c010cddc48b48032358c0cddcb7ed7f021f10977d9ce"
+        }
+      ]
+    },
+    {
       "key": "amz_spapi.amz_promotion_calendar",
       "database": "amz_spapi",
       "name": "amz_promotion_calendar",
@@ -35164,6 +35549,271 @@
           "line": 10,
           "group": "flyway-migration",
           "hash": "8a6a4a6fb04b93e925c6cf0d78a339e9e0758defc085f17e145205b4865b5226"
+        }
+      ]
+    },
+    {
+      "key": "amz_spapi.amz_shop_performance",
+      "database": "amz_spapi",
+      "name": "amz_shop_performance",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "marketplace_id",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "站点",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "report_type",
+          "type": "VARCHAR",
+          "args": "80",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'GET_V2_SELLER_PERFORMANCE_REPORT'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "官方报表类型",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "report_id",
+          "type": "VARCHAR",
+          "args": "64",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "SP-API reportId（追溯）",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "raw_content",
+          "type": "LONGTEXT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "报表原文（未解析，等真实样本后补字段级解析）",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "content_length",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "原文长度（列表页展示用）",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'SYNCED'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "状态：SYNCED/EMPTY",
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "operator_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "marketplace_id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "report_type": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "report_id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "raw_content": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "content_length": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "status": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "operator_id": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [],
+      "indexes": [
+        {
+          "name": "idx_shop_time",
+          "columns": [
+            "shop_id",
+            "create_time"
+          ]
+        },
+        {
+          "name": "idx_shop_type",
+          "columns": [
+            "shop_id",
+            "report_type"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "f4ffc4c62561c23eed408d081564f5e1123addd4655c6b19ad0e33c940446d41",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V12__shop_performance.sql",
+          "line": 15,
+          "group": "flyway-migration",
+          "hash": "f4ffc4c62561c23eed408d081564f5e1123addd4655c6b19ad0e33c940446d41"
         }
       ]
     },

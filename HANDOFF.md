@@ -30,6 +30,54 @@ FBA 入库计划、FBA 退货自动导入、HTTP 500 语义。
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
 
+## S7b. 业务升级方案四期交付（2026-10-11，P1–P4）
+
+> 依据 §S11 方案逐期交付，每期 Review（全量回归+门禁）通过后进入下一期。
+
+### P1 地基（commit 797058c）
+流水全面接入（调拨 ship/receive 双向扣补+TRANSFER_OUT/IN，入库 INBOUND_RECEIVE，
+出库 OUTBOUND_SHIP；WarehouseService 新增 shopId 显式 4 参 decrease 与 currentQuantity）；
+盘点单 V10（修正以 apply 时真实账面→实盘，未盘行跳过不按 0）；工单 CLOSED/差评 RESOLVED 终态；
+角色管理（user V4 status 列，禁改自己/禁禁用自己，登录拦禁用账号）；CSV 导出
+（CsvExportUtil：BOM+RFC4180+公式注入防护+显式截断行；利润/订单/库存健康三端点）；
+消息落库（user V5 amz_notification + message 经 Feign 推送时落库，离线也落）。
+
+### P2 供应链（commit ba2d082）
+配货履约流（order /allocate 编排「检查→出库→ALLOCATED」两步；logistics
+FulfillmentController check/outbound；MFN 限定不足点名）；供应商付款 V7
+（三单匹配：收货证据+金额容差 1% 可配；PAID 唯一写入来源；防重复；取消回退）；
+批量到货 batch-receive（逐单独立事务）；BOM V8（递归展开+环检测+自引用拒绝；
+履约编排先展开再扣减——组合 SKU 在本地仓无库存行）；标签打印（renderLabelHtml）。
+
+### P3 运营（本批）
+- 绩效域（V12 amz_shop_performance）：**诚实边界**——GET_V2_SELLER_PERFORMANCE_REPORT
+  官方存在但快照无列结构，本轮做「原文留痕 + 查询」而非编造字段级解析器；
+  解析器等真实样本后补（原文不丢）。spapi /spapi/performance/* 三端点。
+- Listing 调价规则（V13 amz_listing_price_rule）：规则 CRUD + 手动执行经统一
+  operation 执行器（listingsItems.patchListingsItem，官方快照形状）下发；
+  幅度规则需当前价来源，本轮仅支持目标价规则（如实限制）；执行结果留痕 last_result。
+  手动触发；定时自动执行等联调后开。
+- **P3.3 Review 星级 / P3.4 竞品上新：本轮未做**——两者数据源都是 Keepa
+  （KeepaRealClient 未联调），做 mock 骨架无运营价值；等 Keepa token 后按
+  AmazonReturnSyncScheduler 模式接（写入本节防遗漏）。
+
+### P4 差异化（本批）
+- AI 广告托管（AdPilotController /ai/ad-pilot/run）：干跑默认（mode=DRY_RUN），
+  EXECUTE 需显式 confirm；方案由 Agent 工具链产出（无 DeepSeek key 显式失败无假方案）；
+  执行通道=ad 真实改价（未联调会显式失败）。诚实边界写进响应体 honestBoundary 字段。
+- 平台适配层：**只做接口骨架不接线**（PlatformAdapter 接口固化七能力形状）——
+  三平台 Real/Mock 是已验证运行代码，强行迁移是纯重构；接入第四家平台时按此清单验收。
+- P4.2 完整适配层重构与 P4 AI 生图：未做（前者风险>收益，后者依赖外部生图凭据）。
+
+### 验证（每期 Review 实测）
+每期：后端全量 mvn test 0F/0E BUILD SUCCESS；前端 tsc 0 + vitest 506/506；
+门禁全绿（hygiene 0 / drift 0 / 零引用 0 / release tools 91/91 / 快照一致）。
+钉数终态：迁移 **72**、Flyway 活表 **125**、FallbackFactory **26**（模块 10）、
+logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化 error 补齐后实测）。
+变异验证累计 9 处全红。三个一次性 MySQL 容器（审计/店铺/CI 模拟）用完已删。
+未做并如实留档：P3.3/P3.4（Keepa token）、绩效字段级解析（等真实样本）、
+平台适配层完整迁移、Listing 定时自动调价（等联调）、AI 生图（外部凭据）。
+
 ## S7. 业务齐全度推进（2026-10-11，六大项）
 
 ### S7.1 操作审计落库
