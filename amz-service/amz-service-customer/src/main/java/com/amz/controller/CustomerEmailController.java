@@ -1,5 +1,9 @@
 package com.amz.controller;
 
+import lombok.extern.slf4j.Slf4j;
+
+import com.amz.annotation.OperLog;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.EmailTemplate;
 import com.amz.model.EmailTask;
@@ -28,6 +32,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/customer/email")
+@Slf4j
 public class CustomerEmailController {
 
     @Autowired
@@ -137,6 +142,23 @@ public class CustomerEmailController {
 
     /** 差评自动跟进（创建跟进邮件） */
     @ShopScoped
+    /**
+     * 差评跟进结案（DETECTED/MATCHED/CONTACTED → RESOLVED）。结案幂等。
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "差评跟进", action = "结案", description = "差评跟进结案")
+    @PostMapping("/negative-review/{reviewId}/resolve")
+    public Result<NegativeReview> resolveReview(@PathVariable Long reviewId) {
+        try {
+            return Result.success(customerEmailService.resolveNegativeReview(reviewId));
+        } catch (IllegalStateException e) {
+            return Result.failure(e.getMessage());
+        } catch (Exception e) {
+            log.error("差评结案失败 reviewId={}", reviewId, e);
+            return Result.failure("差评结案失败：" + e.getMessage());
+        }
+    }
+
     @PostMapping("/negative-review/{reviewId}/followup")
     public Result<EmailTask> followUpNegativeReview(@PathVariable Long reviewId) {
         return Result.success(customerEmailService.followUpNegativeReview(reviewId));

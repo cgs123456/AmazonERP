@@ -28,4 +28,15 @@ public interface WarehouseInventoryMapper extends BaseMapper<WarehouseInventory>
     @Update("UPDATE amz_warehouse_inventory SET quantity = quantity + #{qty}, update_time = NOW() " +
             "WHERE id = #{id}")
     int increaseQuantityAtomic(@Param("id") Long id, @Param("qty") Integer qty);
+
+    /**
+     * 盘点修正：把账面数量直接 SET 为实盘值（不受 available 约束——实盘为准语义，
+     * 预留量保持不变，available 生成列随之重算）。
+     * <p>
+     * 行的归属（shop_id）由调用方在读取行时校验；这里以 id 定位 + 影响行数返回，
+     * 行已消失时返回 0，调用方必须整体失败。
+     */
+    @Update("UPDATE amz_warehouse_inventory SET quantity = #{target}, update_time = NOW() " +
+            "WHERE id = #{id}")
+    int adjustQuantityTo(@Param("id") Long id, @Param("target") Integer target);
 }

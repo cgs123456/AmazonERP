@@ -55,10 +55,11 @@ class FeignDegradationLoggingContractTest {
         // 基线 19 升到 20；退货闭环新增 LogisticsReturnClientFallbackFactory
         // （finance→logistics 退货件数，降级返回失败而非 0）到 21；
         // 补货接线新增 SpApiFbaInboundClientFallbackFactory（procurement→spapi FBA 入库计划）到 22；
-        // 退货自动对接新增 SpApiReportsClientFallbackFactory（logistics→spapi 报表三段式）到 23。
+        // 退货自动对接新增 SpApiReportsClientFallbackFactory（logistics→spapi 报表三段式）到 23；
+        // P1 消息落库新增 UserNotificationClientFallbackFactory（message→user 通知落库）到 24。
         // 数量仍需钉死：新增 factory 不纳入本契约要红，无谓删除也要红。
-        assertEquals(23, factories.size(),
-                "FallbackFactory 数量变了（当前应为 23）：新增的要同步纳入本契约，删除的要更新断言");
+        assertEquals(24, factories.size(),
+                "FallbackFactory 数量变了（当前应为 24）：新增的要同步纳入本契约，删除的要更新断言");
         for (Path factory : factories) {
             String text = read(factory);
             assertTrue(LOG_WITH_THROWABLE.matcher(text).find(),

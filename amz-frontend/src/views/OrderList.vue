@@ -23,6 +23,9 @@
         <input type="date" v-model="filterDate" class="filter-date" />
         <input type="text" v-model="filterOrderNo" placeholder="搜索订单号..." class="filter-input" />
         <button class="filter-btn" @click="handleQuery">查询</button>
+        <button class="filter-btn export" :disabled="exporting" @click="exportOrders">
+          {{ exporting ? '导出中…' : '导出 CSV' }}
+        </button>
       </div>
 
       <!-- 骨架屏：表格行形状（技能 4.5 Loading） -->
@@ -140,6 +143,7 @@ import { getOrderList, confirmShipment } from '@/api/order'
 import type { OrderItem } from '@/api/order'
 import { getShops, type ShopOption } from '@/utils/shop'
 import { openPackingSlip } from '@/utils/packingSlip'
+import { downloadCsv } from '@/utils/csvDownload'
 import { useShopGuard } from '@/composables/useShopGuard'
 
 const filterShop = ref('')
@@ -148,6 +152,26 @@ const filterOrderNo = ref('')
 
 // 店铺下拉来自真实来源（后端 getInfo 写入 localStorage），不再写死 Shop A/B/C
 const shopOptions = ref<ShopOption[]>(getShops())
+
+const exporting = ref(false)
+const exportOrders = async () => {
+  const shopId = filterShop.value || refreshShop()
+  if (!shopId) return
+  exporting.value = true
+  try {
+    await downloadCsv('/order/list/export', {
+      shopId,
+      days: filterDate.value ? undefined : 30,
+      startDate: filterDate.value || undefined,
+      endDate: filterDate.value || undefined,
+      orderNo: filterOrderNo.value || undefined
+    }, `orders-${shopId}.csv`)
+  } catch (e) {
+    loadErrors.value = [e instanceof Error ? e.message : '导出失败']
+  } finally {
+    exporting.value = false
+  }
+}
 
 const loading = ref(false)
 const orders = ref<OrderItem[]>([])
@@ -349,6 +373,7 @@ const printSlip = (order: OrderItem) => {
 .filter-input { flex: 1; max-width: 300px; }
 .filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
 .filter-btn:hover { background: var(--color-primary-dark); }
+.filter-btn.export { background: var(--color-surface); color: var(--color-primary); border: 1px solid var(--color-primary); }
 
 /* shop-tip / table-card / data-table / mono / empty-row / status-tag 基类 / 分页已收敛至全局 style.css */
 

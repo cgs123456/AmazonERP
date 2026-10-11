@@ -120,6 +120,10 @@ public class LoginServiceImpl implements LoginService {
             userId = user.getId();
             role = user.getRole() == null ? "VIEWER" : user.getRole();
         } else {
+            // 禁用账号立即拦登录（P1.4）：status 1=正常 0=禁用（V4）
+            if (dbUser.getStatus() != null && dbUser.getStatus() == 0) {
+                throw new CodeErrorException("账号已被禁用，请联系管理员");
+            }
             userId = dbUser.getId();
             role = dbUser.getRole() == null ? "VIEWER" : dbUser.getRole();
         }

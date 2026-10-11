@@ -10,7 +10,9 @@ import com.amz.mapper.ShipmentMapper;
 import com.amz.model.CarrierQuote;
 import com.amz.model.FbaReceiptDiscrepancy;
 import com.amz.model.FreightAllocation;
+import com.amz.model.InventoryMovement;
 import com.amz.model.InventoryTransfer;
+import com.amz.model.WarehouseInventory;
 import com.amz.model.Shipment;
 import com.amz.result.PageRequest;
 import org.junit.jupiter.api.AfterEach;
@@ -36,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,6 +74,12 @@ class LogisticsUpgradeServiceImplTest {
 
     @Mock
     private ShipmentMapper shipmentMapper;
+
+    @Mock
+    private com.amz.service.WarehouseService warehouseService;
+
+    @Mock
+    private InventoryMovementService inventoryMovementService;
 
     @InjectMocks
     private LogisticsUpgradeServiceImpl service;
@@ -288,16 +297,41 @@ class LogisticsUpgradeServiceImplTest {
     }
 
     @Test
-    @DisplayName("发出：已审批 → 运输中，并落承运商与单号")
+    @DisplayName("发出：已审批 → 运输中，扣源仓库存并写 TRANSFER_OUT 流水（P1.1）")
     void shipTransferFromApproved() {
         InventoryTransfer transfer = transfer(25L, "APPROVED");
         when(inventoryTransferMapper.selectById(25L)).thenReturn(transfer);
+        when(warehouseService.currentQuantity(transfer.getFromWarehouseId(), transfer.getShopId(),
+                transfer.getSku())).thenReturn(10);
+        com.amz.model.WarehouseInventory afterInv = new com.amz.model.WarehouseInventory();
+        afterInv.setQuantity(7);
+        when(warehouseService.decreaseInventory(transfer.getFromWarehouseId(), transfer.getShopId(),
+                transfer.getSku(), transfer.getQuantity())).thenReturn(afterInv);
 
         InventoryTransfer result = service.shipTransfer(25L, "SF Express", "SF123456");
 
         assertEquals("IN_TRANSIT", result.getStatus());
         assertEquals("SF Express", result.getCarrier());
         assertEquals("SF123456", result.getTrackingNo());
+        verify(warehouseService).decreaseInventory(transfer.getFromWarehouseId(), transfer.getShopId(),
+                transfer.getSku(), transfer.getQuantity());
+        verify(inventoryMovementService).record(eq(transfer.getShopId()),
+                eq(transfer.getFromWarehouseId()), eq(transfer.getSku()), any(),
+                eq(10), eq(7), eq(com.amz.model.InventoryMovement.TYPE_TRANSFER_OUT),
+                eq("TRANSFER"), eq(transfer.getTransferNo()), any(), any());
+    }
+
+    @Test
+    @DisplayName("发出：源仓无库存则 fail-closed 拒绝（调拨不能凭空产生在途货）")
+    void shipTransferFailsWhenNoStock() {
+        InventoryTransfer transfer = transfer(28L, "APPROVED");
+        when(inventoryTransferMapper.selectById(28L)).thenReturn(transfer);
+        when(warehouseService.currentQuantity(any(), any(), any())).thenReturn(0);
+        when(warehouseService.decreaseInventory(any(), any(), any(), any()))
+                .thenThrow(new CodeErrorException("库存不足"));
+
+        assertThrows(CodeErrorException.class, () -> service.shipTransfer(28L, "SF", "SF1"));
+        verify(inventoryTransferMapper, never()).updateById(any(InventoryTransfer.class));
     }
 
     @Test

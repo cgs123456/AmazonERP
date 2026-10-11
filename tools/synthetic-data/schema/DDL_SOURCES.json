@@ -333,6 +333,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 3476,
+      "lines": 57,
+      "sha256": "48cba84ddccbe6b538ea47c74f727dcaae8c962c1384c55a9339f08912fa9a53",
+      "tables": 2,
+      "insert_statements": 0,
+      "db_hint": "amz_logistics",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 13598,
       "lines": 266,
       "sha256": "05794e2fa15bcea381479ff43fd3c33e3c2434eba583f46e624e13b0d93123ef",
@@ -989,6 +1004,36 @@
       "mysql8_incompatible_add_column": 0,
       "db_source": "application.yml",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V3__oper_log.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1068,
+      "lines": 19,
+      "sha256": "40551b962792a701e4baed41d72f28787fe5ea3f13cd2b8ce3e32ff97601b90a",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 1,
+      "add_column_statements": 1,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V4__user_status.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1564,
+      "lines": 28,
+      "sha256": "c7ed512af9b43e3bbf78b7cb7544fb9a3ba7a86e2ff5906d7db71abe23dec459",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql",
       "dynamic_ddl": 0
     }
   ]

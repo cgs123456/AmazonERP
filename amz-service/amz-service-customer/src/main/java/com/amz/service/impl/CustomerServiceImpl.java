@@ -80,6 +80,26 @@ public class CustomerServiceImpl implements CustomerService {
     }
 
     @Override
+    public CustomerTicket closeTicket(Long ticketId) {
+        CustomerTicket ticket = ticketMapper.selectById(ticketId);
+        if (ticket == null) {
+            throw new IllegalArgumentException("工单不存在：id=" + ticketId);
+        }
+        requireShopOnRow(ticket.getShopId());
+        String status = ticket.getStatus();
+        if ("CLOSED".equals(status)) {
+            // 重复关闭幂等：返回当前行而不是报错（关闭是收敛动作，重复点不该炸）
+            return ticket;
+        }
+        if (!"PENDING".equals(status) && !"REPLIED".equals(status)) {
+            throw new IllegalArgumentException("工单当前状态为「" + status + "」，只有待处理/已回复可关闭");
+        }
+        ticket.setStatus("CLOSED");
+        ticketMapper.updateById(ticket);
+        return ticket;
+    }
+
+    @Override
     public PageResult<CustomerTicket> listTickets(Long shopId, String status, String category, PageRequest page) {
         PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
         LambdaQueryWrapper<CustomerTicket> wrapper = new LambdaQueryWrapper<>();

@@ -5,6 +5,7 @@ import com.amz.exception.CodeErrorException;
 import com.amz.util.BizNoGenerator;
 
 import com.amz.mapper.OutboundOrderMapper;
+import com.amz.model.InventoryMovement;
 import com.amz.model.OutboundOrder;
 import com.amz.model.WarehouseInventory;
 import com.amz.result.PageRequest;
@@ -32,6 +33,9 @@ public class OutboundServiceImpl implements OutboundService {
 
     @Autowired
     private WarehouseService warehouseService;
+
+    @Autowired
+    private InventoryMovementService inventoryMovementService;
 
     @Override
     public OutboundOrder createOutboundOrder(OutboundOrder order) {
@@ -108,11 +112,18 @@ public class OutboundServiceImpl implements OutboundService {
                 if (item.getQuantity() == null || item.getQuantity() <= 0) {
                     continue;
                 }
-                warehouseService.decreaseInventory(
+                WarehouseInventory afterInv = warehouseService.decreaseInventory(
                         order.getWarehouseId(),
                         item.getSku(),
                         item.getQuantity());
                 shipped += item.getQuantity();
+                // 库存流水（P1.1）：出库发运必须留痕（before/after/操作人/关联单号）
+                int qty = item.getQuantity() == null ? 0 : item.getQuantity();
+                int after = afterInv == null || afterInv.getQuantity() == null ? 0 : afterInv.getQuantity();
+                inventoryMovementService.record(order.getShopId(), order.getWarehouseId(),
+                        item.getSku(), afterInv == null ? null : afterInv.getBatchNo(),
+                        after + qty, after, InventoryMovement.TYPE_OUTBOUND_SHIP,
+                        "OUTBOUND_ORDER", order.getOutboundNo(), null, null);
             }
             order.setShippedItems(shipped);
         }

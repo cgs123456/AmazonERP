@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.BusinessOverview;
@@ -49,6 +50,62 @@ public class ReportUpgradeController {
      * 2026-10-07 从无界全量读改为 size/cursor：明细表随聚合逐日增长，全量返回迟早
      * 把整表灌进一次响应；分页口径与 /report/profit/snapshot/list 一致。
      */
+    /**
+     * 利润明细 CSV 导出（P1.5）：复用列表口径，游标翻页直到取尽。
+     * 有 10 万行硬上限，触顶写显式截断说明行——静默截断会把「部分」当「全部」。
+     */
+    @ShopScoped
+    @RequireRole({"VIEWER", "OPERATOR", "ADMIN"})
+    @OperLog(module = "报表导出", action = "导出", description = "导出利润明细 CSV")
+    @GetMapping(value = "/profit/export/{shopId}", produces = "text/csv; charset=UTF-8")
+    public void exportProfit(@PathVariable Long shopId,
+                             @RequestParam(required = false) String asin,
+                             @RequestParam(required = false) String startDate,
+                             @RequestParam(required = false) String endDate,
+                             jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        java.io.PrintWriter writer = com.amz.util.CsvExportUtil.begin(
+                response, "profit-detail-" + shopId + ".csv");
+        int maxRows = com.amz.util.CsvExportUtil.DEFAULT_MAX_ROWS;
+        com.amz.util.CsvExportUtil.row(writer, java.util.List.of(
+                "报表日期", "Amazon订单号", "ASIN", "SKU", "销售额", "采购成本", "FBA费用",
+                "佣金", "仓储费", "广告费", "VAT", "其他费用", "退款", "毛利", "净利", "币种"));
+        int rows = 0;
+        String cursor = null;
+        boolean truncated = false;
+        try {
+            while (rows < maxRows) {
+                com.amz.result.PageResult<com.amz.model.ProfitDetail> page =
+                        reportUpgradeService.listProfitDetails(shopId, asin, startDate, endDate,
+                                com.amz.result.PageRequest.of(500, cursor));
+                for (com.amz.model.ProfitDetail d : page.items()) {
+                    com.amz.util.CsvExportUtil.row(writer, java.util.List.of(
+                            d.getReportDate(), d.getAmazonOrderId(), d.getAsin(), d.getSku(),
+                            d.getProductSales(), d.getProductCost(), d.getFbaFees(),
+                            d.getReferralFee(), d.getStorageFee(), d.getAdvertisingCost(),
+                            d.getVatTax(), d.getOtherFees(), d.getRefundCost(),
+                            d.getGrossProfit(), d.getNetProfit(), d.getCurrency()));
+                    rows++;
+                    if (rows >= maxRows) {
+                        truncated = true;
+                        break;
+                    }
+                }
+                if (truncated || !page.hasMore()) {
+                    break;
+                }
+                cursor = page.nextCursor();
+                if (cursor == null || cursor.isBlank()) {
+                    break;
+                }
+            }
+            if (truncated) {
+                com.amz.util.CsvExportUtil.truncatedRow(writer, maxRows);
+            }
+        } finally {
+            writer.flush();
+        }
+    }
+
     @ShopScoped
     @GetMapping("/profit/list/{shopId}")
     public Result<List<ProfitDetail>> listProfit(@PathVariable Long shopId,

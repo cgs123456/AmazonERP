@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 
@@ -51,6 +52,41 @@ public class InventoryController {
      * @param shopId 店铺 ID
      * @return 库存健康度列表
      */
+    /**
+     * FBA 库存健康 CSV 导出（P1.5）：与列表同口径（本店全量，无分页——健康度列表
+     * 本身以单店为界，量级受 SKU 数约束）。
+     */
+    @ShopScoped
+    @OperLog(module = "库存导出", action = "导出", description = "导出 FBA 库存健康 CSV")
+    @GetMapping(value = "/health/{shopId}/export", produces = "text/csv; charset=UTF-8")
+    public void exportHealth(@PathVariable Long shopId,
+                             jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        if (shopId == null) {
+            response.sendError(400, "shopId must not be null");
+            return;
+        }
+        List<FbaInventory> list = fbaInventoryMapper.selectList(
+                new LambdaQueryWrapper<FbaInventory>()
+                        .eq(FbaInventory::getShopId, shopId)
+                        .orderByAsc(FbaInventory::getSku));
+        java.io.PrintWriter writer = com.amz.util.CsvExportUtil.begin(
+                response, "inventory-health-" + shopId + ".csv");
+        try {
+            com.amz.util.CsvExportUtil.row(writer, java.util.List.of(
+                    "SKU", "ASIN", "FNSKU", "商品名", "可售", "站点",
+                    "7天日均", "30天日均", "可售天数", "健康状态"));
+            for (FbaInventory inv : list) {
+                com.amz.util.CsvExportUtil.row(writer, java.util.List.of(
+                        inv.getSku(), inv.getAsin(), inv.getFnSku(), inv.getProductName(),
+                        inv.getAvailableQuantity(), inv.getMarketplaceId(),
+                        inv.getAvg7Days(), inv.getAvg30Days(),
+                        inv.getDaysOfSupply(), inv.getHealthStatus()));
+            }
+        } finally {
+            writer.flush();
+        }
+    }
+
     @ShopScoped
     @GetMapping("/health/{shopId}")
     public Result<List<FbaInventory>> health(@PathVariable Long shopId) {

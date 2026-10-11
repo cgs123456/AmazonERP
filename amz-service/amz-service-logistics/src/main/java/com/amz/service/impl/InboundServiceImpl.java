@@ -6,6 +6,7 @@ import com.amz.util.BizNoGenerator;
 
 import com.amz.mapper.InboundOrderMapper;
 import com.amz.model.InboundOrder;
+import com.amz.model.InventoryMovement;
 import com.amz.model.WarehouseInventory;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
@@ -32,6 +33,9 @@ public class InboundServiceImpl implements InboundService {
 
     @Autowired
     private WarehouseService warehouseService;
+
+    @Autowired
+    private InventoryMovementService inventoryMovementService;
 
     @Override
     public InboundOrder createInboundOrder(InboundOrder order) {
@@ -95,7 +99,7 @@ public class InboundServiceImpl implements InboundService {
                 if (item.getQuantity() == null || item.getQuantity() <= 0) {
                     continue;
                 }
-                warehouseService.increaseInventory(
+                WarehouseInventory afterInv = warehouseService.increaseInventory(
                         order.getWarehouseId(),
                         order.getShopId(),
                         item.getSku(),
@@ -103,6 +107,13 @@ public class InboundServiceImpl implements InboundService {
                         item.getBatchNo(),
                         item.getLocationCode());
                 received += item.getQuantity();
+                // 库存流水（P1.1）：入库验收留痕
+                int qty = item.getQuantity();
+                int after = afterInv == null || afterInv.getQuantity() == null ? 0 : afterInv.getQuantity();
+                inventoryMovementService.record(order.getShopId(), order.getWarehouseId(),
+                        item.getSku(), item.getBatchNo(),
+                        after - qty, after, InventoryMovement.TYPE_INBOUND_RECEIVE,
+                        "INBOUND_ORDER", order.getInboundNo(), null, null);
             }
             order.setReceivedItems(received);
         }

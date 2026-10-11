@@ -60,6 +60,14 @@ public interface CustomerEmailService {
     /** 差评自动跟进：为已匹配订单的差评创建跟进邮件任务 */
     EmailTask followUpNegativeReview(Long reviewId);
 
+    /**
+     * 差评跟进结案（DETECTED/MATCHED/CONTACTED → RESOLVED）。
+     * <p>
+     * 跟进链路此前到 CONTACTED 就没有终态——差评队列只进不出。
+     * 结案不删除任何记录，只把状态收敛，保留完整跟进痕迹。
+     */
+    NegativeReview resolveNegativeReview(Long reviewId);
+
     // ===== RMA 退货 =====
 
     /** 创建 RMA 退货申请 */

@@ -315,7 +315,109 @@
           </div>
         </div>
       </div>
+
+      <!-- 库存盘点（P1.2） -->
+      <div v-show="activeTab === 'stocktake'" class="panel">
+        <div class="panel-header">
+          <h3>库存盘点</h3>
+          <button class="primary-btn" @click="openStocktakeDialog()">+ 新建盘点单</button>
+        </div>
+        <div class="table-card">
+          <table class="data-table">
+            <thead>
+              <tr><th>盘点单号</th><th>仓库</th><th>状态</th><th>创建时间</th><th>落账时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="st in stocktakes" :key="st.id">
+                <td class="mono">{{ st.stocktakeNo }}</td>
+                <td>{{ warehouseName(st.warehouseId) }}</td>
+                <td>{{ STOCKTAKE_STATUS_LABELS[st.status || ''] || st.status }}</td>
+                <td class="mono">{{ (st.createTime || '').slice(0, 19).replace('T', ' ') }}</td>
+                <td class="mono">{{ (st.appliedAt || '').slice(0, 19).replace('T', ' ') || '—' }}</td>
+                <td>
+                  <div class="row-actions">
+                    <button class="row-btn" @click="openStocktakeDetail(st)">明细</button>
+                    <button v-if="st.status === 'COUNTED'" class="row-btn primary" @click="applyStocktakeRow(st)">落账</button>
+                    <button v-if="st.status === 'DRAFT' || st.status === 'COUNTED'" class="row-btn" @click="cancelStocktakeRow(st)">取消</button>
+                  </div>
+                </td>
+              </tr>
+              <tr v-if="!stocktakeLoading && !stocktakes.length">
+                <td colspan="6" class="empty-row">暂无盘点单：建单会按仓库+SKU 快照账面数，落账按实盘修正并写库存流水</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
       </template>
+
+      <!-- 新建盘点弹窗 -->
+      <div v-if="stocktakeDialog.visible" class="modal-mask" @click.self="stocktakeDialog.visible = false">
+        <div class="modal">
+          <h3>新建盘点单</h3>
+          <div class="form-row">
+            <label>仓库
+              <select v-model="stocktakeDialog.warehouseId">
+                <option value="">请选择</option>
+                <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.warehouseName }}</option>
+              </select>
+            </label>
+          </div>
+          <div class="form-row">
+            <label>SKU 清单（每行一个）</label>
+            <textarea v-model="stocktakeDialog.skusText" rows="6" placeholder="SKU-001&#10;SKU-002" />
+          </div>
+          <div class="form-row">
+            <label>备注<input v-model="stocktakeDialog.remark" /></label>
+          </div>
+          <p class="muted">建单会快照各 SKU 当前账面数；未盘的行落账时跳过（不按 0 处理）。</p>
+          <div class="modal-actions">
+            <button class="row-btn" @click="stocktakeDialog.visible = false">取消</button>
+            <button class="primary-btn" :disabled="stocktakeCreating" @click="submitStocktake">
+              {{ stocktakeCreating ? '创建中…' : '创建' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 盘点明细弹窗 -->
+      <div v-if="stocktakeDetail" class="modal-mask" @click.self="stocktakeDetail = null">
+        <div class="modal modal-wide">
+          <h3>盘点明细 {{ stocktakeDetail.stocktake.stocktakeNo }}</h3>
+          <table class="data-table">
+            <thead>
+              <tr><th>SKU</th><th>账面快照</th><th>实盘数量</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in stocktakeDetail.items" :key="item.id">
+                <td class="mono">{{ item.sku }}</td>
+                <td>{{ item.expectedQty }}</td>
+                <td>
+                  <input
+                    v-model.number="item.countedQtyInput"
+                    type="number"
+                    min="0"
+                    :disabled="stocktakeDetail.stocktake.status !== 'DRAFT' && stocktakeDetail.stocktake.status !== 'COUNTED'"
+                    style="width: 6rem"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="muted">留空 = 未盘，落账时跳过；「快照差额」仅供报告，落账以「apply 时真实账面 → 实盘」为准。</p>
+          <div class="modal-actions">
+            <button class="row-btn" @click="stocktakeDetail = null">关闭</button>
+            <button
+              v-if="stocktakeDetail.stocktake.status === 'DRAFT' || stocktakeDetail.stocktake.status === 'COUNTED'"
+              class="primary-btn"
+              :disabled="stocktakeSaving"
+              @click="saveCounted"
+            >
+              {{ stocktakeSaving ? '保存中…' : '保存实盘' }}
+            </button>
+          </div>
+        </div>
+      </div>
 
       <!-- 仓库弹窗 -->
       <div v-if="warehouseDialog.visible" class="modal-mask" @click.self="warehouseDialog.visible = false">
@@ -452,6 +554,17 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import * as WH from '@/api/warehouse'
+import {
+  listStocktakes,
+  createStocktake,
+  getStocktakeDetail,
+  countStocktake,
+  applyStocktake,
+  cancelStocktake,
+  STOCKTAKE_STATUS_LABELS,
+  type StocktakeRow,
+  type StocktakeItemRow
+} from '@/api/stocktake'
 import { canUseRole, LOCATION_EDIT_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
 import { AGING_BUCKETS } from '@/api/warehouse'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder, StockAging } from '@/api/warehouse'
@@ -463,12 +576,13 @@ const { currentShopId, refreshShop } = useShopGuard()
 const shopIdNum = () => Number(currentShopId.value) || 0
 const { showToast } = useToast()
 const loading = ref(false)
-const activeTab = ref<'warehouse' | 'inventory' | 'inbound' | 'outbound'>('warehouse')
+const activeTab = ref<'warehouse' | 'inventory' | 'inbound' | 'outbound' | 'stocktake'>('warehouse')
 const tabs = [
   { key: 'warehouse', label: '仓库列表', icon: 'mdi:warehouse' },
   { key: 'inventory', label: '库存查询', icon: 'mdi:package-variant-closed' },
   { key: 'inbound', label: '入库单', icon: 'mdi:truck-in' },
-  { key: 'outbound', label: '出库单', icon: 'mdi:truck-out' }
+  { key: 'outbound', label: '出库单', icon: 'mdi:truck-out' },
+  { key: 'stocktake', label: '库存盘点', icon: 'mdi:clipboard-check' }
 ] as const
 
 const PAGE_SIZE = 50
@@ -543,8 +657,162 @@ const loadAging = async (force = false) => {
 
 // 切到「库存查询」才读，且只在第一次进入时自动读；之后靠「重新计算」按钮。
 
+// ==================== 库存盘点（P1.2） ====================
+const stocktakes = ref<StocktakeRow[]>([])
+const stocktakeLoading = ref(false)
+const stocktakeCreating = ref(false)
+const stocktakeSaving = ref(false)
+const stocktakeDialog = ref({ visible: false, warehouseId: '', skusText: '', remark: '' })
+/** 可编辑明细行：countedQtyInput 绑定输入框（undefined=未盘，落账跳过） */
+interface EditableStocktakeItem extends StocktakeItemRow {
+  countedQtyInput?: number
+}
+interface EditableStocktakeDetail {
+  stocktake: StocktakeRow
+  items: EditableStocktakeItem[]
+}
+const stocktakeDetail = ref<EditableStocktakeDetail | null>(null)
+
+const loadStocktakes = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  stocktakeLoading.value = true
+  try {
+    const res = await listStocktakes(shopId)
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      stocktakes.value = res.data
+    } else {
+      showToast(res?.message || '加载盘点单失败', 'error')
+    }
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : '加载盘点单失败', 'error')
+  } finally {
+    stocktakeLoading.value = false
+  }
+}
+
+const openStocktakeDialog = () => {
+  if (!refreshShop()) return
+  stocktakeDialog.value = { visible: true, warehouseId: '', skusText: '', remark: '' }
+}
+
+const submitStocktake = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  if (!stocktakeDialog.value.warehouseId) {
+    showToast('请选择盘点仓库', 'error')
+    return
+  }
+  const skus = stocktakeDialog.value.skusText
+    .split(/\r?\n|,/)
+    .map(x => x.trim())
+    .filter(Boolean)
+  if (!skus.length) {
+    showToast('请填写至少一个 SKU', 'error')
+    return
+  }
+  stocktakeCreating.value = true
+  try {
+    const res = await createStocktake({
+      shopId,
+      warehouseId: stocktakeDialog.value.warehouseId,
+      remark: stocktakeDialog.value.remark || undefined,
+      skus
+    })
+    if (res?.code === 200) {
+      stocktakeDialog.value.visible = false
+      showToast(`盘点单 ${res.data?.stocktakeNo || ''} 已创建`, 'success')
+      await loadStocktakes()
+    } else {
+      showToast(res?.message || '创建盘点单失败', 'error')
+    }
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : '创建盘点单失败', 'error')
+  } finally {
+    stocktakeCreating.value = false
+  }
+}
+
+const openStocktakeDetail = async (st: StocktakeRow) => {
+  if (!st.id) return
+  try {
+    const res = await getStocktakeDetail(st.id)
+    if (res?.code === 200 && res.data) {
+      stocktakeDetail.value = {
+        stocktake: res.data.stocktake,
+        items: (res.data.items || []).map(item => ({
+          ...item,
+          countedQtyInput: item.countedQty ?? undefined
+        }))
+      }
+    } else {
+      showToast(res?.message || '加载盘点详情失败', 'error')
+    }
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : '加载盘点详情失败', 'error')
+  }
+}
+
+const saveCounted = async () => {
+  const detail = stocktakeDetail.value
+  if (!detail?.stocktake.id) return
+  const counts = detail.items
+    .filter(item => item.countedQtyInput != null)
+    .map(item => ({ sku: item.sku || '', countedQty: Number(item.countedQtyInput) }))
+  if (!counts.length) {
+    showToast('至少为一个 SKU 录入实盘数（留空 = 未盘）', 'error')
+    return
+  }
+  stocktakeSaving.value = true
+  try {
+    const res = await countStocktake(detail.stocktake.id, counts)
+    if (res?.code === 200) {
+      showToast('实盘已保存', 'success')
+      stocktakeDetail.value = null
+      await loadStocktakes()
+    } else {
+      showToast(res?.message || '保存实盘失败', 'error')
+    }
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : '保存实盘失败', 'error')
+  } finally {
+    stocktakeSaving.value = false
+  }
+}
+
+const applyStocktakeRow = async (st: StocktakeRow) => {
+  if (!st.id) return
+  try {
+    const res = await applyStocktake(st.id)
+    if (res?.code === 200) {
+      const d = res.data
+      showToast(`落账完成：修正 ${d?.adjusted ?? 0} 行，未盘跳过 ${d?.skippedUncounted ?? 0}，零差异 ${d?.noDiff ?? 0}`, 'success')
+      await loadStocktakes()
+    } else {
+      showToast(res?.message || '落账失败', 'error')
+    }
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : '落账失败', 'error')
+  }
+}
+
+const cancelStocktakeRow = async (st: StocktakeRow) => {
+  if (!st.id) return
+  try {
+    const res = await cancelStocktake(st.id)
+    if (res?.code === 200) {
+      await loadStocktakes()
+    } else {
+      showToast(res?.message || '取消失败', 'error')
+    }
+  } catch (e) {
+    showToast(e instanceof Error ? e.message : '取消失败', 'error')
+  }
+}
+
 watch(activeTab, (t) => {
   if (t === 'inventory') void loadAging()
+  if (t === 'stocktake') void loadStocktakes()
 })
 
 onMounted(() => window.addEventListener(ROLE_CHANGED_EVENT, syncLocationRole))

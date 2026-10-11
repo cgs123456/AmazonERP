@@ -95,8 +95,8 @@ class FlywayBaselineContractTest {
         // amz_oper_log 在 V1 建过、V2 删过、V3 重建过，因此 CREATE 出现 2 次而唯一表只有 1 张。
         // 这不是重复建表，是「删了又建」的历史；下面两条断言分别钉住唯一表数与这个例外，
         // 免得将来有人把 V1 改掉（checksum 不可变，改了会让存量库启动失败）。
-        assertEquals(116, tableCounts.size(),
-                "Flyway 唯一表集合必须保持 116 张（114 + logistics V7 amz_return_order + V8 amz_inventory_movement）");
+        assertEquals(119, tableCounts.size(),
+                "Flyway 唯一表集合必须保持 119 张（116 + logistics V10 盘点两表 + user V5 amz_notification）");
         int duplicated = (int) tableCounts.values().stream().filter(v -> v > 1).count();
         assertEquals(1, duplicated,
                 "只允许 amz_oper_log 一个「建-删-重建」例外；出现新的重复建表说明有人绕过了 V2 的清理");

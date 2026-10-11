@@ -65,6 +65,10 @@
         >{{ recalcBusy ? '重算中...' : '重算补货建议' }}</button>
         <span v-if="recalcMsg" class="recalc-msg" role="status">{{ recalcMsg }}</span>
         <span v-else class="recalc-hint">重算按当前库存与销售历史逐条 upsert 本店的补货建议；已生成的采购计划草稿不受影响</span>
+        <button class="export-btn" :disabled="!dataLive || exporting" @click="exportInventory">
+          {{ exporting ? '导出中…' : '导出库存 CSV' }}
+        </button>
+        <span v-if="exportError" class="recalc-hint" style="color: var(--color-error)">{{ exportError }}</span>
       </div>
 
       <!-- 库存列表（客户端分页，避免大店铺全量渲染卡顿） -->
@@ -202,6 +206,7 @@ import AppSidebar from '../components/AppSidebar.vue'
 import { getInventoryList, getInventoryHealth, recalcReplenishment, createFbaInboundPlan } from '@/api/inventory'
 import type { InventoryItem, InventoryHealth } from '@/api/inventory'
 import { createPlan } from '@/api/procurement'
+import { downloadCsv } from '@/utils/csvDownload'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { usePagination } from '@/composables/usePagination'
 
@@ -215,6 +220,21 @@ const inboundTarget = ref<InventoryItem | null>(null)
 const inboundBusy = ref('')
 const inboundError = ref('')
 const inboundMsg = ref('')
+const exporting = ref(false)
+const exportError = ref('')
+const exportInventory = async () => {
+  const shopId = refreshShop()
+  if (!shopId || !dataLive.value) return
+  exporting.value = true
+  exportError.value = ''
+  try {
+    await downloadCsv(`/spapi/inventory/health/${shopId}/export`, {}, `inventory-health-${shopId}.csv`)
+  } catch (e) {
+    exportError.value = e instanceof Error ? e.message : '导出失败'
+  } finally {
+    exporting.value = false
+  }
+}
 const inboundForm = ref({
   marketplaceId: 'ATVPDKIKX0DER',
   name: '',

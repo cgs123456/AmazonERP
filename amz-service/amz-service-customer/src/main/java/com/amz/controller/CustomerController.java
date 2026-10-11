@@ -1,4 +1,8 @@
 package com.amz.controller;
+import lombok.extern.slf4j.Slf4j;
+
+import com.amz.annotation.OperLog;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 
 import com.amz.model.CustomerTicket;
@@ -22,6 +26,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/customer")
+@Slf4j
 public class CustomerController {
 
     @Autowired
@@ -66,6 +71,23 @@ public class CustomerController {
      * POST /customer/review/solicit/{shopId}
      */
     @ShopScoped
+    /**
+     * 关闭工单（PENDING/REPLIED → CLOSED）。工单此前无终态，售后队列只进不出。
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "客服工单", action = "关闭", description = "工单结案")
+    @PostMapping("/ticket/{ticketId}/close")
+    public Result<CustomerTicket> closeTicket(@PathVariable Long ticketId) {
+        try {
+            return Result.success(customerService.closeTicket(ticketId));
+        } catch (IllegalArgumentException e) {
+            return Result.failure(e.getMessage());
+        } catch (Exception e) {
+            log.error("关闭工单失败 ticketId={}", ticketId, e);
+            return Result.failure("关闭工单失败：" + e.getMessage());
+        }
+    }
+
     @PostMapping("/review/solicit/{shopId}")
     public Result<Integer> solicitReviews(@PathVariable Long shopId) {
         return Result.success(customerService.sendReviewSolicitations(shopId));

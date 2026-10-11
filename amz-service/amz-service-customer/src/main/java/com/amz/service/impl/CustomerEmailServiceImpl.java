@@ -409,6 +409,23 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         return task;
     }
 
+    @Override
+    public NegativeReview resolveNegativeReview(Long reviewId) {
+        NegativeReview review = mustGetAuthorizedReview(reviewId);
+        String status = review.getStatus();
+        if ("RESOLVED".equals(status)) {
+            // 结案幂等：重复点返回当前行
+            return review;
+        }
+        if (!"DETECTED".equals(status) && !"MATCHED".equals(status) && !"CONTACTED".equals(status)) {
+            throw new IllegalStateException("差评当前状态为「" + status + "」，不可结案");
+        }
+        review.setStatus("RESOLVED");
+        negativeReviewMapper.updateById(review);
+        log.info("差评结案 reviewId={} 原状态={}", reviewId, status);
+        return review;
+    }
+
     // ==================== RMA 退货 ====================
 
     @Override

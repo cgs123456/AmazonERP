@@ -1,5 +1,7 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.context.UserContext;
 import com.amz.mapper.FbaFeeTableMapper;
@@ -135,6 +137,76 @@ public class OrderController {
         summary.put("orders", orders);
         summary.put("totalAmount", totalAmount);
         return Result.success(summary);
+    }
+
+    /**
+     * 订单 CSV 导出（P1.5）：复用列表口径按页翻尽；10 万行硬上限，触顶写显式截断说明。
+     */
+    @ShopScoped
+    @RequireRole({"VIEWER", "OPERATOR", "ADMIN"})
+    @OperLog(module = "订单导出", action = "导出", description = "导出订单 CSV")
+    @GetMapping(value = "/list/export", produces = "text/csv; charset=UTF-8")
+    public void exportOrders(@RequestParam Long shopId,
+                             @RequestParam(required = false) Integer days,
+                             @RequestParam(required = false)
+                             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+                             @RequestParam(required = false)
+                             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+                             @RequestParam(required = false) String orderNo,
+                             jakarta.servlet.http.HttpServletResponse response) throws java.io.IOException {
+        java.io.PrintWriter writer = com.amz.util.CsvExportUtil.begin(
+                response, "orders-" + shopId + ".csv");
+        int maxRows = com.amz.util.CsvExportUtil.DEFAULT_MAX_ROWS;
+        com.amz.util.CsvExportUtil.row(writer, java.util.List.of(
+                "Amazon订单号", "站点", "订单状态", "履约渠道", "金额", "数量",
+                "运单号", "回传状态", "下单时间"));
+        int rows = 0;
+        int page = 1;
+        boolean truncated = false;
+        try {
+            while (rows < maxRows) {
+                LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                        .eq(Order::getShopId, shopId);
+                if (orderNo != null && !orderNo.isBlank()) {
+                    wrapper.like(Order::getAmazonOrderId, orderNo.trim());
+                }
+                if (startDate != null && endDate != null) {
+                    wrapper.gt(Order::getPurchaseDate, startDate.atStartOfDay())
+                            .lt(Order::getPurchaseDate, endDate.plusDays(1).atStartOfDay());
+                } else {
+                    int windowDays = (days == null || days <= 0) ? 7 : days;
+                    wrapper.gt(Order::getPurchaseDate, LocalDateTime.now().minusDays(windowDays));
+                }
+                wrapper.orderByDesc(Order::getPurchaseDate)
+                        .last("LIMIT 200 OFFSET " + ((long) (page - 1) * 200));
+                List<Order> orders = orderMapper.selectList(wrapper);
+                if (orders.isEmpty()) {
+                    break;
+                }
+                for (Order o : orders) {
+                    com.amz.util.CsvExportUtil.row(writer, java.util.List.of(
+                            o.getAmazonOrderId(), o.getMarketplaceId(), o.getOrderStatus(),
+                            o.getFulfillmentChannel(), o.getFinalPrice(), o.getQuantity(),
+                            o.getTrackingNumber(),
+                            o.getFulfillmentStatus() == null ? "NOT_CONFIRMED" : o.getFulfillmentStatus(),
+                            o.getPurchaseDate()));
+                    rows++;
+                    if (rows >= maxRows) {
+                        truncated = true;
+                        break;
+                    }
+                }
+                if (truncated || orders.size() < 200) {
+                    break;
+                }
+                page++;
+            }
+            if (truncated) {
+                com.amz.util.CsvExportUtil.truncatedRow(writer, maxRows);
+            }
+        } finally {
+            writer.flush();
+        }
     }
 
     /**

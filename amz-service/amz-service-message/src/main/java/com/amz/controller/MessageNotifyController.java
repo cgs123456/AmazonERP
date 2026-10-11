@@ -7,6 +7,7 @@ import io.netty.channel.Channel;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,6 +34,9 @@ import java.util.Map;
 @RequestMapping("/internal/message")
 public class MessageNotifyController {
 
+    @Autowired(required = false)
+    private com.amz.client.UserNotificationClient userNotificationClient;
+
     /**
      * 推送通知到指定用户的 WebSocket 通道。
      * <p>
@@ -51,6 +55,10 @@ public class MessageNotifyController {
         String content = req.getContent() == null || req.getContent().isEmpty()
                 ? "" : req.getContent();
         Integer userId = req.getUserId().intValue();
+
+        // P1.6 消息落库：推送前先落历史（离线/在线都落——离线恰恰是历史最该兜住的场景）。
+        // 落库是旁路：失败只 warn，绝不阻断推送，也绝不假装已落库。
+        persistNotification(req);
 
         Channel channel = Session.getChannel(userId);
         NotifyResponse resp = new NotifyResponse();
@@ -78,6 +86,30 @@ public class MessageNotifyController {
                     userId, req.getType(), e.getMessage());
             resp.setReason("push_failed:" + e.getMessage());
             return Result.success(resp);
+        }
+    }
+
+    /**
+     * 通知落库（P1.6）。经 Feign 写 user 服务的 amz_notification；
+     * 失败只记 warn（旁路语义），无 client（未装配）时跳过。
+     */
+    private void persistNotification(NotifyRequest req) {
+        if (userNotificationClient == null) {
+            return;
+        }
+        try {
+            java.util.Map<String, Object> row = new LinkedHashMap<>();
+            row.put("userId", req.getUserId());
+            row.put("type", req.getType() == null ? 0 : req.getType());
+            row.put("title", "运营通知");
+            row.put("content", req.getContent());
+            com.amz.result.Result<Boolean> result = userNotificationClient.save(row);
+            if (result == null || result.getCode() != 200) {
+                log.warn("通知落库失败（推送不受影响）userId={}: {}",
+                        req.getUserId(), result == null ? "无响应" : result.getMessage());
+            }
+        } catch (Exception e) {
+            log.warn("通知落库异常（推送不受影响）userId={}: {}", req.getUserId(), e.getMessage());
         }
     }
 

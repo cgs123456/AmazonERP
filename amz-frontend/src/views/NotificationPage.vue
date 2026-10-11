@@ -24,8 +24,8 @@
           </div>
 
           <div class="notice-zone" role="note">
-            消息中心只显示本次会话通过 WebSocket 收到的通知：服务端不落库，
-            刷新页面或离线期间的推送都会丢失，也没有可回看的历史消息。
+            通知已服务端落库（P1.6）：进入页面即加载最近 100 条历史，WebSocket 实时推送
+            与历史合并显示；「离线期间的推送」不再丢失。标为已读会同步到服务端。
           </div>
 
           <!-- 标签切换 -->
@@ -102,6 +102,7 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { listNotifications, markNotificationRead } from '@/api/notification'
 
 // 通知类型对齐后端 MessageTypeEnum：
 // INVENTORY_ALERT(0) / ORDER_EXCEPTION(1) / REPLENISH_SUGGEST(2) / NEGATIVE_REVIEW(3) / PRICE_CHANGE(4)
@@ -227,9 +228,30 @@ const requestNotificationPermission = () => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   onMessage(handleWebSocketMessage)
   requestNotificationPermission()
+  // 加载服务端历史（最近 100 条），与本次会话的实时推送合并（按内容+时间去重）
+  try {
+    const history = await listNotifications()
+    if (history?.code === 200 && Array.isArray(history.data)) {
+      const seen = new Set(notifications.value.map(n => n.type + '|' + n.content + '|' + n.time))
+      for (const row of history.data) {
+        const key = String(row.type ?? 0) + '|' + (row.content || '') + '|' + (row.createTime || '')
+        if (seen.has(key)) continue
+        notifications.value.push({
+          id: 'h-' + row.id,
+          type: mapMessageType(row.type),
+          title: row.title || '运营通知',
+          content: row.content || '',
+          time: (row.createTime || '').slice(0, 19).replace('T', ' '),
+          read: !!row.isRead
+        })
+      }
+    }
+  } catch {
+    // 历史加载失败不阻断实时推送（页面仍有会话内通知）
+  }
 })
 
 // 按标签过滤
@@ -241,7 +263,10 @@ const filteredNotifications = computed(() => {
 // 操作
 const handleView = (notification: Notification) => {
   notification.read = true
-  // 实际项目中可跳转到对应详情页
+  // 服务端同步已读（历史行 id 带 h- 前缀；会话内实时行无服务端 id，跳过）
+  if (notification.id.startsWith('h-')) {
+    markNotificationRead(Number(notification.id.slice(2))).catch(() => {})
+  }
 }
 
 const handleDismiss = (notification: Notification) => {

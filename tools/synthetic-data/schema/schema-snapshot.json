@@ -334,6 +334,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 3476,
+      "lines": 57,
+      "sha256": "48cba84ddccbe6b538ea47c74f727dcaae8c962c1384c55a9339f08912fa9a53",
+      "tables": 2,
+      "insert_statements": 0,
+      "db_hint": "amz_logistics",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 13598,
       "lines": 266,
       "sha256": "05794e2fa15bcea381479ff43fd3c33e3c2434eba583f46e624e13b0d93123ef",
@@ -991,6 +1006,36 @@
       "db_source": "application.yml",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V3__oper_log.sql",
       "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1068,
+      "lines": 19,
+      "sha256": "40551b962792a701e4baed41d72f28787fe5ea3f13cd2b8ce3e32ff97601b90a",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 1,
+      "add_column_statements": 1,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V4__user_status.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1564,
+      "lines": 28,
+      "sha256": "c7ed512af9b43e3bbf78b7cb7544fb9a3ba7a86e2ff5906d7db71abe23dec459",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql",
+      "dynamic_ddl": 0
     }
   ],
   "stats": {
@@ -1000,11 +1045,11 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 65,
-        "tables": 116
+        "files": 68,
+        "tables": 119
       }
     },
-    "union_table_count": 103,
+    "union_table_count": 106,
     "databases": [
       "amz_ad",
       "amz_ai",
@@ -1030,9 +1075,9 @@
     ],
     "tables_with_conditional_columns": [],
     "conditional_columns_total": 0,
-    "alter_table_statements": 44,
-    "add_column_statements": 29,
-    "applied_alter_operations": 58,
+    "alter_table_statements": 45,
+    "add_column_statements": 30,
+    "applied_alter_operations": 59,
     "unapplied_alter_operations": 0,
     "renamed_columns": [
       [
@@ -13613,6 +13658,521 @@
           "line": 8,
           "group": "flyway-migration",
           "hash": "36058c1e94a44bee8a254efa72b32d272433190f15c530fa0c36266924e13acf"
+        }
+      ]
+    },
+    {
+      "key": "amz_logistics.amz_stocktake",
+      "database": "amz_logistics",
+      "name": "amz_stocktake",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "stocktake_no",
+          "type": "VARCHAR",
+          "args": "40",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "盘点单号（STK + 时间戳 + 随机数）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "warehouse_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "盘点仓库 ID",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR",
+          "args": "20",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'DRAFT'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "状态：DRAFT/COUNTED/APPLIED/CANCELLED",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "remark",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "备注",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "operator_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "建单人用户 ID",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "applied_at",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "修正落账时间",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "update_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": true,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "stocktake_no": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "warehouse_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "status": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "remark": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "operator_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "applied_at": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "update_time": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [
+        {
+          "name": "uk_stocktake_no",
+          "columns": [
+            "stocktake_no"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shop_status",
+          "columns": [
+            "shop_id",
+            "status"
+          ]
+        },
+        {
+          "name": "idx_shop_warehouse",
+          "columns": [
+            "shop_id",
+            "warehouse_id"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "f9ea9132421293f8a6346918113bbad9331cc256134a841e584f3744a8922310",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql",
+          "line": 27,
+          "group": "flyway-migration",
+          "hash": "f9ea9132421293f8a6346918113bbad9331cc256134a841e584f3744a8922310"
+        }
+      ]
+    },
+    {
+      "key": "amz_logistics.amz_stocktake_item",
+      "database": "amz_logistics",
+      "name": "amz_stocktake_item",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "stocktake_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "盘点单 ID（amz_stocktake.id）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID（冗余，便于按店对账）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "sku",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "卖家 SKU",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "expected_qty",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "建单时账面快照（冻结）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "counted_qty",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "实盘数量（NULL=未盘）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "batch_no",
+          "type": "VARCHAR",
+          "args": "64",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "批次号（可空；按行修正时定位库存行）",
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "update_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": true,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "stocktake_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "sku": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "expected_qty": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "counted_qty": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "batch_no": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ],
+        "update_time": [
+          "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [
+        {
+          "name": "uk_stocktake_sku",
+          "columns": [
+            "stocktake_id",
+            "sku"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shop",
+          "columns": [
+            "shop_id"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "763ea32cc91a3aa08643208f7abd3ac3ea88d177c173829d82b26bf7a3c70511",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-logistics/src/main/resources/db/migration/V10__stocktake.sql",
+          "line": 44,
+          "group": "flyway-migration",
+          "hash": "763ea32cc91a3aa08643208f7abd3ac3ea88d177c173829d82b26bf7a3c70511"
         }
       ]
     },
@@ -36173,6 +36733,205 @@
       ]
     },
     {
+      "key": "amz_user.amz_notification",
+      "database": "amz_user",
+      "name": "amz_notification",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "user_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "接收用户 ID",
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "type",
+          "type": "INT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "消息类型（MessageTypeEnum 序号：0=库存预警/1=订单异常/2=补货建议/3=差评/4=价格异动）",
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "title",
+          "type": "VARCHAR",
+          "args": "100",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "标题",
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "content",
+          "type": "VARCHAR",
+          "args": "1000",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "内容",
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "is_read",
+          "type": "TINYINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "是否已读：0=未读 1=已读",
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+        ],
+        "user_id": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+        ],
+        "type": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+        ],
+        "title": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+        ],
+        "content": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+        ],
+        "is_read": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [],
+      "indexes": [
+        {
+          "name": "idx_user_time",
+          "columns": [
+            "user_id",
+            "create_time"
+          ]
+        },
+        {
+          "name": "idx_user_unread",
+          "columns": [
+            "user_id",
+            "is_read"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "d541b0809ef948d28c8a0a20b12e5af328201bea54f8f699b69b2bf3b985f424",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql",
+          "line": 17,
+          "group": "flyway-migration",
+          "hash": "d541b0809ef948d28c8a0a20b12e5af328201bea54f8f699b69b2bf3b985f424"
+        }
+      ]
+    },
+    {
       "key": "amz_user.amz_shop",
       "database": "amz_user",
       "name": "amz_shop",
@@ -36676,6 +37435,25 @@
           ],
           "conditional": false,
           "conflicts": []
+        },
+        {
+          "name": "status",
+          "type": "TINYINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": "1",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "账号状态：1=正常 0=禁用",
+          "sources": [
+            "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
         }
       ],
       "column_sources": {
@@ -36717,6 +37495,9 @@
         ],
         "update_time": [
           "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
+        ],
+        "status": [
+          "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql"
         ]
       },
       "conditional_columns": [],
@@ -36735,13 +37516,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "aa831266ca3205c079a760881364b600963e6ee02295b3fd8a7a7b2ccec191b5",
+      "table_hash": "c7af2e45136e77aac15d4735ea4c0cb55e50083500af1887cbc98663cd9264b8",
       "definitions": [
         {
           "path": "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql",
           "line": 8,
           "group": "flyway-migration",
-          "hash": "aa831266ca3205c079a760881364b600963e6ee02295b3fd8a7a7b2ccec191b5"
+          "hash": "c7af2e45136e77aac15d4735ea4c0cb55e50083500af1887cbc98663cd9264b8"
         }
       ]
     },
@@ -38933,6 +39714,55 @@
       "database": "amz_spapi",
       "sql": "ALTER TABLE `amz_shop_credential` ADD COLUMN `version` BIGINT NOT NULL DEFAULT 0 COMMENT '乐观锁版本号，每次写入原子递增'",
       "path": "amz-service/amz-service-spapi/src/main/resources/db/migration/V9__spapi_credential_version.sql"
+    },
+    {
+      "table": "amz_user",
+      "add_columns": [
+        {
+          "column": "status",
+          "if_not_exists": false,
+          "definition": {
+            "name": "status",
+            "type": "TINYINT",
+            "args": "",
+            "unsigned": false,
+            "nullable": false,
+            "default": "1",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "账号状态：1=正常 0=禁用"
+          }
+        }
+      ],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "add_column",
+          "column": "status",
+          "if_not_exists": false,
+          "definition": {
+            "name": "status",
+            "type": "TINYINT",
+            "args": "",
+            "unsigned": false,
+            "nullable": false,
+            "default": "1",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "账号状态：1=正常 0=禁用"
+          }
+        }
+      ],
+      "line": 17,
+      "database": "amz_user",
+      "sql": "ALTER TABLE amz_user ADD COLUMN status TINYINT NOT NULL DEFAULT 1 COMMENT '账号状态：1=正常 0=禁用'",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V4__user_status.sql"
     }
   ],
   "parse_issues": [],

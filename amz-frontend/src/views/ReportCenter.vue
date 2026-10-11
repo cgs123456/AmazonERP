@@ -97,6 +97,9 @@
             <label class="filter">起<input type="date" v-model="pdStart" /></label>
             <label class="filter">止<input type="date" v-model="pdEnd" /></label>
             <button class="action-btn" @click="loadAllProfit">查询</button>
+            <button class="action-btn" :disabled="pdExporting" @click="exportProfitDetail">
+              {{ pdExporting ? '导出中…' : '导出 CSV' }}
+            </button>
             <span class="muted">明细与汇总分别来自两个端点，汇总不是对明细的前端求和</span>
           </div>
 
@@ -528,6 +531,7 @@ import { useShopGuard } from '@/composables/useShopGuard'
 import { asNumber } from '@/utils/format'
 import type { ApiResponse, PageMeta } from '@/api/types'
 import * as rpt from '@/api/report'
+import { downloadCsv } from '@/utils/csvDownload'
 import { listShipments as listProcurementShipments, listShipmentItems as listProcurementShipmentItems } from '@/api/procurement'
 import type { FbaShipment, FbaShipmentItem } from '@/api/procurement'
 import type {
@@ -556,6 +560,25 @@ const overviewList = makeList<BusinessOverview>()
 
 const profitList = makeList<ProfitDetail>()
 const pSummary = ref<ProfitSummaryReport | null>(null)
+const pdExporting = ref(false)
+const pdExportError = ref('')
+const exportProfitDetail = async () => {
+  const shopId = refreshShop() || currentShopId.value
+  if (!shopId) return
+  pdExporting.value = true
+  pdExportError.value = ''
+  try {
+    await downloadCsv('/report/v2/profit/export/' + shopId, {
+      asin: pdAsin.value || undefined,
+      startDate: pdStart.value || undefined,
+      endDate: pdEnd.value || undefined
+    }, `profit-detail-${shopId}.csv`)
+  } catch (e) {
+    pdExportError.value = e instanceof Error ? e.message : '导出失败'
+  } finally {
+    pdExporting.value = false
+  }
+}
 const pdAsin = ref('')
 const pdStart = ref('')
 const pdEnd = ref('')

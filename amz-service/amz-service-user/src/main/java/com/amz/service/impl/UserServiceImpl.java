@@ -222,4 +222,72 @@ public class UserServiceImpl implements UserService {
         userMapper.update(null, updateWrapper);
         return Result.success(null);
     }
+    // ==================== 账号管理（P1.4，ADMIN） ====================
+
+    /** 角色白名单：与 amz_user.role DDL 注释一致。 */
+    private static final java.util.Set<String> ROLES = java.util.Set.of("ADMIN", "OPERATOR", "VIEWER");
+
+    @Override
+    public java.util.List<com.amz.model.pojo.User> listUsers() {
+        requireAdmin();
+        // 管理列表按 id 稳定排序；手机号对 ADMIN 全量可见（账号管理需要识别用户）
+        LambdaQueryWrapper<User> q = new LambdaQueryWrapper<>();
+        q.orderByAsc(User::getId);
+        return userMapper.selectList(q);
+    }
+
+    @Override
+    public com.amz.model.pojo.User updateRole(Integer userId, String role) {
+        requireAdmin();
+        if (userId == null || role == null || role.isBlank()) {
+            throw new com.amz.exception.CodeErrorException("用户 ID 与角色均不能为空");
+        }
+        String normalized = role.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!ROLES.contains(normalized)) {
+            throw new com.amz.exception.CodeErrorException(
+                    "角色只支持 ADMIN/OPERATOR/VIEWER，实际收到「" + role + "」");
+        }
+        Integer current = UserContext.getUserId();
+        if (current != null && current.equals(userId)) {
+            // 防锁死：最后一个 ADMIN 把自己降级后，系统就没有管理员了
+            throw new com.amz.exception.CodeErrorException("不能修改自己的角色（防止 ADMIN 全部流失）");
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new com.amz.exception.CodeErrorException("用户不存在：id=" + userId);
+        }
+        user.setRole(normalized);
+        userMapper.updateById(user);
+        log.info("修改用户角色 userId={} role={}", userId, normalized);
+        return user;
+    }
+
+    @Override
+    public com.amz.model.pojo.User updateStatus(Integer userId, Integer status) {
+        requireAdmin();
+        if (userId == null || status == null) {
+            throw new com.amz.exception.CodeErrorException("用户 ID 与状态均不能为空");
+        }
+        if (status != 1 && status != 0) {
+            throw new com.amz.exception.CodeErrorException("状态只支持 1=正常 / 0=禁用");
+        }
+        Integer current = UserContext.getUserId();
+        if (current != null && current.equals(userId)) {
+            throw new com.amz.exception.CodeErrorException("不能禁用自己的账号");
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new com.amz.exception.CodeErrorException("用户不存在：id=" + userId);
+        }
+        user.setStatus(status);
+        userMapper.updateById(user);
+        log.info("修改用户状态 userId={} status={}", userId, status);
+        return user;
+    }
+
+    private void requireAdmin() {
+        if (!"ADMIN".equalsIgnoreCase(UserContext.getRole())) {
+            throw new com.amz.exception.CodeErrorException("无权限执行该操作（需要角色：ADMIN）");
+        }
+    }
 }

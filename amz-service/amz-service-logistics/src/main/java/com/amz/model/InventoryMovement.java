@@ -40,6 +40,8 @@ public class InventoryMovement implements Serializable {
     public static final String TYPE_TRANSFER_OUT = "TRANSFER_OUT";
     /** 业务动作：调拨收货。 */
     public static final String TYPE_TRANSFER_IN = "TRANSFER_IN";
+    /** 业务动作：盘点差异调整（可正可负，以实盘为准修正账面）。 */
+    public static final String TYPE_STOCKTAKE_ADJUST = "STOCKTAKE_ADJUST";
 
     @TableId(type = IdType.AUTO)
     private Long id;

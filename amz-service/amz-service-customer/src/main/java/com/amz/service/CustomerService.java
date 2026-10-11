@@ -21,6 +21,14 @@ public interface CustomerService {
     CustomerTicket replyTicket(Long ticketId, String reply);
 
     /**
+     * 关闭工单（PENDING/REPLIED → CLOSED）。
+     * <p>
+     * 工单此前只能 PENDING→REPLIED，永远关不掉——售后队列会无限堆积。
+     * PENDING 也允许直接关闭（误建/重复单不需要先回复一遍再关）。
+     */
+    CustomerTicket closeTicket(Long ticketId);
+
+    /**
      * 查询店铺工单列表（可按状态/分类筛选）。
      */
     PageResult<CustomerTicket> listTickets(Long shopId, String status, String category, PageRequest page);

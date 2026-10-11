@@ -194,4 +194,42 @@ public class WarehouseServiceImpl implements WarehouseService {
         return inventoryMapper.selectById(inv.getId());
     }
 
+    @Override
+    public WarehouseInventory decreaseInventory(Long warehouseId, Long shopId, String sku, Integer quantity) {
+        if (quantity == null || quantity <= 0) {
+            throw new IllegalArgumentException("出库数量必须大于 0");
+        }
+        requireShopAllowed(shopId, "库存");
+        LambdaQueryWrapper<WarehouseInventory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(WarehouseInventory::getWarehouseId, warehouseId)
+                .eq(WarehouseInventory::getShopId, shopId)
+                .eq(WarehouseInventory::getSku, sku);
+        List<WarehouseInventory> list = inventoryMapper.selectList(wrapper);
+        if (list.isEmpty()) {
+            throw new CodeErrorException("库存不足：warehouseId=" + warehouseId
+                    + " shopId=" + shopId + " sku=" + sku);
+        }
+        WarehouseInventory inv = list.get(0);
+        int affected = inventoryMapper.decreaseQuantityAtomic(inv.getId(), quantity);
+        if (affected == 0) {
+            throw new CodeErrorException("库存不足：warehouseId=" + warehouseId
+                    + " shopId=" + shopId + " sku=" + sku + " need=" + quantity);
+        }
+        return inventoryMapper.selectById(inv.getId());
+    }
+
+    @Override
+    public int currentQuantity(Long warehouseId, Long shopId, String sku) {
+        LambdaQueryWrapper<WarehouseInventory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(WarehouseInventory::getWarehouseId, warehouseId)
+                .eq(WarehouseInventory::getShopId, shopId)
+                .eq(WarehouseInventory::getSku, sku);
+        List<WarehouseInventory> list = inventoryMapper.selectList(wrapper);
+        if (list.isEmpty()) {
+            return 0;
+        }
+        Integer qty = list.get(0).getQuantity();
+        return qty == null ? 0 : qty;
+    }
+
 }

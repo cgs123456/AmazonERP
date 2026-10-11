@@ -99,6 +99,11 @@ const router = createRouter({
             component: () => import('../views/ReturnOrder.vue')
         },
         {
+            path: '/users',
+            name: 'UserManagement',
+            component: () => import('../views/UserManagement.vue')
+        },
+        {
             path: '/connector-queue',
             name: 'ConnectorQueue',
             component: () => import('../views/ConnectorQueue.vue')

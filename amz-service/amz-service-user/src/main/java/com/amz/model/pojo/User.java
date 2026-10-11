@@ -61,4 +61,10 @@ public class User implements Serializable {
      */
     @TableField("role")
     private String role;
+
+    /**
+     * 账号状态：1=正常 0=禁用（V4 新增）。
+     * 禁用后登录被拒、已签发 token 在下一次请求即失效（状态查询走本表）。
+     */
+    private Integer status;
 }

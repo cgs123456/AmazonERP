@@ -102,6 +102,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/users') }"
+        @click="navigateTo('/users')"
+        role="button"
+        aria-label="用户管理"
+        tabindex="0"
+      >
+        <Icon icon="mdi:account-cog-outline" class="nav-icon" width="24" />
+        <span class="nav-text">用户管理</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/ads') }"
         @click="navigateTo('/ads')"
         role="button"

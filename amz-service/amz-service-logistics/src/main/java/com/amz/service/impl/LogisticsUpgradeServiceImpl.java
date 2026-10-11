@@ -7,6 +7,8 @@ import com.amz.mapper.FbaReceiptDiscrepancyMapper;
 import com.amz.mapper.FreightAllocationMapper;
 import com.amz.mapper.InventoryTransferMapper;
 import com.amz.mapper.ShipmentMapper;
+import com.amz.model.WarehouseInventory;
+import com.amz.model.InventoryMovement;
 import com.amz.model.CarrierQuote;
 import com.amz.model.FbaReceiptDiscrepancy;
 import com.amz.model.FreightAllocation;
@@ -15,6 +17,7 @@ import com.amz.model.Shipment;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 import com.amz.service.LogisticsUpgradeService;
+import com.amz.service.WarehouseService;
 import com.amz.util.BizNoGenerator;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -121,6 +124,12 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
 
     @Autowired
     private ShipmentMapper shipmentMapper;
+
+    @Autowired
+    private InventoryMovementService inventoryMovementService;
+
+    @Autowired
+    private WarehouseService warehouseService;
 
     // ==================== 物流商比价 ====================
 
@@ -454,6 +463,18 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
             // 已在途：允许补充 / 更正承运商与运单号（手误录错时唯一的修正入口），状态不变
             log.info("调拨单在途信息更正：userId={} transferId={}", UserContext.getUserId(), transferId);
         } else if (TRANSFER_APPROVED.equals(current)) {
+            // P1.1：发出即从源仓扣减（fail-closed——源仓无账面库存不允许发货，
+            // 否则调拨会变成「凭空多出一笔在途货」）；并写 TRANSFER_OUT 流水
+            int before = warehouseService.currentQuantity(
+                    transfer.getFromWarehouseId(), transfer.getShopId(), transfer.getSku());
+            WarehouseInventory afterInv = warehouseService.decreaseInventory(
+                    transfer.getFromWarehouseId(), transfer.getShopId(), transfer.getSku(),
+                    transfer.getQuantity());
+            int after = afterInv == null || afterInv.getQuantity() == null ? 0 : afterInv.getQuantity();
+            inventoryMovementService.record(transfer.getShopId(), transfer.getFromWarehouseId(),
+                    transfer.getSku(), null, before, after, InventoryMovement.TYPE_TRANSFER_OUT,
+                    "TRANSFER", transfer.getTransferNo(), null,
+                    "调拨发出 → " + transfer.getToWarehouseId());
             transfer.setStatus(TRANSFER_IN_TRANSIT);
             log.info("调拨单发出：userId={} transferId={}", UserContext.getUserId(), transferId);
         } else {
@@ -482,6 +503,18 @@ public class LogisticsUpgradeServiceImpl implements LogisticsUpgradeService {
             throw new CodeErrorException("调拨单当前状态为「" + current + "」，只有运输中（IN_TRANSIT）的单据才能确认到货");
         }
         log.info("调拨单到货：userId={} transferId={}", UserContext.getUserId(), transferId);
+        // P1.1：到货即向目标仓回补（此前 README 已知限制「调拨收货不改动库存账」就此解除），
+        // 并写 TRANSFER_IN 流水；批次号记调拨单号，便于按单追溯
+        int before = warehouseService.currentQuantity(
+                transfer.getToWarehouseId(), transfer.getShopId(), transfer.getSku());
+        WarehouseInventory afterInv = warehouseService.increaseInventory(
+                transfer.getToWarehouseId(), transfer.getShopId(), transfer.getSku(),
+                transfer.getQuantity(), transfer.getTransferNo(), null);
+        int after = afterInv == null || afterInv.getQuantity() == null ? 0 : afterInv.getQuantity();
+        inventoryMovementService.record(transfer.getShopId(), transfer.getToWarehouseId(),
+                transfer.getSku(), transfer.getTransferNo(), before, after,
+                InventoryMovement.TYPE_TRANSFER_IN, "TRANSFER", transfer.getTransferNo(), null,
+                "调拨收货 ← " + transfer.getFromWarehouseId());
         transfer.setStatus(TRANSFER_RECEIVED);
         inventoryTransferMapper.updateById(transfer);
         return transfer;
