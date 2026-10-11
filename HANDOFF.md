@@ -1890,6 +1890,16 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 
 ---
 
+> **⚠️ 2026-10-11 推送后 CI 红的教训（本机环境会掩盖三类问题，别只靠本地绿收工）**：
+> ① **本机 JDK 21 vs CI JDK 17**——message 服务的声明式 Feign 客户端本地能起、CI 装配失败
+> （`No bean found of type feign.codec.Encoder`），runtime-smoke 腿 8 秒内退出；已改为
+> DiscoveryClient + amz-common `ResilientHttpClient`（自带熔断/重试），message 不再引入 Feign。
+> ② **DB 门控 IT 本机跳过、CI 真跑**——`ShopServiceMySqlIT` 的手写 DDL 漏同步 V4 新增的 `status`
+> 列 → `Unknown column 'status'`；手写 DDL 必须与迁移同步（根治方向：IT 直接应用 `db/migration`）。
+> ③ **测试依赖执行顺序**——`ProcurementServiceImplTest` 隐式依赖「UserContext 未设置即放行」，
+> 被同 JVM 其它测试残留的 userId 污染后报「无权操作该店铺」；测试应显式设置授权上下文。
+> 另记：`anyFileContains` 这类**源码文本扫描型契约**会被注释里的字面量误判（坑 12「注释不是调用」）。
+
 # §S10 业务功能待做清单（2026-10-11 盘点；同日 §S7b 四期交付后状态见各条括注）
 
 > 分四档：**A 缺整块能力**（标准 ERP 有、本仓完全没有）/ **B 流程单向**（走到一半缺终态或缺联动）/

@@ -264,7 +264,7 @@
     {
       "path": "amz-service/amz-service-user/src/test/java/com/amz/service/impl/ShopServiceMySqlIT.java",
       "rule": "secret-like-assignment",
-      "sha256": "9f2eefa4a449c8e1b4bc8e57b9e47fbb1576cc143c1f153e3601b9cd250acdfe"
+      "sha256": "7bbbf8102c5b16540808b1acf1136c3bc317f588a01184d871031ea0cfe03b8c"
     },
     {
       "path": "docs/superpowers/plans/2026-09-28-production-hardening-phase0.md",
