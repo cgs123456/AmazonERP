@@ -11,7 +11,7 @@ import type { Page } from '@playwright/test'
 
 const SEED = {
   token: 'e2e-test-token',
-  shops: '[{"id":"1","name":"Shop A (US)"}]',
+  shops: '[{"id":"1","name":"E2E Alpha"}]',
   shop: '1',
   user: '1'
 }

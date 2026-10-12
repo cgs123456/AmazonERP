@@ -12,7 +12,7 @@ import { test, expect } from './support/test'
 
 const SEED = {
   token: 'e2e-test-token',
-  shops: '[{"id":"1","name":"Shop A (US)"},{"id":"2","name":"Shop B (UK)"},{"id":"3","name":"Shop C (DE)"}]',
+  shops: '[{"id":"1","name":"E2E Alpha"},{"id":"2","name":"E2E Beta"},{"id":"3","name":"E2E Gamma"}]',
   shop: '1',
   user: '1'
 }
@@ -45,7 +45,9 @@ test.describe('订单管理 /orders', () => {
     await page.goto('/orders')
     await expect(page.locator('.data-table tbody tr')).toHaveCount(3)
     await page.locator('.filter-input').fill('114-')
-    await page.locator('.filter-btn').click()
+    // 订单页有两个 .filter-btn：查询按钮与 P1 CSV 导出加的「导出」按钮（带 .export 修饰类）。
+    // 收窄到查询按钮，不用 .first()——那会在按钮顺序变化时静默点错另一个。
+    await page.locator('.filter-btn:not(.export)').click()
     await expect(page.locator('.data-table tbody tr')).toHaveCount(1)
     await expect(page.locator('.data-table')).toContainText('114-1234567-8901234')
   })

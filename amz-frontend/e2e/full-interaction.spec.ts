@@ -66,9 +66,9 @@ test.beforeEach(async ({ page }) => {
     localStorage.setItem('token', token)
     localStorage.setItem('token_expiry', String(Date.now() + 86400_000))
     localStorage.setItem('shops', JSON.stringify([
-      { id: '1', name: 'Shop A (US)' },
-      { id: '2', name: 'Shop B (UK)' },
-      { id: '3', name: 'Shop C (DE)' }
+      { id: '1', name: 'E2E Alpha' },
+      { id: '2', name: 'E2E Beta' },
+      { id: '3', name: 'E2E Gamma' }
     ]))
     localStorage.setItem('current_shop_id', '1')
     localStorage.setItem('user_id', '1')

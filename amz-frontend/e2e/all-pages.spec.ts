@@ -21,7 +21,7 @@ import { test, expect } from './support/test'
 // 断言会红（这是对的——不播种就测不到渲染路径）。
 const SEED = {
   token: 'e2e-test-token',
-  shops: '[{"id":"1","name":"Shop A (US)"},{"id":"2","name":"Shop B (UK)"},{"id":"3","name":"Shop C (DE)"}]',
+  shops: '[{"id":"1","name":"E2E Alpha"},{"id":"2","name":"E2E Beta"},{"id":"3","name":"E2E Gamma"}]',
   shop: '1',
   user: '1'
 }
@@ -210,12 +210,13 @@ test.describe('Logistics', () => {
 
 // ═══ 10. 消息通知 ═══
 test.describe('Notifications', () => {
-  test('消息中心不再摆硬编码示例：空态 + 不持久化说明（该页无 REST 端点）', async ({ page }) => {
+  test('消息中心不再摆硬编码示例：空态 + 历史来自服务端', async ({ page }) => {
     await page.goto('/notifications')
     // 之前这里断言的是 5 条写死通知，等于把伪造数据固化成契约
     await expect(page.locator('.notification-item')).toHaveCount(0)
     await expect(page.locator('.empty-state')).toContainText('本次会话还没有收到推送')
-    await expect(page.locator('.notice-zone')).toContainText('服务端不落库')
+    // P1.6 落库后说明区改成了「已落库」，这里断言的是这条说明仍然存在且点名了落库语义
+    await expect(page.locator('.notice-zone')).toContainText('服务端落库')
     // Tab 仍可切换，且切过去仍是空而不是造出来的行
     await page.locator('.tab-item', { hasText: '订单异常' }).click()
     await expect(page.locator('.tab-item.active')).toContainText('订单异常')

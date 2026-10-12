@@ -49,6 +49,40 @@ describe('店铺来源：不再使用写死的占位店铺', () => {
     expect(main).not.toContain('Shop B (UK)')
     expect(main).not.toContain('Shop C (DE)')
   })
+
+  /**
+   * E2E 目录此前漏在扫描范围外：四个 spec 用 addInitScript 播种 'Shop A (US)'，
+   * 启动时被 purgeLegacyPlaceholderShops 判为占位值清掉，页面停在「请先选择店铺」，
+   * 所有依赖店铺的断言超时——126 例里 72 例红、全量要 28 分钟才跑完。
+   * 生产代码是对的（店铺只能来自后端），错的是测试播种了会被清理的假数据，
+   * 所以这里钉住「E2E 也不能播种占位店铺名」。
+   */
+  it('E2E 播种的店铺名不会被启动清理判为占位值', async () => {
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+
+    const walk = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+        const full = path.join(dir, e.name)
+        if (e.isDirectory()) return walk(full)
+        return e.isFile() && /\.ts$/.test(e.name) ? [full] : []
+      })
+
+    // api-stub.ts 里的 Shop A/B/C 是 DASHBOARD_SHOP_DIST 的展示用店铺名，
+    // 不写进 localStorage、不经过清理函数，且有页面渲染断言依赖其文本——排除。
+    const excluded = path.join('e2e', 'support', 'api-stub.ts')
+    const files = walk('e2e').filter((f) => f !== excluded && !f.endsWith(excluded))
+    expect(files.length).toBeGreaterThan(0)
+
+    const offenders: string[] = []
+    for (const file of files) {
+      const text = fs.readFileSync(file, 'utf8')
+      for (const name of ['Shop A (US)', 'Shop B (UK)', 'Shop C (DE)']) {
+        if (text.includes(name)) offenders.push(`${file} -> ${name}`)
+      }
+    }
+    expect(offenders).toEqual([])
+  })
 })
 
 describe('店铺同步：后端返回为空时必须清空本地', () => {
