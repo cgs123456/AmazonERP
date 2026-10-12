@@ -177,6 +177,28 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 剩余前端缺口只剩**挂着的两项**（P3 店铺绩效 / P4 AI 广告托管）——按用户拍板
 「需要 API 的挂着」处理，不做对着空数据的 UI；P4 适配层按设计等第四家平台。
 
+## S7f. A5 促销悬空列清理 + IT 期望值修复（2026-10-12，`8594822` / `34fb747`）
+
+> A 档「缺整块能力」里的 A5（促销/优惠券）。两个选项（重建促销域 or 清理悬空列）里
+> 选清理：项目范围前提明确排除商业化功能，促销属营销工具而非 ERP 核心闭环；
+> 且 amz_coupon 表早已作为死表删除（product V5），coupon_id 留着只会误导后人。
+
+- **删除前核实引用面清零**（实测，不是推断）：代码仅 `Order.couponId` 字段声明无逻辑读取；
+  测试仅一个 IT 断言列类型；合成数据 `generate.py` 不产 coupon、`verify.py` 的
+  `FK_TARGETS` 不含 coupon_id；无任何端点暴露该字段。
+- 改动：order V7 `DROP COLUMN` + `Order.java` 删字段 + IT 的 INSERT 去列、
+  并把「列类型是 bigint」的断言改成「列已删」（删列若被回滚这条必须红）；
+  同步钉数 72→73（manifest 三处 + ci.yml 三处注释）；schema 快照重生成（110 表/14 库一致）。
+- **CI 上红过一次，根因是 IT 期望值写错**：`assertMigration(migrate(..., "7"), 7)` 期望 7、
+  实际只执行 2——该方法前面已 `migrate(...,"5")`，k 是**本次执行数**不是累计数
+  （同文件 `"5"` 期望 4 是同一口径）。已改为 2 并在注释里写明原因。
+- **本机全绿对这个 IT 是假绿**：它被 `FLYWAY_ALL_IT_URL` 门控跳过（那 35S 的来源），
+  本机 `mvn test` 根本不跑它。本轮用一次性 MySQL 容器真跑该用例（1/1 BUILD SUCCESS）
+  才确认改对。这与「本机环境会掩盖三类问题」是同一主题的又一实证——
+  **结论：改 env 门控 IT 后，要么起一次性容器真跑，要么推送后立刻盯 CI**。
+- 坑 11 本轮复现两次（`router/index.ts` 与 `AllModulesUpgradeFlywayMySqlIT.java`
+  都在 allowlist 豁免里，改动即哈希失效），均重新针定，未放宽任何检查。
+
 ## S7e. Listing 调价规则独立页（2026-10-12，commit `e034442`）
 
 > 用户拍板分工：**数据导入类编造数据做完整 UI，API 类挂着**。P3 三项里
@@ -2115,7 +2137,8 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 2. **P3.3 Review 星级 / P3.4 竞品上新**——等 Keepa token（AmazonReturnSyncScheduler 模式可复用）；
 3. **绩效字段级解析**——等真实报表样本（原文已留痕不丢）；
 4. **A8 多平台入报表**——需先定口径（合并展示 or 分平台）；
-5. **A1 面单 / A3 发票与容差配置化 / A5 促销 / A6 批量导入**——按 §S10 A 档节奏渐进；
+5. **A1 面单 / A3 发票与容差配置化 / A6 批量导入**——按 §S10 A 档节奏渐进
+   （~~A5 促销~~ 已清理：悬空列删除 + 明确不做商业化域，见 §S7f）；
 6. **P4 平台适配层完整迁移**——第四家平台接入时按 PlatformAdapter 清单验收；
 7. **主线不变**：真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）。
 
