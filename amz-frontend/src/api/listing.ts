@@ -202,6 +202,29 @@ export const updateMaster = (shopId: number | string, id: number, patch: Partial
 export const masterByAsin = (asin: string) =>
   request.get<void, ApiResponse<MasterRow[]>>('/product/master/by-asin', { params: { asin } })
 
+/** CSV 导入报告（行号 1 基、含表头行；空行算 skipped 不算 failed）。 */
+export interface MasterImportReport {
+  totalRows: number
+  insertedRows: number
+  updatedRows: number
+  skippedRows: number
+  failedRows: number
+  errors: Record<string, string>
+  headers: string[]
+}
+
+/**
+ * CSV 批量导入商品主数据（A6）。
+ * 模板必需列 sku / marketplace_id / title，缺任一后端整批拒绝并点名。
+ * 幂等键 (shopId, sku, marketplaceId)：已存在走更新，因此可重复导入同一份文件。
+ */
+export const importMasterCsv = (shopId: number | string, file: File) => {
+  const form = new FormData()
+  form.append('shopId', String(shopId))
+  form.append('file', file)
+  return request.post<void, ApiResponse<MasterImportReport>>('/product/master/import/csv', form)
+}
+
 /**
  * 人工自查登记 + 趋势 / 对比三个只能在这里看到的视图。
  *

@@ -1,10 +1,15 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.context.UserContext;
+import com.amz.dto.ProductCsvImportReport;
 import com.amz.model.AmzProduct;
 import com.amz.result.Result;
 import com.amz.service.ProductMasterService;
+import com.amz.service.impl.ProductCsvImportService;
+import com.amz.util.CsvImportUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -33,6 +39,9 @@ public class ProductMasterController {
 
     @Autowired
     private ProductMasterService productMasterService;
+
+    @Autowired
+    private ProductCsvImportService productCsvImportService;
 
     @ShopScoped
     @GetMapping("/list/{shopId}")
@@ -53,6 +62,52 @@ public class ProductMasterController {
             return Result.success(productMasterService.get(shopId, id));
         } catch (IllegalArgumentException e) {
             return Result.failure(e.getMessage());
+        }
+    }
+
+    /**
+     * CSV 批量导入商品主数据（A6）。
+     * <p>
+     * POST /product/master/import/csv?shopId=1（multipart，字段名 file）
+     * <p>
+     * 模板表头（按名定位，使用者可增列不影响）：
+     * {@code sku, marketplace_id, title} 为必需列，缺任一整批拒绝并点名；
+     * 其余可选：asin / brand / price / currency / category / product_type /
+     * size_tier / weight_g / status。
+     * <p>
+     * 幂等键 (shopId, sku, marketplaceId)：已存在走更新，不存在走新建，
+     * 因此同一份文件重复导入是安全的。报告带回显表头与行级错误（带文件行号）。
+     * <p>
+     * 大小与类型在控制器就挡掉：超限/非 CSV 直接拒绝，不进入解析。
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @ShopScoped
+    @OperLog(module = "商品主数据", action = "CSV导入", description = "批量导入商品主数据")
+    @PostMapping(value = "/import/csv", consumes = "multipart/form-data")
+    public Result<ProductCsvImportReport> importCsv(@RequestParam Long shopId,
+                                                    @RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return Result.failure("上传文件为空");
+        }
+        if (file.getSize() > CsvImportUtil.DEFAULT_MAX_BYTES) {
+            return Result.failure("文件超过大小上限 "
+                    + (CsvImportUtil.DEFAULT_MAX_BYTES / 1024 / 1024) + "MB，当前 "
+                    + (file.getSize() / 1024 / 1024) + "MB");
+        }
+        String name = file.getOriginalFilename();
+        if (name == null || !name.toLowerCase().endsWith(".csv")) {
+            return Result.failure("只支持 .csv 文件（Excel 请另存为 CSV UTF-8）");
+        }
+        try {
+            return Result.success(productCsvImportService.importCsv(shopId,
+                    new java.io.BufferedReader(new java.io.InputStreamReader(
+                            file.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))));
+        } catch (CsvImportUtil.StructuralException e) {
+            // 结构错误（缺列/空文件/超行数）：整批拒绝，不做部分导入
+            return Result.failure(e.getMessage());
+        } catch (Exception e) {
+            log.warn("商品 CSV 导入失败 shopId={}: {}", shopId, e.getMessage());
+            return Result.failure("导入失败：" + e.getMessage());
         }
     }
 

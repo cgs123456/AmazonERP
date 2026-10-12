@@ -330,6 +330,7 @@
             <button class="page-btn" @click="reloadMaster">搜索</button>
             <span class="muted">marketplaceId 与 title 在库上是 NOT NULL，缺失会在保存时被挡下</span>
           </div>
+          <MasterCsvImport @imported="reloadMaster" />
           <table class="data-table">
             <thead>
               <tr><th>SKU</th><th>ASIN</th><th>站点</th><th>标题</th><th>品牌</th>
@@ -402,6 +403,7 @@ import { ref, computed, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import MasterCsvImport from '../components/MasterCsvImport.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { usePagination } from '@/composables/usePagination'
 import { renderLabelHtml } from '@/utils/packingSlip'

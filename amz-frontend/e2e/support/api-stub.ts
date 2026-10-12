@@ -1338,6 +1338,11 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
 
   // ===== Listing 监控台 /listings（读快照 + 人工登记 + 趋势 / 对比）=====
   // 顺序敏感：trend / compare / check 都要排在各自的通用 list/ 之前。
+  // 商品主数据 CSV 导入（A6）：报告带回显表头与行级错误（行号含表头行）
+  { match: /^\/product\/master\/import\/csv$/, data: {
+      totalRows: 4, insertedRows: 2, updatedRows: 1, skippedRows: 1, failedRows: 1,
+      headers: ['sku', 'marketplace_id', 'title', 'price'],
+      errors: { '3': '价格不是合法数字：abc' } } },
   { match: /^\/product\/listing-monitor\/health\/summary\//, data: LM_SUMMARY },
   { match: /^\/product\/listing-monitor\/health\/check$/, data: LM_CHECK_RESULT },
   { match: /^\/product\/listing-monitor\/health\/list\//, data: LM_HEALTH, page: FULL_PAGE(LM_HEALTH.length) },

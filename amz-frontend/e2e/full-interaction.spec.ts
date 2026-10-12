@@ -1166,6 +1166,33 @@ test.describe('ListingMonitor 交互（商品与 Listing 监控）', () => {
     await expect(row).toContainText('—')
     await expect(page.locator('.error-zone')).toHaveCount(0)
   })
+
+  test('CSV 导入逐行报告：失败行带文件行号，且换文件后清掉上一份报告', async ({ page }) => {
+    await page.goto('/listings')
+    await page.locator('.tab', { hasText: '商品主数据' }).click()
+    const panel = page.locator('[data-panel="master-csv-import"]')
+    await expect(panel).toBeVisible()
+
+    await panel.locator('input[type="file"]').setInputFiles({
+      name: 'masters.csv', mimeType: 'text/csv',
+      buffer: Buffer.from('sku,marketplace_id,title,price\r\nSKU-1,ATVPDKIKX0DER,Widget,19.99\r\n')
+    })
+    await panel.locator('button', { hasText: '导入 CSV' }).click()
+
+    // 统计与行级错误都要显示：只给「4 行 1 失败」没法知道改哪一行
+    const report = panel.locator('[data-panel="import-report"]')
+    await expect(report).toContainText('共 4 行')
+    await expect(report).toContainText('新增 2')
+    await expect(report).toContainText('更新 1')
+    await expect(report).toContainText('跳过空行 1')
+    await expect(report).toContainText('失败 1')
+    await expect(report.locator('.ci-errors tbody tr')).toHaveCount(1)
+    // 行号对着文件（含表头行），原因原样显示
+    await expect(report.locator('.ci-errors tbody tr')).toContainText('第 3 行')
+    await expect(report.locator('.ci-errors tbody tr')).toContainText('abc')
+    // 识别到的表头要回显，列名对不上时先核这里
+    await expect(report).toContainText('marketplace_id')
+  })
 })
 
 test.describe('MultiplatformOrders 交互（多平台订单）', () => {
