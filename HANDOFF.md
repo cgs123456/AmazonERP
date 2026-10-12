@@ -133,7 +133,11 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 | P1 角色管理 | `UserManagement.vue` 角色下拉 → `updateUserRole` |
 | P1 CSV 导出 | `OrderList.vue` 导出按钮 + 利润/订单/库存健康三端点 |
 | P1 消息落库 | `NotificationPage.vue` 真调 `listNotifications()` 拉历史 |
+| P1 工单终态 | `CustomerService.vue`「关闭」按钮（仅 PENDING/REPLIED） |
 | P2 配货履约 | `OrderList.vue`「配货出库」按钮 → `/order/{id}/allocate` |
+| P2 供应商付款 | `Procurement.vue`「供应商付款」Tab + 采购单操作列付款按钮 |
+| P2 批量到货 | `Warehouse.vue` 入库单 Tab 勾选 + 批量到货弹窗（逐单报告） |
+| P2 BOM 组合品 | `Procurement.vue`「BOM 组合品」Tab：按组合 SKU 查子品行 + 展开试算 |
 | P2 标签打印 | `ListingMonitor.vue:637` 打开打印窗口（纯前端 `renderLabelHtml`） |
 
 连同 §S7 六大项（审计落库/店铺体系/发货回传/退货闭环/FBA 入库/FBA 退货自动对接）与
@@ -143,18 +147,14 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 
 | 功能 | 后端现状 | 前端缺口 |
 |---|---|---|
-| P1 工单终态 | `/customer/ticket/{ticketId}/close` 已在 | api 层与页面都没有关闭入口——工单仍只进不出 |
-| P2 批量到货 | `/logistics/inbound/batch-receive` 已在（注意落在 logistics，非 procurement） | 前端零引用 |
-| P2 BOM 组合品 | `/procurement/bom` 三个端点（建/列表/展开）已在 | 前端零引用 |
 | P3 店铺绩效 | `/spapi/performance/*` 三端点 + V12 表 | 前端零引用 |
 | P3 Listing 调价规则 | V13 表 + 规则 CRUD/执行端点 | 前端零引用 |
 | P4 AI 广告托管 | `/ai/ad-pilot/run`（干跑默认） | 前端零引用 |
 
 ### 孤儿 api（函数写好了，页面没调用——比「完全没接」更隐蔽）
 
-- **P2 供应商付款**：`src/api/procurement.ts` 有 `payPurchaseOrder` /
-  `listSupplierPayments` / `cancelSupplierPayment` 三个函数，但 `Procurement.vue`
-  只有 `paymentTerms` 表单字段，**没有任何页面调用它们**。三单匹配的成果用户碰不到。
+- ~~**P2 供应商付款**~~ **已接（2026-10-12）**：三个 api 函数曾零调用，
+  现由「供应商付款」Tab + 采购单付款按钮消费。
 
 ### 只有接口骨架
 
@@ -169,10 +169,9 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 
 ### 建议优先序（据此更新 §S10）
 
-上述缺口里，**P1 工单终态**是唯一属 P1「地基」且改动最小的（一个端点 + 页面按钮）；
-**P2 供应商付款**只需把已有 api 接到页面（函数都写好了）；
-**P2 批量到货 / BOM** 需新建 UI；**P3 三项**依赖 Keepa/真实样本等外部条件，
-本就排在后面。**P4 平台适配层**按设计等第四家平台，不算欠账。
+~~工单终态 / 供应商付款 / 批量到货 / BOM~~ **四项已补齐（2026-10-12，见 §S7d）**。
+剩余前端缺口只剩 **P3 三项**（绩效/调价/AI 托管）与 **P4 适配层**：
+P3 三项依赖 Keepa/真实样本等外部条件，本就排在后面；适配层按设计等第四家平台。
 
 ## S7. 业务齐全度推进（2026-10-11，六大项）
 
@@ -2068,11 +2067,8 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 **后端已全部交付**；但按 §S7c 三层核实，**其中四项用户还碰不到**（前端未接或 api 孤儿）。
 当前剩余按优先序：
 
-**〇、「已交付但用户碰不到」的补前端欠账（最高优先——工作量小、收益直接）**
-- **P1 工单终态**：后端 `/customer/ticket/{id}/close` 已在，差一个 api 函数 + 页面按钮；
-- **P2 供应商付款**：api 三个函数已写好，只需接到 `Procurement.vue`（最容易的一项）；
-- **P2 批量到货 / P2 BOM**：需新建 UI，量级中等。
-（明细与页面落点见 §S7c）
+**〇、「已交付但用户碰不到」的补前端欠账** — ~~最高优先~~ **已完成（2026-10-12，§S7d）**：
+付款 / 工单终态 / 批量到货 / BOM 四项全部接到页面并补了 E2E。剩余前端缺口只剩 P3 三项。
 
 1. ~~**CI run 确认**~~ **已结案（2026-10-12）**：run `38133981053` 实际是 failure——
    四类交付后 master 连红 4 次，唯一红的 job 是 frontend（E2E 超时）。根因与修复见 **§S7a**：
