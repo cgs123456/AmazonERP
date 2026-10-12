@@ -18,8 +18,11 @@
 
 ## 项目现状一句话
 
-后端 19 个 Maven 模块可编译可测；本机整仓回归 **2211/0F/0E/35S**（§S7.8），前端 vue-tsc 0 错 +
-vitest **506/506**；迁移 **65** 个（钉数已同步）、Flyway 活表 **116** 张、
+**CI 全绿（run `38203516776`，2026-10-12）**：11 个 job 全过——后端 **2222/0F/0E/2S**、
+前端 vitest **507/507** + vue-tsc 0 错 + build 通过 + **E2E 126 passed（58.7s）**、
+hygiene 0 / release tools 91/91 / stub-shape RED 0（145 注册/97 过）/ synthetic-data /
+mysql-import / docker / runtime-smoke / checkstyle 双档。
+本机整仓回归 **1968/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑故为 2222）；迁移 **65** 个（钉数已同步）、Flyway 活表 **116** 张、
 实体 102 / 0 漂移、零引用表 0、hygiene 0 findings（两种模式）、release tools 91/91、
 schema 快照 103 表/14 库一致；fallbackFactory **23** 个 / 声明模块 **9** 个（全部接线熔断+超时）。
 新增能力面：审计落库、店铺管理、发货回传、退货单+流水账+FIFO 回补、COGS 退货冲减、
@@ -77,6 +80,36 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 变异验证累计 9 处全红。三个一次性 MySQL 容器（审计/店铺/CI 模拟）用完已删。
 未做并如实留档：P3.3/P3.4（Keepa token）、绩效字段级解析（等真实样本）、
 平台适配层完整迁移、Listing 定时自动调价（等联调）、AI 生图（外部凭据）。
+
+## S7a. E2E 桩漂移修复：CI 转绿（2026-10-12，commit `e2fc86b`）
+
+> 四期交付后 master 连红 4 次（3 failure + 1 cancelled），唯一红的 job 是 `frontend`
+> （45 分钟超时被打断）。根因不是产品缺陷，是**测试与产品代码漂移**。
+> 方案见 [`docs/superpowers/plans/2026-10-12-e2e-stub-drift-fix.md`](docs/superpowers/plans/2026-10-12-e2e-stub-drift-fix.md)。
+
+- **根因（单点，非多层）**：4 个 spec 用 `addInitScript` 播种店铺名 `Shop A (US)`，
+  精确命中生产代码 `purgeLegacyPlaceholderShops()` 的清理模式 `/^Shop [ABC] \((US|UK|DE)\)$/`——
+  **播种即被清空**；而 e2e 桩的 `/user/getInfo` 不返回顶层 `shops`（后端 `UserVo.shops`
+  在 S7.2 已加、桩未同步），页面停在「请先选择店铺」，所有依赖店铺的断言因此超时。
+  改 spec 而非改清理规则：清理规则是 S7.2 定案的正确行为，改规则等于让测试迁就假数据。
+- **排除了「桩缺登记」这一猜测**：给桩加诊断开关把落到 `EMPTY_PAGE` 兜底的未匹配端点全打印，
+  跑完 126 例**只发现 1 个**未登记端点（`GET /user/notification/list`）。桩覆盖是够的。
+- **另两处同型漂移**（都是 P1 新功能改了 UI、旧 spec 未同步）：
+  ① 订单页 `.filter-btn` 定位歧义——P1 的 CSV 导出加了「导出」按钮并复用该类名，
+  收窄为 `:not(.export)`（不用 `.first()`，那会在按钮顺序变化时静默点错）；
+  ② 通知页断言「服务端不落库」已过时——P1.6 落库做完后文案改成「已落库」，断言同步为新文案
+  （有 `NotificationPage.vue` 支撑，属同步事实非放松断言）。顺带补了那个未登记端点
+  （后端返回 `Result<List<Notification>>`，按数组+`FULL_PAGE` 登记，不让它落到对象兜底）。
+- **防回潮**：`shopSource.test.ts` 的店铺种子扫描从 `src/main.ts` 单文件扩到 **`e2e/**`**
+  （排除 `api-stub.ts` 展示用店铺名）。E2E 目录此前不在任何契约扫描范围内——这是漂移能潜伏至今的原因。
+  变异验证：播种名改回占位值 → **恰好 1 红**并点名文件，已还原。
+- **实测**：E2E 126 例 **52 passed/72 failed（27.9 分钟）→ 126 passed（CI 58.7s）**；
+  本机最后一轮 123/3，剩 3 例单跑全过（冷启动抖动，失败集合每轮不同），CI 上未复现。
+  45 分钟超时问题随之消失（现在 2 分半跑完整个 frontend job）。
+- **坑 19 精确复现（自踩）**：方案文档里写「避免出现 `token = xxx` 形式」这句**警示本身**
+  被 hygiene 的裸串扫描当成真赋值，CI 上 1 finding。写「别写 X」会被当成写了 X——
+  必须连措辞一起改写。教训：**文档/注释改动后也要重跑 hygiene**，本机本来就能抓到，
+  是我加文档后漏跑了一次。
 
 ## S7. 业务齐全度推进（2026-10-11，六大项）
 
@@ -1971,7 +2004,13 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 ~~P1 原四项~~（流水/盘点/角色/导出/工单终态/消息落库）与 ~~P2 四项~~（履约/付款/批量到货/BOM）
 **已全部交付**。当前剩余按优先序：
 
-1. **CI run 确认**：推送后 run `38133981053` 待确认全绿（本地门禁已全绿，远端需跑完）；
+1. ~~**CI run 确认**~~ **已结案（2026-10-12）**：run `38133981053` 实际是 failure——
+   四类交付后 master 连红 4 次，唯一红的 job 是 frontend（E2E 超时）。根因与修复见 **§S7a**：
+   三处测试/产品代码漂移，已修，现 run `38203516776` **11 个 job 全绿**
+   （后端 2222/0F/0E、前端 E2E 126 passed、hygiene 0、release tools 91/91）。
+   **教训（本机掩盖问题的解法）**：本机跑不到的三类（JDK 21 vs CI 17、DB 门控 IT 本机跳过、
+   测试顺序依赖）只能靠**推送后立刻盯 CI** 兜底；而 hygiene 这类本机跑得到的门禁，
+   必须**每次改完文档/注释都重跑**——本机漏跑一次就让 CI 红了（坑 19 复现，见 §S7a）；
 2. **P3.3 Review 星级 / P3.4 竞品上新**——等 Keepa token（AmazonReturnSyncScheduler 模式可复用）；
 3. **绩效字段级解析**——等真实报表样本（原文已留痕不丢）；
 4. **A8 多平台入报表**——需先定口径（合并展示 or 分平台）；
