@@ -6,12 +6,20 @@ export default defineConfig({
   expect: { timeout: 10000 },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // 零重试：失败了就是失败了，不靠再跑一次把红灯抹平。
+  // 成本不是时间（全量约 1 分钟，省下的重试时间反而更多），而是偶发红灯——
+  // 若 CI 上开始出现间歇性红，正确动作是去修抖动根因，不要把这个数字加回 1：
+  // 加回去只是把「产品缺陷在偶发条件下只红一次」和「环境抖动」这两类问题重新藏起来。
+  // 判据（2026-10-12）：改为 0 之前 CI 连跑两轮 126 passed 且 retry 计数均为 0，
+  // 即那一次重试根本没被用到——关掉它在这两轮里是零成本的。
+  retries: 0,
   workers: 1,
   reporter: 'list',
   use: {
     baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
+    // 原来是 'on-first-retry'：retries 归 0 后它永远不会触发，等于死配置。
+    // 改成失败即保留——零重试下 trace 是唯一的失败现场，诊断抖动要靠它。
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   webServer: {
