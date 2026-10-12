@@ -101,7 +101,8 @@ class AllModulesUpgradeFlywayMySqlIT {
 
             // V7 删除 coupon_id 悬空列：amz_coupon 表已在 product V5 删除，该列再无引用目标。
             // 断言「列已删」而不是「列类型是什么」——删列若被回滚，这里必须红。
-            assertMigration(migrate(schema, "amz-service-order", "7"), 7);
+            // 本次只执行 V6/V7 两个（前面已 migrate 到 "5"），所以期望 2 而不是 7。
+            assertMigration(migrate(schema, "amz-service-order", "7"), 2);
             assertFalse(columnExists(connection, "amz_order", "coupon_id"));
             // 删列不影响既有行与其余列
             assertEquals(1L, scalarLong(connection, "SELECT COUNT(*) FROM amz_order WHERE id = 1"));
