@@ -177,6 +177,38 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 剩余前端缺口只剩**挂着的两项**（P3 店铺绩效 / P4 AI 广告托管）——按用户拍板
 「需要 API 的挂着」处理，不做对着空数据的 UI；P4 适配层按设计等第四家平台。
 
+## S7g. 商品主数据 CSV 批量导入（2026-10-12，commit `dc469d0`）
+
+> A 档 A6。**只做商品主数据一个域**——按「抽象延迟到第二个真实用例」，
+> 不预先造通用导入框架；第二个域接入时再抽公共部分。
+
+- **后端**：`amz-common` 新增 `CsvImportUtil`（RFC 4180 解析、**按表头名定位列**、
+  缺必需列整批拒绝并点名、行数/大小硬上限、剥掉导出侧加的公式注入前导单引号）；
+  `POST /product/master/import/csv`（multipart，控制器就挡空文件/超 5MB/非 .csv）；
+  `ProductCsvImportService` 复用 create/update 的同一套校验——不另写一套，
+  否则「批量能进、单条进不去」的割裂会让使用者怀疑数据被悄悄改松。
+- **幂等键 (shopId, sku, marketplaceId)**：已存在走更新，同一份文件可重复导入。
+- **行级隔离**：失败带文件行号（含表头行）；**空行算 skipped 不算 failed**——
+  文件末尾空行不该让「1 条失败」掩盖真实问题。
+- **报告回显识别到的表头**：列名对不上时使用者能立刻看出是模板错还是自己加错列。
+- **前端**：自足组件 `MasterCsvImport`（自己管文件与报告状态，成功后 emit imported
+  让父页面刷新），嵌进 ListingMonitor 的商品主数据 Tab。没往那个文件里堆状态——
+  它已 786 行，超单文件 500 行上限。
+- **测试抓出一个真 bug**：列数多于表头时，多出来的列被**静默丢弃**。改成判坏行
+  并说明理由——静默丢弃会让使用者以为那列导进去了。
+- 测试：解析器 9 项 + service 6 项 + E2E 1 项；变异验证（桩报告改成 0 失败 →
+  E2E 确实红，已还原）。
+- 本机：后端整仓 **2237/0F/0E/35S** BUILD SUCCESS（较 A5 后 +15）、vue-tsc 0 错、
+  vitest 507/507、hygiene 0、release tools 91/91、stub-shape RED 0（159/103）、
+  entity_column_drift 0 mismatch、E2E 136/138（2 例已知冷启动抖动，单跑均过）。
+
+### 顺带发现：`/product/master` 的 api 层曾零页面调用
+
+§S7c 三层核实时把「P3 Listing 调价规则」记为前端零引用，但漏看了
+`src/api/listing.ts` 里的主数据 api——其实 ListingMonitor 的「商品主数据」Tab
+一直在用（当时 grep 只查了 `api/stocktake` 这类显式 import，没算命名空间解构的）。
+本轮修正该记录：主数据 CRUD 前端一直有，缺的只是批量导入入口。
+
 ## S7f. A5 促销悬空列清理 + IT 期望值修复（2026-10-12，`8594822` / `34fb747`）
 
 > A 档「缺整块能力」里的 A5（促销/优惠券）。两个选项（重建促销域 or 清理悬空列）里
@@ -2137,8 +2169,9 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
 2. **P3.3 Review 星级 / P3.4 竞品上新**——等 Keepa token（AmazonReturnSyncScheduler 模式可复用）；
 3. **绩效字段级解析**——等真实报表样本（原文已留痕不丢）；
 4. **A8 多平台入报表**——需先定口径（合并展示 or 分平台）；
-5. **A1 面单 / A3 发票与容差配置化 / A6 批量导入**——按 §S10 A 档节奏渐进
-   （~~A5 促销~~ 已清理：悬空列删除 + 明确不做商业化域，见 §S7f）；
+5. **A1 面单 / A3 发票与容差配置化**——按 §S10 A 档节奏渐进
+   （~~A5 促销~~ 已清理，见 §S7f；~~A6 批量导入~~ 已做商品主数据域，见 §S7g——
+   第二个域接入时按 `CsvImportUtil` 复用，届时再抽公共框架）；
 6. **P4 平台适配层完整迁移**——第四家平台接入时按 PlatformAdapter 清单验收；
 7. **主线不变**：真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）。
 
