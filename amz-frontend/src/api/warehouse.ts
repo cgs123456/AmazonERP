@@ -137,6 +137,33 @@ export const receiveInbound = (id: number, items: WarehouseInventory[]) => {
   return request.post<void, ApiResponse<InboundOrder>>(`/logistics/inbound/${id}/receive`, items)
 }
 
+/** 批量到货的一行：入库单 + 该单的到货明细（SKU/数量/批次/库位）。 */
+export interface BatchReceiveLine {
+  inboundId: number
+  items: WarehouseInventory[]
+}
+
+/** 批量到货的逐单结果行（后端逐单独立事务，失败不互相影响）。 */
+export interface BatchReceiveReportRow {
+  inboundId: number
+  ok: boolean
+  status?: string
+  error?: string
+}
+
+/**
+ * 批量到货验收：一次对多张入库单签收。
+ * <p>
+ * 返回**逐单报告**而不是整体成败——后端对每单单独 try/catch，一单失败
+ * （状态不对 / 库存行不存在）不挡住其余单。UI 必须把每行的 ok 与 error
+ * 原样显示出来，把失败行汇总成「全部成功」会让仓库漏收货。
+ * <p>
+ * items 不能省：后端 items==null 时只改单据状态、不增加库存。
+ */
+export const batchReceiveInbound = (lines: BatchReceiveLine[]) => {
+  return request.post<void, ApiResponse<BatchReceiveReportRow[]>>('/logistics/inbound/batch-receive', lines)
+}
+
 export const cancelInbound = (id: number) => {
   return request.post<void, ApiResponse<InboundOrder>>(`/logistics/inbound/${id}/cancel`)
 }

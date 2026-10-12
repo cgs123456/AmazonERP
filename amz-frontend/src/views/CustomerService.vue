@@ -57,7 +57,9 @@
                   <td class="cell-clip" :title="t.content">{{ t.content || '-' }}</td>
                   <td class="cell-clip" :title="t.reply">{{ t.reply || '-' }}</td>
                   <td>
-                    <button class="action-btn" :disabled="busy || t.status === 'RESOLVED'" @click="openModal('reply', { ticket: t })">回复</button>
+                    <button class="action-btn" :disabled="busy || t.status === 'CLOSED'" @click="openModal('reply', { ticket: t })">回复</button>
+                    <button v-if="canCloseTicket(t.status)" class="action-btn" :disabled="busy"
+                            @click="confirm(closeTicketConfirm(t))">关闭</button>
                   </td>
                 </tr>
                 <tr v-if="!tickets.loading.value && !tickets.rows.value.length">
@@ -577,6 +579,26 @@ const toggleTpl = async (tp: EmailTemplate, enabled: boolean) => {
   if (ok) await loadTemplates()
 }
 
+/* ---------- 关闭工单（PENDING/REPLIED → CLOSED） ---------- */
+
+/** 后端 closeTicket 只接 PENDING/REPLIED；其余状态点名拒绝，不做兜底放行。 */
+const canCloseTicket = (status?: string) => status === 'PENDING' || status === 'REPLIED'
+
+const closeTicketConfirm = (t: CustomerTicket) => ({
+  title: '关闭工单',
+  detail: `工单 ${t.amazonOrderId || t.id} 将置为 CLOSED。关闭后不能再回复；`
+    + '若买家后续来信，请新建工单而不是重开旧单——旧单的回复记录要保持连续。',
+  run: async () => {
+    if (!t.id) return
+    // 只回写这一行：后端返回的就是最新实体（权威数据），不必整表刷新——
+    // 刷新会重置分页游标与筛选条件，也会让「刚关闭的那行」在重新拉取前闪回旧状态
+    await call('关闭工单', () => cust.closeTicket(t.id!), (r) => {
+      const idx = tickets.rows.value.findIndex(x => x.id === r.id)
+      if (idx >= 0) tickets.rows.value[idx] = r
+    })
+  }
+})
+
 const processConfirm = {
   title: '处理待发邮件队列',
   detail: '会遍历本店 PENDING 任务并尝试发送。邮件通道目前未接入：非模拟环境下任务会被标成 FAILED 并写原因，'
@@ -711,7 +733,7 @@ const runConfirm = async () => {
 
 /* ---------- 展示归类 ---------- */
 const ticketClass = (s?: string) =>
-  s === 'RESOLVED' ? 'healthy' : s === 'ESCALATED' ? 'urgent' : s === 'PENDING' ? 'risk' : ''
+  s === 'CLOSED' ? 'healthy' : s === 'ESCALATED' ? 'urgent' : s === 'PENDING' ? 'risk' : ''
 const sentimentClass = (s?: string) => (s === 'ANGRY' || s === 'NEGATIVE' ? 'urgent' : s === 'POSITIVE' ? 'healthy' : '')
 const taskClass = (s?: string) => (s === 'SENT' ? 'healthy' : s === 'FAILED' ? 'urgent' : s === 'PENDING' ? 'risk' : '')
 const reviewClass = (s?: string) => (s === 'RESOLVED' ? 'healthy' : s === 'IGNORED' ? 'unknown' : 'risk')

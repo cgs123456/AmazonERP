@@ -215,18 +215,29 @@
       <div v-show="activeTab === 'inbound'" class="panel">
         <div class="panel-header">
           <h3>入库单列表</h3>
-          <button class="primary-btn" @click="openInboundDialog()">+ 创建入库单</button>
+          <div class="header-actions">
+            <button class="primary-btn" :disabled="!batchSelected.length || batchReceiving"
+                    @click="openBatchReceive()">批量到货（{{ batchSelected.length }}）</button>
+            <button class="primary-btn" @click="openInboundDialog()">+ 创建入库单</button>
+          </div>
         </div>
         <div class="table-card">
           <table class="data-table">
             <thead>
               <tr>
+                <th class="col-check"><input type="checkbox" :checked="allReceivableChecked"
+                                             @change="toggleAllReceivable(($event.target as HTMLInputElement).checked)" /></th>
                 <th>入库单号</th><th>仓库</th><th>来源</th><th>关联单号</th>
                 <th>状态</th><th>总数</th><th>已收</th><th>预计到货</th><th>操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="o in inboundOrders" :key="o.id">
+                <td class="col-check">
+                  <input v-if="canReceiveInbound(o.status)" type="checkbox" :checked="batchSelected.includes(o.id!)"
+                         @change="toggleBatchSelect(o.id!, ($event.target as HTMLInputElement).checked)" />
+                  <span v-else class="muted">—</span>
+                </td>
                 <td>{{ o.inboundNo }}</td>
                 <td>{{ warehouseName(o.warehouseId) }}</td>
                 <td>{{ o.source || '-' }}</td>
@@ -241,7 +252,7 @@
                   <button v-if="canCancelInbound(o.status)" class="action-btn cancel" @click="doCancelInbound(o.id!)">取消</button>
                 </td>
               </tr>
-              <tr v-if="!loading && inboundOrders.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-in" width="32" class="empty-icon" /><span>暂无入库单</span></div></td></tr>
+              <tr v-if="!loading && inboundOrders.length === 0"><td colspan="10" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-in" width="32" class="empty-icon" /><span>暂无入库单</span></div></td></tr>
             </tbody>
           </table>
           <div class="pagination">
@@ -523,6 +534,44 @@
         </div>
       </div>
 
+      <!-- 批量到货弹窗：每张入库单各自填明细，提交后逐单报告 -->
+      <div v-if="batchDialog.visible" class="modal-mask" @click.self="batchDialog.visible = false">
+        <div class="modal modal-wide" role="dialog" aria-modal="true" data-panel="batch-receive">
+          <h3>批量到货验收（{{ batchDialog.lines.length }} 张入库单）</h3>
+          <p class="helper">
+            每张单各自填明细：后端对每单独立校验与落账，一单失败不会挡住其余单。
+            明细留空的单只会变更单据状态、不增加库存——请不要对需要收货的单留空。
+          </p>
+          <div v-for="line in batchDialog.lines" :key="line.inboundId" class="batch-group">
+            <div class="batch-group-head">
+              <strong>{{ line.inboundNo }}</strong>
+              <span class="muted">仓库 {{ warehouseName(line.warehouseId) }} · 总数 {{ line.totalItems }} · 已收 {{ line.receivedItems }}</span>
+            </div>
+            <div v-for="(item, ii) in line.items" :key="ii" class="inline-row">
+              <input v-model="item.sku" placeholder="SKU" />
+              <input v-model.number="item.quantity" type="number" placeholder="数量" />
+              <input v-model="item.batchNo" placeholder="批次号（选填）" />
+              <button class="action-btn cancel" @click="line.items.splice(ii, 1)">删除</button>
+            </div>
+            <button class="ghost-btn" @click="line.items.push({ sku: '', quantity: 1, batchNo: '' })">+ 添加明细</button>
+          </div>
+          <div v-if="batchReport.length" class="batch-report" data-panel="batch-report">
+            <h4>到货报告（逐单）</h4>
+            <div v-for="r in batchReport" :key="r.inboundId" class="batch-report-row"
+                 :class="r.ok ? 'ok' : 'fail'" role="status">
+              <template v-if="r.ok">入库单 {{ r.inboundId }}：到货成功，状态 {{ r.status }}</template>
+              <template v-else>入库单 {{ r.inboundId }}：失败——{{ r.error || '未给出原因' }}</template>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button class="ghost-btn" @click="batchDialog.visible = false">关闭</button>
+            <button class="primary-btn" :disabled="batchReceiving" @click="confirmBatchReceive">
+              {{ batchReceiving ? '提交中…' : '确认到货' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 发货弹窗 -->
       <div v-if="shipDialog.visible" class="modal-mask" @click.self="shipDialog.visible = false">
         <div class="modal">
@@ -549,7 +598,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, reactive, watch } from 'vue'
+import { ref, onMounted, onUnmounted, reactive, watch, computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -567,7 +616,7 @@ import {
 } from '@/api/stocktake'
 import { canUseRole, LOCATION_EDIT_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
 import { AGING_BUCKETS } from '@/api/warehouse'
-import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder, StockAging } from '@/api/warehouse'
+import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder, StockAging, BatchReceiveReportRow } from '@/api/warehouse'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { useToast } from '@/composables/useToast'
 
@@ -1101,6 +1150,100 @@ const openReceive = (id: number, warehouseId: number) => {
   receiveDialog.items = [{ sku: '', quantity: 1 }]
   receiveDialog.visible = true
 }
+/* ---------- 批量到货 ---------- */
+
+/** 后端 receiveInbound 只接 IN_TRANSIT / PARTIAL；与单条「到货验收」按钮的显示条件一致。 */
+const canReceiveInbound = (status?: string) => status === 'IN_TRANSIT' || status === 'PARTIAL'
+
+const receivableInbounds = computed<InboundOrder[]>(() => inboundOrders.value.filter((o) => canReceiveInbound(o.status)))
+const allReceivableChecked = computed(() =>
+  receivableInbounds.value.length > 0 && batchSelected.value.length === receivableInbounds.value.length)
+
+const batchSelected = ref<number[]>([])
+const batchReceiving = ref(false)
+const batchReport = ref<BatchReceiveReportRow[]>([])
+const batchDialog = reactive<{
+  visible: boolean
+  lines: Array<{ inboundId: number; inboundNo: string; warehouseId: number; totalItems?: number; receivedItems?: number; items: Array<{ sku: string; quantity: number; batchNo: string }> }>
+}>({ visible: false, lines: [] })
+
+const toggleBatchSelect = (id: number, checked: boolean) => {
+  batchSelected.value = checked ? [...batchSelected.value, id] : batchSelected.value.filter((x) => x !== id)
+}
+
+const toggleAllReceivable = (checked: boolean) => {
+  batchSelected.value = checked ? receivableInbounds.value.map((o) => o.id!) : []
+}
+const openBatchReceive = () => {
+  batchReport.value = []
+  batchDialog.lines = batchSelected.value
+    .map((id) => inboundOrders.value.find((o) => o.id === id))
+    .filter((o): o is InboundOrder => !!o)
+    .map((o) => ({
+      inboundId: o.id!,
+      inboundNo: o.inboundNo || String(o.id),
+      warehouseId: o.warehouseId,
+      totalItems: o.totalItems,
+      receivedItems: o.receivedItems,
+      items: [{ sku: '', quantity: 1, batchNo: '' }]
+    }))
+  batchDialog.visible = true
+}
+
+const confirmBatchReceive = async () => {
+  // 逐组校验：只要有单没填明细就整批拒绝，并点名未填的单号。
+  // 不按「过滤掉空组」放行——那会静默少收几单，比明确报错危险得多。
+  const blankLines = batchDialog.lines
+    .filter((line) => line.items.every((x) => !x.sku || x.quantity <= 0))
+    .map((line) => line.inboundNo)
+  if (blankLines.length) {
+    showToast(`以下入库单还没填明细：${blankLines.join('、')}。不留空的单才会增加库存`, 'error')
+    return
+  }
+
+  const lines = batchDialog.lines.map((line) => ({
+    inboundId: line.inboundId,
+    items: line.items
+      .filter((x) => x.sku && x.quantity > 0)
+      .map((x) => ({
+        warehouseId: line.warehouseId,
+        shopId: shopIdNum(),
+        sku: x.sku,
+        quantity: x.quantity,
+        ...(x.batchNo ? { batchNo: x.batchNo } : {})
+      } as WarehouseInventory))
+  }))
+
+  if (!lines.length) {
+    showToast('每张入库单都要至少填一条 SKU 明细，否则不会增加库存', 'error')
+    return
+  }
+
+  batchReceiving.value = true
+  batchReport.value = []
+  try {
+    const res = await WH.batchReceiveInbound(lines)
+    if (res?.code !== 200) {
+      showToast(`批量到货失败：${res?.message || '接口返回非 200'}`, 'error')
+      return
+    }
+    batchReport.value = res.data ?? []
+    const failed = batchReport.value.filter((r) => !r.ok).length
+    // 逐单报告，不汇总成「全部成功」：失败行必须看得见，否则仓库会漏收货
+    if (failed > 0) {
+      showToast(`${batchReport.value.length} 张单：${batchReport.value.length - failed} 成功、${failed} 失败（详见下方报告）`, 'error')
+    } else {
+      showToast(`${batchReport.value.length} 张入库单全部到货成功`, 'success')
+    }
+    await Promise.all([loadInbound(), loadInventory()])
+  } catch (e) {
+    console.warn('[Warehouse] 批量到货失败', e)
+    showToast('批量到货失败，请稍后重试', 'error')
+  } finally {
+    batchReceiving.value = false
+  }
+}
+
 const confirmReceive = async () => {
   try {
     const items: WarehouseInventory[] = receiveDialog.items
@@ -1276,6 +1419,16 @@ onMounted(async () => {
 .panel { margin-bottom: 1rem; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
 .panel-header h3 { font-size: 1rem; font-weight: 600; margin: 0; color: var(--color-on-surface); }
+.panel-header .header-actions { display: flex; gap: 0.5rem; }
+/* 批量到货：勾选列窄，不可勾的格子给破折号而不是空（空会被读成「漏渲染」） */
+.col-check { width: 2.5rem; text-align: center; }
+.batch-group { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.75rem; margin: 0.5rem 0; }
+.batch-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem; }
+.batch-report { border-top: 1px solid var(--color-border); margin-top: 0.75rem; padding-top: 0.5rem; }
+.batch-report h4 { font-size: 0.875rem; margin: 0 0 0.375rem; }
+.batch-report-row { font-size: 0.8125rem; padding: 0.25rem 0; }
+.batch-report-row.ok { color: var(--color-primary); }
+.batch-report-row.fail { color: var(--color-error, #d32f2f); }
 .filter-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .filter-bar select, .filter-bar input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.8125rem; background: var(--color-surface); color: var(--color-on-surface); }
 

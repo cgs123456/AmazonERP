@@ -395,7 +395,10 @@ const WAREHOUSE_INVENTORY = [
 
 // GET /logistics/inbound/list/{shopId}、/logistics/outbound/list/{shopId} -> 数组
 const INBOUND_ORDERS = [
-  { id: 1, shopId: 1, warehouseId: 1, inboundNo: 'IN-2026-0001', source: 'FBA_TRANSFER', referenceNo: 'FBA16KQ9W2', status: 'IN_TRANSIT', totalItems: 100, receivedItems: 0, expectedArrival: '2026-09-20' }
+  { id: 1, shopId: 1, warehouseId: 1, inboundNo: 'IN-2026-0001', source: 'FBA_TRANSFER', referenceNo: 'FBA16KQ9W2', status: 'IN_TRANSIT', totalItems: 100, receivedItems: 0, expectedArrival: '2026-09-20' },
+  // 第二条刻意用 PARTIAL：批量到货的入参校验就是 IN_TRANSIT / PARTIAL，
+  // 只有一条时测不到「哪些行可勾」这条门槛
+  { id: 2, shopId: 1, warehouseId: 1, inboundNo: 'IN-2026-0002', source: '1688_PURCHASE', referenceNo: 'PO-2026-0031', status: 'PARTIAL', totalItems: 50, receivedItems: 30, expectedArrival: '2026-09-22' }
 ]
 const OUTBOUND_ORDERS = [
   { id: 1, shopId: 1, warehouseId: 1, outboundNo: 'OUT-2026-0001', orderType: 'ORDER', referenceNo: '114-1234567-8901234', status: 'PENDING', carrier: 'DHL', trackingNo: 'TRK0000001', totalItems: 5, shippedItems: 0 }
@@ -446,7 +449,7 @@ const CUSTOMER_TICKETS = [
   },
   {
     id: 2, shopId: 1, amazonOrderId: '114-7712567-000002', buyerId: 'buyer-2', channel: 'RETURN',
-    category: 'REFUND', sentiment: 'NEUTRAL', priority: 'LOW', status: 'RESOLVED',
+    category: 'REFUND', sentiment: 'NEUTRAL', priority: 'LOW', status: 'REPLIED',
     content: 'refund ok', reply: 'done'
   }
 ]
@@ -574,6 +577,35 @@ const PROCUREMENT_TRAIL_PLAN_12 = [
     comment: '价格已核', createTime: '2026-10-03T10:00:00' },
   { id: 1, shopId: 1, refType: 'PLAN', refId: 12, action: 'REJECT', operator: '李四',
     comment: null, createTime: '2026-10-02T09:00:00' }
+]
+
+/**
+ * 采购单（/procurement/order/list）。
+ * 两条刻意覆盖付款门槛的两侧：id=31 是 QC_PASSED（可付款），id=32 是 DRAFT（不可付款）。
+ * 此前这份桩是空数组，页面永远渲染空态——付款按钮「什么状态才出现」根本没被测到。
+ */
+const PURCHASE_ORDERS = [
+  { id: 31, shopId: 1, orderNo: 'PO-2026-0031', sku: 'SKU-A1', supplierName: '深圳市华强北电子科技有限公司',
+    quantity: 100, unitPrice: 22.0, totalAmount: 2200.0, status: 'QC_PASSED', alibabaOrderNo: 'ALI-88001', trackingNo: null },
+  { id: 32, shopId: 1, orderNo: 'PO-2026-0032', sku: 'SKU-B2', supplierName: '深圳市华强北电子科技有限公司',
+    quantity: 30, unitPrice: 18.0, totalAmount: 540.0, status: 'DRAFT', alibabaOrderNo: null, trackingNo: null }
+]
+
+/** 供应商付款单（/procurement/payment/list）。形状对齐后端 SupplierPayment 实体。 */
+const SUPPLIER_PAYMENTS = [
+  { id: 51, shopId: 1, paymentNo: 'PAY-2026-0051', purchaseOrderId: 31, purchaseNo: 'PO-2026-0031',
+    amount: 2200.0, currency: 'CNY', method: 'TRANSFER', status: 'PAID',
+    poAmountSnapshot: 2200.0, createTime: '2026-10-05T14:00:00' }
+]
+
+/**
+ * BOM 组合品：两层结构 GIFT-BOX → 2×GIFT-BAG → 3×GIFT-CARD。
+ * 刻意做成两层：展开接口是递归的，只有一层时「递归累计」这条路径测不到
+ * （1 个 GIFT-BOX 应展开成 6 个 GIFT-CARD，而不是 2 个）。
+ */
+const BOM_ROWS = [
+  { id: 61, shopId: 1, compositeSku: 'GIFT-BOX', childSku: 'GIFT-BAG', childQty: 2, remark: '礼盒装', createTime: '2026-10-01T09:00:00' },
+  { id: 62, shopId: 1, compositeSku: 'GIFT-BAG', childSku: 'GIFT-CARD', childQty: 3, remark: null, createTime: '2026-10-01T09:05:00' }
 ]
 
 /**
@@ -1132,10 +1164,17 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/logistics\/warehouse\/list\//, data: WAREHOUSES },
   { match: /^\/logistics\/warehouse\/inventory$/, data: WAREHOUSE_INVENTORY, page: FULL_PAGE(WAREHOUSE_INVENTORY.length) },
   { match: /^\/logistics\/inbound\/list\//, data: INBOUND_ORDERS, page: FULL_PAGE(INBOUND_ORDERS.length) },
+  // 批量到货（逐单独立）：回一份「一成一败」的报告，UI 必须把两行都显示出来
+  { match: /^\/logistics\/inbound\/batch-receive$/, data: [
+    { inboundId: 1, ok: true, status: 'RECEIVED' },
+    { inboundId: 2, ok: false, error: '仅 IN_TRANSIT / PARTIAL 状态可到货验收，当前=RECEIVED' }
+  ] },
   { match: /^\/logistics\/outbound\/list\//, data: OUTBOUND_ORDERS, page: FULL_PAGE(OUTBOUND_ORDERS.length) },
 
   // ===== 客服 /customer =====
   { match: /^\/customer\/ticket\/list\//, data: CUSTOMER_TICKETS, page: FULL_PAGE(CUSTOMER_TICKETS.length) },
+  // 关闭工单（PENDING/REPLIED → CLOSED）：回一条 CLOSED，页面据此回写那一行
+  { match: /^\/customer\/ticket\/\d+\/close$/, data: { ...CUSTOMER_TICKETS[0], status: 'CLOSED', reply: 'closed by E2E' } },
   { match: /^\/customer\/email\/template\/list\//, data: CUSTOMER_TEMPLATES, page: FULL_PAGE(CUSTOMER_TEMPLATES.length) },
   { match: /^\/customer\/email\/task\/list\//, data: CUSTOMER_TASKS, page: FULL_PAGE(CUSTOMER_TASKS.length) },
   { match: /^\/customer\/email\/negative-review\/list\//, data: CUSTOMER_REVIEWS, page: FULL_PAGE(CUSTOMER_REVIEWS.length) },
@@ -1175,12 +1214,24 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   },
   { match: /^\/procurement\/supplier\/list\//, data: PROCUREMENT_SUPPLIERS, page: FULL_PAGE(PROCUREMENT_SUPPLIERS.length) },
   { match: /^\/procurement\/plan\/list\//, data: PROCUREMENT_PLANS, page: FULL_PAGE(PROCUREMENT_PLANS.length) },
-  { match: /^\/procurement\/order\/list\//, data: [], page: FULL_PAGE(0) },
+  { match: /^\/procurement\/order\/list\//, data: PURCHASE_ORDERS, page: FULL_PAGE(PURCHASE_ORDERS.length) },
   { match: /^\/procurement\/fba\/shipment\/list\//, data: [], page: FULL_PAGE(0) },
   // 顺序敏感：具体 planId 必须排在通配 \d+ 之前
   { match: /^\/procurement\/plan\/12\/approvals$/, data: PROCUREMENT_TRAIL_PLAN_12 },
   { match: /^\/procurement\/plan\/\d+\/approvals$/, data: [] },
   { match: /^\/procurement\/plan\/\d+\/approve$/, data: PROCUREMENT_PLANS[0] },
+
+  // 供应商付款（三单匹配）：列表是「已付过款的单」，付款接口回一条 PAID、取消回 CANCELLED。
+  { match: /^\/procurement\/payment\/list\//, data: SUPPLIER_PAYMENTS },
+  { match: /^\/procurement\/payment$/, data: SUPPLIER_PAYMENTS[0] },
+  { match: /^\/procurement\/payment\/\d+\/cancel$/, data: { ...SUPPLIER_PAYMENTS[0], status: 'CANCELLED' } },
+
+  // BOM 组合品：list 按 compositeSku 过滤（不是全量列表），expand 回递归累计后的叶子行
+  { match: /^\/procurement\/bom\/list\//, data: (query: URLSearchParams) =>
+      BOM_ROWS.filter((b) => b.compositeSku === (query.get('compositeSku') || '')) },
+  { match: /^\/procurement\/bom$/, data: BOM_ROWS[0] },
+  { match: /^\/procurement\/bom\/\d+$/, data: true },
+  { match: /^\/procurement\/bom\/expand\//, data: [{ sku: 'GIFT-CARD', quantity: 6 }] },
 
   // ===== 海外仓库存与预警 /logistics/warehouse（stock + alert 部分） =====
   { match: /^\/logistics\/warehouse\/stock\/list\//, data: WAREHOUSE_STOCKS, page: FULL_PAGE(WAREHOUSE_STOCKS.length) },

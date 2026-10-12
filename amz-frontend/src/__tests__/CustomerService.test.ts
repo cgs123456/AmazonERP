@@ -26,7 +26,7 @@ const TICKETS = ok([
     category: 'LOGISTICS', sentiment: 'NEGATIVE', priority: 'HIGH', status: 'PENDING',
     content: 'package not received', reply: '' },
   { id: 2, shopId: 1, amazonOrderId: '114-7712567-000002', buyerId: 'buyer-2', channel: 'RETURN',
-    category: 'REFUND', sentiment: 'NEUTRAL', priority: 'LOW', status: 'RESOLVED',
+    category: 'REFUND', sentiment: 'NEUTRAL', priority: 'LOW', status: 'CLOSED',
     content: 'refund ok', reply: 'done' }
 ], pageOf(null))
 
@@ -175,7 +175,7 @@ describe('CustomerService 视图（客服中心）', () => {
     expect(note).toContain('关键词规则匹配')
   })
 
-  it('工单表原样显示后端分类与情感，已解决行的回复按钮禁用且没有伪装成升级', async () => {
+  it('工单表原样显示后端分类与情感，终态行的回复按钮禁用且没有伪装成升级', async () => {
     const wrapper = await mountPage()
     const panel = wrapper.find('[data-panel="ticket"]')
     expect(panel.text()).toContain('114-7712567-000001')
@@ -183,10 +183,17 @@ describe('CustomerService 视图（客服中心）', () => {
     expect(panel.text()).toContain('NEGATIVE')
     expect(panel.text()).toContain('PENDING')
     expect(panel.findAll('tbody tr').length).toBe(2)
+    // 每行：PENDING 行有「回复 + 关闭」两个，CLOSED 行只留禁用的「回复」
+    // （关闭入口按后端门槛 PENDING/REPLIED 隐藏，不是禁用——禁用会诱导点击）
     const rowButtons = panel.findAll('tbody button')
-    expect(rowButtons.length).toBe(2)
-    expect(rowButtons[0].attributes('disabled')).toBeUndefined()
-    expect(rowButtons[1].attributes('disabled')).toBeDefined()
+    expect(rowButtons.length).toBe(3)
+    const firstRow = panel.findAll('tbody tr')[0].findAll('button')
+    expect(firstRow.map((b: any) => b.text())).toEqual(['回复', '关闭'])
+    expect(firstRow[0].attributes('disabled')).toBeUndefined()
+    expect(firstRow[1].attributes('disabled')).toBeUndefined()
+    const closedRow = panel.findAll('tbody tr')[1].findAll('button')
+    expect(closedRow.map((b: any) => b.text())).toEqual(['回复'])
+    expect(closedRow[0].attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').map((b: any) => b.text())).not.toContain('升级')
   })
 

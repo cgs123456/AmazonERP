@@ -466,3 +466,46 @@ export const cancelSupplierPayment = (id: number, reason?: string) =>
 /** 付款单列表 */
 export const listSupplierPayments = (shopId: number | string) =>
   request.get<void, ApiResponse<SupplierPaymentRow[]>>(`/procurement/payment/list/${shopId}`)
+
+/* ==================== 物料 BOM（组合品） ==================== */
+
+export interface BomRow {
+  id?: number
+  shopId?: number | string
+  /** 组合品 SKU */
+  compositeSku: string
+  /** 子品 SKU */
+  childSku: string
+  childQty: number
+  remark?: string | null
+  createTime?: string
+}
+
+/** 展开试算的一行输入：组合品 + 数量 */
+export interface BomExpandLine {
+  sku: string
+  quantity: number
+}
+
+/** 展开结果：叶子 SKU 与递归累计数量 */
+export interface BomExpandedRow {
+  sku: string
+  quantity: number
+}
+
+export const saveBom = (body: Partial<BomRow>) =>
+  request.post<void, ApiResponse<BomRow>>('/procurement/bom', body)
+
+export const deleteBom = (id: number, shopId: number | string) =>
+  request.delete<void, ApiResponse<boolean>>(`/procurement/bom/${id}`, { params: { shopId } })
+
+/** 按组合品 SKU 查它的子品行（list 接口按 compositeSku 过滤，不是全量列表） */
+export const listBomByComposite = (shopId: number | string, compositeSku: string) =>
+  request.get<void, ApiResponse<BomRow[]>>(`/procurement/bom/list/${shopId}`, { params: { compositeSku } })
+
+/**
+ * 展开试算：输入组合品与数量，返回叶子 SKU 及累计数量。
+ * 后端做递归展开 + 环检测 + 自引用拒绝，错误会点名 SKU。
+ */
+export const expandBom = (shopId: number | string, lines: BomExpandLine[]) =>
+  request.post<void, ApiResponse<BomExpandedRow[]>>(`/procurement/bom/expand/${shopId}`, lines)

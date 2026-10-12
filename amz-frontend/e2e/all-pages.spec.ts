@@ -192,7 +192,8 @@ test.describe('Warehouse', () => {
     await expect(page.locator('.panel:visible')).toContainText('DE-ThirdParty')
 
     await page.locator('.tab-item', { hasText: '入库单' }).click()
-    await expect(rows).toHaveCount(1)
+    // 两条：一条 IN_TRANSIT、一条 PARTIAL——批量到货的勾选门槛就是这两种状态
+    await expect(rows).toHaveCount(2)
     await expect(page.locator('.panel:visible')).toContainText('IN-2026-0001')
     await expect(page.locator('.panel:visible')).toContainText('IN_TRANSIT')
   })

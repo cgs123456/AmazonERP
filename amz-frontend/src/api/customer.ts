@@ -133,6 +133,13 @@ export const listTickets = (shopId: number | string,
                             q: { status?: string; category?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<CustomerTicket[]>>(`/customer/ticket/list/${shopId}`, { params: params(q) })
 
+/**
+ * 关闭工单（PENDING/REPLIED → CLOSED）。工单此前无终态，售后队列只进不出。
+ * 非 PENDING/REPLIED 状态后端会点名拒绝，不做兜底放行。
+ */
+export const closeTicket = (ticketId: number) =>
+  request.post<void, ApiResponse<CustomerTicket>>(`/customer/ticket/${ticketId}/close`)
+
 /* ==================== 索评 ==================== */
 
 /** ⚠ 只发一次"请评价"给真实订单需要 SP-API Request a Review；非 mock 档后端直接抛错 */

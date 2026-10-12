@@ -131,13 +131,16 @@ describe('Procurement 视图（采购供应链）', () => {
     vi.clearAllMocks()
   })
 
-  it('渲染标题与 5 个业务分区', async () => {
+  it('渲染标题与业务分区', async () => {
     happyPath()
     const wrapper = await mountPage()
     expect(wrapper.find('.hero-title').text()).toBe('采购供应链')
-    expect(wrapper.findAll('.tab').length).toBe(6)
-    // 第 6 个是本轮加的「凭证来源（可入账）」
-    expect(wrapper.findAll('.tab').map((t: any) => t.text()).join('|')).toContain('凭证来源')
+    // 5 个业务分区 + 凭证来源 + 供应商付款 + BOM 组合品
+    expect(wrapper.findAll('.tab').length).toBe(8)
+    const labels = wrapper.findAll('.tab').map((t: any) => t.text()).join('|')
+    expect(labels).toContain('凭证来源')
+    expect(labels).toContain('供应商付款')
+    expect(labels).toContain('BOM 组合品')
   })
 
   it('挂载即按当前店铺拉列表，字段直接来自后端不做页面常量', async () => {

@@ -262,7 +262,7 @@
         </div>
 
         <!-- ==================== 采购单 ==================== -->
-        <div v-if="tab === 'order'" class="table-card">
+        <div v-if="tab === 'order'" class="table-card" data-panel="order">
           <div class="filter-row">
             <button class="action-btn" :disabled="orders.loading.value" @click="loadOrders()">刷新</button>
             <button class="action-btn" @click="openModal('order')">新建采购单</button>
@@ -292,6 +292,8 @@
                   <button v-if="o.alibabaOrderNo" class="action-btn" :disabled="busy" @click="runOrder(o, 'sync')">同步状态</button>
                   <button v-if="o.status === 'QC_PENDING'" class="action-btn" :disabled="busy"
                           @click="openModal('qc', { order: o })">提交质检</button>
+                  <button v-if="canPayOrder(o.status)" class="action-btn" :disabled="busy"
+                          @click="openPayBox(o)">付款</button>
                   <button v-if="canCancelOrder(o.status)" class="action-btn cancel" :disabled="busy"
                           @click="confirmAction(cancelOrderConfirm(o))">取消</button>
                 </td>
@@ -347,6 +349,99 @@
                       @click="loadVoucherOrders(true)">加载下一页</button>
             </div>
           </div>
+        </div>
+
+        <!-- ==================== BOM 组合品 ==================== -->
+        <div v-if="tab === 'bom'" class="table-card" data-panel="bom">
+          <div class="filter-row">
+            <span class="muted">
+              组合品 → 子品数量关系。出库时按 BOM 展开扣减，成本按子品归集；
+              后端做递归展开、环检测与自引用拒绝（错误会点名 SKU）。
+            </span>
+          </div>
+          <div class="inline-row">
+            <input v-model="bomCompositeSku" placeholder="组合品 SKU" @keyup.enter="loadBom()" />
+            <button class="action-btn" :disabled="!bomCompositeSku.trim() || bomLoading" @click="loadBom()">查子品行</button>
+            <button class="action-btn" @click="openBomDialog()">+ 新增子品行</button>
+          </div>
+          <p v-if="bomError" class="error-zone" role="alert">{{ bomError }}</p>
+          <p v-if="bomQueried && !bomLoading && !bomRows.length && !bomError" class="muted">
+            该组合品暂无子品行：空是后端真实结果，不是加载失败。
+          </p>
+          <table v-if="bomRows.length" class="data-table">
+            <thead>
+              <tr><th>组合品</th><th>子品 SKU</th><th>数量</th><th>备注</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="b in bomRows" :key="b.id ?? `${b.compositeSku}|${b.childSku}`">
+                <td class="mono">{{ b.compositeSku }}</td>
+                <td class="mono">{{ b.childSku }}</td>
+                <td>{{ b.childQty }}</td>
+                <td>{{ b.remark || '-' }}</td>
+                <td class="row-actions">
+                  <button class="action-btn cancel" :disabled="busy" @click="removeBomRow(b)">删除</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="sub-block">
+            <div class="sub-title">展开试算</div>
+            <div class="inline-row">
+              <input v-model="bomExpandSku" placeholder="组合品 SKU（默认取上面查询值）" />
+              <input v-model.number="bomExpandQty" type="number" min="1" placeholder="数量" />
+              <button class="action-btn" :disabled="bomExpanding || !Number(bomExpandQty)" @click="runBomExpand()">展开</button>
+            </div>
+            <p v-if="bomExpandError" class="error-zone" role="alert">{{ bomExpandError }}</p>
+            <table v-if="bomExpanded.length" class="data-table">
+              <thead><tr><th>叶子 SKU</th><th>累计数量</th></tr></thead>
+              <tbody>
+                <tr v-for="e in bomExpanded" :key="e.sku">
+                  <td class="mono">{{ e.sku }}</td><td>{{ e.quantity }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ==================== 供应商付款（三单匹配） ==================== -->
+        <div v-if="tab === 'payment'" class="table-card" data-panel="payment">
+          <div class="filter-row">
+            <button class="action-btn" :disabled="paymentsLoading" @click="loadPayments()">刷新</button>
+            <span class="muted">
+              三单匹配：收货证据（PO ∈ RECEIVED / COMPLETED / QC_PASSED）+ 金额容差（默认 1%）
+              都过了才落付款单，并把采购单推进为 PAID——PAID 这个状态的唯一写入来源就是这里。
+              同一采购单只允许一张有效付款单。
+            </span>
+          </div>
+          <p v-if="paymentError" class="error-zone" role="alert">{{ paymentError }}</p>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>付款单号</th><th>采购单号</th><th>付款金额</th><th>PO 金额快照</th>
+                <th>方式</th><th>状态</th><th>时间</th><th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="p in payments" :key="p.id">
+                <td class="mono">{{ p.paymentNo || p.id }}</td>
+                <td class="mono">{{ p.purchaseNo || p.purchaseOrderId }}</td>
+                <td>{{ p.amount ?? '-' }}</td>
+                <td>{{ p.poAmountSnapshot ?? '-' }}</td>
+                <td>{{ p.method || '-' }}</td>
+                <td><span class="status-tag" :class="paymentClass(p.status)">{{ p.status }}</span></td>
+                <td>{{ p.createTime || '-' }}</td>
+                <td class="row-actions">
+                  <button v-if="p.status === 'PAID' && canCancelPayment" class="action-btn cancel"
+                          :disabled="busy"
+                          @click="confirmAction(cancelPaymentConfirm(p))">取消付款</button>
+                </td>
+              </tr>
+              <tr v-if="!paymentsLoading && !payments.length">
+                <td colspan="8" class="empty-row">该店铺暂无付款单</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <!-- ==================== FBA 货件 ==================== -->
@@ -662,6 +757,47 @@
       </div>
     </div>
 
+    <div v-if="bomDialog" class="modal-mask" @click.self="bomDialog = null">
+      <div class="modal" role="dialog" aria-modal="true" data-panel="bom-save">
+        <h3>新增 BOM 子品行</h3>
+        <p class="confirm-detail">
+          声明「组合品由哪些子品、各多少件组成」。自引用（组合品等于子品）会被后端拒绝。
+        </p>
+        <div class="form-grid">
+          <label>组合品 SKU *<input v-model="bomDialog.compositeSku" /></label>
+          <label>子品 SKU *<input v-model="bomDialog.childSku" /></label>
+          <label>数量 *<input v-model.number="bomDialog.childQty" type="number" min="1" /></label>
+          <label>备注<input v-model="bomDialog.remark" /></label>
+        </div>
+        <div class="modal-actions">
+          <button class="action-btn cancel" @click="bomDialog = null">取消</button>
+          <button class="action-btn" :disabled="busy || !bomDialog.compositeSku || !bomDialog.childSku || !Number(bomDialog.childQty)"
+                  @click="submitBom()">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="payBox" class="modal-mask" @click.self="payBox = null">
+      <div class="modal" role="dialog" aria-modal="true" data-panel="pay">
+        <h3>供应商付款（三单匹配）</h3>
+        <p class="confirm-detail">
+          采购单 {{ payBox.order.orderNo || payBox.order.id }}：后端会校验「货已收」与
+          「金额容差（默认 1%）」，两项都过才落付款单并把该单推进为 PAID。
+          金额偏差超容差时后端会点名 PO 金额、付款金额与容差额度，失败原因会原样显示在这里。
+        </p>
+        <div class="form-grid">
+          <label>付款金额 *<input v-model="payBox.amount" type="number" step="0.01" min="0" /></label>
+          <label>付款方式<input v-model="payBox.method" placeholder="如 TRANSFER / ALIPAY" /></label>
+          <label>备注<input v-model="payBox.remark" /></label>
+        </div>
+        <p class="modal-note">同一采购单只允许一张有效付款单，重复付款会被后端拒绝。</p>
+        <div class="modal-actions">
+          <button class="action-btn cancel" @click="payBox = null">再想想</button>
+          <button class="action-btn" :disabled="busy || !Number(payBox.amount)" @click="submitPay()">确认付款</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="confirmBox" class="modal-mask" @click.self="confirmBox = null">
       <div class="modal" role="dialog" aria-modal="true">
         <h3>{{ confirmBox.title }}</h3>
@@ -683,21 +819,24 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
+import { canUseRole } from '@/utils/identity'
 import { asNumber } from '@/utils/format'
 import type { ApiResponse } from '@/api/types'
 import * as proc from '@/api/procurement'
 import type {
   Supplier, SupplierProduct, PurchasePlan, PurchaseOrder, FbaShipment, FbaShipmentItem,
   InventoryBatch, BatchCostSummary, PriceCompareRow, SupplierKpi, AllocationResult, ReceiptResult,
-  PurchaseApproval
+  PurchaseApproval, SupplierPaymentRow
 } from '@/api/procurement'
 
-type TabKey = 'supplier' | 'plan' | 'order' | 'voucher' | 'shipment' | 'batch'
+type TabKey = 'supplier' | 'plan' | 'order' | 'voucher' | 'payment' | 'bom' | 'shipment' | 'batch'
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'supplier', label: '供应商与比价' },
   { key: 'plan', label: '采购计划' },
   { key: 'order', label: '采购单（1688）' },
   { key: 'voucher', label: '凭证来源（可入账）' },
+  { key: 'payment', label: '供应商付款' },
+  { key: 'bom', label: 'BOM 组合品' },
   { key: 'shipment', label: 'FBA 货件' },
   { key: 'batch', label: '库存批次与 FIFO' }
 ]
@@ -968,6 +1107,176 @@ const cancelOrderConfirm = (o: PurchaseOrder) => ({
   run: () => runOrder(o, 'cancel')
 })
 
+/* ---------- 供应商付款（三单匹配） ---------- */
+
+/** 后端 pay() 的收货证据门槛：PO 状态 ∈ RECEIVED / COMPLETED / QC_PASSED。
+ *  PAID 不在其中，所以付款成功后按钮自动消失，不需要额外的「已付款」判定。 */
+const PAYABLE_ORDER_STATUS = ['RECEIVED', 'COMPLETED', 'QC_PASSED']
+const canPayOrder = (status?: string) => !!status && PAYABLE_ORDER_STATUS.includes(status)
+const paymentClass = (status?: string) =>
+  status === 'PAID' ? 'healthy' : status === 'CANCELED' ? 'urgent' : ''
+
+/** 后端取消付款是 @RequireRole({"ADMIN"})，这里做按钮级门控，避免点了必然 403。
+ *  canUseRole 对「角色未知」是放行的（权限权威判定在后端），与 Warehouse 页库位编辑同一先例。 */
+const canCancelPayment = canUseRole(['ADMIN'])
+const payments = ref<SupplierPaymentRow[]>([])
+const paymentsLoading = ref(false)
+const paymentError = ref('')
+
+const loadPayments = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  paymentsLoading.value = true
+  paymentError.value = ''
+  try {
+    const res = await proc.listSupplierPayments(shop())
+    if (res?.code !== 200) {
+      paymentError.value = `付款单列表：${res?.message || '接口返回非 200'}`
+      payments.value = []
+      return
+    }
+    payments.value = res.data ?? []
+  } catch (e) {
+    // 「拉不到」与「真的没有付款单」必须可区分：清空列表会让人以为没有
+    paymentError.value = `付款单列表：${(e as Error)?.message || '调用失败'}`
+    payments.value = []
+  } finally {
+    paymentsLoading.value = false
+  }
+}
+
+const payBox = ref<null | {
+  order: PurchaseOrder
+  amount: string
+  method: string
+  remark: string
+}>(null)
+
+const openPayBox = (o: PurchaseOrder) => {
+  payBox.value = {
+    order: o,
+    // 默认带 PO 金额：容差就是拿它算的，让用户从「与 PO 一致」起步而不是从 0 起步
+    amount: o.totalAmount === undefined || o.totalAmount === null ? '' : String(o.totalAmount),
+    method: '',
+    remark: ''
+  }
+}
+
+const submitPay = async () => {
+  const box = payBox.value
+  if (!box?.order.id || !Number(box.amount)) return
+  const ok = await callApi('付款', () =>
+    proc.payPurchaseOrder(box.order.id!, Number(box.amount), box.method || undefined, box.remark || undefined))
+  if (ok === null) {
+    // 失败留在弹窗里：后端会点名 PO 金额/付款金额/容差额度，关掉弹窗就看不到原因了
+    return
+  }
+  payBox.value = null
+  await Promise.all([loadOrders(), loadPayments()])
+}
+
+const cancelPaymentConfirm = (p: SupplierPaymentRow) => ({
+  title: '取消付款（管理性纠错）',
+  detail: `付款单 ${p.paymentNo || p.id} 取消后，采购单 ${p.purchaseNo || p.purchaseOrderId} 的状态会回退为 RECEIVED。`
+    + '这是纠错通道，不是撤销转账——已付出的钱不会因此回来。',
+  run: async () => {
+    if (!p.id) return
+    if (await callApi('取消付款', () => proc.cancelSupplierPayment(p.id!)) !== null) {
+      await Promise.all([loadOrders(), loadPayments()])
+    }
+  }
+})
+
+/* ---------- 物料 BOM（组合品） ---------- */
+
+const bomCompositeSku = ref('')
+const bomQueried = ref(false)
+const bomRows = ref<proc.BomRow[]>([])
+const bomLoading = ref(false)
+const bomError = ref('')
+
+const loadBom = async () => {
+  const shopId = refreshShop()
+  const composite = bomCompositeSku.value.trim()
+  if (!shopId || !composite) return
+  bomLoading.value = true
+  bomError.value = ''
+  try {
+    const res = await proc.listBomByComposite(shop(), composite)
+    if (res?.code !== 200) {
+      bomError.value = `BOM 查询：${res?.message || '接口返回非 200'}`
+      bomRows.value = []
+      return
+    }
+    bomRows.value = res.data ?? []
+    bomQueried.value = true
+  } catch (e) {
+    // 「拉不到」与「该组合品没有子品行」必须可区分
+    bomError.value = `BOM 查询：${(e as Error)?.message || '调用失败'}`
+    bomRows.value = []
+  } finally {
+    bomLoading.value = false
+  }
+}
+
+const bomDialog = ref<null | { compositeSku: string; childSku: string; childQty: string; remark: string }>(null)
+
+const openBomDialog = () => {
+  bomDialog.value = {
+    compositeSku: bomCompositeSku.value.trim(),
+    childSku: '',
+    childQty: '1',
+    remark: ''
+  }
+}
+
+const submitBom = async () => {
+  const box = bomDialog.value
+  if (!box?.compositeSku || !box.childSku || !Number(box.childQty)) return
+  const ok = await callApi('新增子品行', () => proc.saveBom({
+    compositeSku: box.compositeSku,
+    childSku: box.childSku,
+    childQty: Number(box.childQty),
+    remark: box.remark || undefined
+  }))
+  if (ok === null) return
+  bomDialog.value = null
+  await loadBom()
+}
+
+const removeBomRow = async (b: proc.BomRow) => {
+  if (!b.id) return
+  if (await callApi('删除子品行', () => proc.deleteBom(b.id!, shop())) !== null) await loadBom()
+}
+
+const bomExpandSku = ref('')
+const bomExpandQty = ref<number | string>(1)
+const bomExpanded = ref<proc.BomExpandedRow[]>([])
+const bomExpandError = ref('')
+const bomExpanding = ref(false)
+
+const runBomExpand = async () => {
+  const sku = (bomExpandSku.value.trim() || bomCompositeSku.value.trim())
+  const qty = Number(bomExpandQty.value)
+  if (!sku || !qty) return
+  bomExpanding.value = true
+  bomExpandError.value = ''
+  bomExpanded.value = []
+  try {
+    const res = await proc.expandBom(shop(), [{ sku, quantity: qty }])
+    if (res?.code !== 200) {
+      // 环/自引用/数量非法：后端点名 SKU，原样显示
+      bomExpandError.value = `展开失败：${res?.message || '接口返回非 200'}`
+      return
+    }
+    bomExpanded.value = res.data ?? []
+  } catch (e) {
+    bomExpandError.value = `展开失败：${(e as Error)?.message || '调用失败'}`
+  } finally {
+    bomExpanding.value = false
+  }
+}
+
 /* ---------- FBA 货件 ---------- */
 const shipments = makeList<FbaShipment>()
 const shipmentStatus = ref('')
@@ -1211,7 +1520,7 @@ const loadTabData = async () => {
   if (!shopId) return
   loading.value = true
   errors.value = []
-  await Promise.all([loadSuppliers(), loadPlans(), loadOrders(), loadVoucherOrders(), loadShipments()])
+  await Promise.all([loadSuppliers(), loadPlans(), loadOrders(), loadVoucherOrders(), loadShipments(), loadPayments()])
   loading.value = false
 }
 

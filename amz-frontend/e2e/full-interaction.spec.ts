@@ -326,7 +326,8 @@ test.describe('Warehouse 交互', () => {
     await expect(page.locator('.panel:visible')).toContainText('90')
 
     await page.locator('.tab-item', { hasText: '入库单' }).click()
-    await expect(rows).toHaveCount(1)
+    // 两条：一条 IN_TRANSIT、一条 PARTIAL——批量到货的勾选门槛就是这两种状态
+    await expect(rows).toHaveCount(2)
     await expect(page.locator('.panel:visible')).toContainText('IN-2026-0001')
     await expect(page.locator('.panel:visible')).toContainText('IN_TRANSIT')
 
@@ -346,6 +347,59 @@ test.describe('Warehouse 交互', () => {
     await expect(modal.locator('h3')).toHaveText('新建仓库')
     await modal.locator('.modal-actions button', { hasText: '取消' }).click()
     await expect(modal).toHaveCount(0)
+  })
+
+  test('批量到货逐单报告：一成一败都要显示，不汇总成全部成功', async ({ page }) => {
+    const bodies: string[] = []
+    page.on('request', (r) => {
+      if (r.url().includes('/logistics/inbound/batch-receive')) bodies.push(r.postData() || '')
+    })
+    await page.goto('/warehouse')
+    await waitReady(page)
+    await page.locator('.tab-item', { hasText: '入库单' }).click()
+
+    // 只有可到货状态才给勾选框；两张都勾上
+    await page.locator('tbody tr', { hasText: 'IN-2026-0001' }).locator('input[type="checkbox"]').check()
+    await page.locator('tbody tr', { hasText: 'IN-2026-0002' }).locator('input[type="checkbox"]').check()
+    await page.locator('.primary-btn', { hasText: '批量到货' }).click()
+
+    const modal = page.locator('[data-panel="batch-receive"]')
+    await expect(modal).toBeVisible()
+    // 两张单各自一组明细，不能共用一份（不同单的 SKU 不同）
+    await expect(modal.locator('.batch-group')).toHaveCount(2)
+    const groups = modal.locator('.batch-group')
+    await groups.nth(0).locator('input').first().fill('SKU-A1')
+    await groups.nth(0).locator('input[type="number"]').fill('100')
+    await groups.nth(1).locator('input').first().fill('SKU-B2')
+    await groups.nth(1).locator('input[type="number"]').fill('20')
+
+    // 明细留空的单不进请求：后端会把它记成「只改状态不增库存」，那不是用户要的
+    await groups.nth(1).locator('input').first().fill('')
+    await modal.locator('button', { hasText: '确认到货' }).click()
+    await expect(modal).toBeVisible()
+    await expect.poll(() => bodies.length).toBe(0)
+    // toast 会在数秒后消失，用 poll 抓文本而不是等一个可能已经收起的元素
+    await expect.poll(() => page.locator('.toast-message').textContent()).toContain('IN-2026-0002')
+    await expect.poll(() => page.locator('.toast-message').textContent()).toContain('还没填明细')
+
+    await groups.nth(1).locator('input').first().fill('SKU-B2')
+    await modal.locator('button', { hasText: '确认到货' }).click()
+    await expect.poll(() => bodies.length).toBe(1)
+
+    // 请求体按单各带明细，且带上所属仓库与店铺（硬编码 0 会让后端按无效仓库落库存）
+    const sent = JSON.parse(bodies[0]) as Array<{ inboundId: number; items: Array<{ sku: string; quantity: number; warehouseId: number; shopId: number }> }>
+    expect(sent.map((l) => l.inboundId).sort()).toEqual([1, 2])
+    for (const line of sent) {
+      expect(line.items.length).toBe(1)
+      expect(line.items[0].warehouseId).toBe(1)
+      expect(line.items[0].shopId).toBe(1)
+    }
+
+    // 逐单报告：成功行与失败行都在，且失败行带后端原因
+    const report = modal.locator('[data-panel="batch-report"]')
+    await expect(report.locator('.batch-report-row')).toHaveCount(2)
+    await expect(report.locator('.batch-report-row.ok')).toContainText('到货成功')
+    await expect(report.locator('.batch-report-row.fail')).toContainText('仅 IN_TRANSIT / PARTIAL 状态可到货验收')
   })
 })
 
@@ -407,6 +461,30 @@ test.describe('CustomerService 交互（客服中心）', () => {
     await expect(page.locator('.notice-zone')).toContainText('邮件发送通道未接入')
     await expect(page.locator('.notice-zone')).toContainText('SP-API')
     await expect(page.locator('.notice-zone')).toContainText('关键词规则匹配')
+  })
+
+  test('关闭工单要先确认：未受理的单给入口，关闭后不能再回复', async ({ page }) => {
+    const sent: string[] = []
+    page.on('request', (r) => {
+      if (/\/api\/customer\/ticket\/\d+\/close/.test(r.url())) sent.push(r.url())
+    })
+    await page.goto('/customer')
+    const panel = page.locator('.tab-panel[data-panel="ticket"]')
+    const pending = panel.locator('tbody tr', { hasText: '114-7712567-000001' }).first()
+    // 后端只接 PENDING/REPLIED，未受理的单才有关闭入口
+    await expect(pending).toContainText('PENDING')
+    await expect(pending.locator('button', { hasText: '关闭' })).toBeVisible()
+
+    await pending.locator('button', { hasText: '关闭' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('关闭后不能再回复')
+    await expect.poll(() => sent.length).toBe(0)
+
+    await page.locator('button', { hasText: '确认执行' }).click()
+    await expect.poll(() => sent.length).toBe(1)
+    await expect(pending).toContainText('CLOSED')
+    // 关闭后不能再回复，也不能二次关闭
+    await expect(pending.locator('button', { hasText: '回复' })).toBeDisabled()
+    await expect(pending.locator('button', { hasText: '关闭' })).toHaveCount(0)
   })
 
   test('待发邮件队列要二次确认：取消不执行，确认后才写处理结果', async ({ page }) => {
@@ -639,6 +717,112 @@ test.describe('Procurement 交互（采购供应链）', () => {
       .locator('button', { hasText: '审批留痕' }).click()
     await expect(page.locator('.trail-row')).toContainText('不会伪造')
     await expect(page.locator('.trail-row tbody tr')).toHaveCount(0)
+  })
+
+  test('付款按钮只给「已收货」的采购单，未收货的单不给入口', async ({ page }) => {
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购单' }).click()
+    // 后端 pay() 只认 RECEIVED / COMPLETED / QC_PASSED 三种收货证据
+    const payable = page.locator('tbody tr', { hasText: 'PO-2026-0031' }).first()
+    await expect(payable).toContainText('QC_PASSED')
+    await expect(payable.locator('button', { hasText: '付款' })).toBeVisible()
+    const draft = page.locator('tbody tr', { hasText: 'PO-2026-0032' }).first()
+    await expect(draft).toContainText('DRAFT')
+    await expect(draft.locator('button', { hasText: '付款' })).toHaveCount(0)
+  })
+
+  test('付款弹窗默认带采购单金额，提交把金额与方式原样发给后端', async ({ page }) => {
+    const sent: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname === '/api/procurement/payment') sent.push(decodeURIComponent(u.search))
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购单' }).click()
+    await page.locator('tbody tr', { hasText: 'PO-2026-0031' }).first()
+      .locator('button', { hasText: '付款' }).click()
+
+    const box = page.locator('[data-panel="pay"]')
+    await expect(box).toBeVisible()
+    // 默认带 PO 金额：容差是拿它算的，让用户从「与 PO 一致」起步
+    await expect(box.locator('input[type="number"]')).toHaveValue('2200')
+    await box.locator('input[type="number"]').fill('2200')
+    await box.locator('input').nth(1).fill('TRANSFER')
+    await box.locator('button', { hasText: '确认付款' }).click()
+
+    await expect.poll(() => sent.length).toBe(1)
+    expect(sent[0]).toContain('purchaseOrderId=31')
+    expect(sent[0]).toContain('amount=2200')
+    expect(sent[0]).toContain('method=TRANSFER')
+  })
+
+  test('付款单列表渲染已付的行，取消付款要先确认', async ({ page }) => {
+    const sent: string[] = []
+    page.on('request', (r) => {
+      if (/\/api\/procurement\/payment\/\d+\/cancel/.test(r.url())) sent.push(r.url())
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '供应商付款' }).click()
+    const panel = page.locator('.table-card[data-panel="payment"]')
+    await expect(panel.locator('tbody tr')).toHaveCount(1)
+    await expect(panel).toContainText('PAY-2026-0051')
+    await expect(panel).toContainText('PAID')
+    // 三单匹配与「PAID 唯一写入来源」的语义要摆在页面上，否则运营不知道这一栏在验什么
+    await expect(panel).toContainText('三单匹配')
+
+    await panel.locator('button', { hasText: '取消付款' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('回退为 RECEIVED')
+    await expect.poll(() => sent.length).toBe(0)
+
+    await page.locator('button', { hasText: '确认执行' }).click()
+    await expect.poll(() => sent.length).toBe(1)
+  })
+
+  test('BOM 按组合品过滤出子品行，展开走递归累计而不是只看一层', async ({ page }) => {
+    const listUrls: string[] = []
+    const expandBodies: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname.startsWith('/api/procurement/bom/list')) listUrls.push(u.search)
+      if (u.pathname.startsWith('/api/procurement/bom/expand')) expandBodies.push(r.postData() || '')
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: 'BOM 组合品' }).click()
+    const panel = page.locator('.table-card[data-panel="bom"]')
+
+    // 只查 GIFT-BOX：应只有它的子品行，不会把 GIFT-BAG 的子品行也带出来
+    await panel.locator('input').first().fill('GIFT-BOX')
+    await panel.locator('button', { hasText: '查子品行' }).click()
+    await expect(panel.locator('tbody tr')).toHaveCount(1)
+    await expect(panel).toContainText('GIFT-BAG')
+    await expect(panel).not.toContainText('GIFT-CARD')
+    await expect.poll(() => listUrls.some((q) => q.includes('compositeSku=GIFT-BOX'))).toBe(true)
+
+    // 展开：1 个 GIFT-BOX → 2 个 GIFT-BAG → 6 个 GIFT-CARD。
+    // 只按一层展开会得到 2，这里锁的就是「递归累计」这条路径。
+    await panel.locator('.sub-block input').first().fill('GIFT-BOX')
+    await panel.locator('.sub-block input[type="number"]').fill('1')
+    await panel.locator('button', { hasText: '展开' }).click()
+    await expect.poll(() => expandBodies.length).toBe(1)
+    expect(expandBodies[0]).toContain('GIFT-BOX')
+    await expect(panel.locator('.sub-block tbody tr')).toHaveCount(1)
+    await expect(panel.locator('.sub-block tbody tr')).toContainText('GIFT-CARD')
+    await expect(panel.locator('.sub-block tbody tr')).toContainText('6')
+  })
+
+  test('BOM 查不到的组合品给诚实空态，不编造子品行', async ({ page }) => {
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: 'BOM 组合品' }).click()
+    const panel = page.locator('.table-card[data-panel="bom"]')
+    await panel.locator('input').first().fill('NO-SUCH-SKU')
+    await panel.locator('button', { hasText: '查子品行' }).click()
+    await expect(panel).toContainText('该组合品暂无子品行')
+    await expect(panel.locator('tbody tr')).toHaveCount(0)
   })
 })
 
@@ -1465,9 +1649,12 @@ test.describe('连接器自检与凭证来源', () => {
     await expect(panel).toContainText('QC_PASSED')
     expect(urls.some(u => u.startsWith('/api/procurement/order/voucher-source/'))).toBe(true)
 
-    // 「采购单」Tab 走的是另一个端点，两个口径不能互相顶替
+    // 「采购单」Tab 走的是另一个端点，两个口径不能互相顶替。
+    // 这里断言「两个 Tab 的单号不同」而不是「某个 Tab 为空」——后者依赖桩是否给数据，
+    // 一旦采购单桩补上行就会假红，而用例真正要证明的是两栏不同源。
     await page.locator('.tab', { hasText: '采购单（1688）' }).click()
-    await expect(page.locator('.table-card').first()).toContainText('该店铺暂无采购单')
+    await expect(page.locator('[data-panel="order"]')).toContainText('PO-2026-0031')
+    await expect(page.locator('[data-panel="order"]')).not.toContainText('PO-VOUCHER-77')
     expect(urls.some(u => u.startsWith('/api/procurement/order/list/'))).toBe(true)
   })
 })
