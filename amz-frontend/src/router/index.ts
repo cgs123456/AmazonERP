@@ -144,6 +144,11 @@ const router = createRouter({
             component: () => import('../views/ListingMonitor.vue')
         },
         {
+            path: '/listing-price-rules',
+            name: 'ListingPriceRules',
+            component: () => import('../views/ListingPriceRules.vue')
+        },
+        {
             path: '/procurement',
             name: 'Procurement',
             component: () => import('../views/Procurement.vue')

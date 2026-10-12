@@ -609,6 +609,22 @@ const BOM_ROWS = [
 ]
 
 /**
+ * Listing 调价规则。三条刻意覆盖：目标价型 / 幅度型 / 停用型（停用行不给执行入口，
+ * 后端会点名「规则已停用，请先启用」而不是静默什么都不做）。
+ */
+const PRICE_RULES = [
+  { id: 71, shopId: 1, marketplaceId: 'ATVPDKIKX0DER', sku: 'SKU-A1', ruleType: 'MANUAL_SCHEDULE',
+    targetPrice: 29.99, adjustPct: null, enabled: 1, lastExecutedAt: null, lastResult: null,
+    remark: '日常价', createTime: '2026-10-02T10:00:00' },
+  { id: 72, shopId: 1, marketplaceId: 'ATVPDKIKX0DER', sku: 'SKU-B2', ruleType: 'MANUAL_SCHEDULE',
+    targetPrice: null, adjustPct: -0.05, enabled: 1, lastExecutedAt: '2026-10-06T08:00:00',
+    lastResult: '凭证未配置，无法下发（API-ready 边界）', remark: null, createTime: '2026-10-02T10:05:00' },
+  { id: 73, shopId: 1, marketplaceId: 'A1F83G8C2ARO7P', sku: 'SKU-C3', ruleType: 'MANUAL_SCHEDULE',
+    targetPrice: 15.5, adjustPct: null, enabled: 0, lastExecutedAt: null, lastResult: null,
+    remark: '暂停', createTime: '2026-10-03T11:00:00' }
+]
+
+/**
  * 海外仓库存与预警（/logistics/warehouse 的 stock/alert 部分）。
  * 第二条规则故意用 alertType=DAMAGE_RISK：后端 evaluateAlert 对未知类型走 default，
  * 页面必须自己标「不会被判定」而不是让运营以为它在生效。
@@ -1232,6 +1248,15 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/procurement\/bom$/, data: BOM_ROWS[0] },
   { match: /^\/procurement\/bom\/\d+$/, data: true },
   { match: /^\/procurement\/bom\/expand\//, data: [{ sku: 'GIFT-CARD', quantity: 6 }] },
+
+  // Listing 调价规则：list 按店铺，save 回一条规则，execute 回带 last_result 的规则，
+  // delete 回 true（后端是 Result<Boolean>）
+  { match: /^\/spapi\/listing-price\/list\//, data: PRICE_RULES },
+  { match: /^\/spapi\/listing-price$/, data: PRICE_RULES[0] },
+  { match: /^\/spapi\/listing-price\/\d+\/execute$/, data: {
+      ...PRICE_RULES[0], lastExecutedAt: '2026-10-12T07:00:00',
+      lastResult: '凭证未配置，无法下发（API-ready 边界）' } },
+  { match: /^\/spapi\/listing-price\/\d+$/, data: true },
 
   // ===== 海外仓库存与预警 /logistics/warehouse（stock + alert 部分） =====
   { match: /^\/logistics\/warehouse\/stock\/list\//, data: WAREHOUSE_STOCKS, page: FULL_PAGE(WAREHOUSE_STOCKS.length) },

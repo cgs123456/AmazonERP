@@ -40,6 +40,7 @@ const NAV = [
   { path: '/finance', linkText: '财务管理' },
   { path: '/selection', linkText: '选品分析' },
   { path: '/search', linkText: '商品搜索' },
+  { path: '/listing-price-rules', linkText: 'Listing 调价规则' },
   { path: '/procurement', linkText: '采购供应链' },
   { path: '/connectors', linkText: '连接器状态' },
   { path: '/connector-queue', linkText: '调用队列' },
@@ -823,6 +824,71 @@ test.describe('Procurement 交互（采购供应链）', () => {
     await panel.locator('button', { hasText: '查子品行' }).click()
     await expect(panel).toContainText('该组合品暂无子品行')
     await expect(panel.locator('tbody tr')).toHaveCount(0)
+  })
+})
+
+test.describe('ListingPriceRules 交互（调价规则）', () => {
+  test('规则表区分目标价与幅度，停用行不给执行入口', async ({ page }) => {
+    await page.goto('/listing-price-rules')
+    const panel = page.locator('.table-card[data-panel="rules"]')
+    await expect(panel.locator('tbody tr')).toHaveCount(3)
+    // 目标价型：显示金额，幅度列给占位
+    const target = panel.locator('tbody tr', { hasText: 'SKU-A1' }).first()
+    await expect(target).toContainText('29.99')
+    await expect(target).toContainText('—')
+    // 幅度型：-0.05 要显示成 -5.0%（存的是小数，页面负责换算）
+    const pct = panel.locator('tbody tr', { hasText: 'SKU-B2' }).first()
+    await expect(pct).toContainText('-5.0%')
+    // 后端执行拒绝停用规则并点名「请先启用」，这里就不该给入口
+    const disabled = panel.locator('tbody tr', { hasText: 'SKU-C3' }).first()
+    await expect(disabled).toContainText('停用')
+    await expect(disabled.locator('button', { hasText: '执行' })).toBeDisabled()
+    await expect(disabled.locator('button', { hasText: '执行' })).toHaveAttribute('title', /请先启用/)
+    // 上次执行结果要看得见（API-ready 边界的原因不能只留在后端日志里）
+    await expect(pct).toContainText('凭证未配置')
+  })
+
+  test('目标价与幅度都填时前端就挡住，不发保存请求', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => {
+      if (r.url().includes('/spapi/listing-price') && r.method() === 'POST') posts.push(r.postData() || '')
+    })
+    await page.goto('/listing-price-rules')
+    await page.locator('button', { hasText: '+ 新建规则' }).click()
+    const modal = page.locator('[data-panel="rule-save"]')
+    await expect(modal).toBeVisible()
+    await modal.locator('input').first().fill('SKU-NEW')
+    await modal.locator('input').nth(1).fill('ATVPDKIKX0DER')
+    // 按 label 定位而不是 input 序号：表单中间夹着规则类型与备注，序号会随字段增减漂移
+    await modal.locator('label', { hasText: '目标价' }).locator('input').fill('19.99')
+    await modal.locator('label', { hasText: '调整幅度' }).locator('input').fill('-0.05')
+    await modal.locator('button', { hasText: '保存' }).click()
+    // 后端只认目标价语义，两个都填会静默丢掉一个——前端必须挡
+    await expect(modal.locator('.error-zone')).toContainText('二选一')
+    await expect.poll(() => posts.length).toBe(0)
+
+    await modal.locator('label', { hasText: '调整幅度' }).locator('input').fill('')
+    await modal.locator('button', { hasText: '保存' }).click()
+    await expect.poll(() => posts.length).toBe(1)
+    expect(posts[0]).toContain('SKU-NEW')
+    expect(posts[0]).toContain('19.99')
+  })
+
+  test('执行规则要确认，且确认文案点明这是真实改价', async ({ page }) => {
+    const execs: string[] = []
+    page.on('request', (r) => {
+      if (/\/spapi\/listing-price\/\d+\/execute/.test(r.url())) execs.push(r.url())
+    })
+    await page.goto('/listing-price-rules')
+    const panel = page.locator('.table-card[data-panel="rules"]')
+    await panel.locator('tbody tr', { hasText: 'SKU-A1' }).first()
+      .locator('button', { hasText: '执行' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('真实改价')
+    await expect(page.locator('.confirm-detail')).toContainText('SKU-A1')
+    await expect.poll(() => execs.length).toBe(0)
+
+    await page.locator('button', { hasText: '确认执行' }).click()
+    await expect.poll(() => execs.length).toBe(1)
   })
 })
 

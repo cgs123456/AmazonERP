@@ -223,6 +223,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/listing-price-rules') }"
+        @click="navigateTo('/listing-price-rules')"
+        role="button"
+        aria-label="Listing调价规则"
+        tabindex="0"
+      >
+        <Icon icon="mdi:currency-usd" class="nav-icon" width="24" />
+        <span class="nav-text">Listing 调价规则</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/procurement') }"
         @click="navigateTo('/procurement')"
         role="button"
