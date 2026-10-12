@@ -36,12 +36,6 @@ public class Order {
     private Integer quantity;
 
     /**
-     * 优惠券id
-     */
-    @TableField("coupon_id")
-    private Long couponId;
-
-    /**
      * 最终价格
      */
     @TableField("final_price")

@@ -172,13 +172,14 @@ class ReleaseManifestTest(unittest.TestCase):
     # 退货自动对接再新增 logistics V9（退货单外部幂等键）到 65；
     # P1 地基批次再新增 user V4/V5（账号状态+通知历史）与 logistics V10（盘点）到 68；
     # P2 供应链再新增 procurement V7/V8（付款单+BOM）到 70；
-    # P3/P4 再新增 spapi V12/V13（绩效留痕+调价规则）到 72。
-    # 注：本会话最终迁移数 72、Flyway 活表 125（新增 BOM/付款/盘点/通知/绩效/调价六域）。
+    # P3/P4 再新增 spapi V12/V13（绩效留痕+调价规则）到 72；
+    # A5 清理促销悬空列新增 order V7 到 73。
+    # 注：当前迁移数 73、Flyway 活表 125。
     # 上一班只改了迁移没改这里，真 CI 的 hygiene job 抓到「改一半」）。新增/删除
     # db/migration/V*__*.sql 时必须逐处同步：本方法名与两处断言、ci.yml 的
     # mysql-import/runtime-smoke 注释口径。凡改这个数，交班前逐字复跑
     # ci.yml 卫生 job 的 release-tools unittest（勿凭 HANDOFF 清单的记忆）。
-    def test_current_flyway_inventory_contains_all_72_files(self) -> None:
+    def test_current_flyway_inventory_contains_all_73_files(self) -> None:
         manifest = build_manifest(ROOT, COMMIT, VERSION, IMAGE_REF, IMAGE_DIGEST)
         expected_paths = sorted(
             path.relative_to(ROOT).as_posix()
@@ -186,8 +187,8 @@ class ReleaseManifestTest(unittest.TestCase):
             if not any(part == "target" for part in path.parts)
         )
 
-        self.assertEqual(72, len(expected_paths))
-        self.assertEqual(72, manifest["migrations"]["count"])
+        self.assertEqual(73, len(expected_paths))
+        self.assertEqual(73, manifest["migrations"]["count"])
         self.assertEqual(expected_paths, [item["path"] for item in manifest["migrations"]["items"]])
 
     def test_cli_builds_verifies_and_rejects_changed_input(self) -> None:

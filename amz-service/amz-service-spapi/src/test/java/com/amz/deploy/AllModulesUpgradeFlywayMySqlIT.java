@@ -56,9 +56,9 @@ class AllModulesUpgradeFlywayMySqlIT {
 
         try (Connection connection = open(schema)) {
             execute(connection, "INSERT INTO amz_order "
-                    + "(id, product_id, quantity, coupon_id, final_price, user_id, shop_id, "
+                    + "(id, product_id, quantity, final_price, user_id, shop_id, "
                     + "amazon_order_id, marketplace_id, order_status) VALUES "
-                    + "(1, 2147483647, 2, 2147483647, 12.34, 2147483647, 10, "
+                    + "(1, 2147483647, 2, 12.34, 2147483647, 10, "
                     + "'111-0000000-0000001', 'ATVPDKIKX0DER', 'Shipped')");
             execute(connection, "INSERT INTO amz_shipment_routing "
                     + "(shop_id, order_id, sku, quantity) VALUES "
@@ -69,7 +69,6 @@ class AllModulesUpgradeFlywayMySqlIT {
 
         try (Connection connection = open(schema)) {
             assertEquals("bigint", columnDataType(connection, "amz_order", "product_id"));
-            assertEquals("bigint", columnDataType(connection, "amz_order", "coupon_id"));
             assertEquals("bigint", columnDataType(connection, "amz_order", "user_id"));
             assertEquals(1L, scalarLong(connection,
                     "SELECT COUNT(*) FROM amz_order WHERE id = 1 AND amazon_order_id = "
@@ -99,6 +98,14 @@ class AllModulesUpgradeFlywayMySqlIT {
                     + "(id, shop_id, amazon_order_id, amazon_order_item_id, quantity) VALUES "
                     + "(100, 10, '111-0000000-0000001', 'item-1', 1)");
             assertEquals(1L, scalarLong(connection, "SELECT COUNT(*) FROM amz_order_item WHERE id = 100"));
+
+            // V7 删除 coupon_id 悬空列：amz_coupon 表已在 product V5 删除，该列再无引用目标。
+            // 断言「列已删」而不是「列类型是什么」——删列若被回滚，这里必须红。
+            assertMigration(migrate(schema, "amz-service-order", "7"), 7);
+            assertFalse(columnExists(connection, "amz_order", "coupon_id"));
+            // 删列不影响既有行与其余列
+            assertEquals(1L, scalarLong(connection, "SELECT COUNT(*) FROM amz_order WHERE id = 1"));
+            assertEquals("bigint", columnDataType(connection, "amz_order", "product_id"));
         }
     }
 
