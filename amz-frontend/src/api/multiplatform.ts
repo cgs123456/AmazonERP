@@ -64,6 +64,36 @@ interface ListQuery {
 export const listOrders = (shopId: number | string, q: ListQuery = {}) =>
   request.get<void, ApiResponse<UnifiedOrder[]>>(`/multiplatform/order/list/${shopId}`, { params: q })
 
+/* ==================== 分平台统计（A8） ==================== */
+
+/** 单个平台的统计桶。金额按币种分组——跨平台或跨币种都不做合计。 */
+export interface PlatformBucket {
+  platform: string
+  orderCount: number
+  amountByCurrency: Record<string, number>
+  cnyByCurrency: Record<string, number>
+  statusCounts: Record<string, number>
+  truncated: boolean
+}
+
+/**
+ * 分平台统计（A8）。
+ *
+ * <b>口径是分平台</b>：每个平台各一份，没有跨平台的「全店销售额」——
+ * 各平台币种与费用结构不同，直接相加的合计无法对应任何真实经营口径。
+ * 触顶时 truncatedPlatforms 点名哪些平台没算全，页面必须显示出来。
+ */
+export interface PlatformOrderStatsDto {
+  platforms: PlatformBucket[]
+  totalOrders: number
+  truncatedPlatforms: string[]
+}
+
+export const orderStats = (shopId: number | string, platforms?: string[]) =>
+  request.get<void, ApiResponse<PlatformOrderStatsDto>>(`/multiplatform/order/stats/${shopId}`, {
+    params: platforms && platforms.length ? { platform: platforms } : {}
+  })
+
 export const listOrdersByPlatform = (shopId: number | string, platform: string, q: ListQuery = {}) =>
   request.get<void, ApiResponse<UnifiedOrder[]>>(
     `/multiplatform/order/list/${shopId}/${platform}`,

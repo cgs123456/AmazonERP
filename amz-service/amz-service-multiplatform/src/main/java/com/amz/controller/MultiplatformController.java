@@ -8,6 +8,8 @@ import com.amz.model.PlatformAccount;
 import com.amz.model.PlatformInventory;
 import com.amz.model.PlatformMessage;
 import com.amz.model.PlatformProduct;
+import com.amz.dto.PlatformOrderStats;
+import com.amz.service.impl.PlatformOrderStatsService;
 import com.amz.model.UnifiedOrder;
 import com.amz.model.WebhookEvent;
 import com.amz.result.PageRequest;
@@ -39,6 +41,9 @@ public class MultiplatformController {
 
     @Autowired
     private MultiplatformServiceImpl multiplatformService;
+
+    @Autowired
+    private PlatformOrderStatsService platformOrderStatsService;
 
     // ==================== 平台账号管理 ====================
 
@@ -234,6 +239,25 @@ public class MultiplatformController {
     @PostMapping("/sync/{shopId}/{platform}")
     public Result<Integer> syncByPlatform(@PathVariable Long shopId, @PathVariable String platform) {
         return Result.success(multiplatformService.syncByPlatform(shopId, platform));
+    }
+
+    /**
+     * 多平台订单的分平台统计（A8）。
+     * <p>
+     * 口径：每个平台各给一份（订单量 / 按币种分组的金额 / 状态分布），
+     * <b>不产跨平台的合计</b>——各平台币种与费用结构不同，直接相加的
+     * 「全店销售额」无法对应任何真实经营口径，页面也不渲染总计。
+     * <p>
+     * 金额按币种分组而非合并：同平台多币种时混加同样是假数字。
+     * 触顶时 truncatedPlatforms 点名哪些平台没算全——静默截断会让
+     * 「5000 单的统计」被当成「全部订单的统计」。
+     */
+    @ShopScoped
+    @GetMapping("/order/stats/{shopId}")
+    public Result<PlatformOrderStats> orderStats(
+            @PathVariable Long shopId,
+            @RequestParam(required = false) List<String> platform) {
+        return Result.success(platformOrderStatsService.stats(shopId, platform));
     }
 
     @ShopScoped

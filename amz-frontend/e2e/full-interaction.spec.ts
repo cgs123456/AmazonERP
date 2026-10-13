@@ -1258,6 +1258,35 @@ test.describe('MultiplatformOrders 交互（多平台订单）', () => {
     await expect(page.locator('.notice-zone')).toContainText('不提供')
   })
 
+  test('分平台统计各平台各一份，不给跨平台合计，触顶要点名', async ({ page }) => {
+    await page.goto('/multiplatform')
+    await waitReady(page)
+    const panel = page.locator('[data-panel="platform-stats"]')
+    await expect(panel).toBeVisible()
+
+    // 两个平台各一张卡片
+    await expect(panel.locator('.stats-card')).toHaveCount(2)
+    const temu = panel.locator('.stats-card', { hasText: 'TEMU' })
+    await expect(temu).toContainText('2 单')
+    // 金额带币种，不是裸数字
+    await expect(temu).toContainText('120.5 USD')
+    await expect(temu).toContainText('PAID')
+    await expect(temu).toContainText('SHIPPED')
+
+    const shein = panel.locator('.stats-card', { hasText: 'SHEIN' })
+    await expect(shein).toContainText('30 EUR')
+    // SHEIN 用 EUR、TEMU 用 USD：币种不同更要分开显示
+    await expect(shein).not.toContainText('120.5')
+
+    // 关键：页面不渲染「总计」这类跨平台合计
+    await expect(panel).not.toContainText('总计')
+    await expect(panel).toContainText('不做跨平台合计')
+
+    // 触顶必须点名，不能静默
+    await expect(panel.locator('.truncation-note')).toContainText('TEMU')
+    await expect(temu).toContainText('已触统计上限')
+  })
+
   test('全平台同步要确认，结果点名失败的平台', async ({ page }) => {
     const syncs: string[] = []
     page.on('request', (r) => {

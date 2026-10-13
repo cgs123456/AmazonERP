@@ -1359,6 +1359,18 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   // ===== 多平台订单 /multiplatform =====
   // 顺序敏感：按平台的列表要在通用 list/ 之前；ship 要排在 list 之后但不冲突。
   { match: /^\/multiplatform\/order\/list\/1\/TEMU$/, data: [MP_ORDERS[0]] },
+  // 分平台统计（A8）：两个平台各一份 + TEMU 触顶，覆盖「不做合计」与「截断披露」两条
+  { match: /^\/multiplatform\/order\/stats\//, data: {
+      totalOrders: 3,
+      truncatedPlatforms: ['TEMU'],
+      platforms: [
+        { platform: 'TEMU', orderCount: 2, truncated: true,
+          amountByCurrency: { USD: 120.5 }, cnyByCurrency: { USD: 860.0 },
+          statusCounts: { PAID: 1, SHIPPED: 1 } },
+        { platform: 'SHEIN', orderCount: 1, truncated: false,
+          amountByCurrency: { EUR: 30.0 }, cnyByCurrency: { EUR: 235.0 },
+          statusCounts: { DELIVERED: 1 } }
+      ] } },
   { match: /^\/multiplatform\/order\/list\//, data: MP_ORDERS },
   { match: /^\/multiplatform\/order\/\d+\/ship$/, data: true },
   { match: /^\/multiplatform\/sync\/all\//, data: { attempted: 3, succeeded: 2, failed: 1, inserted: 2, failedPlatforms: ['TIKTOK'] } },
