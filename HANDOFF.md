@@ -136,6 +136,7 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 | P1 工单终态 | `CustomerService.vue`「关闭」按钮（仅 PENDING/REPLIED） |
 | P2 配货履约 | `OrderList.vue`「配货出库」按钮 → `/order/{id}/allocate` |
 | P2 供应商付款 | `Procurement.vue`「供应商付款」Tab + 采购单操作列付款按钮 |
+| A3 采购发票（三方核对） | `Procurement.vue`「采购发票（三方核对）」Tab：登记 + 核对四态（缺发票不显示成匹配） |
 | P2 批量到货 | `Warehouse.vue` 入库单 Tab 勾选 + 批量到货弹窗（逐单报告） |
 | P2 BOM 组合品 | `Procurement.vue`「BOM 组合品」Tab：按组合 SKU 查子品行 + 展开试算 |
 | P3 Listing 调价规则 | 独立页 `ListingPriceRules.vue`（路由 `/listing-price-rules`）+ 侧边栏入口 |
@@ -176,6 +177,30 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
 ~~Listing 调价规则~~ **已补（2026-10-12，见 §S7e）**。
 剩余前端缺口只剩**挂着的两项**（P3 店铺绩效 / P4 AI 广告托管）——按用户拍板
 「需要 API 的挂着」处理，不做对着空数据的 UI；P4 适配层按设计等第四家平台。
+
+## S7d. 四项前端补齐 + A3 采购发票三方核对（2026-10-12，`b06862d` / `fae078e`）
+
+> 补 §S7c 核出的「后端已交付、用户碰不到」欠账。四项 + A3 发票域。
+
+- **工单终态**：`closeTicket` +「关闭」按钮（仅 PENDING/REPLIED，与后端门槛一致）。
+  顺带修一处漂移：回复按钮禁用条件原写 `RESOLVED`——后端状态机里没有（那是差评状态），
+  是死条件，导致 CLOSED 工单仍能再回复；改 CLOSED，`ticketClass` 补终态色。
+- **供应商付款**（孤儿 api 转正）：三个 api 函数早已存在但零调用。「供应商付款」Tab +
+  采购单付款按钮。金额默认带 PO 金额（容差拿它算），失败留在弹窗里（后端点名三方金额），
+  取消付款按后端 `@RequireRole("ADMIN")` 做按钮级门控。
+- **批量到货**：入库单 Tab 勾选 + 按单分组填明细 + 逐单报告；有单没填即整批拒绝并点名
+  单号（不放行「过滤掉空组」，那会静默少收几单）。
+- **BOM 组合品**：「BOM 组合品」Tab：按组合 SKU 查子品行 + 增删 + 展开试算。桩刻意做两层
+  （GIFT-BOX→2×GIFT-BAG→3×GIFT-CARD），锁「1 组合展开成 6 叶子」的递归而非按一层得 2。
+- **A3 采购发票（三方核对）**：V9 `amz_purchase_invoice`——同店铺发票号唯一（防一张票对
+  多 PO 重复入账）、`purchaseOrderId` 可空（先开票后对账）、状态机 UNMATCHED→MATCHED/
+  CANCELLED **刻意无 PAID**（付款是 SupplierPayment 职责，两域不交叉写状态）。
+  `match` 四态：MATCHED / MISSING_INVOICE / PO_ONLY / MISMATCH；**缺发票绝不显示成「匹配」**。
+  容差与付款读同一份 `@Value(...amount-tolerance:0.01)`——顺带核实：容差**本就可配**，
+  §S10 原记「A3 容差配置化」的容差部分早已完成，真正缺口只有发票域（记此防重复排查）。
+  前端「采购发票（三方核对）」Tab：登记 + 列表 + 核对区，三态成色（缺发票/不符为 fail 色）。
+- 测试：A3 service 9 项 + 各域 E2E；变异验证（缺发票→MATCHED、去掉二选一/截断披露）均红。
+- 交付细节与坑（骨架屏卸载、桩形状、计数同步）见各 commit message 与 §S7i。
 
 ## S7h. 多平台订单分平台统计（2026-10-12，A8）
 
@@ -279,6 +304,44 @@ logistics 守卫 **42**、spapi 失败出口 **86**（ListingPriceRule 结构化
   stub-shape RED 0（158 注册/102 过）；CI **E2E 137 passed**（1.5 分钟）。
   本机全量曾出现 8 例失败（含 2 例 localStorage SecurityError），
   单跑全过、CI 连续 5 轮全过——属已知冷启动抖动家族。
+
+## S7i. 库存元数据 CSV 批量维护（2026-10-13，A6 第二个域，commit `5aa5636`）
+
+> A6 的第二个真实导入域。按「抽象延迟到第二个用例」验证：第二个用例到了，但**两个契约
+> 的可见语义不同**（商品=upsert 有「新增」，库存=只更新已存在行、数量列整行拒绝），
+> 不足以抽共享面板——故组件与报告 DTO 各自独立，等**第三个**域再抽。这是
+> 「第二个用例在此处被证伪」的有意取舍。
+
+- **为什么只做元数据、不碰数量**（硬约束，不是偷懒）：
+  `quantity / reserved_quantity / inbound_quantity` 受库存流水账（P1.1）管辖，任何改量
+  必须由单据（出入库/调拨/盘点/退货）带流水落账；CSV 直接 SET 数量=绕开流水账，正是
+  P1 立流水账要消灭的状态。`available_quantity` 是 STORED 生成列，写它无效。
+  按实盘调数量**已有**盘点单（`adjustQuantityTo` + `STOCKTAKE_ADJUST`）——所以数量列在
+  CSV 里出现即按行拒绝并指路，不静默忽略。
+- **只更新已存在行**：表上没有 (shop, warehouse, sku, batch) 唯一键（只有普通索引），
+  find-or-create 先查后插并发下会插重复行；命中多行直接拒绝，**绝不替使用者挑一行**。
+- **按列 UPDATE 而非整行**：新增 `WarehouseInventoryMapper.updateMetadataById`，
+  SET 只含 asin/location_code/expire_date、WHERE 带 shop_id。整行 `updateById` 会把
+  读行时刻的 quantity 原样写回，与并发的 `increase/decreaseQuantityAtomic` 打架丢更新
+  （`increaseQuantityAtomic` 注释里记过同一个坑）。
+- **顺带修一个真 bug（非测试问题）**：Warehouse 整个内容区包在 `<template v-if="!loading">`
+  里，导入成功后 `emit('imported')` → `loadInventory()` 打骨架屏，把刚渲染的面板连同
+  报告一起卸载——用户点完导入会看到报告瞬间消失。改 `loadInventory(false, false)` 原地
+  刷新。第一域无此问题（ListingMonitor 的 `zone()` 用分区级 loading，不在页面骨架屏里）。
+- 计数同步：物流写接口守卫 42→43（新端点带 @RequireRole，契约要求）。**本轮无新迁移**，
+  迁移/表钉数不动（A8 之前已到 74）。
+- 测试：service 9 项（数量列拒绝/不新建/不唯一拒绝/元数据按列/空值保留/skipped/
+  格式与长度/结构错误/混合行隔离）+ E2E 1 项（报告无「新增」、逐行错误指路）。
+  变异验证：去掉数量列守卫 → 拒绝用例红（expected 1 got 0），已还原确认。
+- **E2E 调试的教训（诚实记一笔）**：这个骨架屏卸载问题，我先用「panel 文本为空 /
+  IDLE」误判了好几轮，还一度怀疑 stub 正则不匹配；真正的定位是往组件里
+  `console.log` + 注入状态到 DOM 才看到「组件确实收到 code=200、report 被 set、
+  却又消失」。结论：**渲染问题别靠猜，先把组件自身的分支状态打出来**。盲改测试/桩绕了
+  不少路，最后那轮才找对方向——下次遇到「数据对但 DOM 不更新」，先查是不是被父级
+  条件渲染（v-if / key 变化）卸载重建。
+- 本机：后端整仓 2260/0F/0E/35S、vue-tsc 0、vitest 507/507、hygiene 0 findings、
+  release tools 91/91、stub-shape RED 0（166/110）、entity_column_drift 0 mismatch、
+  E2E 138/142（4 例已知冷启动抖动，单跑均过）。
 
 ## S7. 业务齐全度推进（2026-10-11，六大项）
 
@@ -2188,10 +2251,11 @@ cd tools/synthetic-data && python generate.py --tier ci --reset --out out/ci && 
    必须**每次改完文档/注释都重跑**——本机漏跑一次就让 CI 红了（坑 19 复现，见 §S7a）；
 2. **P3.3 Review 星级 / P3.4 竞品上新**——等 Keepa token（AmazonReturnSyncScheduler 模式可复用）；
 3. **绩效字段级解析**——等真实报表样本（原文已留痕不丢）；
-4. **A8 多平台入报表**——需先定口径（合并展示 or 分平台）；
-5. **A1 面单 / A3 发票与容差配置化**——按 §S10 A 档节奏渐进
-   （~~A5 促销~~ 已清理，见 §S7f；~~A6 批量导入~~ 已做商品主数据域，见 §S7g——
-   第二个域接入时按 `CsvImportUtil` 复用，届时再抽公共框架）；
+4. ~~**A8 多平台入报表**~~ **已完成（2026-10-12，§S7h）**——口径定为**分平台**：每平台一份、不做跨平台合计、金额按币种分组、截断披露；
+5. **A1 面单**仍挂——需 Buy Shipping 独立凭证，**不能编造**（编了会得到「调用失败」
+   而 UI 看起来可用）。~~A3 发票~~ 已完成（采购发票 + 三方核对，§S7d；容差本就可配）；
+   ~~A5 促销~~ 已清理（§S7f）；~~A6 批量导入~~ 商品 + 库存两域完成（§S7g / §S7i，
+   第三个域接入时再抽公共框架）；
 6. **P4 平台适配层完整迁移**——第四家平台接入时按 PlatformAdapter 清单验收；
 7. **主线不变**：真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）。
 
