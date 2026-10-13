@@ -359,13 +359,19 @@
         <!-- ==================== 采购发票（三单匹配第三单） ==================== -->
         <div v-if="tab === 'invoice'" class="table-card" data-panel="invoice">
           <div class="filter-row">
-            <button class="action-btn" :disabled="invoiceLoading" @click="loadInvoices()">刷新</button>
+            <button class="action-btn" :disabled="invoiceLoading || unlinkedOnly" @click="loadInvoices()">刷新</button>
+            <button class="action-btn" :class="{ primary: unlinkedOnly }" :disabled="unlinkedLoading"
+                    @click="toggleUnlinked()">{{ unlinkedOnly ? '看全部发票' : '只看未关联 PO 的发票' }}</button>
             <button class="action-btn" @click="openInvoiceDialog()">+ 登记发票</button>
             <span class="muted">
               发票是三单匹配的第三单（PO-收货-发票）。purchaseOrderId 可空——
               供应商常先开票、后对账，允许先登记后关联。
             </span>
           </div>
+          <p v-if="unlinkedOnly" class="muted unlinked-note">
+            只显示<b>还没关联采购单</b>的发票（供应商先开票、后对账的那批）——
+            它们进不了任何采购单的三方核对，需人工确认归属后补关联。
+          </p>
 
           <div class="sub-block">
             <div class="sub-title">三方核对</div>
@@ -394,7 +400,7 @@
                   <th>开票日期</th><th>状态</th><th>操作</th></tr>
             </thead>
             <tbody>
-              <tr v-for="v in invoices" :key="v.id">
+              <tr v-for="v in (unlinkedOnly ? unlinkedInvoices : invoices)" :key="v.id">
                 <td class="mono">{{ v.invoiceNo }}</td>
                 <td class="mono">{{ v.purchaseOrderId || '未关联' }}</td>
                 <td>{{ v.supplierName || '-' }}</td>
@@ -407,8 +413,8 @@
                           @click="confirmAction(cancelInvoiceConfirm(v))">作废</button>
                 </td>
               </tr>
-              <tr v-if="!invoiceLoading && !invoices.length">
-                <td colspan="8" class="empty-row">该店铺暂无采购发票</td>
+              <tr v-if="!invoiceLoading && !unlinkedLoading && !(unlinkedOnly ? unlinkedInvoices : invoices).length">
+                <td colspan="8" class="empty-row">{{ unlinkedOnly ? '没有未关联 PO 的发票' : '该店铺暂无采购发票' }}</td>
               </tr>
             </tbody>
           </table>
@@ -1398,6 +1404,33 @@ const loadInvoices = async () => {
 const invoiceClass = (status?: string) =>
   status === 'MATCHED' ? 'healthy' : status === 'CANCELLED' ? 'urgent' : ''
 
+/* 未关联 PO 的发票视图：供应商先开票、后对账的票单独可见——它们进不了任何
+   采购单的三方核对，混在全部发票里容易被当成「已核对」。 */
+const unlinkedOnly = ref(false)
+const unlinkedInvoices = ref<inv.PurchaseInvoiceRow[]>([])
+const unlinkedLoading = ref(false)
+
+const toggleUnlinked = async () => {
+  unlinkedOnly.value = !unlinkedOnly.value
+  if (!unlinkedOnly.value) return
+  unlinkedLoading.value = true
+  invoiceError.value = ''
+  try {
+    const res = await inv.listUnlinkedInvoices(shop())
+    if (res?.code !== 200) {
+      invoiceError.value = `未关联发票：${res?.message || '接口返回非 200'}`
+      unlinkedInvoices.value = []
+      return
+    }
+    unlinkedInvoices.value = res.data ?? []
+  } catch (e) {
+    invoiceError.value = `未关联发票：${(e as Error)?.message || '调用失败'}`
+    unlinkedInvoices.value = []
+  } finally {
+    unlinkedLoading.value = false
+  }
+}
+
 const matchPoId = ref('')
 const matchResult = ref<inv.ThreeWayMatch | null>(null)
 const matchError = ref('')
@@ -1769,6 +1802,8 @@ onMounted(loadTabData)
 
 .compare-table { margin-top: 0.75rem; }
 .sub-block { border-top: 1px solid var(--color-border); margin-top: 1rem; padding-top: 0.875rem; }
+.unlinked-note { margin: 0 0 0.5rem; }
+.action-btn.primary { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 /* 三方核对结论：三态各自成色。MISSING_INVOICE 与 MISMATCH 都是 fail，
    绝不因为「还没核对」就显示成通过——那会让未开票的采购单直接进付款流程。 */
 .match-result { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }

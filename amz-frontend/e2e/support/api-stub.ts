@@ -1253,6 +1253,11 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
 
   // 采购发票（A3 三单匹配第三单）：列表 + 三方核对。
   // 核对刻意覆盖「缺发票」与「金额不符」两种结论——把未核对显示成通过是本域最贵的错。
+  // 未关联 PO 的发票（先开票后对账）：一条，purchaseOrderId 为 null
+  { match: /^\/procurement\/invoice\/unlinked\//, data: [
+      { id: 82, shopId: 1, invoiceNo: 'INV-2026-0082', purchaseOrderId: null,
+        supplierName: '深圳市华强北电子科技有限公司', invoiceAmount: 540.0, taxAmount: 0,
+        invoiceDate: '2026-10-07', status: 'UNMATCHED' } ] },
   { match: /^\/procurement\/invoice\/list\//, data: [
       { id: 81, shopId: 1, invoiceNo: 'INV-2026-0081', purchaseOrderId: 31, supplierName: '深圳市华强北电子科技有限公司',
         invoiceAmount: 2200.0, taxAmount: 0, invoiceDate: '2026-10-06', status: 'UNMATCHED' } ] },

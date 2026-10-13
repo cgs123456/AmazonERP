@@ -894,6 +894,34 @@ test.describe('Procurement 交互（采购供应链）', () => {
     expect(posts[0]).toContain('INV-NEW')
   })
 
+  test('未关联 PO 的发票可单独查看：先开票后对账的票不混进已核对列表', async ({ page }) => {
+    const urls: string[] = []
+    page.on('request', (r) => {
+      if (r.url().includes('/procurement/invoice/')) urls.push(new URL(r.url()).pathname)
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购发票' }).click()
+    const panel = page.locator('.table-card[data-panel="invoice"]')
+
+    // 默认视图：全部发票（含已关联 INV-2026-0081）
+    await expect(panel).toContainText('INV-2026-0081')
+    await expect(panel).not.toContainText('INV-2026-0082')
+
+    // 切到未关联视图：只出先开票后对账的票，且点名为什么单列
+    await panel.locator('button', { hasText: '只看未关联' }).click()
+    await expect(panel.locator('.unlinked-note')).toContainText('还没关联采购单')
+    await expect(panel).toContainText('INV-2026-0082')
+    // 关键：已关联的票不出现在未关联视图——否则「漏关联」会被掩盖
+    await expect(panel).not.toContainText('INV-2026-0081')
+    expect(urls.some((u) => u.includes('/unlinked/'))).toBe(true)
+
+    // 切回全部
+    await panel.locator('button', { hasText: '看全部发票' }).click()
+    await expect(panel).toContainText('INV-2026-0081')
+    await expect(panel).not.toContainText('INV-2026-0082')
+  })
+
   test('BOM 查不到的组合品给诚实空态，不编造子品行', async ({ page }) => {
     await page.goto('/procurement')
     await waitReady(page)
