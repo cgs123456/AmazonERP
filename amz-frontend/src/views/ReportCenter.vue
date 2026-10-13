@@ -506,6 +506,16 @@
             </table>
           </div>
         </div>
+
+        <!-- ==================== 分平台经营（A8，多平台订单） ==================== -->
+        <div v-if="tab === 'multiplatform'" class="tab-panel" data-panel="multiplatform">
+          <PlatformOrderStats />
+          <p class="muted">
+            这里是 Temu / TikTok / Shein 等平台的<b>订单概览</b>，与上面的 Amazon 经营视图分开看——
+            各平台币种、物流与平台费结构不同，不做跨平台的合并合计；要按平台看明细/同步，去「多平台订单」页。
+          </p>
+        </div>
+
       </template>
     </main>
 
@@ -527,6 +537,7 @@ import { ref, computed, onMounted, type Ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import PlatformOrderStats from '../components/PlatformOrderStats.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
 import { asNumber } from '@/utils/format'
 import type { ApiResponse, PageMeta } from '@/api/types'
@@ -540,13 +551,14 @@ import type {
   RealtimeProfitSummary, CostAllocation
 } from '@/api/report'
 
-type TabKey = 'overview' | 'profit' | 'turnover' | 'sales' | 'snapshot'
+type TabKey = 'overview' | 'profit' | 'turnover' | 'sales' | 'snapshot' | 'multiplatform'
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'overview', label: '经营概览' },
   { key: 'profit', label: '利润明细' },
   { key: 'turnover', label: '库存周转与滞销' },
   { key: 'sales', label: '日销与同期对比' },
-  { key: 'snapshot', label: '实时快照与成本分摊' }
+  { key: 'snapshot', label: '实时快照与成本分摊' },
+  { key: 'multiplatform', label: '分平台经营（多平台）' }
 ]
 
 const currentShop = ref('')
@@ -899,7 +911,9 @@ const TAB_LOADERS: Record<TabKey, () => Promise<unknown>> = {
   profit: loadAllProfit,
   turnover: loadTurnover,
   sales: () => loadSalesList(),
-  snapshot: async () => { await Promise.all([loadAllSnapshot(), loadImportShipments()]) }
+  snapshot: async () => { await Promise.all([loadAllSnapshot(), loadImportShipments()]) },
+  // 分平台统计由 PlatformOrderStats 组件在面板挂载时自请求（懒加载），此处无需父级 loader
+  multiplatform: async () => {}
 }
 
 const loaded = new Set<TabKey>()

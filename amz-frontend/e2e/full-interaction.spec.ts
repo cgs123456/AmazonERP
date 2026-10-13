@@ -1519,6 +1519,27 @@ test.describe('MultiplatformOps 交互（多平台运营台）', () => {
   })
 })
 
+test.describe('ReportCenter 交互（经营报表）', () => {
+  test('分平台经营分区复用统计组件：进入分区才渲染，与订单页同一渲染口径', async ({ page }) => {
+    await page.goto('/reports')
+    await waitReady(page)
+    // 分区默认未挂载（懒加载）：概览面板不在，点 tab 才出现
+    await expect(page.locator('[data-panel="platform-stats"]')).toHaveCount(0)
+    await page.locator('.tab', { hasText: '分平台经营' }).click()
+    const panel = page.locator('[data-panel="platform-stats"]')
+    await expect(panel).toBeVisible()
+    // 与订单页同一组件：两个平台各一卡、金额带币种、不做跨平台合计
+    await expect(panel.locator('.stats-card')).toHaveCount(2)
+    await expect(panel.locator('.stats-card', { hasText: 'TEMU' })).toContainText('120.5 USD')
+    await expect(panel).toContainText('不做跨平台合计')
+    await expect(panel).not.toContainText('总计')
+    // 可视化条：订单数相对最大值（TEMU 2 单是最大，满宽）
+    await expect(panel.locator('.stats-bar').first()).toBeVisible()
+    // 该分区说明点明与 Amazon 经营视图分开看（分平台口径，不混入合并合计）
+    await expect(page.locator('[data-panel="multiplatform"]')).toContainText('不做跨平台的合并合计')
+  })
+})
+
 test.describe('ProfitReport 交互（利润报表与下钻）', () => {
   test('统计区间可见可改，且不再有填不上的「按店铺」维度', async ({ page }) => {
     const reportCalls: string[] = []

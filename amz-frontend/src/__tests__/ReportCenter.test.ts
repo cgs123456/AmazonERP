@@ -151,9 +151,9 @@ describe('ReportCenter 视图（经营报表）', () => {
     happy()
   })
 
-  it('渲染 5 个分区，且只在进入该分区时才请求对应端点', async () => {
+  it('渲染 6 个分区，且只在进入该分区时才请求对应端点', async () => {
     const wrapper = await mountPage()
-    expect(wrapper.findAll('.tab').length).toBe(5)
+    expect(wrapper.findAll('.tab').length).toBe(6)
     expect(rpt.shopDashboard).toHaveBeenCalledWith('900000000000001000')
     expect(rpt.listProfitDetails).not.toHaveBeenCalled()
     await openTab(wrapper, '利润明细')

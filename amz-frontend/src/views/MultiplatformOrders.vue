@@ -66,50 +66,8 @@
                     :disabled="rows.loading.value" @click="loadOrders(true)">下一页</button>
             <span class="muted">{{ pagerText }}</span>
           </div>
-          <!-- 分平台统计（A8）：每个平台各一份，不渲染跨平台的「总计」 -->
-          <div class="stats-block" data-panel="platform-stats">
-            <div class="stats-head">
-              <span class="stats-title">分平台概览</span>
-              <button class="action-btn" :disabled="statsLoading" @click="loadStats()">重算</button>
-              <span class="muted stats-note">
-                各平台币种与费用结构不同，这里<b>不做跨平台合计</b>——
-                「全店销售额」这种数字必须先定汇率与费用归集口径才有意义
-              </span>
-            </div>
-            <p v-if="statsError" class="error-zone" role="alert">{{ statsError }}</p>
-            <p v-if="stats?.truncatedPlatforms?.length" class="truncation-note" role="status">
-              以下平台数据超出统计上限，下面的数字不是该平台全量：
-              {{ stats.truncatedPlatforms.join('、') }}
-            </p>
-            <div v-if="stats?.platforms?.length" class="stats-grid">
-              <div v-for="b in stats.platforms" :key="b.platform" class="stats-card">
-                <div class="stats-card-head">
-                  <strong>{{ b.platform }}</strong>
-                  <span class="muted">{{ b.orderCount }} 单</span>
-                </div>
-                <div class="stats-row">
-                  <span class="stats-label">金额</span>
-                  <span class="stats-value">
-                    <span v-if="!Object.keys(b.amountByCurrency || {}).length">—</span>
-                    <span v-for="(amt, cur) in b.amountByCurrency" :key="cur" class="amt-chip">
-                      {{ amt }} {{ cur }}
-                    </span>
-                  </span>
-                </div>
-                <div class="stats-row">
-                  <span class="stats-label">状态</span>
-                  <span class="stats-value">
-                    <span v-if="!Object.keys(b.statusCounts || {}).length">—</span>
-                    <span v-for="(cnt, st) in b.statusCounts" :key="st" class="amt-chip">
-                      {{ st }} {{ cnt }}
-                    </span>
-                  </span>
-                </div>
-                <div v-if="b.truncated" class="stats-truncated">该平台已触统计上限</div>
-              </div>
-            </div>
-            <p v-else-if="!statsLoading" class="muted">该店铺暂无多平台订单，概览为空</p>
-          </div>
+          <!-- 分平台统计（A8）：抽成共享组件，ReportCenter 经营报表分区复用同一渲染与口径 -->
+          <PlatformOrderStats />
 
           <table class="data-table">
             <thead>
@@ -168,6 +126,7 @@ import { computed, ref, onMounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import PlatformOrderStats from '../components/PlatformOrderStats.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
 import type { ApiResponse } from '@/api/types'
 import * as api from '@/api/multiplatform'
@@ -336,38 +295,9 @@ const runConfirm = async () => {
 }
 
 
-/* ---------- 分平台统计（A8） ---------- */
-
-const stats = ref<api.PlatformOrderStatsDto | null>(null)
-const statsLoading = ref(false)
-const statsError = ref('')
-
-const loadStats = async () => {
-  const shopId = refreshShop()
-  if (!shopId) return
-  statsLoading.value = true
-  statsError.value = ''
-  try {
-    const res = await api.orderStats(shopId)
-    if (res?.code !== 200) {
-      statsError.value = `分平台统计：${res?.message || '接口返回非 200'}`
-      stats.value = null
-      return
-    }
-    stats.value = res.data ?? null
-  } catch (e) {
-    // 「拉不到」与「真的没有订单」必须可区分
-    statsError.value = `分平台统计：${(e as Error)?.message || '调用失败'}`
-    stats.value = null
-  } finally {
-    statsLoading.value = false
-  }
-}
-
 onMounted(() => {
   errors.value = []   // 整页入口清一次；loader 只按各自前缀追加/移除
   void loadOrders()
-  void loadStats()
 })
 </script>
 
@@ -405,18 +335,4 @@ onMounted(() => {
 .confirm-detail { font-size: 0.875rem; color: var(--color-on-surface); line-height: 1.5; }
 .empty-row { color: var(--color-muted); font-size: 0.8125rem; padding: 1rem; }
 
-/* 分平台统计 */
-.stats-block { margin-bottom: 0.875rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
-.stats-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
-.stats-title { font-weight: 600; font-size: 0.9375rem; }
-.stats-note { font-size: 0.75rem; }
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; }
-.stats-card { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.5rem 0.625rem; }
-.stats-card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.375rem; }
-.stats-row { display: flex; gap: 0.5rem; font-size: 0.75rem; margin-bottom: 0.25rem; }
-.stats-label { color: var(--color-muted); flex: 0 0 2.5rem; }
-.stats-value { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-.amt-chip { background: var(--color-surface-alt, #f5f5f5); border-radius: 999px; padding: 0 0.375rem; }
-.stats-truncated { margin-top: 0.25rem; font-size: 0.7rem; color: var(--color-error, #c62828); }
-.truncation-note { font-size: 0.75rem; color: var(--color-error, #c62828); margin-bottom: 0.5rem; }
 </style>
