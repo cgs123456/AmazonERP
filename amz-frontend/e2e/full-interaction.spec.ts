@@ -815,6 +815,55 @@ test.describe('Procurement 交互（采购供应链）', () => {
     await expect(panel.locator('.sub-block tbody tr')).toContainText('6')
   })
 
+  test('三方核对：缺发票显示成「缺发票」，不伪装成通过', async ({ page }) => {
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购发票' }).click()
+    const panel = page.locator('.table-card[data-panel="invoice"]')
+
+    // PO 32：后端结论 MISSING_INVOICE
+    await panel.locator('.sub-block input').first().fill('32')
+    await panel.locator('.sub-block button', { hasText: '核对' }).click()
+    const result = panel.locator('[data-panel="match-result"]')
+    await expect(result).toContainText('缺发票')
+    await expect(result).toContainText('尚未登记发票')
+    // 关键：不能出现「三方一致」，也不能是 ok 色
+    await expect(result).not.toContainText('三方一致')
+    await expect(result).not.toHaveClass(/ok/)
+    await expect(result).toHaveClass(/fail/)
+
+    // PO 31：金额不符，要说出差多少、容差多少
+    await panel.locator('.sub-block input').first().fill('31')
+    await panel.locator('.sub-block button', { hasText: '核对' }).click()
+    await expect(result).toContainText('金额不符')
+    await expect(result).toContainText('2200')
+    await expect(result).toContainText('3000')
+  })
+
+  test('登记发票要填发票号与金额，缺一不发请求', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => {
+      if (r.url().includes('/procurement/invoice') && r.method() === 'POST') posts.push(r.postData() || '')
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: '采购发票' }).click()
+    await page.locator('button', { hasText: '+ 登记发票' }).click()
+    const modal = page.locator('[data-panel="invoice-save"]')
+    await expect(modal).toBeVisible()
+
+    await modal.locator('input').first().fill('INV-NEW')
+    // 只填发票号、金额为空 → 保存按钮禁用，自然不会有请求
+    await expect(modal.locator('button', { hasText: '保存' })).toBeDisabled()
+    await expect.poll(() => posts.length).toBe(0)
+
+    await modal.locator('label', { hasText: '发票金额' }).locator('input').fill('2200')
+    await expect(modal.locator('button', { hasText: '保存' })).toBeEnabled()
+    await modal.locator('button', { hasText: '保存' }).click()
+    await expect.poll(() => posts.length).toBe(1)
+    expect(posts[0]).toContain('INV-NEW')
+  })
+
   test('BOM 查不到的组合品给诚实空态，不编造子品行', async ({ page }) => {
     await page.goto('/procurement')
     await waitReady(page)

@@ -1242,6 +1242,34 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/procurement\/payment$/, data: SUPPLIER_PAYMENTS[0] },
   { match: /^\/procurement\/payment\/\d+\/cancel$/, data: { ...SUPPLIER_PAYMENTS[0], status: 'CANCELLED' } },
 
+  // 采购发票（A3 三单匹配第三单）：列表 + 三方核对。
+  // 核对刻意覆盖「缺发票」与「金额不符」两种结论——把未核对显示成通过是本域最贵的错。
+  { match: /^\/procurement\/invoice\/list\//, data: [
+      { id: 81, shopId: 1, invoiceNo: 'INV-2026-0081', purchaseOrderId: 31, supplierName: '深圳市华强北电子科技有限公司',
+        invoiceAmount: 2200.0, taxAmount: 0, invoiceDate: '2026-10-06', status: 'UNMATCHED' } ] },
+  { match: /^\/procurement\/invoice$/, data: {
+      id: 81, shopId: 1, invoiceNo: 'INV-2026-0081', purchaseOrderId: 31,
+      invoiceAmount: 2200.0, taxAmount: 0, status: 'UNMATCHED' } },
+  // 核对结论按采购单区分：31 = 金额不符，32 = 缺发票。
+  // 两个都要能测到——「缺发票被显示成通过」是本域最贵的错（钱付出去而无票据凭据）。
+  { match: /^\/procurement\/invoice\/match\/\d+\/31$/, data: {
+      purchaseOrderId: 31, purchaseOrderNo: 'PO-2026-0031', poAmount: 2200.0,
+      receivedAmount: 2200.0, invoiceAmount: 3000.0, invoiceCount: 1,
+      poMatchesInvoice: false, receivedMatchesInvoice: false,
+      conclusion: 'MISMATCH',
+      detail: 'PO 金额=2200.0，发票合计=3000.0，偏差超容差 22.00。请核对后重试或调整容差' } },
+  { match: /^\/procurement\/invoice\/match\/\d+\/32$/, data: {
+      purchaseOrderId: 32, purchaseOrderNo: 'PO-2026-0032', poAmount: 540.0,
+      receivedAmount: null, invoiceAmount: null, invoiceCount: 0,
+      poMatchesInvoice: false, receivedMatchesInvoice: false,
+      conclusion: 'MISSING_INVOICE',
+      detail: '该采购单尚未登记发票：三单匹配缺「票」，付款前请先登记或确认供应商未开票' } },
+  // 作废返回 PurchaseInvoice 实体（不是布尔）：后端是 Result<PurchaseInvoice>,
+  // 桩给标量会被 stub_shape_audit 判为形状漂移
+  { match: /^\/procurement\/invoice\/\d+\/cancel$/, data: {
+      id: 81, shopId: 1, invoiceNo: 'INV-2026-0081', purchaseOrderId: 31,
+      invoiceAmount: 2200.0, taxAmount: 0, status: 'CANCELLED' } },
+
   // BOM 组合品：list 按 compositeSku 过滤（不是全量列表），expand 回递归累计后的叶子行
   { match: /^\/procurement\/bom\/list\//, data: (query: URLSearchParams) =>
       BOM_ROWS.filter((b) => b.compositeSku === (query.get('compositeSku') || '')) },

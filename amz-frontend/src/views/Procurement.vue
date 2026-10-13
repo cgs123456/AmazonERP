@@ -351,6 +351,64 @@
           </div>
         </div>
 
+        <!-- ==================== 采购发票（三单匹配第三单） ==================== -->
+        <div v-if="tab === 'invoice'" class="table-card" data-panel="invoice">
+          <div class="filter-row">
+            <button class="action-btn" :disabled="invoiceLoading" @click="loadInvoices()">刷新</button>
+            <button class="action-btn" @click="openInvoiceDialog()">+ 登记发票</button>
+            <span class="muted">
+              发票是三单匹配的第三单（PO-收货-发票）。purchaseOrderId 可空——
+              供应商常先开票、后对账，允许先登记后关联。
+            </span>
+          </div>
+
+          <div class="sub-block">
+            <div class="sub-title">三方核对</div>
+            <div class="inline-row">
+              <input v-model="matchPoId" placeholder="采购单 ID" />
+              <button class="action-btn" :disabled="matching || !Number(matchPoId)"
+                      @click="runThreeWayMatch()">核对</button>
+            </div>
+            <p v-if="matchError" class="error-zone" role="alert">{{ matchError }}</p>
+            <div v-if="matchResult" class="match-result" data-panel="match-result"
+                 :class="matchClass(matchResult.conclusion)">
+              <strong>{{ MATCH_CONCLUSION_LABEL[matchResult.conclusion] || matchResult.conclusion }}</strong>
+              <span class="match-detail">{{ matchResult.detail }}</span>
+              <span class="muted">
+                PO 金额 {{ matchResult.poAmount ?? '-' }} ·
+                收货金额 {{ matchResult.receivedAmount ?? '-' }} ·
+                发票合计 {{ matchResult.invoiceAmount ?? '-' }}（{{ matchResult.invoiceCount }} 张）
+              </span>
+            </div>
+          </div>
+
+          <p v-if="invoiceError" class="error-zone" role="alert">{{ invoiceError }}</p>
+          <table class="data-table">
+            <thead>
+              <tr><th>发票号</th><th>关联采购单</th><th>开票方</th><th>金额</th><th>税额</th>
+                  <th>开票日期</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="v in invoices" :key="v.id">
+                <td class="mono">{{ v.invoiceNo }}</td>
+                <td class="mono">{{ v.purchaseOrderId || '未关联' }}</td>
+                <td>{{ v.supplierName || '-' }}</td>
+                <td>{{ v.invoiceAmount }}</td>
+                <td>{{ v.taxAmount ?? '-' }}</td>
+                <td>{{ v.invoiceDate || '-' }}</td>
+                <td><span class="status-tag" :class="invoiceClass(v.status)">{{ v.status }}</span></td>
+                <td class="row-actions">
+                  <button v-if="v.status !== 'CANCELLED'" class="action-btn cancel" :disabled="busy"
+                          @click="confirmAction(cancelInvoiceConfirm(v))">作废</button>
+                </td>
+              </tr>
+              <tr v-if="!invoiceLoading && !invoices.length">
+                <td colspan="8" class="empty-row">该店铺暂无采购发票</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <!-- ==================== BOM 组合品 ==================== -->
         <div v-if="tab === 'bom'" class="table-card" data-panel="bom">
           <div class="filter-row">
@@ -757,6 +815,29 @@
       </div>
     </div>
 
+    <div v-if="invoiceDialog" class="modal-mask" @click.self="invoiceDialog = null">
+      <div class="modal" role="dialog" aria-modal="true" data-panel="invoice-save">
+        <h3>登记采购发票</h3>
+        <p class="confirm-detail">
+          同店铺内发票号唯一——重复登记会被拒，避免一张票对多个采购单重复入账。
+          采购单可留空（先登记、后关联）。
+        </p>
+        <div class="form-grid">
+          <label>发票号 *<input v-model="invoiceDialog.invoiceNo" /></label>
+          <label>关联采购单 ID<input v-model="invoiceDialog.purchaseOrderId" placeholder="可留空" /></label>
+          <label>开票方<input v-model="invoiceDialog.supplierName" /></label>
+          <label>发票金额 *<input v-model="invoiceDialog.invoiceAmount" type="number" step="0.01" /></label>
+          <label>税额<input v-model="invoiceDialog.taxAmount" type="number" step="0.01" /></label>
+          <label>开票日期<input v-model="invoiceDialog.invoiceDate" type="date" /></label>
+        </div>
+        <div class="modal-actions">
+          <button class="action-btn cancel" @click="invoiceDialog = null">取消</button>
+          <button class="action-btn" :disabled="busy || !invoiceDialog.invoiceNo || !Number(invoiceDialog.invoiceAmount)"
+                  @click="submitInvoice()">保存</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="bomDialog" class="modal-mask" @click.self="bomDialog = null">
       <div class="modal" role="dialog" aria-modal="true" data-panel="bom-save">
         <h3>新增 BOM 子品行</h3>
@@ -823,19 +904,22 @@ import { canUseRole } from '@/utils/identity'
 import { asNumber } from '@/utils/format'
 import type { ApiResponse } from '@/api/types'
 import * as proc from '@/api/procurement'
+import * as inv from '@/api/invoice'
+import { MATCH_CONCLUSION_LABEL } from '@/api/invoice'
 import type {
   Supplier, SupplierProduct, PurchasePlan, PurchaseOrder, FbaShipment, FbaShipmentItem,
   InventoryBatch, BatchCostSummary, PriceCompareRow, SupplierKpi, AllocationResult, ReceiptResult,
   PurchaseApproval, SupplierPaymentRow
 } from '@/api/procurement'
 
-type TabKey = 'supplier' | 'plan' | 'order' | 'voucher' | 'payment' | 'bom' | 'shipment' | 'batch'
+type TabKey = 'supplier' | 'plan' | 'order' | 'voucher' | 'payment' | 'invoice' | 'bom' | 'shipment' | 'batch'
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'supplier', label: '供应商与比价' },
   { key: 'plan', label: '采购计划' },
   { key: 'order', label: '采购单（1688）' },
   { key: 'voucher', label: '凭证来源（可入账）' },
   { key: 'payment', label: '供应商付款' },
+  { key: 'invoice', label: '采购发票（三方核对）' },
   { key: 'bom', label: 'BOM 组合品' },
   { key: 'shipment', label: 'FBA 货件' },
   { key: 'batch', label: '库存批次与 FIFO' }
@@ -1277,6 +1361,112 @@ const runBomExpand = async () => {
   }
 }
 
+/* ---------- 采购发票（三单匹配第三单） ---------- */
+
+const invoices = ref<inv.PurchaseInvoiceRow[]>([])
+const invoiceLoading = ref(false)
+const invoiceError = ref('')
+
+const loadInvoices = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  invoiceLoading.value = true
+  invoiceError.value = ''
+  try {
+    const res = await inv.listInvoices(shop())
+    if (res?.code !== 200) {
+      invoiceError.value = `发票列表：${res?.message || '接口返回非 200'}`
+      invoices.value = []
+      return
+    }
+    invoices.value = res.data ?? []
+  } catch (e) {
+    // 「拉不到」与「真的没有发票」必须可区分
+    invoiceError.value = `发票列表：${(e as Error)?.message || '调用失败'}`
+    invoices.value = []
+  } finally {
+    invoiceLoading.value = false
+  }
+}
+
+const invoiceClass = (status?: string) =>
+  status === 'MATCHED' ? 'healthy' : status === 'CANCELLED' ? 'urgent' : ''
+
+const matchPoId = ref('')
+const matchResult = ref<inv.ThreeWayMatch | null>(null)
+const matchError = ref('')
+const matching = ref(false)
+
+/**
+ * 结论 → 样式类。MISSING_INVOICE 与 MISMATCH 都给「风险」色，
+ * 绝不因为「还没核对」就显示成通过——那会让未开票的采购单直接进付款流程。
+ */
+const matchClass = (conclusion: string) =>
+  conclusion === 'MATCHED' ? 'ok' : conclusion === 'PO_ONLY' ? 'warn' : 'fail'
+
+const runThreeWayMatch = async () => {
+  const poId = Number(matchPoId.value)
+  if (!poId) return
+  matching.value = true
+  matchError.value = ''
+  matchResult.value = null
+  try {
+    const res = await inv.matchInvoiceThreeWay(shop(), poId)
+    if (res?.code !== 200) {
+      matchError.value = `三方核对：${res?.message || '接口返回非 200'}`
+      return
+    }
+    matchResult.value = res.data ?? null
+  } catch (e) {
+    matchError.value = `三方核对：${(e as Error)?.message || '调用失败'}`
+  } finally {
+    matching.value = false
+  }
+}
+
+const invoiceDialog = ref<null | {
+  invoiceNo: string
+  purchaseOrderId: string
+  supplierName: string
+  invoiceAmount: string
+  taxAmount: string
+  invoiceDate: string
+}>(null)
+
+const openInvoiceDialog = () => {
+  invoiceDialog.value = {
+    invoiceNo: '', purchaseOrderId: '', supplierName: '',
+    invoiceAmount: '', taxAmount: '', invoiceDate: ''
+  }
+}
+
+const submitInvoice = async () => {
+  const d = invoiceDialog.value
+  if (!d?.invoiceNo.trim() || !Number(d.invoiceAmount)) return
+  const ok = await callApi('登记发票', () => inv.registerInvoice({
+    shopId: shop(),
+    invoiceNo: d.invoiceNo.trim(),
+    purchaseOrderId: d.purchaseOrderId ? Number(d.purchaseOrderId) : null,
+    supplierName: d.supplierName.trim() || undefined,
+    invoiceAmount: Number(d.invoiceAmount),
+    taxAmount: d.taxAmount ? Number(d.taxAmount) : undefined,
+    invoiceDate: d.invoiceDate || undefined
+  }))
+  if (ok === null) return
+  invoiceDialog.value = null
+  await loadInvoices()
+}
+
+const cancelInvoiceConfirm = (v: inv.PurchaseInvoiceRow) => ({
+  title: '作废发票',
+  detail: `发票 ${v.invoiceNo} 作废后，其关联采购单的三方核对会回到「缺发票」状态——`
+    + '付款前需要重新登记或确认供应商未开票。已付出的钱不会因此退回。',
+  run: async () => {
+    if (!v.id) return
+    if (await callApi('作废发票', () => inv.cancelInvoice(v.id!, shop())) !== null) await loadInvoices()
+  }
+})
+
 /* ---------- FBA 货件 ---------- */
 const shipments = makeList<FbaShipment>()
 const shipmentStatus = ref('')
@@ -1520,7 +1710,7 @@ const loadTabData = async () => {
   if (!shopId) return
   loading.value = true
   errors.value = []
-  await Promise.all([loadSuppliers(), loadPlans(), loadOrders(), loadVoucherOrders(), loadShipments(), loadPayments()])
+  await Promise.all([loadSuppliers(), loadPlans(), loadOrders(), loadVoucherOrders(), loadShipments(), loadPayments(), loadInvoices()])
   loading.value = false
 }
 
@@ -1573,6 +1763,14 @@ onMounted(loadTabData)
 
 .compare-table { margin-top: 0.75rem; }
 .sub-block { border-top: 1px solid var(--color-border); margin-top: 1rem; padding-top: 0.875rem; }
+/* 三方核对结论：三态各自成色。MISSING_INVOICE 与 MISMATCH 都是 fail，
+   绝不因为「还没核对」就显示成通过——那会让未开票的采购单直接进付款流程。 */
+.match-result { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }
+.match-result strong { margin-right: 0.5rem; }
+.match-result .match-detail { color: inherit; }
+.match-result.ok { background: var(--color-primary-light, #e8f5e9); color: var(--color-primary); }
+.match-result.warn { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.match-result.fail { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); }
 .sub-title { font-weight: 600; font-size: 0.9375rem; color: var(--color-on-surface); margin-bottom: 0.5rem; }
 .inline-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; flex-wrap: wrap; }
 .inline-row input { flex: 1; min-width: 12rem; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.8125rem; background: var(--color-surface); color: var(--color-on-surface); }

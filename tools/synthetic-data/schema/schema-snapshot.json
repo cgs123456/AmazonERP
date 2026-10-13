@@ -724,6 +724,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 2413,
+      "lines": 39,
+      "sha256": "6002bc63b4be836c7c307637b818491842da0c88a2db36db8d3c9d0c24a87ba3",
+      "tables": 1,
+      "insert_statements": 0,
+      "db_hint": "amz_procurement",
+      "alter_table_statements": 0,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 8658,
       "lines": 192,
       "sha256": "e1f2627709a2779b2c32f20641ef2ada0c9f88023f5c6fb869caf329f38aa4d3",
@@ -1120,11 +1135,11 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 73,
-        "tables": 123
+        "files": 74,
+        "tables": 124
       }
     },
-    "union_table_count": 110,
+    "union_table_count": 111,
     "databases": [
       "amz_ad",
       "amz_ai",
@@ -24634,6 +24649,316 @@
           "line": 219,
           "group": "flyway-migration",
           "hash": "4595354641de1af068cf38018adc4bd1541c5f6eec9432c0fc4ebf2cae69aef8"
+        }
+      ]
+    },
+    {
+      "key": "amz_procurement.amz_purchase_invoice",
+      "database": "amz_procurement",
+      "name": "amz_purchase_invoice",
+      "primary_key": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": null,
+          "auto_increment": true,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": true,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "shop_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "所属店铺 ID",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "invoice_no",
+          "type": "VARCHAR",
+          "args": "64",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "供应商发票号（同店铺唯一）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "purchase_order_id",
+          "type": "BIGINT",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "关联采购单 ID（可空：先登记后关联）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "supplier_name",
+          "type": "VARCHAR",
+          "args": "200",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "开票方（冗余，便于按供应商查）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "invoice_amount",
+          "type": "DECIMAL",
+          "args": "12,2",
+          "unsigned": false,
+          "nullable": false,
+          "default": null,
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "发票金额（不含税额）",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "tax_amount",
+          "type": "DECIMAL",
+          "args": "12,2",
+          "unsigned": false,
+          "nullable": true,
+          "default": "0",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "税额",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "invoice_date",
+          "type": "DATE",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "开票日期",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "status",
+          "type": "VARCHAR",
+          "args": "15",
+          "unsigned": false,
+          "nullable": false,
+          "default": "'UNMATCHED'",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": "UNMATCHED/MATCHED/CANCELLED",
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "remark",
+          "type": "VARCHAR",
+          "args": "300",
+          "unsigned": false,
+          "nullable": true,
+          "default": "NULL",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "create_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": false,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        },
+        {
+          "name": "update_time",
+          "type": "DATETIME",
+          "args": "",
+          "unsigned": false,
+          "nullable": true,
+          "default": "CURRENT_TIMESTAMP",
+          "auto_increment": false,
+          "generated": false,
+          "on_update": true,
+          "inline_primary_key": false,
+          "inline_unique": false,
+          "comment": null,
+          "sources": [
+            "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+          ],
+          "conditional": false,
+          "conflicts": []
+        }
+      ],
+      "column_sources": {
+        "id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "shop_id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "invoice_no": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "purchase_order_id": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "supplier_name": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "invoice_amount": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "tax_amount": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "invoice_date": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "status": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "remark": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "create_time": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ],
+        "update_time": [
+          "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql"
+        ]
+      },
+      "conditional_columns": [],
+      "conflicting_columns": [],
+      "definition_count": 1,
+      "unique_keys": [
+        {
+          "name": "uk_shop_invoice",
+          "columns": [
+            "shop_id",
+            "invoice_no"
+          ]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_shop_po",
+          "columns": [
+            "shop_id",
+            "purchase_order_id"
+          ]
+        }
+      ],
+      "foreign_keys": [],
+      "engine": "InnoDB",
+      "charset": "utf8mb4",
+      "comment": null,
+      "table_hash": "4015679f2d5df1a1b26f45bb14b143179b81264320e72a9136563f6ed1536cec",
+      "definitions": [
+        {
+          "path": "amz-service/amz-service-procurement/src/main/resources/db/migration/V9__purchase_invoice.sql",
+          "line": 23,
+          "group": "flyway-migration",
+          "hash": "4015679f2d5df1a1b26f45bb14b143179b81264320e72a9136563f6ed1536cec"
         }
       ]
     },

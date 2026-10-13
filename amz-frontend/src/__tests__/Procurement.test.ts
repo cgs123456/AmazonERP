@@ -135,11 +135,12 @@ describe('Procurement 视图（采购供应链）', () => {
     happyPath()
     const wrapper = await mountPage()
     expect(wrapper.find('.hero-title').text()).toBe('采购供应链')
-    // 5 个业务分区 + 凭证来源 + 供应商付款 + BOM 组合品
-    expect(wrapper.findAll('.tab').length).toBe(8)
+    // 5 个业务分区 + 凭证来源 + 供应商付款 + 采购发票 + BOM 组合品
+    expect(wrapper.findAll('.tab').length).toBe(9)
     const labels = wrapper.findAll('.tab').map((t: any) => t.text()).join('|')
     expect(labels).toContain('凭证来源')
     expect(labels).toContain('供应商付款')
+    expect(labels).toContain('采购发票')
     expect(labels).toContain('BOM 组合品')
   })
 
