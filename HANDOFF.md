@@ -18,7 +18,7 @@
 
 ## 项目现状一句话
 
-**CI 全绿（run `38203516776`，2026-10-12）**：11 个 job 全过——后端 **2222/0F/0E/2S**、
+**CI 全绿（run `38402216045`，2026-10-13）**：11 个 job 全过——后端 **2222/0F/0E/2S**、
 前端 vitest **507/507** + vue-tsc 0 错 + build 通过 + **E2E 126 passed（58.7s）**、
 hygiene 0 / release tools 91/91 / stub-shape RED 0（145 注册/97 过）/ synthetic-data /
 mysql-import / docker / runtime-smoke / checkstyle 双档。
@@ -32,6 +32,105 @@ FBA 入库计划、FBA 退货自动导入、HTTP 500 语义。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
+
+## S8. 交接：2026-10-13 孤儿 API 清理会话（未完成，含下一步）
+
+> 本段是**当前会话的交接**。最新状态：commit `46c0c4f` 已推送、CI 全绿
+> （run `38402216045` success，11 job 全过）。工作区干净、与 origin 同步。
+
+### 1. 当前任务
+
+前端孤儿 API 清理：全量扫描发现 **389 个 api 导出中 41 个零引用候选**，
+目标是「删纯死代码、接功能缺口」。本轮只完成了**第一项**（`listUnlinkedInvoices`
+接入），剩余 40 个待分类处理——这是交接的核心。
+
+### 2. 已完成（本轮）
+
+- **§S7c 三层核实**：确认 §S10 表已过时（说 13 项未做、实际大多已交付），
+  按代码真实状态重写 §S10（四态：✅完成/🔴需凭证/🟡需拍板/⚪可接受）。
+- **A3 采购发票域**（§S7d）：V9 `amz_purchase_invoice` + 三方核对四态
+  （MATCHED / MISSING_INVOICE / PO_ONLY / MISMATCH）。**缺发票绝不显示成「匹配」**。
+- **四项拍板落档**（2026-10-13）：A8 利润=A（只报订单不算利润）、
+  B7 退货自动收货=A（保持人工，防超卖）、B8 移除单=A（不做）、
+  B6 双口径=已写清边界（合理建模非重复）、P4 适配层=等第四家平台。
+- **A8 分平台报表前端**（§S7h/§S7k）：抽 `PlatformOrderStats` 共享组件 +
+  ReportCenter「分平台经营」分区；只画 orderCount 条（跨平台唯一可比），
+  **刻意不画金额条**（币种不同，横向比较是假信号）。
+- **A6 三个导入域**（§S7g/§S7i/§S7j）：商品/库存元数据/供货价，第三域到时抽
+  `CsvImportSupport` 收敛三域行循环（前两域测试一字未改全绿=抽象未改语义）。
+- **`listUnlinkedInvoices` 接入**（`46c0c4f`）：Procuremement 发票 Tab 加
+  「只看未关联 PO 的发票」切换——供应商先开票后对账的票进不了三方核对，
+  混在全部里会被当成已核对、导致付款前漏检。E2E 1 条 + 变异验证通过。
+
+### 3. 卡住的问题（下一步核心）
+
+**41 个孤儿候选已人工读完定义并分成三类**（本轮成果，下一步直接用它）：
+
+| 类 | 数量 | 内容 | 处置 |
+|---|---|---|---|
+| ① 纯函数/常量 | ~14 | `mapOrderRow`/`mapOrderStatus`/`mapKpiItems`/`deriveHealthCounts`/`joinSuggestQty`/`mapHealthLevel`/`mapInventoryRow`/`mapProfitReport`/`zeroProfitReport`/`isShipmentConfirmed`/`CHANNEL_NOT_INTEGRATED`/`MULTIPLIER_PRESETS`/`ORDER_STATUSES`/`SNAPSHOT_PLACEHOLDER_FIELDS` | **删前必查测试引用**（memory 记：`apiMapping.test.ts` 测过 `mapInventoryRow`；查 `src/__tests__/` 全目录）。确认零引用才删 |
+| ② 功能缺口 | ~20 | `updateSupplier`/`updateWarehouse`/`getUnreadCount`/`markAllNotificationsRead`/`rmaDetail`/`getShipment`/`getBuyBoxSummary`/`listQuotes`/`calculateFreight`/`updateShipment`/`assignShopUser`/`unassignShopUser`/`createShop`/`updateShop`/`updateShopStatus`/`discrepancyDetail`/`executeRules` + 广告域 CRUD 6 个（create/update Campaign/Creative/Targeting/batch 两个） | **不能删**（后端已实现，删=毁功能）。按价值排序接 UI：`getUnreadCount`/`markAllNotificationsRead`（顶栏红点+全部已读，用户可见价值最高）优先 |
+| ③ 内部使用 | 1 | `refreshAccessToken` | **扫描误报**：被 auth.ts 内部拦截器调用。保留，扫描脚本应把「同文件内引用」计为使用 |
+
+**未决**：①类删不删需先查测试引用（memory 有前车之鉴：删前不查测试会红）。
+②类接哪些需用户定优先级（建议从通知红点开始，用户价值最高）。
+
+### 4. 下一步计划
+
+1. **查 ① 类测试引用**：`grep -rn "mapInventoryRow\|mapOrderRow\|..." src/__tests__/`，
+   零引用的删、有引用的保留（删了会让单测红）。
+2. **接 ② 类最高价值项**：`getUnreadCount` + `markAllNotificationsRead`
+   （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。
+3. 每步按既有纪律：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
+
+### 5. 踩过的坑（本轮新增，务必先读再动手）
+
+1. **正则提取 URL 连续三次失配**——多行函数签名让 `[^=]*=>` 和
+   `request.\w+\s*<?` 失配，把 41 个全误报成「无 URL/常量」。
+   **教训：判定代码结构时打印原文人眼读，别用复杂正则猜**（本轮三次都靠这个纠正）。
+2. **grep -v 'src/api/' 在 Git Bash 失效**——路径是反斜杠 `src\api\`，
+   匹配不到斜杠模式，导致验证时把定义行当引用、差点误判扫描有 bug。
+   **教训：路径操作用 python 的 os.path.normpath 规范化后再比**。
+3. **扫描排除逻辑两个 bug**：① 排除了整个 api 目录（漏算 api 内部互引）；
+   ② 应按「排除定义所在文件」而非排除目录。修正后 `masterByAsin` 等仍判孤儿
+   是对的（确实只出现在定义文件里）——**别把「扫描报孤儿」直接当 bug**。
+4. **`/returns` 退货页无任何自动化覆盖**（all-pages 没去、vitest 无文件、
+   full-interaction 无用例）——补了 all-pages 一条渲染用例锁 notice-zone 四条边界。
+   **教训：改无覆盖页面时，顺手补条 smoke 用例**，否则文本改动无兜底。
+5. **写死计数不同步会自相矛盾**——notice-zone 开头写「三条边界」，加第四条时
+   忘了改计数；§S10 开头四态说明在区段降级后也没同步。
+   **教训：改「第 N 条」类文案时，grep 整个文件找写死的计数**。
+
+### 6. 验证口径（本机）
+
+```bash
+# 后端整仓（CI 上 2270/0F/0E/35S；本机 35S 是无 DB/Redis 门控 IT）
+mvn -B -o -fae test
+# 前端
+cd amz-frontend && npx vue-tsc --noEmit && npx vitest run && npx playwright test
+# 门禁
+python tools/release/repository_hygiene.py --root .
+python tools/schema/stub_shape_audit.py
+python tools/schema/entity_column_drift.py
+python -m pytest tools/release -q
+```
+
+**注意**：本机 `mvn test` 会跳过 `FLYWAY_ALL_IT_URL` 门控的 IT（本机无 DB），
+所以本机绿≠CI 绿；DB 相关改动要么起一次性 MySQL 容器真跑（见 memory
+「真机 + 变异」两道），要么推送后立刻盯 CI。vitest 必须在 `amz-frontend/` 目录跑
+（仓库根跑会捡进 e2e 的 Playwright spec 造成假失败）。
+
+### 7. 用户拍板记录（2026-10-13，勿重复问）
+
+1. **需要凭证和外接 API key 的先不做**——包括 A1 面单（Buy Shipping）、
+   P3 绩效/AI 托管、Keepa/DeepSeek/SMTP 等 8 项。这些端点全部 fail-closed
+   （缺凭证显式报错，不返回空/0/假数据）。
+2. **A8 利润只报订单不算利润**——多平台成本归集口径未定，硬算=假数字；
+   要做须先攒真实账单样本。
+3. **B7 保持人工收货**——Amazon 报表「货已回 FC」≠「货回本地仓」，
+   自动回补库存会超卖。
+4. **B8 移除单不做**——低频 + 需凭证。
+5. **B6 保留双口径**——logistics 管货、finance 管钱，合理建模。
 
 ## S7b. 业务升级方案四期交付（2026-10-11，P1–P4）
 
