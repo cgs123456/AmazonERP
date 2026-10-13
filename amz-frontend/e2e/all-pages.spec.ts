@@ -225,6 +225,25 @@ test.describe('Notifications', () => {
   })
 })
 
+// ═══ 10b. 退货管理（此前无任何自动化覆盖，属盲区） =====
+test.describe('ReturnOrder', () => {
+  test('退货页四条判读边界常驻，尤其「不自动收货」防超卖语义', async ({ page }) => {
+    await page.goto('/returns')
+    await expect(page.locator('.hero-title')).toHaveText('退货管理')
+    const notice = page.locator('.notice-zone')
+    await expect(notice).toBeVisible()
+    // 既有三条：退款≠退货、良品才回补、同步只覆盖 FBA
+    await expect(notice).toContainText('退款不退货')
+    await expect(notice).toContainText('良品')
+    await expect(notice).toContainText('只覆盖 FBA')
+    // 新增第四条：收货一律人工确认——「货已回 Amazon FC」≠「货回本地仓」，
+    // 自动回补可售库存会造成超卖。这条是 B7 的产品决策，页面必须披露。
+    await expect(notice).toContainText('收货一律人工确认')
+    await expect(notice).toContainText('不等于')
+    await expect(notice).toContainText('超卖')
+  })
+})
+
 // ═══ 11. 404 页面 ═══
 test.describe('404', () => {
   test('访问不存在路径应显示 404 页面', async ({ page }) => {

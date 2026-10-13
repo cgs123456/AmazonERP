@@ -10,6 +10,11 @@ import java.util.List;
 
 /**
  * 费用差异与短收候选服务（T06）。
+ *
+ * <p><b>与 logistics 域 `amz_fba_receipt_discrepancy`（货件签收差异）的分工</b>——
+ * 见 {@code FbaReceiptDiscrepancy} 类注释：那边管<b>货</b>（签收时箱内少了多少），
+ * 本域的「入库短收」管<b>钱</b>（把货的差异折算成可申报的索赔金额）。
+ * 两个领域各自建模是有意为之，不是重复建设；合并会让物流侧改动牵连财务金额。
  */
 public interface FeeDiscrepancyService {
 
