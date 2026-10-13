@@ -93,6 +93,14 @@
             <button class="primary-btn" @click="loadInventory()">查询</button>
           </div>
         </div>
+        <!-- CSV 批量维护库存元数据（A6）：只更新已存在行的 asin/库位/过期日期，数量列被拒。
+             刻意用常驻可见的小节而非 <details> 折叠：折叠会让内容 display 隐藏，
+             E2E 里 innerText 取空、元素判不可见，徒增脆弱（与 MasterCsvImport 内联同形）。 -->
+        <div class="inv-import" data-panel="inventory-import">
+          <div class="inv-import-title">批量维护库存元数据（CSV）</div>
+          <!-- manageLoading=false：整个内容区包在 v-if="!loading" 里，打骨架屏会把面板连同报告一起卸载 -->
+          <InventoryCsvImport @imported="loadInventory(false, false)" />
+        </div>
         <div class="table-card">
           <table class="data-table">
             <thead>
@@ -602,6 +610,7 @@ import { ref, onMounted, onUnmounted, reactive, watch, computed } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import InventoryCsvImport from '../components/InventoryCsvImport.vue'
 import * as WH from '@/api/warehouse'
 import {
   listStocktakes,
@@ -1464,4 +1473,6 @@ onMounted(async () => {
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } }
 @media (max-width: 768px) { .main-content { margin-left: 0; padding: 1rem; } .tab-bar { overflow-x: auto; } }
+.inv-import { margin-bottom: 0.5rem; }
+.inv-import-title { font-size: 0.8125rem; font-weight: 600; color: var(--color-on-surface); margin-bottom: 0.375rem; }
 </style>

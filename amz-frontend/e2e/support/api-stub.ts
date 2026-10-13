@@ -1088,6 +1088,15 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/order\/saveOrder$/, data: null },
   { match: /^\/order\/getOrderList$/, data: B2C_ORDERS },
   { match: /^\/product\/master\/list\//, data: B2C_MASTERS },
+  // 库存元数据 CSV 导入（A6 第二个域）：报告刻意没有 insertedRows（只更新已存在行）。
+  // 失败行演示数量列拒绝与不唯一拒绝两种原因，UI 都要原样显示。
+  { match: /^\/logistics\/warehouse\/inventory\/import\/csv$/, data: {
+      totalRows: 3, updatedRows: 1, skippedRows: 0, failedRows: 2,
+      headers: ['warehouse_id', 'sku', 'batch_no', 'quantity', 'asin'],
+      errors: {
+        '2': '文件里的数量类列不能批量改（当前列：quantity）：改量请走盘点单或出入库单据，库存变更要进流水账',
+        '3': '找不到该库存行（warehouse_id=10 sku=SKU-MISS 无批次）：CSV 只补元数据，库存行请先由单据产生'
+      } } },
   { match: /^\/logistics\/warehouse\/stock\/aging\//, data: WAREHOUSE_AGING },
   { match: /^\/order\/profit\/report$/, data: PROFIT_REPORT },
 

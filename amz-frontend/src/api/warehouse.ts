@@ -251,3 +251,32 @@ export const AGING_BUCKETS = [
 
 export const getStockAging = (shopId: number | string) =>
   request.get<void, ApiResponse<StockAging>>(`/logistics/warehouse/stock/aging/${shopId}`)
+
+/* ==================== 库存元数据 CSV 批量维护（A6 第二个域） ==================== */
+
+/**
+ * 导入报告。刻意没有 insertedRows——库存行只能由单据产生，CSV 只更新已存在行的
+ * 元数据（ASIN/库位码/过期日期）；出现数量列会被整行拒绝（改量必须走盘点/出入库，
+ * 变更要进库存流水账）。
+ */
+export interface InventoryImportReport {
+  totalRows: number
+  updatedRows: number
+  skippedRows: number
+  failedRows: number
+  /** 文件行号（1 基、含表头行）→ 原因 */
+  errors: Record<string, string>
+  headers: string[]
+}
+
+/**
+ * CSV 批量维护库存元数据。
+ * 模板必需列 warehouse_id / sku / batch_no（行定位键，batch_no 值可空=匹配无批次行）。
+ */
+export const importInventoryCsv = (shopId: number | string, file: File) => {
+  const form = new FormData()
+  form.append('shopId', String(shopId))
+  form.append('file', file)
+  return request.post<void, ApiResponse<InventoryImportReport>>(
+    '/logistics/warehouse/inventory/import/csv', form)
+}

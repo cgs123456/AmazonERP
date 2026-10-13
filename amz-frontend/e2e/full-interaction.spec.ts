@@ -339,6 +339,36 @@ test.describe('Warehouse 交互', () => {
     await expect(page.locator('.panel:visible .action-btn', { hasText: '拣货' })).toBeVisible()
   })
 
+  test('库存 CSV 导入：数量列被整行拒绝并指路到盘点单，行号对着文件', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => { if (r.method() === 'POST' && r.url().includes('/import/csv')) posts.push(r.url()) })
+    await page.goto('/warehouse')
+    await waitReady(page)
+    await page.locator('.tab-item', { hasText: '库存查询' }).click()
+
+    const panel = page.locator('[data-panel="inventory-csv-import"]')
+    await panel.locator('input[type="file"]').setInputFiles({
+      name: 'inv.csv', mimeType: 'text/csv',
+      buffer: Buffer.from('warehouse_id,sku,batch_no,quantity\r\n10,SKU-A1,,88\r\n')
+    })
+    await panel.locator('button', { hasText: '导入 CSV' }).click()
+
+    const report = panel.locator('[data-panel="inventory-import-report"]')
+    await expect(report).toContainText('共 3 行')
+    await expect(report).toContainText('更新 1')
+    await expect(report).toContainText('失败 2')
+    // 库存报告刻意没有「新增」计数——库存行只能由单据产生
+    await expect(report).not.toContainText('新增')
+    const rows = report.locator('.ci-errors tbody tr')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.first()).toContainText('第 2 行')
+    await expect(rows.first()).toContainText('数量类列不能批量改')
+    await expect(rows.first()).toContainText('盘点')
+    await expect(rows.nth(1)).toContainText('第 3 行')
+    await expect(rows.nth(1)).toContainText('找不到')
+    expect(posts.length).toBe(1)
+  })
+
   test('新建仓库弹窗可打开并取消', async ({ page }) => {
     await page.goto('/warehouse')
     await waitReady(page)
