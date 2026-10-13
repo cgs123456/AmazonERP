@@ -3,6 +3,9 @@ package com.amz.service.impl;
 import com.amz.dto.ProductCsvImportReport;
 import com.amz.model.AmzProduct;
 import com.amz.service.ProductMasterService;
+import com.amz.util.CsvImportSupport;
+import com.amz.util.CsvImportSupport.Accumulator;
+import com.amz.util.CsvImportSupport.RowOutcome;
 import com.amz.util.CsvImportUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,7 +13,6 @@ import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
 import java.math.BigDecimal;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -41,49 +43,34 @@ public class ProductCsvImportService {
         CsvImportUtil.Parsed parsed = CsvImportUtil.parse(reader, REQUIRED_COLUMNS,
                 CsvImportUtil.DEFAULT_MAX_ROWS);
 
+        Accumulator acc = CsvImportSupport.run(parsed, (lineNumber, row) -> applyRow(shopId, row));
+
         ProductCsvImportReport report = new ProductCsvImportReport();
-        report.setTotalRows(parsed.totalRows());
-        report.setHeaders(parsed.headers());
-
-        int inserted = 0;
-        int updated = 0;
-        java.util.Map<Integer, String> errors = new LinkedHashMap<>();
-
-        for (int i = 0; i < parsed.rows().size(); i++) {
-            // 文件行号 = 表头 1 行 + 前面已处理的数据行数 + 1（1 基）
-            int lineNumber = i + 2;
-            Map<String, String> row = parsed.rows().get(i);
-            try {
-                AmzProduct product = toProduct(shopId, row);
-                boolean blank = !hasText(product.getSku()) && !hasText(product.getTitle())
-                        && !hasText(product.getMarketplaceId());
-                if (blank) {
-                    report.setSkippedRows(report.getSkippedRows() + 1);
-                    continue;
-                }
-                AmzProduct existing = findExisting(product);
-                if (existing == null) {
-                    productMasterService.create(product);
-                    inserted++;
-                } else {
-                    productMasterService.update(shopId, existing.getId(), product);
-                    updated++;
-                }
-            } catch (Exception e) {
-                // 行号对着文件说，使用者能直接跳到那一行改
-                errors.put(lineNumber, e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
-            }
-        }
-
-        report.setInsertedRows(inserted);
-        report.setUpdatedRows(updated);
-        // 解析阶段的坏行（列数不符等）与业务校验失败分开报，但都带行号
-        for (CsvImportUtil.BadRow bad : parsed.badRows()) {
-            errors.put(bad.lineNumber(), bad.reason());
-        }
-        report.setErrors(errors);
-        report.setFailedRows(errors.size());
+        report.setTotalRows(acc.totalRows);
+        report.setHeaders(acc.headers);
+        report.setInsertedRows(acc.insertedRows);
+        report.setUpdatedRows(acc.updatedRows);
+        report.setSkippedRows(acc.skippedRows);
+        report.setErrors(acc.errors);
+        report.setFailedRows(acc.failedRows());
         return report;
+    }
+
+    /** 单行：空行跳过，存在则更新、不存在则新建（幂等键 shopId+sku+marketplaceId）。 */
+    private RowOutcome applyRow(Long shopId, Map<String, String> row) {
+        AmzProduct product = toProduct(shopId, row);
+        boolean blank = !hasText(product.getSku()) && !hasText(product.getTitle())
+                && !hasText(product.getMarketplaceId());
+        if (blank) {
+            return RowOutcome.SKIPPED;
+        }
+        AmzProduct existing = findExisting(product);
+        if (existing == null) {
+            productMasterService.create(product);
+            return RowOutcome.INSERTED;
+        }
+        productMasterService.update(shopId, existing.getId(), product);
+        return RowOutcome.UPDATED;
     }
 
     /** 已存在判定：create 的唯一键是 (shopId, sku, marketplaceId)，这里用同一口径找。 */

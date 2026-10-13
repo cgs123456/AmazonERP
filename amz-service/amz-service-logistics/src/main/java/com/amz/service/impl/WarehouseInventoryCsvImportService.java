@@ -3,6 +3,9 @@ package com.amz.service.impl;
 import com.amz.dto.InventoryCsvImportReport;
 import com.amz.mapper.WarehouseInventoryMapper;
 import com.amz.model.WarehouseInventory;
+import com.amz.util.CsvImportSupport;
+import com.amz.util.CsvImportSupport.Accumulator;
+import com.amz.util.CsvImportSupport.RowOutcome;
 import com.amz.util.CsvImportUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +15,6 @@ import org.springframework.stereotype.Service;
 import java.io.BufferedReader;
 import java.time.LocalDate;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -64,59 +66,36 @@ public class WarehouseInventoryCsvImportService {
         CsvImportUtil.Parsed parsed = CsvImportUtil.parse(reader, REQUIRED_COLUMNS,
                 CsvImportUtil.DEFAULT_MAX_ROWS);
 
+        Accumulator acc = CsvImportSupport.run(parsed, (lineNumber, row) -> applyRow(shopId, row));
+
         InventoryCsvImportReport report = new InventoryCsvImportReport();
-        report.setTotalRows(parsed.totalRows());
-        report.setHeaders(parsed.headers());
-
-        int updated = 0;
-        Map<Integer, String> errors = new LinkedHashMap<>();
-
-        for (int i = 0; i < parsed.rows().size(); i++) {
-            // 文件行号 = 表头 1 行 + 前面已处理的数据行数 + 1（1 基，与第一个域同口径）
-            int lineNumber = i + 2;
-            Map<String, String> row = parsed.rows().get(i);
-            try {
-                String reason = applyRow(shopId, row);
-                if (reason == null) {
-                    report.setSkippedRows(report.getSkippedRows() + 1); // 空行
-                } else if (reason.isEmpty()) {
-                    updated++;
-                } else {
-                    errors.put(lineNumber, reason);
-                }
-            } catch (Exception e) {
-                errors.put(lineNumber, e.getMessage() == null
-                        ? e.getClass().getSimpleName() : e.getMessage());
-            }
-        }
-
-        report.setUpdatedRows(updated);
-        for (CsvImportUtil.BadRow bad : parsed.badRows()) {
-            errors.put(bad.lineNumber(), bad.reason());
-        }
-        report.setErrors(errors);
-        report.setFailedRows(errors.size());
+        report.setTotalRows(acc.totalRows);
+        report.setHeaders(acc.headers);
+        report.setUpdatedRows(acc.updatedRows);
+        report.setSkippedRows(acc.skippedRows);
+        report.setErrors(acc.errors);
+        report.setFailedRows(acc.failedRows());
         return report;
     }
 
     /**
-     * 返回 null=空行跳过，空串=更新成功，其余=失败原因。
+     * 返回 UPDATED=改成功，SKIPPED=整行留空无改动；失败抛异常（原因带进 errors）。
      * 校验顺序刻意先挡「数量列」再定位：数量列一旦存在，整行语义就错，不用白扫一遍库。
      */
-    String applyRow(Long shopId, Map<String, String> row) {
+    RowOutcome applyRow(Long shopId, Map<String, String> row) {
         String quantityProblem = firstQuantityColumnWithText(row);
         if (quantityProblem != null) {
-            return "文件里的数量类列不能批量改（当前列：" + quantityProblem
-                    + "）：改量请走盘点单或出入库单据，库存变更要进流水账";
+            throw new IllegalArgumentException("文件里的数量类列不能批量改（当前列：" + quantityProblem
+                    + "）：改量请走盘点单或出入库单据，库存变更要进流水账");
         }
 
         Long warehouseId = parseLong(trimToNull(row.get("warehouse_id")));
         if (warehouseId == null) {
-            return "warehouse_id 缺失或不是整数";
+            throw new IllegalArgumentException("warehouse_id 缺失或不是整数");
         }
         String sku = trimToNull(row.get("sku"));
         if (sku == null) {
-            return "sku 不能为空";
+            throw new IllegalArgumentException("sku 不能为空");
         }
         String batch = trimToNull(row.get("batch_no"));
 
@@ -129,12 +108,13 @@ public class WarehouseInventoryCsvImportService {
                         .eq(batch != null, WarehouseInventory::getBatchNo, batch));
 
         if (hits.isEmpty()) {
-            return "找不到该库存行（warehouse_id=" + warehouseId + " sku=" + sku
-                    + (batch == null ? " 无批次" : " 批次=" + batch) + "）：CSV 只补元数据，库存行请先由单据产生";
+            throw new IllegalArgumentException("找不到该库存行（warehouse_id=" + warehouseId + " sku=" + sku
+                    + (batch == null ? " 无批次" : " 批次=" + batch) + "）：CSV 只补元数据，库存行请先由单据产生");
         }
         if (hits.size() > 1) {
             // 表无唯一键，脏数据可能本来就有多行；这里绝不替使用者挑一行
-            return "该键值命中 " + hits.size() + " 行（数据不唯一，表上无唯一约束），为避免改错行不更新：请先人工合并重复库存行";
+            throw new IllegalArgumentException("该键值命中 " + hits.size()
+                    + " 行（数据不唯一，表上无唯一约束），为避免改错行不更新：请先人工合并重复库存行");
         }
 
         WarehouseInventory target = hits.get(0);
@@ -146,21 +126,21 @@ public class WarehouseInventoryCsvImportService {
         try {
             expire = expireText == null ? target.getExpireDate() : LocalDate.parse(expireText);
         } catch (Exception e) {
-            return "过期日期格式应为 yyyy-MM-dd，实际：" + expireText;
+            throw new IllegalArgumentException("过期日期格式应为 yyyy-MM-dd，实际：" + expireText);
         }
         // 全空（都保持原值）时不写库：避免无意义 update_time 抖动，也让「空行」统计准确
         boolean changed = !equalsNullSafe(asin, target.getAsin())
                 || !equalsNullSafe(location, target.getLocationCode())
                 || (expire != null && !expire.equals(target.getExpireDate()));
         if (!changed) {
-            return null;
+            return RowOutcome.SKIPPED;
         }
         int affected = inventoryMapper.updateMetadataById(
                 target.getId(), shopId, asin, location, expire);
         if (affected == 0) {
-            return "行在提交前被删除或未更新（并发），请重查后重试";
+            throw new IllegalArgumentException("行在提交前被删除或未更新（并发），请重查后重试");
         }
-        return "";
+        return RowOutcome.UPDATED;
     }
 
     /** 取列值：非空用文件值（并校验长度），空=保持原值。 */

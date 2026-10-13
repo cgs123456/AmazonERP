@@ -255,6 +255,35 @@ export const listSuppliers = (shopId: number | string,
                               q: { status?: string; keyword?: string; size?: number; cursor?: string } = {}) =>
   request.get<void, ApiResponse<Supplier[]>>(`/procurement/supplier/list/${shopId}`, { params: params(q) })
 
+/* ==================== 供货价 CSV 批量维护（A6 第三个域） ==================== */
+
+/**
+ * 供货价导入报告。无 insertedRows（update-only）：只改已存在供货关系的价格/交期，
+ * is_preferred 等列会被逐行拒绝（设首选有跨行副作用，走单条表单）。
+ */
+export interface SupplierPriceImportReport {
+  totalRows: number
+  updatedRows: number
+  skippedRows: number
+  failedRows: number
+  errors: Record<string, string>
+  headers: string[]
+}
+
+/**
+ * CSV 批量维护某供应商的供货价。供应商由参数选定（选哪个供应商传它的价目表），
+ * 每行只填 sku 定位。必需列 sku；可维护列 supplier_sku_code / supplier_offer_id /
+ * supply_price / moq / lead_time_days / packaging_spec / unit_weight / unit_volume。
+ */
+export const importSupplierPriceCsv = (shopId: number | string, supplierId: number | string, file: File) => {
+  const form = new FormData()
+  form.append('shopId', String(shopId))
+  form.append('supplierId', String(supplierId))
+  form.append('file', file)
+  return request.post<void, ApiResponse<SupplierPriceImportReport>>(
+    `/procurement/supplier/product/import/csv?shopId=${shopId}&supplierId=${supplierId}`, form)
+}
+
 export const getSupplier = (id: number) =>
   request.get<void, ApiResponse<Supplier>>(`/procurement/supplier/${id}`)
 

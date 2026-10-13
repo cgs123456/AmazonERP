@@ -106,6 +106,11 @@
           </div>
 
           <div class="sub-block">
+            <div class="sub-title">供货价批量维护（CSV）</div>
+            <SupplierPriceCsvImport @imported="loadOffers()" />
+          </div>
+
+          <div class="sub-block">
             <div class="sub-title">SKU 供应商关联与比价</div>
             <div class="inline-row">
               <input v-model="offerSku" placeholder="输入 SKU 查该 SKU 的供货关系与比价" @keyup.enter="loadOffers()" />
@@ -904,6 +909,7 @@ import { canUseRole } from '@/utils/identity'
 import { asNumber } from '@/utils/format'
 import type { ApiResponse } from '@/api/types'
 import * as proc from '@/api/procurement'
+import SupplierPriceCsvImport from '../components/SupplierPriceCsvImport.vue'
 import * as inv from '@/api/invoice'
 import { MATCH_CONCLUSION_LABEL } from '@/api/invoice'
 import type {

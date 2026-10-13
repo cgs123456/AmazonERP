@@ -1279,6 +1279,12 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
       id: 81, shopId: 1, invoiceNo: 'INV-2026-0081', purchaseOrderId: 31,
       invoiceAmount: 2200.0, taxAmount: 0, status: 'CANCELLED' } },
 
+  // 供货价 CSV 批量维护（A6 第三个域）：报告无 insertedRows（update-only），
+  // 失败行演示「is_preferred 列拒绝」与「找不到不新建」两种原因。
+  { match: /^\/procurement\/supplier\/product\/import\/csv/, data: {
+      totalRows: 2, updatedRows: 1, skippedRows: 0, failedRows: 1,
+      headers: ['sku', 'supply_price', 'is_preferred'],
+      errors: { '2': '「is_preferred」列不能经批量改价维护（is_preferred 有跨行副作用、身份/状态不是价格——请走单条表单）' } } },
   // BOM 组合品：list 按 compositeSku 过滤（不是全量列表），expand 回递归累计后的叶子行
   { match: /^\/procurement\/bom\/list\//, data: (query: URLSearchParams) =>
       BOM_ROWS.filter((b) => b.compositeSku === (query.get('compositeSku') || '')) },

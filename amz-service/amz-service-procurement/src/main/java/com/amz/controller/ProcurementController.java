@@ -2,6 +2,8 @@ package com.amz.controller;
 
 import com.amz.dto.BatchCostSummary;
 import com.amz.dto.ReceiptShortage;
+import com.amz.dto.SupplierPriceCsvImportReport;
+import com.amz.util.CsvImportUtil;
 import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
@@ -20,6 +22,8 @@ import com.amz.service.FbaShipmentService;
 import com.amz.service.ProcurementService;
 import com.amz.service.PurchasePlanService;
 import com.amz.service.SupplierService;
+import com.amz.service.impl.SupplierPriceCsvImportService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -42,6 +47,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/procurement")
+@Slf4j
 public class ProcurementController {
 
     @Autowired
@@ -49,6 +55,9 @@ public class ProcurementController {
 
     @Autowired
     private SupplierService supplierService;
+
+    @Autowired
+    private SupplierPriceCsvImportService supplierPriceCsvImportService;
 
     @Autowired
     private PurchasePlanService purchasePlanService;
@@ -112,6 +121,53 @@ public class ProcurementController {
     @PostMapping("/supplier/product")
     public Result<SupplierProduct> addSupplierProduct(@RequestBody SupplierProduct sp) {
         return Result.success(supplierService.addSupplierProduct(sp));
+    }
+
+    /**
+     * CSV 批量维护供货价（A6 第三个域）。
+     * <p>
+     * POST /procurement/supplier/product/import/csv?shopId=1&amp;supplierId=2（multipart，字段名 file）
+     * <p>
+     * 供应商由请求参数选定（选哪个供应商传它的价目表），每行只用 sku 定位——不把内部
+     * supplier_id 塞进 Excel 让使用者手抄。必需列 sku；可维护列 supplier_sku_code /
+     * supplier_offer_id / supply_price / moq / lead_time_days / packaging_spec /
+     * unit_weight / unit_volume，留空=保持原值。
+     * <p>
+     * 两条刻意限制（见 SupplierPriceCsvImportService 类注释）：
+     * ① 只更新已存在的供货关系，不新建（表无唯一键，且新建走的是纯 insert 的
+     *    addSupplierProduct，语义是「新增供货关系」不是「改价」）；
+     * ② is_preferred / 身份 / 状态列出现在文件里即按行拒绝——设首选有跨行副作用，
+     *    要放单条表单里做，不进逐行循环。
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @ShopScoped
+    @OperLog(module = "采购供应链", action = "CSV导入", description = "批量维护供货价")
+    @PostMapping(value = "/supplier/product/import/csv", consumes = "multipart/form-data")
+    public Result<SupplierPriceCsvImportReport> importSupplierPriceCsv(
+            @RequestParam Long shopId,
+            @RequestParam Long supplierId,
+            @RequestParam("file") MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return Result.failure("上传文件为空");
+        }
+        if (file.getSize() > CsvImportUtil.DEFAULT_MAX_BYTES) {
+            return Result.failure("文件超过大小上限 "
+                    + (CsvImportUtil.DEFAULT_MAX_BYTES / 1024 / 1024) + "MB");
+        }
+        String name = file.getOriginalFilename();
+        if (name == null || !name.toLowerCase().endsWith(".csv")) {
+            return Result.failure("只支持 .csv 文件（Excel 请另存为 CSV UTF-8）");
+        }
+        try {
+            return Result.success(supplierPriceCsvImportService.importCsv(shopId, supplierId,
+                    new java.io.BufferedReader(new java.io.InputStreamReader(
+                            file.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))));
+        } catch (CsvImportUtil.StructuralException e) {
+            return Result.failure(e.getMessage());
+        } catch (Exception e) {
+            log.warn("供货价 CSV 导入失败 shopId={} supplierId={}: {}", shopId, supplierId, e.getMessage());
+            return Result.failure("导入失败：" + e.getMessage());
+        }
     }
 
     /** 查询 SKU 的供应商列表 */

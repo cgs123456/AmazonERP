@@ -904,6 +904,44 @@ test.describe('Procurement 交互（采购供应链）', () => {
     await expect(panel).toContainText('该组合品暂无子品行')
     await expect(panel.locator('tbody tr')).toHaveCount(0)
   })
+  test('供货价 CSV：is_preferred 列被逐行拒绝并指路单条表单，供应商下拉先选才能导', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().includes('/supplier/product/import/csv')) posts.push(r.url())
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    // 供货价面板在默认「供应商与比价」Tab 内，不用切 Tab
+    const panel = page.locator('[data-panel="supplier-price-csv-import"]')
+    await expect(panel).toBeVisible()
+
+    // 没选供应商时导入按钮禁用——身份由界面选定，不让使用者抄进 Excel
+    await panel.locator('input[type="file"]').setInputFiles({
+      name: 'price.csv', mimeType: 'text/csv',
+      buffer: Buffer.from('sku,supply_price\r\nSKU-A1,12.00\r\n')
+    })
+    await expect(panel.locator('button', { hasText: '导入价目表' })).toBeDisabled()
+
+    await panel.locator('select').selectOption('1')
+    await expect(panel.locator('button', { hasText: '导入价目表' })).toBeEnabled()
+    await panel.locator('button', { hasText: '导入价目表' }).click()
+
+    const report = panel.locator('[data-panel="supplier-price-import-report"]')
+    await expect(report).toContainText('共 2 行')
+    await expect(report).toContainText('更新 1')
+    await expect(report).toContainText('失败 1')
+    // 关键：报告没有「新增」计数——供货关系只能先建立，CSV 只改价
+    await expect(report).not.toContainText('新增')
+    // is_preferred 拒绝原因指路到单条表单
+    await expect(report.locator('.ci-errors tbody tr')).toHaveCount(1)
+    await expect(report.locator('.ci-errors tbody tr')).toContainText('第 2 行')
+    await expect(report.locator('.ci-errors tbody tr')).toContainText('is_preferred')
+    await expect(report.locator('.ci-errors tbody tr')).toContainText('单条表单')
+    // POST 带上 shopId 与 supplierId（供应商由界面选定，不进表内）
+    expect(posts.length).toBe(1)
+    expect(posts[0]).toContain('supplierId=1')
+  })
+
 })
 
 test.describe('ListingPriceRules 交互（调价规则）', () => {
