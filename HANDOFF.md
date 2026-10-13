@@ -68,7 +68,9 @@ FBA 入库计划、FBA 退货自动导入、HTTP 500 语义。
 
 | 类 | 数量 | 内容 | 处置 |
 |---|---|---|---|
-| ① 纯函数/常量 | ~14 | `mapOrderRow`/`mapOrderStatus`/`mapKpiItems`/`deriveHealthCounts`/`joinSuggestQty`/`mapHealthLevel`/`mapInventoryRow`/`mapProfitReport`/`zeroProfitReport`/`isShipmentConfirmed`/`CHANNEL_NOT_INTEGRATED`/`MULTIPLIER_PRESETS`/`ORDER_STATUSES`/`SNAPSHOT_PLACEHOLDER_FIELDS` | **删前必查测试引用**（memory 记：`apiMapping.test.ts` 测过 `mapInventoryRow`；查 `src/__tests__/` 全目录）。确认零引用才删 |
+| ①-a 被单测钉住（**不可删**） | 9 | `mapOrderRow`/`mapOrderStatus`/`mapKpiItems`/`deriveHealthCounts`/`joinSuggestQty`/`mapHealthLevel`/`mapInventoryRow`/`mapProfitReport` | 已在 `src/__tests__/` 查证（各 3–9 处引用），删了单测即红。保留 |
+| ①-b api 内部使用（**非孤儿**） | 1 | `zeroProfitReport` | 被 `api/profit.ts` 内部调用（99/102 行）。扫描口径误报，保留 |
+| ①-c 真零引用（**可删，属语义文档**） | 5 | `isShipmentConfirmed`/`CHANNEL_NOT_INTEGRATED`/`MULTIPLIER_PRESETS`/`ORDER_STATUSES`/`SNAPSHOT_PLACEHOLDER_FIELDS` | 三处（api / __tests__ / e2e）均零引用。**但它们是语义文档**：`SNAPSHOT_PLACEHOLDER_FIELDS` 声明「哪三个成本字段是占位零」、`ORDER_STATUSES` 是状态枚举、`CHANNEL_NOT_INTEGRATED` 声明未接通道。删了知识会退化成魔法字符串。**倾向保留并各加一行用途注释**（CLAUDE.md「为未来维护者保留上下文」），若坚持删除请先确认下游无引用 |
 | ② 功能缺口 | ~20 | `updateSupplier`/`updateWarehouse`/`getUnreadCount`/`markAllNotificationsRead`/`rmaDetail`/`getShipment`/`getBuyBoxSummary`/`listQuotes`/`calculateFreight`/`updateShipment`/`assignShopUser`/`unassignShopUser`/`createShop`/`updateShop`/`updateShopStatus`/`discrepancyDetail`/`executeRules` + 广告域 CRUD 6 个（create/update Campaign/Creative/Targeting/batch 两个） | **不能删**（后端已实现，删=毁功能）。按价值排序接 UI：`getUnreadCount`/`markAllNotificationsRead`（顶栏红点+全部已读，用户可见价值最高）优先 |
 | ③ 内部使用 | 1 | `refreshAccessToken` | **扫描误报**：被 auth.ts 内部拦截器调用。保留，扫描脚本应把「同文件内引用」计为使用 |
 
@@ -77,8 +79,9 @@ FBA 入库计划、FBA 退货自动导入、HTTP 500 语义。
 
 ### 4. 下一步计划
 
-1. **查 ① 类测试引用**：`grep -rn "mapInventoryRow\|mapOrderRow\|..." src/__tests__/`，
-   零引用的删、有引用的保留（删了会让单测红）。
+1. **① 类已核实完毕**（本轮查证，见上表）：9 个被单测钉住不可删、
+   `zeroProfitReport` 是 api 内部使用、5 个真零引用常量**建议保留**（语义文档）。
+   若要删这 5 个，先确认 api/__tests__/e2e 三处均零引用——**别凭扫描直接删**。
 2. **接 ② 类最高价值项**：`getUnreadCount` + `markAllNotificationsRead`
    （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。
 3. 每步按既有纪律：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
