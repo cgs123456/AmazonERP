@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 @Data
 @TableName("amz_user")
@@ -67,4 +68,14 @@ public class User implements Serializable {
      * 禁用后登录被拒、已签发 token 在下一次请求即失效（状态查询走本表）。
      */
     private Integer status;
+
+    /**
+     * 创建时间（V1 迁移内建列 create_time）。
+     * <p>
+     * 此前该列在 DDL 与前端契约（UserRow.createTime、用户管理页「创建时间」列）里都有，
+     * 唯独 pojo 未声明——列表接口从不返回它，前端那一列恒为「—」。
+     * 只读展示字段，不参与写入（默认值由 DB 的 CURRENT_TIMESTAMP 提供）。
+     */
+    @TableField("create_time")
+    private LocalDateTime createTime;
 }

@@ -999,6 +999,18 @@ const AGENT_HISTORY = [
 ]
 
 /**
+ * 用户管理页（/users，ADMIN）用的账号列表。
+ * 字段名抄自后端 User pojo（phone/nickname/role/status/createTime）；
+ * id=1 是上面的 /user/getInfo 桩回给登录用户的 id——页面用「不能操作自己」判断时
+ * 依赖它，所以这里必须有一行 id=1 才能测到那条禁用分支。
+ */
+const USER_ROWS = [
+  { id: 1, phone: '13800000000', nickname: 'E2E', role: 'ADMIN', status: 1, createTime: '2026-09-01T08:00:00' },
+  { id: 2, phone: '13900000000', nickname: '运营甲', role: 'OPERATOR', status: 1, createTime: '2026-09-02T09:30:00' },
+  { id: 3, phone: '13700000000', nickname: '访客乙', role: 'VIEWER', status: 0, createTime: '2026-09-03T10:00:00' }
+]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -1470,7 +1482,17 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   // 前端拿到的是对象而非数字——红点虽然不显示（被类型守卫挡下），但桩对
   // 一个真实端点给了错形状，正是「桩越像真的越会替字段漂移打掩护」的反面。
   { match: /^\/user\/notification\/unread-count$/, data: 0 },
-  { match: /^\/user\/notification\/read-all$/, data: true }
+  { match: /^\/user\/notification\/read-all$/, data: true },
+
+  // ===== 用户管理 /user（P1.4，ADMIN）=====
+  // GET /user/list 返回**数组**（Result<List<User>>），必须显式登记成数组而不是
+  // 落到 EMPTY_PAGE 对象兜底——页面按数组消费，对象形状会让「列表渲染」断言
+  // 测的是「前端把对象当空」而不是「真的拿到了行」。
+  { match: /^\/user\/list$/, data: USER_ROWS, page: FULL_PAGE(USER_ROWS.length) },
+  // 改角色/改状态都回 Result<User>（单对象，后端把改后的行回给前端）。
+  // 用 spread 回第 2 行（id=2）而不是第 1 行：第 1 行是「自己」，页面不给改。
+  { match: /^\/user\/\d+\/role$/, data: { ...USER_ROWS[1], role: 'ADMIN' } },
+  { match: /^\/user\/\d+\/status$/, data: { ...USER_ROWS[2], status: 1 } }
 ]
 
 /**

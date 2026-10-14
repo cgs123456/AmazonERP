@@ -50,6 +50,7 @@ const NAV = [
   { path: '/multiplatform-ops', linkText: '多平台运营台' },
   { path: '/ops-alerts', linkText: '运营预警台' },
   { path: '/notifications', linkText: '消息中心' },
+  { path: '/users', linkText: '用户管理' },
   { path: '/customer', linkText: '客服中心' },
   { path: '/agent-memory', linkText: '助手记忆' }
 ]
@@ -528,6 +529,63 @@ test.describe('Notifications 交互', () => {
     // 确认后：按钮消失（没有未读）、顶栏红点消失
     await expect(page.locator('.mark-all-btn')).toHaveCount(0, { timeout: 20000 })
     await expect(page.locator('.nav-with-badge .unread-badge')).toHaveCount(0)
+  })
+})
+
+test.describe('UserManagement 交互（用户管理）', () => {
+  test('账号列表渲染角色/状态，本人那行不给改角色与禁用', async ({ page }) => {
+    await page.goto('/users')
+    const rows = page.locator('table.data-table tbody tr')
+    await expect(rows).toHaveCount(3, { timeout: 20000 })
+    await expect(page.locator('table.data-table')).toContainText('13900000000')
+    await expect(page.locator('table.data-table')).toContainText('已禁用')
+
+    // 第 1 行是登录用户自己（桩 /user/getInfo 回 id=1）：下拉与禁用按钮都必须 disabled
+    const selfRow = rows.nth(0)
+    await expect(selfRow.locator('select.role-select')).toBeDisabled()
+    await expect(selfRow.locator('button.row-btn')).toBeDisabled()
+    // 第 2 行（id=2）可改
+    await expect(rows.nth(1).locator('select.role-select')).toBeEnabled()
+  })
+
+  test('改角色：选新值后把 role 参数打给后端并停在新值', async ({ page }) => {
+    const roleCalls: string[] = []
+    await page.route(/\/api\/user\/\d+\/role/, (route) => {
+      roleCalls.push(route.request().url())
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { id: 2, phone: '13900000000', nickname: '运营甲', role: 'ADMIN', status: 1 } })
+      })
+    })
+
+    await page.goto('/users')
+    const rows = page.locator('table.data-table tbody tr')
+    await expect(rows).toHaveCount(3, { timeout: 20000 })
+
+    await rows.nth(1).locator('select.role-select').selectOption('ADMIN')
+    await expect(rows.nth(1).locator('select.role-select')).toHaveValue('ADMIN')
+    expect(roleCalls.some((u) => u.includes('role=ADMIN'))).toBe(true)
+  })
+
+  test('改角色被后端拒绝：原因留在页面上（重拉列表不能把它抹掉）', async ({ page }) => {
+    await page.route(/\/api\/user\/\d+\/role/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 400, data: null, message: '不能修改自己的角色（防止 ADMIN 全部流失）' })
+      })
+    )
+
+    await page.goto('/users')
+    const rows = page.locator('table.data-table tbody tr')
+    await expect(rows).toHaveCount(3, { timeout: 20000 })
+
+    await rows.nth(1).locator('select.role-select').selectOption('ADMIN')
+    // 关键：失败原因必须可见——不能只看到下拉弹回旧值却没有任何说明
+    const zone = page.locator('.error-zone')
+    await expect(zone).toBeVisible({ timeout: 20000 })
+    await expect(zone).toContainText('不能修改自己的角色')
   })
 })
 

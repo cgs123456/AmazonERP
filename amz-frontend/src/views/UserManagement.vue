@@ -94,6 +94,12 @@ const pushError = (text: string) => {
   if (!errors.value.includes(text)) errors.value.push(text)
 }
 
+// 错误按标签前缀隔离：重拉列表只清自己那一类，不能把「改角色/改状态失败」的原因一起抹掉。
+// 前缀必须与下面 pushError 的标签逐字一致（仓库既有的前缀过滤模式）。
+const clearErrorsByPrefix = (prefix: string) => {
+  errors.value = errors.value.filter((x) => !x.startsWith(prefix))
+}
+
 const isSelf = (u: UserRow): boolean =>
   currentUserId != null && String(u.id) === String(currentUserId)
 
@@ -103,13 +109,14 @@ const load = async () => {
     const res = await listUsers()
     if (res?.code === 200 && Array.isArray(res.data)) {
       users.value = res.data
-      errors.value = []
+      // 只清「用户列表」这一类错误：改角色/改状态失败的原因必须留在页面上
+      clearErrorsByPrefix('用户列表：')
     } else {
-      pushError(`加载用户列表：${res?.message || '后端返回非 200'}`)
+      pushError(`用户列表：${res?.message || '后端返回非 200'}`)
       users.value = []
     }
   } catch (e) {
-    pushError(`加载用户列表：${e instanceof Error ? e.message : '调用失败'}`)
+    pushError(`用户列表：${e instanceof Error ? e.message : '调用失败'}`)
     users.value = []
   } finally {
     loading.value = false
@@ -123,6 +130,7 @@ const changeRole = async (u: UserRow, role: string) => {
     const res = await updateUserRole(u.id, role)
     if (res?.code === 200) {
       u.role = role
+      clearErrorsByPrefix('修改角色：')
     } else {
       pushError(`修改角色：${res?.message || '后端返回非 200'}`)
       await load()
@@ -143,12 +151,14 @@ const toggleStatus = async (u: UserRow) => {
     const res = await updateUserStatus(u.id, next)
     if (res?.code === 200) {
       u.status = next
+      clearErrorsByPrefix('修改状态：')
     } else {
       pushError(`修改状态：${res?.message || '后端返回非 200'}`)
       await load()
     }
   } catch (e) {
     pushError(`修改状态：${e instanceof Error ? e.message : '调用失败'}`)
+    await load()
   } finally {
     busyId.value = null
   }
