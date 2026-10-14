@@ -22,7 +22,7 @@ synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
 迁移 **65** 个、Flyway 活表 **116** 张、实体 110 / 0 漂移、零引用表 0、
 release tools 91/91、schema 快照 103 表/14 库一致。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.10。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.11。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
@@ -194,7 +194,23 @@ CustomerService 的 RMA 表只列了物流/退款相关字段，从不显示承�
    `data: null` 裸值未 `as any`——**vitest 跑绿但 vue-tsc 会红**。测试文件也要过类型检查，
    别只跑 vitest 就收工。
 
-### 10. 下一步
+### 10. 卡住的问题（本班结束时的未决项）
+
+- **真实 Amazon SP-API / DeepSeek / Keepa 凭证仍缺**——这是唯一真正阻塞的项，
+  **非代码可推进**。它卡住的是 A5/E4/E5 联调取证（runbook §3 端到端验收）：离线证据
+  （契约绿 + mock 链路完整）已到顶，真实签名/限流/字段变化只有真连才知道。
+  凭证到位后按 `docs/superpowers/runbooks/first-deploy-bootstrap-runbook.md` 录凭证 →
+  prod 启动 → 跑一次 runbook §3。
+- **② 类 5 个「真零引用常量」删不删未拍板**（§S8.3）：`isShipmentConfirmed`/
+  `CHANNEL_NOT_INTEGRATED`/`MULTIPLIER_PRESETS`/`ORDER_STATUSES`/`SNAPSHOT_PLACEHOLDER_FIELDS`
+  是语义文档（声明状态枚举/占位字段/未接通道），本班倾向**保留并各加一行用途注释**；
+  若坚持删除，先确认 `api/` `__tests__/` `e2e/` 三处均零引用（别凭扫描直接删）。
+- **`updateSupplier` 该不该加编辑入口未定**：不像仓库编辑那样已有「编辑」死分支可以接，
+  需要先判断「改供应商主数据」是否真实业务需求（避免为接 api 而造一个没人用的功能）。
+- **`calculateFreight`/`executeRules` 的入口门控未做**：这两个带 `@RequireRole(OPERATOR/ADMIN)`，
+  接到页面上后非该角色点了会 403——接 UI 前需先决定入口隐藏还是如实提示。
+
+### 11. 下一步
 
 - **② 类剩余约 10 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
   继续按「页面已有相邻功能、只差这一步」挑（已完成：店铺 CRUD、仓库编辑、Buybox 汇总、
@@ -262,7 +278,7 @@ CustomerService 的 RMA 表只列了物流/退款相关字段，从不显示承�
 2. ~~**接 ② 类最高价值项**：`getUnreadCount` + `markAllNotificationsRead`
    （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。~~ **已完成（2026-10-14，见 §S9.1）**：
    顶栏红点 + 消息页「全部已读」已接入，vitest +10、E2E +2、变异 2 处均红。
-   ② 类剩余约 10 项见 §S9.10（店铺 CRUD 见 §S9.3；仓库编辑见 §S9.4；Buybox 汇总见 §S9.5；
+   ② 类剩余约 10 项见 §S9.11（店铺 CRUD 见 §S9.3；仓库编辑见 §S9.4；Buybox 汇总见 §S9.5；
    差异详情见 §S9.6；RMA 详情见 §S9.7）。
 3. 每步按既有纪律：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
 
