@@ -463,6 +463,72 @@ test.describe('Notifications 交互', () => {
     await expect(tab).toHaveClass(/active/)
     await expect(page.locator('.notification-item')).toHaveCount(0)
   })
+
+  /**
+   * 顶栏未读红点 + 「全部已读」：接上此前零调用的 getUnreadCount / markAllNotificationsRead。
+   * 桩的 /user/notification/* 默认给「0 未读 / 空列表」，这里用后注册的 route 覆盖成
+   * 有未读的状态，才能真的走到红点渲染与批量已读这条路径（默认空态测不到它）。
+   */
+  test('顶栏消息入口显示未读红点', async ({ page }) => {
+    await page.route(/\/api\/user\/notification\/unread-count/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: 7 }) })
+    )
+    await page.goto('/')
+    await waitReady(page)
+    const badge = page.locator('.nav-with-badge .unread-badge')
+    await expect(badge).toHaveText('7', { timeout: 20000 })
+  })
+
+  test('消息页「全部已读」：确认后清空未读并让顶栏红点消失', async ({ page }) => {
+    // 列表两条未读；unread-count 与之一致，read-all 后两者都归零
+    let readAll = false
+    await page.route(/\/api\/user\/notification\/list$/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 200,
+          data: readAll
+            ? [
+                { id: 11, type: 0, title: '库存预警', content: 'SKU-A 低于安全库存', isRead: 1, createTime: '2026-10-01T09:00:00' },
+                { id: 10, type: 1, title: '订单异常', content: '订单 113-0000000-0000001 延迟', isRead: 1, createTime: '2026-10-01T08:00:00' }
+              ]
+            : [
+                { id: 11, type: 0, title: '库存预警', content: 'SKU-A 低于安全库存', isRead: 0, createTime: '2026-10-01T09:00:00' },
+                { id: 10, type: 1, title: '订单异常', content: '订单 113-0000000-0000001 延迟', isRead: 0, createTime: '2026-10-01T08:00:00' }
+              ],
+          _page: { size: 50, returned: 2, hasMore: false, truncated: false, nextCursor: null, total: 2 }
+        })
+      })
+    )
+    await page.route(/\/api\/user\/notification\/unread-count/, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: readAll ? 0 : 2 }) })
+    )
+    await page.route(/\/api\/user\/notification\/read-all/, (route) => {
+      readAll = true
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: true }) })
+    })
+
+    await page.goto('/notifications')
+    await expect(page.locator('.notification-item')).toHaveCount(2, { timeout: 20000 })
+    // 顶栏红点先是 2
+    await expect(page.locator('.nav-with-badge .unread-badge')).toHaveText('2')
+
+    const markAll = page.locator('.mark-all-btn')
+    await expect(markAll).toHaveText(/全部已读/)
+    await markAll.click()
+
+    // 二次确认：不可撤销 + 影响范围
+    const modal = page.locator('.modal')
+    await expect(modal).toBeVisible()
+    await expect(modal).toContainText('全部标记为已读')
+    await expect(modal).toContainText('不可撤销')
+    await page.locator('.modal .page-btn', { hasText: '确认执行' }).click()
+
+    // 确认后：按钮消失（没有未读）、顶栏红点消失
+    await expect(page.locator('.mark-all-btn')).toHaveCount(0, { timeout: 20000 })
+    await expect(page.locator('.nav-with-badge .unread-badge')).toHaveCount(0)
+  })
 })
 
 test.describe('CustomerService 交互（客服中心）', () => {

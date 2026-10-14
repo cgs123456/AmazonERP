@@ -28,6 +28,11 @@
             与历史合并显示；「离线期间的推送」不再丢失。标为已读会同步到服务端。
           </div>
 
+          <div v-if="errors.length" class="error-zone" role="alert">
+            <Icon icon="mdi:alert-circle-outline" width="16" />
+            <span>{{ errors.join('；') }}</span>
+          </div>
+
           <!-- 标签切换 -->
           <div class="content-tabs">
             <button
@@ -38,6 +43,16 @@
               @click="activeTab = tab.id"
             >
               {{ tab.name }}
+            </button>
+            <!-- 全部已读：仅在存在未读行时出现（没有未读可清时不给一个点了没反应的按钮） -->
+            <button
+              v-if="unreadLocalCount > 0"
+              class="mark-all-btn"
+              :disabled="busy"
+              @click="askMarkAll"
+            >
+              <Icon icon="mdi:email-check-outline" width="14" />
+              全部已读
             </button>
           </div>
 
@@ -93,6 +108,18 @@
         </div>
       </div>
     </main>
+
+    <!-- 全部已读二次确认：批量写操作不可撤销，先确认再落库 -->
+    <div v-if="confirmBox" class="modal-mask" @click.self="confirmBox = null">
+      <div class="modal" role="dialog" aria-modal="true">
+        <h3>{{ confirmBox.title }}</h3>
+        <p class="confirm-detail">{{ confirmBox.detail }}</p>
+        <div class="modal-actions">
+          <button class="page-btn" @click="confirmBox = null">取消</button>
+          <button class="page-btn" :disabled="busy" @click="runConfirm()">确认执行</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -102,7 +129,7 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { listNotifications, markNotificationRead } from '@/api/notification'
+import { listNotifications, markNotificationRead, markAllNotificationsRead } from '@/api/notification'
 
 // 通知类型对齐后端 MessageTypeEnum：
 // INVENTORY_ALERT(0) / ORDER_EXCEPTION(1) / REPLENISH_SUGGEST(2) / NEGATIVE_REVIEW(3) / PRICE_CHANGE(4)
@@ -228,30 +255,40 @@ const requestNotificationPermission = () => {
   }
 }
 
+// 加载服务端历史（最近 100 条）。会话内的实时行（无 h- 前缀）保留，历史行整体以服务端为准刷新。
+// 返回是否成功，供调用方决定后续动作（失败不阻断实时推送）。
+const loadHistory = async (): Promise<boolean> => {
+  try {
+    const history = await listNotifications()
+    if (history?.code !== 200 || !Array.isArray(history.data)) return false
+    // 只保留会话内实时行，历史行丢弃后用服务端最新状态重建（避免「已读后又重拉」时残留旧未读）
+    const live = notifications.value.filter(n => !n.id.startsWith('h-'))
+    const seen = new Set(live.map(n => n.type + '|' + n.content + '|' + n.time))
+    const merged = [...live]
+    for (const row of history.data) {
+      const key = String(row.type ?? 0) + '|' + (row.content || '') + '|' + (row.createTime || '')
+      if (seen.has(key)) continue
+      merged.push({
+        id: 'h-' + row.id,
+        type: mapMessageType(row.type),
+        title: row.title || '运营通知',
+        content: row.content || '',
+        time: (row.createTime || '').slice(0, 19).replace('T', ' '),
+        read: !!row.isRead
+      })
+    }
+    notifications.value = merged
+    return true
+  } catch {
+    // 历史加载失败不阻断实时推送（页面仍有会话内通知）
+    return false
+  }
+}
+
 onMounted(async () => {
   onMessage(handleWebSocketMessage)
   requestNotificationPermission()
-  // 加载服务端历史（最近 100 条），与本次会话的实时推送合并（按内容+时间去重）
-  try {
-    const history = await listNotifications()
-    if (history?.code === 200 && Array.isArray(history.data)) {
-      const seen = new Set(notifications.value.map(n => n.type + '|' + n.content + '|' + n.time))
-      for (const row of history.data) {
-        const key = String(row.type ?? 0) + '|' + (row.content || '') + '|' + (row.createTime || '')
-        if (seen.has(key)) continue
-        notifications.value.push({
-          id: 'h-' + row.id,
-          type: mapMessageType(row.type),
-          title: row.title || '运营通知',
-          content: row.content || '',
-          time: (row.createTime || '').slice(0, 19).replace('T', ' '),
-          read: !!row.isRead
-        })
-      }
-    }
-  } catch {
-    // 历史加载失败不阻断实时推送（页面仍有会话内通知）
-  }
+  await loadHistory()
 })
 
 // 按标签过滤
@@ -267,10 +304,57 @@ const handleView = (notification: Notification) => {
   if (notification.id.startsWith('h-')) {
     markNotificationRead(Number(notification.id.slice(2))).catch(() => {})
   }
+  // 已读会让顶栏红点数变化，通知顶栏重拉
+  window.dispatchEvent(new Event('amz:notifications-changed'))
 }
 
 const handleDismiss = (notification: Notification) => {
   notifications.value = notifications.value.filter(n => n.id !== notification.id)
+}
+
+// ==================== 全部已读（接孤儿 api markAllNotificationsRead） ====================
+// 该函数此前定义但全仓零调用：后端 POST /user/notification/read-all 早已就绪。
+// 未读以本地行状态为准（服务端返回 isRead，会话内实时行为未读），点一次清空全部未读。
+const busy = ref(false)
+const errors = ref<string[]>([])
+
+const unreadLocalCount = computed(() => notifications.value.filter(n => !n.read).length)
+
+const confirmBox = ref<null | { title: string; detail: string; run: () => Promise<void> }>(null)
+
+const askMarkAll = () => {
+  confirmBox.value = {
+    title: '全部标记为已读',
+    detail: '会把当前所有未读通知一次性标为已读（服务端同步）。该操作不可撤销。',
+    run: async () => {
+      const res = await markAllNotificationsRead()
+      if (res?.code !== 200) {
+        errors.value = ['全部已读失败：' + (res?.message || '服务端未返回成功')]
+        return
+      }
+      errors.value = []
+      // 本地行全部置已读（不必等重拉，红点与行状态立即一致）
+      notifications.value.forEach(n => { n.read = true })
+      // 重拉服务端列表，让 isRead 与后端对齐
+      await loadHistory()
+      // 通知顶栏重拉未读数
+      window.dispatchEvent(new Event('amz:notifications-changed'))
+    }
+  }
+}
+
+const runConfirm = async () => {
+  const box = confirmBox.value
+  confirmBox.value = null
+  if (!box) return
+  busy.value = true
+  try {
+    await box.run()
+  } catch (e) {
+    errors.value = ['全部已读失败：' + ((e as Error)?.message || '请求异常')]
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 
@@ -292,6 +376,21 @@ const handleDismiss = (notification: Notification) => {
 .tab-item:hover { color: var(--color-primary); }
 .tab-item.active { color: var(--color-primary); font-weight: 600; }
 .tab-item.active::after { content: ''; position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 40px; height: 3px; background: var(--color-primary); border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+
+/* 全部已读：右对齐的次级动作，不参与 Tab 高亮/下划线 */
+.mark-all-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 0.25rem; align-self: center; padding: 0.25rem 0.625rem; background: var(--color-surface); color: var(--color-primary); border: 1px solid var(--color-border); border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; white-space: nowrap; }
+.mark-all-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); }
+.mark-all-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 0.75rem; font-size: 0.875rem; }
+
+.confirm-detail { font-size: 0.875rem; color: var(--color-on-surface); line-height: 1.5; }
+.modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+.modal { background: var(--color-surface); border-radius: var(--radius-md); padding: 1.5rem; width: 90%; max-width: 560px; }
+.modal h3 { margin: 0 0 0.5rem; font-size: 1.125rem; color: var(--color-on-surface); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.page-btn { padding: 0.3rem 0.7rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; font-size: 0.8125rem; }
+.page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .notification-list { padding: 0.5rem 1rem; }
 

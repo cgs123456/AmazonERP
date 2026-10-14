@@ -15,7 +15,12 @@
           <router-link to="/inventory" class="nav-link">库存</router-link>
           <router-link to="/ads" class="nav-link">广告</router-link>
           <router-link to="/profit" class="nav-link">利润</router-link>
-          <router-link to="/notifications" class="nav-link">消息</router-link>
+          <router-link to="/notifications" class="nav-link nav-with-badge">
+            消息
+            <!-- 未读红点：数据来自后端 GET /user/notification/unread-count（顶栏唯一的未读信号）。
+                 0 不渲染——「0」徽标会被当成一条待处理消息。 -->
+            <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+          </router-link>
         </nav>
 
         <div class="header-actions">
@@ -75,6 +80,7 @@ import { Icon } from '@iconify/vue'
 import { useRouter } from 'vue-router'
 import LoginModal from './LoginModal.vue'
 import { getUserInfo, type UserVo } from '../api/auth'
+import { getUnreadCount } from '../api/notification'
 import { setUserRole, clearUserRole } from '../utils/identity'
 import { websocketManager } from '../utils/websocket'
 import { getShops, getCurrentShopId, setCurrentShopId, setShops, type ShopOption } from '../utils/shop'
@@ -83,6 +89,31 @@ const router = useRouter()
 const showLoginModal = ref(false)
 const userInfo = ref<UserVo | null>(null)
 const showUserMenu = ref(false)
+
+// 顶栏未读数（消息入口红点）。来源：GET /user/notification/unread-count。
+// 未登录时不请求；请求失败静默降级为「不显示红点」——未读数只是提示，
+// 拉不到不该打断用户（真实未读仍在消息页）。
+const unreadCount = ref(0)
+
+const refreshUnreadCount = async () => {
+  if (!localStorage.getItem('token')) {
+    unreadCount.value = 0
+    return
+  }
+  try {
+    const res = await getUnreadCount()
+    if (res?.code === 200 && typeof res.data === 'number') {
+      unreadCount.value = res.data
+    }
+  } catch {
+    // 静默降级：不显示红点，不打扰用户
+  }
+}
+
+// 消息页标记已读后会派发该事件，顶栏据此重拉未读数，让红点即时同步
+const onNotificationsChanged = () => {
+  refreshUnreadCount()
+}
 
 // 当前选中店铺与授权店铺列表（来源：localStorage 'shops' 数组）
 const shops = ref<ShopOption[]>([])
@@ -142,6 +173,7 @@ const loadUserInfo = async () => {
   const token = localStorage.getItem('token')
   if (!token) {
     userInfo.value = null
+    unreadCount.value = 0
     return
   }
   try {
@@ -154,6 +186,8 @@ const loadUserInfo = async () => {
       // 会把选中的 id 当 shopId 头发给网关——等于用编造的 ID 去撞店铺隔离边界。
       // 后端返回空数组 = 该账号确实没被分配店铺，此时清空而不是保留旧值。
       syncShopsFromServer(response.data.shops)
+      // 登录态确认后再拉未读数（未登录的请求会被后端拒绝，也没意义）
+      refreshUnreadCount()
     } else if (response.code === 401) {
       // 明确的鉴权失败才清除凭证
       clearCredentials()
@@ -216,10 +250,12 @@ const goHome = () => {
 onMounted(() => {
   loadUserInfo()
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('amz:notifications-changed', onNotificationsChanged)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('amz:notifications-changed', onNotificationsChanged)
 })
 </script>
 
@@ -326,6 +362,26 @@ onUnmounted(() => {
 .nav-link.router-link-exact-active {
   background: var(--color-primary);
   color: var(--color-on-primary);
+}
+
+/* 消息入口 + 未读红点：relative 给红点定位锚点；右侧留出红点宽度避免压住文字 */
+.nav-with-badge { position: relative; padding-right: 1.5rem; }
+
+.unread-badge {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-error);
+  color: var(--color-on-primary);
+  font-size: 0.625rem; /* 10px */
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 /* header-actions: 右侧排列 */

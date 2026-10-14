@@ -12,8 +12,9 @@
  *
  * 边界（写下来以免后人误读）：
  * - 打桩不证明后端契约；后端改字段名而前端未同步时，这里查不出来。
- * - /notifications 没有 REST 端点：数据只来自 WebSocket（服务端不落库、前端不摆示例），
- *   因此那里断言的是硬编码数据，不是打桩响应。
+ * - /notifications 自 P1.6 起有 REST 端点（GET /user/notification/list 读服务端落库历史），
+ *   桩给空数组故断言空态；未读数（unread-count）与批量已读（read-all）在
+ *   full-interaction.spec.ts 里用有未读的桩覆盖验证，本文件不重复。
  */
 import { test, expect } from './support/test'
 

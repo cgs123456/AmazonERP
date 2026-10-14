@@ -1463,7 +1463,14 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   // GET /user/notification/list：P1.6 落库后通知页进页面就拉历史（Result<List<Notification>>）。
   // 这里刻意给空数组而不是让它落到 EMPTY_PAGE 对象兜底——页面按数组消费，
   // 对象形状会让「空态」断言测的是「前端把对象当空」而不是「真的没有通知」。
-  { match: /^\/user\/notification\/list$/, data: [], page: FULL_PAGE(0) }
+  { match: /^\/user\/notification\/list$/, data: [], page: FULL_PAGE(0) },
+  // GET /user/notification/unread-count（Result<Long>，顶栏红点）与
+  // POST /user/notification/read-all（Result<Boolean>）必须显式登记：
+  // 顶栏在**每个**页面加载时都会请求未读数，落到 EMPTY_PAGE 对象兜底时
+  // 前端拿到的是对象而非数字——红点虽然不显示（被类型守卫挡下），但桩对
+  // 一个真实端点给了错形状，正是「桩越像真的越会替字段漂移打掩护」的反面。
+  { match: /^\/user\/notification\/unread-count$/, data: 0 },
+  { match: /^\/user\/notification\/read-all$/, data: true }
 ]
 
 /**
