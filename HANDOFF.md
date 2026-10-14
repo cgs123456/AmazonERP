@@ -9,8 +9,8 @@
 
 ## 项目现状一句话
 
-**CI 全绿（run `38426131374`，2026-10-13，HEAD `0943a84`）**：11 个 job 全过——后端 **2222/0F/0E/2S**、
-前端 vitest **517/517**（本轮 +10）+ vue-tsc 0 错 + build 通过、
+**CI 全绿（run `38499764153`，2026-10-14，HEAD `0ec9d10`）**：11 个 job 全过——后端 **2222/0F/0E/2S**、
+前端 vitest **517/517**（本轮 +10）+ vue-tsc 0 错 + build 通过 + **E2E 148 passed**、
 hygiene 0 / release tools 91/91 / stub-shape RED 0（170 注册/114 过）/
 synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
 本机整仓回归 **1968/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑故为 2222）；
@@ -25,7 +25,8 @@ release tools 91/91、schema 快照 103 表/14 库一致。
 ## S9. 交接：2026-10-14 通知未读红点 + 全部已读（已完成）
 
 > 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条：接 ② 类功能缺口里
-> 用户可见价值最高的两项。工作区干净、改动已本地提交待推送。
+> 用户可见价值最高的两项。**commit `0ec9d10` 已推送、CI 全绿（run `38499764153`
+> 11 job 全过）**，工作区干净、与 origin 同步。
 
 ### 1. 做了什么
 
@@ -62,6 +63,11 @@ release tools 91/91、schema 快照 103 表/14 库一致。
 - **本机门禁全绿**：vue-tsc 0 错、vitest **517/517**、vite build 通过、hygiene 0 findings
   （两种模式）、release tools **91/91**、stub-shape RED 0（170/114）、entity drift 0、
   零引用表 0、endpoint self-test 25/25 + reverse 0、param-name 24/24。
+- **CI（run `38499764153`，HEAD `0ec9d10`）11 job 全过**：frontend 腿实测 vitest 517/517、
+  E2E **148 passed**、vue-tsc + build 通过；test/hygiene/docker/runtime-smoke 等全绿。
+  首轮 `test` 腿红过一次，根因是 Maven Central **`Connection reset`** 拉不到
+  `spring-boot-starter-data-mongodb`（网络瞬时抖动，非代码问题——本轮是纯前端改动），
+  `gh run rerun --failed` 重跑即全绿（与历史「发版瞬时网络失败重跑」同类，不改代码）。
 
 ### 3. 踩过的坑（本轮）
 
