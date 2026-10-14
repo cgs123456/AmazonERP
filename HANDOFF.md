@@ -1,33 +1,35 @@
-# HANDOFF — 店铺管理页 + 用户管理角色分配 + 通知红点（2026-10-14 最新更新）
+# HANDOFF — 店铺管理 + 用户管理 + 通知红点 + 仓库编辑（2026-10-14 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > 本次更新（§S9）：① 通知未读红点 + 全部已读（孤儿 api 接入）；② **用户管理角色分配**
 > 收口——该页此前零测试覆盖，补测暴露两处真实缺陷（失败原因被重拉抹掉、创建时间列恒空），
 > 并顺带修掉由此暴露的 CI 真红（`ShopServiceMySqlIT` 手写 DDL 漏列）+ 加静态契约防再犯；
 > ③ **店铺管理页**——接 6 个孤儿店铺 api（后端 S7.2 早已就绪），并补「已绑定用户」读端点
-> （此前只有写端点，授权界面是盲写），顺带修一处前端类型字段名漂移。详见 §S9。
+> （此前只有写端点，授权界面是盲写），顺带修一处前端类型字段名漂移；
+> ④ **仓库编辑不可达**——弹窗早有「编辑仓库」分支但无入口、保存恒走新建，补入口 + PUT 分支。
+> 详见 §S9。
 
 ## 项目现状一句话
 
-**CI 全绿（run `38510649720`，2026-10-14，HEAD `a1d294d`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
-前端 vitest **539/539** + vue-tsc 0 错 + build 通过 + **E2E 153 passed**、
-hygiene 0 / release tools 91/91 / stub-shape RED 0（180 注册/118 过）/
+**CI 全绿（run `38514760527`，2026-10-14，HEAD `8ad6c43`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
+前端 vitest **543/543** + vue-tsc 0 错 + build 通过 + **E2E 156 passed**、
+hygiene 0 / release tools 91/91 / stub-shape RED 0（181 注册/118 过）/
 synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
 本机整仓回归 **2283/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑）；
 迁移 **65** 个、Flyway 活表 **116** 张、实体 110 / 0 漂移、零引用表 0、
 release tools 91/91、schema 快照 103 表/14 库一致。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.6。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.7。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
 
-## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理（已完成）
+## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理 + 仓库编辑（已完成）
 
 > 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条 + 用户点名的
 > 「先处理 UserManagement 的角色分配，再做店铺 CRUD」。**commit `0ec9d10` / `9be4de8` /
-> `0cfa96a` / `1b9c47d` / `a1d294d` 已推送、CI 全绿（run `38510649720` 11 job 全过）**，
-> 工作区干净、与 origin 同步。
+> `0cfa96a` / `1b9c47d` / `a1d294d` / `b175512` / `8ad6c43` 已推送、CI 全绿
+> （run `38514760527` 11 job 全过）**，工作区干净、与 origin 同步。
 
 ### 1. 通知未读红点 + 全部已读（§S9.1，commit `0ec9d10`）
 
@@ -85,24 +87,40 @@ release tools 91/91、schema 快照 103 表/14 库一致。
   导致店名恒为 `undefined`。该类型此前**零消费**所以从未暴露；本轮页面测试当场抓到
   （`expected 'ID店铺名称…' to contain '美国站主店'`）。已改为独立 interface 用 `shopName`。
 
-### 4. 测试与验证
+### 4. 仓库编辑不可达（§S9.4，commit `8ad6c43`）
 
-- **前端**：vitest +2 文件 22 例（UserManagement 10 + ShopManagement 12；均修前红）、
-  E2E +7 条（UserManagement 3 + ShopManagement 4）+ `/users`、`/shops` 入侧边栏跳转 NAV；
-  桩显式登记 `/user/list`、`/{id}/role`、`/{id}/status`、`/user/shop/list`（数组）、
-  `/{shopId}/users`、`/{shopId}/status`、`/{shopId}/assign`、`/{shopId}/assign/remove`。
+核实 ② 类孤儿 api 候选时（用只读子代理逐个核后端）发现：`Warehouse.vue` 的仓库弹窗标题
+**早就写了 `form.id ? '编辑仓库' : '新建仓库'` 分支**，但仓库列表既没有「编辑」入口、
+`submitWarehouse` 也无条件调 `createWarehouse`——**编辑仓库根本不可达**，误点「保存」只会
+新建一个同名仓库。后端 `PUT /logistics/warehouse` 早已就绪（归属校验 + `@OperLog`，
+OPERATOR/ADMIN 守卫），前端 `updateWarehouse` 却零调用。故：
+
+- 仓库列表加「操作」列 + 「编辑」按钮（无 id 的行禁用），点击回填该行到弹窗。
+- `openWarehouseDialog(w?)` 支持编辑回填；`submitWarehouse` 按有无 id 分支
+  create（POST）/ update（PUT），路径同为 `/logistics/warehouse`。
+- 桩补登记 `/logistics/warehouse`（此前新建/编辑都落到 `EMPTY_PAGE` 对象兜底，
+  前端拿到对象而非 Warehouse——桩对真实端点给了错形状）。
+
+### 5. 测试与验证
+
+- **前端**：vitest +3 文件 26 例（UserManagement 10 + ShopManagement 12 + Warehouse 编辑 4；
+  均修前红）、E2E +8 条（UserManagement 3 + ShopManagement 4 + Warehouse 编辑 1）+
+  `/users`、`/shops` 入侧边栏跳转 NAV；桩显式登记 `/user/list`、`/{id}/role`、`/{id}/status`、
+  `/user/shop/list`（数组）、`/{shopId}/users`、`/{shopId}/status`、`/{shopId}/assign`、
+  `/{shopId}/assign/remove`、`/logistics/warehouse`（新建/编辑同路径）。
 - **后端**：+3 文件 13 例——`UserAdminServiceTest`（9 例，此前 listUsers/updateRole/updateStatus
   三方法零覆盖）+ `ShopItUserDdlContractTest`（1 例静态 DDL 契约）+ `ShopServiceImplTest` +3 例
   （listShopUsers 正常/店铺不存在点名/非 ADMIN 拒绝）。
-- **变异验证 6 处均红**（均已还原）：后端去掉自检；前端前缀清理换回 blanket clear；
-  手写 DDL 去掉 create_time；前端不读绑定列表；后端缺失店铺返回空；前端去掉前置校验。
-- **门禁全绿**：后端整仓 2283/0F/0E/35S、vue-tsc 0、vitest 539/539、E2E 153 passed、
-  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0（180 注册/118 过）、
+- **变异验证 8 处均红**（均已还原）：后端去掉自检；前端前缀清理换回 blanket clear；
+  手写 DDL 去掉 create_time；前端不读绑定列表；后端缺失店铺返回空；前端去掉前置校验；
+  仓库编辑恒走 create；去掉仓库编辑入口。
+- **门禁全绿**：后端整仓 2283/0F/0E/35S、vue-tsc 0、vitest 543/543、E2E 156 passed、
+  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0（181 注册/118 过）、
   drift 0、零引用 0、endpoint self-test 25/25 + reverse 0、param-name 24/24。
-- **CI（run `38510649720`，HEAD `a1d294d`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`
-  （4/4，未跳过）与新静态契约；frontend 腿 vitest 539 + E2E 153。
+- **CI（run `38514760527`，HEAD `8ad6c43`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`
+  （4/4，未跳过）与新静态契约；frontend 腿 vitest 543 + E2E 156。
 
-### 5. 踩过的坑（本轮）
+### 6. 踩过的坑（本轮）
 
 1. **坑 11 三次复现（allowlist 哈希失效）**：改 `AppHeader.vue` / `ShopServiceMySqlIT.java` /
    `api/auth.ts` / `router/index.ts` 后 hygiene 各报 `secret-like-assignment`
@@ -117,14 +135,21 @@ release tools 91/91、schema 快照 103 表/14 库一致。
    与仓库既有教训一致：变异不红 ≠ 断言够用，要确认目标代码真被改掉、断言真在观察该行为。
 5. **测试当场抓到真实类型漂移**：`ShopListItem` 用 `name` 而后端返回 `shopName`——
    写页面测试时第一个渲染断言就红了。**「零消费的类型」最容易藏漂移**：没人用就没人发现。
+6. **「死分支」是孤儿 api 的另一种形态**：`Warehouse.vue` 弹窗有 `编辑仓库` 标题分支、
+   却没入口也没对应调用——比「函数没被调用」更隐蔽（UI 看起来支持编辑，实际只会新建）。
+   核实孤儿 api 时不能只看「有没有页面调用」，还要看**页面里的分支是否真的可达**。
 
-### 6. 下一步
+### 7. 下一步
 
-- **§S8.3 ② 类剩余约 14 项**（`updateSupplier`/`updateWarehouse`/`rmaDetail`/`getShipment`/
-  `getBuyBoxSummary`/`listQuotes`/`calculateFreight`/`updateShipment`/`discrepancyDetail`/
-  `executeRules` + 广告域 CRUD 等）。**不能删**（后端已实现，删=毁功能）。
-- **其他可能的高价值项**：`getBuyBoxSummary`（选品辅助）、`listQuotes`/`calculateFreight`
-  （物流比价）——需先核实后端是否真就绪（不是所有孤儿 api 都像店铺这样后端齐全）。
+- **② 类剩余约 13 项**，本轮已核实**全部 7 个候选的后端都真就绪**（用只读子代理逐个核过，
+  非占位实现）：`rmaDetail`、`getBuyBoxSummary`、`listQuotes`、`calculateFreight`、
+  `discrepancyDetail`、`executeRules`、`getShipment`/`updateShipment`/`updateSupplier`。
+  下一个候选建议按「页面已有相邻功能、只差这一步」挑（像本轮仓库编辑那样）：
+  - `getBuyBoxSummary`：ListingMonitor 已接 `getBuyBoxList`，只差汇总；
+  - `rmaDetail`：CustomerService 已接 `listRmas`/`updateRmaStatus`，只差详情；
+  - `discrepancyDetail`：Finance 已接 `listDiscrepancies`/`dismissDiscrepancy`，只差详情。
+- **权限注意**：`calculateFreight`/`executeRules`/`updateWarehouse` 带 `@RequireRole(OPERATOR/ADMIN)`，
+  接 UI 时非该角色会 403（页面应做入口门控或如实提示）。
 - 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；**改门控 IT / 后端 DTO 后盯 CI**。
 
 ## S8. 交接：2026-10-13 孤儿 API 清理会话（未完成，含下一步）
@@ -180,7 +205,7 @@ release tools 91/91、schema 快照 103 表/14 库一致。
 2. ~~**接 ② 类最高价值项**：`getUnreadCount` + `markAllNotificationsRead`
    （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。~~ **已完成（2026-10-14，见 §S9.1）**：
    顶栏红点 + 消息页「全部已读」已接入，vitest +10、E2E +2、变异 2 处均红。
-   ② 类剩余约 14 项见 §S9.6（店铺 CRUD 已完成，见 §S9.3）。
+   ② 类剩余约 13 项见 §S9.7（店铺 CRUD 已完成，见 §S9.3；仓库编辑已完成，见 §S9.4）。
 3. 每步按既有纪律：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
 
 ### 5. 踩过的坑（本轮新增，务必先读再动手）
