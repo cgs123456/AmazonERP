@@ -268,6 +268,7 @@
                   <td class="cell-clip"><a v-if="r.labelUrl" :href="r.labelUrl" target="_blank" rel="noopener">面单</a><span v-else>-</span></td>
                   <td class="mono">{{ r.trackingNo || '-' }}</td>
                   <td>
+                    <button class="action-btn" @click="openRmaDetail(r)">详情</button>
                     <select class="cell-input" :value="r.status" @change="changeRmaStatus(r, $event)">
                       <option v-for="s in RMA_STATUS" :key="s" :value="s">{{ s }}</option>
                     </select>
@@ -285,6 +286,25 @@
                         @click="loadRmas(true)">加载下一页</button>
               </div>
             </div>
+          </div>
+
+          <div v-if="rmaDetail" class="table-card" data-panel="rma-detail">
+            <div class="panel-title">
+              RMA 详情：{{ rmaDetail.rmaNo || rmaDetail.id }}
+              <button class="action-btn" @click="rmaDetail = null">收起</button>
+            </div>
+            <div class="detail-grid">
+              <div><span class="muted">订单号</span><span class="mono">{{ rmaDetail.amazonOrderId || '-' }}</span></div>
+              <div><span class="muted">ASIN / SKU</span><span class="mono">{{ rmaDetail.asin || '-' }} / {{ rmaDetail.sku || '-' }}</span></div>
+              <div><span class="muted">退货类型</span><span>{{ rmaDetail.returnType || '-' }}</span></div>
+              <div><span class="muted">商品状态</span><span>{{ rmaDetail.productCondition || '-' }}</span></div>
+              <div><span class="muted">退款金额</span><span>{{ rmaDetail.refundAmount ?? '-' }}</span></div>
+              <div><span class="muted">退货状态</span><span>{{ rmaDetail.status || '-' }}</span></div>
+              <div><span class="muted">承运商</span><span>{{ rmaDetail.carrier || '未记录' }}</span></div>
+              <div><span class="muted">面单成本</span><span>{{ rmaDetail.labelCost ?? '-' }}</span></div>
+              <div><span class="muted">运单号</span><span>{{ rmaDetail.trackingNo || '-' }}</span></div>
+            </div>
+            <p class="profit-note"><b>备注：</b>{{ rmaDetail.remark || '无备注' }}</p>
           </div>
         </div>
       </template>
@@ -642,6 +662,22 @@ const changeRmaStatus = async (r: Rma, ev: Event) => {
   if (ok) await loadRmas()
 }
 
+/**
+ * RMA 详情：拉单条（含承运商/面单成本/备注——列表不显示这三个字段，
+ * 而它们正是处理一笔退货时要知道的）。
+ * <p>
+ * 后端无 shopId 参数，归属校验在服务层（MustGetAuthorizedRma），失败原因由 call
+ * 按「RMA 详情：」前缀落到错误区。
+ */
+const rmaDetail = ref<Rma | null>(null)
+const openRmaDetail = async (r: Rma) => {
+  if (r.id == null) return
+  rmaDetail.value = null
+  await call('RMA 详情', () => cust.rmaDetail(r.id as number), (row) => {
+    rmaDetail.value = row || null
+  })
+}
+
 /* ---------- 弹窗 ---------- */
 const DEFAULTS: Record<ModalKey, () => Record<string, any>> = {
   ticket: () => ({ channel: 'MESSAGE', priority: 'NORMAL' }),
@@ -778,6 +814,10 @@ onMounted(async () => {
 .reason { font-size: 0.75rem; color: var(--color-error); max-width: 16rem; }
 .cell-clip { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .block-title { font-weight: 600; font-size: 0.9375rem; color: var(--color-on-surface); padding: 0.75rem 1rem 0.25rem; }
+.panel-title { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9375rem; font-weight: 600; color: var(--color-on-surface); margin-bottom: 0.5rem; }
+.detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem 1.5rem; margin-bottom: 0.75rem; }
+.detail-grid > div { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.8125rem; padding: 0.25rem 0; border-bottom: 1px solid var(--color-border); }
+.profit-note { font-size: 0.8125rem; color: var(--color-on-surface); line-height: 1.6; margin: 0.25rem 0 0; }
 .table-card { margin-bottom: 1rem; }
 .table-pager { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; }
 .status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; white-space: nowrap; }

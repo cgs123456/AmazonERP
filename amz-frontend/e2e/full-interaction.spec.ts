@@ -714,6 +714,28 @@ test.describe('CustomerService 交互（客服中心）', () => {
     await expect(page.locator('.notice-zone')).toContainText('关键词规则匹配')
   })
 
+  test('RMA 详情：拉单条并展示承运商/面单成本/备注', async ({ page }) => {
+    const detailPaths: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (/\/customer\/email\/rma\/\d+$/.test(u.pathname)) detailPaths.push(u.pathname)
+    })
+    await page.goto('/customer')
+    await page.locator('.tab', { hasText: 'RMA' }).click()
+    const rmaPanel = page.locator('.tab-panel[data-panel="rma"]')
+    await expect(rmaPanel).toContainText('RMA-0001')
+
+    await rmaPanel.locator('button', { hasText: '详情' }).first().click()
+    await expect.poll(() => detailPaths.length).toBe(1)
+    expect(detailPaths[0]).toContain('/customer/email/rma/51')
+
+    const detail = page.locator('[data-panel="rma-detail"]')
+    await expect(detail).toBeVisible()
+    await expect(detail).toContainText('UPS')
+    await expect(detail).toContainText('4.95')
+    await expect(detail).toContainText('买家称外包装破损')
+  })
+
   test('关闭工单要先确认：未受理的单给入口，关闭后不能再回复', async ({ page }) => {
     const sent: string[] = []
     page.on('request', (r) => {

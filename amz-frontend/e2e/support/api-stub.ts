@@ -495,7 +495,8 @@ const CUSTOMER_RMAS = [
   {
     id: 51, shopId: 1, rmaNo: 'RMA-0001', amazonOrderId: '114-7712567-000003', asin: 'B0CUST01',
     sku: 'SKU-1', returnType: 'REFUND', productCondition: 'OPENED', refundAmount: 12.5,
-    status: 'PENDING', labelUrl: null, trackingNo: null
+    status: 'PENDING', labelUrl: null, trackingNo: null,
+    carrier: 'UPS', labelCost: 4.95, remark: '买家称外包装破损，要求退款'
   }
 ]
 
@@ -1261,6 +1262,9 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/customer\/email\/negative-review\/list\//, data: CUSTOMER_REVIEWS, page: FULL_PAGE(CUSTOMER_REVIEWS.length) },
   { match: /^\/customer\/review\/list\//, data: CUSTOMER_SOLICITATIONS, page: FULL_PAGE(CUSTOMER_SOLICITATIONS.length) },
   { match: /^\/customer\/email\/rma\/list\//, data: CUSTOMER_RMAS, page: FULL_PAGE(CUSTOMER_RMAS.length) },
+  // RMA 详情（Result<Rma> 单对象）。登记在 list 之后：list 的 \d+ 通配段不吃这个
+  // 精确形状，故顺序无碍；但形状必须是单对象而不是数组/分页。
+  { match: /^\/customer\/email\/rma\/\d+$/, data: CUSTOMER_RMAS[0] },
   // 通道受限的三个动作：桩返回的是后端真实会返回的形状（处理报告 / 计数 / 匹配结果），
   // 用来说明「点了确认才会真的发请求」，不证明真的发了信。
   { match: /^\/customer\/email\/process\//, data: { processed: 1, failed: 0, skipped: 0 } },

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import CustomerService from '../views/CustomerService.vue'
 
@@ -59,7 +59,8 @@ const SOLICITATIONS = ok([
 const RMAS = ok([
   { id: 51, shopId: 1, rmaNo: 'RMA-0001', amazonOrderId: '114-7712567-000003', asin: 'B0TEST01',
     sku: 'SKU-1', returnType: 'REFUND', productCondition: 'OPENED', refundAmount: 12.5,
-    status: 'PENDING', labelUrl: null, trackingNo: null }
+    status: 'PENDING', labelUrl: null, trackingNo: null,
+    carrier: 'UPS', labelCost: 4.95, remark: '买家称外包装破损，要求退款' }
 ], pageOf(null))
 
 const stubs = { stubs: { AppHeader: { template: '<div />' }, AppSidebar: { template: '<div />' }, Icon: true } }
@@ -355,5 +356,62 @@ describe('CustomerService 视图（客服中心）', () => {
     await openTab(wrapper, '差评与索评')
     expect(wrapper.find('.error-zone').text()).toContain('差评列表')
     expect(wrapper.find('.error-zone').text()).toContain('network down')
+  })
+})
+
+describe('CustomerService RMA 详情（此前 rmaDetail 零调用）', () => {
+  /**
+   * RMA 表只列了物流/退款相关字段，从不显示承运商、面单成本与备注——
+   * 客服要处理一笔退货时看不到「买家为什么退」。后端 GET /customer/email/rma/{id}
+   * 返回完整单条（含 carrier/labelCost/remark），前端 rmaDetail 却零调用。
+   * 本组钉住「详情」链路：调后端、展示这三个字段、失败点名原因。
+   */
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', SHOP)
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  const mountRma = async () => {
+    happy()
+    const wrapper = mount(CustomerService, { global: stubs })
+    await flushPromises()
+    await openTab(wrapper, 'RMA')
+    return wrapper
+  }
+
+  it('RMA 行有「详情」入口，点它拉单条并展示承运商/面单成本/备注', async () => {
+    vi.mocked(cust.rmaDetail).mockResolvedValue(ok(RMAS.data[0]))
+    const wrapper = await mountRma()
+    await clickBtn(wrapper, '详情')
+
+    expect(cust.rmaDetail).toHaveBeenCalledWith(51)
+    const detail = wrapper.find('[data-panel="rma-detail"]')
+    expect(detail.exists()).toBe(true)
+    expect(detail.text()).toContain('UPS')
+    expect(detail.text()).toContain('4.95')
+    expect(detail.text()).toContain('买家称外包装破损')
+  })
+
+  it('备注缺失时如实说「无备注」，不留白让人误以为漏渲染', async () => {
+    vi.mocked(cust.rmaDetail).mockResolvedValue(ok({ ...RMAS.data[0], remark: null, carrier: null }))
+    const wrapper = await mountRma()
+    await clickBtn(wrapper, '详情')
+    const detail = wrapper.find('[data-panel="rma-detail"]')
+    expect(detail.text()).toContain('无备注')
+    expect(detail.text()).toContain('未记录')
+  })
+
+  it('详情拉取被拒时点名原因，不铺假详情', async () => {
+    vi.mocked(cust.rmaDetail).mockResolvedValue({ code: 400, message: '无权操作该店铺的 RMA：id=51', data: null as any })
+    const wrapper = await mountRma()
+    await clickBtn(wrapper, '详情')
+    expect(wrapper.find('[data-panel="rma-detail"]').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('无权操作该店铺的 RMA')
   })
 })
