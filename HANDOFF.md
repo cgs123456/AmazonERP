@@ -1,4 +1,4 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 三个详情/汇总（2026-10-14 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细（2026-10-14 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > 本次更新（§S9）：① 通知未读红点 + 全部已读（孤儿 api 接入）；② **用户管理角色分配**
@@ -9,31 +9,32 @@
 > ④ **仓库编辑不可达**——弹窗早有「编辑仓库」分支但无入口、保存恒走新建，补入口 + PUT 分支；
 > ⑤ **Buybox 汇总区**——接 `getBuyBoxSummary`（自有率 + 丢失清单）；
 > ⑥ **费用差异详情**——接 `discrepancyDetail`（evidence/detectedAt）；
-> ⑦ **RMA 详情**——接 `rmaDetail`（承运商/面单成本/备注）。
+> ⑦ **RMA 详情**——接 `rmaDetail`（承运商/面单成本/备注）；
+> ⑧ **有效报价明细**——接 `listQuotes`（比价页缺逐条报价表）。
 > 详见 §S9。
 
 ## 项目现状一句话
 
-**CI 全绿（run `38545853973`，2026-10-14，HEAD `829e572`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
-前端 vitest **553/553** + vue-tsc 0 错 + build 通过 + **E2E 158 passed**、
-hygiene 0 / release tools 91/91 / stub-shape RED 0（185 注册/119 过）/
+**CI 全绿（run `38571169004`，2026-10-14，HEAD `a4bb626`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
+前端 vitest **557/557**（含有效报价明细 +4）+ vue-tsc 0 错 + build 通过 + **E2E 159 passed**、
+hygiene 0 / release tools 91/91 / stub-shape RED 0（186 注册/119 过）/
 synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
 本机整仓回归 **2283/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑）；
 迁移 **65** 个、Flyway 活表 **116** 张、实体 110 / 0 漂移、零引用表 0、
 release tools 91/91、schema 快照 103 表/14 库一致。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.11。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.12。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
 
-## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理 + 仓库编辑 + 三个详情/汇总（已完成）
+## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理 + 仓库编辑 + 四个详情/汇总/明细（已完成）
 
 > 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条 + 用户点名的
 > 「先处理 UserManagement 的角色分配，再做店铺 CRUD」。**commit `0ec9d10` / `9be4de8` /
 > `0cfa96a` / `1b9c47d` / `a1d294d` / `b175512` / `8ad6c43` / `a42926c` / `807457e` /
-> `8bda8e1` / `5e56dc2` / `95fc6f2` / `829e572` 已推送、CI 全绿
-> （run `38545853973` 11 job 全过）**，工作区干净、与 origin 同步。
+> `8bda8e1` / `5e56dc2` / `95fc6f2` / `829e572` / `c11346e` / `4d815b2` / `a4bb626`
+> 已推送**，工作区干净、与 origin 同步。
 
 ### 1. 通知未读红点 + 全部已读（§S9.1，commit `0ec9d10`）
 
@@ -144,30 +145,46 @@ CustomerService 的 RMA 表只列了物流/退款相关字段，从不显示承�
 - 归属校验在**后端服务层**（`mustGetAuthorizedRma`）：RMA 端点无 shopId 参数，
   `@ShopScoped` 切面按参数名拦不住，服务层显式判 `UserContext.isShopAllowed`。
 
-### 8. 测试与验证
+### 8. 有效报价明细（§S9.8，commit `a4bb626`）
 
-- **前端**：vitest +5 文件 36 例（UserManagement 10 + ShopManagement 12 + Warehouse 编辑 4 +
-  Buybox 汇总 4 + 差异详情 3 + RMA 详情 3；均修前红）、E2E +11 条（UserManagement 3 +
-  ShopManagement 4 + Warehouse 编辑 1 + Buybox 汇总 1 + 差异详情 1 + RMA 详情 1）+
-  `/users`、`/shops` 入侧边栏跳转 NAV；桩显式登记 `/user/list`、`/{id}/role`、`/{id}/status`、
-  `/user/shop/list`（数组）、`/{shopId}/users`、`/{shopId}/status`、`/{shopId}/assign`、
-  `/{shopId}/assign/remove`、`/logistics/warehouse`（新建/编辑同路径）、
-  `/product/listing-monitor/buybox/summary`、`/finance/discrepancy/list`（带 page 元数据）、
-  `/finance/discrepancy/{id}`、`/customer/email/rma/{id}`（均为详情单对象）。
+物流看板「比价」Tab 此前只有看板聚合 + 航线覆盖 + 运费比价三块，**没有逐条报价明细**——
+运营看不出「某条航线上具体有哪些报价、单价多少、什么时候失效」。后端
+`GET /logistics/v2/quote/list/{shopId}` 早已就绪（只返回有效期内且 ACTIVE 的报价，
+keyset 分页），前端 `listQuotes` 却零调用。故：
+
+- 比价 Tab 加「有效报价明细」表：承运商/服务类型/航线/时效/每公斤价/每立方价/
+  最低收费/燃油附加/币种/生效日/失效日（失效日缺失时显示「长期」）。
+- 服务类型筛选作为参数下推，不是前端本地过滤。
+- keyset 分页与货件/调拨同模式：截断时披露「不是全量」并给下一页；分页元数据缺失时
+  披露「无法确认是否全量」——**报价漏看一条可能就选错承运商**，静默截断是危险方向。
+- 跟开关 Tab 懒加载（与看板同批、首次打开才拉），切店铺时由 reload 分支重拉。
+
+### 9. 测试与验证
+
+- **前端**：vitest +6 文件 40 例（UserManagement 10 + ShopManagement 12 + Warehouse 编辑 4 +
+  Buybox 汇总 4 + 差异详情 3 + RMA 详情 3 + 有效报价明细 4；均修前红）、
+  E2E +12 条（UserManagement 3 + ShopManagement 4 + Warehouse 编辑 1 + Buybox 汇总 1 +
+  差异详情 1 + RMA 详情 1 + 有效报价明细 1）+ `/users`、`/shops` 入侧边栏跳转 NAV；
+  桩显式登记 `/user/list`、`/{id}/role`、`/{id}/status`、`/user/shop/list`（数组）、
+  `/{shopId}/users`、`/{shopId}/status`、`/{shopId}/assign`、`/{shopId}/assign/remove`、
+  `/logistics/warehouse`（新建/编辑同路径）、`/product/listing-monitor/buybox/summary`、
+  `/finance/discrepancy/list`（带 page 元数据）、`/finance/discrepancy/{id}`、
+  `/customer/email/rma/{id}`、`/logistics/v2/quote/list/`（游标分页）。
 - **后端**：+3 文件 13 例——`UserAdminServiceTest`（9 例，此前 listUsers/updateRole/updateStatus
   三方法零覆盖）+ `ShopItUserDdlContractTest`（1 例静态 DDL 契约）+ `ShopServiceImplTest` +3 例
   （listShopUsers 正常/店铺不存在点名/非 ADMIN 拒绝）。
-- **变异验证 14 处均红**（均已还原）：后端去掉自检；前端前缀清理换回 blanket clear；
+- **变异验证 16 处均红**（均已还原）：后端去掉自检；前端前缀清理换回 blanket clear；
   手写 DDL 去掉 create_time；前端不读绑定列表；后端缺失店铺返回空；前端去掉前置校验；
   仓库编辑恒走 create；去掉仓库编辑入口；Buybox 汇总不读后端；丢失清单不渲染；
-  差异详情复用列表行；去掉差异详情入口；RMA 详情复用列表行；去掉 RMA 详情入口。
-- **门禁全绿**：后端整仓 2283/0F/0E/35S、vue-tsc 0、vitest 553/553、E2E 158 passed、
-  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0（185 注册/119 过）、
+  差异详情复用列表行；去掉差异详情入口；RMA 详情复用列表行；去掉 RMA 详情入口；
+  有效报价不读后端；截断提示不渲染。
+- **门禁全绿**：后端整仓 2283/0F/0E/35S、vue-tsc 0、vitest 557/557、E2E 159 passed、
+  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0（186 注册/119 过）、
   drift 0、零引用 0、endpoint self-test 25/25 + reverse 0、param-name 24/24。
-- **CI（run `38545853973`，HEAD `829e572`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`
-  （4/4，未跳过）与新静态契约；frontend 腿 vitest 553 + E2E 158。
-- **E2E 抖动复核**：本机全量三轮失败集合互不相同（5 例 vs 3 例 vs 3 例）、彼此无关、单跑全过——
-  与各轮新测无关，属已知冷启动抖动，判据以 CI 为准。
+- **CI（run `38571169004`，HEAD `a4bb626`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`
+  （4/4，未跳过）与新静态契约；frontend 腿 vitest 557 + E2E 159。
+- **E2E 抖动复核**：本机全量四轮失败集合互不相同（5 例 vs 3 例 vs 3 例 vs 3 例）、彼此无关、
+  单跑全过——与各轮新测无关（含本轮新测通过），属已知冷启动抖动，判据以 CI 为准（CI 上 159 passed）。
 
 ### 9. 踩过的坑（本轮）
 
@@ -190,9 +207,11 @@ CustomerService 的 RMA 表只列了物流/退款相关字段，从不显示承�
 7. **加表格会打乱既有测试的选择器**：给 Buybox Tab 加第二张表后，既有用例的
    `wrapper.find('.data-table tbody tr')` 命中了新表——**给已有区域加表格时要顺手收窄旧断言的选择器**
    （本处改用 `[data-panel="buybox"] .data-table:last-of-type`）。
-8. **tsc 会拦测试文件里的裸错**：新测试块用了 `afterEach` 却没 import、又给 mock 的
-   `data: null` 裸值未 `as any`——**vitest 跑绿但 vue-tsc 会红**。测试文件也要过类型检查，
-   别只跑 vitest 就收工。
+8. **tsc 会拦测试文件里的裸错（本班连续三次复发，务必当清单用）**：新测试块用了
+   `afterEach` 却没 import、又给 mock 的 `data: null` 裸值未 `as any`——
+   **vitest 全绿但 vue-tsc 报 2 个错**。写测试文件的两条硬规则：
+   ① 用了哪个 vitest hook 就 import 哪个；② mock 的失败响应一律 `data: null as any`
+   （后端 data 类型非空）。**别只跑 vitest 就收工**，`npx vue-tsc --noEmit` 必须一起跑。
 
 ### 10. 卡住的问题（本班结束时的未决项）
 
@@ -210,20 +229,22 @@ CustomerService 的 RMA 表只列了物流/退款相关字段，从不显示承�
 - **`calculateFreight`/`executeRules` 的入口门控未做**：这两个带 `@RequireRole(OPERATOR/ADMIN)`，
   接到页面上后非该角色点了会 403——接 UI 前需先决定入口隐藏还是如实提示。
 
-### 11. 下一步
+### 12. 下一步
 
-- **② 类剩余约 10 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
+- **② 类剩余约 9 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
   继续按「页面已有相邻功能、只差这一步」挑（已完成：店铺 CRUD、仓库编辑、Buybox 汇总、
-  差异详情、RMA 详情）：
+  差异详情、RMA 详情、有效报价明细）：
   - `getShipment`/`updateShipment`：Procurement 已接 `listShipments`/`createShipment`，只差单条详情/编辑；
   - `updateSupplier`：Procurement 已接 `createSupplier`/`listSuppliers`，只差编辑（注意 supplier 无「死分支」，
     需确认页面是否该加编辑入口）；
-  - `listQuotes`/`calculateFreight`：LogisticsDashboard 已接 `compareQuotes`/`expireOutdatedQuotes`，
-    只差报价列表与头程分摊（`calculateFreight` 带 OPERATOR/ADMIN 守卫）；
-  - `executeRules`：AdSearchTerms 已接 `executeRule`（单条），只差批量执行入口。
+  - `calculateFreight`：LogisticsDashboard 已接 `compareQuotes`/`expireOutdatedQuotes`/`listQuotes`，
+    只差头程分摊（带 OPERATOR/ADMIN 守卫，接 UI 前先定入口门控）；
+  - `executeRules`：AdSearchTerms 已接 `executeRule`（单条），只差批量执行入口（同带 OPERATOR/ADMIN 守卫）。
 - **权限注意**：`calculateFreight`/`executeRules`/`updateWarehouse` 带 `@RequireRole(OPERATOR/ADMIN)`，
   接 UI 时非该角色会 403（页面应做入口门控或如实提示）。
-- 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；**改门控 IT / 后端 DTO 后盯 CI**。
+- 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；
+  **写完测试文件必须连跑 `npx vue-tsc --noEmit`**（坑 8 已三次复发）；
+  **改门控 IT / 后端 DTO 后盯 CI**。
 
 ## S8. 交接：2026-10-13 孤儿 API 清理会话（未完成，含下一步）
 
@@ -278,8 +299,8 @@ CustomerService 的 RMA 表只列了物流/退款相关字段，从不显示承�
 2. ~~**接 ② 类最高价值项**：`getUnreadCount` + `markAllNotificationsRead`
    （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。~~ **已完成（2026-10-14，见 §S9.1）**：
    顶栏红点 + 消息页「全部已读」已接入，vitest +10、E2E +2、变异 2 处均红。
-   ② 类剩余约 10 项见 §S9.11（店铺 CRUD 见 §S9.3；仓库编辑见 §S9.4；Buybox 汇总见 §S9.5；
-   差异详情见 §S9.6；RMA 详情见 §S9.7）。
+   ② 类剩余约 9 项见 §S9.12（店铺 CRUD 见 §S9.3；仓库编辑见 §S9.4；Buybox 汇总见 §S9.5；
+   差异详情见 §S9.6；RMA 详情见 §S9.7；有效报价明细见 §S9.8）。
 3. 每步按既有纪律：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
 
 ### 5. 踩过的坑（本轮新增，务必先读再动手）
