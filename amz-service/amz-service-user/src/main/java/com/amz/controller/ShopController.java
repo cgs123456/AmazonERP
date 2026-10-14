@@ -3,6 +3,7 @@ package com.amz.controller;
 import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.model.pojo.Shop;
+import com.amz.model.vo.ShopUserVo;
 import com.amz.model.vo.ShopVo;
 import com.amz.result.Result;
 import com.amz.service.ShopService;
@@ -96,6 +97,21 @@ public class ShopController {
             return Result.success(shopService.updateShopStatus(shopId, status));
         } catch (Exception e) {
             log.warn("更新店铺状态失败 shopId={}: {}", shopId, e.getMessage());
+            return Result.failure(e.getMessage());
+        }
+    }
+
+    /**
+     * 某店铺已绑定的用户列表（ADMIN）。授权界面的「当前绑定」读侧——
+     * 没有它，分配/解绑就是盲写（看不到现状、解绑只能靠报错试）。
+     */
+    @RequireRole({"ADMIN"})
+    @GetMapping("/{shopId}/users")
+    public Result<List<ShopUserVo>> listShopUsers(@PathVariable Long shopId) {
+        try {
+            return Result.success(shopService.listShopUsers(shopId));
+        } catch (Exception e) {
+            log.warn("查询店铺绑定用户失败 shopId={}: {}", shopId, e.getMessage());
             return Result.failure(e.getMessage());
         }
     }

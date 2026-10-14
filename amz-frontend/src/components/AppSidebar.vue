@@ -113,6 +113,17 @@
       </div>
       <div
         class="nav-item"
+        :class="{ active: isActive('/shops') }"
+        @click="navigateTo('/shops')"
+        role="button"
+        aria-label="店铺管理"
+        tabindex="0"
+      >
+        <Icon icon="mdi:store-cog-outline" class="nav-icon" width="24" />
+        <span class="nav-text">店铺管理</span>
+      </div>
+      <div
+        class="nav-item"
         :class="{ active: isActive('/ads') }"
         @click="navigateTo('/ads')"
         role="button"

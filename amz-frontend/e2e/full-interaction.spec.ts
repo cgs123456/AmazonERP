@@ -51,6 +51,7 @@ const NAV = [
   { path: '/ops-alerts', linkText: '运营预警台' },
   { path: '/notifications', linkText: '消息中心' },
   { path: '/users', linkText: '用户管理' },
+  { path: '/shops', linkText: '店铺管理' },
   { path: '/customer', linkText: '客服中心' },
   { path: '/agent-memory', linkText: '助手记忆' }
 ]
@@ -586,6 +587,75 @@ test.describe('UserManagement 交互（用户管理）', () => {
     const zone = page.locator('.error-zone')
     await expect(zone).toBeVisible({ timeout: 20000 })
     await expect(zone).toContainText('不能修改自己的角色')
+  })
+})
+
+test.describe('ShopManagement 交互（店铺管理）', () => {
+  test('店铺列表渲染名称/授权状态/凭证配置（字段名是 shopName）', async ({ page }) => {
+    await page.goto('/shops')
+    const rows = page.locator('table.data-table tbody tr')
+    await expect(rows).toHaveCount(2, { timeout: 20000 })
+    const table = page.locator('table.data-table')
+    await expect(table).toContainText('美国站主店')
+    await expect(table).toContainText('ATVPDKIKX0DER')
+    // 凭证未配置必须可见——运营要知道去连接器中心登记
+    await expect(table).toContainText('未配置')
+  })
+
+  test('改授权状态：选中后把 status 打给后端', async ({ page }) => {
+    const statusCalls: string[] = []
+    await page.route(/\/api\/user\/shop\/\d+\/status/, (route) => {
+      statusCalls.push(route.request().url())
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { id: 9002, shopName: '德国站', status: 1, statusText: '已授权' } })
+      })
+    })
+
+    await page.goto('/shops')
+    const rows = page.locator('table.data-table tbody tr')
+    await expect(rows).toHaveCount(2, { timeout: 20000 })
+
+    await rows.nth(1).locator('select.status-select').selectOption('1')
+    await expect(rows.nth(1).locator('select.status-select')).toHaveValue('1')
+    expect(statusCalls.some((u) => u.includes('status=1'))).toBe(true)
+  })
+
+  test('授权弹窗先展示当前绑定用户（读侧，不盲写）', async ({ page }) => {
+    await page.goto('/shops')
+    const rows = page.locator('table.data-table tbody tr')
+    await expect(rows).toHaveCount(2, { timeout: 20000 })
+
+    await rows.nth(0).locator('button', { hasText: '授权用户' }).click()
+    const modal = page.locator('[data-panel="shop-users"]')
+    await expect(modal).toBeVisible({ timeout: 20000 })
+    await expect(modal).toContainText('运营甲')
+    await expect(modal).toContainText('OPERATOR')
+    await expect(modal).toContainText('访客乙')
+  })
+
+  test('授权弹窗解绑：二次确认后调用后端', async ({ page }) => {
+    const unassignCalls: string[] = []
+    await page.route(/\/api\/user\/shop\/\d+\/assign\/remove/, (route) => {
+      unassignCalls.push(route.request().url())
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, data: true }) })
+    })
+
+    await page.goto('/shops')
+    const rows = page.locator('table.data-table tbody tr')
+    await expect(rows).toHaveCount(2, { timeout: 20000 })
+    await rows.nth(0).locator('button', { hasText: '授权用户' }).click()
+
+    const modal = page.locator('[data-panel="shop-users"]')
+    await expect(modal).toBeVisible({ timeout: 20000 })
+    await modal.locator('tbody tr').nth(0).locator('button', { hasText: '解绑' }).click()
+
+    // 二次确认
+    await expect(page.locator('.confirm-detail')).toContainText('重新登录')
+    await page.locator('.modal', { hasText: '确认执行' }).locator('button', { hasText: '确认执行' }).click()
+    await expect.poll(() => unassignCalls.length).toBeGreaterThan(0)
+    expect(unassignCalls[0]).toContain('userId=7')
   })
 })
 

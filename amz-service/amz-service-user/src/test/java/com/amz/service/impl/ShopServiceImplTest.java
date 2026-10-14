@@ -248,13 +248,83 @@ class ShopServiceImplTest {
         assertNotNull(result.get(0).getStatusText());
     }
 
+    @Test
+    @DisplayName("店铺：列出某店铺已绑定用户（含店铺级角色）——授权界面不能盲写")
+    void listShopUsersReturnsBindings() {
+        ShopMapper shops = mock(ShopMapper.class);
+        UserShopMapper bindings = mock(UserShopMapper.class);
+        UserMapper users = mock(UserMapper.class);
+        ShopServiceImpl service = serviceWith(shops, bindings, users);
+
+        UserContext.setUserId(1);
+        UserContext.setRole("ADMIN");
+        when(shops.selectById(9001L)).thenReturn(shop(9001L, "US 店"));
+
+        UserShop b1 = new UserShop();
+        b1.setShopId(9001L);
+        b1.setUserId(7L);
+        b1.setRole("OPERATOR");
+        UserShop b2 = new UserShop();
+        b2.setShopId(9001L);
+        b2.setUserId(8L);
+        b2.setRole("VIEWER");
+        when(bindings.selectList(any())).thenReturn(List.of(b1, b2));
+
+        User u7 = new User();
+        u7.setId(7);
+        u7.setNickname("运营甲");
+        u7.setPhone("13800000077");
+        User u8 = new User();
+        u8.setId(8);
+        u8.setNickname("访客乙");
+        u8.setPhone("13800000088");
+        when(users.selectById(7)).thenReturn(u7);
+        when(users.selectById(8)).thenReturn(u8);
+
+        List<com.amz.model.vo.ShopUserVo> result = service.listShopUsers(9001L);
+
+        assertEquals(2, result.size());
+        assertEquals(7L, result.get(0).getUserId());
+        assertEquals("运营甲", result.get(0).getNickname());
+        assertEquals("OPERATOR", result.get(0).getRole());
+        assertEquals("VIEWER", result.get(1).getRole());
+    }
+
+    @Test
+    @DisplayName("店铺：列出绑定用户对不存在的店铺点名拒绝，不返回空列表冒充「无人绑定」")
+    void listShopUsersRejectsMissingShop() {
+        ShopMapper shops = mock(ShopMapper.class);
+        ShopServiceImpl service = serviceWith(shops, mock(UserShopMapper.class), mock(UserMapper.class));
+        UserContext.setUserId(1);
+        UserContext.setRole("ADMIN");
+        when(shops.selectById(9999L)).thenReturn(null);
+
+        assertThrows(CodeErrorException.class, () -> service.listShopUsers(9999L),
+                "店铺不存在时必须报错——返回空会让管理员以为这家店确实没人被授权");
+    }
+
+    @Test
+    @DisplayName("店铺：列出绑定用户限定 ADMIN（不能枚举他人店铺的用户清单）")
+    void listShopUsersRequiresAdmin() {
+        ShopServiceImpl service = serviceWith(mock(ShopMapper.class), mock(UserShopMapper.class),
+                mock(UserMapper.class));
+        UserContext.setUserId(9);
+        UserContext.setRole("OPERATOR");
+
+        assertThrows(CodeErrorException.class, () -> service.listShopUsers(9001L));
+    }
+
     // ============ 辅助 ============
 
     private ShopServiceImpl serviceWith(ShopMapper shops, UserShopMapper bindings) {
+        return serviceWith(shops, bindings, mock(UserMapper.class));
+    }
+
+    private ShopServiceImpl serviceWith(ShopMapper shops, UserShopMapper bindings, UserMapper users) {
         ShopServiceImpl service = new ShopServiceImpl();
         ReflectionTestUtils.setField(service, "shopMapper", shops);
         ReflectionTestUtils.setField(service, "userShopMapper", bindings);
-        ReflectionTestUtils.setField(service, "userMapper", mock(UserMapper.class));
+        ReflectionTestUtils.setField(service, "userMapper", users);
         return service;
     }
 

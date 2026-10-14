@@ -189,7 +189,7 @@ export interface UserVo {
 }
 
 /**
- * 店铺下拉选项（后端 UserVo.shops / GET /user/shop/list 的元素形状）。
+ * 店铺下拉选项（后端 UserVo.shops 的元素形状，对应后端 ShopOptionVo）。
  * 只带 id 与 name：后端刻意不返回凭证或卖家身份信息，前端也不要在这里扩展。
  */
 export interface ShopOption {
@@ -197,8 +197,17 @@ export interface ShopOption {
     name: string
 }
 
-/** 店铺管理页用的完整店铺项（GET /user/shop/list）。 */
-export interface ShopListItem extends ShopOption {
+/**
+ * 店铺管理页用的完整店铺项（GET /user/shop/list，对应后端 ShopVo）。
+ * <p>
+ * <b>字段名是 shopName 而不是 name</b>：后端 ShopVo 的字段就叫 shopName，
+ * 与 UserVo.shops 的元素（ShopOptionVo.name）是**两个不同的 DTO**。
+ * 此前这里 extends ShopOption 复用 name，导致 /user/shop/list 返回的店名
+ * 在前端恒为 undefined（该类型此前零消费，所以一直没暴露）。
+ */
+export interface ShopListItem {
+    id: number | string
+    shopName: string
     marketplaceId?: string
     region?: string
     sellerId?: string
@@ -257,6 +266,24 @@ export const unassignShopUser = (shopId: number | string, userId: number | strin
     request.post<void, ApiResponse<boolean>>(`/user/shop/${shopId}/assign/remove`, null, {
         params: { userId }
     })
+
+/**
+ * 某店铺已绑定的用户列表（ADMIN）。
+ * <p>
+ * 授权界面的「当前绑定」读侧：没有它，分配/解绑就是盲写——
+ * 看不到这家店现在授权了谁，解绑只能靠报错试。
+ */
+export const listShopUsers = (shopId: number | string) =>
+    request.get<void, ApiResponse<ShopUserItem[]>>(`/user/shop/${shopId}/users`)
+
+/** 店铺-用户绑定项（GET /user/shop/{shopId}/users 的元素形状）。 */
+export interface ShopUserItem {
+    userId: number
+    nickname?: string
+    phone?: string
+    /** 该用户在这家店的店铺级角色（ADMIN/OPERATOR/VIEWER） */
+    role?: string
+}
 
 // 发送验证码
 export const sendVerifyCode = (phone: string) => {

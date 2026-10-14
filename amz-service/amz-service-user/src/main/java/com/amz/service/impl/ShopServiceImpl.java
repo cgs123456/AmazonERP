@@ -7,7 +7,9 @@ import com.amz.mapper.ShopMapper;
 import com.amz.mapper.UserMapper;
 import com.amz.mapper.UserShopMapper;
 import com.amz.model.pojo.Shop;
+import com.amz.model.pojo.User;
 import com.amz.model.pojo.UserShop;
+import com.amz.model.vo.ShopUserVo;
 import com.amz.model.vo.ShopVo;
 import com.amz.service.ShopService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -215,6 +217,35 @@ public class ShopServiceImpl implements ShopService {
             throw new CodeErrorException("该用户未绑定此店铺，无需解绑");
         }
         log.info("解除用户-店铺绑定 shopId={} userId={}", shopId, userId);
+    }
+
+    @Override
+    public List<ShopUserVo> listShopUsers(Long shopId) {
+        requireAdmin();
+        if (shopId == null) {
+            throw new CodeErrorException("店铺 ID 不能为空");
+        }
+        if (shopMapper.selectById(shopId) == null) {
+            // 不返回空列表冒充「无人绑定」：店铺不存在与「确实没授权任何人」是两件事
+            throw new CodeErrorException("店铺不存在：id=" + shopId);
+        }
+        LambdaQueryWrapper<UserShop> q = new LambdaQueryWrapper<>();
+        q.eq(UserShop::getShopId, shopId).orderByAsc(UserShop::getUserId);
+        List<UserShop> bindings = userShopMapper.selectList(q);
+
+        List<ShopUserVo> result = new ArrayList<>();
+        for (UserShop binding : bindings) {
+            ShopUserVo vo = new ShopUserVo();
+            vo.setUserId(binding.getUserId());
+            vo.setRole(binding.getRole());
+            User user = binding.getUserId() == null ? null : userMapper.selectById(binding.getUserId().intValue());
+            if (user != null) {
+                vo.setNickname(user.getNickname());
+                vo.setPhone(user.getPhone());
+            }
+            result.add(vo);
+        }
+        return result;
     }
 
     @Override

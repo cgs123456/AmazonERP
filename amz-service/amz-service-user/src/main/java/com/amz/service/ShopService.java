@@ -1,6 +1,7 @@
 package com.amz.service;
 
 import com.amz.model.pojo.Shop;
+import com.amz.model.vo.ShopUserVo;
 import com.amz.model.vo.ShopVo;
 
 import java.util.List;
@@ -47,6 +48,14 @@ public interface ShopService {
      * 解除用户-店铺绑定（ADMIN）。未绑定时明确失败，不静默返回成功。
      */
     void unassignUser(Long shopId, Long userId);
+
+    /**
+     * 某店铺已绑定的用户列表（ADMIN）。供授权界面展示当前绑定——没有它，
+     * 分配/解绑就是盲写（看不到现状、解绑只能靠报错试）。
+     * <p>
+     * 店铺不存在时<b>点名拒绝</b>，不返回空列表冒充「无人绑定」。
+     */
+    List<ShopUserVo> listShopUsers(Long shopId);
 
     /**
      * 某用户被授权的店铺 ID 列表（供登录签发 JWT shops claim 复用）。

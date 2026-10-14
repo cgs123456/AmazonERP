@@ -1011,6 +1011,22 @@ const USER_ROWS = [
 ]
 
 /**
+ * 店铺管理页（/shops，ADMIN）用的店铺列表。
+ * 字段名抄自后端 ShopVo：**shopName**（不是 name）、marketplaceId、region、
+ * sellerId、status、statusText、credentialConfigured。
+ */
+const SHOP_ROWS = [
+  { id: 9001, shopName: '美国站主店', marketplaceId: 'ATVPDKIKX0DER', region: 'NA', sellerId: 'A1SELLER', status: 1, statusText: '已授权', credentialConfigured: true, role: 'ADMIN' },
+  { id: 9002, shopName: '德国站', marketplaceId: 'A1PA6795UKMFR9', region: 'EU', sellerId: null, status: 0, statusText: '未授权', credentialConfigured: false, role: 'ADMIN' }
+]
+
+/** 某店铺已绑定用户（GET /user/shop/{shopId}/users，对应后端 ShopUserVo）。 */
+const SHOP_USERS = [
+  { userId: 7, nickname: '运营甲', phone: '13800000077', role: 'OPERATOR' },
+  { userId: 8, nickname: '访客乙', phone: '{{PHONE_3hvl2nzp}}', role: 'VIEWER' }
+]
+
+/**
  * 非 JSON 的打桩：目前只有 AI 助手的 SSE 流式接口。
  * /api/ai/chat-stream 若按 JSON 兜底返回，fetch 会拿到 200 + 非 SSE 正文，
  * readSseStream 解析不出任何事件，占位气泡永远是空串——页面看起来「没坏」但也没回复。
@@ -1492,7 +1508,18 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   // 改角色/改状态都回 Result<User>（单对象，后端把改后的行回给前端）。
   // 用 spread 回第 2 行（id=2）而不是第 1 行：第 1 行是「自己」，页面不给改。
   { match: /^\/user\/\d+\/role$/, data: { ...USER_ROWS[1], role: 'ADMIN' } },
-  { match: /^\/user\/\d+\/status$/, data: { ...USER_ROWS[2], status: 1 } }
+  { match: /^\/user\/\d+\/status$/, data: { ...USER_ROWS[2], status: 1 } },
+
+  // ===== 店铺管理 /user/shop（S7.2 后端 + 本轮前端）=====
+  // GET /user/shop/list 返回**数组**（Result<List<ShopVo>>），字段名是 shopName
+  // （不是 name——ShopVo 与 UserVo.shops 的元素 ShopOptionVo 是两个 DTO）。
+  { match: /^\/user\/shop\/list$/, data: SHOP_ROWS, page: FULL_PAGE(SHOP_ROWS.length) },
+  { match: /^\/user\/shop\/\d+\/users$/, data: SHOP_USERS },
+  { match: /^\/user\/shop\/\d+\/status$/, data: { ...SHOP_ROWS[1], status: 1 } },
+  { match: /^\/user\/shop\/\d+\/assign\/remove$/, data: true },
+  { match: /^\/user\/shop\/\d+\/assign$/, data: true },
+  { match: /^\/user\/shop\/\d+$/, data: { ...SHOP_ROWS[0], shopName: 'E2E 改名店' } },
+  { match: /^\/user\/shop$/, data: SHOP_ROWS[0] }
 ]
 
 /**

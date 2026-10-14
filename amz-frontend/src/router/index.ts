@@ -104,6 +104,11 @@ const router = createRouter({
             component: () => import('../views/UserManagement.vue')
         },
         {
+            path: '/shops',
+            name: 'ShopManagement',
+            component: () => import('../views/ShopManagement.vue')
+        },
+        {
             path: '/connector-queue',
             name: 'ConnectorQueue',
             component: () => import('../views/ConnectorQueue.vue')
