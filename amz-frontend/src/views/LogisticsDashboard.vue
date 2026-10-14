@@ -587,6 +587,67 @@
               </table>
             </div>
 
+            <!-- 逐条有效报价（与看板/比价互补的读侧；服务端已按「有效期内」过滤） -->
+            <div class="chart-card mt" data-panel="quotes">
+              <div class="card-head">
+                <h3>有效报价明细</h3>
+                <label class="inline-filter">
+                  服务类型
+                  <select v-model="quoteServiceType" @change="loadQuotes()">
+                    <option value="">全部</option>
+                    <option value="SEA">海运</option>
+                    <option value="AIR">空运</option>
+                    <option value="EXPRESS">快递</option>
+                  </select>
+                </label>
+              </div>
+              <p class="card-desc">
+                只列<b>有效期内且已启用</b>的报价（后端过滤），比价用的就是这批。
+                已过失效日期但状态仍为 ACTIVE 的报价不在这里出现，需到看板里「标记过期」收口。
+              </p>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>承运商</th><th>服务类型</th><th>航线</th><th>时效</th>
+                    <th>每公斤价</th><th>每立方价</th><th>最低收费</th><th>燃油附加</th>
+                    <th>币种</th><th>生效</th><th>失效</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="q in quotes" :key="q.id">
+                    <td>{{ q.carrierName || '-' }}</td>
+                    <td>{{ q.serviceType || '-' }}</td>
+                    <td>{{ q.originPort || '?' }} → {{ q.destinationPort || '?' }}</td>
+                    <td>{{ q.transitDays ?? '-' }} 天</td>
+                    <td class="mono">{{ q.pricePerKg ?? '-' }}</td>
+                    <td class="mono">{{ q.pricePerCbm ?? '-' }}</td>
+                    <td class="mono">{{ q.minCharge ?? '-' }}</td>
+                    <td>{{ q.fuelSurchargeRate == null ? '-' : `${(Number(q.fuelSurchargeRate) * 100).toFixed(1)}%` }}</td>
+                    <td>{{ q.currency || '-' }}</td>
+                    <td>{{ q.effectiveDate || '-' }}</td>
+                    <td>{{ q.expiryDate || '长期' }}</td>
+                  </tr>
+                  <tr v-if="!quotes.length">
+                    <td colspan="11" class="empty-row">暂无有效报价</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="table-pager">
+                <span class="page-info">已加载 {{ quotes.length }} 条</span>
+                <div class="page-actions">
+                  <button v-if="quotesTruncated" class="page-btn"
+                          :disabled="quotesLoadingMore || !quotesNextCursor"
+                          @click="loadMoreQuotes">加载下一页</button>
+                </div>
+              </div>
+              <div v-if="quotesTruncated" class="truncated-tip" role="status">
+                后端声明还有更多未加载，当前列表不是全量。
+              </div>
+              <div v-else-if="quotesPageMetaMissing" class="truncated-tip" role="status">
+                未拿到分页元数据，无法确认是否全量。
+              </div>
+            </div>
+
             <div class="chart-card mt">
               <h3>运费比价</h3>
               <p class="card-desc">
@@ -1316,6 +1377,7 @@ import {
   getReceiptBoard,
   compareQuotes,
   expireOutdatedQuotes,
+  listQuotes,
   listTransfers,
   approveTransfer,
   shipTransfer,
@@ -1333,6 +1395,7 @@ import {
   type ImportTrackingRow,
   type QuoteBoard,
   type QuoteCompareResult,
+  type CarrierQuote,
   type TransferBoard,
   type FreightCostBoard,
   type ReceiptBoard,
@@ -1359,6 +1422,13 @@ const shipmentsLoadingMore = ref(false)
 
 // 运营子域看板
 const quoteBoard = ref<QuoteBoard | null>(null)
+/** 逐条有效报价（与看板/比价互补的后端读侧；只含有效期内且 ACTIVE 的报价） */
+const quotes = ref<CarrierQuote[]>([])
+const quotesNextCursor = ref<string | null>(null)
+const quotesTruncated = ref(false)
+const quotesPageMetaMissing = ref(false)
+const quotesLoadingMore = ref(false)
+const quoteServiceType = ref('')
 const transferBoard = ref<TransferBoard | null>(null)
 const freightBoard = ref<FreightCostBoard | null>(null)
 const receiptBoard = ref<ReceiptBoard | null>(null)
@@ -1873,6 +1943,50 @@ const loadQuoteBoard = async (shopId: string) => {
   }
 }
 
+/**
+ * 逐条有效报价（keyset 分页，与货件/调拨同模式）。
+ * <p>
+ * 服务端已按「有效期内」过滤，页面上直接呈现即可；_page 缺失时披露「无法确认是否全量」，
+ * 不把第一页冒充全部报价——报价漏看一条可能就选错承运商。
+ */
+const loadQuotes = async (append = false) => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  if (!append) {
+    quotesNextCursor.value = null
+    quotesTruncated.value = false
+    quotesPageMetaMissing.value = false
+  }
+  if (append) quotesLoadingMore.value = true
+  try {
+    const cursor = append ? (quotesNextCursor.value ?? undefined) : undefined
+    const res = await listQuotes(shopId, quoteServiceType.value || undefined, PAGE_SIZE, cursor)
+    if (res?.code === 200 && Array.isArray(res.data)) {
+      quotes.value = append ? quotes.value.concat(res.data) : res.data
+      const page = res._page
+      const hasMore = page ? (page.truncated || page.hasMore) : false
+      const metaMissing = !page || (hasMore && !page.nextCursor)
+      quotesPageMetaMissing.value = metaMissing
+      quotesTruncated.value = !metaMissing && hasMore
+      quotesNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
+    } else {
+      pushBlockError('有效报价', res?.message)
+      if (!append) quotes.value = []
+    }
+  } catch (e) {
+    console.warn('[Logistics] 加载有效报价失败', e)
+    pushBlockError('有效报价', e)
+    if (!append) quotes.value = []
+  } finally {
+    if (append) quotesLoadingMore.value = false
+  }
+}
+
+const loadMoreQuotes = () => {
+  if (!quotesTruncated.value || !quotesNextCursor.value || quotesLoadingMore.value) return
+  void loadQuotes(true)
+}
+
 const loadTransferBoard = async (shopId: string) => {
   const res = await getTransferBoard(shopId)
   if (res?.code === 200 && res.data) {
@@ -2001,6 +2115,8 @@ const switchTab = async (key: TabKey) => {
     if (!shipments.value.length) await safeLoad('shipments', loadShipments)
   } else if (key === 'quotes') {
     if (!quoteBoard.value) await safeLoad('quotes', () => loadQuoteBoard(shopId))
+    // 逐条报价与看板同源但不同端点：也按「首次打开才拉」，切店铺时由上面的 reload 分支重拉
+    if (!quotes.value.length) await loadQuotes()
   } else if (key === 'transfers') {
     if (!transferBoard.value) await safeLoad('transfers', () => loadTransferBoard(shopId))
     if (!transfers.value.length) await loadTransfers()
@@ -2343,7 +2459,10 @@ const onAuthChanged = () => {
     if (tab.value === 'shipments') loadShipments()
     // 子域看板同样要跟着换店铺重拉，否则会残留上一个店铺的数字
     const shopId = refreshShop()
-    if (tab.value === 'quotes') safeLoad('quotes', () => loadQuoteBoard(shopId))
+    if (tab.value === 'quotes') {
+      safeLoad('quotes', () => loadQuoteBoard(shopId))
+      loadQuotes()
+    }
     if (tab.value === 'transfers') {
       safeLoad('transfers', () => loadTransferBoard(shopId))
       loadTransfers()

@@ -88,6 +88,25 @@ test.describe('物流看板 /logistics', () => {
     await expect(main).toContainText('运输中')
     await expect(main).toContainText('已送达')
   })
+
+  test('比价页逐条有效报价明细：承运商/航线/失效日来自后端', async ({ page }) => {
+    const quotePaths: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname.includes('/logistics/v2/quote/list/')) quotePaths.push(u.pathname)
+    })
+    await page.goto('/logistics')
+    await page.locator('.tab', { hasText: '比价' }).click()
+    const panel = page.locator('[data-panel="quotes"]')
+    await expect(panel).toBeVisible({ timeout: 20000 })
+
+    await expect.poll(() => quotePaths.length).toBe(1)
+    await expect(panel).toContainText('Matson')
+    await expect(panel).toContainText('CNSZX')
+    await expect(panel).toContainText('2026-12-31')
+    // 桩返回完整分页元数据，此时不应出现截断/无法确认的提示
+    await expect(panel).not.toContainText('不是全量')
+  })
 })
 
 test.describe('利润报表 /profit', () => {

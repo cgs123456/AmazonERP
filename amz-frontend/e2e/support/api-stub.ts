@@ -213,6 +213,19 @@ const QUOTE_BOARD = {
   warnings: []
 }
 
+/**
+ * GET /logistics/v2/quote/list/{shopId} -> CarrierQuote[]（Result.paged，元数据在 _page）。
+ * 后端只返回有效期内且 ACTIVE 的报价——「有效报价明细」表的数据源。
+ */
+const QUOTE_ROWS = [
+  { id: 302, shopId: 1, carrierName: 'Matson', serviceType: 'SEA', originPort: 'CNSZX', destinationPort: 'USLAX',
+    transitDays: 18, pricePerKg: 3.8, pricePerCbm: 880, minCharge: 500, fuelSurchargeRate: 0.15,
+    currency: 'USD', effectiveDate: '2026-09-01', expiryDate: '2026-12-31', status: 'ACTIVE' },
+  { id: 301, shopId: 1, carrierName: 'Evergreen', serviceType: 'SEA', originPort: 'CNSZX', destinationPort: 'USLAX',
+    transitDays: 22, pricePerKg: 3.2, pricePerCbm: 820, minCharge: 450, fuelSurchargeRate: 0.12,
+    currency: 'USD', effectiveDate: '2026-09-01', expiryDate: '2026-12-31', status: 'ACTIVE' }
+]
+
 const TRANSFER_BOARD = {
   shopId: 1,
   total: 3,
@@ -1193,6 +1206,12 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/logistics\/dashboard\/carrier-performance$/, data: LOGISTICS_CARRIER },
   { match: /^\/logistics\/dashboard\/alerts$/, data: LOGISTICS_ALERTS },
   { match: /^\/logistics\/dashboard\/quotes$/, data: QUOTE_BOARD },
+  // 逐条有效报价（游标分页，带 cursor 返回第二页）
+  {
+    match: /^\/logistics\/v2\/quote\/list\//,
+    data: (query: URLSearchParams) => (query.get('cursor') ? [] : QUOTE_ROWS),
+    page: (query: URLSearchParams) => FULL_PAGE(query.get('cursor') ? 0 : QUOTE_ROWS.length)
+  },
   { match: /^\/logistics\/dashboard\/transfers$/, data: TRANSFER_BOARD },
   { match: /^\/logistics\/dashboard\/freight-cost$/, data: FREIGHT_BOARD },
   { match: /^\/logistics\/dashboard\/receipts$/, data: RECEIPT_BOARD },

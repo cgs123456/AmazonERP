@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import LogisticsDashboard from '../views/LogisticsDashboard.vue'
 
@@ -21,6 +21,7 @@ vi.mock('@/api/logistics', () => ({
   getReceiptBoard: vi.fn(),
   compareQuotes: vi.fn(),
   expireOutdatedQuotes: vi.fn(),
+  listQuotes: vi.fn(),
   listTransfers: vi.fn(),
   approveTransfer: vi.fn(),
   shipTransfer: vi.fn(),
@@ -42,6 +43,7 @@ import {
   getFreightCostBoard,
   getReceiptBoard,
   compareQuotes,
+  listQuotes,
   listTransfers,
   approveTransfer,
   resolveDiscrepancy
@@ -59,6 +61,7 @@ const mockedTransferBoard = vi.mocked(getTransferBoard)
 const mockedFreightBoard = vi.mocked(getFreightCostBoard)
 const mockedReceiptBoard = vi.mocked(getReceiptBoard)
 const mockedCompare = vi.mocked(compareQuotes)
+const mockedQuotes = vi.mocked(listQuotes)
 const mockedTransfers = vi.mocked(listTransfers)
 const mockedApprove = vi.mocked(approveTransfer)
 const mockedResolve = vi.mocked(resolveDiscrepancy)
@@ -195,6 +198,19 @@ const quoteBoardFixture = (overrides: Record<string, unknown> = {}) => ({
   warnings: ['2 条报价已过失效日期但状态仍为 ACTIVE，比价时会自动排除；可执行「标记过期」收口'],
   ...overrides
 })
+
+/**
+ * GET /logistics/v2/quote/list/{shopId} 的元素（CarrierQuote）。
+ * 后端只返回「有效期内且 ACTIVE」的报价——这正是看板与比价之外的逐条明细面。
+ */
+const quoteListFixture = [
+  { id: 301, shopId: 1, carrierName: 'Matson', serviceType: 'SEA', originPort: 'CNSZX', destinationPort: 'USLAX',
+    transitDays: 18, pricePerKg: 3.8, pricePerCbm: 880, minCharge: 500, fuelSurchargeRate: 0.15,
+    currency: 'USD', effectiveDate: '2026-09-01', expiryDate: '2026-12-31', status: 'ACTIVE' },
+  { id: 300, shopId: 1, carrierName: 'Evergreen', serviceType: 'SEA', originPort: 'CNSZX', destinationPort: 'USLAX',
+    transitDays: 22, pricePerKg: 3.2, pricePerCbm: 820, minCharge: 450, fuelSurchargeRate: 0.12,
+    currency: 'USD', effectiveDate: '2026-09-01', expiryDate: '2026-12-31', status: 'ACTIVE' }
+]
 
 const transferBoardFixture = (overrides: Record<string, unknown> = {}) => ({
   shopId: 1,
@@ -812,6 +828,7 @@ describe('LogisticsDashboard 运营子域看板', () => {
     mockedTransferBoard.mockResolvedValue({ code: 200, message: 'ok', data: transferBoardFixture() } as never)
     mockedFreightBoard.mockResolvedValue({ code: 200, message: 'ok', data: freightBoardFixture() } as never)
     mockedReceiptBoard.mockResolvedValue({ code: 200, message: 'ok', data: receiptBoardFixture() } as never)
+    mockedQuotes.mockResolvedValue({ code: 200, message: 'ok', data: quoteListFixture, _page: pageMeta(quoteListFixture) } as never)
     mockedTransfers.mockResolvedValue({ code: 200, message: 'ok', data: transferListFixture, _page: pageMeta(transferListFixture) } as never)
   })
 
@@ -1261,5 +1278,91 @@ describe('LogisticsDashboard 运营子域看板', () => {
     expect(mockedTransfers).toHaveBeenLastCalledWith('1', 'IN_TRANSIT', 50, undefined)
     expect(wrapper.text()).toContain('TRF-3')
     expect(wrapper.text()).not.toContain('TRF-1')
+  })
+})
+
+describe('LogisticsDashboard 有效报价明细（此前 listQuotes 零调用）', () => {
+  /**
+   * 比价页此前只有「看板聚合 + 航线覆盖 + 运费比价」，没有逐条报价明细——
+   * 运营看不出「某条航线上具体有哪些报价、单价多少、什么时候失效」。后端
+   * GET /logistics/v2/quote/list/{shopId} 只返回有效期内且 ACTIVE 的报价（keyset 分页），
+   * 前端 listQuotes 却零调用。本组钉住明细表：字段来自后端、截断时披露、
+   * 失败时点名原因而不铺假报价。
+   */
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('token', 'test-token')
+    localStorage.setItem('current_shop_id', '1')
+    vi.clearAllMocks()
+
+    mockedOverview.mockResolvedValue({ code: 200, message: 'ok', data: overviewFixture() } as never)
+    mockedTrend.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedCarriers.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedAlerts.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
+    mockedTracking.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
+    mockedQuoteBoard.mockResolvedValue({ code: 200, message: 'ok', data: quoteBoardFixture() } as never)
+    mockedTransferBoard.mockResolvedValue({ code: 200, message: 'ok', data: transferBoardFixture() } as never)
+    mockedFreightBoard.mockResolvedValue({ code: 200, message: 'ok', data: freightBoardFixture() } as never)
+    mockedReceiptBoard.mockResolvedValue({ code: 200, message: 'ok', data: receiptBoardFixture() } as never)
+    mockedQuotes.mockResolvedValue({ code: 200, message: 'ok', data: quoteListFixture, _page: pageMeta(quoteListFixture) } as never)
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  const mountQuotes = async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const t = wrapper.findAll('.tab').find((x) => x.text().includes('比价'))
+    await t!.trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  it('比价页展示逐条有效报价：承运商/航线/单价/失效日', async () => {
+    const wrapper = await mountQuotes()
+    const panel = wrapper.find('[data-panel="quotes"]')
+    expect(panel.exists()).toBe(true)
+    expect(mockedQuotes).toHaveBeenCalledWith('1', undefined, 50, undefined)
+    const text = panel.text()
+    expect(text).toContain('Matson')
+    expect(text).toContain('CNSZX')
+    expect(text).toContain('USLAX')
+    expect(text).toContain('2026-12-31')
+  })
+
+  it('服务类型筛选作为参数下推，不是前端本地过滤', async () => {
+    const wrapper = await mountQuotes()
+    const panel = wrapper.find('[data-panel="quotes"]')
+    await panel.find('select').setValue('AIR')
+    await flushPromises()
+    expect(mockedQuotes).toHaveBeenLastCalledWith('1', 'AIR', 50, undefined)
+  })
+
+  it('截断时披露「不是全量」并给下一页（游标带上游）', async () => {
+    mockedQuotes.mockResolvedValue({
+      code: 200, message: 'ok', data: quoteListFixture,
+      _page: pageMeta(quoteListFixture, { hasMore: true, truncated: true, nextCursor: 'c1' })
+    })
+    const wrapper = await mountQuotes()
+    const panel = wrapper.find('[data-panel="quotes"]')
+    expect(panel.text()).toContain('不是全量')
+
+    await panel.findAll('button').find((b: any) => b.text().includes('加载下一页'))!.trigger('click')
+    await flushPromises()
+    expect(mockedQuotes).toHaveBeenLastCalledWith('1', undefined, 50, 'c1')
+  })
+
+  it('报价列表拉取失败时点名原因，不铺假报价', async () => {
+    mockedQuotes.mockResolvedValue({ code: 400, message: '无权访问该店铺的报价', data: null as any })
+    const wrapper = await mountQuotes()
+    // 区块错误走页面顶部 error-zone（与货件/调拨同模式），不在面板内自说自话
+    expect(wrapper.find('.error-zone').text()).toContain('无权访问该店铺的报价')
+    const panel = wrapper.find('[data-panel="quotes"]')
+    expect(panel.text()).not.toContain('Matson')
+    expect(panel.text()).toContain('暂无有效报价')
   })
 })
