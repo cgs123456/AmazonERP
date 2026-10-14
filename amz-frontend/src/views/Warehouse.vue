@@ -59,7 +59,7 @@
             <thead>
               <tr>
                 <th>仓库名称</th><th>编码</th><th>类型</th><th>国家</th>
-                <th>城市</th><th>联系人</th><th>容量(m³)</th><th>已用(m³)</th><th>状态</th>
+                <th>城市</th><th>联系人</th><th>容量(m³)</th><th>已用(m³)</th><th>状态</th><th>操作</th>
               </tr>
             </thead>
             <tbody>
@@ -73,8 +73,11 @@
                 <td>{{ w.capacityCbm || '-' }}</td>
                 <td>{{ w.usedCbm || 0 }}</td>
                 <td><span class="status-tag" :class="w.status === 'ACTIVE' ? 'active' : 'inactive'">{{ w.status }}</span></td>
+                <td>
+                  <button class="ghost-btn" :disabled="w.id == null" @click="openWarehouseDialog(w)">编辑</button>
+                </td>
               </tr>
-              <tr v-if="!loading && warehouses.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:warehouse" width="32" class="empty-icon" /><span>暂无仓库数据</span></div></td></tr>
+              <tr v-if="!loading && warehouses.length === 0"><td colspan="10" class="empty-row"><div class="empty-state"><Icon icon="mdi:warehouse" width="32" class="empty-icon" /><span>暂无仓库数据</span></div></td></tr>
             </tbody>
           </table>
         </div>
@@ -1110,16 +1113,31 @@ const warehouseDialog = reactive<{ visible: boolean; form: Warehouse }>({
   visible: false,
   form: { shopId: shopIdNum(), warehouseName: '', warehouseCode: '', warehouseType: 'THIRD_PARTY', country: 'US' }
 })
-const openWarehouseDialog = () => {
-  warehouseDialog.form = { shopId: shopIdNum(), warehouseName: '', warehouseCode: '', warehouseType: 'THIRD_PARTY', country: 'US' }
+/**
+ * 打开仓库弹窗：不传参＝新建，传行＝编辑（回填该行）。
+ * <p>
+ * 弹窗标题早就写了 `form.id ? '编辑仓库' : '新建仓库'` 这个分支，但此前没有任何入口能
+ * 把 id 带进来、submitWarehouse 也无条件调 createWarehouse——编辑仓库根本不可达，
+ * 误点只会「新建一个同名仓库」。这里补上编辑入口。
+ */
+const openWarehouseDialog = (w?: Warehouse) => {
+  warehouseDialog.form = w
+    ? { ...w }
+    : { shopId: shopIdNum(), warehouseName: '', warehouseCode: '', warehouseType: 'THIRD_PARTY', country: 'US' }
   warehouseDialog.visible = true
 }
 const submitWarehouse = async () => {
   try {
-    await WH.createWarehouse(warehouseDialog.form)
+    // 有 id 走更新（PUT /logistics/warehouse），否则新建（POST）——两者后端都在，
+    // 路径同为 /logistics/warehouse，靠请求体带 id 区分。
+    if (warehouseDialog.form.id != null) {
+      await WH.updateWarehouse(warehouseDialog.form)
+    } else {
+      await WH.createWarehouse(warehouseDialog.form)
+    }
     warehouseDialog.visible = false
     await loadWarehouses()
-  } catch (e) { console.warn('[Warehouse] 创建仓库失败', e) }
+  } catch (e) { console.warn('[Warehouse] 保存仓库失败', e) }
 }
 
 // ===== 入库单表单 =====

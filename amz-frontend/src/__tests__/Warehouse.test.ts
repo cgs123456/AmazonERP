@@ -8,12 +8,16 @@ vi.mock('@/api/warehouse', () => ({
   listInboundOrders: vi.fn(),
   listOutboundOrders: vi.fn(),
   updateInventoryLocation: vi.fn(),
+  createWarehouse: vi.fn(),
+  updateWarehouse: vi.fn(),
   LOCATION_CODE_MAX_LENGTH: 50
 }))
 
-import { listWarehouses, listInventory, listInboundOrders, listOutboundOrders, updateInventoryLocation } from '@/api/warehouse'
+import { listWarehouses, listInventory, listInboundOrders, listOutboundOrders, updateInventoryLocation, createWarehouse, updateWarehouse } from '@/api/warehouse'
 
 const mockedUpdateLocation = vi.mocked(updateInventoryLocation)
+const mockedCreateWarehouse = vi.mocked(createWarehouse)
+const mockedUpdateWarehouse = vi.mocked(updateWarehouse)
 
 const mockedListWarehouses = vi.mocked(listWarehouses)
 const mockedListInventory = vi.mocked(listInventory)
@@ -352,5 +356,96 @@ describe('Warehouse 库位入口的角色门禁', () => {
   it('角色未知（AppHeader 还没回 getInfo）时不隐藏入口，权限由后端判', async () => {
     const wrapper = await mountWithRole(null)
     expect(wrapper.find('.loc-btn').exists()).toBe(true)
+  })
+})
+
+describe('Warehouse 编辑仓库（此前 updateWarehouse 零调用）', () => {
+  /**
+   * 弹窗标题早就写了 `form.id ? '编辑仓库' : '新建仓库'` 这个分支，但仓库列表既没有
+   * 「编辑」入口、submitWarehouse 也无条件调 createWarehouse——编辑仓库根本不可达，
+   * 且误点只会「新建一个同名仓库」。本组钉住编辑链路：入口、回填、走 PUT、成功后重拉。
+   */
+  const wh = (id: number, name: string, code: string) => ({
+    id, shopId: 1, warehouseName: name, warehouseCode: code,
+    warehouseType: 'THIRD_PARTY' as const, country: 'US', city: 'LA', contactName: '张三', capacityCbm: 100
+  })
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '1')
+    mockedListWarehouses.mockReset()
+    mockedCreateWarehouse.mockReset()
+    mockedUpdateWarehouse.mockReset()
+    mockedListInventory.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: page({ returned: 0 }) })
+    mockedListInboundOrders.mockResolvedValue({ code: 200, message: 'ok', data: [] })
+    mockedListOutboundOrders.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: page({ returned: 0 }) })
+    mockedListWarehouses.mockResolvedValue({ code: 200, message: 'ok', data: [wh(5, '洛杉矶仓', 'LA-01')] })
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  const mountPage = async () => {
+    const wrapper = mount(Warehouse, { shallow: true, global: globalStubs })
+    await flushPromises()
+    return wrapper
+  }
+
+  const editBtn = (wrapper: any) =>
+    wrapper.findAll('button').find((b: any) => b.text() === '编辑')
+
+  it('仓库行提供「编辑」入口（弹窗的编辑分支可达）', async () => {
+    const wrapper = await mountPage()
+    expect(editBtn(wrapper)).toBeTruthy()
+  })
+
+  it('点编辑把该行数据回填进弹窗，标题为「编辑仓库」', async () => {
+    const wrapper = await mountPage()
+    await editBtn(wrapper)!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('.modal-mask')
+    expect(dialog.text()).toContain('编辑仓库')
+    const nameInput = dialog.findAll('input')[0].element as HTMLInputElement
+    expect(nameInput.value).toBe('洛杉矶仓')
+    const codeInput = dialog.findAll('input')[1].element as HTMLInputElement
+    expect(codeInput.value).toBe('LA-01')
+  })
+
+  it('编辑保存走 updateWarehouse（PUT），不误调 createWarehouse', async () => {
+    mockedUpdateWarehouse.mockResolvedValue({ code: 200, message: 'ok', data: wh(5, '洛杉矶仓2', 'LA-01') })
+    const wrapper = await mountPage()
+    await editBtn(wrapper)!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('.modal-mask')
+    await dialog.findAll('input')[0].setValue('洛杉矶仓2')
+    await dialog.findAll('button').find((b: any) => b.text() === '保存')!.trigger('click')
+    await flushPromises()
+
+    expect(mockedUpdateWarehouse).toHaveBeenCalledTimes(1)
+    expect(mockedUpdateWarehouse).toHaveBeenCalledWith(expect.objectContaining({ id: 5, warehouseName: '洛杉矶仓2' }))
+    expect(mockedCreateWarehouse).not.toHaveBeenCalled()
+    // 成功后重拉列表
+    expect(mockedListWarehouses).toHaveBeenCalledTimes(2)
+  })
+
+  it('新建仍走 createWarehouse（编辑分支不误伤新建）', async () => {
+    mockedCreateWarehouse.mockResolvedValue({ code: 200, message: 'ok', data: wh(9, '新仓', 'NEW-01') })
+    const wrapper = await mountPage()
+    await wrapper.findAll('button').find((b: any) => b.text() === '+ 新建仓库')!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('.modal-mask')
+    expect(dialog.text()).toContain('新建仓库')
+    await dialog.findAll('input')[0].setValue('新仓')
+    await dialog.findAll('input')[1].setValue('NEW-01')
+    await dialog.findAll('button').find((b: any) => b.text() === '保存')!.trigger('click')
+    await flushPromises()
+
+    expect(mockedCreateWarehouse).toHaveBeenCalledTimes(1)
+    expect(mockedUpdateWarehouse).not.toHaveBeenCalled()
   })
 })

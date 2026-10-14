@@ -198,6 +198,38 @@ test.describe('Warehouse', () => {
     await expect(page.locator('.panel:visible')).toContainText('IN-2026-0001')
     await expect(page.locator('.panel:visible')).toContainText('IN_TRANSIT')
   })
+
+  test('编辑仓库：入口可达、回填该行、保存走 PUT（不再是「编辑不可达」）', async ({ page }) => {
+    const putCalls: string[] = []
+    await page.route(/\/api\/logistics\/warehouse$/, (route) => {
+      if (route.request().method() === 'PUT') putCalls.push(route.request().postData() || '')
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { id: 1, shopId: 1, warehouseName: 'US-West-FBA(改)', warehouseCode: 'USW-01', warehouseType: 'FBA', country: 'US' } })
+      })
+    })
+
+    await page.goto('/warehouse')
+    await expect(page.locator('.skeleton-zone')).toHaveCount(0, { timeout: 15000 })
+
+    // 仓库列表第一行的「编辑」入口
+    const editBtn = page.locator('.panel:visible .data-table tbody tr').first().locator('button', { hasText: '编辑' })
+    await editBtn.click()
+
+    const dialog = page.locator('.modal-mask')
+    await expect(dialog).toContainText('编辑仓库')
+    // 回填该行数据（第一行是 US-West-FBA）
+    await expect(dialog.locator('input').first()).toHaveValue('US-West-FBA')
+
+    await dialog.locator('input').first().fill('US-West-FBA(改)')
+    await dialog.locator('button', { hasText: '保存' }).click()
+
+    await expect.poll(() => putCalls.length).toBeGreaterThan(0)
+    expect(putCalls[0]).toContain('US-West-FBA(改)')
+    // PUT 请求体必须带 id（后端靠它区分更新 vs 新建）
+    expect(putCalls[0]).toContain('"id":1')
+  })
 })
 
 // ═══ 9. 物流看板 ═══

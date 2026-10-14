@@ -1215,6 +1215,10 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
 
   // ===== 海外仓 /warehouse =====
   { match: /^\/logistics\/warehouse\/list\//, data: WAREHOUSES },
+  // 新建（POST）与编辑（PUT）同为 /logistics/warehouse，靠请求体是否带 id 区分。
+  // 此前两者都没登记，落到 EMPTY_PAGE 对象兜底——新建/编辑成功后页面重拉列表时
+  // 前端拿到的是对象而不是 Warehouse，虽不崩但桩对真实端点给了错形状。
+  { match: /^\/logistics\/warehouse$/, data: { ...WAREHOUSES[0], warehouseName: 'E2E 编辑后的仓' } },
   { match: /^\/logistics\/warehouse\/inventory$/, data: WAREHOUSE_INVENTORY, page: FULL_PAGE(WAREHOUSE_INVENTORY.length) },
   { match: /^\/logistics\/inbound\/list\//, data: INBOUND_ORDERS, page: FULL_PAGE(INBOUND_ORDERS.length) },
   // 批量到货（逐单独立）：回一份「一成一败」的报告，UI 必须把两行都显示出来
