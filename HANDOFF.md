@@ -1,104 +1,107 @@
-# HANDOFF — 通知未读红点 + 全部已读接入（2026-10-14 最新更新）
+# HANDOFF — 用户管理角色分配收口 + 通知红点（2026-10-14 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S9）：接 §S8.4 的「② 类功能缺口」最高价值项——把此前**零调用**的
-> `getUnreadCount` / `markAllNotificationsRead` 两个孤儿 api 接上 UI：
-> 顶栏「消息」入口未读红点（`AppHeader.vue`）+ 消息页「全部已读」按钮
-> （`NotificationPage.vue`）。后端两端点（`GET /user/notification/unread-count`、
-> `POST /user/notification/read-all`）早已实现且带 `@RequireRole`，本轮**零后端改动**。
+> 本次更新（§S9）：① 通知未读红点 + 全部已读（孤儿 api 接入）；② **用户管理角色分配**
+> 收口——该页此前零测试覆盖，补测暴露两处真实缺陷（失败原因被重拉抹掉、创建时间列恒空），
+> 并顺带修掉由此暴露的 CI 真红（`ShopServiceMySqlIT` 手写 DDL 漏列）+ 加静态契约防再犯。
+> 详见 §S9。
 
 ## 项目现状一句话
 
-**CI 全绿（run `38499764153`，2026-10-14，HEAD `0ec9d10`）**：11 个 job 全过——后端 **2222/0F/0E/2S**、
-前端 vitest **517/517**（本轮 +10）+ vue-tsc 0 错 + build 通过 + **E2E 148 passed**、
-hygiene 0 / release tools 91/91 / stub-shape RED 0（170 注册/114 过）/
+**CI 全绿（run `38506574647`，2026-10-14，HEAD `0cfa96a`）**：11 个 job 全过——后端 **2280/0F/0E/2S**、
+前端 vitest **527/527** + vue-tsc 0 错 + build 通过 + **E2E 150 passed**、
+hygiene 0 / release tools 91/91 / stub-shape RED 0（173 注册/114 过）/
 synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
-本机整仓回归 **1968/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑故为 2222）；
+本机整仓回归 **2280/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑）；
 迁移 **65** 个、Flyway 活表 **116** 张、实体 110 / 0 漂移、零引用表 0、
 release tools 91/91、schema 快照 103 表/14 库一致。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.4。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
 
-## S9. 交接：2026-10-14 通知未读红点 + 全部已读（已完成）
+## S9. 交接：2026-10-14 通知红点 + 用户管理角色分配（已完成）
 
-> 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条：接 ② 类功能缺口里
-> 用户可见价值最高的两项。**commit `0ec9d10` 已推送、CI 全绿（run `38499764153`
-> 11 job 全过）**，工作区干净、与 origin 同步。
+> 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条 + 用户点名的「先处理
+> UserManagement 的角色分配，再做店铺 CRUD」。**commit `0ec9d10` / `9be4de8` / `0cfa96a`
+> 已推送、CI 全绿（run `38506574647` 11 job 全过）**，工作区干净、与 origin 同步。
 
-### 1. 做了什么
+### 1. 通知未读红点 + 全部已读（§S9.1，commit `0ec9d10`）
 
-把 `src/api/notification.ts` 里两个**零调用**的孤儿函数接上 UI（§S8 扫描把它们
-列为 ② 类功能缺口——后端已实现、前端没人用）：
+把 `src/api/notification.ts` 里两个**零调用**的孤儿函数接上 UI：
 
 | 能力 | 落点 | 行为 |
 |---|---|---|
-| `getUnreadCount` | `AppHeader.vue` 消息入口 `.unread-badge` | 登录后拉未读数；**0 不渲染**（「0」徽标会被当成一条待处理消息）；>99 显示 `99+`；请求失败**静默降级**为不显示（未读数只是提示，拉不到不该打断用户） |
-| `markAllNotificationsRead` | `NotificationPage.vue` `.mark-all-btn` | **仅存在未读行时出现**（没有未读可清时不给一个点了没反应的按钮）；点击**二次确认**（文案点明「不可撤销」）；成功后本地行置已读 + 重拉服务端列表对齐 `isRead`；失败**点名原因**且不重拉、不装作成功 |
+| `getUnreadCount` | `AppHeader.vue` 消息入口 `.unread-badge` | 登录后拉未读数；**0 不渲染**；>99 显示 `99+`；请求失败**静默降级**为不显示 |
+| `markAllNotificationsRead` | `NotificationPage.vue` `.mark-all-btn` | **仅存在未读行时出现**；点击**二次确认**（「不可撤销」）；成功后本地置已读 + 重拉对齐；失败**点名原因**且不重拉 |
 
-- **跨组件同步**：已读操作后派发 `amz:notifications-changed` 事件，顶栏监听后重拉未读数
-  （沿用仓库既有的 `amz:auth-changed` 事件模式）。`handleView`（单条查看）也一并派发。
-- **顺带重构**：把 `onMounted` 里的历史加载抽成 `loadHistory()` 复用——「全部已读」成功后
-  需要重拉对齐服务端状态。重拉时**丢弃旧历史行、只保留会话内实时行**再按服务端重建，
-  避免「已读后又重拉」残留旧未读（原实现是 push 增量，重拉会重复）。
+跨组件同步用 `amz:notifications-changed` 事件（沿用 `amz:auth-changed` 模式）。顺带把
+`onMounted` 的历史加载抽成 `loadHistory()` 复用。vitest +10、E2E +2、变异 2 处均红。
 
-### 2. 测试与验证
+### 2. 用户管理角色分配收口（§S9.2，commit `9be4de8` + `0cfa96a`）
 
-- **vitest 新增 2 文件 10 例**：`AppHeaderUnreadBadge.test.ts`（5：未登录不请求/有未读显示数字/
-  0 不显示/事件后重拉/失败静默降级）、`NotificationPage.test.ts`（5：空列表无按钮/有未读有按钮且唯一/
-  二次确认文案/确认后调后端+重拉+派发事件/后端拒绝点名）。
-  **修前 6 例红**（`getUnreadCount`/`markAllNotificationsRead` 未接，`mark-all-btn` 不存在）。
-- **E2E 新增 2 条**（`full-interaction.spec.ts` Notifications 段）：顶栏红点显示、消息页
-  全部已读全流程（确认 → 按钮消失 → 红点消失）。用**后注册的 route 覆盖**桩的默认空态
-  才能走到这条路径（默认 `/user/notification/*` 桩给 0 未读/空列表）。
-- **桩同步（防假绿）**：`e2e/support/api-stub.ts` 显式登记 `/user/notification/unread-count`
-  （`data: 0`）与 `/user/notification/read-all`（`data: true`）——顶栏在**每个**页面加载时都会
-  请求未读数，不登记会落到 `EMPTY_PAGE` **对象**兜底（正是 stub_shape_audit 头注自认的
-  「桩越像真的越会替字段漂移打掩护」）。登记后 stub-shape `registrations=170 / RED=0`。
-- **变异验证 2 处均红**（已还原）：
-  ① `AppHeader.vue` 红点 `v-if="unreadCount > 0"` → `v-if="false"`：2 例红；
-  ② `NotificationPage.vue` 的 `markAllNotificationsRead()` 换成假 resolve：2 例红。
-- **本机门禁全绿**：vue-tsc 0 错、vitest **517/517**、vite build 通过、hygiene 0 findings
-  （两种模式）、release tools **91/91**、stub-shape RED 0（170/114）、entity drift 0、
-  零引用表 0、endpoint self-test 25/25 + reverse 0、param-name 24/24。
-- **CI（run `38499764153`，HEAD `0ec9d10`）11 job 全过**：frontend 腿实测 vitest 517/517、
-  E2E **148 passed**、vue-tsc + build 通过；test/hygiene/docker/runtime-smoke 等全绿。
-  首轮 `test` 腿红过一次，根因是 Maven Central **`Connection reset`** 拉不到
-  `spring-boot-starter-data-mongodb`（网络瞬时抖动，非代码问题——本轮是纯前端改动），
-  `gh run rerun --failed` 重跑即全绿（与历史「发版瞬时网络失败重跑」同类，不改代码）。
+**核实结论（先读再动手）**：UserManagement 的**角色分配其实早已接好**
+（`changeRole` → `updateUserRole`，后端 `/user/{id}/role` 也在）——它不是「孤儿 api」。
+真正的缺口是**零测试覆盖**（无 vitest、不在任何 E2E、端点未登记桩），补测后暴露两处真实缺陷：
 
-### 3. 踩过的坑（本轮）
+1. **改角色/改状态被后端拒绝时，失败原因会被重拉列表抹掉**：失败分支先
+   `pushError(原因)` 再 `await load()`，而 `load()` 成功时执行 `errors.value = []`，
+   把刚写进去的原因一起清空——用户只看到下拉弹回旧值、没有任何说明。
+   改为**按标签前缀隔离**（仓库既有前缀过滤模式）：`load` 只清「用户列表：」、
+   成功改角色/状态只清自己那一类；失败时同样重拉以把控件弹回服务端真值。
+2. **用户管理页「创建时间」列恒为「—」**：DDL 有 `create_time`、前端 `UserRow` 契约
+   也声明了 `createTime`，唯独后端 `User` pojo 未声明该字段，列表接口从不返回它。
+   补 `@TableField("create_time") LocalDateTime createTime`（只读展示，默认值由 DB
+   `CURRENT_TIMESTAMP` 提供；drift 门禁 0 漂移）。
 
-1. **坑 11 复现（allowlist 哈希失效）**：改 `AppHeader.vue` 后 hygiene 报 1 条
-   `secret-like-assignment`（第 173 行那条读取本地登录凭证的既有语句——
-   本就在豁免里，与本次改动无关）。**按既有纪律重新针定该文件的 sha256，不放宽任何检查**
-   （`_sha256_file` 按 LF 归一化后重算）。教训不变：改动被 allowlist 按文件哈希钉住的
-   文件，必须同步重签字。
-2. **Python 写文件改了行尾（CRLF 污染）**：用 `io.open(..., newline='')` 做变异/还原时，
-   写入把 `NotificationPage.vue` 变成了 CRLF（仓库 `.gitattributes` 规定 `*.vue` 为 LF，
-   其余 .vue 全是 LF）。`git diff` 未见全文件 diff（`.gitattributes` 归一化兜住了），
-   但工作副本已偏离约定——**已按 `newline='\n'` 重新归一化**。教训：用脚本改文件时显式
-   指定 `newline`，别让平台默认行尾写进去。
-3. **E2E 冷启动抖动（既有开放项，非本轮引入）**：全量跑每轮有 ~3–5 例失败、**失败集合每轮不同、
-   单跑全过**，报错形如 `Failed to fetch dynamically imported module: /src/views/Xxx.vue`
-   或 `page.goto` 超时——是 dev server 按需编译路由 chunk 的抖动（`playwright.config.ts`
-   已记该开放项）。**本轮做了对照实验取证**：`git stash` 掉全部改动后跑 pristine HEAD，
-   同样 5 例失败（141 passed）、集合与改动版完全不同；改动版 143 passed（+2 = 本轮新增 E2E）。
-   故抖动与本次改动无关。判据以 CI 为准（CI 上 126 passed）。
+**连带修掉由此暴露的 CI 真红（`0cfa96a`）**：给 User 补 `createTime` 后 CI `test` 腿红——
+`ShopServiceMySqlIT` 用**手写** `CREATE TABLE` 建 `amz_user`，漏了 `create_time`，
+而该 IT 是 `SHOP_IT_URL` 门控的真机用例（本机无 DB 整类跳过、只有 CI 真跑），
+**本机全绿也发现不了**。这是同一份手写 DDL 的**第二次**漂移（2026-10-11 漏 V4 的
+`status`，本次漏 V1 的 `create_time`）。故除补列外，新增 **`ShopItUserDdlContractTest`**：
+静态比对（读 IT 源码里的手写建表块 + 读 User 实体 MyBatis 映射列），不起 DB、本机能跑，
+漏列即红——把这类「本机绿 CI 红」提前到本机。变异验证：去掉 `create_time` → 用例红（已还原）。
 
-### 4. 下一步
+### 3. 测试与验证
 
-- **§S8.3 的 ② 类功能缺口仍剩约 18 项**（`updateSupplier`/`updateWarehouse`/`rmaDetail`/
-  `getShipment`/`getBuyBoxSummary`/`listQuotes`/`calculateFreight`/`updateShipment`/
-  `assignShopUser`/`unassignShopUser`/`createShop`/`updateShop`/`updateShopStatus`/
-  `discrepancyDetail`/`executeRules` + 广告域 CRUD 6 个）。**不能删**（后端已实现，删=毁功能）。
-  按价值排序接 UI：**店铺 CRUD（createShop/updateShop/updateShopStatus）** 是下一个高价值项
-  （多店铺 ERP 的立身之本，后端 S7.2 已交付 6 端点，前端仅 UserManagement 有角色分配）。
-- **①-c 的 5 个真零引用常量**按 §S8 结论**保留**（语义文档），若要删先确认 api/__tests__/e2e
-  三处均零引用。
-- 纪律不变：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
+- **前端**：vitest +1 文件 10 例（UserManagement，修前 3 红）、E2E +3 条 + `/users` 入侧边栏
+  跳转 NAV；桩显式登记 `/user/list`（数组）、`/{id}/role`、`/{id}/status`。
+- **后端**：+2 文件 10 例——`UserAdminServiceTest`（9 例，此前 listUsers/updateRole/updateStatus
+  三方法零覆盖：非 ADMIN 拒绝、角色白名单、不能改自己/禁用自己、目标不存在点名、createTime 透传）
+  + `ShopItUserDdlContractTest`（1 例静态 DDL 契约）。
+- **变异验证 3 处**：后端去掉自检 → 用例红（**首轮断言过松、已收紧到具体原因后确认真红**）；
+  前端前缀清理换回 blanket clear → 3 例红；手写 DDL 去掉 create_time → 静态契约红。均还原。
+- **门禁全绿**：后端整仓 2280/0F/0E/35S、vue-tsc 0、vitest 527/527、E2E 150 passed、
+  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0、drift 0、零引用 0。
+- **CI（run `38506574647`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`（4/4，未跳过，
+  证明 DDL 修复在真实 MySQL 8 上成立）与新静态契约；frontend 腿 vitest 527 + E2E 150。
+
+### 4. 踩过的坑（本轮）
+
+1. **坑 11 两次复现（allowlist 哈希失效）**：改 `AppHeader.vue` 与 `ShopServiceMySqlIT.java`
+   后 hygiene 各报 1 条 `secret-like-assignment`（都是既有豁免行、与改动无关）。
+   **按纪律重新针定 sha256，不放宽任何检查**。
+2. **Python 写文件改了行尾（CRLF 污染）**：用脚本做变异/还原时把 `.vue`/`.java` 写成 CRLF
+   （`.gitattributes` 规定 LF）。`git diff` 未见全文件 diff 但工作副本已偏离约定——
+   **已用 `newline='\n'` 重新归一化**。教训：脚本改文件显式指定 `newline`。
+3. **「本机绿 CI 红」第 N 次实证**：手写 DDL 漏列 → 本机跳过的门控 IT → 只有 CI 红。
+   本轮的对策是**加一条本机能跑的静态契约**，而不是「下次记得同步」。
+4. **变异验证暴露断言过松**：首轮「不能改自己的角色」用例只断言「抛异常」，
+   去掉后端自检后仍绿（因为「目标不存在」分支也抛）——**收紧到断言具体原因后确认真红**。
+   与仓库既有教训一致：变异不红 ≠ 断言够用，要确认目标代码真被改掉、断言真在观察该行为。
+
+### 5. 下一步
+
+- **店铺 CRUD（用户点名的下一个高价值项）**：`createShop` / `updateShop` / `updateShopStatus`
+  前端 api 已在 `api/auth.ts` 定义但**零页面调用**（孤儿 api），后端 S7.2 已交付 6 个店铺端点。
+  接 UI 落点建议：`UserManagement` 旁新增店铺管理页，或 `UserManagement` 加「店铺」Tab
+  （含店铺列表 `getMyShops`、创建、改主数据、改授权状态；`assignShopUser`/`unassignShopUser`
+  是用户-店铺绑定，与角色分配同页更自然）。
+- **§S8.3 ② 类剩余约 15 项**（`updateSupplier`/`updateWarehouse`/`rmaDetail`/`getShipment`/
+  `getBuyBoxSummary`/`listQuotes`/`calculateFreight`/`updateShipment`/`discrepancyDetail`/
+  `executeRules` + 广告域 CRUD 等）。
+- 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；**改门控 IT 后盯 CI**。
 
 ## S8. 交接：2026-10-13 孤儿 API 清理会话（未完成，含下一步）
 
