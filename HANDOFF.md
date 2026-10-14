@@ -1,31 +1,33 @@
-# HANDOFF — 用户管理角色分配收口 + 通知红点（2026-10-14 最新更新）
+# HANDOFF — 店铺管理页 + 用户管理角色分配 + 通知红点（2026-10-14 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > 本次更新（§S9）：① 通知未读红点 + 全部已读（孤儿 api 接入）；② **用户管理角色分配**
 > 收口——该页此前零测试覆盖，补测暴露两处真实缺陷（失败原因被重拉抹掉、创建时间列恒空），
-> 并顺带修掉由此暴露的 CI 真红（`ShopServiceMySqlIT` 手写 DDL 漏列）+ 加静态契约防再犯。
-> 详见 §S9。
+> 并顺带修掉由此暴露的 CI 真红（`ShopServiceMySqlIT` 手写 DDL 漏列）+ 加静态契约防再犯；
+> ③ **店铺管理页**——接 6 个孤儿店铺 api（后端 S7.2 早已就绪），并补「已绑定用户」读端点
+> （此前只有写端点，授权界面是盲写），顺带修一处前端类型字段名漂移。详见 §S9。
 
 ## 项目现状一句话
 
-**CI 全绿（run `38506574647`，2026-10-14，HEAD `0cfa96a`）**：11 个 job 全过——后端 **2280/0F/0E/2S**、
-前端 vitest **527/527** + vue-tsc 0 错 + build 通过 + **E2E 150 passed**、
-hygiene 0 / release tools 91/91 / stub-shape RED 0（173 注册/114 过）/
+**CI 全绿（run `38510649720`，2026-10-14，HEAD `a1d294d`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
+前端 vitest **539/539** + vue-tsc 0 错 + build 通过 + **E2E 153 passed**、
+hygiene 0 / release tools 91/91 / stub-shape RED 0（180 注册/118 过）/
 synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
-本机整仓回归 **2280/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑）；
+本机整仓回归 **2283/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑）；
 迁移 **65** 个、Flyway 活表 **116** 张、实体 110 / 0 漂移、零引用表 0、
 release tools 91/91、schema 快照 103 表/14 库一致。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.4。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.6。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
 
-## S9. 交接：2026-10-14 通知红点 + 用户管理角色分配（已完成）
+## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理（已完成）
 
-> 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条 + 用户点名的「先处理
-> UserManagement 的角色分配，再做店铺 CRUD」。**commit `0ec9d10` / `9be4de8` / `0cfa96a`
-> 已推送、CI 全绿（run `38506574647` 11 job 全过）**，工作区干净、与 origin 同步。
+> 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条 + 用户点名的
+> 「先处理 UserManagement 的角色分配，再做店铺 CRUD」。**commit `0ec9d10` / `9be4de8` /
+> `0cfa96a` / `1b9c47d` / `a1d294d` 已推送、CI 全绿（run `38510649720` 11 job 全过）**，
+> 工作区干净、与 origin 同步。
 
 ### 1. 通知未读红点 + 全部已读（§S9.1，commit `0ec9d10`）
 
@@ -63,45 +65,67 @@ release tools 91/91、schema 快照 103 表/14 库一致。
 静态比对（读 IT 源码里的手写建表块 + 读 User 实体 MyBatis 映射列），不起 DB、本机能跑，
 漏列即红——把这类「本机绿 CI 红」提前到本机。变异验证：去掉 `create_time` → 用例红（已还原）。
 
-### 3. 测试与验证
+### 3. 店铺管理页（§S9.3，commit `a1d294d`）
 
-- **前端**：vitest +1 文件 10 例（UserManagement，修前 3 红）、E2E +3 条 + `/users` 入侧边栏
-  跳转 NAV；桩显式登记 `/user/list`（数组）、`/{id}/role`、`/{id}/status`。
-- **后端**：+2 文件 10 例——`UserAdminServiceTest`（9 例，此前 listUsers/updateRole/updateStatus
-  三方法零覆盖：非 ADMIN 拒绝、角色白名单、不能改自己/禁用自己、目标不存在点名、createTime 透传）
-  + `ShopItUserDdlContractTest`（1 例静态 DDL 契约）。
-- **变异验证 3 处**：后端去掉自检 → 用例红（**首轮断言过松、已收紧到具体原因后确认真红**）；
-  前端前缀清理换回 blanket clear → 3 例红；手写 DDL 去掉 create_time → 静态契约红。均还原。
-- **门禁全绿**：后端整仓 2280/0F/0E/35S、vue-tsc 0、vitest 527/527、E2E 150 passed、
-  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0、drift 0、零引用 0。
-- **CI（run `38506574647`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`（4/4，未跳过，
-  证明 DDL 修复在真实 MySQL 8 上成立）与新静态契约；frontend 腿 vitest 527 + E2E 150。
+**核实结论（先读再动手）**：后端店铺 CRUD **早已完整**（`ShopController` 六端点 +
+`ShopServiceImpl` 校验 + `ShopServiceImplTest` 10 例），前端 6 个店铺 api 函数
+（`getMyShops`/`createShop`/`updateShop`/`updateShopStatus`/`assignShopUser`/`unassignShopUser`）
+**全是零调用孤儿**——纯 UI 缺口。但发现一个真实障碍：**没有「列出某店铺已绑定用户」的读端点**，
+授权界面看不到现状、解绑只能靠报错试，属盲写（违反仓库「不盲写/不假成功」纪律）。故：
 
-### 4. 踩过的坑（本轮）
+- **后端补读端点** `GET /user/shop/{shopId}/users`（`ShopUserVo`：userId/nickname/phone/role）：
+  店铺不存在时**点名拒绝**，不返回空列表冒充「无人绑定」。`ShopService.listShopUsers` 限定 ADMIN。
+- **前端新页面** `ShopManagement.vue`（路由 `/shops` + 侧边栏「店铺管理」入口）：
+  店铺列表、新建/编辑主数据（名称+marketplaceId 必填，与后端 `validateShop` 同口径前置校验）、
+  改授权状态（已授权/未授权/授权过期三态下拉）、授权用户弹窗（先展示当前绑定再操作 +
+  分配 + 解绑二次确认）。说明区披露三条边界：**凭证唯一入口是连接器中心**、
+  **授权状态 ≠ 凭证已配置**、**JWT 24h 时效（分配/回收后需重新登录）**。
+- **顺带修一处类型字段名漂移**：前端 `ShopListItem` 此前 `extends ShopOption`（字段 `name`），
+  而后端 `/user/shop/list` 返回 `ShopVo`（字段 **`shopName`**）——两个不同 DTO，
+  导致店名恒为 `undefined`。该类型此前**零消费**所以从未暴露；本轮页面测试当场抓到
+  （`expected 'ID店铺名称…' to contain '美国站主店'`）。已改为独立 interface 用 `shopName`。
 
-1. **坑 11 两次复现（allowlist 哈希失效）**：改 `AppHeader.vue` 与 `ShopServiceMySqlIT.java`
-   后 hygiene 各报 1 条 `secret-like-assignment`（都是既有豁免行、与改动无关）。
-   **按纪律重新针定 sha256，不放宽任何检查**。
-2. **Python 写文件改了行尾（CRLF 污染）**：用脚本做变异/还原时把 `.vue`/`.java` 写成 CRLF
-   （`.gitattributes` 规定 LF）。`git diff` 未见全文件 diff 但工作副本已偏离约定——
-   **已用 `newline='\n'` 重新归一化**。教训：脚本改文件显式指定 `newline`。
-3. **「本机绿 CI 红」第 N 次实证**：手写 DDL 漏列 → 本机跳过的门控 IT → 只有 CI 红。
-   本轮的对策是**加一条本机能跑的静态契约**，而不是「下次记得同步」。
+### 4. 测试与验证
+
+- **前端**：vitest +2 文件 22 例（UserManagement 10 + ShopManagement 12；均修前红）、
+  E2E +7 条（UserManagement 3 + ShopManagement 4）+ `/users`、`/shops` 入侧边栏跳转 NAV；
+  桩显式登记 `/user/list`、`/{id}/role`、`/{id}/status`、`/user/shop/list`（数组）、
+  `/{shopId}/users`、`/{shopId}/status`、`/{shopId}/assign`、`/{shopId}/assign/remove`。
+- **后端**：+3 文件 13 例——`UserAdminServiceTest`（9 例，此前 listUsers/updateRole/updateStatus
+  三方法零覆盖）+ `ShopItUserDdlContractTest`（1 例静态 DDL 契约）+ `ShopServiceImplTest` +3 例
+  （listShopUsers 正常/店铺不存在点名/非 ADMIN 拒绝）。
+- **变异验证 6 处均红**（均已还原）：后端去掉自检；前端前缀清理换回 blanket clear；
+  手写 DDL 去掉 create_time；前端不读绑定列表；后端缺失店铺返回空；前端去掉前置校验。
+- **门禁全绿**：后端整仓 2283/0F/0E/35S、vue-tsc 0、vitest 539/539、E2E 153 passed、
+  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0（180 注册/118 过）、
+  drift 0、零引用 0、endpoint self-test 25/25 + reverse 0、param-name 24/24。
+- **CI（run `38510649720`，HEAD `a1d294d`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`
+  （4/4，未跳过）与新静态契约；frontend 腿 vitest 539 + E2E 153。
+
+### 5. 踩过的坑（本轮）
+
+1. **坑 11 三次复现（allowlist 哈希失效）**：改 `AppHeader.vue` / `ShopServiceMySqlIT.java` /
+   `api/auth.ts` / `router/index.ts` 后 hygiene 各报 `secret-like-assignment`
+   （都是既有豁免行、与改动无关）。**按纪律逐个重新针定 sha256，不放宽任何检查**。
+2. **Python 写文件改了行尾（CRLF 污染）**：用脚本做变异/还原时把 `.vue`/`.ts`/`.java`
+   写成 CRLF（`.gitattributes` 规定 LF）。`git diff` 未见全文件 diff 但工作副本已偏离约定——
+   **已用 `newline='\n'` 逐个归一化**。教训：脚本改文件显式指定 `newline`。
+3. **「本机绿 CI 红」实证**：手写 DDL 漏列 → 本机跳过的门控 IT → 只有 CI 红。
+   对策是**加一条本机能跑的静态契约**，而不是「下次记得同步」。
 4. **变异验证暴露断言过松**：首轮「不能改自己的角色」用例只断言「抛异常」，
    去掉后端自检后仍绿（因为「目标不存在」分支也抛）——**收紧到断言具体原因后确认真红**。
    与仓库既有教训一致：变异不红 ≠ 断言够用，要确认目标代码真被改掉、断言真在观察该行为。
+5. **测试当场抓到真实类型漂移**：`ShopListItem` 用 `name` 而后端返回 `shopName`——
+   写页面测试时第一个渲染断言就红了。**「零消费的类型」最容易藏漂移**：没人用就没人发现。
 
-### 5. 下一步
+### 6. 下一步
 
-- **店铺 CRUD（用户点名的下一个高价值项）**：`createShop` / `updateShop` / `updateShopStatus`
-  前端 api 已在 `api/auth.ts` 定义但**零页面调用**（孤儿 api），后端 S7.2 已交付 6 个店铺端点。
-  接 UI 落点建议：`UserManagement` 旁新增店铺管理页，或 `UserManagement` 加「店铺」Tab
-  （含店铺列表 `getMyShops`、创建、改主数据、改授权状态；`assignShopUser`/`unassignShopUser`
-  是用户-店铺绑定，与角色分配同页更自然）。
-- **§S8.3 ② 类剩余约 15 项**（`updateSupplier`/`updateWarehouse`/`rmaDetail`/`getShipment`/
+- **§S8.3 ② 类剩余约 14 项**（`updateSupplier`/`updateWarehouse`/`rmaDetail`/`getShipment`/
   `getBuyBoxSummary`/`listQuotes`/`calculateFreight`/`updateShipment`/`discrepancyDetail`/
-  `executeRules` + 广告域 CRUD 等）。
-- 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；**改门控 IT 后盯 CI**。
+  `executeRules` + 广告域 CRUD 等）。**不能删**（后端已实现，删=毁功能）。
+- **其他可能的高价值项**：`getBuyBoxSummary`（选品辅助）、`listQuotes`/`calculateFreight`
+  （物流比价）——需先核实后端是否真就绪（不是所有孤儿 api 都像店铺这样后端齐全）。
+- 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；**改门控 IT / 后端 DTO 后盯 CI**。
 
 ## S8. 交接：2026-10-13 孤儿 API 清理会话（未完成，含下一步）
 
@@ -154,9 +178,9 @@ release tools 91/91、schema 快照 103 表/14 库一致。
    `zeroProfitReport` 是 api 内部使用、5 个真零引用常量**建议保留**（语义文档）。
    若要删这 5 个，先确认 api/__tests__/e2e 三处均零引用——**别凭扫描直接删**。
 2. ~~**接 ② 类最高价值项**：`getUnreadCount` + `markAllNotificationsRead`
-   （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。~~ **已完成（2026-10-14，见 §S9）**：
+   （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。~~ **已完成（2026-10-14，见 §S9.1）**：
    顶栏红点 + 消息页「全部已读」已接入，vitest +10、E2E +2、变异 2 处均红。
-   ② 类剩余约 18 项（店铺 CRUD 为下一个高价值项）见 §S9.4。
+   ② 类剩余约 14 项见 §S9.6（店铺 CRUD 已完成，见 §S9.3）。
 3. 每步按既有纪律：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
 
 ### 5. 踩过的坑（本轮新增，务必先读再动手）
