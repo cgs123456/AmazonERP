@@ -282,6 +282,32 @@ test.describe('Finance 交互', () => {
     await page.locator('.filter-btn', { hasText: /^查询$/ }).click()
     await expect(rows).toHaveCount(3)
   })
+
+  test('费用差异详情：拉单条并展示「为什么判成差异」（evidence）', async ({ page }) => {
+    const detailPaths: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (/\/finance\/discrepancy\/\d+$/.test(u.pathname)) detailPaths.push(u.pathname + u.search)
+    })
+    await page.goto('/finance')
+    await waitReady(page)
+    await page.locator('.dim-tab', { hasText: '费用差异' }).click()
+
+    // 列表只列金额/状态，不显示 evidence；点「详情」才拉单条
+    const discPanel = page.locator('[data-panel="discrepancy"]')
+    await expect(discPanel.locator('tbody tr').first()).toContainText('INBOUND_SHORTAGE')
+
+    await discPanel.locator('button', { hasText: '详情' }).first().click()
+    await expect.poll(() => detailPaths.length).toBe(1)
+    // 详情请求必须带 shopId（后端按它做归属校验）
+    expect(detailPaths[0]).toContain('shopId=')
+
+    const detail = page.locator('[data-panel="discrepancy-detail"]')
+    await expect(detail).toBeVisible()
+    await expect(detail).toContainText('结算原表实收 70 与采购到货 100 不符')
+    await expect(detail).toContainText('2026-10-01')
+    await expect(detail).toContainText('SKU-9')
+  })
 })
 
 test.describe('Warehouse 交互', () => {

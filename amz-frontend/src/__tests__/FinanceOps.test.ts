@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import Finance from '../views/Finance.vue'
 
@@ -18,6 +18,7 @@ vi.mock('@/api/finance-ext', async () => {
     listSettlements: vi.fn(),
     syncSettlement: vi.fn(),
     listDiscrepancies: vi.fn(),
+    discrepancyDetail: vi.fn(),
     scanDiscrepancies: vi.fn(),
     dismissDiscrepancy: vi.fn(),
     createClaimFromDiscrepancy: vi.fn(),
@@ -88,7 +89,8 @@ const SETTLEMENTS = ok([
 const DISCREPANCIES = ok([
   { id: 21, shopId: 900000000000001000, sku: 'SKU-9', shipmentId: 'FBA123',
     discrepancyType: 'INBOUND_SHORTAGE', expectedAmount: 100, actualAmount: 70, difference: -30,
-    currency: 'USD', status: 'OPEN', detectedAt: '2026-10-01T09:00:00' }
+    currency: 'USD', status: 'OPEN', detectedAt: '2026-10-01T09:00:00',
+    evidence: '结算原表实收 70 与采购到货 100 不符，缺 30 件' }
 ], pageOf(null))
 
 const CLAIMS = ok([
@@ -348,5 +350,60 @@ describe('Finance 视图：财务运营分区（回款/结算/差异/索赔/单�
     await clickBtn(wrapper, '提交')
     expect(ext.intakeInboundShortage).toHaveBeenCalledWith('900000000000001000',
       expect.objectContaining({ sku: 'SKU-9', shipmentId: 'FBA18ABC', shortageUnits: 12, unitAmount: 12.5, currency: 'USD' }))
+  })
+})
+
+describe('Finance 费用差异详情（此前 discrepancyDetail 零调用）', () => {
+  /**
+   * 费用差异表只列了金额/状态，从不显示「为什么判成差异」（evidence）与「何时判出」
+   * （detectedAt）——运营要追一笔差异的来龙去脉时无从下手。后端 GET
+   * /finance/discrepancy/{id}?shopId= 返回完整单条（含 evidence/detectedAt），前端
+   * discrepancyDetail 却零调用。本组钉住「详情」链路：调后端、展示 evidence 与
+   * detectedAt、后端拒绝时点名而不铺假内容。
+   */
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '900000000000001000')
+    vi.mocked(ext.listDiscrepancies).mockResolvedValue(DISCREPANCIES)
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  const mountDisc = async () => {
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '费用差异')
+    return wrapper
+  }
+
+  it('每行有「详情」入口，点它拉单条并展示 evidence 与 detectedAt', async () => {
+    vi.mocked(ext.discrepancyDetail).mockResolvedValue(ok(DISCREPANCIES.data[0]))
+    const wrapper = await mountDisc()
+    await clickBtn(wrapper, '详情')
+
+    expect(ext.discrepancyDetail).toHaveBeenCalledWith(21, '900000000000001000')
+    const detail = wrapper.find('[data-panel="discrepancy-detail"]')
+    expect(detail.exists()).toBe(true)
+    expect(detail.text()).toContain('结算原表实收 70 与采购到货 100 不符')
+    expect(detail.text()).toContain('2026-10-01')
+    expect(detail.text()).toContain('SKU-9')
+  })
+
+  it('evidence 缺失时如实说「无证据说明」，不留白让人误以为漏渲染', async () => {
+    vi.mocked(ext.discrepancyDetail).mockResolvedValue(ok({ ...DISCREPANCIES.data[0], evidence: null }))
+    const wrapper = await mountDisc()
+    await clickBtn(wrapper, '详情')
+    const detail = wrapper.find('[data-panel="discrepancy-detail"]')
+    expect(detail.text()).toContain('无证据说明')
+  })
+
+  it('详情拉取被拒时点名原因，不铺假详情', async () => {
+    vi.mocked(ext.discrepancyDetail).mockResolvedValue({ code: 400, message: '无权访问该店铺的差异', data: null as any })
+    const wrapper = await mountDisc()
+    await clickBtn(wrapper, '详情')
+    expect(wrapper.find('[data-panel="discrepancy-detail"]').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('无权访问该店铺的差异')
   })
 })

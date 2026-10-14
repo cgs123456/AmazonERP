@@ -349,6 +349,15 @@ const VOUCHERS_PAGE2 = [
 // GET /finance/profit/{shopId} -> number（不是对象）
 const FINANCE_PROFIT = 12345.67
 
+// GET /finance/discrepancy/list/{shopId} -> FeeDiscrepancy[]（游标分页）
+// GET /finance/discrepancy/{id}?shopId= -> FeeDiscrepancy（详情，带 evidence/detectedAt）
+const FINANCE_DISCREPANCIES = [
+  { id: 21, shopId: 1, sku: 'SKU-9', shipmentId: 'FBA123',
+    discrepancyType: 'INBOUND_SHORTAGE', expectedAmount: 100, actualAmount: 70, difference: -30,
+    currency: 'USD', status: 'OPEN', detectedAt: '2026-10-01T09:00:00',
+    evidence: '结算原表实收 70 与采购到货 100 不符，缺 30 件' }
+]
+
 // GET /ops/selection/opportunities -> SelectionOpportunity[]
 const SELECTION_OPPORTUNITIES = [
   { id: 101, shopId: 1, asin: 'B0SELECT1', title: 'Wireless Earbuds Pro', category: 'Electronics', marketplace: 'US', avgPrice: 39.99, avgReviews: 1200, avgRating: 4.5, searchVolume: 90000, competitorCount: 12, reviewBarrier: 'LOW', opportunityScore: 82, trend30d: 'UP', trend90d: 'UP' },
@@ -1218,6 +1227,10 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
     }
   },
   { match: /^\/finance\/profit\//, data: FINANCE_PROFIT },
+  // 费用差异列表与详情。列表带 page 元数据（游标分页）；详情必须是 {id} 形单对象
+  // （路由顺序在 list 之后，用 \d+ 锚定 id，避免 list 路径被误吃）。
+  { match: /^\/finance\/discrepancy\/list\//, data: FINANCE_DISCREPANCIES, page: FULL_PAGE(FINANCE_DISCREPANCIES.length) },
+  { match: /^\/finance\/discrepancy\/\d+$/, data: FINANCE_DISCREPANCIES[0] },
 
   // ===== 选品 /selection =====
   { match: /^\/ops\/selection\/opportunities$/, data: SELECTION_OPPORTUNITIES },

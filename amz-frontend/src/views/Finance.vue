@@ -310,6 +310,7 @@
                 <td>{{ d.currency || '-' }}</td>
                 <td><span class="status-tag">{{ d.status }}</span></td>
                 <td>
+                  <button class="sync-btn" :disabled="busy" @click="openDiscrepancyDetail(d)">详情</button>
                   <button class="sync-btn" :disabled="busy || d.status !== 'OPEN'" @click="confirm(claimFrom(d))">生成索赔单</button>
                   <button class="sync-btn" :disabled="busy || d.status !== 'OPEN'" @click="confirm(dismissConfirm(d))">忽略</button>
                 </td>
@@ -326,6 +327,28 @@
           </table>
         </div>
         <cursor-bar :state="disc" :load="loadDiscrepancies" />
+
+        <div v-if="discrepancyDetail" class="table-card" data-panel="discrepancy-detail">
+          <div class="panel-title">
+            费用差异详情：{{ discrepancyDetail.sku || '-' }} / {{ discrepancyDetail.discrepancyType }}
+            <button class="filter-btn" @click="discrepancyDetail = null">收起</button>
+          </div>
+          <div class="detail-grid">
+            <div><span class="muted">差异 ID</span><span class="mono">{{ discrepancyDetail.id }}</span></div>
+            <div><span class="muted">SKU</span><span class="mono">{{ discrepancyDetail.sku || '-' }}</span></div>
+            <div><span class="muted">货件</span><span class="mono">{{ discrepancyDetail.shipmentId || '-' }}</span></div>
+            <div><span class="muted">类型</span><span>{{ discrepancyDetail.discrepancyType || '-' }}</span></div>
+            <div><span class="muted">应收</span><span>{{ discrepancyDetail.expectedAmount ?? '-' }}</span></div>
+            <div><span class="muted">实收</span><span>{{ discrepancyDetail.actualAmount ?? '-' }}</span></div>
+            <div><span class="muted">差额</span><span class="profit-negative">{{ discrepancyDetail.difference ?? '-' }}</span></div>
+            <div><span class="muted">币种</span><span>{{ discrepancyDetail.currency || '-' }}</span></div>
+            <div><span class="muted">状态</span><span>{{ discrepancyDetail.status || '-' }}</span></div>
+            <div><span class="muted">判出时间</span><span>{{ (discrepancyDetail.detectedAt || '').slice(0, 19).replace('T', ' ') || '-' }}</span></div>
+          </div>
+          <p class="profit-note">
+            <b>证据说明：</b>{{ discrepancyDetail.evidence || '无证据说明（后端未记录这条差异的判定依据）' }}
+          </p>
+        </div>
 
         <div class="table-card">
           <div class="panel-title">入库短收待登记（来自采购域签收事实）</div>
@@ -1051,6 +1074,22 @@ const openShortage = () => {
   shortage.value = { sku: '', shipmentId: '', shortageUnits: 1, unitAmount: undefined, currency: 'USD', note: '' }
   formKind.value = 'shortage'
 }
+
+/**
+ * 费用差异详情：拉单条（含 evidence / detectedAt——列表不显示这两个字段，
+ * 而它们正是「为什么判成差异」的依据）。
+ * <p>
+ * 后端返回空 data（记录不存在或跨店）时不铺详情面板：不能把空详情当成「拉到了」。
+ * 失败原因由 call 按「差异详情：」前缀落到错误区。
+ */
+const discrepancyDetail = ref<FeeDiscrepancy | null>(null)
+const openDiscrepancyDetail = async (d: FeeDiscrepancy) => {
+  if (d.id == null) return
+  discrepancyDetail.value = null
+  await call('差异详情', () => ext.discrepancyDetail(d.id as number, shop()), (row) => {
+    discrepancyDetail.value = row || null
+  })
+}
 const dismissConfirm = (d: FeeDiscrepancy) => ({
   title: '忽略这条费用差异',
   detail: `标记为 DISMISSED 后不再进入索赔流程（${d.sku || '-'} / ${d.discrepancyType}，差额 ${d.difference}）。若之后发现判错，需要人工重新登记。`,
@@ -1304,6 +1343,9 @@ onMounted(() => {
 .summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
 .summary-label { font-size: 0.8125rem; color: var(--color-muted); }
 .summary-value { font-size: 1.75rem; font-weight: 700; color: var(--color-on-surface); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
+.detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem 1.5rem; margin-bottom: 0.75rem; }
+.detail-grid > div { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.8125rem; padding: 0.25rem 0; border-bottom: 1px solid var(--color-border); }
+.panel-title { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9375rem; font-weight: 600; color: var(--color-on-surface); margin-bottom: 0.5rem; }
 .summary-value.small { font-size: 1rem; font-weight: 600; }
 
 .profit-positive { color: var(--color-success); font-weight: 600; }
