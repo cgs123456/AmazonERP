@@ -85,6 +85,31 @@ export interface BuyBoxRow {
   snapshotTime?: string
 }
 
+/** 丢失 Buybox 的一条明细（后端 buyBoxSummary 的 lostBuyBox 元素）。 */
+export interface BuyBoxLostItem {
+  asin: string
+  buyboxPrice?: number | string | null
+  ourPrice?: number | string | null
+  priceGap?: number | string | null
+  sellerId?: string
+}
+
+/**
+ * Buybox 汇总（GET /product/listing-monitor/buybox/summary/{shopId}）。
+ * <p>
+ * 字段名对齐后端 `ListingMonitorServiceImpl.buyBoxSummary` 返回的 Map：
+ * totalAsins/selfOwned/selfOwnedPct/lostCount/lostBuyBox。
+ * 数字全部来自后端聚合（不在前端重算），避免与逐行列表口径不一致。
+ */
+export interface BuyBoxSummary {
+  totalAsins: number
+  selfOwned: number
+  /** 自有占比（后端已按 1 位小数四舍五入） */
+  selfOwnedPct: number | string
+  lostCount: number
+  lostBuyBox: BuyBoxLostItem[]
+}
+
 /** severity 由后端按 utf8mb4_bin 精确比较产出，这里只做展示归类，不做大小写猜测。 */
 export const severityClass = (severity?: string | null): 'ok' | 'warning' | 'critical' | 'unknown' => {
   if (severity === 'OK') return 'ok'
@@ -149,7 +174,7 @@ export const getBuyBoxList = async (shopId: number | string) => {
 }
 
 export const getBuyBoxSummary = async (shopId: number | string) => {
-  return request.get<void, ApiResponse<Record<string, unknown>>>(
+  return request.get<void, ApiResponse<BuyBoxSummary>>(
     `/product/listing-monitor/buybox/summary/${shopId}`)
 }
 

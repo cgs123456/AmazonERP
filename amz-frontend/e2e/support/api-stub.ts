@@ -915,6 +915,17 @@ const LM_COMPETITORS = [
 const LM_BUYBOX = [
   { id: 1, shopId: 1, asin: 'B00000000001', sellerId: 'A2SELLER', isSelf: true, buyboxPrice: 23.5, ourPrice: 23.49, priceGap: -0.01, fulfillmentType: 'FBA', ownershipPct: 62.5, snapshotTime: '2026-10-02T08:30:02' }
 ]
+// GET /product/listing-monitor/buybox/summary/{shopId}（后端 Map<String,Object>）
+// 一自有 + 一丢失，让「丢失清单」这条分支在 E2E 里也能被渲染到。
+const LM_BUYBOX_SUMMARY = {
+  totalAsins: 2,
+  selfOwned: 1,
+  selfOwnedPct: 50.0,
+  lostCount: 1,
+  lostBuyBox: [
+    { asin: 'B0LOST0001', buyboxPrice: 19.99, ourPrice: 21.5, priceGap: 1.51, sellerId: 'A9RIVAL' }
+  ]
+}
 const LM_CHANGELOGS = [
   // 字段名必须对齐后端 ListingChangeLog DTO（fieldName，不是 field）——
   // 由 tools/schema/stub_shape_audit.py 把关
@@ -1443,6 +1454,7 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/product\/listing-monitor\/competitor\/compare\//, data: LM_COMPARE },
   { match: /^\/product\/listing-monitor\/competitor\/list\//, data: LM_COMPETITORS, page: FULL_PAGE(LM_COMPETITORS.length) },
   { match: /^\/product\/listing-monitor\/buybox\/list\//, data: LM_BUYBOX, page: FULL_PAGE(LM_BUYBOX.length) },
+  { match: /^\/product\/listing-monitor\/buybox\/summary\//, data: LM_BUYBOX_SUMMARY },
   { match: /^\/product\/listing-monitor\/change-log\/list\//, data: LM_CHANGELOGS, page: FULL_PAGE(LM_CHANGELOGS.length) },
   { match: /^\/product\/master\/list\//, data: LM_MASTERS, page: FULL_PAGE(LM_MASTERS.length) },
 

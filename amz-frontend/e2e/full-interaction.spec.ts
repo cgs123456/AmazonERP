@@ -1506,6 +1506,28 @@ test.describe('ListingMonitor 交互（商品与 Listing 监控）', () => {
     await expect(page.locator('.error-zone')).toHaveCount(0)
   })
 
+  test('Buybox 汇总：自有率来自后端聚合，丢失清单点名对手与价差', async ({ page }) => {
+    await page.goto('/listings')
+    await page.locator('.tab', { hasText: 'Buybox' }).click()
+    const panel = page.locator('[data-panel="buybox"]')
+    await expect(panel).toBeVisible({ timeout: 20000 })
+
+    // 4 个汇总指标来自后端（2 在售 / 1 自有 / 50% / 1 丢失），不是前端自己算的
+    const metrics = panel.locator('.buybox-summary')
+    await expect(metrics).toContainText('2')
+    await expect(metrics).toContainText('50')
+    await expect(metrics).toContainText('1')
+
+    // 丢失清单点名对手与价差
+    await expect(panel).toContainText('B0LOST0001')
+    await expect(panel).toContainText('A9RIVAL')
+    await expect(panel).toContainText('1.51')
+
+    // 逐行快照仍在（一个区加了汇总不挤掉列表）
+    await expect(panel).toContainText('A2SELLER')
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
+
   test('CSV 导入逐行报告：失败行带文件行号，且换文件后清掉上一份报告', async ({ page }) => {
     await page.goto('/listings')
     await page.locator('.tab', { hasText: '商品主数据' }).click()

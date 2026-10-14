@@ -11,6 +11,7 @@ vi.mock('@/api/listing', async () => {
     getRankings: vi.fn(),
     getCompetitors: vi.fn(),
     getBuyBoxList: vi.fn(),
+    getBuyBoxSummary: vi.fn(),
     getChangeLogs: vi.fn(),
     estimateFees: vi.fn(),
     listMaster: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock('@/api/listing', async () => {
 
 import {
   getListingSummary, getListingHealthList, getRankings, getCompetitors,
-  getBuyBoxList, getChangeLogs, estimateFees, listMaster, createMaster, updateMaster,
+  getBuyBoxList, getBuyBoxSummary, getChangeLogs, estimateFees, listMaster, createMaster, updateMaster,
   runListingCheck, getRankingTrend, compareCompetitors
 } from '@/api/listing'
 
@@ -69,6 +70,20 @@ const BUYBOX = ok([
     ownershipPct: 62.50, snapshotTime: '2026-10-02T08:30:02' }
 ])
 
+// GET /product/listing-monitor/buybox/summary/{shopId}（后端 Map<String,Object>，
+// 字段名抄自 ListingMonitorServiceImpl.buyBoxSummary）
+const BUYBOX_SUMMARY = ok({
+  totalAsins: 10,
+  selfOwned: 7,
+  selfOwnedPct: 70.0,
+  lostCount: 3,
+  lostBuyBox: [
+    { asin: 'B0LOST0001', buyboxPrice: 19.99, ourPrice: 21.50, priceGap: 1.51, sellerId: 'A9RIVAL' },
+    { asin: 'B0LOST0002', buyboxPrice: 30.00, ourPrice: 30.00, priceGap: 0, sellerId: 'A8RIVAL' },
+    { asin: 'B0LOST0003', buyboxPrice: 12.00, ourPrice: 12.00, priceGap: 0, sellerId: 'A7RIVAL' }
+  ]
+})
+
 const MASTERS = ok([
   { id: 1, shopId: 900000000000001000, sku: 'MASTER-1', asin: 'B0MASTER001',
     marketplaceId: 'ATVPDKIKX0DER', title: '瑜伽垫 6mm', brand: 'Akman',
@@ -87,6 +102,7 @@ const happyPath = () => {
   vi.mocked(getRankings).mockResolvedValue(RANKINGS)
   vi.mocked(getCompetitors).mockResolvedValue(COMPETITORS)
   vi.mocked(getBuyBoxList).mockResolvedValue(BUYBOX)
+  vi.mocked(getBuyBoxSummary).mockResolvedValue(BUYBOX_SUMMARY)
   vi.mocked(getChangeLogs).mockResolvedValue(ok([]))
   vi.mocked(listMaster).mockResolvedValue(MASTERS)
 }
@@ -144,7 +160,9 @@ describe('ListingMonitor 视图（商品与 Listing）', () => {
     expect(wrapper.text()).toContain('Competitor yoga mat')
 
     await wrapper.findAll('.tab')[3].trigger('click')
-    expect(wrapper.find('.data-table tbody tr').text()).toContain('A2SELLER')
+    // Buybox 区现有两张表（丢失清单 + 逐行快照），用面板定位到逐行快照那张
+    const snapshot = wrapper.find('[data-panel="buybox"] .data-table:last-of-type')
+    expect(snapshot.text()).toContain('A2SELLER')
     expect(wrapper.text()).toContain('我方')
   })
 
@@ -383,5 +401,65 @@ describe('ListingMonitor 视图（商品与 Listing）', () => {
     expect(row).toContain('—')
     expect(row).toContain('否')
     expect(wrapper.find('.error-zone').exists()).toBe(false)
+  })
+})
+
+describe('ListingMonitor Buybox 汇总（此前 getBuyBoxSummary 零调用）', () => {
+  /**
+   * Buybox Tab 此前只有逐行列表，没有汇总——运营看不出「自有率多少、哪些 ASIN 丢了
+   * Buybox」。后端 buyBoxSummary 早已就绪（totalAsins/selfOwned/selfOwnedPct/lostCount/
+   * lostBuyBox），前端 getBuyBoxSummary 却零调用。本组钉住汇总区：数字来自后端聚合、
+   * 丢失清单点名、后端拒绝时点名原因而不铺假数字。
+   */
+  beforeEach(() => {
+    localStorage.clear()
+    withShop()
+    vi.clearAllMocks()
+  })
+
+  const mountBuybox = async (summaryOverride?: unknown) => {
+    happyPath()
+    if (summaryOverride !== undefined) {
+      vi.mocked(getBuyBoxSummary).mockResolvedValue(summaryOverride as any)
+    }
+    const wrapper = mount(ListingMonitor, { shallow: true, global: globalStubs })
+    await flushPromises()
+    await wrapper.findAll('.tab')[3].trigger('click')  // Buybox
+    await flushPromises()
+    return wrapper
+  }
+
+  it('Buybox 区展示后端聚合的自有率与丢失数，不自己算', async () => {
+    const wrapper = await mountBuybox()
+    const panel = wrapper.find('[data-panel="buybox"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).toContain('10')     // totalAsins
+    expect(panel.text()).toContain('70')     // selfOwnedPct
+    expect(panel.text()).toContain('3')      // lostCount
+  })
+
+  it('丢失清单点名具体 ASIN 与价差，让运营知道该调谁', async () => {
+    const wrapper = await mountBuybox()
+    const panel = wrapper.find('[data-panel="buybox"]')
+    expect(panel.text()).toContain('B0LOST0001')
+    expect(panel.text()).toContain('A9RIVAL')
+    expect(panel.text()).toContain('1.51')
+  })
+
+  it('全部自有时不显示丢失清单（没有对手可点名）', async () => {
+    const wrapper = await mountBuybox(ok({
+      totalAsins: 5, selfOwned: 5, selfOwnedPct: 100.0, lostCount: 0, lostBuyBox: []
+    }))
+    const panel = wrapper.find('[data-panel="buybox"]')
+    expect(panel.text()).toContain('100')
+    expect(panel.text()).toContain('全部自有')
+  })
+
+  it('汇总接口失败时点名原因，且不铺任何假数字', async () => {
+    const wrapper = await mountBuybox({ code: 500, message: '凭证未配置', data: null })
+    expect(wrapper.find('.error-zone').text()).toContain('Buybox 汇总')
+    expect(wrapper.find('.error-zone').text()).toContain('凭证未配置')
+    // 逐行列表仍照常渲染（一个区失败不拖垮另一个）
+    expect(wrapper.find('[data-panel="buybox"]').text()).toContain('A2SELLER')
   })
 })

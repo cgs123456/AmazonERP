@@ -285,7 +285,45 @@
         </div>
 
                 <!-- Buybox -->
-        <div v-if="tab === 'buybox'" class="table-card">
+        <div v-if="tab === 'buybox'" class="table-card" data-panel="buybox">
+          <!-- 汇总：数字全部来自后端聚合（不在此重算），与下方逐行列表同源 -->
+          <div class="buybox-summary">
+            <div class="buybox-metric">
+              <span class="buybox-metric-label">在售 ASIN</span>
+              <span class="buybox-metric-value">{{ buyboxSummary.totalAsins }}</span>
+            </div>
+            <div class="buybox-metric">
+              <span class="buybox-metric-label">自有 Buybox</span>
+              <span class="buybox-metric-value">{{ buyboxSummary.selfOwned }}</span>
+            </div>
+            <div class="buybox-metric">
+              <span class="buybox-metric-label">自有占比</span>
+              <span class="buybox-metric-value">{{ buyboxSummary.selfOwnedPct }}%</span>
+            </div>
+            <div class="buybox-metric" :class="{ 'is-lost': buyboxSummary.lostCount > 0 }">
+              <span class="buybox-metric-label">丢失 Buybox</span>
+              <span class="buybox-metric-value">{{ buyboxSummary.lostCount }}</span>
+            </div>
+          </div>
+
+          <template v-if="buyboxSummary.lostCount > 0">
+            <p class="buybox-lost-title">丢失 Buybox 的 ASIN（价差＝对手价－我方价，正数表示我们更贵）</p>
+            <table class="data-table">
+              <thead><tr><th>ASIN</th><th>对手</th><th>Buybox 价</th><th>我方价</th><th>价差</th></tr></thead>
+              <tbody>
+                <tr v-for="(l, i) in buyboxSummary.lostBuyBox" :key="l.asin + '|' + i">
+                  <td class="mono">{{ l.asin }}</td>
+                  <td class="mono">{{ l.sellerId || '-' }}</td>
+                  <td>{{ l.buyboxPrice ?? '-' }}</td>
+                  <td>{{ l.ourPrice ?? '-' }}</td>
+                  <td>{{ l.priceGap ?? '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </template>
+          <p v-else class="buybox-all-owned">全部自有：当前没有 ASIN 被对手抢走 Buybox。</p>
+
+          <p class="buybox-list-title">逐行快照</p>
           <table class="data-table">
             <thead><tr><th>ASIN</th><th>Winner</th><th>是否我方</th><th>Buybox 价</th><th>我方价</th><th>价差</th><th>配送</th><th>份额</th></tr></thead>
             <tbody>
@@ -409,11 +447,11 @@ import { usePagination } from '@/composables/usePagination'
 import { renderLabelHtml } from '@/utils/packingSlip'
 import {
   getListingSummary, getListingHealthList, getRankings, getCompetitors,
-  getBuyBoxList, getChangeLogs, estimateFees, severityClass, emptySummary,
+  getBuyBoxList, getBuyBoxSummary, getChangeLogs, estimateFees, severityClass, emptySummary,
   listMaster, createMaster, updateMaster, runListingCheck, getRankingTrend, compareCompetitors
 } from '@/api/listing'
 import type {
-  ListingHealthRow, ListingSummary, KeywordRankingRow, CompetitorRow, BuyBoxRow, MasterRow,
+  ListingHealthRow, ListingSummary, KeywordRankingRow, CompetitorRow, BuyBoxRow, BuyBoxSummary, MasterRow,
   ListingCheckForm, RankingTrendResult, CompetitorCompareResult
 } from '@/api/listing'
 
@@ -436,6 +474,10 @@ const healthRows = ref<ListingHealthRow[]>([])
 const rankings = ref<KeywordRankingRow[]>([])
 const competitors = ref<CompetitorRow[]>([])
 const buybox = ref<BuyBoxRow[]>([])
+// 空汇总：后端未返回前不铺数字（0 也要来自后端，不能让前端先摆一个假的 0）
+const buyboxSummary = ref<BuyBoxSummary>({
+  totalAsins: 0, selfOwned: 0, selfOwnedPct: 0, lostCount: 0, lostBuyBox: []
+})
 const changeLogs = ref<Array<Record<string, unknown>>>([])
 const errors = ref<string[]>([])
 const masterErrors = ref<string[]>([])
@@ -516,6 +558,9 @@ const loadAll = async () => {
     zone('关键词排名', () => getRankings(shopId), (d: KeywordRankingRow[]) => { rankings.value = d || [] }),
     zone('竞品监控', () => getCompetitors(shopId), (d: CompetitorRow[]) => { competitors.value = d || [] }),
     zone('Buybox', () => getBuyBoxList(shopId), (d: BuyBoxRow[]) => { buybox.value = d || [] }),
+    zone('Buybox 汇总', () => getBuyBoxSummary(shopId), (d: BuyBoxSummary) => {
+      buyboxSummary.value = d || { totalAsins: 0, selfOwned: 0, selfOwnedPct: 0, lostCount: 0, lostBuyBox: [] }
+    }),
     zone('变更记录', () => getChangeLogs(shopId), (d: Array<Record<string, unknown>>) => { changeLogs.value = d || [] }),
     zone('商品主数据', () => listMaster(shopId), (d: MasterRow[]) => { masters.value = d || [] })
   ])
@@ -723,6 +768,16 @@ onMounted(loadAll)
 .health-card.risk { border-top-color: var(--color-warning); }
 .health-card.healthy { border-top-color: var(--color-success); }
 .health-label { font-size: 0.875rem; color: var(--color-muted); margin-top: 0.125rem; }
+
+/* Buybox 汇总：4 个指标 + 丢失清单，数字全部来自后端聚合 */
+.buybox-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; padding: 0.75rem 1rem 0.25rem; }
+.buybox-metric { background: var(--color-surface-variant, #f5f5f5); border-radius: var(--radius-md); padding: 0.625rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.buybox-metric.is-lost { background: var(--color-light-red); }
+.buybox-metric-label { font-size: 0.75rem; color: var(--color-muted); }
+.buybox-metric-value { font-size: 1.25rem; font-weight: 700; color: var(--color-on-surface); font-variant-numeric: tabular-nums; }
+.buybox-metric.is-lost .buybox-metric-value { color: var(--color-error); }
+.buybox-lost-title, .buybox-list-title { padding: 0.75rem 1rem 0.25rem; margin: 0; font-size: 0.8125rem; color: var(--color-muted); }
+.buybox-all-owned { padding: 0.5rem 1rem; margin: 0; font-size: 0.8125rem; color: var(--color-muted); }
 
 .error-zone {
   display: flex; align-items: center; gap: 0.5rem;
