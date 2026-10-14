@@ -1,4 +1,4 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + Buybox/差异详情（2026-10-14 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 三个详情/汇总（2026-10-14 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > 本次更新（§S9）：① 通知未读红点 + 全部已读（孤儿 api 接入）；② **用户管理角色分配**
@@ -7,32 +7,33 @@
 > ③ **店铺管理页**——接 6 个孤儿店铺 api（后端 S7.2 早已就绪），并补「已绑定用户」读端点
 > （此前只有写端点，授权界面是盲写），顺带修一处前端类型字段名漂移；
 > ④ **仓库编辑不可达**——弹窗早有「编辑仓库」分支但无入口、保存恒走新建，补入口 + PUT 分支；
-> ⑤ **Buybox 汇总区**——ListingMonitor 只有逐行快照、缺自有率与丢失清单，接 `getBuyBoxSummary`；
-> ⑥ **费用差异详情**——Finance 差异表不显示 evidence/detectedAt，接 `discrepancyDetail`。
+> ⑤ **Buybox 汇总区**——接 `getBuyBoxSummary`（自有率 + 丢失清单）；
+> ⑥ **费用差异详情**——接 `discrepancyDetail`（evidence/detectedAt）；
+> ⑦ **RMA 详情**——接 `rmaDetail`（承运商/面单成本/备注）。
 > 详见 §S9。
 
 ## 项目现状一句话
 
-**CI 全绿（run `38536097315`，2026-10-14，HEAD `5e56dc2`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
-前端 vitest **550/550** + vue-tsc 0 错 + build 通过 + **E2E 157 passed**、
-hygiene 0 / release tools 91/91 / stub-shape RED 0（184 注册/119 过）/
+**CI 全绿（run `38545853973`，2026-10-14，HEAD `829e572`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
+前端 vitest **553/553** + vue-tsc 0 错 + build 通过 + **E2E 158 passed**、
+hygiene 0 / release tools 91/91 / stub-shape RED 0（185 注册/119 过）/
 synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
 本机整仓回归 **2283/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑）；
 迁移 **65** 个、Flyway 活表 **116** 张、实体 110 / 0 漂移、零引用表 0、
 release tools 91/91、schema 快照 103 表/14 库一致。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.9。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.10。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
 
-## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理 + 仓库编辑 + Buybox/差异详情（已完成）
+## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理 + 仓库编辑 + 三个详情/汇总（已完成）
 
 > 本段是**当前会话的交接**。承接 §S8.4「下一步计划」第 2 条 + 用户点名的
 > 「先处理 UserManagement 的角色分配，再做店铺 CRUD」。**commit `0ec9d10` / `9be4de8` /
 > `0cfa96a` / `1b9c47d` / `a1d294d` / `b175512` / `8ad6c43` / `a42926c` / `807457e` /
-> `8bda8e1` / `5e56dc2` 已推送、CI 全绿（run `38536097315` 11 job 全过）**，
-> 工作区干净、与 origin 同步。
+> `8bda8e1` / `5e56dc2` / `95fc6f2` / `829e572` 已推送、CI 全绿
+> （run `38545853973` 11 job 全过）**，工作区干净、与 origin 同步。
 
 ### 1. 通知未读红点 + 全部已读（§S9.1，commit `0ec9d10`）
 
@@ -130,31 +131,45 @@ Finance 的费用差异表只列了金额/状态，从不显示「为什么判�
 - evidence 缺失时如实说「无证据说明」，不留白让人误以为漏渲染；拉取被拒时 call 按
   「差异详情：」前缀点名原因，不铺假详情面板。
 
-### 7. 测试与验证
+### 7. RMA 详情（§S9.7，commit `829e572`）
 
-- **前端**：vitest +4 文件 33 例（UserManagement 10 + ShopManagement 12 + Warehouse 编辑 4 +
-  Buybox 汇总 4 + 差异详情 3；均修前红）、E2E +10 条（UserManagement 3 + ShopManagement 4 +
-  Warehouse 编辑 1 + Buybox 汇总 1 + 差异详情 1）+ `/users`、`/shops` 入侧边栏跳转 NAV；
-  桩显式登记 `/user/list`、`/{id}/role`、`/{id}/status`、`/user/shop/list`（数组）、
-  `/{shopId}/users`、`/{shopId}/status`、`/{shopId}/assign`、`/{shopId}/assign/remove`、
-  `/logistics/warehouse`（新建/编辑同路径）、`/product/listing-monitor/buybox/summary`、
-  `/finance/discrepancy/list`（带 page 元数据）与 `/finance/discrepancy/{id}`（详情单对象）。
+CustomerService 的 RMA 表只列了物流/退款相关字段，从不显示承运商、面单成本与备注——
+客服要处理一笔退货时看不到「买家为什么退」。后端 `GET /customer/email/rma/{id}`
+返回完整单条（含 carrier/labelCost/remark），前端 `rmaDetail` 却零调用。故：
+
+- 每行加「详情」按钮，点击拉单条并展示全字段：订单号/ASIN/SKU/退货类型/商品状态/
+  退款金额/退货状态/承运商/面单成本/运单号 + 备注。
+- 备注缺失时如实说「无备注」、承运商缺失时「未记录」，不留白让人误以为漏渲染；
+  拉取被拒时 call 按「RMA 详情：」前缀点名原因，不铺假详情面板。
+- 归属校验在**后端服务层**（`mustGetAuthorizedRma`）：RMA 端点无 shopId 参数，
+  `@ShopScoped` 切面按参数名拦不住，服务层显式判 `UserContext.isShopAllowed`。
+
+### 8. 测试与验证
+
+- **前端**：vitest +5 文件 36 例（UserManagement 10 + ShopManagement 12 + Warehouse 编辑 4 +
+  Buybox 汇总 4 + 差异详情 3 + RMA 详情 3；均修前红）、E2E +11 条（UserManagement 3 +
+  ShopManagement 4 + Warehouse 编辑 1 + Buybox 汇总 1 + 差异详情 1 + RMA 详情 1）+
+  `/users`、`/shops` 入侧边栏跳转 NAV；桩显式登记 `/user/list`、`/{id}/role`、`/{id}/status`、
+  `/user/shop/list`（数组）、`/{shopId}/users`、`/{shopId}/status`、`/{shopId}/assign`、
+  `/{shopId}/assign/remove`、`/logistics/warehouse`（新建/编辑同路径）、
+  `/product/listing-monitor/buybox/summary`、`/finance/discrepancy/list`（带 page 元数据）、
+  `/finance/discrepancy/{id}`、`/customer/email/rma/{id}`（均为详情单对象）。
 - **后端**：+3 文件 13 例——`UserAdminServiceTest`（9 例，此前 listUsers/updateRole/updateStatus
   三方法零覆盖）+ `ShopItUserDdlContractTest`（1 例静态 DDL 契约）+ `ShopServiceImplTest` +3 例
   （listShopUsers 正常/店铺不存在点名/非 ADMIN 拒绝）。
-- **变异验证 12 处均红**（均已还原）：后端去掉自检；前端前缀清理换回 blanket clear；
+- **变异验证 14 处均红**（均已还原）：后端去掉自检；前端前缀清理换回 blanket clear；
   手写 DDL 去掉 create_time；前端不读绑定列表；后端缺失店铺返回空；前端去掉前置校验；
   仓库编辑恒走 create；去掉仓库编辑入口；Buybox 汇总不读后端；丢失清单不渲染；
-  差异详情复用列表行；去掉差异详情入口。
-- **门禁全绿**：后端整仓 2283/0F/0E/35S、vue-tsc 0、vitest 550/550、E2E 157 passed、
-  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0（184 注册/119 过）、
+  差异详情复用列表行；去掉差异详情入口；RMA 详情复用列表行；去掉 RMA 详情入口。
+- **门禁全绿**：后端整仓 2283/0F/0E/35S、vue-tsc 0、vitest 553/553、E2E 158 passed、
+  hygiene 0（两种模式）、release tools 91/91、stub-shape RED 0（185 注册/119 过）、
   drift 0、零引用 0、endpoint self-test 25/25 + reverse 0、param-name 24/24。
-- **CI（run `38536097315`，HEAD `5e56dc2`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`
-  （4/4，未跳过）与新静态契约；frontend 腿 vitest 550 + E2E 157。
-- **E2E 抖动复核**：本机全量两轮失败集合不同（5 例 vs 3 例）、彼此无关、单跑全过——
-  与本轮新测（差异详情）无关（第二轮它通过），属已知冷启动抖动，判据以 CI 为准。
+- **CI（run `38545853973`，HEAD `829e572`）11 job 全过**：`test` 腿真跑了 `ShopServiceMySqlIT`
+  （4/4，未跳过）与新静态契约；frontend 腿 vitest 553 + E2E 158。
+- **E2E 抖动复核**：本机全量三轮失败集合互不相同（5 例 vs 3 例 vs 3 例）、彼此无关、单跑全过——
+  与各轮新测无关，属已知冷启动抖动，判据以 CI 为准。
 
-### 8. 踩过的坑（本轮）
+### 9. 踩过的坑（本轮）
 
 1. **坑 11 三次复现（allowlist 哈希失效）**：改 `AppHeader.vue` / `ShopServiceMySqlIT.java` /
    `api/auth.ts` / `router/index.ts` 后 hygiene 各报 `secret-like-assignment`
@@ -179,17 +194,17 @@ Finance 的费用差异表只列了金额/状态，从不显示「为什么判�
    `data: null` 裸值未 `as any`——**vitest 跑绿但 vue-tsc 会红**。测试文件也要过类型检查，
    别只跑 vitest 就收工。
 
-### 9. 下一步
+### 10. 下一步
 
-- **② 类剩余约 11 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
-  继续按「页面已有相邻功能、只差这一步」挑（已完成：店铺 CRUD、仓库编辑、Buybox 汇总、差异详情）：
-  - `rmaDetail`：CustomerService 已接 `listRmas`/`updateRmaStatus`，只差详情（RMA 表也不显示
-    `carrier`/`remark`，详情页可一并展示）；
+- **② 类剩余约 10 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
+  继续按「页面已有相邻功能、只差这一步」挑（已完成：店铺 CRUD、仓库编辑、Buybox 汇总、
+  差异详情、RMA 详情）：
   - `getShipment`/`updateShipment`：Procurement 已接 `listShipments`/`createShipment`，只差单条详情/编辑；
   - `updateSupplier`：Procurement 已接 `createSupplier`/`listSuppliers`，只差编辑（注意 supplier 无「死分支」，
     需确认页面是否该加编辑入口）；
   - `listQuotes`/`calculateFreight`：LogisticsDashboard 已接 `compareQuotes`/`expireOutdatedQuotes`，
-    只差报价列表与头程分摊（`calculateFreight` 带 OPERATOR/ADMIN 守卫）。
+    只差报价列表与头程分摊（`calculateFreight` 带 OPERATOR/ADMIN 守卫）；
+  - `executeRules`：AdSearchTerms 已接 `executeRule`（单条），只差批量执行入口。
 - **权限注意**：`calculateFreight`/`executeRules`/`updateWarehouse` 带 `@RequireRole(OPERATOR/ADMIN)`，
   接 UI 时非该角色会 403（页面应做入口门控或如实提示）。
 - 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；**改门控 IT / 后端 DTO 后盯 CI**。
@@ -247,7 +262,8 @@ Finance 的费用差异表只列了金额/状态，从不显示「为什么判�
 2. ~~**接 ② 类最高价值项**：`getUnreadCount` + `markAllNotificationsRead`
    （通知中心顶栏未读红点 + 全部已读按钮，后端已实现+测试）。~~ **已完成（2026-10-14，见 §S9.1）**：
    顶栏红点 + 消息页「全部已读」已接入，vitest +10、E2E +2、变异 2 处均红。
-   ② 类剩余约 11 项见 §S9.9（店铺 CRUD 见 §S9.3；仓库编辑见 §S9.4；Buybox 汇总见 §S9.5；差异详情见 §S9.6）。
+   ② 类剩余约 10 项见 §S9.10（店铺 CRUD 见 §S9.3；仓库编辑见 §S9.4；Buybox 汇总见 §S9.5；
+   差异详情见 §S9.6；RMA 详情见 §S9.7）。
 3. 每步按既有纪律：TDD（先写测试看红）→ 实现 → E2E → 变异验证 → 全量门禁 → 提交推送。
 
 ### 5. 踩过的坑（本轮新增，务必先读再动手）
