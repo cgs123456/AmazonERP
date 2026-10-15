@@ -1,15 +1,22 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空（2026-10-15 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空 + WMS 写入口门控与业务拒绝修复（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S18）：清空 ② 类队列后**重跑 `endpoint_coverage_audit.py` 又抓到一个真缺口**——
-> 差评结案 `resolveNegativeReview`（差评能匹配订单、能生成跟进邮件，却不能结案，
-> 记录永远停在 CONTACTED）。已落地，候选清单里现已无「该接而未接」的用户面向端点；
+> 本次更新（§S19）：复查 §S18.5.1 的覆盖面时发现**一个比缺门控更严重的缺陷，且 §S17 的
+> 结论本身是不完整的**——`Warehouse.vue` 上 15 个 WMS 写入口（入库单/出库单/盘点单全族）
+> 此前**一个门控都没有**，§S17 只补了仓库新建/编辑与改库位那 3 个。
+> 更关键的是**后端业务拒绝被前端当成成功**：`RequireRoleAspect` 与所有业务校验失败都返回
+> `Result.failure()`，即 **HTTP 200 + `code=400`**（`GlobalExceptionHandler` 上「业务拒绝刻意
+> 保持 200」的注释写明这是拍过板的），所以 axios 是 **resolve 而不是 reject**，
+> `catch` 块根本不执行——于是弹窗关闭、列表刷新、用户以为办成了。
+> **这一条 OPERATOR 同样受害**（任何 code=400：状态不对、仓库无效…），不只是 VIEWER。
+> 两件事一起修：15 个入口补门控 + 全部写操作改判 `code`。另修一个 OPERATOR 也踩得到的
+> 零反馈缺陷：无仓库时点「创建入库/出库单」会提交 `warehouseId=0` 然后只写 console。
+> 上一班（§S18）：清空 ② 类队列后重跑 `endpoint_coverage_audit.py` 又抓到一个真缺口——
+> 差评结案 `resolveNegativeReview`。已落地，候选清单里现已无「该接而未接」的用户面向端点；
 > §S10 🔴 类的**前端边界披露**也逐条复查为全部 GOOD（见 §S18.5.1）——前端该做的都做了。
-> 上一班（§S17）：仓库新建/编辑入口补角色门禁——后端 `POST/PUT /logistics/warehouse`
-> 是 `@RequireRole({"OPERATOR","ADMIN"})`，而这两个按钮此前无任何门控，VIEWER 点了只会 403。
-> 同时纠正一个过期口径：**`updateWarehouse` 早在 §S9.4（`8ad6c43`）就接完了**，
-> §S15/§S9.12 队列里「仍无 UI」是漏回填，真正缺的只有守卫。
-> **② 类孤儿 api 队列至此清空**，后续只剩真凭据阻塞（A5/E4–E5）。详见 §S17。
+> 上一班（§S17）：仓库新建/编辑入口补角色门禁（后端 `POST/PUT /logistics/warehouse`
+> 是 `@RequireRole({"OPERATOR","ADMIN"})`），并纠正 `updateWarehouse` 早在 §S9.4（`8ad6c43`）
+> 就接完了的过期口径。**② 类孤儿 api 队列至此清空**，只剩真凭据阻塞（A5/E4–E5）。详见 §S17。
 > 上一班（§S16）：ad 域 6 个孤儿 CRUD 落地——`createCampaign`/`updateCampaign`/
 > `batchCreateCampaigns`/`batchUpdateStatus`/`updateCreative`/`updateTargeting` 此前零调用，
 > 广告页只有读路径。活动域补新建/编辑/批量（勾选列 + 二次确认 + 部分返回如实报数），
@@ -40,15 +47,15 @@
 
 ## 项目现状一句话
 
-**CI 全绿（run `38727636484` 代码 / `38727838899` 文档，2026-10-15，HEAD `151f05e`）**：
-11 个 job 全过。本班为**纯前端班**，无 Java/SQL 改动。
-本机门禁全绿：前端 vitest **603/603**（含差评结案 +3）+ vue-tsc 0 错 + `npm run build` 通过 +
-E2E CustomerService **10/10**；stub-shape RED 0（**197 注册/131 可比**）、
-param-name 0、hygiene 0（两种模式）、entity_column_drift **110 实体/0 漂移**、release tools **91/91**；
-endpoint 自测 25/25。
-上一班（run `38721593255` 全绿，HEAD `76c008f`）：vitest 600/600、Warehouse E2E 7/7。
+**本机门禁全绿，CI 待跑（HEAD 见 git log；本班 §S19 为纯前端班，无 Java/SQL 改动）**：
+前端 vitest **617/617**（50 文件，含本班 +14）+ vue-tsc 0 错 + `vite build` 通过 +
+Warehouse 相关 E2E **20/20**（含本班新增 VIEWER 1 例）；stub-shape RED 0、param-name 0、
+hygiene 0、entity_column_drift **110 实体/0 漂移**、release tools **91/91**。
+上一班 CI 全绿（run `38727636484` 代码 / `38727838899` 文档，HEAD `151f05e`），11/11 job。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
 业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（见 §S9.12 / §S17.4）。
+**新增一条待办**：`OrderList.vue` / `Finance.vue` / `ListingMonitor.vue` / `CustomerService.vue`
+四个页面**完全没有 `canUseRole` 门控**，而它们的后端有 `@RequireRole` 写端点（见 §S19.5）。
 
 ## S16. 交接：2026-10-15 ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑，已完成）
 
@@ -3131,3 +3138,116 @@ S14 两项孤儿 API（广告 `executeRules` 批量出建议、物流 `calculate
 - 广告批量执行失败行形状 `{ruleId,ruleName,error}` 缺 `actionCount`——渲染必须先判 `error`，不能混读 `undefined`。
 - 未核算表头 `colspan` 从 6 改 7 时，Vue 模板的空态占位必须同步，否则 E2E 严格计数失败。
 - CRLF stat/index 大面积假 M：`git update-index --refresh` 报 needs update 却 `git diff` 为空——先字节归一化再 `git add -u`。
+
+---
+
+## S19. 交接：2026-10-15 WMS 写入口补门控 + 「后端业务拒绝被当成成功」修复（§S17 结论不完整的更正）
+
+> 本段是**当前会话的交接**。起因是复查 §S18.5.1 的覆盖面：
+> 那次只抽查了空态，两个只读子代理分别走完 `Finance.vue`（1360 行）与
+> `Warehouse.vue`（1523 行）。`Warehouse.vue` 的走查带出**两个比 §S17 记的严重得多的缺陷**，
+> 其中一个**否掉了 §S17「仓库写入口门禁已补齐」的结论**。
+> 仍为**纯前端班**，无 Java/SQL 改动。
+
+### 1. §S17 的结论为什么不完整（必须记下来，否则下一班还会照旧口径结案）
+
+§S17 只核实了当时在看的两个端点（`POST/PUT /logistics/warehouse`），**没有枚举该页其余
+`@RequireRole` 端点**。实际清点结果：
+
+| 域 | 后端写端点（全部 `@RequireRole({"OPERATOR","ADMIN"})`） | §S17 前门控 |
+|---|---|---|
+| 仓库主数据 | `POST/PUT /logistics/warehouse` | ✅ 已有 |
+| 库位码 | `PUT /logistics/warehouse/inventory/{id}/location` | ✅ 已有 |
+| **入库单** | `POST /logistics/inbound`、`/{id}/transit`、`/batch-receive`、`/{id}/receive`、`/{id}/cancel` | ❌ **全无** |
+| **出库单** | `POST /logistics/outbound`、`/{id}/pick`、`/{id}/pack`、`/{id}/ship`、`/{id}/cancel` | ❌ **全无** |
+| **盘点单** | `POST /logistics/stocktake`、`/{id}/count`、`/{id}/apply`、`/{id}/cancel` | ❌ **全无** |
+| **库存 CSV** | `POST /logistics/warehouse/inventory/import/csv` | ❌ **无** |
+
+即 **15 个写入口零门控**，而同屏的「编辑」按钮已经规规矩矩换成灰字说明——
+**两套口径出现在同一屏，用户无从判断哪个是真坏了**。
+
+### 2. 更严重的那个：后端业务拒绝被前端当成成功（OPERATOR 同样受害）
+
+这条与角色无关，是 `code` 判断缺失：
+
+`RequireRoleAspect:59` 命中失败时返回 `Result.failure(...)`，而
+`Result#failure`（`Result.java:79-81`）是 **`code=400`**；`GlobalExceptionHandler.java:88-90`
+的注释明确写着「业务校验失败与『无权限操作』**保持 HTTP 200 + code=400**」是拍过板的
+（前端有 60+ 处按 `code === 200` 判断，全改 4xx/5xx 是全站契约变更，风险收益不成比例）。
+
+所以 axios 的 promise 是 **resolve 而不是 reject**，`catch` 块根本不执行。
+本页原来写的是：
+
+```ts
+try { await WH.createInboundOrder(f); 关弹窗(); 重拉列表() }
+catch (e) { console.warn(...) }        // ← 永远进不来
+```
+
+结果：**角色不够 / 状态不对 / 仓库无效，全部表现为「操作成功」**——弹窗关了、列表刷了。
+少数几处有 toast 的，用的又是通用文案「操作失败，请稍后重试」，
+把后端已经写好的原因（「无权限执行该操作（需要角色：OPERATOR/ADMIN）」）盖掉了，
+让「重试」变成一个必然无效的动作。
+
+**这类缺陷的特征是"看起来很忙但什么都没发生"**，比 403 白屏更难排查，值得单独记住。
+
+### 3. 顺带修掉一个 OPERATOR 也踩得到的零反馈缺陷
+
+`openInboundDialog` / `openOutboundDialog` 原来用 `warehouses[0]?.id || 0` 回填仓库。
+**没有仓库时**：下拉是空的、提交值退化成 `warehouseId=0`，后端按无效仓库拒绝，
+而 `catch` 只写 `console.warn`——OPERATOR 看到「弹窗一开一关、什么都没发生」。
+现在无仓库时直接不打开弹窗并说明原因。盘点单同理。
+
+### 4. 落地内容
+
+- `utils/identity.ts`：新增 `WMS_WRITE_ROLES` 与 `WRITE_LOCKED_HINT`。
+  常量**有条件地**合并（三类后端取值与用户可见语义目前完全一致），注释写明
+  **一旦后端对某一族放开就必须拆成三个常量**——继续共用的后果是前端对已放开的那族
+  仍然隐藏入口，即**前端用旧判断否决后端的新能力，而这类不一致没有任何测试会发现**。
+  与 `WAREHOUSE_WRITE_ROLES` 保持分开：仓库主数据不是单据流，不是同一个授权决策。
+- `Warehouse.vue`：
+  - 新增 `wmsWriteAllowed`（挂 `ROLE_CHANGED_EVENT`，与另两个门控同机制）；
+  - 新增 `wmsWriteBlocked(action)`：每个写函数**第一行**都调，入口隐藏之外再挡一次；
+  - 新增 `ok(res, fallback)`：`code !== 200` 时**原样透出 `res.message`** 并中止成功分支，
+    11 个写操作全部改判 `code`；
+  - 15 个入口按 `v-if="wmsWriteAllowed"` 收起，`v-else` 给 `role="note"` 灰字说明；
+  - 三个建单入口补「无可用仓库」前置说明。
+- `InventoryCsvImport.vue`：新增 `roleAllowed` prop（由父页统一判定），
+  文件选择与导入按钮一并禁用，`upload()` 内再兜底一次。
+
+### 5. 测试与验证
+
+- 新增 Vitest **14 例**（全量 **617/617**，50 文件）：三个 Tab 的 VIEWER 门控 /
+  OPERATOR+ADMIN 有入口 / 未知角色放行 / 直接调 submitInbound、doPick、confirmShip、
+  applyStocktakeRow 均不发请求；**6 例专钉「code=400 被当成失败」**（不关弹窗、不重拉列表）；
+  3 例无仓库时不打开弹窗。
+- E2E：新增「VIEWER 时海外仓不给入库/出库/盘点写入口，但单据仍可读」，
+  逐 Tab 断言各自说明文案；Warehouse 相关 **20/20**。
+- 门禁：`vue-tsc --noEmit` 0 错、`vite build` 通过、stub-shape RED 0、param-name 0、
+  hygiene 0、entity_column_drift 110 实体 0 漂移、release tools 91/91。
+- **变异验证 3 项逐一红后还原**：①`ok()` 恒真（4 例红）②门控恒开（3 例红）
+  ③去掉无仓库守卫（1 例红）。第 ③ 项第一轮变异** tests 却全绿**——因为变异后的代码
+  直接抛 `TypeError`，用例「碰巧」通过。补上 toast 断言后才真正抓到：
+  **变异只让用例变红不够，还要确认它是因为断言失败而红，不是因为崩了而红。**
+
+### 6. 下一班要做的（本节新开的待办，勿与 §S10 的 🔴 类混在一起）
+
+**四个页面完全没有 `canUseRole` 门控，而它们的后端有 `@RequireRole` 写端点**：
+`OrderList.vue`、`Finance.vue`、`ListingMonitor.vue`、`CustomerService.vue`。
+已有门控的页面：`AdManager`、`AdSearchTerms`、`LogisticsDashboard`、`Procurement`、`Warehouse`。
+
+处理前必须先逐页核实两件事，不要照着本节直接照搬：
+1. **VIEWER 到底会不会被分配到这些页面**（`assignShopUser` 默认就是 VIEWER，
+   而店铺级角色 `ShopUserItem.role` 与 JWT 里的 `role` 是**两个来源**，
+   `canUseRole` 读的是后者——详见 `utils/identity.ts` 顶部注释）；
+2. 后端的角色集是否真的与 `WMS_WRITE_ROLES` 一致（逐条读 `@RequireRole`，不要假定）。
+
+`Finance.vue` 走查还发现两处**与角色无关**的披露缺口（判 BAD，本节未修，不在同一条线上）：
+`Finance.vue:76` 空态「暂无凭证数据」不区分「真没凭证 / 没选店 / 请求失败 / data 非数组」
+四种成因（失败时顶部错误横幅几秒后被下一次查询的前缀擦除逻辑带走，剩下的表格与
+「这家店确实没凭证」完全无法区分，同文件 191/255/322 行的空态都写了「需先同步」）；
+`Finance.vue:314-315` 非 OPEN 状态的差异行上「生成索赔单/忽略」两个按钮静默禁用，
+**没有任何地方说明为什么不能点**（同一行的「详情」永远是亮的，进一步放大困惑）。
+
+另有一条**已知未披露**：`amz_warehouse_stock` 快照表全仓没有任何写入方
+（`POST /logistics/warehouse/stock` 前端刻意不接，也无定时任务回填），
+因此**库龄分析在没有人工 curl 灌数的部署上恒为空**，而页面只说「尚未加载：切到本标签会自动算一次」。
