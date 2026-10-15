@@ -1277,6 +1277,37 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/ad\/campaigns\/summary\/type\//, data: AD_SUMMARY_BY_TYPE },
   { match: /^\/ad\/creatives\/list\//, data: AD_CREATIVES },
   { match: /^\/ad\/targeting\/list\//, data: AD_TARGETING },
+  // 活动写操作：新建/编辑共用 /ad/campaigns（POST/PUT 按 method 分），
+  // 批量两个是 /batch 与 /batch/status。回显里带 shopId 让用例能断言
+  // 「店铺是从查询参数取的，不是请求体里的」——后端正是这么覆盖的。
+  {
+    match: /^\/ad\/campaigns$/,
+    data: (query: URLSearchParams) => ({ id: 99, shopId: Number(query.get('shopId')), campaignId: 'C-E2E', campaignName: 'E2E 活动', adType: 'SP', status: 'ENABLED', budget: 60 })
+  },
+  {
+    match: /^\/ad\/campaigns\/batch$/,
+    data: (query: URLSearchParams) => [
+      { id: 91, shopId: Number(query.get('shopId')), campaignId: 'C-4001', campaignName: '批量一', adType: 'SP', status: 'ENABLED' },
+      { id: 92, shopId: Number(query.get('shopId')), campaignId: 'C-4002', campaignName: '批量二', adType: 'SP', status: 'ENABLED' }
+    ]
+  },
+  // 批量改状态：按 ids 个数回同等数量的行——用例据此断言「不能把没改成的报成成功」
+  {
+    match: /^\/ad\/campaigns\/batch\/status$/,
+    data: (query: URLSearchParams) => {
+      const ids = (query.get('ids') || '').split(',').filter(Boolean)
+      return ids.map((id) => ({ ...AD_CAMPAIGNS[0], id: Number(id), status: query.get('status') }))
+    }
+  },
+  // 素材 / 定向编辑（PUT 与 POST 同路径同形状）
+  {
+    match: /^\/ad\/creatives$/,
+    data: (query: URLSearchParams) => ({ id: 21, shopId: Number(query.get('shopId')), campaignId: 'C-1001', creativeType: 'VIDEO', headline: 'E2E 改过的标题', brandName: 'E2E Brand', status: 'PENDING' })
+  },
+  {
+    match: /^\/ad\/targeting$/,
+    data: (query: URLSearchParams) => ({ id: 31, shopId: Number(query.get('shopId')), campaignId: 'C-1002', targetingType: 'CONTEXTUAL', targetingValue: 'E2E-value', bid: 0.9 })
+  },
 
   // ===== 财务 /finance =====
   // 游标分页：带 cursor 的请求返回第二页并收口，否则返回第一页且 truncated=true

@@ -7,7 +7,13 @@ export type AdType = 'SP' | 'SB' | 'SD' | 'DSP'
 // 广告活动扩展（支持全广告类型）
 export interface AdCampaignExt {
   id?: number
-  shopId: number
+  /**
+   * 请求体里可省略：后端 createCampaign/updateCampaign 用查询参数里的 shopId 覆盖它，
+   * 且两者不一致时明确拒绝（`活动归属与请求店铺不一致`）。
+   * 声明成必填只会诱导前端把店铺 ID 塞进 body——那是给「改店铺」留一条后端不认的路。
+   * 响应里它一定有值（列表/详情都返回）。
+   */
+  shopId?: number
   campaignId: string
   campaignName: string
   adType: AdType

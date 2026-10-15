@@ -95,25 +95,31 @@
         <table class="data-table">
           <thead>
             <tr>
+              <th v-if="canEditCampaign"><input type="checkbox" :checked="allChecked" @change="toggleAllCampaigns(($event.target as HTMLInputElement).checked)" aria-label="全选活动" /></th>
               <th>活动名称</th>
               <th>状态</th>
               <th>日预算</th>
               <th>花费</th>
               <th>销售额</th>
               <th>ACoS</th>
+              <th v-if="canEditCampaign">操作</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="camp in campaigns" :key="camp.id">
+              <td v-if="canEditCampaign"><input type="checkbox" :value="camp.id" v-model="checkedCampaignIds" aria-label="选择活动" /></td>
               <td>{{ camp.name }}</td>
               <td><span class="status-tag" :class="camp.active ? 'active' : 'paused'">{{ camp.active ? '运行中' : '已暂停' }}</span></td>
               <td>${{ camp.budget }}</td>
               <td>{{ money(camp.spend) }}</td>
               <td>{{ money(camp.sales) }}</td>
               <td :class="spAcosClass(camp.acos)">{{ pct(camp.acos) }}</td>
+              <td v-if="canEditCampaign">
+                <button class="action-btn" @click="openCampaignEdit(camp.campaignId)">编辑</button>
+              </td>
             </tr>
             <tr v-if="!loading && campaigns.length === 0">
-              <td colspan="6" class="empty-row">
+              <td :colspan="canEditCampaign ? 8 : 6" class="empty-row">
                 <div class="empty-state">
                   <Icon icon="mdi:chart-line" width="32" class="empty-icon" />
                   <span>暂无广告活动数据</span>
@@ -126,6 +132,42 @@
           花费 / 销售额 / ACoS 取自本页已拉到的日报聚合行，按 campaignId 关联过来；
           活动没有日报时显示「—」。日预算仍是广告活动扩展表的真列。
         </p>
+
+        <!-- 活动写操作：新建 / 批量新建 / 批量改状态。
+             默认收起：大部分时候只是看数，四个按钮常驻会把表格挤成两行。 -->
+        <div v-if="canEditCampaign" class="ops-card" data-panel="campaign-ops">
+          <div class="section-header">
+            <h3>活动写操作</h3>
+            <button class="action-btn" @click="campaignOpsOpen = !campaignOpsOpen">
+              {{ campaignOpsOpen ? '收起' : '展开' }}
+            </button>
+          </div>
+          <template v-if="campaignOpsOpen">
+            <p class="ops-note">
+              这些按钮直接改<strong>真实广告平台</strong>的活动（<code>POST/PUT /ad/campaigns</code>），
+              不是本地草稿：暂停后平台立刻停止投放，无法从本系统撤销。仅 OPERATOR / ADMIN 可点。
+            </p>
+            <div class="ops-row">
+              <button class="action-btn" @click="openCampaignCreate()">新建活动</button>
+              <button class="action-btn" @click="batchDialog.visible = true; batchDialog.parseError = ''">批量新建</button>
+              <button
+                class="action-btn cancel"
+                :disabled="checkedCampaignIds.length === 0"
+                @click="askBatchStatus('PAUSED')"
+              >
+                批量暂停（{{ checkedCampaignIds.length }}）
+              </button>
+              <button
+                class="action-btn"
+                :disabled="checkedCampaignIds.length === 0"
+                @click="askBatchStatus('ENABLED')"
+              >
+                批量启用（{{ checkedCampaignIds.length }}）
+              </button>
+            </div>
+            <div v-if="campaignError" class="ops-error" role="alert">{{ campaignError }}</div>
+          </template>
+        </div>
       </div>
 
       <!-- SB 广告素材管理 -->
@@ -153,6 +195,7 @@
                 <td>{{ cr.asin || '-' }}</td>
                 <td><span class="status-tag" :class="creativeStatusClass(cr.status)">{{ cr.status }}</span></td>
                 <td>
+                  <button v-if="canEditCampaign" class="action-btn" @click="openCreativeEdit(cr)">编辑</button>
                   <button v-if="cr.status === 'PENDING'" class="action-btn" @click="reviewCreative(cr.id!, 'APPROVED')">通过</button>
                   <button v-if="cr.status === 'PENDING'" class="action-btn cancel" @click="reviewCreative(cr.id!, 'REJECTED')">拒绝</button>
                 </td>
@@ -161,6 +204,7 @@
             </tbody>
           </table>
         </div>
+        <div v-if="creativeError" class="ops-error" role="alert">{{ creativeError }}</div>
         <div class="ext-toolbar">
           <input v-model="creativeQuery.campaignId" placeholder="输入活动ID查询素材" />
           <button class="action-btn" @click="loadCreatives">查询</button>
@@ -191,12 +235,16 @@
                 <td>{{ tg.clicks || 0 }}</td>
                 <td>${{ tg.spend || 0 }}</td>
                 <td>${{ tg.sales || 0 }}</td>
-                <td><button class="action-btn cancel" @click="removeTargeting(tg.id!)">删除</button></td>
+                <td>
+                  <button v-if="canEditCampaign" class="action-btn" @click="openTargetingEdit(tg)">编辑</button>
+                  <button class="action-btn cancel" @click="removeTargeting(tg.id!)">删除</button>
+                </td>
               </tr>
               <tr v-if="targetings.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:target-variant" width="32" class="empty-icon" /><span>暂无定向规则，请输入活动ID查询</span></div></td></tr>
             </tbody>
           </table>
         </div>
+        <div v-if="targetingError" class="ops-error" role="alert">{{ targetingError }}</div>
         <div class="ext-toolbar">
           <input v-model="targetingQuery.campaignId" placeholder="输入活动ID查询定向" />
           <button class="action-btn" @click="loadTargetings">查询</button>
@@ -270,10 +318,10 @@
         </template>
       </div>
 
-      <!-- 素材弹窗 -->
+      <!-- 素材弹窗（新建 / 编辑同一套表单；编辑时按 id 走 PUT） -->
       <div v-if="creativeDialog.visible" class="modal-mask" @click.self="creativeDialog.visible = false">
         <div class="modal">
-          <h3>新建 SB 广告素材</h3>
+          <h3>{{ creativeDialog.form.id ? '编辑 SB 广告素材' : '新建 SB 广告素材' }}</h3>
           <div class="form-grid">
             <label>活动ID<input v-model="creativeDialog.form.campaignId" /></label>
             <label>素材类型
@@ -291,6 +339,10 @@
             <label>落地页<input v-model="creativeDialog.form.landingPageUrl" /></label>
             <label>ASIN<input v-model="creativeDialog.form.asin" /></label>
           </div>
+          <p class="modal-note">
+            素材的审核状态走行内的「通过 / 拒绝」，这里只改主数据；活动ID 必须属于本店，否则后端拒绝。
+          </p>
+          <div v-if="creativeError" class="ops-error" role="alert">{{ creativeError }}</div>
           <div class="modal-actions">
             <button class="action-btn cancel" @click="creativeDialog.visible = false">取消</button>
             <button class="action-btn" @click="submitCreative">保存</button>
@@ -298,10 +350,10 @@
         </div>
       </div>
 
-      <!-- 定向弹窗 -->
+      <!-- 定向弹窗（新建 / 编辑同一套表单；编辑时按 id 走 PUT） -->
       <div v-if="targetingDialog.visible" class="modal-mask" @click.self="targetingDialog.visible = false">
         <div class="modal">
-          <h3>新建 SD 受众定向</h3>
+          <h3>{{ targetingDialog.form.id ? '编辑 SD 受众定向' : '新建 SD 受众定向' }}</h3>
           <div class="form-grid">
             <label>活动ID<input v-model="targetingDialog.form.campaignId" /></label>
             <label>定向类型
@@ -315,9 +367,95 @@
             <label>定向值<input v-model="targetingDialog.form.targetingValue" placeholder="ASIN/Category/Interest" /></label>
             <label>竞价<input v-model.number="targetingDialog.form.bid" type="number" /></label>
           </div>
+          <p class="modal-note">
+            曝光 / 点击 / 花费 / 销售额由日报同步回填，这里改不动；删除走行内按钮。
+          </p>
+          <div v-if="targetingError" class="ops-error" role="alert">{{ targetingError }}</div>
           <div class="modal-actions">
             <button class="action-btn cancel" @click="targetingDialog.visible = false">取消</button>
             <button class="action-btn" @click="submitTargeting">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 活动弹窗：新建 / 编辑（campaignId 编辑态只读——后端明确拒改） -->
+      <div v-if="campaignDialog.visible" class="modal-mask" @click.self="campaignDialog.visible = false">
+        <div class="modal">
+          <h3>{{ campaignDialog.mode === 'edit' ? '编辑广告活动' : '新建广告活动' }}</h3>
+          <div class="form-grid">
+            <label>活动ID
+              <input
+                v-model="campaignDialog.form.campaignId"
+                :readonly="campaignDialog.mode === 'edit'"
+                :class="{ 'input-locked': campaignDialog.mode === 'edit' }"
+              />
+            </label>
+            <label>活动名称<input v-model="campaignDialog.form.campaignName" /></label>
+            <label>广告类型
+              <select v-model="campaignDialog.form.adType">
+                <option value="SP">SP 商品推广</option>
+                <option value="SB">SB 品牌推广</option>
+                <option value="SD">SD 展示推广</option>
+                <option value="DSP">DSP 批量报表</option>
+              </select>
+            </label>
+            <label>日预算<input v-model="campaignDialog.form.budget" type="number" placeholder="留空表示不修改" /></label>
+            <label>状态
+              <select v-model="campaignDialog.form.status">
+                <option value="ENABLED">启用</option>
+                <option value="PAUSED">暂停</option>
+                <option value="ARCHIVED">归档</option>
+              </select>
+            </label>
+          </div>
+          <p class="modal-note">
+            编辑态下<strong>活动ID 只读</strong>——后端拒改它（会破坏与日报行的关联）。
+            日预算留空表示保持原值，填 0 是把预算设成 0 元而不是「不改」。
+            暂停 / 归档是真实平台操作，改完立刻生效。
+          </p>
+          <div v-if="campaignError" class="ops-error" role="alert">{{ campaignError }}</div>
+          <div class="modal-actions">
+            <button class="action-btn cancel" @click="campaignDialog.visible = false">取消</button>
+            <button class="action-btn" :disabled="!campaignFormReady" @click="submitCampaign">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 批量新建弹窗 -->
+      <div v-if="batchDialog.visible" class="modal-mask" @click.self="batchDialog.visible = false">
+        <div class="modal">
+          <h3>批量新建广告活动</h3>
+          <p class="modal-note">
+            一行一个活动，格式「活动ID, 活动名称[, 预算[, 状态]]」，例如
+            <code>C-4001, 春季促销, 80, ENABLED</code>。
+            所有行会在<strong>一次请求</strong>里提交到 <code>/ad/campaigns/batch</code>，
+            任一行不合法后端会整批拒绝——不会留下建了一半的活动。这里只建 SP 活动。
+          </p>
+          <textarea v-model="batchDialog.text" class="batch-box" rows="8" placeholder="C-4001, 春季促销, 80&#10;C-4002, 夏季清仓"></textarea>
+          <div v-if="batchDialog.parseError" class="ops-error" role="alert">{{ batchDialog.parseError }}</div>
+          <div v-if="campaignError" class="ops-error" role="alert">{{ campaignError }}</div>
+          <div class="modal-actions">
+            <button class="action-btn cancel" @click="batchDialog.visible = false">取消</button>
+            <button class="action-btn" :disabled="!batchDialog.text.trim()" @click="submitBatchCreate">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 批量改状态二次确认 -->
+      <div v-if="batchStatusDialog.visible" class="modal-mask" @click.self="batchStatusDialog.visible = false">
+        <div class="modal">
+          <h3>确认{{ batchStatusDialog.status === 'PAUSED' ? '暂停' : '启用' }} {{ checkedCampaignIds.length }} 个活动</h3>
+          <p class="modal-note">
+            这会<strong>立刻</strong>改动真实广告平台的投放状态，
+            {{ batchStatusDialog.status === 'PAUSED' ? '暂停后这些活动马上停止消耗预算，本系统无法帮你撤销' : '启用后这些活动马上开始消耗预算' }}。
+            若只想临时停投，优先用单个活动的编辑而不是批量操作。
+          </p>
+          <div v-if="campaignError" class="ops-error" role="alert">{{ campaignError }}</div>
+          <div class="modal-actions">
+            <button class="action-btn cancel" @click="batchStatusDialog.visible = false">取消</button>
+            <button class="action-btn cancel" @click="submitBatchStatus">
+              确认{{ batchStatusDialog.status === 'PAUSED' ? '暂停' : '启用' }}
+            </button>
           </div>
         </div>
       </div>
@@ -333,7 +471,8 @@ import AppSidebar from '../components/AppSidebar.vue'
 import { getAdReports, getAdTrend, syncAdReports, syncAllAdReports, AD_SYNC_MAX_DAYS } from '@/api/ad'
 import type { AdOverview, AcosTrendItem, AdCampaign, AdSyncSummary, AdReportRow } from '@/api/ad'
 import * as AdExt from '@/api/ad-ext'
-import type { AdCreative, AdTargeting, AdSummary, AdType } from '@/api/ad-ext'
+import type { AdCampaignExt, AdCreative, AdTargeting, AdSummary, AdType } from '@/api/ad-ext'
+import { canUseRole } from '@/utils/identity'
 import { useShopGuard } from '@/composables/useShopGuard'
 
 const loading = ref(false)
@@ -555,6 +694,9 @@ const loadOverview = async () => {
     // 活动列表改用 /ad/campaigns/list（含名称/状态/预算，AdReport 行无这些字段）
     const cres = await AdExt.listCampaigns(shopId, 'SP')
     if (cres?.code === 200 && Array.isArray(cres.data) && cres.data.length > 0) {
+      // 原始行留给编辑/批量勾选（表格里展示的是聚合后的视图模型，没有 budget 之外的原始字段）
+      campaignRows.value = cres.data
+      checkedCampaignIds.value = []
       // 同一活动可能有多天日报，先按 campaignId 汇总再关联
       const byCampaign = new Map<string, { cost: number; sales: number }>()
       reportRows.forEach((r) => {
@@ -582,12 +724,16 @@ const loadOverview = async () => {
       })
     } else {
       campaigns.value = adDemoMode ? [...mockCampaigns] : []
+      campaignRows.value = []
+      checkedCampaignIds.value = []
       if (!cres || cres.code !== 200) {
         console.warn('[AdManager] 活动列表返回异常', cres)
       }
     }
   } catch (e) {
     campaigns.value = adDemoMode ? [...mockCampaigns] : []
+    campaignRows.value = []
+    checkedCampaignIds.value = []
     console.warn('[AdManager] 活动列表调用失败', e)
   }
   await loadTrend(shopId, activeAdTab.value)
@@ -599,6 +745,7 @@ onMounted(loadOverview)
 // ===== SB 广告素材 =====
 const creatives = ref<AdCreative[]>([])
 const creativeQuery = reactive<{ campaignId: string }>({ campaignId: '' })
+const creativeError = ref('')
 const creativeDialog = reactive<{ visible: boolean; form: AdCreative }>({
   visible: false,
   form: { campaignId: '', creativeType: 'VIDEO', headline: '', brandName: '', status: 'PENDING' }
@@ -614,15 +761,6 @@ const loadCreatives = async () => {
     const res = await AdExt.listCreatives(shopId, creativeQuery.campaignId)
     if (res?.code === 200) creatives.value = res.data || []
   } catch (e) { console.warn('[AdManager] 加载素材失败', e) }
-}
-const submitCreative = async () => {
-  const shopId = refreshShop()
-  if (!shopId) return
-  try {
-    await AdExt.createCreative(shopId, creativeDialog.form)
-    creativeDialog.visible = false
-    if (creativeQuery.campaignId) await loadCreatives()
-  } catch (e) { console.warn('[AdManager] 创建素材失败', e) }
 }
 const reviewCreative = async (id: number, status: 'APPROVED' | 'REJECTED') => {
   const shopId = refreshShop()
@@ -641,6 +779,7 @@ const creativeStatusClass = (s?: string) => {
 // ===== SD 受众定向 =====
 const targetings = ref<AdTargeting[]>([])
 const targetingQuery = reactive<{ campaignId: string }>({ campaignId: '' })
+const targetingError = ref('')
 const targetingDialog = reactive<{ visible: boolean; form: AdTargeting }>({
   visible: false,
   form: { campaignId: '', targetingType: 'CONTEXTUAL', targetingValue: '', bid: 1 }
@@ -656,15 +795,6 @@ const loadTargetings = async () => {
     const res = await AdExt.listTargeting(shopId, targetingQuery.campaignId)
     if (res?.code === 200) targetings.value = res.data || []
   } catch (e) { console.warn('[AdManager] 加载定向失败', e) }
-}
-const submitTargeting = async () => {
-  const shopId = refreshShop()
-  if (!shopId) return
-  try {
-    await AdExt.createTargeting(shopId, targetingDialog.form)
-    targetingDialog.visible = false
-    if (targetingQuery.campaignId) await loadTargetings()
-  } catch (e) { console.warn('[AdManager] 创建定向失败', e) }
 }
 const removeTargeting = async (id: number) => {
   const shopId = refreshShop()
@@ -691,6 +821,277 @@ const acosClass = (acos?: number) => {
   if (acos < 25) return 'acos-good'
   if (acos < 35) return 'acos-warn'
   return 'acos-bad'
+}
+
+// ===== 活动 CRUD（曾零调用：createCampaign/updateCampaign/batchCreateCampaigns/batchUpdateStatus）=====
+// 这四个 api 函数定义完整但页面从未调用（只在测试里被 mock），SP 活动表长期只读——
+// 换预算、暂停活动都要去卖家后台。后端四个写端点全部 @RequireRole(OPERATOR/ADMIN)，
+// 入口门控沿用采购页取消付款 / 搜索词批量出建议的先例：VIEWER 隐藏，未知角色放行让后端做权威判定。
+const canEditCampaign = canUseRole(['OPERATOR', 'ADMIN'])
+
+/** 原始活动行：编辑/批量勾选都要 id 与 campaignId，而表格里展示的是聚合后的视图模型 */
+const campaignRows = ref<AdCampaignExt[]>([])
+const checkedCampaignIds = ref<number[]>([])
+const campaignOpsOpen = ref(false)
+const campaignError = ref('')
+const campaignDialog = reactive<{
+  visible: boolean
+  mode: 'create' | 'edit'
+  form: { id?: number; campaignId: string; campaignName: string; adType: AdType; status: 'ENABLED' | 'PAUSED' | 'ARCHIVED'; budget: number | string }
+}>({
+  visible: false,
+  mode: 'create',
+  form: { campaignId: '', campaignName: '', adType: 'SP', status: 'ENABLED', budget: '' }
+})
+const batchDialog = reactive<{ visible: boolean; text: string; parseError: string }>({
+  visible: false, text: '', parseError: ''
+})
+const batchStatusDialog = reactive<{ visible: boolean; status: 'PAUSED' | 'ENABLED'; resultNote: string }>({
+  visible: false, status: 'PAUSED', resultNote: ''
+})
+
+const allChecked = computed(
+  () => campaignRows.value.length > 0 && checkedCampaignIds.value.length === campaignRows.value.length
+)
+const toggleAllCampaigns = (checked: boolean) => {
+  checkedCampaignIds.value = checked ? campaignRows.value.map((c) => c.id!) : []
+}
+
+/** 与后端 validateCreateFields 同口径的前置校验：省一次往返，但后端仍是权威 */
+const campaignFormReady = computed(() => {
+  const f = campaignDialog.form
+  return Boolean(String(f.campaignId).trim() && String(f.campaignName).trim() && String(f.adType).trim())
+})
+
+const openCampaignCreate = () => {
+  campaignDialog.mode = 'create'
+  campaignDialog.visible = true
+  campaignDialog.form = { campaignId: '', campaignName: '', adType: 'SP', status: 'ENABLED', budget: '' }
+}
+
+const openCampaignEdit = (campaignId: string) => {
+  // 表格行（视图模型）与 campaignRows（原始行）是两个数组，按下标关联是一条没人守的不变量：
+  // 汇总、排序、分页任一改动都会让「编辑」改到别的活动上。用活动 ID 找回自己的行。
+  const row = campaignRows.value.find((c) => String(c.campaignId ?? '') === campaignId)
+  if (!row) {
+    campaignError.value = `找不到活动 ${campaignId}，请重新查询后再编辑`
+    return
+  }
+  campaignDialog.mode = 'edit'
+  campaignDialog.visible = true
+  campaignDialog.form = {
+    id: row.id,
+    campaignId: String(row.campaignId ?? ''),
+    campaignName: String(row.campaignName ?? ''),
+    adType: (row.adType as AdType) || 'SP',
+    // 库里理论上可能有关联状态机之外的值（历史数据/后端扩枚举），
+    // 落回后端认可的三态而不是原样带进表单——带进去会在保存时被拒且看不出原因。
+    status: row.status === 'PAUSED' || row.status === 'ARCHIVED' ? row.status : 'ENABLED',
+    budget: row.budget ?? ''
+  }
+}
+
+const submitCampaign = async () => {
+  const shopId = refreshShop()
+  if (!shopId || !campaignFormReady.value) return
+  campaignError.value = ''
+  const f = campaignDialog.form
+  const budget = String(f.budget).trim()
+  // 预算留空 = 不修改（后端 NOT_NULL 策略下 null 字段不写），
+  // 不能填 0：0 预算会把活动打到花不出钱，那不是「保持原值」。
+  const body: AdCampaignExt = {
+    campaignId: f.campaignId.trim(),
+    campaignName: f.campaignName.trim(),
+    adType: f.adType,
+    status: f.status,
+    ...(budget ? { budget: Number(budget) } : {})
+  }
+  if (campaignDialog.mode === 'edit') body.id = f.id
+  try {
+    const res = campaignDialog.mode === 'edit'
+      ? await AdExt.updateCampaign(shopId, body)
+      : await AdExt.createCampaign(shopId, body)
+    if (res?.code !== 200) {
+      campaignError.value = `保存活动：${res?.message || '后端返回非 200'}`
+      return
+    }
+    campaignDialog.visible = false
+    await loadOverview()
+  } catch (e) {
+    campaignError.value = `保存活动：${e instanceof Error ? e.message : '调用失败'}`
+  }
+}
+
+/**
+ * 批量新建：一行一个活动，`活动ID, 活动名称[, 预算[, 状态]]`。
+ * 走 /ad/campaigns/batch（一个数组体的单次请求），不是逐条 create——
+ * 批量建 10 个活动逐条发要么慢要么中途失败留下半个批次。
+ */
+const parseBatchRows = (): AdCampaignExt[] | null => {
+  const lines = batchDialog.text.split('\n').map((l) => l.trim()).filter(Boolean)
+  if (lines.length === 0) {
+    batchDialog.parseError = '请至少输入一行'
+    return null
+  }
+  const rows: AdCampaignExt[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const parts = lines[i].split(',').map((p) => p.trim())
+    if (parts.length < 2 || !parts[0] || !parts[1]) {
+      batchDialog.parseError = `第 ${i + 1} 行格式应为「活动ID, 活动名称」：${lines[i]}`
+      return null
+    }
+    const budget = parts[2] ? Number(parts[2]) : undefined
+    if (parts[2] && !Number.isFinite(budget)) {
+      batchDialog.parseError = `第 ${i + 1} 行预算不是数字：${parts[2]}`
+      return null
+    }
+    const rawStatus = parts[3] ? parts[3].toUpperCase() : undefined
+    const status = rawStatus === 'ENABLED' || rawStatus === 'PAUSED' || rawStatus === 'ARCHIVED'
+      ? rawStatus
+      : undefined
+    if (rawStatus && !status) {
+      batchDialog.parseError = `第 ${i + 1} 行状态仅支持 ENABLED / PAUSED / ARCHIVED：${parts[3]}`
+      return null
+    }
+    rows.push({
+      campaignId: parts[0],
+      campaignName: parts[1],
+      adType: 'SP',
+      ...(budget !== undefined ? { budget } : {}),
+      ...(status ? { status } : {})
+    })
+  }
+  return rows
+}
+
+const submitBatchCreate = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  batchDialog.parseError = ''
+  campaignError.value = ''
+  const rows = parseBatchRows()
+  if (!rows) return
+  try {
+    const res = await AdExt.batchCreateCampaigns(shopId, rows)
+    if (res?.code !== 200) {
+      campaignError.value = `批量新建：${res?.message || '后端返回非 200'}`
+      return
+    }
+    batchDialog.visible = false
+    batchDialog.text = ''
+    await loadOverview()
+  } catch (e) {
+    campaignError.value = `批量新建：${e instanceof Error ? e.message : '调用失败'}`
+  }
+}
+
+/**
+ * 批量改状态：一个 PUT 按 ids 改，是不可逆的真实平台写操作，故二次确认。
+ * 确认按钮文案随目标状态变（暂停/启用），不让用户对着同一个「确认」猜自己批准了什么。
+ */
+const askBatchStatus = (status: 'PAUSED' | 'ENABLED') => {
+  if (checkedCampaignIds.value.length === 0) return
+  batchStatusDialog.status = status
+  batchStatusDialog.resultNote = ''
+  batchStatusDialog.visible = true
+}
+
+const submitBatchStatus = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  batchStatusDialog.resultNote = ''
+  campaignError.value = ''
+  const ids = [...checkedCampaignIds.value]
+  try {
+    const res = await AdExt.batchUpdateStatus(shopId, ids, batchStatusDialog.status)
+    if (res?.code !== 200) {
+      campaignError.value = `批量改状态：${res?.message || '后端返回非 200'}`
+      batchStatusDialog.visible = false
+      return
+    }
+    // 后端按 ids 原序返回更新后的行；回来的比勾选的少，
+    // 说明有 id 被归属校验拦下了——报「没有活动被更新」而不是「已暂停 N 个」。
+    const returned = Array.isArray(res.data) ? res.data : []
+    batchStatusDialog.visible = false
+    checkedCampaignIds.value = []
+    if (returned.length < ids.length) {
+      campaignError.value = `批量改状态：勾选 ${ids.length} 个活动，只有 ${returned.length} 个被更新，` +
+        '其余不在本店或已归档（归属校验在后端）'
+      return
+    }
+    await loadOverview()
+  } catch (e) {
+    campaignError.value = `批量改状态：${e instanceof Error ? e.message : '调用失败'}`
+    batchStatusDialog.visible = false
+  }
+}
+
+// 素材/定向编辑：新建已有入口，补「编辑」走对应的 PUT（后端按 id + shopId 双重定位）
+const openCreativeEdit = (row: AdCreative) => {
+  creativeDialog.form = {
+    id: row.id,
+    campaignId: String(row.campaignId ?? ''),
+    creativeType: row.creativeType || 'VIDEO',
+    headline: row.headline || '',
+    brandName: row.brandName || '',
+    logoUrl: row.logoUrl || '',
+    videoUrl: row.videoUrl || '',
+    landingPageUrl: row.landingPageUrl || '',
+    asin: row.asin || '',
+    status: row.status || 'PENDING'
+  }
+  creativeDialog.visible = true
+}
+
+const submitCreative = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  creativeError.value = ''
+  const isEdit = creativeDialog.form.id != null
+  try {
+    const res = isEdit
+      ? await AdExt.updateCreative(shopId, creativeDialog.form)
+      : await AdExt.createCreative(shopId, creativeDialog.form)
+    if (res?.code !== 200) {
+      creativeError.value = `${isEdit ? '保存素材' : '新建素材'}：${res?.message || '后端返回非 200'}`
+      return
+    }
+    creativeDialog.visible = false
+    if (creativeQuery.campaignId) await loadCreatives()
+  } catch (e) {
+    creativeError.value = `${isEdit ? '保存素材' : '新建素材'}：${e instanceof Error ? e.message : '调用失败'}`
+  }
+}
+
+const openTargetingEdit = (row: AdTargeting) => {
+  targetingDialog.form = {
+    id: row.id,
+    campaignId: String(row.campaignId ?? ''),
+    targetingType: row.targetingType || 'CONTEXTUAL',
+    targetingValue: row.targetingValue || '',
+    bid: row.bid ?? 1
+  }
+  targetingDialog.visible = true
+}
+
+const submitTargeting = async () => {
+  const shopId = refreshShop()
+  if (!shopId) return
+  targetingError.value = ''
+  const isEdit = targetingDialog.form.id != null
+  try {
+    const res = isEdit
+      ? await AdExt.updateTargeting(shopId, targetingDialog.form)
+      : await AdExt.createTargeting(shopId, targetingDialog.form)
+    if (res?.code !== 200) {
+      targetingError.value = `${isEdit ? '保存定向' : '新建定向'}：${res?.message || '后端返回非 200'}`
+      return
+    }
+    targetingDialog.visible = false
+    if (targetingQuery.campaignId) await loadTargetings()
+  } catch (e) {
+    targetingError.value = `${isEdit ? '保存定向' : '新建定向'}：${e instanceof Error ? e.message : '调用失败'}`
+  }
 }
 </script>
 
@@ -798,6 +1199,12 @@ const acosClass = (acos?: number) => {
 .form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--color-on-surface); }
 .form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.modal-note { font-size: 0.75rem; color: var(--color-muted); line-height: 1.6; margin: 0.625rem 0 0; }
+.modal-note code, .ops-note code { font-family: var(--font-mono, monospace); }
+.batch-box { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-mono, monospace); font-size: 0.8125rem; resize: vertical; }
+.input-locked { background: var(--color-muted-light); color: var(--color-muted); cursor: not-allowed; }
+/* 勾选框列：收窄，别把活动名称挤走 */
+.data-table th:first-child:has(input[type="checkbox"]), .data-table td:first-child:has(input[type="checkbox"]) { width: 2.25rem; text-align: center; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } .acos-overview { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 768px) { .main-content { margin-left: 0; } .acos-overview { grid-template-columns: 1fr; } .ad-tab-bar { overflow-x: auto; } }

@@ -243,6 +243,117 @@ test.describe('AdManager 交互', () => {
     await expect(cards.first()).toContainText('20%')
     await expect(cards.first()).toContainText('5x')
   })
+
+  // ===== ad 域 CRUD 收口（createCampaign/updateCampaign/batchCreateCampaigns/
+  //      batchUpdateStatus/updateCreative/updateTargeting 曾零调用）=====
+  // 断言的纪律：写操作必须走对方法与路径，且店铺从查询参数带（后端用它覆盖 body）；
+  // 请求体的字段白名单在 vitest 里断言（那里读得到 mock 调用参数），这里断言方法与路径。
+  test('VIEWER 看不到活动写操作入口；未知角色才放行', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('user_role', 'VIEWER'))
+    await page.goto('/ads')
+    await waitReady(page)
+    await expect(page.locator('[data-panel="campaign-ops"]')).toHaveCount(0)
+    await expect(page.locator('.data-table:visible thead th', { hasText: '操作' })).toHaveCount(0)
+  })
+
+  test('新建活动走 POST /ad/campaigns 并带 shopId，成功后重拉列表', async ({ page }) => {
+    const posts: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/campaigns') posts.push(r.method())
+    })
+    await page.goto('/ads')
+    await waitReady(page)
+    const ops = page.locator('[data-panel="campaign-ops"]')
+    await ops.locator('.action-btn', { hasText: '展开' }).click()
+    await ops.locator('.action-btn', { hasText: '新建活动' }).click()
+
+    const dialog = page.locator('.modal-mask')
+    await expect(dialog).toContainText('新建广告活动')
+    // 必填项缺失时保存不可点（与后端 validateCreateFields 同口径）
+    await expect(dialog.locator('.action-btn', { hasText: '保存' })).toBeDisabled()
+    await dialog.locator('input').first().fill('C-E2E-1')
+    await dialog.locator('input').nth(1).fill('E2E 新建活动')
+    await dialog.locator('.action-btn', { hasText: '保存' }).click()
+
+    await expect.poll(() => posts.length).toBe(1)
+    expect(posts[0]).toBe('POST')
+    await expect(page.locator('.modal-mask')).toHaveCount(0)
+  })
+
+  test('批量新建两行只在一次请求里提交到 /batch', async ({ page }) => {
+    const batches: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/campaigns/batch') batches.push(r.method())
+    })
+    await page.goto('/ads')
+    await waitReady(page)
+    const ops = page.locator('[data-panel="campaign-ops"]')
+    await ops.locator('.action-btn', { hasText: '展开' }).click()
+    await ops.locator('.action-btn', { hasText: '批量新建' }).click()
+
+    const dialog = page.locator('.modal-mask')
+    await expect(dialog).toContainText('一次请求')
+    await dialog.locator('textarea').fill('C-4001, 批量一\nC-4002, 批量二')
+    await dialog.locator('.action-btn', { hasText: '保存' }).click()
+
+    // 两个活动必须合并成一次请求：逐条发会在中途失败时留下半个批次
+    await expect.poll(() => batches.length).toBe(1)
+    expect(batches[0]).toBe('POST')
+    await expect(page.locator('.modal-mask')).toHaveCount(0)
+  })
+
+  test('批量暂停要二次确认，并只按勾选行发一次 PUT', async ({ page }) => {
+    const statusCalls: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/campaigns/batch/status') {
+        statusCalls.push(new URL(r.url()).search)
+      }
+    })
+    await page.goto('/ads')
+    await waitReady(page)
+    const ops = page.locator('[data-panel="campaign-ops"]')
+    await ops.locator('.action-btn', { hasText: '展开' }).click()
+
+    const pauseBtn = ops.locator('.action-btn', { hasText: '批量暂停' })
+    // 未勾选时不可点：不能对空集合发一次「全店暂停」
+    await expect(pauseBtn).toBeDisabled()
+    await page.locator('.data-table:visible tbody input[type="checkbox"]').first().check()
+    await expect(pauseBtn).toContainText('1')
+
+    await pauseBtn.click()
+    const confirm = page.locator('.modal-mask')
+    await expect(confirm).toContainText('无法帮你撤销')
+    // 未确认前一个请求都不发
+    expect(statusCalls).toEqual([])
+    await confirm.locator('.action-btn', { hasText: '确认暂停' }).click()
+
+    await expect.poll(() => statusCalls.length).toBe(1)
+    expect(statusCalls[0]).toContain('status=PAUSED')
+    expect(statusCalls[0]).toContain('shopId=1')
+  })
+
+  test('素材编辑走 PUT /ad/creatives，标题按单条回填', async ({ page }) => {
+    const puts: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/creatives') puts.push(r.method())
+    })
+    await page.goto('/ads')
+    await waitReady(page)
+    await page.locator('.ad-tab-item', { hasText: 'SB 品牌推广' }).click()
+    const sb = page.locator('.ext-section:visible')
+    await sb.locator('input').fill('C-1001')
+    await sb.locator('.action-btn', { hasText: '查询' }).click()
+    await expect(sb.locator('.data-table tbody tr')).toHaveCount(1)
+
+    await sb.locator('.action-btn', { hasText: '编辑' }).click()
+    const dialog = page.locator('.modal-mask')
+    await expect(dialog).toContainText('编辑 SB 广告素材')
+    await dialog.locator('input').nth(2).fill('E2E 改过的标题')
+    await dialog.locator('.action-btn', { hasText: '保存' }).click()
+
+    await expect.poll(() => puts.length).toBe(1)
+    expect(puts[0]).toBe('PUT')
+  })
 })
 
 test.describe('Finance 交互', () => {
