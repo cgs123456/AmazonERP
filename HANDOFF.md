@@ -10,8 +10,13 @@
 > 是否补后端门禁是产品决策，见 §S20.6）；**C 类与角色无关的 UI 缺陷直接修**
 > （Finance 凭证空表格现在区分「没选店/没取到/契约异常/真没凭证」四种成因；
 > 非 OPEN 差异行的静默禁用按钮补上了原因说明）。
-> 验证：vitest 636/636、vue-tsc 0 错、build 通过、7 个变异全部捕获、新增 6 条 E2E 全绿、
-> 5 个仓库门禁 + release tools 91/91 全绿。
+> **§S20.7 是对 §S20 自身的复查与纠错，必读**：`call()` 原本是读与写共用的出口，门控加在它
+> 第一行就把 7 个后端「仅 `@ShopScoped`、无 `@RequireRole`」的只读查询一起挡掉了（VIEWER
+> 连入口都看不到，比「点了报错」更糟）；同一节里还有一条凭邻近印象写错的注解引用
+> （误称 `GET /finance/discrepancy/{id}` 有 `@RequireRole`）。已改成读走 `read()`、
+> 写走 `call()` 两个函数，并用 25/25 的端点-注解脚本核对 invariant。
+> 验证：vitest 643/643、vue-tsc 0 错、build 通过、三个方向变异全部由断言打红、
+> 新增 E2E（VIEWER 只读入口仍可点）全绿、5 个仓库门禁 + release tools 91/91 全绿。
 > 上一班（§S19）：复查 §S18.5.1 的覆盖面时发现**一个比缺门控更严重的缺陷，且 §S17 的
 > 结论本身是不完整的**——`Warehouse.vue` 上 15 个 WMS 写入口（入库单/出库单/盘点单全族）
 > 此前**一个门控都没有**，§S17 只补了仓库新建/编辑与改库位那 3 个。
@@ -58,17 +63,21 @@
 
 ## 项目现状一句话
 
-**本机门禁全绿，CI 待跑（HEAD 见 git log；本班 §S20 为纯前端班，无 Java/SQL 改动）**：
-前端 vitest **636/636**（50 文件，含本班 +20）+ vue-tsc 0 错 + `vite build` 通过 +
-本班新增 E2E **6/6**；stub-shape RED 0、param-name 0、hygiene 0、entity_column_drift
-**110 实体/0 漂移**、release tools **91/91**。7 个变异测试全部捕获（断言失败，非崩溃）。
+**本机门禁全绿，CI 待跑（HEAD 见 git log；本班 §S20/§S20.7 为纯前端班，无 Java/SQL 改动）**：
+前端 vitest **643/643**（50 文件）+ vue-tsc 0 错 + `vite build` 通过 +
+本班新增 E2E **7/7**（含 §S20.7 补的「VIEWER 只读入口仍可点」）；stub-shape RED 0、param-name 0、
+hygiene 0、entity_column_drift **110 实体/0 漂移**、release tools **91/91**。
+三个方向的变异全部由断言打红（非崩溃）。全量 E2E 有既有 flake，每次红的都不一样且与本节
+无关，单独跑全绿——见 §S20.7.4，**不要在这个班里修**。
 上一班 CI 全绿（run `38727636484` 代码 / `38727838899` 文档，HEAD `151f05e`），11/11 job。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
 业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（见 §S9.12 / §S17.4）。
-**§S19.6 的四页门控待办已按后端实际角色集分三类处理完**（见 §S20）；剩余待办见 §S20.6：
+**§S19.6 的四页门控待办已按后端实际角色集分三类处理完**（见 §S20），且 §S20.7 复查出
+「读被写门控一起拦掉」并已修正；剩余待办见 §S20.6：
 ① ListingMonitor / CustomerService 的写端点**后端没锁角色**，VIEWER 与 OPERATOR 等权——
 是否补后端门禁要产品拍板，前端不替它决定；② `amz_warehouse_stock` 无写入方致库龄分析恒空；
-③ `Finance.vue` 1360 行超 CLAUDE.md 的 500 行上限，需单独一班拆分。
+③ `Finance.vue` 1489 行超 CLAUDE.md 的 500 行上限（§S20.7 又加了约 60 行，更超了），
+需单独一班拆分。
 
 ## S16. 交接：2026-10-15 ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑，已完成）
 
@@ -3359,6 +3368,95 @@ catch (e) { console.warn(...) }        // ← 永远进不来
    **前端不会替这个决定加门控**（理由见 §S20.1）；要锁就后端加 `@RequireRole` 并同步补前端门控。
 2. `amz_warehouse_stock` 无写入方导致库龄分析恒空——§S19.6 已记，本节未动。
 3. `Finance.vue` 1360 行，超过 CLAUDE.md 的单文件 500 行上限。本节只在其中加了约 60 行，
-   **没有缓解反而加重了**。拆分方案（凭证/回款/结算/差异/索赔/VAT 六个 tab 各自成组件）
-   需要单独一班做，且要先确认 `cursor-bar`、`call()`、`pushFinanceError` 这些跨 tab 复用件的
-   归属——不要为了凑行数把一个 1360 行的文件切成六个还互相 import 的文件。
+   **没有缓解反而加重了**（§S20.7 之后为 1489 行）。拆分方案（凭证/回款/结算/差异/索赔/VAT
+   六个 tab 各自成组件）需要单独一班做，且要先确认 `cursor-bar`、`read()`/`call()`、
+   `pushFinanceError` 这些跨 tab 复用件的归属——不要为了凑行数把一个 1489 行的文件
+   切成六个还互相 import 的文件。**拆的时候 `read()`/`call()` 必须一起搬**：
+   §S20.7 的教训正是这两个函数承载了读/写分野，拆散后 invariant 没人守。
+
+---
+
+## §S20.7 自查复查：上一班自己的门控也过度了（读被一起拦掉）
+
+**这一节是 §S20 的自纠错记录，下一班读 §S20.1 的分类时务必连着读。**
+
+§S20 落地后没有直接信绿测，而是回头逐行复核自己的 diff，结果发现 **A 类门控自己也犯了
+B 类那种错误，只是方向相反**：
+
+### 1. 事实：`call()` 是读与写共用的咽喉，门控加在这里就一定会误伤
+
+`Finance.vue` 原来把所有请求都塞进一个 `call(label, fn, apply)`，`Result.failure()`
+不改状态码（HTTP 200 + code=400）这个特性又让 `catch` 永远不触发，所以它自然成了
+「失败统一进错误条」的收口点。§S20 把 `if (financeWriteBlocked(label)) return false`
+加在了这个函数的第一行——**而它同时承载 7 个只读查询**。
+
+脚本核对了 `Finance.vue` 全部 25 个 API 调用与后端 `@RequireRole`（解析每个
+`public Result<...>` 方法前的注解块，25/25 全部匹配上，无一漏），结论是：
+
+| 端点 | 后端注解 | VIEWER 能不能用 |
+|---|---|---|
+| `GET /finance/collection/summary/{shopId}` | 仅 `@ShopScoped` | 能 |
+| `GET /finance/claim/summary/{shopId}` | 仅 `@ShopScoped` | 能 |
+| `GET /finance/claim/reconcile/{shopId}` | 仅 `@ShopScoped` | 能 |
+| `GET /finance/discrepancy/{id}` | 仅 `@ShopScoped` | 能 |
+| `GET /finance/profit/sku/{shopId}` | 仅 `@ShopScoped`（注释明写「VIEWER 亦可查看」） | 能 |
+| `GET /finance/vat/calculate`、`/rate/{country}`、`/threshold-check` | 仅 `@ShopScoped` | 能 |
+
+这些在 §S20 之后全部对 VIEWER 变成了「点了没反应」。**比「点了报错」更糟**：
+用户根本看不到入口，不会知道有这些功能，也就不会来报 bug。
+
+同一节里我还写错了一条注释，声称 `GET /finance/discrepancy/{id}`
+「同样声明了 `@RequireRole`」（`FeeDiscrepancyController:105`）并据此禁用了详情按钮。
+逐行读 `FeeDiscrepancyController:103-113` 后确认**该行没有 `@RequireRole`**，
+只有 `@ShopScoped`。**这个错误是看着 `dismiss` 的注解凭邻近印象写出来的**，
+不是读出来的——所以下一班遇到「这个方法大概也有」的判断，一律去读原文。
+
+### 2. 修法：不加重试参数，改成两个函数
+
+第一版修法是给 `call()` 加第 4 个布尔参数 `write = true`，读的调用点传 `false`。
+**这个修法是错的，已废弃**：布尔参数会被漏传，而且漏传的方向恰好是「把允许的读也拦掉」。
+实测第一版就漏了 4 个（`collectionSummary`、`claimSummary`、`reconcileClaims`、
+`discrepancyDetail`），全靠 25/25 的脚本核对才发现。
+
+最终形状：
+
+```ts
+const read = async <T>(label, fn, apply) => { /* 刻意不加角色门控 */ }
+const call  = async <T>(label, fn, apply) => { if (financeWriteBlocked(label)) return false; /* ... */ }
+```
+
+读走 `read`，写走 `call`。**拆成两个函数后想漏也漏不掉**——写必须显式写 `call`，
+读显式写 `read`；把读误接到 `call` 会被 typecheck 之外的测试立刻抓到（见下）。
+`Finance.vue` 里现在 16 个静态调用点 + 2 个动态 label 点（`runClaim`/`runVat`）
+全部按「call ⇒ POST 且后端有 `@RequireRole`」「read ⇒ GET 且后端无 `@RequireRole`」
+核对过， invariant 成立。不走 `call` 的独立路径也单独核了：
+`loadVouchers`（`GET /finance/voucher/list` 无 `@RequireRole`，正确不拦）、
+`handleSync`（`POST /finance/voucher/{id}/sync` 有 `@RequireRole`，
+`FinanceController:92`，正确拦）。
+
+### 3. 测试：三个方向的变异都确认是被断言打红，不是崩
+
+| 变异 | 结果 |
+|---|---|
+| `read()` 里加 `financeWriteBlocked`（复现原 bug） | 5 个「VIEWER 仍可查」用例红 |
+| 删掉 `call()` 的门控 | 「VIEWER 走 call() 的写操作（扫描差异）应被拦住」红 |
+| 把详情按钮重新按角色禁用（复现我写错的那条） | 「VIEWER 仍可看差异详情」红 |
+
+单元 643 passed、`vue-tsc --noEmit` 0 错、`vite build` 通过、仓库门禁与
+`tools/release` 91 tests 全绿。E2E 补了一条 `VIEWER 的财务只读入口仍可点（只拦写，不拦查）`，
+并对它做了变异（重新禁用详情按钮）确认能红。
+
+### 4. E2E 全量跑的 flake（不是本节引入的）
+
+本节跑全量 E2E 三次：4 failed → 另一批 7 failed → 3 failed，**每次红的都不一样**，
+且集中在 MultiplatformOps / 侧边栏导航 / ProfitRep / 个人资料这些与本节无关的用例上。
+单独跑这些用例（含 `git stash` 掉本节改动后的干净树）全绿。§S19 已记录同一现象，
+判定为全量并发下的既有 flake，非本节回归。**下一班不要试图在这个班里修它**，
+需要单独定位（怀疑是模块预取/chunk 加载竞态）。
+
+### 5. 留给下一班的判据
+
+改任何「读/写共用出口」之前，先问一句：**这个函数里有没有后端不校验角色的调用？**
+判断方法只有一种——把该页每个 API 的 URL 和 method 取出来，逐个对后端
+`public Result<...>` 前的注解块。§S20.7.1 那张表就是这么做出来的，
+25 个端点无一漏。**不要凭「这个方法看起来像写」或「旁边那个方法有注解」推断。**

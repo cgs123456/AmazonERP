@@ -407,3 +407,108 @@ describe('Finance 费用差异详情（此前 discrepancyDetail 零调用）', (
     expect(wrapper.find('.error-zone').text()).toContain('无权访问该店铺的差异')
   })
 })
+
+describe('Finance 只读端点不得被角色门控挡住（写才拦）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '900000000000001000')
+    vi.clearAllMocks()
+    mockedVouchers.mockResolvedValue(ok([], pageOf(null)))
+    mockedShortages.mockResolvedValue(SHORTAGES)
+  })
+
+  // 这三个端点后端只加 @ShopScoped、没有 @RequireRole（SkuProfitController 注释明写
+  // 「VIEWER 亦可查看」；VatController:26/33/39 同理）。把它们和写操作一起拦掉，
+  // 就是前端否决后端已有的只读能力——本班在 ListingMonitor/CustomerService 上刻意
+  // 避免的那类错误，差点因为在共用的 call() 上无条件加门控而复发。
+  it('VIEWER 仍可查单品利润（后端无 @RequireRole）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    vi.mocked(ext.skuProfit).mockResolvedValue(ok({
+      shopId: 1, skuCount: 1, costDataComplete: true, incompleteSkuCount: 0,
+      totals: { revenue: 200, profit: 40 },
+      entries: [{ sku: 'SKU-A', unitsSold: 5, revenue: 200, cogs: 100, profit: 40, profitIsComplete: true }],
+      warnings: []
+    }))
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '单品利润')
+    await clickBtn(wrapper, '计算单品利润')
+    expect(ext.skuProfit).toHaveBeenCalled()
+    // costDataComplete=true：不该出现「取不到成本」的说明段
+    expect(byText(wrapper, '采购成本取不到')).toBe(false)
+    expect(byText(wrapper, '需要 OPERATOR 或 ADMIN')).toBe(false)
+  })
+
+  it('VIEWER 仍可查 VAT 税率与门槛（后端无 @RequireRole）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    vi.mocked(ext.vatRate).mockResolvedValue(ok('0.19'))
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, 'VAT 与凭证补数')
+    await clickBtn(wrapper, '查税率')
+    expect(ext.vatRate).toHaveBeenCalled()
+    expect(wrapper.find('.vat-line').text()).toBe('0.19')
+  })
+
+  it('VIEWER 不能执行 VAT 月结（POST + @RequireRole）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, 'VAT 与凭证补数')
+    // 按钮本身就该禁用，且说明缺角色
+    const btn = wrapper.findAll('button').find((b: any) => b.text() === '执行 VAT 月结')
+    expect(btn!.attributes('disabled')).toBeDefined()
+    expect(btn!.attributes('title')).toContain('OPERATOR/ADMIN')
+  })
+
+  it('VIEWER 仍可看差异详情（GET /finance/discrepancy/{id} 只有 @ShopScoped）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    vi.mocked(ext.discrepancyDetail).mockResolvedValue(ok(DISCREPANCIES.data[0]))
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '费用差异')
+    const detail = wrapper.findAll('.sync-btn').find((b: any) => b.text() === '详情')
+    // FeeDiscrepancyController:104 只有 @ShopScoped，没有 @RequireRole。
+    // 这个按钮不该被角色禁用：点了能拿到数据，禁用反而挡掉了后端允许的读。
+    expect(detail!.attributes('disabled')).toBeUndefined()
+    // 同一行的写按钮仍须禁用
+    const dismiss = wrapper.findAll('.sync-btn').find((b: any) => b.text() === '忽略')
+    expect(dismiss!.attributes('disabled')).toBeDefined()
+    expect(dismiss!.attributes('title')).toContain('OPERATOR/ADMIN')
+  })
+
+  it('VIEWER 仍可拉回款汇总（GET /finance/collection/summary 只有 @ShopScoped）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    vi.mocked(ext.collectionSummary).mockResolvedValue(ok({} as any))
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '回款对账')
+    expect(ext.collectionSummary).toHaveBeenCalled()
+    // 同一 tab 的「重算回款」是 POST + @RequireRole，必须禁用
+    const rebuild = wrapper.findAll('button').find((b: any) => b.text().includes('重算回款'))
+    expect(rebuild!.attributes('disabled')).toBeDefined()
+  })
+
+  it('VIEWER 仍可与平台对账（GET /finance/claim/reconcile 只有 @ShopScoped）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    vi.mocked(ext.reconcileClaims).mockResolvedValue(ok({} as any))
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '亚马逊索赔')
+    const btn = wrapper.findAll('button').find((b: any) => b.text() === '与平台对账')
+    // ReimbursementClaimController:140 只有 @ShopScoped——读平台状态不改数据，
+    // 不能因为「对账」听起来像写就禁掉。
+    expect(btn!.attributes('disabled')).toBeUndefined()
+    await btn!.trigger('click')
+    expect(ext.reconcileClaims).toHaveBeenCalled()
+  })
+
+  it('VIEWER 仍可拉索赔汇总（GET /finance/claim/summary 只有 @ShopScoped）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    vi.mocked(ext.claimSummary).mockResolvedValue(ok({} as any))
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '亚马逊索赔')
+    expect(ext.claimSummary).toHaveBeenCalled()
+  })
+})

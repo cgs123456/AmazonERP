@@ -482,6 +482,38 @@ test.describe('Finance 交互', () => {
     await expect(scan).toBeDisabled()
   })
 
+  // 门控只该拦住写。VIEWER 下「详情」「与平台对账」以及各汇总/试算必须仍可点——
+  // 这些端点后端只加 @ShopScoped 没有 @RequireRole（FeeDiscrepancyController:104、
+  // ReimbursementClaimController:140、PaymentCollectionController:53、VatController:26/33/39），
+  // 前端把允许的读也禁掉，就是前端否决后端能力，比「点了报错」更糟：用户根本不知道有这功能。
+  test('VIEWER 的财务只读入口仍可点（只拦写，不拦查）', async ({ page }) => {
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'VIEWER' } } })
+      })
+    )
+    await page.goto('/finance')
+    await waitReady(page)
+
+    // 差异 tab：详情可点，同行两个写按钮禁用
+    await page.locator('.dim-tab', { hasText: '费用差异' }).click()
+    const row = page.locator('[data-panel="discrepancy"] tbody tr').first()
+    await expect(row.locator('.sync-btn', { hasText: '详情' })).toBeEnabled()
+    await expect(row.locator('.sync-btn', { hasText: '生成索赔单' })).toBeDisabled()
+    await expect(row.locator('.sync-btn', { hasText: '忽略' })).toBeDisabled()
+
+    // 索赔 tab：与平台对账是 GET，VIEWER 可点；写按钮禁用
+    await page.locator('.dim-tab', { hasText: '亚马逊索赔' }).click()
+    await expect(page.locator('.filter-btn', { hasText: '与平台对账' })).toBeEnabled()
+
+    // 单品利润 tab：查询可点（SkuProfitController 注释明写「VIEWER 亦可查看」）
+    await page.locator('.dim-tab', { hasText: '单品利润' }).click()
+    const spBtn = page.locator('.filter-btn', { hasText: /查询/ }).first()
+    await expect(spBtn).toBeEnabled()
+  })
+
   test('OPERATOR 的财务写入口可点', async ({ page }) => {
     await page.route(/\/api\/user\/getInfo/, (route) =>
       route.fulfill({

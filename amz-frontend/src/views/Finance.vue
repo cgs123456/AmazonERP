@@ -316,7 +316,12 @@
                 <td>{{ d.currency || '-' }}</td>
                 <td><span class="status-tag">{{ d.status }}</span></td>
                 <td>
-                  <button class="sync-btn" :disabled="busy" @click="openDiscrepancyDetail(d)">详情</button>
+                  <!-- 详情是个只读 GET，后端 GET /finance/discrepancy/{id} 只加了
+                       @ShopScoped 没有 @RequireRole（FeeDiscrepancyController:104），
+                       VIEWER 查得到，所以刻意不套 financeWriteAllowed。
+                       它右侧两个按钮才是写，按 d.status 与角色分别禁用。 -->
+                  <button class="sync-btn" :disabled="busy" title="查看这条差异的判定依据"
+                    @click="openDiscrepancyDetail(d)">详情</button>
                   <button class="sync-btn" :disabled="busy || d.status !== 'OPEN' || !financeWriteAllowed"
                     :title="d.status !== 'OPEN' ? `仅 OPEN 状态可生成索赔单；当前 ${d.status} 已终结` : (financeWriteAllowed ? '以这条差异生成亚马逊索赔单' : `生成索赔单${WRITE_LOCKED_HINT}`)"
                     @click="confirm(claimFrom(d))">生成索赔单</button>
@@ -398,8 +403,10 @@
             <option v-for="s in CLAIM_STATUS" :key="s" :value="s">{{ s }}</option>
           </select>
           <button class="filter-btn" :disabled="claimList.loading.value" @click="loadClaims(false)">刷新</button>
-          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
-                  :title="financeWriteAllowed ? '拉取平台侧的索赔状态' : `与平台对账${WRITE_LOCKED_HINT}`" @click="runReconcile">与平台对账</button>
+          <!-- GET /finance/claim/reconcile/{shopId} 后端无 @RequireRole（ReimbursementClaimController:140
+               只加了 @ShopScoped），VIEWER 可查，所以这个「对账」按钮不按角色禁用——
+               它读平台状态，不改任何数据。真正写的是 submit/accept/reject/reimburse。 -->
+          <button class="filter-btn" :disabled="busy" title="拉取平台侧的索赔状态" @click="runReconcile">与平台对账</button>
         </div>
 
         <div v-if="claimSum" class="summary-grid">
@@ -1011,17 +1018,47 @@ const pushError = (text: string) => {
   if (!errors.value.includes(text)) errors.value.push(text)
 }
 
-/** 一次调用：失败进错误条并返回 false，绝不把失败伪装成「空列表」。 */
 /**
- * 财务写操作的统一出口。
+ * 只读查询的统一出口。**刻意不加角色门控**，原因见下方 {@link call} 的说明：
+ * 本页的查询端点后端普遍没有 {@code @RequireRole}，VIEWER 查得到。
  * <p>
- * 本页全部 14 个写端点（FinanceController ×4、SettlementController、FeeDiscrepancyController ×3、
- * ReimbursementClaimController ×5、PaymentCollectionController、VatController）在后端都声明了
- * {@code @RequireRole({"OPERATOR","ADMIN"})}，此前页面上对 VIEWER 全绿可点。点了之后拿到的是
- * HTTP 200 + code=400（Result.failure 不改状态码），界面只显示一句「无权限执行该操作」——
- * 用户看到的是「功能点了报错」，而不是「这个功能不归你用」。
- *
- * 角色门控放在这里而不是逐个按钮 v-if：confirm() 弹窗可能在角色变更前就已打开，
+ * 读与写分成两个函数而不是给 {@link call} 加一个布尔参数：布尔参数会被漏传
+ * （本班第一版就是这么写的，漏了 4 个查询点，VIEWER 被挡在「回款汇总」「索赔汇总」
+ * 「索赔对账」「差异详情」之外），而漏传的方向恰好是「把允许的读也拦掉」。
+ * 拆成两个函数后，写必须显式写 {@code call}，读显式写 {@code read}，
+ * 想漏也漏不掉——这才是能防住复发的形状。
+ */
+const read = async <T>(label: string, fn: () => Promise<ApiResponse<T>>, apply: (v: T) => void): Promise<boolean> => {
+  busy.value = true
+  try {
+    const res = await fn()
+    if (res?.code !== 200) {
+      pushError(`${label}：${res?.message || '后端返回非 200'}`)
+      return false
+    }
+    apply(res.data as T)
+    return true
+  } catch (e) {
+    pushError(`${label}：${e instanceof Error ? e.message : '调用失败'}`)
+    return false
+  } finally {
+    busy.value = false
+  }
+}
+
+/**
+ * 财务写操作的统一出口。**只有它能改数据，也只有它做角色门控。**
+ * <p>
+ * 本页 14 个写端点（FinanceController ×4、SettlementController、FeeDiscrepancyController ×3、
+ * ReimbursementClaimController ×5、PaymentCollectionController、VatController 的 monthly-close）
+ * 在后端都声明了 {@code @RequireRole({"OPERATOR","ADMIN"})}，此前页面上对 VIEWER 全绿可点。
+ * 点了之后拿到的是 HTTP 200 + code=400（Result.failure 不改状态码），界面只显示一句
+ * 「无权限执行该操作」——用户看到的是「功能点了报错」，而不是「这个功能不归你用」。
+ * <p>
+ * 同页的查询端点（{@code /collection/summary}、{@code /claim/summary}、{@code /claim/reconcile}、
+ * {@code /discrepancy/{id}}、{@code /profit/sku}、{@code /vat/calculate|rate|threshold-check}）
+ * 后端**没有** {@code @RequireRole}，VIEWER 查得到，所以那些走 {@link read}。
+ * 门控放在这里而不是逐个按钮 v-if：confirm() 弹窗可能在角色变更前就已打开，
  * 或者角色信息比弹窗晚到（AppHeader 的 getInfo 与页面挂载是并发的），
  * 禁用态挡不住这种时序，而这里是所有写操作的必经之路。
  */
@@ -1096,7 +1133,7 @@ const loadCollections = (append = false) => {
   void loadCursor(col, '回款列表', cursor => ext.listCollections(shop(), { status: colStatus.value || undefined, size: PAGE, cursor }), append)
 }
 const loadCollectionSummary = () =>
-  call('回款汇总', () => ext.collectionSummary(shop()), (d) => { colSummary.value = d })
+  read('回款汇总', () => ext.collectionSummary(shop()), (d) => { colSummary.value = d })
 const rebuildConfirm = {
   title: '重算回款',
   detail: '从结算原表重新聚合每个订单的应回 / 扣费 / 退款 / 实收。结算原表若还没同步，重算只会得到空结果。',
@@ -1173,7 +1210,7 @@ const discrepancyDetail = ref<FeeDiscrepancy | null>(null)
 const openDiscrepancyDetail = async (d: FeeDiscrepancy) => {
   if (d.id == null) return
   discrepancyDetail.value = null
-  await call('差异详情', () => ext.discrepancyDetail(d.id as number, shop()), (row) => {
+  await read('差异详情', () => ext.discrepancyDetail(d.id as number, shop()), (row) => {
     discrepancyDetail.value = row || null
   })
 }
@@ -1201,9 +1238,9 @@ const loadClaims = (append = false) => {
   void loadCursor(claimList, '索赔单', cursor =>
     ext.listClaims(shop(), { status: claimStatus.value || undefined, size: PAGE, cursor }), append)
 }
-const loadClaimSummary = () => call('索赔汇总', () => ext.claimSummary(shop()), (d) => { claimSum.value = d })
+const loadClaimSummary = () => read('索赔汇总', () => ext.claimSummary(shop()), (d) => { claimSum.value = d })
 const runReconcile = async () => {
-  const ok = await call('索赔对账', () => ext.reconcileClaims(shop()), (d) => { recon.value = d })
+  const ok = await read('索赔对账', () => ext.reconcileClaims(shop()), (d) => { recon.value = d })
   if (ok) showToast(`对账完成：平台侧 ${d0(recon.value?.platformAdjustmentCount)} 笔 / 系统侧 ${d0(recon.value?.matched)} 笔匹配`, 'info')
 }
 const d0 = (v: unknown) => Number(v ?? 0)
@@ -1238,7 +1275,9 @@ const rejectConfirm = (c: ReimbursementClaim) => ({
 const runSkuProfit = async () => {
   spLoading.value = true
   try {
-    await call('单品利润', () => ext.skuProfit(shop(), {
+    // 走 read 不是笔误：GET /finance/profit/sku/{shopId} 后端没有 @RequireRole
+    // （SkuProfitController 注释明写「VIEWER 亦可查看」）——VIEWER 查得到。
+    await read('单品利润', () => ext.skuProfit(shop(), {
       depositAfter: spAfter.value || undefined,
       depositBefore: spBefore.value || undefined,
       sku: spSku.value || undefined
@@ -1258,7 +1297,10 @@ const runVat = async (mode: 'calc' | 'rate' | 'threshold') => {
   const fn = mode === 'calc' ? () => ext.calculateVat(amount, country)
     : mode === 'rate' ? () => ext.vatRate(country)
       : () => ext.vatThreshold(country, amount)
-  await call(label, fn, (text) => { vatResult.value = String(text ?? '') })
+  // 这三个 VAT 端点是试算/查税率/查门槛，后端只加 @ShopScoped 没有 @RequireRole
+  // （VatController:26/33/39），VIEWER 算得动，所以走 read。
+  // 同 tab 的「执行 VAT 月结」才是 POST + @RequireRole，那个走 call 照旧拦。
+  await read(label, fn, (text) => { vatResult.value = String(text ?? '') })
 }
 
 const monthlyCloseConfirm = {
