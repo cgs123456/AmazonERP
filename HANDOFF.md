@@ -3,7 +3,8 @@
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > 本次更新（§S18）：清空 ② 类队列后**重跑 `endpoint_coverage_audit.py` 又抓到一个真缺口**——
 > 差评结案 `resolveNegativeReview`（差评能匹配订单、能生成跟进邮件，却不能结案，
-> 记录永远停在 CONTACTED）。已落地，候选清单里现已无「该接而未接」的用户面向端点。
+> 记录永远停在 CONTACTED）。已落地，候选清单里现已无「该接而未接」的用户面向端点；
+> §S10 🔴 类的**前端边界披露**也逐条复查为全部 GOOD（见 §S18.5.1）——前端该做的都做了。
 > 上一班（§S17）：仓库新建/编辑入口补角色门禁——后端 `POST/PUT /logistics/warehouse`
 > 是 `@RequireRole({"OPERATOR","ADMIN"})`，而这两个按钮此前无任何门控，VIEWER 点了只会 403。
 > 同时纠正一个过期口径：**`updateWarehouse` 早在 §S9.4（`8ad6c43`）就接完了**，
@@ -236,8 +237,37 @@ endpoint 自测 25/25。
 
 - **候选清单里已无「该接而未接」的用户面向端点**（见 §1 的逐条判定）。
 - 剩余全是 🔴 需凭证（A5/E4–E5）或已拍板不做（§S10）。
-- 若还要找活：下一个可做的是把 §S10 的 🔴 类逐条做**前端边界披露**复查
-  （确认每处都如实说明「未接入」而不是留空），但那属打磨，不是缺口。
+
+### 5.1 🔴 类前端边界披露复查（2026-10-15，只读子代理逐条核 + 抽样复核）
+
+**结论：全部 GOOD，无 BAD。** §S10 的 🔴 类与 §S7c 两项「挂着的」在前端都做到了
+「如实披露」而不是「留一块空白让用户以为功能坏了」。逐条落点（复核过原文）：
+
+| 项 | 落点 | 披露口径 |
+|---|---|---|
+| C1/C2 差评/跟卖扫描 | `OpsAlerts.vue:19-21` | **「扫描」按钮本页不提供**，并说明实现是 `ThreadLocalRandom` 造数、只有 mock 档放行（生产返回 0）；空态补一句「空可能是从没扫描过，不是真的没有差评」 |
+| C3 关键词排名 | `OpsAlerts.vue:143-148,185-190`；`ListingMonitor.vue:177,216` | 「排名只由抓取写入，而抓取是 mock 造数，所以空记录不等于没有排名」 |
+| C4/P3.3/P3.4 选品与竞品 | `ProductSelection.vue:27-41`；`ListingMonitor.vue:254-257,282-284` | 明写「这些数字是模拟的」（哈希播种 Random + 品类基准，未接 Helium 10 / Brand Analytics），且 `/ops/selection/competitors/{asin}`、`/ops/selection/keyword` 两条端点**同样不提供入口**（非 mock 档被拒） |
+| C7 邮件 SMTP/SES | `CustomerService.vue:18-22,463,624-627` | 页面级常驻横幅 + 弹窗说明 + 二次确认框三处都说「通道未接入，非模拟环境只会标 FAILED 并写原因」 |
+| D1 SP-API 联调 | `ConnectorCenter.vue:11-14,136,152,176-187,261-263`；`ShopManagement.vue:16-24,57-60` | 「具备对接能力（未联调）」；凭证逐项「已配置/未配置」；店铺页特别点明**「授权状态」不等于「凭证已配置」** |
+| D3/D4 1688/Temu/TikTok/Shein | `MultiplatformOps.vue:18-27,135-140,252`；`MultiplatformOrders.vue:18-27,248-249`；`Procurement.vue:302,1295-1306` | 同步按钮不做（三家真实客户端一律抛「未接入」）；1688 下单反而**明确告知会真实调用开放平台**，远程失败会回滚 DRAFT |
+| A1 物流面单 | `OrderList.vue:355-378`；`packingSlip.ts:104,138-141` | 打印单据自带「不是承运商面单」文案；仓库内 buy-shipping 前后端零命中，无误导入口 |
+| P3 店铺绩效 / P4 AI 广告托管（§S7c 挂着项） | 无页面（前端 `ad-pilot`/`adPilot` 零命中，路由与侧边栏均无入口） | **N/A，符合拍板**：边界由后端 catalog / `honestBoundary` 承载，不做对着空数据的 UI |
+
+抽样复核过的相邻页同样 GOOD：`AgentEval.vue:16-26`（LLM 打分需 `AGENT_LLM_EVAL_ENABLED=true` + `deepseek.api-key`，并明说**不会退化成「0 条通过」这种看起来像结果的东西**）、
+`AgentMemory.vue:114`（表只由需密钥的 chat 写入）、`Dashboard.vue:54-56,185-187`（降级时标注「示意数据」，不再静默回退 mock）、
+`LogisticsDashboard.vue:34-36`（轨迹同步未启用，按 `trackingClient.isAvailable()` 真实判定）、
+`AdManager.vue:44-49`（演示模式横幅）。`KnowledgeBase.vue` 无 api 依赖（纯前端演示页），空态无需披露。
+
+**这意味着 §S10 的「前端边界披露」这一半已经履行完**，与开头「这些端点全部 fail-closed」的后端那半合上。
+
+### 5. 下一步
+
+- **候选清单里已无「该接而未接」的用户面向端点**（见 §1 的逐条判定）。
+- **🔴 类前端边界披露已复查为全部 GOOD**（见 §5.1）——前端该做的都做了。
+- 剩余只有：真凭据到位后走 runbook §3 端到端验收（A5/E4–E5）；以及 §S10 已拍板不做项。
+- 未逐行走完的大文件（`Finance.vue` 1360 行 / `Warehouse.vue` 1523 行）只抽查了空态，
+  都是「表本来可能为空」的正常空态而非凭证缺口；若要 100% 覆盖需另开一轮。
 
 ## S14. 交接：2026-10-15 广告 `executeRules` + 物流 `calculateFreight` 接孤儿 API（已完成）
 
