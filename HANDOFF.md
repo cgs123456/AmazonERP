@@ -12,14 +12,12 @@
 
 ## 项目现状一句话
 
-**CI 全绿（run `38664125678`，2026-10-15，HEAD `497526e`）**：11 个 job 全过（test / frontend /
-hygiene / stub-shape / param-name / docker / checkstyle 双档 / mysql-import / runtime-smoke /
-synthetic-data / release-manifest / ad-v7-preflight-gate）。本班实测（HEAD 之上，推送后 CI
-结论以 `gh run list` 为准）：前端 vitest **571/571**（含供应商详情/编辑 +7）+ vue-tsc 0 错 +
-采购域 E2E **15/15**；stub-shape RED 0（**189 注册/130 可比**）、param-name 0、hygiene 0、
+**CI 全绿（run `38672378612`，2026-10-15，HEAD `57cdf29`）**：11 个 job 全过。本班实测：
+前端 vitest **571/571**（含供应商详情/编辑 +7）+ vue-tsc 0 错 + 采购域 E2E **15/15**；
+stub-shape RED 0（**189 注册/130 可比**）、param-name 0、hygiene 0（两种模式）、
 entity_column_drift 0、release tools **91/91**；后端零改动（纯前端班）。
-上一班基线（run `38571169004`，HEAD `a4bb626`）：后端 2283/0F/0E/2S、vitest 557/557 +
-E2E 159 passed、迁移 65 / 活表 116 / 实体 110 / 0 漂移。
+上一班（run `38664125678`，HEAD `497526e`）：vitest 564/564 + E2E 160 passed、
+stub-shape 188 注册；迁移 65 / 活表 116 / 实体 110 / 0 漂移。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
 业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S13.5。
 
@@ -84,6 +82,8 @@ supplierName/supplierCode/contactName/contactPhone/contactEmail/alibabaShopUrl/p
   按钮级门控先例）：**门控已不再是未决项**，下一班可直接按该模式接；
   广告域 CRUD 6 个未点名优先级。
 - 真实凭证仍缺（非代码可推进）。
+- **CI**：run `38672378612`（HEAD `57cdf29`）**11 job 全绿**（唯一 annotation 是既有
+  javac 弃用告警，非失败），本班收口。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
