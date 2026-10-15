@@ -463,3 +463,44 @@ describe('ListingMonitor Buybox 汇总（此前 getBuyBoxSummary 零调用）', 
     expect(wrapper.find('[data-panel="buybox"]').text()).toContain('A2SELLER')
   })
 })
+
+describe('ListingMonitor 商品主数据 CSV 导入的角色门控', () => {
+  const goMasterTab = async (wrapper: Awaited<ReturnType<typeof mount>>) => {
+    const tab = wrapper.findAll('button').find((b) => b.text() === '商品主数据')
+    await tab!.trigger('click')
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '1')
+  })
+
+  it('VIEWER 时 CSV 导入禁用并给出角色说明', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    const wrapper = mount(ListingMonitor, { shallow: true })
+    await flushPromises()
+    await goMasterTab(wrapper)
+    const panel = wrapper.findComponent({ name: 'MasterCsvImport' })
+    expect(panel.exists()).toBe(true)
+    expect(panel.props('roleAllowed')).toBe(false)
+  })
+
+  it('OPERATOR 时 CSV 导入可用', async () => {
+    localStorage.setItem('user_role', 'OPERATOR')
+    const wrapper = mount(ListingMonitor, { shallow: true })
+    await flushPromises()
+    await goMasterTab(wrapper)
+    const panel = wrapper.findComponent({ name: 'MasterCsvImport' })
+    expect(panel.exists()).toBe(true)
+    expect(panel.props('roleAllowed')).toBe(true)
+  })
+
+  it('角色未知时不隐藏导入入口（前端状态不否决后端能力）', async () => {
+    const wrapper = mount(ListingMonitor, { shallow: true })
+    await flushPromises()
+    await goMasterTab(wrapper)
+    const panel = wrapper.findComponent({ name: 'MasterCsvImport' })
+    expect(panel.props('roleAllowed')).toBe(true)
+  })
+})

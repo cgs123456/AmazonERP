@@ -5,12 +5,16 @@ import type { OrderItem } from '@/api/order'
 
 // mock @/api/order，避免触发真实请求
 vi.mock('@/api/order', () => ({
-  getOrderList: vi.fn()
+  getOrderList: vi.fn(),
+  confirmShipment: vi.fn(),
+  allocateOrderStock: vi.fn()
 }))
 
-import { getOrderList } from '@/api/order'
+import { getOrderList, confirmShipment, allocateOrderStock } from '@/api/order'
 
 const mockedGetOrderList = vi.mocked(getOrderList)
+const mockedConfirmShipment = vi.mocked(confirmShipment)
+const mockedAllocateOrderStock = vi.mocked(allocateOrderStock)
 
 // 公共 stubs：shallow mount 已会 stub 子组件，这里额外提供 Icon 占位以防万一
 const globalStubs = {
@@ -24,6 +28,8 @@ describe('OrderList 视图', () => {
   beforeEach(() => {
     localStorage.clear()
     mockedGetOrderList.mockReset()
+    mockedConfirmShipment.mockReset()
+    mockedAllocateOrderStock.mockReset()
   })
 
   afterEach(() => {
@@ -156,5 +162,109 @@ describe('OrderList 视图', () => {
 
     expect(wrapper.find('.empty-row').exists()).toBe(true)
     expect(wrapper.find('.empty-row').text()).toContain('暂无订单数据')
+  })
+})
+
+describe('OrderList 写入口角色门控', () => {
+  // MFN + 未配货 + 未回传的订单：两个写按钮都可点
+  const allocatable = (id: number): OrderItem => ({
+    id, orderNo: `114-${id}`, shop: 'Shop A (US)', shopId: '1', sku: 'B08X4-001', qty: 2,
+    amount: '$59.98', profit: 18.5, status: '待发货', statusClass: 'pending', date: '2026-07-06 14:30',
+    fulfillmentChannel: 'MFN'
+  })
+
+  const mountPage = async (role?: string) => {
+    if (role !== undefined) localStorage.setItem('user_role', role)
+    localStorage.setItem('current_shop_id', '1')
+    mockedGetOrderList.mockResolvedValue({ code: 200, message: 'ok', data: [allocatable(1)] })
+    const wrapper = mount(OrderList, { shallow: true, global: globalStubs })
+    await flushPromises()
+    return wrapper
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    mockedGetOrderList.mockReset()
+    mockedConfirmShipment.mockReset()
+    mockedAllocateOrderStock.mockReset()
+  })
+
+  it('OPERATOR 应看到可点的配货与确认发货按钮', async () => {
+    const wrapper = await mountPage('OPERATOR')
+    const btns = wrapper.findAll('.row-actions .row-btn')
+    // 发货单 / 配货出库 / 确认发货
+    expect(btns.length).toBe(3)
+    expect(btns[1].attributes('disabled')).toBeUndefined()
+    expect(btns[2].attributes('disabled')).toBeUndefined()
+  })
+
+  it('VIEWER 时两个写按钮应禁用并带权限说明（而不是可点后拿到业务拒绝）', async () => {
+    const wrapper = await mountPage('VIEWER')
+    const btns = wrapper.findAll('.row-actions .row-btn')
+    expect(btns[1].attributes('disabled')).toBeDefined()
+    expect(btns[2].attributes('disabled')).toBeDefined()
+    expect(btns[1].attributes('title')).toContain('OPERATOR/ADMIN')
+    expect(btns[2].attributes('title')).toContain('OPERATOR/ADMIN')
+  })
+
+  it('角色未知（getInfo 未回来）时不应隐藏写入口', async () => {
+    const wrapper = await mountPage()
+    const btns = wrapper.findAll('.row-actions .row-btn')
+    expect(btns[1].attributes('disabled')).toBeUndefined()
+    expect(btns[2].attributes('disabled')).toBeUndefined()
+  })
+
+  it('VIEWER 点击配货出库应被拦住且不发请求，并给出理由', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('9')
+    const wrapper = await mountPage('VIEWER')
+    // 直接调组件方法：按钮已禁用，但门控的边界在处理器里（弹窗可能在角色变更前打开）
+    await (wrapper.vm as any).allocate(allocatable(1))
+    await flushPromises()
+    expect(mockedAllocateOrderStock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('需要 OPERATOR 或 ADMIN')
+  })
+
+  it('VIEWER 打开确认发货弹窗应被拦住，弹窗不出现', async () => {
+    const wrapper = await mountPage('VIEWER')
+    ;(wrapper.vm as any).openConfirm(allocatable(1))
+    await flushPromises()
+    expect(wrapper.find('.dialog-mask').exists()).toBe(false)
+  })
+
+  it('VIEWER 直接提交确认发货应被拦住且不发请求', async () => {
+    const wrapper = await mountPage('OPERATOR')
+    ;(wrapper.vm as any).openConfirm(allocatable(1))
+    await flushPromises()
+    // 弹窗已开，此时角色被改成 VIEWER：模拟 getInfo 竞态（角色比弹窗晚到）
+    localStorage.setItem('user_role', 'VIEWER')
+    window.dispatchEvent(new Event('amz:role-changed'))
+    await flushPromises()
+    ;(wrapper.vm as any).confirmForm = { carrierCode: 'USPS', carrierName: '', trackingNumber: 'TRK-1', shipDate: '' }
+    await (wrapper.vm as any).submitConfirm()
+    await flushPromises()
+    expect(mockedConfirmShipment).not.toHaveBeenCalled()
+  })
+
+  it('OPERATOR 配货出库：后端返回 200 时才认为成功并刷新列表', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('9')
+    mockedAllocateOrderStock.mockResolvedValue({ code: 200, message: 'ok', data: null as any })
+    const wrapper = await mountPage('OPERATOR')
+    await (wrapper.vm as any).allocate(allocatable(1))
+    await flushPromises()
+    expect(mockedAllocateOrderStock).toHaveBeenCalledWith(1, '9')
+    // 成功后重拉列表
+    expect(mockedGetOrderList).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('.error-zone').exists()).toBe(false)
+  })
+
+  it('OPERATOR 配货出库：后端业务拒绝（HTTP 200 + code=400）必须进错误横幅，不能当成功', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('9')
+    mockedAllocateOrderStock.mockResolvedValue({ code: 400, message: '库存不足：B08X4-001', data: null as any })
+    const wrapper = await mountPage('OPERATOR')
+    await (wrapper.vm as any).allocate(allocatable(1))
+    await flushPromises()
+    expect(mockedAllocateOrderStock).toHaveBeenCalled()
+    expect(wrapper.find('.error-zone').exists()).toBe(true)
+    expect(wrapper.text()).toContain('库存不足：B08X4-001')
   })
 })

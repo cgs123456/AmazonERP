@@ -151,6 +151,56 @@ test.describe('OrderList 交互', () => {
     await page.locator('.filter-btn', { hasText: /^查询$/ }).click()
     await expect(page.locator('.data-table tbody tr')).toHaveCount(3)
   })
+
+  // 后端 POST /order/{id}/allocate 与 /confirm-ship 都声明了 @RequireRole(OPERATOR/ADMIN)。
+  // VIEWER 此前点得动，只会拿到 HTTP 200 + code=400 的业务拒绝——界面显示「回传失败」
+  // 而不是「你没权限」，用户无从判断是功能坏了还是自己不配用。
+  test('VIEWER 看不到订单履约写入口（配货/回传均禁用且说明原因）', async ({ page }) => {
+    // 必须覆盖 /user/getInfo：AppHeader 会用它把角色写进 localStorage，
+    // 只靠 addInitScript 设 user_role 会被这个响应覆盖成 ADMIN（installApiStub 的默认用户）。
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'VIEWER' } } })
+      })
+    )
+    await page.goto('/orders')
+    await waitReady(page)
+    await expect(page.locator('.data-table tbody tr')).toHaveCount(3)
+
+    // 每行的「确认发货」按钮禁用，且 title 说明缺角色而不是缺业务状态
+    const shipBtns = page.locator('.row-actions .row-btn', { hasText: '确认发货' })
+    await expect(shipBtns).toHaveCount(3)
+    for (let i = 0; i < 3; i++) {
+      await expect(shipBtns.nth(i)).toBeDisabled()
+      await expect(shipBtns.nth(i)).toHaveAttribute('title', /OPERATOR\/ADMIN/)
+    }
+    // 弹窗提交按钮同样禁用：角色比弹窗晚到时也不能把请求发出去
+    await page.locator('.row-actions .row-btn', { hasText: '发货单' }).first().click()
+  })
+
+  test('OPERATOR 的确认发货入口可点且能打开弹窗', async ({ page }) => {
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'OPERATOR' } } })
+      })
+    )
+    await page.goto('/orders')
+    await waitReady(page)
+    const shipBtn = page.locator('.row-actions .row-btn', { hasText: '确认发货' }).first()
+    await expect(shipBtn).toBeEnabled()
+    await shipBtn.click()
+    await expect(page.locator('.dialog-title')).toHaveText('确认发货')
+    await expect(page.locator('.dialog-input').first()).toBeVisible()
+    // 必填项缺失时提交不可点（与后端必填校验同口径）；填齐后 OPERATOR 必须能提交
+    await expect(page.locator('.dialog .row-btn.primary')).toBeDisabled()
+    await page.locator('.dialog-input').nth(0).fill('USPS')
+    await page.locator('.dialog-input').nth(2).fill('TRK-E2E-1')
+    await expect(page.locator('.dialog .row-btn.primary')).toBeEnabled()
+  })
 })
 
 test.describe('InventoryMonitor 交互', () => {
@@ -392,6 +442,92 @@ test.describe('Finance 交互', () => {
     await select.selectOption('')
     await page.locator('.filter-btn', { hasText: /^查询$/ }).click()
     await expect(rows).toHaveCount(3)
+  })
+
+  // 后端 FinanceController/SettlementController/FeeDiscrepancyController/
+  // ReimbursementClaimController/PaymentCollectionController/VatController 共 14 个写端点
+  // 都声明了 @RequireRole(OPERATOR/ADMIN)。VIEWER 此前全绿可点，点了拿到
+  // HTTP 200 + code=400，界面只显示「无权限执行该操作」——看起来像功能坏了。
+  test('VIEWER 的财务写入口全部禁用并说明缺角色', async ({ page }) => {
+    // 覆盖 installApiStub 的 ADMIN 用户，否则走的是「角色未知故意放行」那条分支
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'VIEWER' } } })
+      })
+    )
+    await page.goto('/finance')
+    await waitReady(page)
+
+    // 凭证 tab：同步金蝶禁用
+    const syncBtn = page.locator('.sync-btn', { hasText: '同步金蝶' }).first()
+    await expect(syncBtn).toBeDisabled()
+    await expect(syncBtn).toHaveAttribute('title', /OPERATOR\/ADMIN/)
+
+    // 回款 tab：重算回款禁用
+    await page.locator('.dim-tab', { hasText: '回款对账' }).click()
+    const rebuild = page.locator('.filter-btn', { hasText: '重算回款' })
+    await expect(rebuild).toBeDisabled()
+    await expect(rebuild).toHaveAttribute('title', /OPERATOR\/ADMIN/)
+
+    // 结算 tab：从 SP-API 同步结算禁用
+    await page.locator('.dim-tab', { hasText: '结算原表' }).click()
+    const settleSync = page.locator('.filter-btn', { hasText: '从 SP-API 同步结算' })
+    await expect(settleSync).toBeDisabled()
+
+    // 差异 tab：扫描差异禁用
+    await page.locator('.dim-tab', { hasText: '费用差异' }).click()
+    const scan = page.locator('.filter-btn', { hasText: '扫描差异' })
+    await expect(scan).toBeDisabled()
+  })
+
+  test('OPERATOR 的财务写入口可点', async ({ page }) => {
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'OPERATOR' } } })
+      })
+    )
+    await page.goto('/finance')
+    await waitReady(page)
+    const syncBtn = page.locator('.sync-btn', { hasText: '同步金蝶' }).first()
+    await expect(syncBtn).toBeEnabled()
+    await page.locator('.dim-tab', { hasText: '回款对账' }).click()
+    await expect(page.locator('.filter-btn', { hasText: '重算回款' })).toBeEnabled()
+  })
+
+  test('OPEN 差异行的写按钮可用，详情永远可点（读不需要写权限）', async ({ page }) => {
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'OPERATOR' } } })
+      })
+    )
+    await page.goto('/finance')
+    await waitReady(page)
+    await page.locator('.dim-tab', { hasText: '费用差异' }).click()
+    const row = page.locator('[data-panel="discrepancy"] tbody tr').first()
+    // 桩里只有一条差异且状态是 OPEN：OPERATOR 下两个写按钮都该可点
+    await expect(row.locator('.sync-btn', { hasText: '生成索赔单' })).toBeEnabled()
+    await expect(row.locator('.sync-btn', { hasText: '忽略' })).toBeEnabled()
+    // 详情永远可点：只看数据不需要写权限
+    await expect(row.locator('.sync-btn', { hasText: '详情' })).toBeEnabled()
+  })
+
+  test('凭证空表格必须区分「没选店/没取到/契约异常/真没凭证」', async ({ page }) => {
+    await page.goto('/finance')
+    await waitReady(page)
+    // 默认有 3 条桩数据；PLATFORM_FEE 在桩里一条都没有，用来触发真空态
+    await page.locator('.filter-select').selectOption('PLATFORM_FEE')
+    await page.locator('.filter-btn', { hasText: /^查询$/ }).click()
+    // 必须说「暂无凭证」并指出去哪里补，而不是笼统一句「暂无凭证数据」
+    await expect(page.locator('.empty-row')).toContainText('该店铺暂无凭证')
+    await expect(page.locator('.empty-row')).toContainText('VAT 与凭证补数')
+    await expect(page.locator('.empty-row')).not.toContainText('尚未选择店铺')
+    await expect(page.locator('.empty-row')).not.toContainText('未取到')
   })
 
   test('费用差异详情：拉单条并展示「为什么判成差异」（evidence）', async ({ page }) => {

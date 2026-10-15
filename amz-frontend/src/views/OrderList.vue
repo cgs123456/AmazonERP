@@ -70,14 +70,14 @@
                   <button class="row-btn" @click="printSlip(order)">发货单</button>
                   <button
                     class="row-btn"
-                    :disabled="!canAllocate(order)"
-                    :title="allocateTitle(order)"
+                    :disabled="!canAllocate(order) || !orderWriteAllowed"
+                    :title="orderWriteAllowed ? allocateTitle(order) : WRITE_LOCKED_HINT"
                     @click="allocate(order)"
                   >{{ order.stockAllocated ? '已配货' : '配货出库' }}</button>
                   <button
                     class="row-btn primary"
-                    :disabled="!canConfirm(order)"
-                    :title="confirmTitle(order)"
+                    :disabled="!canConfirm(order) || !orderWriteAllowed"
+                    :title="orderWriteAllowed ? confirmTitle(order) : WRITE_LOCKED_HINT"
                     @click="openConfirm(order)"
                   >{{ confirmLabel(order) }}</button>
                 </div>
@@ -131,7 +131,7 @@
         <p v-if="confirmError" class="dialog-error">{{ confirmError }}</p>
         <div class="dialog-actions">
           <button class="row-btn" :disabled="confirming" @click="closeConfirm">取消</button>
-          <button class="row-btn primary" :disabled="confirming || !confirmValid" @click="submitConfirm">
+          <button class="row-btn primary" :disabled="confirming || !confirmValid || !orderWriteAllowed" @click="submitConfirm">
             {{ confirming ? '回传中…' : '确认发货' }}
           </button>
         </div>
@@ -141,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
@@ -151,6 +151,7 @@ import { getShops, type ShopOption } from '@/utils/shop'
 import { openPackingSlip } from '@/utils/packingSlip'
 import { downloadCsv } from '@/utils/csvDownload'
 import { useShopGuard } from '@/composables/useShopGuard'
+import { canUseRole, ORDER_FULFILLMENT_WRITE_ROLES, WRITE_LOCKED_HINT, ROLE_CHANGED_EVENT } from '@/utils/identity'
 
 const filterShop = ref('')
 const filterDate = ref('')
@@ -189,6 +190,38 @@ const size = ref(20)
 const { currentShopId, refreshShop } = useShopGuard()
 
 const loadErrors = ref<string[]>([])
+
+/**
+ * 订单履约写入（配货出库 / 确认发货）的角色门控。
+ * <p>
+ * 后端 OrderFulfillmentController 的两个端点都声明了
+ * {@code @RequireRole({"OPERATOR","ADMIN"})}，而本页此前对 VIEWER 全绿可点——
+ * 点了只会拿到 HTTP 200 + code=400 的业务拒绝（Result.failure 不改状态码），
+ * 用户看到的是「点了没反应」而不是「你没权限」。
+ *
+ * 未知角色不隐藏（identity.ts 的口径）：硬刷新时 AppHeader 的 getInfo 可能还没回来，
+ * 因「还没取到角色」就藏掉功能，等于让前端状态否决后端能力。
+ */
+const orderWriteAllowed = ref(canUseRole(ORDER_FULFILLMENT_WRITE_ROLES))
+
+const syncOrderWriteRole = () => {
+  orderWriteAllowed.value = canUseRole(ORDER_FULFILLMENT_WRITE_ROLES)
+}
+
+/**
+ * 写操作的统一守卫：角色不够时不发请求，并把原因说出来。
+ * <p>
+ * 为什么不能只在按钮上做 v-if：入口隐藏只是体验优化，不是边界。弹窗可能在角色变更前
+ * 就已打开，或者角色信息比弹窗晚到——那种情况下请求照样会发出去并 403。
+ */
+const orderWriteBlocked = (action: string): boolean => {
+  if (orderWriteAllowed.value) return false
+  loadErrors.value = [`${action}需要 OPERATOR 或 ADMIN 角色`]
+  return true
+}
+
+onMounted(() => window.addEventListener(ROLE_CHANGED_EVENT, syncOrderWriteRole))
+onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncOrderWriteRole))
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size.value)))
 
@@ -291,6 +324,7 @@ const allocateTitle = (order: OrderItem): string =>
   order.stockAllocated ? '已配货出库' : '从本地仓按明细扣减库存'
 const allocate = async (order: OrderItem) => {
   if (!canAllocate(order)) return
+  if (orderWriteBlocked('配货出库')) return
   const warehouseId = window.prompt('配货出库仓库 ID（本地仓）')
   if (!warehouseId) return
   allocating.value = order.id
@@ -313,6 +347,7 @@ const confirmTitle = (order: OrderItem): string =>
 
 const openConfirm = (order: OrderItem) => {
   if (!canConfirm(order)) return
+  if (orderWriteBlocked('确认发货')) return
   confirmTarget.value = order
   confirmError.value = ''
   confirmForm.value = { carrierCode: '', carrierName: '', trackingNumber: '', shipDate: '' }
@@ -326,6 +361,8 @@ const closeConfirm = () => {
 const submitConfirm = async () => {
   const target = confirmTarget.value
   if (!target || !confirmValid.value) return
+  // 兜底：弹窗可能在角色变更前就已打开，角色比提交晚到——禁用态挡不住这种时序
+  if (orderWriteBlocked('确认发货')) return
   confirming.value = true
   confirmError.value = ''
   try {

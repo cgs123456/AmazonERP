@@ -1,7 +1,18 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空 + WMS 写入口门控与业务拒绝修复（2026-10-15 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空 + WMS 写入口门控与业务拒绝修复 + 四页写入口按后端实际角色集分三类处理（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S19）：复查 §S18.5.1 的覆盖面时发现**一个比缺门控更严重的缺陷，且 §S17 的
+> 本次更新（§S20）：§S19.6 那条「四页补 `canUseRole` 门控」的待办已落地，**同时更正它的错误前提**——
+> 逐条读 `@RequireRole` 后发现四页并非都锁着 OPERATOR/ADMIN：OrderList 与 Finance 的后端确实锁了，
+> 而 ListingMonitor 与 CustomerService 的**绝大多数写端点根本没有 `@RequireRole`**，VIEWER 与
+> OPERATOR 等权。照原口径做会把后端已允许的操作藏掉（前端否决后端能力，且无测试能发现）。
+> 改为按「后端到底锁没锁」分三类：**A 类加门控 + 说明**（OrderList 全部、Finance 全部 14 个写端点、
+> ListingMonitor 的 CSV 导入）；**B 类不加门控、只披露**（ListingMonitor 与 CustomerService 的其余写端点，
+> 是否补后端门禁是产品决策，见 §S20.6）；**C 类与角色无关的 UI 缺陷直接修**
+> （Finance 凭证空表格现在区分「没选店/没取到/契约异常/真没凭证」四种成因；
+> 非 OPEN 差异行的静默禁用按钮补上了原因说明）。
+> 验证：vitest 636/636、vue-tsc 0 错、build 通过、7 个变异全部捕获、新增 6 条 E2E 全绿、
+> 5 个仓库门禁 + release tools 91/91 全绿。
+> 上一班（§S19）：复查 §S18.5.1 的覆盖面时发现**一个比缺门控更严重的缺陷，且 §S17 的
 > 结论本身是不完整的**——`Warehouse.vue` 上 15 个 WMS 写入口（入库单/出库单/盘点单全族）
 > 此前**一个门控都没有**，§S17 只补了仓库新建/编辑与改库位那 3 个。
 > 更关键的是**后端业务拒绝被前端当成成功**：`RequireRoleAspect` 与所有业务校验失败都返回
@@ -47,15 +58,17 @@
 
 ## 项目现状一句话
 
-**本机门禁全绿，CI 待跑（HEAD 见 git log；本班 §S19 为纯前端班，无 Java/SQL 改动）**：
-前端 vitest **617/617**（50 文件，含本班 +14）+ vue-tsc 0 错 + `vite build` 通过 +
-Warehouse 相关 E2E **20/20**（含本班新增 VIEWER 1 例）；stub-shape RED 0、param-name 0、
-hygiene 0、entity_column_drift **110 实体/0 漂移**、release tools **91/91**。
+**本机门禁全绿，CI 待跑（HEAD 见 git log；本班 §S20 为纯前端班，无 Java/SQL 改动）**：
+前端 vitest **636/636**（50 文件，含本班 +20）+ vue-tsc 0 错 + `vite build` 通过 +
+本班新增 E2E **6/6**；stub-shape RED 0、param-name 0、hygiene 0、entity_column_drift
+**110 实体/0 漂移**、release tools **91/91**。7 个变异测试全部捕获（断言失败，非崩溃）。
 上一班 CI 全绿（run `38727636484` 代码 / `38727838899` 文档，HEAD `151f05e`），11/11 job。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
 业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（见 §S9.12 / §S17.4）。
-**新增一条待办**：`OrderList.vue` / `Finance.vue` / `ListingMonitor.vue` / `CustomerService.vue`
-四个页面**完全没有 `canUseRole` 门控**，而它们的后端有 `@RequireRole` 写端点（见 §S19.5）。
+**§S19.6 的四页门控待办已按后端实际角色集分三类处理完**（见 §S20）；剩余待办见 §S20.6：
+① ListingMonitor / CustomerService 的写端点**后端没锁角色**，VIEWER 与 OPERATOR 等权——
+是否补后端门禁要产品拍板，前端不替它决定；② `amz_warehouse_stock` 无写入方致库龄分析恒空；
+③ `Finance.vue` 1360 行超 CLAUDE.md 的 500 行上限，需单独一班拆分。
 
 ## S16. 交接：2026-10-15 ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑，已完成）
 
@@ -3251,3 +3264,101 @@ catch (e) { console.warn(...) }        // ← 永远进不来
 另有一条**已知未披露**：`amz_warehouse_stock` 快照表全仓没有任何写入方
 （`POST /logistics/warehouse/stock` 前端刻意不接，也无定时任务回填），
 因此**库龄分析在没有人工 curl 灌数的部署上恒为空**，而页面只说「尚未加载：切到本标签会自动算一次」。
+
+---
+
+## S20. 交接：2026-10-15 四页写入口按「后端到底锁没锁」分三类处理（§S19.6 待办的落地与更正）
+
+> 本段是 §S19.6 那条待办的落地记录，**同时更正 §S19.6 的一个错误前提**。
+> 结论先说：**「给这四页统一补 `canUseRole` 门控」是错的**——只有 OrderList 和 Finance
+> 的后端真的锁了角色，ListingMonitor 和 CustomerService 的绝大多数写端点**没有 `@RequireRole`**，
+> 照 §S19.6 的口径做会把后端现在允许 VIEWER 做的操作一并藏掉。
+
+### 1. §S19.6 的错误前提：以为四页后端都锁着 OPERATOR/ADMIN
+
+§S19.6 写的是「四个页面完全没有 `canUseRole` 门控，而它们的后端有 `@RequireRole` 写端点」。
+前半句属实（四页 `canUseRole`/`user_role`/`OPERATOR`/`ADMIN` 全部零命中，侧边栏与路由守卫
+也都没有角色维度），**后半句只对两个页面成立**。逐条读 `@RequireRole` 后的真实分布：
+
+| 页面 | 写端点 | 后端角色集 |
+|---|---|---|
+| OrderList | `POST /order/{id}/allocate`、`POST /order/{id}/confirm-ship` | 都是 `{"OPERATOR","ADMIN"}`（`OrderFulfillmentController.java:43`、`:65`） |
+| Finance | 14 个写端点（FinanceController×4、SettlementController、FeeDiscrepancyController×3、ReimbursementClaimController×5、PaymentCollectionController、VatController） | 全部 `{"OPERATOR","ADMIN"}` |
+| ListingMonitor | `POST /product/master/import/csv` | `{"OPERATOR","ADMIN"}`（`ProductMasterController.java:83`） |
+| ListingMonitor | `POST /product/master`、`PUT /product/master/{shopId}/{id}` | **无 `@RequireRole`**，只有 `@ShopScoped`（`:114-116`、`:124-126`） |
+| ListingMonitor | `POST /product/listing-monitor/health/check`、`/ranking`、`/competitor`、`/buybox` | **无 `@RequireRole`**（`ListingMonitorController.java:36/82/110/137`） |
+| CustomerService | `POST /customer/ticket`、`/ticket/{id}/reply`、`/review/solicit/{shopId}` | **无 `@RequireRole`**（`CustomerController.java:39/48/91`） |
+| CustomerService | `CustomerEmailController` 的模板建/改/启停、trigger、process、task/manual、negative-review 建/match/followup、rma 建/改状态 | **几乎全部无 `@RequireRole`**；唯一带角色的是 `POST /customer/email/negative-review/{id}/resolve` = `{"OPERATOR","ADMIN"}`（`:148`） |
+
+**为什么这个区分是load-bearing**：给没有 `@RequireRole` 的端点加 `canUseRole(['OPERATOR','ADMIN'])`
+门控，等于前端把后端现在允许 VIEWER 做的操作藏掉——**前端用旧判断否决了后端的新能力**，
+而这类不一致没有任何测试会发现（后端放开了，前端却藏着）。这正是
+`utils/identity.ts` 里 `WMS_WRITE_ROLES` 注释反复警告的那件事，只是方向相反：
+那条讲的是「后端放开后前端常量没跟着拆」，这里讲的是「后端根本没锁，前端却自己加了锁」。
+
+### 2. 分三类处理（本节的做法）
+
+**A 类（后端已锁 OPERATOR/ADMIN）→ 加门控 + 说明。** VIEWER 点了必然 403，提前隐藏并给出
+「需 OPERATOR/ADMIN」的理由，是纯粹的显示优化，不否决后端能力。
+- `OrderList.vue`：配货出库、确认发货两个写入口 + 弹窗提交按钮 + 三个处理器入口
+  （`allocate` / `openConfirm` / `submitConfirm`）。新增 `ORDER_FULFILLMENT_WRITE_ROLES`。
+- `Finance.vue`：全部 14 个写入口。门控放在 `call()` 这个唯一收口上（每个写操作都经过它），
+  外加不走 `call()` 的 `handleSync`。新增 `FINANCE_WRITE_ROLES`。
+- `ListingMonitor.vue` 的 CSV 导入：新增 `PRODUCT_MASTER_WRITE_ROLES`，给 `MasterCsvImport.vue`
+  加 `roleAllowed` prop（与已有的 `InventoryCsvImport.vue` 同构）。
+
+**B 类（后端没锁）→ 不加门控，改为披露。** ListingMonitor 的商品主数据建/改、登记自查、
+竞品/排名/BuyBox 登记、费用估算；CustomerService 的工单/模板/邮件/差评/RMA 等绝大多数写入口。
+这些 VIEWER 本来就能用。**是否给后端补门禁是产品决策，不是前端该悄悄替它做的**——见 §S20.6 待办。
+
+**C 类（与角色无关的 UI 缺陷）→ 直接修。**
+- `Finance.vue` 凭证空表格现在区分四种成因（没选店 / 没取到 / 契约异常 / 真没凭证），
+  新增 `voucherEmptyText` computed + `voucherLoadedFailed` / `voucherBadShape` 两个标志。
+- `Finance.vue` 差异行的「生成索赔单/忽略」在非 OPEN 时 title 说明「仅 OPEN 状态可…；当前 X 已终结」；
+  角色不足时 title 让位给角色说明（`d.status !== 'OPEN'` 优先于角色判断）。
+
+### 3. 为什么门控既放按钮又放处理器
+
+与 §S19 的 Warehouse 同一理由，值得再记一次：**入口隐藏只是体验优化，不是边界**。
+弹窗可能在角色变更前就已打开，或者角色信息（AppHeader 的 getInfo）比弹窗晚到——
+`identity.ts` 的 `canUseRole` 对未知角色故意放行，就是为了不让前端状态否决后端能力，
+代价就是「禁用态挡不住所有时序」。所以 `allocate` / `openConfirm` / `submitConfirm` /
+`handleSync` / `call()` 里都各有一道 `xxxWriteBlocked(...)`。
+
+### 4. 测试与验证
+
+- **vitest 636/636 通过**（50 个文件）；新增 OrderList 9 条、Finance 8 条、ListingMonitor 3 条。
+- **`vue-tsc --noEmit` 0 错误**；`vite build` 通过。
+- **变异测试 7 个变异全部捕获**，且全部是断言失败而非崩溃：
+  1. 去掉 `allocate` 的角色守卫 → 红
+  2. 去掉 `submitConfirm` 的角色兜底 → 红
+  3. 去掉配货按钮的模板门控 → 红
+  4. 把 `voucherEmptyText` 塌回一句「暂无凭证数据」→ 4 条测试红
+  5. 去掉 `call()` 的角色门控 → 红
+  6. 去掉 `handleSync` 的角色门控 → 红
+  7. 去掉 `MasterCsvImport` 的 `role-allowed` prop → 红
+- **E2E 新增 6 条全绿**：OrderList 的 VIEWER/OPERATOR 各一条，Finance 的 VIEWER/OPERATOR、
+  OPEN 差异行、空表格四成因各一条。
+- 仓库门禁全绿：`repository_hygiene` 0 findings、`stub_shape_audit` 0 findings、
+  `entity_column_drift` 0 mismatch、`param_name_audit` 0 findings、release tools 91/91。
+
+### 5. E2E 踩的坑（下一班直接抄结论，别再试一遍）
+
+**`page.addInitScript(() => localStorage.setItem('user_role', 'VIEWER'))` 在 Finance/OrderList
+这类有 AppHeader 的页面上不生效。** `installApiStub` 的 `/user/getInfo` 桩返回 `role: 'ADMIN'`，
+而 `AppHeader.vue:184` 的 `loadUserInfo` 会 `setUserRole(response.data.user.role)` 把它覆盖掉。
+必须按 §S19 Warehouse 那条的既有写法，在测试里 `page.route(/\/api\/user\/getInfo/, ...)`
+显式覆盖（后注册的 route 先匹配）。前两次我都写错了，症状是「按钮 title 显示的是业务原因
+而不是角色原因」——这个症状本身就是判据。
+
+### 6. 下一班要做的（本节新开的待办）
+
+1. **后端角色门禁缺口是产品决策，需要拍板**：ListingMonitor 与 CustomerService 的写端点
+   （§S20.1 表格里标「无 `@RequireRole`」的那些）现在 VIEWER 与 OPERATOR 等权。
+   商品主数据建/改、Listing 自查登记、竞品/Buybox 登记、客服工单/邮件/RMA——这些到底该不该锁？
+   **前端不会替这个决定加门控**（理由见 §S20.1）；要锁就后端加 `@RequireRole` 并同步补前端门控。
+2. `amz_warehouse_stock` 无写入方导致库龄分析恒空——§S19.6 已记，本节未动。
+3. `Finance.vue` 1360 行，超过 CLAUDE.md 的单文件 500 行上限。本节只在其中加了约 60 行，
+   **没有缓解反而加重了**。拆分方案（凭证/回款/结算/差异/索赔/VAT 六个 tab 各自成组件）
+   需要单独一班做，且要先确认 `cursor-bar`、`call()`、`pushFinanceError` 这些跨 tab 复用件的
+   归属——不要为了凑行数把一个 1360 行的文件切成六个还互相 import 的文件。

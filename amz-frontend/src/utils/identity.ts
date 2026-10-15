@@ -79,5 +79,49 @@ export const WAREHOUSE_WRITE_ROLES = ['OPERATOR', 'ADMIN']
  */
 export const WMS_WRITE_ROLES = ['OPERATOR', 'ADMIN']
 
+/**
+ * 订单履约写入（配货出库 / 向 Amazon 确认发货）的守卫角色。
+ * <p>
+ * 后端 OrderFulfillmentController 的两个端点**逐条声明**同一个
+ * {@code @RequireRole({"OPERATOR","ADMIN"})}，用户可见语义也是同一件事——「货出去了」，
+ * 所以这里合并。
+ * <p>
+ * 合并的条件与 WMS_WRITE_ROLES 相同：一旦后端对其中一个放开，就必须拆成
+ * ALLOCATE_WRITE_ROLES / CONFIRM_SHIP_WRITE_ROLES。继续共用一个常量的后果是前端
+ * 对已放开的那一侧仍然隐藏入口——前端用旧判断否决后端的新能力，而这类不一致
+ * 没有任何测试会发现。
+ * <p>
+ * 与 WMS_WRITE_ROLES 分开是因为授权决策不同：仓内记账是「这一单收了货」，
+ * 订单履约是「这一单货出去了并通知了 Amazon」。合并会让「改一处以为两处都改了」。
+ */
+export const ORDER_FULFILLMENT_WRITE_ROLES = ['OPERATOR', 'ADMIN']
+
+/**
+ * 财务写入（凭证 / 结算同步 / 差异扫描 / 索赔 / 回款重算 / VAT 月结）的守卫角色。
+ * <p>
+ * 后端 FinanceController、SettlementController、FeeDiscrepancyController、
+ * ReimbursementClaimController、PaymentCollectionController、VatController 共 14 个
+ * 写端点**逐条声明**同一个 {@code @RequireRole({"OPERATOR","ADMIN"})}。
+ * <p>
+ * 单独一个常量而不是复用 WMS_WRITE_ROLES：财务写的是账，「记账」与「仓里发生了什么」
+ * 不是同一个授权决策。FinanceControllerGuardTest 已有断言钉住这 14 个端点的数量，
+ * 新增财务写端点必须同步更新该测试——那正是这个常量该跟着改的信号。
+ */
+export const FINANCE_WRITE_ROLES = ['OPERATOR', 'ADMIN']
+
+/**
+ * 商品主数据 CSV 导入（POST /product/master/import/csv）的守卫角色。
+ * <p>
+ * **只覆盖这一个端点**，不要因为「都是 ListingMonitor 页的写操作」就把它扩成
+ * 「ListingMonitor 页写角色」：同一个页面上的 POST /product/master（建/改）与
+ * /product/listing-monitor 的 health/check、ranking、competitor、buybox 在后端
+ * <b>都没有 @RequireRole</b>，VIEWER 与 OPERATOR 权限相同。用这个常量去门控那些入口，
+ * 就是前端否决后端已有的能力，而且没有任何测试会发现这种不一致。
+ * <p>
+ * 后端哪天给那些端点补上 @RequireRole，这里要按新角色集逐个补门控——那是改这个常量
+ * 的语义（从「一个端点」变成「一族端点」）的信号，届时应重命名而不是就地扩用途。
+ */
+export const PRODUCT_MASTER_WRITE_ROLES = ['OPERATOR', 'ADMIN']
+
 /** 门控隐藏时给用户的说明文案：不解释「为什么没有按钮」用户只会以为功能没了。 */
 export const WRITE_LOCKED_HINT = '需 OPERATOR/ADMIN'

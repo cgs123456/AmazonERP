@@ -368,7 +368,7 @@
             <button class="page-btn" @click="reloadMaster">搜索</button>
             <span class="muted">marketplaceId 与 title 在库上是 NOT NULL，缺失会在保存时被挡下</span>
           </div>
-          <MasterCsvImport @imported="reloadMaster" />
+          <MasterCsvImport :role-allowed="masterWriteAllowed" @imported="reloadMaster" />
           <table class="data-table">
             <thead>
               <tr><th>SKU</th><th>ASIN</th><th>站点</th><th>标题</th><th>品牌</th>
@@ -437,12 +437,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import MasterCsvImport from '../components/MasterCsvImport.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
+import { canUseRole, PRODUCT_MASTER_WRITE_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
 import { usePagination } from '@/composables/usePagination'
 import { renderLabelHtml } from '@/utils/packingSlip'
 import {
@@ -467,6 +468,30 @@ const TABS: Array<{ key: TabKey; label: string }> = [
 
 const loading = ref(false)
 const { currentShopId, refreshShop } = useShopGuard()
+
+/**
+ * 商品主数据 CSV 导入的角色门控。
+ * <p>
+ * **本页只有这一个写入口需要门控**，其余写端点（POST /product/master 的建/改、
+ * /product/listing-monitor 的 health/check、ranking、competitor、buybox）后端
+ * <b>都没有声明 @RequireRole</b>，VIEWER 与 OPERATOR 权限相同——给它们加前端门控
+ * 等于前端否决后端已有的能力，而这类不一致没有任何测试会发现。
+ * <p>
+ * 这个「只有一处要门控」的状态是后端现状的快照，不是设计目标：后端哪天给这些端点
+ * 补上 @RequireRole，这里必须跟着补门控（identity.ts 里对同类的说明见
+ * WMS_WRITE_ROLES 的注释）。
+ */
+const masterWriteAllowed = ref(canUseRole(PRODUCT_MASTER_WRITE_ROLES))
+
+const syncMasterWriteRole = () => {
+  masterWriteAllowed.value = canUseRole(PRODUCT_MASTER_WRITE_ROLES)
+}
+
+onMounted(() => {
+  window.addEventListener(ROLE_CHANGED_EVENT, syncMasterWriteRole)
+  loadAll()
+})
+onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncMasterWriteRole))
 
 const tab = ref<TabKey>('health')
 const summary = ref<ListingSummary>(emptySummary())
@@ -734,7 +759,8 @@ const runFee = async () => {
   }
 }
 
-onMounted(loadAll)
+// loadAll 的挂载调用与 ROLE_CHANGED_EVENT 监听在文件上方的 masterWriteAllowed 处一起注册，
+// 不在这里再写一次 onMounted（同一生命周期钩子重复注册会让 loadAll 跑两遍）。
 </script>
 
 <style scoped>

@@ -2,10 +2,11 @@
   <div class="csv-import" data-panel="master-csv-import">
     <div class="ci-row">
       <input ref="fileInput" type="file" accept=".csv" class="ci-file"
-             @change="onFileChange" />
-      <button class="page-btn" :disabled="!file || uploading" @click="upload">
+             :disabled="!roleAllowed" @change="onFileChange" />
+      <button class="page-btn" :disabled="!roleAllowed || !file || uploading" @click="upload">
         {{ uploading ? '导入中…' : '导入 CSV' }}
       </button>
+      <span v-if="!roleAllowed" class="ci-locked" role="note">CSV 导入需 OPERATOR 或 ADMIN 角色</span>
       <span class="muted ci-hint">
         模板必需列：sku / marketplace_id / title；可选 asin / brand / price / currency /
         category / product_type / size_tier / weight_g / status。
@@ -51,7 +52,12 @@ import { importMasterCsv, type MasterImportReport } from '@/api/listing'
  * 两条口径与后端一致：
  * 1. 结构错误（缺必需列/超行数）后端整批拒绝，此时报告为 null、错误进 error 条；
  * 2. 行级失败只失败那一行，报告里逐行给文件行号（含表头行），便于直接跳过去改。
+ *
+ * roleAllowed：POST /product/master/import/csv 声明了 @RequireRole(OPERATOR/ADMIN)，
+ * 所以这个入口要按角色隐藏。与 InventoryCsvImport 是同一个约束、同一个理由，
+ * 但两者**不合并**：导入契约的用户可见语义不同（商品是 upsert，库存只更新已存在行）。
  */
+const props = withDefaults(defineProps<{ roleAllowed?: boolean }>(), { roleAllowed: true })
 const emit = defineEmits<{ (e: 'imported'): void }>()
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -70,6 +76,11 @@ const onFileChange = () => {
 const upload = async () => {
   const shopId = localStorage.getItem('current_shop_id')
   if (!file.value || !shopId) return
+  // 与父页面同一口径的兜底：禁用态可能在角色变更前就已渲染，或者角色比面板晚到
+  if (!props.roleAllowed) {
+    error.value = 'CSV 导入需 OPERATOR 或 ADMIN 角色'
+    return
+  }
   uploading.value = true
   error.value = ''
   try {
@@ -103,5 +114,6 @@ const upload = async () => {
 .ci-stats .ok { color: var(--color-primary); }
 .ci-stats .fail { color: var(--color-error, #c62828); font-weight: 600; }
 .ci-errors { margin-top: 0.5rem; }
+.ci-locked { color: var(--color-muted); font-size: 0.75rem; }
 .error-zone { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.8125rem; margin-top: 0.5rem; }
 </style>

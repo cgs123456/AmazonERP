@@ -67,13 +67,15 @@
                 <td>{{ v.shopId }}</td>
                 <td><span class="status-tag" :class="syncStatusClass(v.kingdeeSyncStatus)">{{ syncStatusText(v.kingdeeSyncStatus) }}</span></td>
                 <td class="mono">{{ v.bizDate }}</td>
-                <td><button class="sync-btn" :disabled="syncing === v.id" @click="handleSync(v)">{{ syncing === v.id ? '同步中...' : '同步金蝶' }}</button></td>
+                <td><button class="sync-btn" :disabled="syncing === v.id || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '把这张凭证同步到金蝶' : `同步金蝶${WRITE_LOCKED_HINT}`"
+                  @click="handleSync(v)">{{ syncing === v.id ? '同步中...' : '同步金蝶' }}</button></td>
               </tr>
               <tr v-if="!loading && vouchers.length === 0">
                 <td colspan="8" class="empty-row">
                   <div class="empty-state">
                     <Icon icon="mdi:book-open-outline" width="32" class="empty-icon" />
-                    <span>暂无凭证数据</span>
+                    <span>{{ voucherEmptyText }}</span>
                   </div>
                 </td>
               </tr>
@@ -140,7 +142,8 @@
             <option v-for="s in COLLECTION_STATUS" :key="s" :value="s">{{ s }}</option>
           </select>
           <button class="filter-btn" :disabled="col.loading.value" @click="loadCollections(false)">刷新</button>
-          <button class="filter-btn" :disabled="busy" @click="confirm(rebuildConfirm)">重算回款</button>
+          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '从结算原表重新聚合回款' : `重算回款${WRITE_LOCKED_HINT}`" @click="confirm(rebuildConfirm)">重算回款</button>
         </div>
 
         <div class="summary-grid">
@@ -203,7 +206,8 @@
         <div class="filter-bar">
           <input v-model="settleOrder" class="filter-date" placeholder="按亚马逊订单号过滤" />
           <button class="filter-btn" :disabled="settle.loading.value" @click="loadSettlements(false)">刷新</button>
-          <button class="filter-btn" :disabled="busy" @click="confirm(settlementSyncConfirm)">从 SP-API 同步结算</button>
+          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '从 SP-API 拉取结算报告' : `同步结算${WRITE_LOCKED_HINT}`" @click="confirm(settlementSyncConfirm)">从 SP-API 同步结算</button>
         </div>
 
         <div v-if="ingest" class="summary-grid">
@@ -270,8 +274,10 @@
             <option v-for="s in DISCREPANCY_STATUS" :key="s" :value="s">{{ s }}</option>
           </select>
           <button class="filter-btn" :disabled="disc.loading.value" @click="loadDiscrepancies(false)">刷新</button>
-          <button class="filter-btn" :disabled="busy" @click="runScan">扫描差异</button>
-          <button class="filter-btn" :disabled="busy" @click="openShortage()">登记入库短收</button>
+          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '从结算明细比对出费用差异' : `扫描差异${WRITE_LOCKED_HINT}`" @click="runScan">扫描差异</button>
+          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '登记一条入库短收差异' : `登记入库短收${WRITE_LOCKED_HINT}`" @click="openShortage()">登记入库短收</button>
         </div>
 
         <div v-if="scan" class="summary-grid">
@@ -311,8 +317,12 @@
                 <td><span class="status-tag">{{ d.status }}</span></td>
                 <td>
                   <button class="sync-btn" :disabled="busy" @click="openDiscrepancyDetail(d)">详情</button>
-                  <button class="sync-btn" :disabled="busy || d.status !== 'OPEN'" @click="confirm(claimFrom(d))">生成索赔单</button>
-                  <button class="sync-btn" :disabled="busy || d.status !== 'OPEN'" @click="confirm(dismissConfirm(d))">忽略</button>
+                  <button class="sync-btn" :disabled="busy || d.status !== 'OPEN' || !financeWriteAllowed"
+                    :title="d.status !== 'OPEN' ? `仅 OPEN 状态可生成索赔单；当前 ${d.status} 已终结` : (financeWriteAllowed ? '以这条差异生成亚马逊索赔单' : `生成索赔单${WRITE_LOCKED_HINT}`)"
+                    @click="confirm(claimFrom(d))">生成索赔单</button>
+                  <button class="sync-btn" :disabled="busy || d.status !== 'OPEN' || !financeWriteAllowed"
+                    :title="d.status !== 'OPEN' ? `仅 OPEN 状态可忽略；当前 ${d.status} 已终结` : (financeWriteAllowed ? '把这条差异标记为不索赔' : `忽略差异${WRITE_LOCKED_HINT}`)"
+                    @click="confirm(dismissConfirm(d))">忽略</button>
                 </td>
               </tr>
               <tr v-if="!disc.loading.value && disc.rows.value.length === 0">
@@ -388,7 +398,8 @@
             <option v-for="s in CLAIM_STATUS" :key="s" :value="s">{{ s }}</option>
           </select>
           <button class="filter-btn" :disabled="claimList.loading.value" @click="loadClaims(false)">刷新</button>
-          <button class="filter-btn" :disabled="busy" @click="runReconcile">与平台对账</button>
+          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '拉取平台侧的索赔状态' : `与平台对账${WRITE_LOCKED_HINT}`" @click="runReconcile">与平台对账</button>
         </div>
 
         <div v-if="claimSum" class="summary-grid">
@@ -452,10 +463,10 @@
                 <td>{{ c.reimbursedAmount ?? 0 }}</td>
                 <td><span class="status-tag">{{ c.status }}</span></td>
                 <td>
-                  <button v-if="c.status === 'CANDIDATE'" class="sync-btn" :disabled="busy" @click="runClaim(c, 'submit')">提交平台</button>
-                  <button v-if="c.status === 'SUBMITTED'" class="sync-btn" :disabled="busy" @click="runClaim(c, 'accept')">登记受理</button>
-                  <button v-if="c.status === 'ACCEPTED'" class="sync-btn" :disabled="busy" @click="openReimburse(c)">登记赔付</button>
-                  <button v-if="c.status !== 'REIMBURSED' && c.status !== 'REJECTED'" class="sync-btn" :disabled="busy" @click="confirm(rejectConfirm(c))">驳回</button>
+                  <button v-if="c.status === 'CANDIDATE'" class="sync-btn" :disabled="busy || !financeWriteAllowed" @click="runClaim(c, 'submit')">提交平台</button>
+                  <button v-if="c.status === 'SUBMITTED'" class="sync-btn" :disabled="busy || !financeWriteAllowed" @click="runClaim(c, 'accept')">登记受理</button>
+                  <button v-if="c.status === 'ACCEPTED'" class="sync-btn" :disabled="busy || !financeWriteAllowed" @click="openReimburse(c)">登记赔付</button>
+                  <button v-if="c.status !== 'REIMBURSED' && c.status !== 'REJECTED'" class="sync-btn" :disabled="busy || !financeWriteAllowed" @click="confirm(rejectConfirm(c))">驳回</button>
                 </td>
               </tr>
               <tr v-if="!claimList.loading.value && claimList.rows.value.length === 0">
@@ -560,11 +571,14 @@
           <div class="filter-bar">
             <input v-model="closeYear" type="number" class="filter-date" placeholder="年" />
             <input v-model="closeMonth" type="number" class="filter-date" placeholder="月" />
-            <button class="filter-btn" :disabled="busy" @click="confirm(monthlyCloseConfirm)">执行 VAT 月结</button>
+            <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '执行指定月份的 VAT 月结' : `VAT 月结${WRITE_LOCKED_HINT}`" @click="confirm(monthlyCloseConfirm)">执行 VAT 月结</button>
           </div>
           <div class="filter-bar">
-            <button class="filter-btn" :disabled="busy" @click="runSettlementVouchers">补结算扣费/退款凭证</button>
-            <button class="filter-btn" :disabled="busy" @click="runProcurementVouchers">补采购成本凭证</button>
+            <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '按结算明细补生成凭证' : `补结算凭证${WRITE_LOCKED_HINT}`" @click="runSettlementVouchers">补结算扣费/退款凭证</button>
+            <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
+                  :title="financeWriteAllowed ? '按采购单补生成凭证' : `补采购凭证${WRITE_LOCKED_HINT}`" @click="runProcurementVouchers">补采购成本凭证</button>
             <button class="filter-btn" :disabled="busy" @click="reloadVouchers">回读凭证列表</button>
           </div>
           <dl v-if="svReport" class="kv-grid">
@@ -595,7 +609,7 @@
           <p class="confirm-detail">{{ confirmBox.detail }}</p>
           <div class="modal-actions">
             <button class="filter-btn" @click="confirmBox = null">取消</button>
-            <button class="filter-btn" :disabled="busy" @click="runConfirm">确认执行</button>
+            <button class="filter-btn" :disabled="busy || !financeWriteAllowed" @click="runConfirm">确认执行</button>
           </div>
         </div>
       </div>
@@ -619,7 +633,7 @@
           </div>
           <div class="modal-actions">
             <button class="filter-btn" @click="formKind = null">取消</button>
-            <button class="filter-btn" :disabled="busy" @click="submitForm">提交</button>
+            <button class="filter-btn" :disabled="busy || !financeWriteAllowed" @click="submitForm">提交</button>
           </div>
         </div>
       </div>
@@ -628,13 +642,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, defineComponent, h, type PropType, type Ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted, defineComponent, h, type PropType, type Ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { listVouchers, syncToKingdee, calculateProfit } from '@/api/finance'
 import type { AccountingVoucher } from '@/api/finance'
 import { useShopGuard } from '@/composables/useShopGuard'
+import { canUseRole, FINANCE_WRITE_ROLES, WRITE_LOCKED_HINT, ROLE_CHANGED_EVENT } from '@/utils/identity'
 import { useToast } from '@/composables/useToast'
 import type { ApiResponse } from '@/api/types'
 import * as ext from '@/api/finance-ext'
@@ -668,6 +683,29 @@ const PAGE_SIZE = 50
 const nextCursor = ref<string | null>(null)
 const truncated = ref(false)
 const loadingMore = ref(false)
+/** 最近一次凭证列表请求是否失败（用于空表格区分「没数据」与「没取到」） */
+const voucherLoadedFailed = ref(false)
+/** 最近一次凭证列表返回是否不是数组（契约问题，与业务空数据是两回事） */
+const voucherBadShape = ref(false)
+
+/**
+ * 凭证空表格的说明文案。
+ * <p>
+ * 四种「列表是空的」在界面上必须能区分开，因为它们要用户做的动作完全不同：
+ * <ul>
+ *   <li>没选店铺 → 去右上角选店（否则发了请求也是空）；</li>
+ *   <li>请求失败 / 返回结构异常 → 看顶部错误区，重试；</li>
+ *   <li>真的一张凭证都没有 → 去「VAT 与凭证补数」页生成；</li>
+ * </ul>
+ * 此前只显示「暂无凭证数据」，而失败分支同样会清空 vouchers，于是请求失败
+ * 与「店铺确实没凭证」在界面上完全一样——用户会以为没数据，其实是被吞掉的错误。
+ */
+const voucherEmptyText = computed(() => {
+  if (!shop()) return '尚未选择店铺：请先在右上角选择店铺，否则请求不到该店凭证。'
+  if (voucherLoadedFailed.value) return '凭证列表未取到（原因见顶部错误区）：这不是「没有凭证」，请重试或换筛选条件。'
+  if (voucherBadShape.value) return '凭证列表返回的结构不是数组：这是接口契约问题，请把顶部错误信息反馈给开发。'
+  return '该店铺暂无凭证：可到「VAT 与凭证补数」页补结算扣费/退款凭证或采购成本凭证。'
+})
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'voucher', label: '凭证列表' },
@@ -689,6 +727,9 @@ const loadVouchers = async (append = false) => {
   const shopId = refreshShop()
   if (!shopId) {
     vouchers.value = []
+    // 没选店铺不是失败：错误区不该为此亮起，但空表格必须说明原因
+    voucherLoadedFailed.value = false
+    voucherBadShape.value = false
     return
   }
   if (append) {
@@ -707,14 +748,22 @@ const loadVouchers = async (append = false) => {
       const page = res._page
       truncated.value = page ? page.truncated : false
       nextCursor.value = page ? page.nextCursor : null
+      voucherLoadedFailed.value = false
+      // 200 但 data 不是数组：契约问题。此时若把它当空数组渲染，用户看到的是
+      // 「没凭证」而不是「接口坏了」——这两件事的处理方式完全不同。
+      voucherBadShape.value = !Array.isArray(res.data)
     } else {
       console.warn('[Finance] 凭证列表返回异常', res)
       pushFinanceError('凭证列表', res?.message)
+      voucherLoadedFailed.value = true
+      voucherBadShape.value = false
       if (!append) vouchers.value = []
     }
   } catch (e) {
     console.warn('[Finance] 凭证列表调用失败', e)
     pushFinanceError('凭证列表', e)
+    voucherLoadedFailed.value = true
+    voucherBadShape.value = false
     if (!append) vouchers.value = []
   } finally {
     loading.value = false
@@ -728,6 +777,8 @@ const loadMore = () => {
 }
 
 const handleSync = async (v: AccountingVoucher) => {
+  // POST /finance/voucher/{id}/sync 也是 OPERATOR/ADMIN，与 call() 覆盖的其余写操作同一口径
+  if (financeWriteBlocked('同步金蝶')) return
   syncing.value = v.id
   try {
     const res = await syncToKingdee(v.id)
@@ -889,6 +940,28 @@ const CursorBar = defineComponent({
 
 const busy = ref(false)
 const errors = ref<string[]>([])
+
+/**
+ * 财务写入口的角色门控（详见 {@link call} 的说明）。
+ * <p>
+ * 未知角色不隐藏、不拦截：硬刷新时 AppHeader 的 getInfo 可能还没回来，
+ * 因「还没取到角色」就拦住操作，等于让前端状态否决后端能力（identity.ts 的口径）。
+ */
+const financeWriteAllowed = ref(canUseRole(FINANCE_WRITE_ROLES))
+
+const syncFinanceWriteRole = () => {
+  financeWriteAllowed.value = canUseRole(FINANCE_WRITE_ROLES)
+}
+
+const financeWriteBlocked = (label: string): boolean => {
+  if (financeWriteAllowed.value) return false
+  pushFinanceError(label, '需要 OPERATOR 或 ADMIN 角色')
+  return true
+}
+
+onMounted(() => window.addEventListener(ROLE_CHANGED_EVENT, syncFinanceWriteRole))
+onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncFinanceWriteRole))
+
 const pushFinanceError = (tag: string, detail: unknown) => {
   const msg = detail instanceof Error ? detail.message : (detail as string | undefined) || '后端返回异常'
   if (!errors.value.some((x) => x.startsWith(`${tag}：`))) errors.value.push(`${tag}：${msg}`)
@@ -939,7 +1012,21 @@ const pushError = (text: string) => {
 }
 
 /** 一次调用：失败进错误条并返回 false，绝不把失败伪装成「空列表」。 */
+/**
+ * 财务写操作的统一出口。
+ * <p>
+ * 本页全部 14 个写端点（FinanceController ×4、SettlementController、FeeDiscrepancyController ×3、
+ * ReimbursementClaimController ×5、PaymentCollectionController、VatController）在后端都声明了
+ * {@code @RequireRole({"OPERATOR","ADMIN"})}，此前页面上对 VIEWER 全绿可点。点了之后拿到的是
+ * HTTP 200 + code=400（Result.failure 不改状态码），界面只显示一句「无权限执行该操作」——
+ * 用户看到的是「功能点了报错」，而不是「这个功能不归你用」。
+ *
+ * 角色门控放在这里而不是逐个按钮 v-if：confirm() 弹窗可能在角色变更前就已打开，
+ * 或者角色信息比弹窗晚到（AppHeader 的 getInfo 与页面挂载是并发的），
+ * 禁用态挡不住这种时序，而这里是所有写操作的必经之路。
+ */
 const call = async <T>(label: string, fn: () => Promise<ApiResponse<T>>, apply: (v: T) => void): Promise<boolean> => {
+  if (financeWriteBlocked(label)) return false
   busy.value = true
   try {
     const res = await fn()
