@@ -1,32 +1,87 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细（2026-10-14 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件详情/编辑（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S9）：① 通知未读红点 + 全部已读（孤儿 api 接入）；② **用户管理角色分配**
-> 收口——该页此前零测试覆盖，补测暴露两处真实缺陷（失败原因被重拉抹掉、创建时间列恒空），
-> 并顺带修掉由此暴露的 CI 真红（`ShopServiceMySqlIT` 手写 DDL 漏列）+ 加静态契约防再犯；
-> ③ **店铺管理页**——接 6 个孤儿店铺 api（后端 S7.2 早已就绪），并补「已绑定用户」读端点
-> （此前只有写端点，授权界面是盲写），顺带修一处前端类型字段名漂移；
-> ④ **仓库编辑不可达**——弹窗早有「编辑仓库」分支但无入口、保存恒走新建，补入口 + PUT 分支；
-> ⑤ **Buybox 汇总区**——接 `getBuyBoxSummary`（自有率 + 丢失清单）；
-> ⑥ **费用差异详情**——接 `discrepancyDetail`（evidence/detectedAt）；
-> ⑦ **RMA 详情**——接 `rmaDetail`（承运商/面单成本/备注）；
-> ⑧ **有效报价明细**——接 `listQuotes`（比价页缺逐条报价表）。
-> 详见 §S9。
+> 本次更新（§S12）：接上 FBA 货件的两个孤儿 api——`getShipment`（单条主数据详情）与
+> `updateShipment`（编辑，PUT）。此前 Procuremement 只接了 list/create/status：详情面板无从
+> 看全主数据（列表只有 9 列），「编辑货件」这条路径完全不存在（弹窗保存恒走新建）。落点上
+> 刻意不让主数据编辑碰 `status`——状态推进有专用端点（确认发货带承运商/运单号、标记到货带
+> 实际到货日），从表单绕进去会造第二条写路径。详见 §S12。
+> 上一班（§S9）：通知未读红点、用户管理角色分配收口、店铺管理页、仓库编辑、Buybox 汇总、
+> 费用差异详情、RMA 详情、有效报价明细。
 
 ## 项目现状一句话
 
-**CI 全绿（run `38571169004`，2026-10-14，HEAD `a4bb626`）**：11 个 job 全过——后端 **2283/0F/0E/2S**、
-前端 vitest **557/557**（含有效报价明细 +4）+ vue-tsc 0 错 + build 通过 + **E2E 159 passed**、
-hygiene 0 / release tools 91/91 / stub-shape RED 0（186 注册/119 过）/
-synthetic-data / mysql-import / docker / runtime-smoke / checkstyle 双档。
-本机整仓回归 **2283/0F/0E/35S**（35S=本机无 DB/Redis 的门控 IT，CI 上真跑）；
-迁移 **65** 个、Flyway 活表 **116** 张、实体 110 / 0 漂移、零引用表 0、
-release tools 91/91、schema 快照 103 表/14 库一致。
+**本机门禁全绿（HEAD `0fb183d` 之上，工作区见 §S12；推送后 CI 结论以 `gh run list` 为准）**：
+前端 vitest **564/564**（含 FBA 货件详情/编辑 +7）+ vue-tsc 0 错 + E2E **160 passed**
+（另有 3 例已知冷启动抖动，单跑全过——坑 19 家族，与本轮无关）；
+stub-shape 0 RED（**188 注册/121 过**，+2 为新发货单端点）、param-name 0 findings、
+hygiene 0 / entity_column_drift 0 / release tools 全 OK；后端零改动（纯前端班）。
+上一班 CI 全绿基线：run `38571169004`（2026-10-14，HEAD `a4bb626`）11 job 全过——后端
+2283/0F/0E/2S、前端 vitest 557/557 + E2E 159 passed、迁移 65 / 活表 116 / 实体 110 / 0 漂移。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S8.3 / §S9.12。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S12.9。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
+
+## S12. 交接：2026-10-15 FBA 货件详情/编辑（getShipment/updateShipment 落地，已完成）
+
+> 本段是**当前会话的交接**。承接 §S9.12「下一步」第 1 项：`getShipment`/`updateShipment`
+> ——「Procurement 已接 listShipments/createShipment，只差单条详情/编辑」。
+> 本班为**纯前端班**（后端两端点早已就绪：`GET/PUT /procurement/fba/shipment/{id}`，
+> 归属校验在服务层 `mustGetAuthorized`），无 Java/SQL 改动。
+
+### 1. 核实结论（先读再动手）
+
+| 核实项 | 结论 |
+|---|---|
+| 后端 | `ProcurementController` 双端点早在（`:403` GET 详情、`:362` PUT 更新），`updateShipment` 服务层按 ID 归属校验并以既有 shopId 覆盖请求体（防把货件搬到别的店铺） |
+| 前端 api | `getShipment`/`updateShipment` 在 `api/procurement.ts` 定义完整但**零调用**（② 类孤儿） |
+| 页面现状 | FBA 货件 Tab 已接 list/create/status(标记到货)/ship/allocate/receive；单条主数据详情入口没有；「编辑货件」整条路径不存在 |
+| 桩 | `/procurement/fba/shipment/list/` 桩是**空数组**——货件 Tab 的行内操作此前从未被 E2E 测到 |
+
+### 2. 落地内容
+
+| 能力 | 落点 | 行为 |
+|---|---|---|
+| `getShipment` 详情 | 货件列表行「详情」按钮 + `[data-panel="shipment-detail"]` 面板 | 单条接口拉主数据全字段（列表 9 列看不到的目的仓地址/发出仓库/体积重量/四项成本构成/实际到货日）；失败按「货件详情：」前缀点名且**不铺面板**（失败即置空，不把上一票的详情留在页面上冒充这一票） |
+| `updateShipment` 编辑 | 行内「编辑」按钮 + 新建同款弹窗（标题变「编辑 FBA 货件 <单号>」） | **先拉单条再回填**（列表行可能已被他人改过，拿陈旧行回填=把旧值写回去）；拉取被拒时**不开弹窗**，不用列表值拼假表单；提交走 PUT，成功后关掉可能已过期的详情面板并刷新列表 |
+
+### 3. 关键设计：主数据编辑不碰 `status`
+
+编辑弹窗**隐藏状态下拉**（仅新建时选初始态），modalNote 写明理由：状态推进有专用端点——
+「确认发货」带承运商/主运单号、「标记到货」写实际到货日——从主数据表单直接改 status 会**绕过
+这些副作用**，制造第二条写路径。提交体按字段白名单挑（`SHIPMENT_EDITABLE_FIELDS`：
+fbaShipmentId/destinationFbaCode/shippingMethod/boxCount/totalWeight/totalVolume/freightCost/
+customsCost/taxCost/otherCost/eta），显式排除 status/shipmentNo/shopId/actualArrival。
+modalNote 另披露两条边界：**留空字段保持原值**（后端按非空字段更新）与
+**成本改动后需重跑「费用分摊」**（明细单位成本不会自动重算）。
+
+### 4. 测试与验证
+
+- **前端 vitest +7 例**（修前 6 红，新建路径那个修前即绿）：详情拉单条展示全字段 /
+  详情失败点名且不铺面板 / 编辑先拉单条回填（列表行埋陈旧哨兵值 999，断言表单取 1500.5）/
+  编辑拉取被拒不开弹窗 / 编辑走 PUT 且 body 不含 status·shipmentNo·shopId·actualArrival /
+  编辑弹窗只剩一个下拉（发货方式）/ 新建保留初始状态下拉；
+- **E2E +1 条**：`full-interaction.spec.ts` FBA 货件 Tab——详情 GET `/fba/shipment/101`、
+  面板含地址/1500.5/未到货，编辑再 GET 一次后 PUT，断言 PUT body 含 boxCount、
+  **不含 status/shopId**；
+- **桩**：`/fba/shipment/list/` 空数组 → 2 条真实形状数据（CREATED+SHIPPED 各一）；
+  新登记 `/fba/shipment/{id}`（GET 详情与 PUT 响应同路径同形状，`Result<FbaShipment>`）与
+  `/{id}/items`（此前未登记会落到 `EMPTY_PAGE` 对象兜底——§S9.4 同款「桩给错形状」）；
+- **变异验证 5 处均红**（均已还原）：详情复用列表行（2 红）/ 编辑不预拉单条（2 红）/
+  编辑恒走 create（1 红）/ 编辑 body 带 status（1 红）/ 去掉编辑入口（4 红）；
+- **门禁**：vitest **564/564**（557+7）、vue-tsc 0 错、E2E **160 passed**（3 例已知冷启动
+  抖动单跑全过）、stub-shape RED 0（188 注册/121 过）、param-name 0、hygiene 0、
+  entity_column_drift 0、release tools 全 OK。
+
+### 5. 卡住的问题 / 下一步
+
+- ② 类剩余：`updateSupplier`（需先定性「改供应商主数据」是否真实需求，避免为接 api 造功能）；
+  `calculateFreight`/`executeRules`（带 `@RequireRole(OPERATOR/ADMIN)`，接 UI 前先定入口
+  门控还是如实提示）；广告域 CRUD 6 个未点名优先级。
+- 真实凭证仍缺（非代码可推进）。
+- **CI 结论以推送后 `gh run list --branch master --limit 1` 为准**（本班未推前不预写绿）。
 
 ## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理 + 仓库编辑 + 四个详情/汇总/明细（已完成）
 
@@ -233,8 +288,9 @@ keyset 分页），前端 `listQuotes` 却零调用。故：
 
 - **② 类剩余约 9 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
   继续按「页面已有相邻功能、只差这一步」挑（已完成：店铺 CRUD、仓库编辑、Buybox 汇总、
-  差异详情、RMA 详情、有效报价明细）：
-  - `getShipment`/`updateShipment`：Procurement 已接 `listShipments`/`createShipment`，只差单条详情/编辑；
+  差异详情、RMA 详情、有效报价明细、**货件详情/编辑**）：
+  - ~~`getShipment`/`updateShipment`~~ **已完成（2026-10-15，见 §S12）**：Procurement 已接
+    `listShipments`/`createShipment`，本轮补单条详情 + 编辑（PUT），编辑不碰 status；
   - `updateSupplier`：Procurement 已接 `createSupplier`/`listSuppliers`，只差编辑（注意 supplier 无「死分支」，
     需确认页面是否该加编辑入口）；
   - `calculateFreight`：LogisticsDashboard 已接 `compareQuotes`/`expireOutdatedQuotes`/`listQuotes`，
