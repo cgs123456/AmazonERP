@@ -39,7 +39,8 @@
 
 ## 项目现状一句话
 
-**CI 以推送后 run 为准；本班 HEAD `e86856d`**（纯前端班，无 Java/SQL 改动）。
+**CI 全绿（run `38727636484` 代码 / `38727838899` 文档，2026-10-15，HEAD `151f05e`）**：
+11 个 job 全过。本班为**纯前端班**，无 Java/SQL 改动。
 本机门禁全绿：前端 vitest **603/603**（含差评结案 +3）+ vue-tsc 0 错 + `npm run build` 通过 +
 E2E CustomerService **10/10**；stub-shape RED 0（**197 注册/131 可比**）、
 param-name 0、hygiene 0（两种模式）、entity_column_drift **110 实体/0 漂移**、release tools **91/91**；
@@ -229,6 +230,7 @@ endpoint 自测 25/25。
   release tools 91/91、endpoint 自测 25/25。
 - 变异验证 2 项逐一红后还原：按钮不按状态收 / 失败也重拉。
 - E2E 全量 143 passed / 2 failed，2 例单跑与串跑均过，属坑 19 冷启动抖动家族。
+- **CI run `38727636484`（代码提交 `e86856d`）与 `38727838899`（文档提交 `151f05e`）均全绿（11/11）**。
 
 ### 5. 下一步
 
