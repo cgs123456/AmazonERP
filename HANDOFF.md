@@ -1,7 +1,15 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑（2026-10-15 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S14）：广告/物流孤儿 api 再落两支——`executeRules`（AdSearchTerms 批量出建议，
+> 本次更新（§S16）：ad 域 6 个孤儿 CRUD 落地——`createCampaign`/`updateCampaign`/
+> `batchCreateCampaigns`/`batchUpdateStatus`/`updateCreative`/`updateTargeting` 此前零调用，
+> 广告页只有读路径。活动域补新建/编辑/批量（勾选列 + 二次确认 + 部分返回如实报数），
+> SB 素材 / SD 定向补编辑；门控沿用采购页 `canCancelPayment` 先例。三个后端约束必须照做：
+> campaignId 拒改（只读）、body 不带 shopId（后端按查询参数覆盖并校验）、
+> 预算留空即整个 key 省略（NOT_NULL 策略下填 0 会把活动打到花不出钱）。
+> 另把编辑入口从「按下标取原始行」改为按活动 ID 取行——视图模型与原始行是两个数组，
+> 下标对齐是没人守的不变量。详见 §S16。
+> 上一班（§S14）：广告/物流孤儿 api 再落两支——`executeRules`（AdSearchTerms 批量出建议，
 > POST 扫描本店全部启用规则，虽不下发广告账号却不可逆地产出建议集合，故放独立面板逐行展示，
 > 成功/失败行不混读 actionCount）与 `calculateFreight`（LogisticsDashboard 头程分摊，
 > 每个未核算货件一行入口；运费预填主单已登记值，提交后按比例重写该票明细行并重拉看板；
@@ -10,7 +18,9 @@
 > 上三班（§S13/§S12/§S9）：供应商详情/编辑、FBA 货件详情/编辑、通知未读红点、用户管理、店铺管理、仓库编辑、
 > Buybox 汇总、费用差异详情、RMA 详情、有效报价明细。
 
-> 本次更新（§S13）：接上供应商域两个孤儿 api——`getSupplier`（单条主数据详情）与
+> 本次更新（§S16）：ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑），
+> 详见 §S16；② 类剩余只剩 `updateWarehouse`。
+> 上一班（§S14）：接上供应商域两个孤儿 api——`getSupplier`（单条主数据详情）与
 > `updateSupplier`（编辑，PUT），承接 §S12 的货件模式（详情+编辑、先拉单条再回填、
 > 提交按白名单挑字段）。真正的结构性发现是**评分与三项统计是 `updateSupplierStats`
 > 按订单履约自动累计的**——新建表单的评分输入只是初始值，编辑白名单刻意排除
@@ -21,14 +31,84 @@
 
 ## 项目现状一句话
 
-**CI 全绿（run `38698833333`，2026-10-15，HEAD `3053f1d`）**：11 个 job 全过。本班实测：
-前端 vitest **580/580**（含广告批量 +4、头程分摊 +5）+ vue-tsc 0 错 + `npm run build` 通过 +
-E2E **159 passed**；stub-shape RED 0（**190 注册/131 可比**）、param-name 0、hygiene 0（两种模式）、
-entity_column_drift 0、release tools **91/91**；后端零改动（纯前端班）。
-上一班（run `38673026033`/`38672378612`，HEAD `57cdf29`）：vitest 571/571 + E2E 161 passed、
-stub-shape 189 注册；迁移 65 / 活表 116 / 实体 110 / 0 漂移。
+**本机门禁全绿，HEAD `1ac8f85`**（纯前端班，无 Java/SQL 改动；CI 以推送后 run 为准）。
+本班实测：前端 vitest **596/596**（含 ad 域 CRUD +16）+ vue-tsc 0 错 + `npm run build` 通过 +
+E2E AdManager **9/9**（`--repeat-each=2` 18/18）；stub-shape RED 0（**195 注册/131 可比**）、
+param-name 0、hygiene 0（两种模式）、entity_column_drift **110 实体/0 漂移**、release tools **91/91**；
+endpoint 自测 25/25。
+上一班（run `38698833333`，HEAD `3053f1d`）：vitest 580/580 + E2E 159 passed、stub-shape 190 注册。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S13.5。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余仅剩 `updateWarehouse`（见 §S9.12 / §S16.5）。
+
+## S16. 交接：2026-10-15 ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑，已完成）
+
+> 本段是**当前会话的交接**。承接 §S15「下一步计划」第 1 项：**ad 域 6 个 CRUD**。
+> 仍为**纯前端班**，无 Java/SQL 改动。本班无 push 异常（代理 7897 干扰仍存在，推送走
+> `git -c http.proxy=` 直连）。
+
+### 1. 定性结论（先核实「是不是真缺口」）
+
+`ad-ext.ts` 里 6 个 api 函数**零调用**：`createCampaign`、`updateCampaign`、
+`batchCreateCampaigns`、`batchUpdateStatus`、`updateCreative`、`updateTargeting`。
+核实后的真实缺口与 §S15 的表述有两点偏差，记录如下（避免下一个人照旧口径重查）：
+
+- **§S15 说「6 个 CRUD」不准确**：Creative/Targeting 域并非「create+update 都没有」——
+  `createCreative`/`createTargeting` 早已接到页面，**缺的只有 update**；真正零调用、
+  整条写路径都没有的是 **Campaign 域**（4 个函数）。
+- **Campaign 域的后端约束比表单字段多**，直接照「新建表单同款字段」做编辑会被拒：
+  - `campaignId` 后端**拒改**（`活动ID不允许修改`）→ 编辑态渲染成只读并说明原因；
+  - 请求体里的 `shopId` **不能由前端填**：后端用查询参数里的 `shopId` 覆盖它，两者不一致
+    直接拒（`活动归属与请求店铺不一致`）→ `AdCampaignExt.shopId` 改为可选并在类型注释里写明；
+  - **预算留空 ≠ 填 0**：MyBatis-Plus 默认 `FieldStrategy.NOT_NULL`，null 字段不写、
+    `0` 是真值会写进去。把 0 当「保持原值」提交会把活动打到花不出钱 → 空预算整个 key 省略。
+
+### 2. 落地内容
+
+| 能力 | 落点 | 行为 |
+|---|---|---|
+| 活动新建/编辑 | SP 表「操作」列 + `[data-panel="campaign-ops"]` 卡片内「新建活动」 | 同一弹窗两种模式；编辑先按行回填，`campaignId` 只读；预算空则不提交该 key |
+| 批量新建 | 同卡片「批量新建」+ textarea | 逐行解析、逐行点名「第 N 行」错误；合法行合并成**一次** `POST /ad/campaigns/batch` |
+| 批量改状态 | 同卡片「批量暂停（N）/批量启用（N）」+ 勾选列 | 二次确认（写明不可撤销）；一次 PUT 带勾选 id；**只回来部分行时如实报「勾选 N 个只有 M 个被更新」**，不报成功 |
+| SB 素材编辑 | 素材表行内「编辑」 | 先查询出行再回填，提交走 `updateCreative`（PUT）而非 create |
+| SD 定向编辑 | 定向表行内「编辑」 | 同上，走 `updateTargeting` |
+
+- 门控：`canEditCampaign = canUseRole(['OPERATOR','ADMIN'])`——VIEWER 隐藏勾选列与操作列，
+  **未知 role 放行**（后端才是权威判定），沿用采购页 `canCancelPayment` 先例；
+  空态占位 `colspan` 随之在 6/8 间切换（否则 E2E 严格计数失败，见 §S14 同型坑）。
+- `amz-frontend/src/api/ad-ext.ts`：`AdCampaignExt.shopId` 由必填改可选，附拒绝原因注释。
+
+### 3. 一个自己改掉的坑：编辑入口不该靠下标对齐
+
+第一版「编辑」按钮是 `openCampaignEdit(campaignRows[idx])`——表格行渲染的是**聚合后的视图
+模型**（`campaigns`，由 `campaignRows` map 而来），两个数组的下标一致是**一条没人守的
+不变量**：汇总、排序、分页任一改动都会让「编辑」打开别的活动，而表单看起来完全正常。
+改为 `openCampaignEdit(camp.campaignId)` 按活动 ID 找回自己的行，找不到时报错不开弹窗。
+补了一条多行用例（编辑第二行必须回填第二行）+ 变异验证：把 lookup 改回 `campaignRows[0]`
+该用例立刻红，还原后绿。
+
+### 4. 测试与验证
+
+- 新增 Vitest **16 例**（`AdManager ad 域 CRUD 收口`）：门控三态 / 新建不带空 budget /
+  必填缺失前端就拦 / 后端拒绝点名原因且不关弹窗 / 编辑回填与只读 campaignId /
+  批量逐行点名 / 批量确认与不可撤销话术 / 部分返回如实报数 / 素材与定向走 PUT；
+  全量 **596/596**（50 文件）。
+- 坑 7 **复发一次**：新卡片同样用「展开」文案，旧同步区 7 个既有断言被抢中（活动写操作卡在 DOM
+  里更靠前）——把既有 helper 收窄到 `[data-panel="sync"]` 内。**给已有区域加表格/卡片时，
+  先收窄旧断言的选择器。**
+- E2E：`full-interaction.spec.ts` 新追 5 条（VIEWER 无入口 / 新建 POST / 批量一次 / 批量 PUT /
+  素材 PUT）；AdManager 单跑 **9/9**，`--repeat-each=2` 18/18。首次跑有 1 例失败、
+  单跑与重复跑均过，属 §S15 记录的冷启动抖动家族（坑 19），非本班改动引入。
+- stub：`api-stub.ts` 新增 5 条路由桩（campaigns / campaigns/batch / campaigns/batch/status /
+  creatives / targeting），注册数 190→195；stub-shape **RED 0**（131 可比）。
+- 门禁：`vue-tsc --noEmit` 0 错、`npm run build` 通过、param-name 0、hygiene 0（两种模式）、
+  entity_column_drift **110 实体 / 0 漂移**、release tools **91/91**、endpoint 自测 25/25。
+
+### 5. 下一步
+
+- ② 类剩余：**`updateWarehouse`（带 OPERATOR/ADMIN 守卫）**是 ad 域之后唯一还列着的一项；
+  纪律不变（TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送，写完测试连跑 vue-tsc）。
+- A5/E4–E5 真凭据仍是唯一外设阻塞。
+- HANDOFF 顶部单入口、§S9.12 队列、§S15 下一步计划已同步（§S16 完成回填）。
 
 ## S14. 交接：2026-10-15 广告 `executeRules` + 物流 `calculateFreight` 接孤儿 API（已完成）
 
@@ -425,6 +505,10 @@ keyset 分页），前端 `listQuotes` 却零调用。故：
     OPERATOR/ADMIN 守卫）；
   - ~~`executeRules`~~ **已完成（2026-10-15，见 §S14）**：AdSearchTerms 已接 `executeRule`（单条），
     本轮补批量执行入口（独立面板逐行展示失败行 + 同样 OPERATOR/ADMIN 守卫）；
+  - ~~ad 域 6 个 CRUD~~ **已完成（2026-10-15，见 §S16）**：`createCampaign`/
+    `updateCampaign`/`batchCreateCampaigns`/`batchUpdateStatus`/`updateCreative`/
+    `updateTargeting` 六个零调用函数全部落地；§S15 的「6 个 CRUD」口径不准确——
+    Creative/Targeting 只缺 update（create 早已接了），Campaign 域才是整条写路径都没有；
 - **权限注意**：`calculateFreight`/`executeRules`/`updateWarehouse` 带 `@RequireRole(OPERATOR/ADMIN)`，
   接 UI 时非该角色会 403（页面应做入口门控或如实提示）。
 - 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；
@@ -2851,6 +2935,10 @@ Listing 自动调价/AI 广告托管）；店小秘 vs 马帮选型对比；启�
 
 ## S15. 会话收尾交接：2026-10-15（S14 完成后的空闲停点）
 
+> **后续状态见 §S16**：本段「下一步计划」第 1 项的 ad 域 6 个 CRUD 已由下一班完成
+> （2026-10-15，HEAD `1ac8f85`），其中「6 个 CRUD」的口径已被核实为不准确（见 §S16.1）。
+> ② 类剩余现在只剩 `updateWarehouse`。
+
 ### 当前任务
 S14 两项孤儿 API（广告 `executeRules` 批量出建议、物流 `calculateFreight` 头程分摊）已落地、验证并推送；本会话结束时无进行中的开发任务。
 
@@ -2867,7 +2955,7 @@ S14 两项孤儿 API（广告 `executeRules` 批量出建议、物流 `calculate
 - `rating/onTimeDeliveryRate/qualityPassRate/totalOrders/totalAmount` 是系统自动累计——任何供应商编辑表单都不能放开这些字段。
 
 ### 下一步计划
-1. ② 类剩余约 7 项：优先 ad 域 6 个 CRUD（create/update Campaign/Creative/Targeting/batch），再 `updateWarehouse`（带 OPERATOR/ADMIN 守卫）。
+1. ② 类剩余约 7 项：优先 ad 域 6 个 CRUD（create/update Campaign/Creative/Targeting/batch），再 `updateWarehouse`（带 OPERATOR/ADMIN 守卫）。**（ad 域已完成，见 §S16）**
 2. 每项仍走 TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；写完测试文件必须连跑 `npx vue-tsc --noEmit`（坑 8 已三次复发）。
 3. 非 guarded 无门控；guarded 一律复用采购页 `canCancelPayment`/`canAllocateFreight`/`canBatchExecute` 先例。
 4. 真凭据到位后走 runbook §3 端到端验收（A5/E4–E5）。
