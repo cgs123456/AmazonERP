@@ -1,10 +1,11 @@
 <template>
   <div class="csv-import" data-panel="inventory-csv-import">
     <div class="ci-row">
-      <input ref="fileInput" type="file" accept=".csv" class="ci-file" @change="onFileChange" />
-      <button class="page-btn" :disabled="!file || uploading" @click="upload">
+      <input ref="fileInput" type="file" accept=".csv" class="ci-file" :disabled="!roleAllowed" @change="onFileChange" />
+      <button class="page-btn" :disabled="!roleAllowed || !file || uploading" @click="upload">
         {{ uploading ? '导入中…' : '导入 CSV' }}
       </button>
+      <span v-if="!roleAllowed" class="ci-locked" role="note">CSV 导入需 OPERATOR 或 ADMIN 角色</span>
     </div>
     <p class="muted ci-hint">
       行定位键：warehouse_id + sku + batch_no（batch_no 列必须在，值留空=匹配无批次的行）；
@@ -54,6 +55,7 @@ import { importInventoryCsv, type InventoryImportReport } from '@/api/warehouse'
  * 真实导入域、能定出稳定接口时再抽（与「抽象延迟到第二个用例、第二个用例在此处被证伪」
  * 的取舍一致）。
  */
+const props = withDefaults(defineProps<{ roleAllowed?: boolean }>(), { roleAllowed: true })
 const emit = defineEmits<{ (e: 'imported'): void }>()
 
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -75,6 +77,11 @@ const upload = async () => {
   // 此刻守卫早已稳定；且它不参与列表加载，直接读 localStorage 足够。
   const shopId = localStorage.getItem('current_shop_id')
   if (!file.value || !shopId) return
+  // 与父页面同一口径的兜底：禁用态可能在角色变更前就已渲染，或者角色比面板晚到
+  if (!props.roleAllowed) {
+    error.value = 'CSV 导入需 OPERATOR 或 ADMIN 角色'
+    return
+  }
   uploading.value = true
   error.value = ''
   try {
@@ -102,6 +109,7 @@ const upload = async () => {
 .csv-import { margin: 0 0 0.75rem; }
 .ci-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .ci-file { font-size: 0.8125rem; }
+.ci-locked { color: var(--color-muted); font-size: 0.75rem; }
 .ci-hint { font-size: 0.75rem; margin: 0.375rem 0 0; line-height: 1.6; }
 .ci-report { margin-top: 0.5rem; padding: 0.625rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .ci-stats { display: flex; gap: 0.875rem; font-size: 0.8125rem; flex-wrap: wrap; }

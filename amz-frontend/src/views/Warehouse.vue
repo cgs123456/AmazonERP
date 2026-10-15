@@ -104,7 +104,9 @@
         <div class="inv-import" data-panel="inventory-import">
           <div class="inv-import-title">批量维护库存元数据（CSV）</div>
           <!-- manageLoading=false：整个内容区包在 v-if="!loading" 里，打骨架屏会把面板连同报告一起卸载 -->
-          <InventoryCsvImport @imported="loadInventory(false, false)" />
+          <!-- :role-allowed 由父页面决定：后端这个端点是 @RequireRole({"OPERATOR","ADMIN"})，
+               角色判定放在父页统一做（同一页其它写入口共用同一 ref），子组件只管展示 -->
+          <InventoryCsvImport :role-allowed="warehouseWriteAllowed" @imported="loadInventory(false, false)" />
         </div>
         <div class="table-card">
           <table class="data-table">
@@ -229,9 +231,10 @@
         <div class="panel-header">
           <h3>入库单列表</h3>
           <div class="header-actions">
-            <button class="primary-btn" :disabled="!batchSelected.length || batchReceiving"
+            <button v-if="wmsWriteAllowed" class="primary-btn" :disabled="!batchSelected.length || batchReceiving"
                     @click="openBatchReceive()">批量到货（{{ batchSelected.length }}）</button>
-            <button class="primary-btn" @click="openInboundDialog()">+ 创建入库单</button>
+            <button v-if="wmsWriteAllowed" class="primary-btn" @click="openInboundDialog()">+ 创建入库单</button>
+            <span v-else class="write-locked" role="note">入库单操作{{ WRITE_LOCKED_HINT }}</span>
           </div>
         </div>
         <div class="table-card">
@@ -247,7 +250,7 @@
             <tbody>
               <tr v-for="o in inboundOrders" :key="o.id">
                 <td class="col-check">
-                  <input v-if="canReceiveInbound(o.status)" type="checkbox" :checked="batchSelected.includes(o.id!)"
+                  <input v-if="canReceiveInbound(o.status) && wmsWriteAllowed" type="checkbox" :checked="batchSelected.includes(o.id!)"
                          @change="toggleBatchSelect(o.id!, ($event.target as HTMLInputElement).checked)" />
                   <span v-else class="muted">—</span>
                 </td>
@@ -260,9 +263,12 @@
                 <td>{{ o.receivedItems }}</td>
                 <td>{{ o.expectedArrival || '-' }}</td>
                 <td>
-                  <button v-if="o.status === 'PENDING'" class="action-btn" @click="doTransit(o.id!)">运输中</button>
-                  <button v-if="o.status === 'IN_TRANSIT' || o.status === 'PARTIAL'" class="action-btn" @click="openReceive(o.id!, o.warehouseId)">到货验收</button>
-                  <button v-if="canCancelInbound(o.status)" class="action-btn cancel" @click="doCancelInbound(o.id!)">取消</button>
+                  <span v-if="!wmsWriteAllowed" class="write-locked" role="note">{{ WRITE_LOCKED_HINT }}</span>
+                  <template v-else>
+                    <button v-if="o.status === 'PENDING'" class="action-btn" @click="doTransit(o.id!)">运输中</button>
+                    <button v-if="o.status === 'IN_TRANSIT' || o.status === 'PARTIAL'" class="action-btn" @click="openReceive(o.id!, o.warehouseId)">到货验收</button>
+                    <button v-if="canCancelInbound(o.status)" class="action-btn cancel" @click="doCancelInbound(o.id!)">取消</button>
+                  </template>
                 </td>
               </tr>
               <tr v-if="!loading && inboundOrders.length === 0"><td colspan="10" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-in" width="32" class="empty-icon" /><span>暂无入库单</span></div></td></tr>
@@ -291,7 +297,8 @@
       <div v-show="activeTab === 'outbound'" class="panel">
         <div class="panel-header">
           <h3>出库单列表</h3>
-          <button class="primary-btn" @click="openOutboundDialog()">+ 创建出库单</button>
+          <button v-if="wmsWriteAllowed" class="primary-btn" @click="openOutboundDialog()">+ 创建出库单</button>
+          <span v-else class="write-locked" role="note">出库单操作{{ WRITE_LOCKED_HINT }}</span>
         </div>
         <div class="table-card">
           <table class="data-table">
@@ -312,10 +319,13 @@
                 <td>{{ o.trackingNo || '-' }}</td>
                 <td>{{ o.shippedItems }}</td>
                 <td>
-                  <button v-if="o.status === 'PENDING'" class="action-btn" @click="doPick(o.id!)">拣货</button>
-                  <button v-if="o.status === 'PICKING'" class="action-btn" @click="doPack(o.id!)">打包</button>
-                  <button v-if="o.status === 'PACKED'" class="action-btn" @click="doShip(o.id!, o.warehouseId)">发货</button>
-                  <button v-if="canCancelOutbound(o.status)" class="action-btn cancel" @click="doCancelOutbound(o.id!)">取消</button>
+                  <span v-if="!wmsWriteAllowed" class="write-locked" role="note">{{ WRITE_LOCKED_HINT }}</span>
+                  <template v-else>
+                    <button v-if="o.status === 'PENDING'" class="action-btn" @click="doPick(o.id!)">拣货</button>
+                    <button v-if="o.status === 'PICKING'" class="action-btn" @click="doPack(o.id!)">打包</button>
+                    <button v-if="o.status === 'PACKED'" class="action-btn" @click="doShip(o.id!, o.warehouseId)">发货</button>
+                    <button v-if="canCancelOutbound(o.status)" class="action-btn cancel" @click="doCancelOutbound(o.id!)">取消</button>
+                  </template>
                 </td>
               </tr>
               <tr v-if="!loading && outboundOrders.length === 0"><td colspan="9" class="empty-row"><div class="empty-state"><Icon icon="mdi:truck-out" width="32" class="empty-icon" /><span>暂无出库单</span></div></td></tr>
@@ -344,7 +354,8 @@
       <div v-show="activeTab === 'stocktake'" class="panel">
         <div class="panel-header">
           <h3>库存盘点</h3>
-          <button class="primary-btn" @click="openStocktakeDialog()">+ 新建盘点单</button>
+          <button v-if="wmsWriteAllowed" class="primary-btn" @click="openStocktakeDialog()">+ 新建盘点单</button>
+          <span v-else class="write-locked" role="note">盘点操作{{ WRITE_LOCKED_HINT }}</span>
         </div>
         <div class="table-card">
           <table class="data-table">
@@ -361,8 +372,10 @@
                 <td>
                   <div class="row-actions">
                     <button class="row-btn" @click="openStocktakeDetail(st)">明细</button>
-                    <button v-if="st.status === 'COUNTED'" class="row-btn primary" @click="applyStocktakeRow(st)">落账</button>
-                    <button v-if="st.status === 'DRAFT' || st.status === 'COUNTED'" class="row-btn" @click="cancelStocktakeRow(st)">取消</button>
+                    <template v-if="wmsWriteAllowed">
+                      <button v-if="st.status === 'COUNTED'" class="row-btn primary" @click="applyStocktakeRow(st)">落账</button>
+                      <button v-if="st.status === 'DRAFT' || st.status === 'COUNTED'" class="row-btn" @click="cancelStocktakeRow(st)">取消</button>
+                    </template>
                   </div>
                 </td>
               </tr>
@@ -628,7 +641,7 @@ import {
   type StocktakeRow,
   type StocktakeItemRow
 } from '@/api/stocktake'
-import { canUseRole, LOCATION_EDIT_ROLES, WAREHOUSE_WRITE_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
+import { canUseRole, LOCATION_EDIT_ROLES, WAREHOUSE_WRITE_ROLES, WMS_WRITE_ROLES, WRITE_LOCKED_HINT, ROLE_CHANGED_EVENT } from '@/utils/identity'
 import { AGING_BUCKETS } from '@/api/warehouse'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder, StockAging, BatchReceiveReportRow } from '@/api/warehouse'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -688,6 +701,19 @@ const warehouseWriteAllowed = ref(canUseRole(WAREHOUSE_WRITE_ROLES))
 const syncWarehouseWriteRole = () => {
   warehouseWriteAllowed.value = canUseRole(WAREHOUSE_WRITE_ROLES)
 }
+
+/**
+ * WMS 单据写入（入库单 / 出库单 / 盘点单）的角色门禁。
+ *
+ * 这三个域此前**完全没有门控**：页面上 15 个写入口对 VIEWER 全绿可点，
+ * 而同一个文件里的「+ 新建仓库」早就规规矩矩换成了灰字说明。
+ * 两套口径出现在同一屏，用户无从判断哪个是真坏了。
+ */
+const wmsWriteAllowed = ref(canUseRole(WMS_WRITE_ROLES))
+
+const syncWmsWriteRole = () => {
+  wmsWriteAllowed.value = canUseRole(WMS_WRITE_ROLES)
+}
 // ==================== 库龄分析 ====================
 // 库龄分析：这条端点接前端前只有 curl 能碰，且 DDL 里 available_qty / days_in_stock /
 // warehouse_name 三列都可空 —— 后端已改成按 0 与空串兜底（见 WarehouseAgingAnalysisTest）
@@ -702,6 +728,45 @@ const fmtMoney = (v?: number | string) => {
 const fmtPct = (v?: number | string) => {
   const n = Number(v ?? 0)
   return Number.isFinite(n) ? `${(n * 100).toFixed(2)}%` : '-'
+}
+
+/**
+ * 写操作的统一守卫：角色不够时不发请求，并把原因说出来。
+ *
+ * 为什么每个写入口都要调用它（而不是只在按钮上做 v-if）：
+ * 入口隐藏只是体验优化，不是边界。弹窗可能在角色变更前就已打开，或者角色信息
+ * （AppHeader 的 getInfo）比弹窗晚到——那种情况下请求照样会发出去并 403。
+ *
+ * 返回 true 表示可以继续发请求。
+ */
+const wmsWriteBlocked = (action: string): boolean => {
+  if (wmsWriteAllowed.value) return false
+  showToast(`${action}需要 OPERATOR 或 ADMIN 角色`, 'error')
+  return true
+}
+
+/**
+ * 后端业务拒绝的统一出口。
+ *
+ * <b>为什么必须有这个函数</b>：{@code RequireRoleAspect} 与所有业务校验失败都返回
+ * {@code Result.failure()}，即 **HTTP 200 + code=400**（见 Result#failure，以及
+ * GlobalExceptionHandler 上「业务拒绝刻意保持 200」的注释）。所以 axios 的 promise
+ * 是 <b>resolve</b> 而不是 reject——`catch` 块根本不会执行。
+ *
+ * 本页此前有一批 `try { await x(); onSuccess() } catch { showToast('请稍后重试') }`，
+ * 把「角色不够」当成成功：弹窗关闭、列表刷新、提示操作成功。用户看到的是
+ * 「点了、有反应、但什么都没发生」，而 OPERATOR 遇到任何 code=400 的业务拒绝
+ * （状态不对、仓库无效…）也是同一套假成功。
+ *
+ * 用法：`const res = await x(); if (!ok(res)) return; doSuccess()`
+ * 返回 true 表示 res.code === 200，调用方可以放心走成功分支。
+ */
+const ok = (res: { code?: number; message?: string } | null | undefined, fallback: string): boolean => {
+  if (res?.code === 200) return true
+  // 后端已经把原因写好了（「无权限执行该操作（需要角色：OPERATOR/ADMIN）」），
+  // 必须原样透出，不能换成「请稍后重试」——那句话让重试变成无效动作。
+  showToast(res?.message || fallback, 'error')
+  return false
 }
 
 const loadAging = async (force = false) => {
@@ -768,12 +833,17 @@ const loadStocktakes = async () => {
 
 const openStocktakeDialog = () => {
   if (!refreshShop()) return
+  if (!warehouses.value.length) {
+    showToast('还没有可用仓库：盘点按仓库快照账面数，请先建仓', 'error')
+    return
+  }
   stocktakeDialog.value = { visible: true, warehouseId: '', skusText: '', remark: '' }
 }
 
 const submitStocktake = async () => {
   const shopId = refreshShop()
   if (!shopId) return
+  if (wmsWriteBlocked('创建盘点单')) return
   if (!stocktakeDialog.value.warehouseId) {
     showToast('请选择盘点仓库', 'error')
     return
@@ -831,6 +901,7 @@ const openStocktakeDetail = async (st: StocktakeRow) => {
 const saveCounted = async () => {
   const detail = stocktakeDetail.value
   if (!detail?.stocktake.id) return
+  if (wmsWriteBlocked('录入实盘')) return
   const counts = detail.items
     .filter(item => item.countedQtyInput != null)
     .map(item => ({ sku: item.sku || '', countedQty: Number(item.countedQtyInput) }))
@@ -857,6 +928,7 @@ const saveCounted = async () => {
 
 const applyStocktakeRow = async (st: StocktakeRow) => {
   if (!st.id) return
+  if (wmsWriteBlocked('盘点落账')) return
   try {
     const res = await applyStocktake(st.id)
     if (res?.code === 200) {
@@ -873,6 +945,7 @@ const applyStocktakeRow = async (st: StocktakeRow) => {
 
 const cancelStocktakeRow = async (st: StocktakeRow) => {
   if (!st.id) return
+  if (wmsWriteBlocked('取消盘点单')) return
   try {
     const res = await cancelStocktake(st.id)
     if (res?.code === 200) {
@@ -893,10 +966,12 @@ watch(activeTab, (t) => {
 onMounted(() => {
   window.addEventListener(ROLE_CHANGED_EVENT, syncLocationRole)
   window.addEventListener(ROLE_CHANGED_EVENT, syncWarehouseWriteRole)
+  window.addEventListener(ROLE_CHANGED_EVENT, syncWmsWriteRole)
 })
 onUnmounted(() => {
   window.removeEventListener(ROLE_CHANGED_EVENT, syncLocationRole)
   window.removeEventListener(ROLE_CHANGED_EVENT, syncWarehouseWriteRole)
+  window.removeEventListener(ROLE_CHANGED_EVENT, syncWmsWriteRole)
 })
 
 const startLocationEdit = (inv: WarehouseInventory) => {
@@ -1172,24 +1247,35 @@ const inboundDialog = reactive<{ visible: boolean; form: InboundOrder }>({
   form: { shopId: shopIdNum(), warehouseId: 0, source: '1688_PURCHASE', totalItems: 0 }
 })
 const openInboundDialog = () => {
-  inboundDialog.form = { shopId: shopIdNum(), warehouseId: warehouses.value[0]?.id || 0, source: '1688_PURCHASE', totalItems: 0 }
+  // 没有可用仓库时不打开弹窗：仓库下拉会空着，提交值退化成 warehouseId=0，
+  // 后端按无效仓库拒绝，而这里的 catch 又只写 console——OPERATOR 会看到
+  // 「弹窗一开一关、什么都没发生」。零反馈比一个明确的报错更难排查。
+  if (!warehouses.value.length) {
+    showToast('还没有可用仓库：请先在「仓库列表」里新建仓库', 'error')
+    return
+  }
+  inboundDialog.form = { shopId: shopIdNum(), warehouseId: warehouses.value[0]!.id!, source: '1688_PURCHASE', totalItems: 0 }
   inboundDialog.visible = true
 }
 const submitInbound = async () => {
+  if (wmsWriteBlocked('创建入库单')) return
   try {
-    await WH.createInboundOrder(inboundDialog.form)
+    const res = await WH.createInboundOrder(inboundDialog.form)
+    if (!ok(res, '创建入库单失败')) return
     inboundDialog.visible = false
     await loadInbound()
-  } catch (e) { console.warn('[Warehouse] 创建入库单失败', e) }
+  } catch (e) { console.warn('[Warehouse] 创建入库单失败', e); showToast('创建入库单失败', 'error') }
 }
 
 const doTransit = async (id: number) => {
+  if (wmsWriteBlocked('标记在途')) return
   try {
-    await WH.transitInbound(id)
+    const res = await WH.transitInbound(id)
+    if (!ok(res, '标记在途失败')) return
     await loadInbound()
   } catch (e) {
     console.warn('[Warehouse] 入库单发运失败', e)
-    showToast('操作失败，请稍后重试', 'error')
+    showToast('标记在途失败', 'error')
   }
 }
 // 到货验收明细弹窗（替代阻塞式 window.prompt，支持多行 SKU/数量校验）
@@ -1244,6 +1330,7 @@ const openBatchReceive = () => {
 }
 
 const confirmBatchReceive = async () => {
+  if (wmsWriteBlocked('批量到货验收')) return
   // 逐组校验：只要有单没填明细就整批拒绝，并点名未填的单号。
   // 不按「过滤掉空组」放行——那会静默少收几单，比明确报错危险得多。
   const blankLines = batchDialog.lines
@@ -1298,27 +1385,31 @@ const confirmBatchReceive = async () => {
 }
 
 const confirmReceive = async () => {
+  if (wmsWriteBlocked('到货验收')) return
   try {
     const items: WarehouseInventory[] = receiveDialog.items
       .filter((x) => x.sku && x.quantity > 0)
       .map((x) => ({ warehouseId: receiveDialog.warehouseId, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
-    await WH.receiveInbound(receiveDialog.id, items)
+    const res = await WH.receiveInbound(receiveDialog.id, items)
+    if (!ok(res, '到货验收失败')) return
     receiveDialog.visible = false
     showToast('到货验收成功', 'success')
     await loadInbound()
     await loadInventory()
   } catch (e) {
     console.warn('[Warehouse] 到货验收失败', e)
-    showToast('到货验收失败，请稍后重试', 'error')
+    showToast('到货验收失败', 'error')
   }
 }
 const doCancelInbound = async (id: number) => {
+  if (wmsWriteBlocked('取消入库单')) return
   try {
-    await WH.cancelInbound(id)
+    const res = await WH.cancelInbound(id)
+    if (!ok(res, '取消入库单失败')) return
     await loadInbound()
   } catch (e) {
     console.warn('[Warehouse] 取消入库单失败', e)
-    showToast('取消失败，请稍后重试', 'error')
+    showToast('取消入库单失败', 'error')
   }
 }
 const canCancelInbound = (s?: string) => s === 'PENDING' || s === 'IN_TRANSIT' || s === 'PARTIAL'
@@ -1329,33 +1420,44 @@ const outboundDialog = reactive<{ visible: boolean; form: OutboundOrder }>({
   form: { shopId: shopIdNum(), warehouseId: 0, orderType: 'ORDER', totalItems: 0 }
 })
 const openOutboundDialog = () => {
-  outboundDialog.form = { shopId: shopIdNum(), warehouseId: warehouses.value[0]?.id || 0, orderType: 'ORDER', totalItems: 0 }
+  // 同 openInboundDialog：无仓库时打开只会拿到一次零反馈的假成功
+  if (!warehouses.value.length) {
+    showToast('还没有可用仓库：请先在「仓库列表」里新建仓库', 'error')
+    return
+  }
+  outboundDialog.form = { shopId: shopIdNum(), warehouseId: warehouses.value[0]!.id!, orderType: 'ORDER', totalItems: 0 }
   outboundDialog.visible = true
 }
 const submitOutbound = async () => {
+  if (wmsWriteBlocked('创建出库单')) return
   try {
-    await WH.createOutboundOrder(outboundDialog.form)
+    const res = await WH.createOutboundOrder(outboundDialog.form)
+    if (!ok(res, '创建出库单失败')) return
     outboundDialog.visible = false
     await loadOutbound()
-  } catch (e) { console.warn('[Warehouse] 创建出库单失败', e) }
+  } catch (e) { console.warn('[Warehouse] 创建出库单失败', e); showToast('创建出库单失败', 'error') }
 }
 
 const doPick = async (id: number) => {
+  if (wmsWriteBlocked('拣货')) return
   try {
-    await WH.pickOutbound(id)
+    const res = await WH.pickOutbound(id)
+    if (!ok(res, '拣货失败')) return
     await loadOutbound()
   } catch (e) {
     console.warn('[Warehouse] 拣货失败', e)
-    showToast('操作失败，请稍后重试', 'error')
+    showToast('拣货失败', 'error')
   }
 }
 const doPack = async (id: number) => {
+  if (wmsWriteBlocked('打包')) return
   try {
-    await WH.packOutbound(id)
+    const res = await WH.packOutbound(id)
+    if (!ok(res, '打包失败')) return
     await loadOutbound()
   } catch (e) {
     console.warn('[Warehouse] 打包失败', e)
-    showToast('操作失败，请稍后重试', 'error')
+    showToast('打包失败', 'error')
   }
 }
 const shipDialog = reactive<{ visible: boolean; id: number; warehouseId: number; carrier: string; trackingNo: string; items: { sku: string; quantity: number }[] }>({
@@ -1371,27 +1473,31 @@ const doShip = (id: number, warehouseId: number) => {
   shipDialog.visible = true
 }
 const confirmShip = async () => {
+  if (wmsWriteBlocked('发货')) return
   try {
     const items: WarehouseInventory[] = shipDialog.items
       .filter((x) => x.sku && x.quantity > 0)
       .map((x) => ({ warehouseId: shipDialog.warehouseId, shopId: shopIdNum(), sku: x.sku, quantity: x.quantity } as WarehouseInventory))
-    await WH.shipOutbound(shipDialog.id, { carrier: shipDialog.carrier, trackingNo: shipDialog.trackingNo, items })
+    const res = await WH.shipOutbound(shipDialog.id, { carrier: shipDialog.carrier, trackingNo: shipDialog.trackingNo, items })
+    if (!ok(res, '发货失败')) return
     shipDialog.visible = false
     showToast('发货成功', 'success')
     await loadOutbound()
     await loadInventory()
   } catch (e) {
     console.warn('[Warehouse] 发货失败', e)
-    showToast('发货失败，请稍后重试', 'error')
+    showToast('发货失败', 'error')
   }
 }
 const doCancelOutbound = async (id: number) => {
+  if (wmsWriteBlocked('取消出库单')) return
   try {
-    await WH.cancelOutbound(id)
+    const res = await WH.cancelOutbound(id)
+    if (!ok(res, '取消出库单失败')) return
     await loadOutbound()
   } catch (e) {
     console.warn('[Warehouse] 取消出库单失败', e)
-    showToast('取消失败，请稍后重试', 'error')
+    showToast('取消出库单失败', 'error')
   }
 }
 const canCancelOutbound = (s?: string) => s === 'PENDING' || s === 'PICKING'

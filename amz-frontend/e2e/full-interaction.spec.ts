@@ -2428,6 +2428,34 @@ test.describe('个人资料', () => {
     // 必须缩到仓库列表那张，否则严格模式下解析到多个元素直接失败。
     await expect(page.locator('.data-table').first()).toContainText('US-West-FBA')
   })
+
+  test('角色是 VIEWER 时海外仓不给入库/出库/盘点写入口，但单据仍可读', async ({ page }) => {
+    // 覆盖 ADMIN 用户（installApiStub 里默认那个），否则走的是「角色未知故意放行」分支
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'VIEWER' } } })
+      })
+    )
+
+    await page.goto('/warehouse')
+    // 每个 Tab 的说明都要在同一屏上说清「为什么没有按钮」。
+    // 逐 Tab 断言各自的文案（入库单操作/出库单操作/盘点操作）而不是笼统的 .write-locked：
+    // 一个面板里会有多条说明（表头一条 + 每行一条），共用一个选择器会解析到多个元素。
+    for (const [tab, hint] of [['入库单', '入库单操作需 OPERATOR/ADMIN'], ['出库单', '出库单操作需 OPERATOR/ADMIN'], ['库存盘点', '盘点操作需 OPERATOR/ADMIN']]) {
+      await page.locator('.tab-item', { hasText: tab }).click()
+      await expect(page.locator('.panel:visible').getByText(hint)).toBeVisible()
+      await expect(page.getByRole('button', { name: /创建入库单|创建出库单|新建盘点单/ })).toHaveCount(0)
+    }
+    // 行内写动作同样收起（拣货/打包/发货/落账/取消/到货验收）
+    await page.locator('.tab-item', { hasText: '出库单' }).click()
+    await expect(page.locator('.panel:visible')).not.toContainText('拣货')
+
+    // 隐藏的只是写入口：单据数据本身照常可读
+    await page.locator('.tab-item', { hasText: '入库单' }).click()
+    await expect(page.locator('.panel:visible')).toContainText('IN-')
+  })
 })
 
 test.describe('连接器自检与凭证来源', () => {
