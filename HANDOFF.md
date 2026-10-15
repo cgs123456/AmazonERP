@@ -1,7 +1,12 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD（2026-10-15 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S16）：ad 域 6 个孤儿 CRUD 落地——`createCampaign`/`updateCampaign`/
+> 本次更新（§S17）：仓库新建/编辑入口补角色门禁——后端 `POST/PUT /logistics/warehouse`
+> 是 `@RequireRole({"OPERATOR","ADMIN"})`，而这两个按钮此前无任何门控，VIEWER 点了只会 403。
+> 同时纠正一个过期口径：**`updateWarehouse` 早在 §S9.4（`8ad6c43`）就接完了**，
+> §S15/§S9.12 队列里「仍无 UI」是漏回填，真正缺的只有守卫。
+> **② 类孤儿 api 队列至此清空**，后续只剩真凭据阻塞（A5/E4–E5）。详见 §S17。
+> 上一班（§S16）：ad 域 6 个孤儿 CRUD 落地——`createCampaign`/`updateCampaign`/
 > `batchCreateCampaigns`/`batchUpdateStatus`/`updateCreative`/`updateTargeting` 此前零调用，
 > 广告页只有读路径。活动域补新建/编辑/批量（勾选列 + 二次确认 + 部分返回如实报数），
 > SB 素材 / SD 定向补编辑；门控沿用采购页 `canCancelPayment` 先例。三个后端约束必须照做：
@@ -19,7 +24,7 @@
 > Buybox 汇总、费用差异详情、RMA 详情、有效报价明细。
 
 > 本次更新（§S16）：ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑），
-> 详见 §S16；② 类剩余只剩 `updateWarehouse`。
+> 详见 §S16；② 类已清空（§S17）。
 > 上一班（§S14）：接上供应商域两个孤儿 api——`getSupplier`（单条主数据详情）与
 > `updateSupplier`（编辑，PUT），承接 §S12 的货件模式（详情+编辑、先拉单条再回填、
 > 提交按白名单挑字段）。真正的结构性发现是**评分与三项统计是 `updateSupplierStats`
@@ -31,14 +36,14 @@
 
 ## 项目现状一句话
 
-**本机门禁全绿，HEAD `1ac8f85`**（纯前端班，无 Java/SQL 改动；CI 以推送后 run 为准）。
-本班实测：前端 vitest **596/596**（含 ad 域 CRUD +16）+ vue-tsc 0 错 + `npm run build` 通过 +
-E2E AdManager **9/9**（`--repeat-each=2` 18/18）；stub-shape RED 0（**195 注册/131 可比**）、
+**本机门禁全绿，HEAD `bae51d9`**（纯前端班，无 Java/SQL 改动；CI 以推送后 run 为准）。
+本班实测：前端 vitest **600/600**（含仓库门禁 +4）+ vue-tsc 0 错 + `npm run build` 通过 +
+E2E Warehouse **7/7**（`--repeat-each=3` 15/15）；stub-shape RED 0（**195 注册/131 可比**）、
 param-name 0、hygiene 0（两种模式）、entity_column_drift **110 实体/0 漂移**、release tools **91/91**；
 endpoint 自测 25/25。
-上一班（run `38698833333`，HEAD `3053f1d`）：vitest 580/580 + E2E 159 passed、stub-shape 190 注册。
+上一班（HEAD `1ac8f85`）：vitest 596/596、AdManager E2E 9/9、stub-shape 195 注册。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余仅剩 `updateWarehouse`（见 §S9.12 / §S16.5）。
+业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（见 §S9.12 / §S17.4）。
 
 ## S16. 交接：2026-10-15 ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑，已完成）
 
@@ -107,8 +112,66 @@ endpoint 自测 25/25。
 
 - ② 类剩余：**`updateWarehouse`（带 OPERATOR/ADMIN 守卫）**是 ad 域之后唯一还列着的一项；
   纪律不变（TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送，写完测试连跑 vue-tsc）。
+  **（已完成，见 §S17；且核实发现 `updateWarehouse` 本身在 §S9.4 就接完了，缺的只是守卫）**
 - A5/E4–E5 真凭据仍是唯一外设阻塞。
 - HANDOFF 顶部单入口、§S9.12 队列、§S15 下一步计划已同步（§S16 完成回填）。
+
+## S17. 交接：2026-10-15 仓库新建/编辑入口角色门禁（② 类清空，已完成）
+
+> 本段是**当前会话的交接**。承接 §S16.5「下一步」唯一剩余项 `updateWarehouse`。
+> 仍为**纯前端班**，无 Java/SQL 改动。
+
+### 1. 先纠一个过期口径：`updateWarehouse` 早就接完了
+
+§S15/§S9.12 队列里写着「`updateWarehouse` 仍无 UI」——**这是过期表述**。核实结果：
+它在 **§S9.4（commit `8ad6c43`，2026-10-14）就已落地**：仓库列表有「操作」列 + 「编辑」按钮，
+`openWarehouseDialog(w?)` 支持回填，`submitWarehouse` 按有无 id 分支走 PUT/POST，
+`Warehouse.test.ts` 里早有 4 例钉住这条链路。队列没跟着 §S9.4 回填，于是一届届传下来。
+
+**真正还缺的是角色守卫**：后端 `POST/PUT /logistics/warehouse` 都是
+`@RequireRole({"OPERATOR","ADMIN"})`，而这两个按钮此前**没有任何门控**——VIEWER 点
+「+ 新建仓库」只会拿到 403，页面看起来像功能坏了。同页的库位码就地编辑
+（`updateInventoryLocation`，同样是 OPERATOR/ADMIN）早就接了门禁，
+两个相邻按钮一个能点一个不能点。
+
+### 2. 落地内容
+
+- `amz-frontend/src/utils/identity.ts`：新增 `WAREHOUSE_WRITE_ROLES`，并**注释说明为何
+  不与 `LOCATION_EDIT_ROLES` 合并**——取值现在相同，但语义不同（库位码改单条库存记录，
+  仓库新建/编辑改主数据），后端各自声明 `@RequireRole`，合并会让「改一处以为两处都改了」。
+  这符合「不因外形相似而过早抽象」：等第二个真实用例出现再谈合并。
+- `Warehouse.vue`：`warehouseWriteAllowed = canUseRole(WAREHOUSE_WRITE_ROLES)`（未知角色
+  放行，后端才是权威判定，与库位码同源）；「+ 新建仓库」与行内「编辑」按它门控，
+  隐藏时留 `.write-locked` 一句「需 OPERATOR 或 ADMIN」而不是静默消失；
+  `ROLE_CHANGED_EVENT` 上多挂一个 `syncWarehouseWriteRole`（AppHeader 的 getInfo 与页面
+  挂载是并发的，只在 setup 里读一次会稳定读到「角色未知」）。
+- **`submitWarehouse` 加兜底**：入口隐藏只是体验优化、不是边界——弹窗可能在角色变更前
+  就已经打开，或角色信息比弹窗晚到。VIEWER 走到这里直接 toast 拒绝，不发请求。
+
+### 3. 测试与验证
+
+- 新增 Vitest **4 例**（`Warehouse 仓库新建/编辑入口的角色门禁`）：VIEWER 看不到两个入口
+  且页面上有说明 / ADMIN+OPERATOR 有入口 / 未知角色不隐藏 / **VIEWER 直接调
+  `submitWarehouse` 也不发写请求**（兜底那条，没有它入口隐藏就只是遮眼睛）；
+  全量 **600/600**（50 文件）。
+- E2E：`full-interaction.spec.ts` 新追「角色是 VIEWER 时海外仓不给新建/编辑仓库入口」
+  （先 route 覆盖 ADMIN 用户才能走到隐藏分支——角色未知时是故意不隐藏的）；
+  Warehouse 相关 7/7，`--repeat-each=3` 15/15。
+- 门禁：`vue-tsc --noEmit` 0 错、`npm run build` 通过、hygiene 0（两种模式）、
+  stub-shape RED 0、param-name 0、entity_column_drift 110 实体 0 漂移、
+  release tools 91/91、endpoint 自测 25/25。
+- 变异验证 3 项逐一红后还原：去掉 submit 兜底 / 新建按钮不门控 / 编辑按钮不门控。
+  第一次把两个模板变异一起打，`v-else` 失去相邻 `v-if` 直接语法错误，掩盖了另一个——
+  **模板变异要一个一个打**。
+- E2E 全量 139 passed / 5 failed，5 例单跑与串跑均过，属坑 19 冷启动抖动家族，
+  与本班改动无关（已逐例复核）。
+
+### 4. 下一步
+
+- **② 类孤儿 api 队列已清空**（§S9.12 剩余项全部落地）。
+- 后续只剩**真凭据阻塞**：A5/E4–E5 端到端验收（runbook §3）。
+- 业务侧待做见 §S10。
+- HANDOFF 顶部单入口与 §S9.12 已同步（§S17 完成回填）。
 
 ## S14. 交接：2026-10-15 广告 `executeRules` + 物流 `calculateFreight` 接孤儿 API（已完成）
 
@@ -509,8 +572,14 @@ keyset 分页），前端 `listQuotes` 却零调用。故：
     `updateCampaign`/`batchCreateCampaigns`/`batchUpdateStatus`/`updateCreative`/
     `updateTargeting` 六个零调用函数全部落地；§S15 的「6 个 CRUD」口径不准确——
     Creative/Targeting 只缺 update（create 早已接了），Campaign 域才是整条写路径都没有；
-- **权限注意**：`calculateFreight`/`executeRules`/`updateWarehouse` 带 `@RequireRole(OPERATOR/ADMIN)`，
-  接 UI 时非该角色会 403（页面应做入口门控或如实提示）。
+- ~~`updateWarehouse`~~ **本项从未真正欠账**：仓库编辑在 **§S9.4（`8ad6c43`）就已完成**，
+  队列漏回填导致后续几届一直把它当待办（§S17.1 已核实并纠正）。
+  §S17 补的是它缺的**角色守卫**——`POST/PUT /logistics/warehouse` 是
+  `@RequireRole(OPERATOR/ADMIN)`，而新建/编辑按钮此前无门控，VIEWER 点了只会 403。
+- **② 类队列至此清空**（2026-10-15，§S17）。后续只剩真凭据阻塞（A5/E4–E5）。
+- **权限注意**：`calculateFreight`/`executeRules`/`updateWarehouse`/`updateInventoryLocation`
+  都带 `@RequireRole(OPERATOR/ADMIN)`，接 UI 时非该角色会 403（页面应做入口门控或如实提示）。
+  四处现已全部接上门控。
 - 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；
   **写完测试文件必须连跑 `npx vue-tsc --noEmit`**（坑 8 已三次复发）；
   **改门控 IT / 后端 DTO 后盯 CI**。
@@ -2935,9 +3004,10 @@ Listing 自动调价/AI 广告托管）；店小秘 vs 马帮选型对比；启�
 
 ## S15. 会话收尾交接：2026-10-15（S14 完成后的空闲停点）
 
-> **后续状态见 §S16**：本段「下一步计划」第 1 项的 ad 域 6 个 CRUD 已由下一班完成
+> **后续状态见 §S16 / §S17**：本段「下一步计划」第 1 项的 ad 域 6 个 CRUD 已由下一班完成
 > （2026-10-15，HEAD `1ac8f85`），其中「6 个 CRUD」的口径已被核实为不准确（见 §S16.1）。
-> ② 类剩余现在只剩 `updateWarehouse`。
+> 第 1 项剩下的 `updateWarehouse` 也已由 §S17 处理——核实后发现它本身在 §S9.4 就接完了，
+> 缺的只是角色守卫，补完后 **② 类队列清空**。
 
 ### 当前任务
 S14 两项孤儿 API（广告 `executeRules` 批量出建议、物流 `calculateFreight` 头程分摊）已落地、验证并推送；本会话结束时无进行中的开发任务。
@@ -2955,7 +3025,7 @@ S14 两项孤儿 API（广告 `executeRules` 批量出建议、物流 `calculate
 - `rating/onTimeDeliveryRate/qualityPassRate/totalOrders/totalAmount` 是系统自动累计——任何供应商编辑表单都不能放开这些字段。
 
 ### 下一步计划
-1. ② 类剩余约 7 项：优先 ad 域 6 个 CRUD（create/update Campaign/Creative/Targeting/batch），再 `updateWarehouse`（带 OPERATOR/ADMIN 守卫）。**（ad 域已完成，见 §S16）**
+1. ② 类剩余约 7 项：优先 ad 域 6 个 CRUD（create/update Campaign/Creative/Targeting/batch），再 `updateWarehouse`（带 OPERATOR/ADMIN 守卫）。**（ad 域已完成，见 §S16；`updateWarehouse` 经核实早在 §S9.4 已完成，§S17 只补了守卫，② 类至此清空）**
 2. 每项仍走 TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；写完测试文件必须连跑 `npx vue-tsc --noEmit`（坑 8 已三次复发）。
 3. 非 guarded 无门控；guarded 一律复用采购页 `canCancelPayment`/`canAllocateFreight`/`canBatchExecute` 先例。
 4. 真凭据到位后走 runbook §3 端到端验收（A5/E4–E5）。
