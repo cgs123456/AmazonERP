@@ -13,6 +13,9 @@ vi.mock('@/api/procurement', async () => {
     listVoucherSourceOrders: vi.fn(),
     listShipments: vi.fn(),
     listShipmentItems: vi.fn(),
+    getShipment: vi.fn(),
+    createShipment: vi.fn(),
+    updateShipment: vi.fn(),
     suppliersBySku: vi.fn(),
     compareSuppliers: vi.fn(),
     supplierKpi: vi.fn(),
@@ -28,6 +31,7 @@ vi.mock('@/api/procurement', async () => {
 
 import {
   listSuppliers, listPlans, listOrders, listVoucherSourceOrders, listShipments, listShipmentItems,
+  getShipment, createShipment, updateShipment,
   suppliersBySku, compareSuppliers, updateSupplierStatus,
   submitOrderTo1688, cancelOrder, receiveShipment, createPlan, approvePlan, listPlanApprovals
 } from '@/api/procurement'
@@ -76,11 +80,24 @@ const ORDERS = paged([
 ])
 
 const SHIPMENTS = paged([
+  // totalWeight/eta 是刻意放的陈旧哨兵值：详情/编辑回填必须取 getShipment 单条，
+  // 复用列表行就会把这些值带进表单（列表可能已被他人改过）
   { id: 31, shopId: 900000000000001000, shipmentNo: 'FBA-SHIP-0031', fbaShipmentId: 'FBA18ABC',
-    destinationFbaCode: 'MDW2', boxCount: 6, totalCost: 1820.5, status: 'CREATED', eta: '2026-10-30' },
+    destinationFbaCode: 'MDW2', boxCount: 6, totalWeight: 999, totalCost: 1820.5, eta: '2026-10-01',
+    status: 'CREATED' },
   { id: 32, shopId: 900000000000001000, shipmentNo: 'FBA-SHIP-0032', destinationFbaCode: 'ONT8',
     carrier: 'UPS', masterTrackingNo: '1Z999', status: 'SHIPPED' }
 ])
+
+// getShipment 单条：含列表表格不展示的主数据字段（体积重量/成本构成/实际到货日/仓库）
+const SHIPMENT_DETAIL = plain({
+  id: 31, shopId: 900000000000001000, shipmentNo: 'FBA-SHIP-0031', fbaShipmentId: 'FBA18ABC',
+  warehouseId: 3, destinationFbaCode: 'MDW2', destinationAddress: '上海市浦东新区美盛路168号',
+  shippingMethod: 'SEA', carrier: '中外运', masterTrackingNo: 'COSU1234567',
+  boxCount: 6, totalWeight: 1500.5, totalVolume: 12.5,
+  freightCost: 800.0, customsCost: 200.0, taxCost: 50.5, otherCost: 20.0, totalCost: 1071.0,
+  status: 'CREATED', eta: '2026-11-15', actualArrival: null
+})
 
 const ITEMS = plain([
   { id: 41, fbaShipmentId: 31, sku: 'SKU-001', asin: 'B0TEST001', quantity: 100, receivedQuantity: 0,
@@ -376,6 +393,122 @@ describe('Procurement 视图（采购供应链）', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('人工随手填的依据，不是 JSON')
     expect(wrapper.text()).toContain('原样显示')
+  })
+})
+
+describe('Procurement FBA 货件详情/编辑（getShipment + updateShipment）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    withShop()
+    vi.clearAllMocks()
+  })
+
+  const openShipmentTab = async () => {
+    happyPath()
+    const wrapper = await mountPage()
+    await openTab(wrapper, 'FBA 货件')
+    return wrapper
+  }
+
+  const rowButton = (wrapper: any, label: string) =>
+    wrapper.find('[data-panel="shipment"]').findAll('button').find((b: any) => b.text() === label)
+
+  it('详情按钮拉单条，展示列表表格不展示的主数据字段（体积/重量/成本构成/实际到货日）', async () => {
+    const wrapper = await openShipmentTab()
+    vi.mocked(getShipment).mockResolvedValue(SHIPMENT_DETAIL)
+    await rowButton(wrapper, '详情')!.trigger('click')
+    await flushPromises()
+    expect(getShipment).toHaveBeenCalledWith(31)
+    const detail = wrapper.find('[data-panel="shipment-detail"]')
+    expect(detail.exists()).toBe(true)
+    expect(detail.text()).toContain('FBA-SHIP-0031')
+    expect(detail.text()).toContain('上海市浦东新区美盛路168号')
+    expect(detail.text()).toContain('1500.5')
+    expect(detail.text()).toContain('12.5')
+    expect(detail.text()).toContain('800')
+    expect(detail.text()).toContain('中外运')
+  })
+
+  it('详情失败按标签前缀点名原因，不铺空详情面板', async () => {
+    const wrapper = await openShipmentTab()
+    vi.mocked(getShipment).mockResolvedValue({ code: 403, message: '无权操作该店铺的货件', data: null } as any)
+    await rowButton(wrapper, '详情')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-panel="shipment-detail"]').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('货件详情：无权操作该店铺的货件')
+  })
+
+  it('编辑入口先拉单条再回填：表单值来自单条而非列表行', async () => {
+    const wrapper = await openShipmentTab()
+    vi.mocked(getShipment).mockResolvedValue(SHIPMENT_DETAIL)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    expect(getShipment).toHaveBeenCalledWith(31)
+    expect(wrapper.text()).toContain('编辑 FBA 货件')
+    // input 顺序：FBA ShipmentId / 目的仓代码 / 箱数 / 总重 / 总体积 / 运费 / 关税 / 税费 / 其他费用 / ETA
+    const inputs = wrapper.findAll('.form-grid input')
+    expect((inputs[3].element as HTMLInputElement).value).toBe('1500.5')
+    expect((inputs[3].element as HTMLInputElement).value).not.toBe('999')
+    expect((inputs[9].element as HTMLInputElement).value).toBe('2026-11-15')
+  })
+
+  it('编辑拉取被拒时不开弹窗：不拿列表陈旧值回填出一份假表单', async () => {
+    const wrapper = await openShipmentTab()
+    vi.mocked(getShipment).mockResolvedValue({ code: 404, message: '货件不存在', data: null } as any)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.modal').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('货件详情：货件不存在')
+  })
+
+  it('编辑提交走 PUT：body 只送可编辑字段，不带 status/shipmentNo/shopId', async () => {
+    const wrapper = await openShipmentTab()
+    vi.mocked(getShipment).mockResolvedValue(SHIPMENT_DETAIL)
+    vi.mocked(updateShipment).mockResolvedValue(SHIPMENT_DETAIL)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.form-grid input')[2].setValue('8')
+    await clickText(wrapper, '提交')
+    await flushPromises()
+    expect(updateShipment).toHaveBeenCalledTimes(1)
+    expect(updateShipment).toHaveBeenCalledWith(31, expect.objectContaining({ boxCount: 8 }))
+    const body = vi.mocked(updateShipment).mock.calls[0][1] as Record<string, unknown>
+    // 状态推进有专用端点（确认发货/标记到货），主数据编辑不能绕过它们的副作用
+    expect(body).not.toHaveProperty('status')
+    // shipmentNo 创建时由后端生成、shopId 以既有记录为准（防把货件搬到别的店铺）
+    expect(body).not.toHaveProperty('shipmentNo')
+    expect(body).not.toHaveProperty('shopId')
+    expect(body).not.toHaveProperty('actualArrival')
+    expect(createShipment).not.toHaveBeenCalled()
+    // 成功后刷新列表（挂载 1 次 + 编辑后 1 次）
+    expect(listShipments).toHaveBeenCalledTimes(2)
+  })
+
+  it('编辑弹窗不给状态下拉：状态只能走「确认发货/标记到货」，并披露重跑分摊', async () => {
+    const wrapper = await openShipmentTab()
+    vi.mocked(getShipment).mockResolvedValue(SHIPMENT_DETAIL)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    const modal = wrapper.find('.modal')
+    // 只剩「发货方式」一个下拉：状态推进必须走专用端点
+    expect(modal.findAll('select').length).toBe(1)
+    expect(modal.text()).toContain('状态')
+    expect(wrapper.text()).toContain('确认发货')
+    // 成本改动不会自动重算明细单位成本，必须说出这一点
+    expect(wrapper.text()).toContain('费用分摊')
+  })
+
+  it('新建货件仍保留初始状态下拉，创建走后端默认值', async () => {
+    const wrapper = await openShipmentTab()
+    vi.mocked(createShipment).mockResolvedValue(plain({ id: 99, shipmentNo: 'FBA-SHIP-0099', status: 'CREATED' }))
+    await clickText(wrapper, '新建货件')
+    expect(wrapper.find('.modal').findAll('select').length).toBe(2)
+    await clickText(wrapper, '提交')
+    await flushPromises()
+    expect(createShipment).toHaveBeenCalledWith(expect.objectContaining({
+      shopId: '900000000000001000', status: 'CREATED'
+    }))
+    expect(updateShipment).not.toHaveBeenCalled()
   })
 })
 

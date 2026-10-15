@@ -514,7 +514,7 @@
         </div>
 
         <!-- ==================== FBA 货件 ==================== -->
-        <div v-if="tab === 'shipment'" class="table-card">
+        <div v-if="tab === 'shipment'" class="table-card" data-panel="shipment">
           <div class="filter-row">
             <label class="filter">状态
               <select v-model="shipmentStatus" @change="loadShipments()">
@@ -544,6 +544,8 @@
                 <td><span class="status-tag" :class="shipmentClass(s.status)">{{ s.status }}</span></td>
                 <td>{{ s.eta || '-' }}</td>
                 <td class="row-actions">
+                  <button class="action-btn" :disabled="busy" @click="loadShipmentDetail(s)">详情</button>
+                  <button class="action-btn" :disabled="busy || !s.id" @click="openEditShipment(s)">编辑</button>
                   <button class="action-btn" :disabled="busy" @click="selectShipment(s)">明细</button>
                   <button v-if="s.status === 'CREATED' || s.status === 'READY_TO_SHIP'" class="action-btn"
                           :disabled="busy" @click="openModal('ship', { shipment: s })">确认发货</button>
@@ -561,6 +563,34 @@
             <div class="page-actions">
               <button v-if="shipments.truncated.value" class="page-btn" :disabled="shipments.loading.value"
                       @click="loadShipments(true)">加载下一页</button>
+            </div>
+          </div>
+
+          <!-- 单条主数据详情（getShipment）：列表只有 9 列，体积/重量/成本构成/实际到货日看不到 -->
+          <div v-if="shipmentDetail" class="sub-block" data-panel="shipment-detail">
+            <div class="sub-title">货件 {{ shipmentDetail.shipmentNo || shipmentDetail.id }} 主数据（单条详情）</div>
+            <dl class="kv">
+              <dt>FBA ShipmentId</dt><dd class="mono">{{ shipmentDetail.fbaShipmentId || '-' }}</dd>
+              <dt>目的仓代码</dt><dd>{{ shipmentDetail.destinationFbaCode || '-' }}</dd>
+              <dt>目的仓地址</dt><dd>{{ shipmentDetail.destinationAddress || '-' }}</dd>
+              <dt>发出仓库</dt><dd>{{ shipmentDetail.warehouseId || '-' }}</dd>
+              <dt>发货方式</dt><dd>{{ shipmentDetail.shippingMethod || '-' }}</dd>
+              <dt>承运商</dt><dd>{{ shipmentDetail.carrier || '-' }}</dd>
+              <dt>主运单号</dt><dd class="mono">{{ shipmentDetail.masterTrackingNo || '-' }}</dd>
+              <dt>箱数</dt><dd>{{ shipmentDetail.boxCount ?? '-' }}</dd>
+              <dt>总重(kg)</dt><dd>{{ shipmentDetail.totalWeight ?? '-' }}</dd>
+              <dt>总体积(m³)</dt><dd>{{ shipmentDetail.totalVolume ?? '-' }}</dd>
+              <dt>运费</dt><dd>{{ shipmentDetail.freightCost ?? '-' }}</dd>
+              <dt>关税</dt><dd>{{ shipmentDetail.customsCost ?? '-' }}</dd>
+              <dt>税费</dt><dd>{{ shipmentDetail.taxCost ?? '-' }}</dd>
+              <dt>其他费用</dt><dd>{{ shipmentDetail.otherCost ?? '-' }}</dd>
+              <dt>总成本</dt><dd>{{ shipmentDetail.totalCost ?? '-' }}</dd>
+              <dt>ETA</dt><dd>{{ shipmentDetail.eta || '-' }}</dd>
+              <dt>实际到货日</dt><dd>{{ shipmentDetail.actualArrival || '未到货' }}</dd>
+            </dl>
+            <div class="inline-row">
+              <button class="action-btn" @click="shipmentDetail = null">关闭</button>
+              <span class="muted">本面板来自单条详情接口，可能与列表行不同步；编辑后会自动关闭</span>
             </div>
           </div>
 
@@ -729,7 +759,7 @@
     <!-- ==================== 弹窗 ==================== -->
     <div v-if="modal" class="modal-mask" @click.self="modal = null">
       <div class="modal" role="dialog" aria-modal="true">
-        <h3>{{ MODAL_TITLE[modal] }}</h3>
+        <h3>{{ modalTitle }}</h3>
 
         <div v-if="modal === 'supplier'" class="form-grid">
           <label>供应商名称 *<input v-model="form.supplierName" /></label>
@@ -801,7 +831,9 @@
           <label>税费<input type="number" step="0.01" min="0" v-model="form.taxCost" /></label>
           <label>其他费用<input type="number" step="0.01" min="0" v-model="form.otherCost" /></label>
           <label>ETA<input v-model="form.eta" placeholder="2026-10-30" /></label>
-          <label>状态
+          <!-- 状态只在新建时选初始态：编辑走状态专属端点（确认发货/标记到货），
+               这里直接改 status 会绕过它们各自的副作用（承运商/运单号/实际到货日） -->
+          <label v-if="!form.id">状态
             <select v-model="form.status"><option v-for="s in SHIPMENT_STATUS" :key="s" :value="s">{{ s }}</option></select>
           </label>
         </div>
@@ -1510,6 +1542,7 @@ const cancelInvoiceConfirm = (v: inv.PurchaseInvoiceRow) => ({
 const shipments = makeList<FbaShipment>()
 const shipmentStatus = ref('')
 const activeShipment = ref<FbaShipment | null>(null)
+const shipmentDetail = ref<FbaShipment | null>(null)
 const items = ref<FbaShipmentItem[]>([])
 const receiveQty = ref<Record<number, number | string>>({})
 const allocation = ref<AllocationResult | null>(null)
@@ -1521,6 +1554,47 @@ const loadShipments = (append = false) =>
     'FBA 货件', append)
 
 const inTransit = computed(() => shipments.rows.value.filter(s => s.status === 'SHIPPED'))
+
+/**
+ * 货件主数据可经「编辑」改写的字段白名单。
+ * 排除的四类各有归属，不能从主数据表单绕进去：
+ * - status：状态推进走「确认发货/标记到货」专用端点，各自带承运商/运单号/实际到货日副作用；
+ * - shipmentNo：创建时由后端生成，不可改；
+ * - shopId：后端按既有记录的店铺覆盖请求体，放进来只会被无视甚至误导；
+ * - actualArrival：只由「标记到货」写入。
+ */
+const SHIPMENT_EDITABLE_FIELDS = [
+  'fbaShipmentId', 'destinationFbaCode', 'shippingMethod', 'boxCount',
+  'totalWeight', 'totalVolume', 'freightCost', 'customsCost', 'taxCost',
+  'otherCost', 'eta'
+] as const
+
+const pickShipmentEditable = (source: Record<string, any>) => {
+  const picked: Record<string, any> = {}
+  for (const key of SHIPMENT_EDITABLE_FIELDS) picked[key] = source[key]
+  return picked
+}
+
+/** 单条主数据详情（getShipment）。失败时置空：不把上一票的详情留在页面上冒充这一票。 */
+const loadShipmentDetail = async (s: FbaShipment) => {
+  if (!s.id) return
+  const data = await callApi('货件详情', () => proc.getShipment(s.id as number))
+  shipmentDetail.value = data ?? null
+}
+
+/**
+ * 编辑入口（updateShipment，PUT /fba/shipment/{id}）。
+ * 先拉单条再回填——列表行可能已被他人改过，拿陈旧行回填等于把旧值写回去；
+ * 拉取被拒时不开弹窗，不用列表值拼一份看起来能提交的假表单。
+ */
+const openEditShipment = async (s: FbaShipment) => {
+  if (!s.id) return
+  const data = await callApi('货件详情', () => proc.getShipment(s.id as number))
+  if (!data) return
+  // shipmentNo 只用于标题展示，不进提交体（提交按白名单挑字段）
+  form.value = { id: data.id, shipmentNo: data.shipmentNo, ...pickShipmentEditable(data as Record<string, any>) }
+  modal.value = 'shipment'
+}
 
 const loadItems = async (shipmentId: number) => {
   const rows = await callApi('货件明细', () => proc.listShipmentItems(shipmentId))
@@ -1666,10 +1740,24 @@ const modalNote = computed(() => {
   switch (modal.value) {
     case 'order': return '采购单在本系统先落成 DRAFT，只有点「提交 1688」才会真的下单。'
     case 'offer': return '供货价是比价与计划金额的依据；shopId 由页面自动带上，无需手填。'
-    case 'shipment': return '成本字段决定后续「费用分摊」按数量分摊的基数。'
+    case 'shipment':
+      return form.value.id
+        ? '编辑只改主数据：状态推进请用「确认发货」「标记到货」（各自带承运商/运单号/实际到货日等副作用），不在这里直接改；'
+          + '留空的字段保持原值不被修改（后端只更新非空字段）；'
+          + '成本字段改动后需重新执行「费用分摊」，明细行的单位成本才会更新。'
+        : '成本字段决定后续「费用分摊」按数量分摊的基数。'
     case 'qc': return '后端按合格率判定：≥95% PASS，<90% FAIL，其间 CONDITIONAL（让步接收，状态仍会置 QC_PASSED）。'
     default: return ''
   }
+})
+
+/** 弹窗标题：货件新建与编辑共用一张表单，编辑时点名是编辑并带出货件号 */
+const modalTitle = computed(() => {
+  if (!modal.value) return ''
+  if (modal.value === 'shipment' && form.value.id) {
+    return `编辑 FBA 货件 ${form.value.shipmentNo || '#' + form.value.id}`
+  }
+  return MODAL_TITLE[modal.value]
 })
 
 const openModal = (key: ModalKey, seed: Record<string, any> = {}) => {
@@ -1703,7 +1791,14 @@ const submitModal = async () => {
       inspector: String(body.inspector || '').trim(), defectDescription: body.defectDescription
     }))) !== null
   } else if (key === 'shipment') {
-    done = (await callApi('新建 FBA 货件', () => proc.createShipment({ ...body, shopId }))) !== null
+    if (body.id) {
+      // 编辑：只送可编辑字段白名单内的值（PUT /fba/shipment/{id}），
+      // status/shipmentNo/shopId 等不进城——后者分别由专用端点与服务端管辖
+      done = (await callApi('编辑 FBA 货件', () =>
+        proc.updateShipment(body.id as number, pickShipmentEditable(body)))) !== null
+    } else {
+      done = (await callApi('新建 FBA 货件', () => proc.createShipment({ ...body, shopId }))) !== null
+    }
   } else if (key === 'item') {
     const shipment = activeShipment.value
     if (!shipment?.id) { pushError('添加货件明细：请先在货件列表点「明细」选中货件'); return }
@@ -1724,7 +1819,11 @@ const submitModal = async () => {
   else if (key === 'offer') await loadOffers()
   else if (key === 'plan') await loadPlans()
   else if (key === 'order' || key === 'qc') await loadOrders()
-  else if (key === 'shipment') await loadShipments()
+  else if (key === 'shipment') {
+    // 编辑成功后，单条详情面板还是编辑前的快照——关掉，避免旧值和新列表混淆
+    if (body.id) shipmentDetail.value = null
+    await loadShipments()
+  }
   else if (key === 'item' && activeShipment.value?.id) await loadItems(activeShipment.value.id)
   else if (key === 'ship') await loadShipments()
 }

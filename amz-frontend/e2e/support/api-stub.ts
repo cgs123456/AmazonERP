@@ -614,6 +614,28 @@ const PURCHASE_ORDERS = [
     quantity: 30, unitPrice: 18.0, totalAmount: 540.0, status: 'DRAFT', alibabaOrderNo: null, trackingNo: null }
 ]
 
+/**
+ * FBA 货件（/procurement/fba/shipment）：
+ * - list 给两条：一条 CREATED（可确认发货/可编辑），一条 SHIPPED（只能标记到货）；
+ * - 单条详情与编辑提交（GET/PUT 同路径 /{id}）共用一份全字段桩：形状对齐后端
+ *   FbaShipment 实体（Result<FbaShipment>），含列表表格不展示的体积/重量/成本构成。
+ *   此前这份 list 桩是空数组，货件 Tab 的「详情/编辑/明细」在本页从未被测到。
+ */
+const PROCUREMENT_SHIPMENTS = [
+  { id: 101, shopId: 1, shipmentNo: 'FBA-2026-0101', fbaShipmentId: 'FBA18ABC', destinationFbaCode: 'MDW2',
+    carrier: '中外运', masterTrackingNo: 'COSU1234567', boxCount: 6, totalCost: 1071.0, status: 'CREATED',
+    eta: '2026-10-30' },
+  { id: 102, shopId: 1, shipmentNo: 'FBA-2026-0102', destinationFbaCode: 'ONT8', boxCount: 2,
+    totalCost: 320.0, status: 'SHIPPED', eta: '2026-09-30' }
+]
+const PROCUREMENT_SHIPMENT_DETAIL = {
+  id: 101, shopId: 1, shipmentNo: 'FBA-2026-0101', fbaShipmentId: 'FBA18ABC', warehouseId: 3,
+  destinationFbaCode: 'MDW2', destinationAddress: '上海市浦东新区美盛路168号', shippingMethod: 'SEA',
+  carrier: '中外运', masterTrackingNo: 'COSU1234567', boxCount: 6, totalWeight: 1500.5, totalVolume: 12.5,
+  freightCost: 800.0, customsCost: 200.0, taxCost: 50.5, otherCost: 20.0, totalCost: 1071.0,
+  status: 'CREATED', eta: '2026-10-30', actualArrival: null
+}
+
 /** 供应商付款单（/procurement/payment/list）。形状对齐后端 SupplierPayment 实体。 */
 const SUPPLIER_PAYMENTS = [
   { id: 51, shopId: 1, paymentNo: 'PAY-2026-0051', purchaseOrderId: 31, purchaseNo: 'PO-2026-0031',
@@ -1319,7 +1341,10 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/procurement\/supplier\/list\//, data: PROCUREMENT_SUPPLIERS, page: FULL_PAGE(PROCUREMENT_SUPPLIERS.length) },
   { match: /^\/procurement\/plan\/list\//, data: PROCUREMENT_PLANS, page: FULL_PAGE(PROCUREMENT_PLANS.length) },
   { match: /^\/procurement\/order\/list\//, data: PURCHASE_ORDERS, page: FULL_PAGE(PURCHASE_ORDERS.length) },
-  { match: /^\/procurement\/fba\/shipment\/list\//, data: [], page: FULL_PAGE(0) },
+  { match: /^\/procurement\/fba\/shipment\/list\//, data: PROCUREMENT_SHIPMENTS, page: FULL_PAGE(PROCUREMENT_SHIPMENTS.length) },
+  // 货件单条详情与编辑提交同路径（GET 详情 / PUT 更新），桩按形状返回实体即可覆盖两者
+  { match: /^\/procurement\/fba\/shipment\/\d+$/, data: PROCUREMENT_SHIPMENT_DETAIL },
+  { match: /^\/procurement\/fba\/shipment\/\d+\/items$/, data: [] },
   // 顺序敏感：具体 planId 必须排在通配 \d+ 之前
   { match: /^\/procurement\/plan\/12\/approvals$/, data: PROCUREMENT_TRAIL_PLAN_12 },
   { match: /^\/procurement\/plan\/\d+\/approvals$/, data: [] },

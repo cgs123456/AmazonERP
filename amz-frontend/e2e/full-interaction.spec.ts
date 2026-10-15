@@ -1212,6 +1212,49 @@ test.describe('Procurement 交互（采购供应链）', () => {
     expect(posts[0]).toContain('supplierId=1')
   })
 
+  test('FBA 货件：详情拉单条看主数据全字段，编辑先拉单条再 PUT 且不碰状态', async ({ page }) => {
+    const gets: string[] = []
+    const puts: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (r.method() === 'GET' && /\/procurement\/fba\/shipment\/\d+$/.test(u.pathname)) gets.push(u.pathname)
+      if (r.method() === 'PUT') puts.push(u.pathname + '|' + (r.postData() || ''))
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    await page.locator('.tab', { hasText: 'FBA 货件' }).click()
+    const panel = page.locator('[data-panel="shipment"]')
+    const row = panel.locator('tbody tr', { hasText: 'FBA-2026-0101' }).first()
+
+    // 详情：单条接口拉主数据，展示列表表格不展示的字段（地址/体积重量/成本构成/未到货）
+    await row.locator('button', { hasText: '详情' }).click()
+    const detail = panel.locator('[data-panel="shipment-detail"]')
+    await expect(detail).toBeVisible()
+    await expect(detail).toContainText('FBA-2026-0101')
+    await expect(detail).toContainText('上海市浦东新区美盛路168号')
+    await expect(detail).toContainText('1500.5')
+    await expect(detail).toContainText('未到货')
+    await expect.poll(() => gets.length).toBe(1)
+    expect(gets[0]).toContain('/fba/shipment/101')
+
+    // 编辑：再拉一次单条（回填取服务端真值，不是列表行），标题点名编辑、不给状态下拉
+    await row.locator('button', { hasText: '编辑' }).click()
+    const modal = page.locator('.modal')
+    await expect(modal).toBeVisible()
+    await expect(modal.locator('h3')).toContainText('编辑 FBA 货件')
+    await expect(modal.locator('select')).toHaveCount(1)
+    await expect(modal).toContainText('状态推进请用')
+    await expect.poll(() => gets.length).toBe(2)
+
+    // 提交走 PUT：body 带可编辑字段，不带 status/shopId（状态只能走专用端点）
+    await modal.locator('label', { hasText: '箱数' }).locator('input').fill('8')
+    await modal.locator('button', { hasText: '提交' }).click()
+    await expect.poll(() => puts.length).toBe(1)
+    expect(puts[0]).toContain('/fba/shipment/101')
+    expect(puts[0]).toContain('boxCount')
+    expect(puts[0]).not.toContain('status')
+    expect(puts[0]).not.toContain('shopId')
+  })
 })
 
 test.describe('ListingPriceRules 交互（调价规则）', () => {
