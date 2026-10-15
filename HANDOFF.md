@@ -36,12 +36,13 @@
 
 ## 项目现状一句话
 
-**本机门禁全绿，HEAD `bae51d9`**（纯前端班，无 Java/SQL 改动；CI 以推送后 run 为准）。
-本班实测：前端 vitest **600/600**（含仓库门禁 +4）+ vue-tsc 0 错 + `npm run build` 通过 +
+**CI 全绿（run `38721593255`，2026-10-15，HEAD `76c008f`）**：11 个 job 全过。
+本机门禁同样全绿（纯前端班，无 Java/SQL 改动）：前端 vitest **600/600**（含仓库门禁 +4）+
+vue-tsc 0 错 + `npm run build` 通过 +
 E2E Warehouse **7/7**（`--repeat-each=3` 15/15）；stub-shape RED 0（**195 注册/131 可比**）、
 param-name 0、hygiene 0（两种模式）、entity_column_drift **110 实体/0 漂移**、release tools **91/91**；
 endpoint 自测 25/25。
-上一班（HEAD `1ac8f85`）：vitest 596/596、AdManager E2E 9/9、stub-shape 195 注册。
+上一班（HEAD `1ac8f85`，CI run `38717713962` 全绿）：vitest 596/596、AdManager E2E 9/9。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
 业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（见 §S9.12 / §S17.4）。
 
@@ -165,6 +166,8 @@ endpoint 自测 25/25。
   **模板变异要一个一个打**。
 - E2E 全量 139 passed / 5 failed，5 例单跑与串跑均过，属坑 19 冷启动抖动家族，
   与本班改动无关（已逐例复核）。
+- **CI run `38721593255` 全绿（11/11 job，2026-10-15，HEAD `76c008f`）**；
+  ad 域代码提交 `1ac8f85` 由 run `38717713962` 覆盖，同样全绿。
 
 ### 4. 下一步
 
