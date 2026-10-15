@@ -359,6 +359,65 @@ describe('Warehouse 库位入口的角色门禁', () => {
   })
 })
 
+describe('Warehouse 仓库新建/编辑入口的角色门禁', () => {
+  /**
+   * 后端 PUT/POST /logistics/warehouse 都是 @RequireRole({"OPERATOR","ADMIN"})，
+   * 而「+ 新建仓库」与行内「编辑」此前没有任何门控——VIEWER 点下去必然 403。
+   * 库位码就地编辑（updateInventoryLocation）早就按同样守卫接了门禁，
+   * 这里把仓库写入口补齐到同一口径，不让两个相邻按钮一个能点一个不能点。
+   */
+  const wh = (id: number, name: string, code: string) => ({
+    id, shopId: 1, warehouseName: name, warehouseCode: code,
+    warehouseType: 'THIRD_PARTY' as const, country: 'US', city: 'LA', contactName: '张三', capacityCbm: 100
+  })
+
+  const mountWithRole = async (role: string | null) => {
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '1')
+    if (role === null) localStorage.removeItem('user_role')
+    else localStorage.setItem('user_role', role)
+    mockedListWarehouses.mockResolvedValue({ code: 200, message: 'ok', data: [wh(5, '洛杉矶仓', 'LA-01')] })
+    mockedListInboundOrders.mockResolvedValue({ code: 200, message: 'ok', data: [] })
+    mockedListOutboundOrders.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: page({ returned: 0 }) })
+    mockedListInventory.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: page({ returned: 0 }) })
+    const wrapper = mount(Warehouse, { shallow: true, global: globalStubs })
+    await flushPromises()
+    return wrapper
+  }
+
+  const writeEntry = (wrapper: any) =>
+    wrapper.findAll('button').filter((b: any) => b.text() === '+ 新建仓库' || b.text() === '编辑')
+
+  it('VIEWER 看不到新建/编辑入口，也不发写请求', async () => {
+    const wrapper = await mountWithRole('VIEWER')
+    expect(writeEntry(wrapper).length).toBe(0)
+    // 说明要留在页面上：不解释「为什么没有按钮」用户只会以为功能没了
+    expect(wrapper.text()).toContain('OPERATOR/ADMIN')
+    expect(mockedListWarehouses).toHaveBeenCalled()
+  })
+
+  it('ADMIN 与 OPERATOR 有入口', async () => {
+    for (const role of ['ADMIN', 'OPERATOR']) {
+      const wrapper = await mountWithRole(role)
+      expect(writeEntry(wrapper).length, role).toBe(2)
+    }
+  })
+
+  it('角色未知时不隐藏入口（权限权威判定在后端）', async () => {
+    const wrapper = await mountWithRole(null)
+    expect(writeEntry(wrapper).length).toBe(2)
+  })
+
+  it('VIEWER 直接调提交也不会发出写请求（入口隐藏之外的兜底）', async () => {
+    const wrapper = await mountWithRole('VIEWER')
+    const vm = wrapper.vm as any
+    await vm.submitWarehouse()
+    await flushPromises()
+    expect(mockedUpdateWarehouse).not.toHaveBeenCalled()
+    expect(mockedCreateWarehouse).not.toHaveBeenCalled()
+  })
+})
+
 describe('Warehouse 编辑仓库（此前 updateWarehouse 零调用）', () => {
   /**
    * 弹窗标题早就写了 `form.id ? '编辑仓库' : '新建仓库'` 这个分支，但仓库列表既没有

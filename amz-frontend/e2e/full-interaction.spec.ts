@@ -2382,6 +2382,25 @@ test.describe('个人资料', () => {
     // 入口隐藏不等于数据被藏起来：库位值本身必须仍然可读
     await expect(page.locator('.loc-view').first()).toContainText('A-01-03')
   })
+
+  test('角色是 VIEWER 时海外仓不给新建/编辑仓库入口', async ({ page }) => {
+    // 同上：覆盖 ADMIN 用户，否则走的是「角色未知故意放行」那条分支
+    await page.route(/\/api\/user\/getInfo/, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 200, data: { user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'VIEWER' } } })
+      })
+    )
+
+    await page.goto('/warehouse')
+    await expect(page.locator('.write-locked').first()).toContainText('OPERATOR')
+    await expect(page.getByRole('button', { name: '新建仓库' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0)
+    // 仓库列表本身照常可读（隐藏的只是写入口）。页面上有 5 张 data-table，
+    // 必须缩到仓库列表那张，否则严格模式下解析到多个元素直接失败。
+    await expect(page.locator('.data-table').first()).toContainText('US-West-FBA')
+  })
 })
 
 test.describe('连接器自检与凭证来源', () => {

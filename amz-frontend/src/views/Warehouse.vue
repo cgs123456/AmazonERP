@@ -52,7 +52,8 @@
       <div v-show="activeTab === 'warehouse'" class="panel">
         <div class="panel-header">
           <h3>仓库列表</h3>
-          <button class="primary-btn" @click="openWarehouseDialog()">+ 新建仓库</button>
+          <button v-if="warehouseWriteAllowed" class="primary-btn" @click="openWarehouseDialog()">+ 新建仓库</button>
+          <span v-else class="write-locked" role="note">新建/编辑仓库需 OPERATOR 或 ADMIN 角色</span>
         </div>
         <div class="table-card">
           <table class="data-table">
@@ -74,7 +75,8 @@
                 <td>{{ w.usedCbm || 0 }}</td>
                 <td><span class="status-tag" :class="w.status === 'ACTIVE' ? 'active' : 'inactive'">{{ w.status }}</span></td>
                 <td>
-                  <button class="ghost-btn" :disabled="w.id == null" @click="openWarehouseDialog(w)">编辑</button>
+                  <button v-if="warehouseWriteAllowed" class="ghost-btn" :disabled="w.id == null" @click="openWarehouseDialog(w)">编辑</button>
+                  <span v-else class="write-locked" role="note">需 OPERATOR/ADMIN</span>
                 </td>
               </tr>
               <tr v-if="!loading && warehouses.length === 0"><td colspan="10" class="empty-row"><div class="empty-state"><Icon icon="mdi:warehouse" width="32" class="empty-icon" /><span>暂无仓库数据</span></div></td></tr>
@@ -626,7 +628,7 @@ import {
   type StocktakeRow,
   type StocktakeItemRow
 } from '@/api/stocktake'
-import { canUseRole, LOCATION_EDIT_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
+import { canUseRole, LOCATION_EDIT_ROLES, WAREHOUSE_WRITE_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
 import { AGING_BUCKETS } from '@/api/warehouse'
 import type { Warehouse, WarehouseInventory, InboundOrder, OutboundOrder, StockAging, BatchReceiveReportRow } from '@/api/warehouse'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -673,6 +675,18 @@ const locationRoleAllowed = ref(canUseRole(LOCATION_EDIT_ROLES))
 
 const syncLocationRole = () => {
   locationRoleAllowed.value = canUseRole(LOCATION_EDIT_ROLES)
+}
+
+/**
+ * 仓库新建/编辑同样是 @RequireRole({"OPERATOR","ADMIN"})，此前两个按钮没有任何门控——
+ * VIEWER 点「+ 新建仓库」只会拿到 403，看起来像功能坏了。
+ * 与库位码门禁同源（都是 canUseRole：未知角色放行，后端才是权威判定），
+ * 但常量分开（见 WAREHOUSE_WRITE_ROLES 注释）。
+ */
+const warehouseWriteAllowed = ref(canUseRole(WAREHOUSE_WRITE_ROLES))
+
+const syncWarehouseWriteRole = () => {
+  warehouseWriteAllowed.value = canUseRole(WAREHOUSE_WRITE_ROLES)
 }
 // ==================== 库龄分析 ====================
 // 库龄分析：这条端点接前端前只有 curl 能碰，且 DDL 里 available_qty / days_in_stock /
@@ -876,8 +890,14 @@ watch(activeTab, (t) => {
   if (t === 'stocktake') void loadStocktakes()
 })
 
-onMounted(() => window.addEventListener(ROLE_CHANGED_EVENT, syncLocationRole))
-onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncLocationRole))
+onMounted(() => {
+  window.addEventListener(ROLE_CHANGED_EVENT, syncLocationRole)
+  window.addEventListener(ROLE_CHANGED_EVENT, syncWarehouseWriteRole)
+})
+onUnmounted(() => {
+  window.removeEventListener(ROLE_CHANGED_EVENT, syncLocationRole)
+  window.removeEventListener(ROLE_CHANGED_EVENT, syncWarehouseWriteRole)
+})
 
 const startLocationEdit = (inv: WarehouseInventory) => {
   if (!inv.id) return
@@ -1127,6 +1147,12 @@ const openWarehouseDialog = (w?: Warehouse) => {
   warehouseDialog.visible = true
 }
 const submitWarehouse = async () => {
+  // 入口隐藏只是体验优化，不是边界：弹窗可能在角色变更前就已经打开，
+  // 或者角色信息比弹窗晚到。这里再挡一次，别把注定 403 的请求发出去。
+  if (!warehouseWriteAllowed.value) {
+    showToast('当前角色不能新建或编辑仓库（需 OPERATOR 或 ADMIN）', 'error')
+    return
+  }
   try {
     // 有 id 走更新（PUT /logistics/warehouse），否则新建（POST）——两者后端都在，
     // 路径同为 /logistics/warehouse，靠请求体带 id 区分。
@@ -1429,6 +1455,7 @@ onMounted(async () => {
 .loc-error { color: var(--color-error); font-size: 0.75rem; max-width: 14rem; }
 .loc-saved { color: var(--color-success); font-size: 0.75rem; }
 .loc-locked { color: var(--color-muted); font-size: 0.75rem; }
+.write-locked { color: var(--color-muted); font-size: 0.75rem; }
 
 /* 页头/主区/表格/分页等公共样式已收敛至全局 style.css */
 

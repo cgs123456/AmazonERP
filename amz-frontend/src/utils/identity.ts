@@ -49,3 +49,12 @@ export const canUseRole = (allowed: string[]): boolean => {
 }
 
 export const LOCATION_EDIT_ROLES = ['OPERATOR', 'ADMIN']
+
+/**
+ * 仓库新建/编辑（POST/PUT /logistics/warehouse）的守卫角色。
+ * 与 LOCATION_EDIT_ROLES 目前取值相同，但**不是同一个语义**：库位码改的是单条库存记录，
+ * 仓库新建/编辑改的是主数据。两边后端各自声明 @RequireRole，将来只要有一边放开
+ * （比如仓库编码允许 OPERATOR 建、只有 ADMIN 能改），这两个常量就该分开——
+ * 现在合成一个会让「改一处以为两处都改了」。
+ */
+export const WAREHOUSE_WRITE_ROLES = ['OPERATOR', 'ADMIN']
