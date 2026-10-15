@@ -1057,11 +1057,12 @@
                     <th>ETA</th>
                     <th>主单已登记运费</th>
                     <th>提示</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="!freightBoard?.uncoveredList?.length">
-                    <td colspan="6" class="empty-row">所有货件都已做头程分摊</td>
+                    <td colspan="7" class="empty-row">所有货件都已做头程分摊</td>
                   </tr>
                   <tr v-for="u in freightBoard?.uncoveredList || []" :key="u.shipmentId">
                     <td class="mono">{{ u.shipmentNo || u.shipmentId }}</td>
@@ -1077,9 +1078,45 @@
                       </span>
                       <span v-else class="status-tag tone-muted">无费用信息</span>
                     </td>
+                    <td>
+                      <button v-if="canAllocateFreight" class="link-btn" :disabled="busy || calcBusy" @click="openCalcForm(u)">分摊</button>
+                    </td>
                   </tr>
                 </tbody>
               </table>
+              <!-- 头程分摊表单：把主单已登记的运费按方法摊到明细行（写操作，提交即改明细金额） -->
+              <div v-if="calcTarget" class="cmp-form" data-panel="freight-calc">
+                <strong>分摊 {{ calcTarget.shipmentNo || calcTarget.shipmentId }}</strong>
+                <span class="muted">提交后按所选方法重写该票全部明细行的分摊金额；总额请按实际支出确认，预填的只是主单登记值。</span>
+                <label>
+                  方法
+                  <select v-model="calcForm.method">
+                    <option v-for="m in CALC_METHODS" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                </label>
+                <label>
+                  运费总额 *
+                  <input type="number" min="0" step="0.01" v-model="calcForm.totalFreight" />
+                </label>
+                <label>
+                  关税
+                  <input type="number" min="0" step="0.01" v-model="calcForm.totalDuty" placeholder="可留空" />
+                </label>
+                <label>
+                  保险
+                  <input type="number" min="0" step="0.01" v-model="calcForm.totalInsurance" placeholder="可留空" />
+                </label>
+                <button class="primary-btn" :disabled="calcBusy" @click="doCalculateFreight">提交分摊</button>
+                <button class="link-btn" @click="calcTarget = null; calcResult = null">关闭</button>
+              </div>
+              <div v-if="calcResult" class="cmp-result" data-panel="freight-calc-result">
+                <div class="cmp-best">
+                  分摊结果（{{ calcResult.method }}）：总额 {{ fmtAmount(calcNum(calcResult.grandTotal)) }}，
+                  共 {{ (calcResult.allocations || []).length }} 行明细
+                </div>
+                <div v-if="calcResult.balanced" class="muted">分摊平衡：各行之和等于总额。</div>
+                <div v-else class="cmp-best multi">分摊不平：各行之和不等于总额，请核对后再用这批数字。</div>
+              </div>
             </div>
 
             <div class="chart-card mt">
@@ -1360,6 +1397,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useToast } from '../composables/useToast'
 import { useShopGuard } from '../composables/useShopGuard'
+import { canUseRole } from '../utils/identity'
 import {
   getLogisticsOverview,
   getLogisticsTrend,
@@ -1377,6 +1415,7 @@ import {
   getReceiptBoard,
   compareQuotes,
   expireOutdatedQuotes,
+  calculateFreight,
   listQuotes,
   listTransfers,
   approveTransfer,
@@ -1398,8 +1437,10 @@ import {
   type CarrierQuote,
   type TransferBoard,
   type FreightCostBoard,
+  type FreightCalculateResult,
   type ReceiptBoard,
-  type InventoryTransfer
+  type InventoryTransfer,
+  type UncoveredShipment
 } from '../api/logistics'
 
 const { toastVisible, toastMessage, toastType, showToast } = useToast()
@@ -1655,6 +1696,13 @@ const fmtTime = (v?: string | null) => {
 
 /** 金额/数量：null 与 undefined 都显示占位，避免出现 NaN 或误读成 0 */
 const fmtAmount = (v?: number | null) => (v === null || v === undefined ? '—' : v.toFixed(2))
+
+/** 分摊结果金额：后端 BigDecimal 可能序列化成字符串，先转数字再格式化 */
+const calcNum = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
 
 /** 比率（0~1）→ 百分比；null / undefined 表示无样本，显示占位而非 0% */
 const fmtRate = (v?: number | null) =>
@@ -2266,6 +2314,87 @@ const doExpireQuotes = async () => {
     showToast('标记失败，请稍后重试', 'error')
   } finally {
     busy.value = false
+  }
+}
+
+// ---- 头程分摊计算 ----
+
+/**
+ * 分摊入口门控：OPERATOR/ADMIN 才能点（后端同口径 @RequireRole）。
+ * canUseRole 对「角色未知」放行（权限权威判定在后端），与采购页取消付款同一先例。
+ */
+const canAllocateFreight = canUseRole(['OPERATOR', 'ADMIN'])
+
+const CALC_METHODS = ['WEIGHT', 'VOLUME', 'QUANTITY'] as const
+
+/** 正在分摊的货件 + 表单 + 结果。一次只摊一票：总额是按票给的，混票必错 */
+const calcTarget = ref<UncoveredShipment | null>(null)
+// number 输入框清空后 v-model 给 null：字段类型必须容纳它，否则 tsc 收窄后
+// 「空」会被当成 0 提交（Number(null) === 0），0 元分摊会把明细金额全写成 0
+const calcForm = ref<{ method: string; totalFreight?: number | string | null; totalDuty?: number | string | null; totalInsurance?: number | string | null }>({
+  method: 'WEIGHT'
+})
+const calcResult = ref<FreightCalculateResult | null>(null)
+const calcBusy = ref(false)
+
+/**
+ * 打开分摊表单。运费预填主单已登记值——「有费用未摊」的那类行，预填的就是这笔钱；
+ * 没登记的行留空，由人工填写（后端 totalFreight 必填，不填会被拒）。
+ */
+const openCalcForm = (u: UncoveredShipment) => {
+  calcTarget.value = u
+  calcResult.value = null
+  calcForm.value = {
+    method: 'WEIGHT',
+    totalFreight: u.freightCost ?? undefined,
+    totalDuty: undefined,
+    totalInsurance: undefined
+  }
+}
+
+/**
+ * 提交分摊计算（calculateFreight，POST /logistics/v2/freight/{shipmentId}/calculate）。
+ * 这是写操作：后端按比例重写该票全部明细行的分摊金额（事务内），
+ * 所以总额必须由人工确认——预填值只是建议，不校验即提交等于默认花钱。
+ */
+const doCalculateFreight = async () => {
+  const target = calcTarget.value
+  if (!target) return
+  // 空输入经 v-model 可能是 null/''：Number(null) === 0 会把「没填」伪装成「0 元」，
+  // 0 元分摊会把明细行的金额全部写成 0——必须先排除再转数字
+  const rawFreight = calcForm.value.totalFreight
+  const totalFreight = rawFreight === null || rawFreight === undefined || rawFreight === ''
+    ? NaN : Number(rawFreight)
+  if (!Number.isFinite(totalFreight) || totalFreight < 0) {
+    showToast('请填写运费总额（≥0 的数字）', 'error')
+    return
+  }
+  const numOrUndefined = (v: unknown) => {
+    if (v === null || v === undefined || v === '') return undefined
+    const n = Number(v)
+    return Number.isFinite(n) ? n : undefined
+  }
+  calcBusy.value = true
+  try {
+    const res = await calculateFreight(target.shipmentId, {
+      method: calcForm.value.method,
+      totalFreight,
+      totalDuty: numOrUndefined(calcForm.value.totalDuty),
+      totalInsurance: numOrUndefined(calcForm.value.totalInsurance)
+    })
+    if (res?.code === 200 && res.data) {
+      calcResult.value = res.data
+      // 分摊改写了明细行，看板数字已过期，必须重拉
+      const shopId = refreshShop()
+      if (shopId) await safeLoad('freight', () => loadFreightBoard(shopId))
+    } else {
+      // 后端会点名具体缺什么（无明细行/基准为 0/方法非法），直接透出
+      showToast(res?.message || '分摊计算失败', 'error')
+    }
+  } catch (e) {
+    showToast('分摊计算失败，请稍后重试', 'error')
+  } finally {
+    calcBusy.value = false
   }
 }
 

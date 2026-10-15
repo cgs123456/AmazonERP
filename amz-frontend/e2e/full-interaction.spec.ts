@@ -1518,6 +1518,26 @@ test.describe('AdSearchTerms 交互（搜索词分析与广告规则）', () => 
     await page.locator('.tab-panel[data-panel="asin"] button', { hasText: '反查' }).click()
     await expect(page.locator('.tab-panel[data-panel="asin"] tbody tr')).toHaveCount(1)
   })
+
+  test('批量出建议走批量接口，逐规则展示结果', async ({ page }) => {
+    const batch: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname === '/api/ad/search-term/rule/execute/1') batch.push(`${r.method()}`)
+    })
+    await page.goto('/ad-search-terms')
+    const panel = page.locator('.tab-panel[data-panel="rules"]')
+    await panel.locator('button', { hasText: '批量出建议' }).click()
+    await expect(page.locator('.confirm-detail')).toContainText('只产出建议')
+    expect(batch).toEqual([])
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => batch.length).toBe(1)
+    const result = page.locator('[data-panel="batch-result"]')
+    await expect(result).toContainText('2')
+    await expect(result).toContainText('高ACoS自动暂停')
+    await expect(result).toContainText('暂停该搜索词所在投放')
+    // 批量结果不复用单条卡片：单条卡片读不到失败行的形状
+    await expect(page.locator('.result-card')).toHaveCount(0)
+  })
 })
 
 test.describe('AdBidSchedule 交互（分时调价）', () => {

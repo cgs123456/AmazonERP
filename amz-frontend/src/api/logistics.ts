@@ -609,11 +609,28 @@ export const listAllocations = (shipmentId: number, size?: number, cursor?: stri
 }
 
 /** 按分摊方法重算头程费用；服务端保证各行之和等于费用总额 */
+export interface FreightCalculateResult {
+  shipmentId: number
+  method: string
+  totalFreight: number | string
+  totalDuty: number | string
+  totalInsurance: number | string
+  totalOther: number | string
+  grandTotal: number | string
+  allocations: FreightCostItem[]
+  allocatedFreight: number | string
+  allocatedDuty: number | string
+  allocatedInsurance: number | string
+  /** 分摊之和是否等于总额：为 false 时调用方必须警告，不得报成成功 */
+  balanced: boolean
+}
+
+/** 按分摊方法重算头程费用；服务端保证各行之和等于费用总额 */
 export const calculateFreight = (
   shipmentId: number,
   params: { method: string; totalFreight: number; totalDuty?: number; totalInsurance?: number }
 ) => {
-  return request.post<void, ApiResponse<Record<string, unknown>>>(
+  return request.post<void, ApiResponse<FreightCalculateResult>>(
     `/logistics/v2/freight/${shipmentId}/calculate`,
     null,
     { params }

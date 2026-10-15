@@ -344,3 +344,85 @@ describe('搜索词分析与广告规则页', () => {
     expect(wrapper.find('[data-panel="rules"]').text()).toContain('这家店还没有规则')
   })
 })
+
+describe('广告规则批量出建议（此前 executeRules 零调用）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    localStorage.setItem('current_shop_id', '1')
+    happy()
+  })
+
+  // 批量结果夹具：一条成功（命中 1 条建议）+ 一条执行失败。
+  // 失败行只有 ruleId/ruleName/error，没有 actionCount——渲染不能假设每行都有命中数
+  const BATCH_MIXED = {
+    shopId: 1, rulesExecuted: 2, totalActions: 1,
+    ruleResults: [
+      EXEC,
+      { ruleId: 42, ruleName: 'BETWEEN 缺上界', error: '报表无数据，跳过该规则' }
+    ]
+  }
+
+  it('批量按钮在规则区，点后二次确认且确认前不发请求', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '规则')
+    const panel = wrapper.find('[data-panel="rules"]')
+    const btn = panel.findAll('button').find((b: any) => b.text() === '批量出建议')
+    expect(btn, '规则区没有「批量出建议」按钮').toBeTruthy()
+    await btn!.trigger('click')
+    await flushPromises()
+    expect(api.executeRules).not.toHaveBeenCalled()
+    expect(confirmText(wrapper)).toContain('只产出建议')
+    expect(confirmText(wrapper)).toContain('不会下发')
+    expect(confirmText(wrapper)).toContain('停用')
+    await clickBtn(wrapper, '确认执行')
+    expect(api.executeRules).toHaveBeenCalledWith('1')
+  })
+
+  it('批量结果逐规则展示：成功行给命中数，失败行点名且不吞成功行', async () => {
+    vi.mocked(api.executeRules).mockResolvedValue(ok(BATCH_MIXED))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '规则')
+    const panel = wrapper.find('[data-panel="rules"]')
+    await panel.findAll('button').find((b: any) => b.text() === '批量出建议')!.trigger('click')
+    await flushPromises()
+    await clickBtn(wrapper, '确认执行')
+    const batch = wrapper.find('[data-panel="batch-result"]')
+    expect(batch.exists(), '没有批量结果面板').toBe(true)
+    expect(batch.text()).toContain('2')
+    expect(batch.text()).toContain('高ACoS自动暂停')
+    expect(batch.text()).toContain('暂停该搜索词所在投放')
+    // 失败行：点名规则 + 失败原因，且成功行的建议仍在
+    expect(batch.text()).toContain('BETWEEN 缺上界')
+    expect(batch.text()).toContain('报表无数据')
+    // 批量结果不能复用单条结果卡片（形状不同：失败行没有 actionCount）
+    expect(wrapper.find('.result-card').exists()).toBe(false)
+    // 批量执行不碰任何规则的「上次执行」以外的状态，列表照常可读
+    expect(wrapper.find('[data-panel="rules"]').text()).toContain('高ACoS自动暂停')
+  })
+
+  it('批量失败按前缀点名，不铺假结果面板', async () => {
+    vi.mocked(api.executeRules).mockResolvedValue(fail('店铺不存在或无权访问'))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '规则')
+    const panel = wrapper.find('[data-panel="rules"]')
+    await panel.findAll('button').find((b: any) => b.text() === '批量出建议')!.trigger('click')
+    await flushPromises()
+    await clickBtn(wrapper, '确认执行')
+    expect(wrapper.find('[data-panel="batch-result"]').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('批量出建议')
+    expect(wrapper.find('.error-zone').text()).toContain('店铺不存在或无权访问')
+  })
+
+  it('VIEWER 看不到批量按钮；未知角色看得到（后端才是权威判定）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    const viewer = await mountPage()
+    await openTab(viewer, '规则')
+    expect(viewer.find('[data-panel="rules"]').findAll('button').some((b: any) => b.text() === '批量出建议')).toBe(false)
+
+    localStorage.removeItem('user_role')
+    const unknown = await mountPage()
+    await openTab(unknown, '规则')
+    expect(unknown.find('[data-panel="rules"]').findAll('button').some((b: any) => b.text() === '批量出建议')).toBe(true)
+  })
+})

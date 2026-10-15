@@ -44,6 +44,7 @@
               <button v-if="rules.truncated.value" class="action-btn"
                       :disabled="rules.loading.value" @click="loadRules(true)">下一页</button>
               <button class="action-btn primary" @click="resetRuleForm()">新建规则</button>
+              <button v-if="canBatchExecute" class="action-btn" :disabled="busy" @click="askExecuteAll()">批量出建议</button>
               <span class="muted">{{ pagerText(rules) }}</span>
             </div>
             <table class="data-table">
@@ -173,6 +174,29 @@
               没有任何搜索词命中——先确认报表里有数据，以及窗口天数是否覆盖到那些日期。
             </p>
             <p v-if="execution.note" class="muted note-line">{{ execution.note }}</p>
+          </div>
+
+          <!-- 批量出建议的结果：逐规则一行。失败行只有 ruleId/ruleName/error，
+               先判 error 再读 actionCount——失败行没有命中数，读了就是 undefined -->
+          <div v-if="batchResult" class="table-card batch-card" data-panel="batch-result">
+            <h3 class="card-title">
+              批量出建议：扫描启用规则 {{ batchResult.rulesExecuted }} 条，共 {{ batchResult.totalActions }} 条建议
+              <span class="status-tag unknown">仅建议，未下发广告账号</span>
+            </h3>
+            <p class="muted">执行时的快照；增删改规则后请重跑。停用的规则不会参与。</p>
+            <table v-if="batchResult.ruleResults && batchResult.ruleResults.length" class="data-table">
+              <thead><tr><th>规则</th><th>结果</th><th>建议</th></tr></thead>
+              <tbody>
+                <tr v-for="rr in batchResult.ruleResults" :key="rr.ruleId">
+                  <td>{{ rr.ruleName || rr.ruleId }}</td>
+                  <td v-if="rr.error" class="mono">失败：{{ rr.error }}</td>
+                  <td v-else class="mono">命中 {{ rr.actionCount }} 条</td>
+                  <td v-if="rr.error" class="muted">该规则的失败不影响其余规则</td>
+                  <td v-else>{{ (rr.matchedActions || []).map((a) => a.suggestion || a.action).filter(Boolean).join('；') || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="muted">本店没有启用的规则：批量执行无事可做，先新建或启用规则。</p>
           </div>
         </div>
 
@@ -481,8 +505,9 @@ import {
 } from '@/api/adSearchTerms'
 import type {
   AdAsinKeyword, AdAutoRule, AdSearchTerm, AnalyzeResult, ClusterResult,
-  ConvertingTerm, RuleExecutionResult
+  ConvertingTerm, RuleBatchResult, RuleExecutionResult
 } from '@/api/adSearchTerms'
+import { canUseRole } from '@/utils/identity'
 
 type TabKey = 'rules' | 'terms' | 'analyze' | 'cluster' | 'converting' | 'asin'
 const TABS: Array<{ key: TabKey; label: string }> = [
@@ -521,6 +546,14 @@ const extractDays = ref<number | string>(7)
 const analyze = ref<AnalyzeResult | null>(null)
 const cluster = ref<ClusterResult | null>(null)
 const execution = ref<RuleExecutionResult | null>(null)
+/** 批量出建议的结果（与单条 execution 分开：失败行没有 actionCount，不能复用单条卡片） */
+const batchResult = ref<RuleBatchResult | null>(null)
+
+/**
+ * 批量入口门控：OPERATOR/ADMIN 才能点（后端同口径 @RequireRole）。
+ * canUseRole 对「角色未知」放行（权限权威判定在后端），与采购页取消付款同一先例。
+ */
+const canBatchExecute = canUseRole(['OPERATOR', 'ADMIN'])
 
 const ruleModal = ref(false)
 const termModal = ref(false)
@@ -797,6 +830,30 @@ const askExecute = (r: AdAutoRule) => {
   }
 }
 
+/**
+ * 批量出建议（executeRules，POST /ad/search-term/rule/execute/{shopId}）。
+ * 启停确认框里承诺的「批量出建议」就是它——此前只有文案没有入口。
+ * 失败行（{ruleId, ruleName, error}）由后端逐条隔离：一条规则抛错不中断其余，
+ * 前端同样逐行展示，不把整批判成失败。
+ */
+const askExecuteAll = () => {
+  confirmBox.value = {
+    title: '批量出建议',
+    detail: '将扫描本店全部启用规则并只产出建议清单：不会暂停投放、不会改价、'
+      + '不会加否词、不会下发到广告账号。停用的规则会被跳过；'
+      + '单条规则失败只影响它自己那一行，其余照常出建议。',
+    run: async () => {
+      const data = await run('批量出建议', () => api.executeRules(shop()))
+      if (!data) return
+      batchResult.value = data
+      if ((data.ruleResults || []).some((rr) => rr.appliedToAdAccount === true)) {
+        pushError('后端把 appliedToAdAccount 置为真：本页「仅建议」的说明已不成立，请核对执行链路')
+      }
+      await loadRules()
+    }
+  }
+}
+
 const askExtract = () => {
   confirmBox.value = {
     title: `按近 ${extractDays.value} 天重算出单词库`,
@@ -913,7 +970,7 @@ onMounted(() => {
 .cell-clip { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-card { margin-bottom: 1rem; }
 .card-title { font-size: 0.9375rem; color: var(--color-on-surface); margin: 0 0 0.5rem; display: flex; align-items: center; gap: 0.5rem; }
-.form-card, .result-card { padding: 0.875rem 1rem 1rem; }
+.form-card, .result-card, .batch-card { padding: 0.875rem 1rem 1rem; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.625rem; }
 .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: var(--color-muted); }
 .field.checkbox { flex-direction: row; align-items: center; }

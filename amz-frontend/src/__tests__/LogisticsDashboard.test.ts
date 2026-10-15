@@ -26,6 +26,7 @@ vi.mock('@/api/logistics', () => ({
   approveTransfer: vi.fn(),
   shipTransfer: vi.fn(),
   receiveTransfer: vi.fn(),
+  calculateFreight: vi.fn(),
   investigateDiscrepancy: vi.fn(),
   resolveDiscrepancy: vi.fn()
 }))
@@ -46,6 +47,7 @@ import {
   listQuotes,
   listTransfers,
   approveTransfer,
+  calculateFreight,
   resolveDiscrepancy
 } from '@/api/logistics'
 
@@ -64,6 +66,7 @@ const mockedCompare = vi.mocked(compareQuotes)
 const mockedQuotes = vi.mocked(listQuotes)
 const mockedTransfers = vi.mocked(listTransfers)
 const mockedApprove = vi.mocked(approveTransfer)
+const mockedCalculate = vi.mocked(calculateFreight)
 const mockedResolve = vi.mocked(resolveDiscrepancy)
 
 const globalStubs = {
@@ -1364,5 +1367,131 @@ describe('LogisticsDashboard 有效报价明细（此前 listQuotes 零调用）
     const panel = wrapper.find('[data-panel="quotes"]')
     expect(panel.text()).not.toContain('Matson')
     expect(panel.text()).toContain('暂无有效报价')
+  })
+})
+
+describe('LogisticsDashboard 头程分摊计算（此前 calculateFreight 零调用）', () => {
+  /**
+   * 未核算表只说「有费用未摊」，不给把钱摊下去的入口——运营看到 SHP-102 登记了 8000
+   * 运费，却只能去别的页面想办法。后端 POST /logistics/v2/freight/{shipmentId}/calculate
+   * 早已就绪（按重量/体积/数量重算并写回明细，返回分摊之和与 balanced 校验量），
+   * 前端 calculateFreight 却零调用。本组钉住：逐行入口、主单运费预填、提交参数、
+   * 结果校验量展示、失败透出、OPERATOR/ADMIN 门控。
+   */
+  const CALC_RESULT = {
+    shipmentId: 102, method: 'WEIGHT',
+    totalFreight: 8000, totalDuty: 0, totalInsurance: 0, totalOther: 0,
+    grandTotal: 8000,
+    allocations: [
+      { shipmentId: 102, sku: 'SKU-A', quantity: 100, freightCost: 5000, totalCost: 5000, unitCost: 50 },
+      { shipmentId: 102, sku: 'SKU-B', quantity: 60, freightCost: 3000, totalCost: 3000, unitCost: 50 }
+    ],
+    allocatedFreight: 8000, allocatedDuty: 0, allocatedInsurance: 0,
+    balanced: true
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem('token', 'test-token')
+    localStorage.setItem('current_shop_id', '1')
+    vi.clearAllMocks()
+
+    mockedOverview.mockResolvedValue({ code: 200, message: 'ok', data: overviewFixture() } as never)
+    mockedTrend.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedCarriers.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedAlerts.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
+    mockedTracking.mockResolvedValue({ code: 200, message: 'ok', data: [], _page: pageMeta([]) } as never)
+    mockedQuoteBoard.mockResolvedValue({ code: 200, message: 'ok', data: quoteBoardFixture() } as never)
+    mockedTransferBoard.mockResolvedValue({ code: 200, message: 'ok', data: transferBoardFixture() } as never)
+    mockedFreightBoard.mockResolvedValue({ code: 200, message: 'ok', data: freightBoardFixture() } as never)
+    mockedReceiptBoard.mockResolvedValue({ code: 200, message: 'ok', data: receiptBoardFixture() } as never)
+    mockedCalculate.mockResolvedValue({ code: 200, message: 'ok', data: CALC_RESULT } as never)
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  const mountFreight = async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const t = wrapper.findAll('.tab').find((x) => x.text().includes('头程'))
+    expect(t, '未找到「头程」标签').toBeTruthy()
+    await t!.trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  const calcRow = (wrapper: any, text: string) => {
+    const row = wrapper.findAll('tbody tr').find((r: any) => r.text().includes(text))
+    expect(row, `未找到含「${text}」的行`).toBeTruthy()
+    return row!
+  }
+
+  it('未核算表每行有「分摊」入口，点开后运费预填主单已登记值', async () => {
+    const wrapper = await mountFreight()
+    const row = calcRow(wrapper, 'SHP-102')
+    const btn = row.findAll('button').find((b: any) => b.text() === '分摊')
+    expect(btn, 'SHP-102 行没有「分摊」按钮').toBeTruthy()
+    await btn!.trigger('click')
+    await flushPromises()
+    const form = wrapper.find('[data-panel="freight-calc"]')
+    expect(form.exists(), '没有分摊表单').toBe(true)
+    // 主单已登记 8000 运费：预填的是「这笔钱」，不是凭空编的默认值
+    const inputs = form.findAll('input')
+    expect((inputs[0].element as HTMLInputElement).value).toBe('8000')
+  })
+
+  it('提交走 calculateFreight，成功后展示总额与平衡校验并重拉看板', async () => {
+    const wrapper = await mountFreight()
+    await calcRow(wrapper, 'SHP-102').findAll('button').find((b: any) => b.text() === '分摊')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-panel="freight-calc"]').findAll('button').find((b: any) => b.text() === '提交分摊')!.trigger('click')
+    await flushPromises()
+    expect(mockedCalculate).toHaveBeenCalledWith(102, expect.objectContaining({ method: 'WEIGHT', totalFreight: 8000 }))
+    const result = wrapper.find('[data-panel="freight-calc-result"]')
+    expect(result.exists(), '没有分摊结果面板').toBe(true)
+    expect(result.text()).toContain('8000')
+    expect(result.text()).toContain('分摊平衡')
+    // 分摊改写了明细行，看板数字已过期，必须重拉
+    expect(mockedFreightBoard.mock.calls.length).toBe(2)
+  })
+
+  it('分摊之和对不上总额时给出不平警告，不报成成功', async () => {
+    mockedCalculate.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: { ...CALC_RESULT, allocatedFreight: 7999.98, balanced: false }
+    } as never)
+    const wrapper = await mountFreight()
+    await calcRow(wrapper, 'SHP-102').findAll('button').find((b: any) => b.text() === '分摊')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-panel="freight-calc"]').findAll('button').find((b: any) => b.text() === '提交分摊')!.trigger('click')
+    await flushPromises()
+    const result = wrapper.find('[data-panel="freight-calc-result"]')
+    expect(result.text()).toContain('分摊不平')
+    expect(result.text()).not.toContain('分摊平衡')
+  })
+
+  it('后端点名失败（无分摊明细）时 toast 透出原因，不留假结果', async () => {
+    mockedCalculate.mockResolvedValue({ code: 400, message: '该货件尚未登记分摊明细，无法计算头程费用', data: null as any } as never)
+    const wrapper = await mountFreight()
+    await calcRow(wrapper, 'SHP-102').findAll('button').find((b: any) => b.text() === '分摊')!.trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-panel="freight-calc"]').findAll('button').find((b: any) => b.text() === '提交分摊')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.toast').text()).toContain('尚未登记分摊明细')
+    expect(wrapper.find('[data-panel="freight-calc-result"]').exists()).toBe(false)
+  })
+
+  it('VIEWER 看不到分摊入口；未知角色看得到（后端才是权威判定）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    const viewer = await mountFreight()
+    expect(calcRow(viewer, 'SHP-102').findAll('button').some((b: any) => b.text() === '分摊')).toBe(false)
+
+    localStorage.removeItem('user_role')
+    const unknown = await mountFreight()
+    expect(calcRow(unknown, 'SHP-102').findAll('button').some((b: any) => b.text() === '分摊')).toBe(true)
   })
 })

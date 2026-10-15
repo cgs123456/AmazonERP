@@ -107,6 +107,32 @@ test.describe('物流看板 /logistics', () => {
     // 桩返回完整分页元数据，此时不应出现截断/无法确认的提示
     await expect(panel).not.toContainText('不是全量')
   })
+
+  test('头程分摊：未核算行给入口，提交走分摊接口并展示平衡校验', async ({ page }) => {
+    const posts: Array<{ url: string; body: string | null }> = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (u.pathname.includes('/logistics/v2/freight/102/calculate')) {
+        posts.push({ url: u.pathname + u.search, body: r.postData() })
+      }
+    })
+    await page.goto('/logistics')
+    await page.locator('.tab', { hasText: '头程成本' }).click()
+    const row = page.locator('tbody tr', { hasText: 'SHP-2026-0102' }).first()
+    await expect(row).toContainText('有费用未摊')
+    await row.locator('button', { hasText: '分摊' }).click()
+    const form = page.locator('[data-panel="freight-calc"]')
+    await expect(form).toBeVisible()
+    // 运费预填的是主单已登记的 8000，不是凭空编的默认值
+    await expect(form.locator('input').first()).toHaveValue('8000')
+    await form.locator('button', { hasText: '提交分摊' }).click()
+    await expect.poll(() => posts.length).toBe(1)
+    expect(posts[0].url).toContain('method=WEIGHT')
+    expect(posts[0].url).toContain('totalFreight=8000')
+    const result = page.locator('[data-panel="freight-calc-result"]')
+    await expect(result).toContainText('8000')
+    await expect(result).toContainText('分摊平衡')
+  })
 })
 
 test.describe('利润报表 /profit', () => {

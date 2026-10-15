@@ -256,7 +256,12 @@ const FREIGHT_BOARD = {
   totalCost: 1950,
   avgUnitCost: 6.09,
   methodMix: { BY_VALUE: 2 },
-  uncoveredList: [],
+  // 未核算行：SHP-2026-0102 登记了 8000 运费却没做分摊（hasDeclaredFreight=true），
+  // 给分摊入口 E2E 用；空数组时该页永远渲染空态，行内操作测不到
+  uncoveredList: [
+    { shipmentId: 102, shipmentNo: 'SHP-2026-0102', carrier: 'COSCO', status: 'IN_TRANSIT',
+      eta: '2026-10-01', freightCost: 8000, hasDeclaredFreight: true }
+  ],
   topUnitCostItems: [],
   warnings: []
 }
@@ -1250,6 +1255,16 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   },
   { match: /^\/logistics\/dashboard\/transfers$/, data: TRANSFER_BOARD },
   { match: /^\/logistics\/dashboard\/freight-cost$/, data: FREIGHT_BOARD },
+  // 头程分摊计算（写操作）：返回分摊总额与 balanced 校验量，allocations 行形状对齐后端 FreightAllocation
+  { match: /^\/logistics\/v2\/freight\/\d+\/calculate$/, data: {
+      shipmentId: 102, method: 'WEIGHT',
+      totalFreight: 8000, totalDuty: 0, totalInsurance: 0, totalOther: 0, grandTotal: 8000,
+      allocations: [
+        { id: 1, shopId: 1, shipmentId: 102, sku: 'SKU-A', quantity: 100,
+          freightCost: 5000, dutyCost: 0, insuranceCost: 0, otherCost: 0,
+          totalCost: 5000, unitCost: 50, allocationMethod: 'WEIGHT' }
+      ],
+      allocatedFreight: 8000, allocatedDuty: 0, allocatedInsurance: 0, balanced: true } },
   { match: /^\/logistics\/dashboard\/receipts$/, data: RECEIPT_BOARD },
   { match: /^\/logistics\/shipment\/list\//, data: SHIPMENTS },
 
