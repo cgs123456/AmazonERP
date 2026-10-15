@@ -2847,3 +2847,33 @@ Listing 自动调价/AI 广告托管）；店小秘 vs 马帮选型对比；启�
 - **P3 运营**：店铺绩效域（accountHealth）、Listing 自动调价、Review 星级统计、竞品上新监控；
 - **P4 差异化**：AI 广告托管（带干跑/审批门槛）、平台适配层抽象（新平台=一个 client）、AI 内容。
 执行纪律不变：TDD+契约锁+门禁同步；拎包入住**不降低**工程门禁标准。
+
+
+## S15. 会话收尾交接：2026-10-15（S14 完成后的空闲停点）
+
+### 当前任务
+S14 两项孤儿 API（广告 `executeRules` 批量出建议、物流 `calculateFreight` 头程分摊）已落地、验证并推送；本会话结束时无进行中的开发任务。
+
+### 已完成
+- 提交 `3053f1d`：接孤儿 API，8 文件，+481/-6。
+- 提交 `2c38a95`：HANDOFF §S14 收口。
+- CI：`38698833333` + `38699957785` 全绿（11/11）。
+- 门禁：Vitest 580/580、E2E 159 passed、vue-tsc 0、npm run build 通过、stub-shape RED 0、hygiene 0、release tools 91/91、entity_column_drift 0。
+
+### 卡住的问题
+- 工作区在本会话初期曾出现 ~140 个假性 Modified（CRLF stat/index 漂移），已以 `git add -u` 刷新 stat 缓存、归一化 37 个 LF/CRLF 文件，当前 `git status` 仅在本文件追加后有变更；新会话仍需警惕。
+- 本地代理 `127.0.0.1:7897` 不稳定；推送统一使用 `git -c http.proxy= push origin master`。
+- `updateWarehouse` 与 ad 域 6 个 CRUD 仍无 UI；A5/E4–E5 仍缺真实凭据（业务真阻塞）。
+- `rating/onTimeDeliveryRate/qualityPassRate/totalOrders/totalAmount` 是系统自动累计——任何供应商编辑表单都不能放开这些字段。
+
+### 下一步计划
+1. ② 类剩余约 7 项：优先 ad 域 6 个 CRUD（create/update Campaign/Creative/Targeting/batch），再 `updateWarehouse`（带 OPERATOR/ADMIN 守卫）。
+2. 每项仍走 TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；写完测试文件必须连跑 `npx vue-tsc --noEmit`（坑 8 已三次复发）。
+3. 非 guarded 无门控；guarded 一律复用采购页 `canCancelPayment`/`canAllocateFreight`/`canBatchExecute` 先例。
+4. 真凭据到位后走 runbook §3 端到端验收（A5/E4–E5）。
+
+### 踩过的坑（本会话）
+- `v-model` 清空数字输入框后把 `null` 当 `0` 提交（头程分摊）——类型必须含 `string | null` 并先排除 empty。
+- 广告批量执行失败行形状 `{ruleId,ruleName,error}` 缺 `actionCount`——渲染必须先判 `error`，不能混读 `undefined`。
+- 未核算表头 `colspan` 从 6 改 7 时，Vue 模板的空态占位必须同步，否则 E2E 严格计数失败。
+- CRLF stat/index 大面积假 M：`git update-index --refresh` 报 needs update 却 `git diff` 为空——先字节归一化再 `git add -u`。
