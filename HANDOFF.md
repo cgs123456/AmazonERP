@@ -1,6 +1,15 @@
 # HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
+> 本次更新（§S14）：广告/物流孤儿 api 再落两支——`executeRules`（AdSearchTerms 批量出建议，
+> POST 扫描本店全部启用规则，虽不下发广告账号却不可逆地产出建议集合，故放独立面板逐行展示，
+> 成功/失败行不混读 actionCount）与 `calculateFreight`（LogisticsDashboard 头程分摊，
+> 每个未核算货件一行入口；运费预填主单已登记值，提交后按比例重写该票明细行并重拉看板；
+> balanced=false 必须点名不平，不报成成功）。入口门控沿用采购页 `canCancelPayment` 先例
+> （OPERATOR/ADMIN，unknown role 放行让后端做权威判定，VIEWER 隐藏）。详见 §S14。
+> 上三班（§S13/§S12/§S9）：供应商详情/编辑、FBA 货件详情/编辑、通知未读红点、用户管理、店铺管理、仓库编辑、
+> Buybox 汇总、费用差异详情、RMA 详情、有效报价明细。
+
 > 本次更新（§S13）：接上供应商域两个孤儿 api——`getSupplier`（单条主数据详情）与
 > `updateSupplier`（编辑，PUT），承接 §S12 的货件模式（详情+编辑、先拉单条再回填、
 > 提交按白名单挑字段）。真正的结构性发现是**评分与三项统计是 `updateSupplierStats`
@@ -12,14 +21,65 @@
 
 ## 项目现状一句话
 
-**CI 全绿（run `38672378612`，2026-10-15，HEAD `57cdf29`）**：11 个 job 全过。本班实测：
-前端 vitest **571/571**（含供应商详情/编辑 +7）+ vue-tsc 0 错 + 采购域 E2E **15/15**；
-stub-shape RED 0（**189 注册/130 可比**）、param-name 0、hygiene 0（两种模式）、
+**CI 全绿（run `38698833333`，2026-10-15，HEAD `3053f1d`）**：11 个 job 全过。本班实测：
+前端 vitest **580/580**（含广告批量 +4、头程分摊 +5）+ vue-tsc 0 错 + `npm run build` 通过 +
+E2E **159 passed**；stub-shape RED 0（**190 注册/131 可比**）、param-name 0、hygiene 0（两种模式）、
 entity_column_drift 0、release tools **91/91**；后端零改动（纯前端班）。
-上一班（run `38664125678`，HEAD `497526e`）：vitest 564/564 + E2E 160 passed、
-stub-shape 188 注册；迁移 65 / 活表 116 / 实体 110 / 0 漂移。
+上一班（run `38673026033`/`38672378612`，HEAD `57cdf29`）：vitest 571/571 + E2E 161 passed、
+stub-shape 189 注册；迁移 65 / 活表 116 / 实体 110 / 0 漂移。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
 业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S13.5。
+
+## S14. 交接：2026-10-15 广告 `executeRules` + 物流 `calculateFreight` 接孤儿 API（已完成）
+
+> 本段是**当前会话的交接**。承接 HANDOFF §S9.12「下一步」后两项，仍为**纯前端班**，无 Java/SQL 改动。
+> `executeRules`（AdSearchTerms 已接 `executeRule` 单条，landing 批量执行入口）与
+> `calculateFreight`（LogisticsDashboard 已接 `compareQuotes`/`expireOutdatedQuotes`/`listQuotes`，
+> 落地头程分摊）都是 guarded `@RequireRole(OPERATOR/ADMIN)`；入口门控复用 procurement `canCancelPayment`
+> 先例（`canUseRole`，VIEWER 隐藏，未知 role 放行让后端做权威判定）。本班无 push 异常（代理 7897 干擾仍存在，
+> 本次推送走了 `git -c http.proxy=` 直连）。
+
+### 1. ② 类剩余再落两项
+
+- `executeRules`：`GET /ad/search-term/rule/execute/{shopId}` → `api.executeRules` 曾零调用；
+  现在规则区顶栏多一颗「批量出建议」按钮 + 二次确认，提交走 `api.executeRules(shopId)`，
+  结果给**独立面板** `[data-panel="batch-result"]`（失败行 `{ruleId,ruleName,error}` 先判 error
+  再读 `actionCount`，不混读 `undefined`）； honesty 为先：`appliedToAdAccount === true` 即 warnings；
+  `asText`/`asNumber` 等 helpers 未变更。
+- `calculateFreight`：`POST /logistics/v2/freight/{shipmentId}/calculate` → `api.calculateFreight` 曾零调用；
+  现在未核算表每行一颗「分摊」按钮，打开表单时运费总额预填主单已登记值 `u.freightCost`（无登记则空），
+  提交带 `method/totalFreight/totalDuty/totalInsurance`，成功后展示 `grandTotal` 与 `balanced`
+ （ balanced=false 必须点名「分摊不平」，不得报成功），并 `safeLoad` 重拉 freight 看板；
+  失败时 toast 透出后端 message。
+
+### 2. 落地与类型
+
+- `amz-frontend/src/api/logistics.ts`：`calculateFreight` 从 `ApiResponse<Record<string,unknown>>`
+  收窄到 `ApiResponse<FreightCalculateResult>`，新增 DTO 接口（grandTotal / allocated* / balanced）；
+  所有数字字段用 `string | number` 容纳 BigDecimal 序列化。
+- `amz-frontend/src/views/LogisticsDashboard.vue`：`canAllocateFreight = canUseRole(['OPERATOR','ADMIN'])`；
+  `CALC_METHODS` 三枚；`calcForm` 字段型别含 `string | null` 以区分「未填」和「0 元」（0 元分摊会把明细
+  全部写零，故 `doCalculateFreight` 先排除 null/undefined/''）；表头 colspan 6→7。
+- `amz-frontend/src/views/AdSearchTerms.vue`：`canBatchExecute`、`batchResult: RuleBatchResult | null`、
+  `askExecuteAll()`，面板 styling 单独 `.batch-card` 避免 `.result-card` 互扰；失败行只有 ruleId/ruleName/error。
+
+### 3. 测试与验证
+
+- 新增 Vitest：广告 4 例（按钮/确认/逐行/失败/门控）+ 物流 5 例（入口/预填/提交 balanced/不平/toast/门控）；
+  门禁：**580/580**（48→50 测试文件），`vue-tsc --noEmit` 0 错，`npm run build` 通过；
+- E2E：`core-pages.spec.ts` 新追「头程分摊：未核算行给入口 …」，`full-interaction.spec.ts` 新追
+  「批量出建议走批量接口，逐规则展示结果」；本地全量 **159 passed**；
+- stub：`FREIGHT_BOARD.uncoveredList` 由 `[]` 改为 1 条 hasDeclaredFreight 行 + calculate route 桩（190 注册）；
+  stub-shape 0 RED，param-name 0，hygiene 0（tracked/untracked 两模式），release tools 91/91，entity_column_drift 0；
+- Mutation：5 项/切片（orbital confirm 红），均在还原后回归绿；
+- CI run `38698833333` 全绿（2026-10-15，HEAD `3053f1d`）。
+
+### 4. 下一步
+
+- ② 类剩余约 7 项：`updateWarehouse`（带守卫）仍 listed；`ad` 域 6 个 CRUD
+  （create/update Campaign/Creative/Targeting/batch）优先级已提高；
+- A5/E4–E5 真凭据仍然是唯一外设阻塞；业务侧其他待做与真实凭据视图见 §S10。
+- HANDOFF 顶部单入口与 §S9.12 队列已同步（§S14 完成回填）。
 
 ## S13. 交接：2026-10-15 供应商详情/编辑（getSupplier/updateSupplier 落地，已完成）
 
@@ -353,16 +413,18 @@ keyset 分页），前端 `listQuotes` 却零调用。故：
 
 ### 12. 下一步
 
-- **② 类剩余约 9 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
+- **② 类剩余约 7 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
   继续按「页面已有相邻功能、只差这一步」挑（已完成：店铺 CRUD、仓库编辑、Buybox 汇总、
   差异详情、RMA 详情、有效报价明细、货件详情/编辑、**供应商详情/编辑**）：
   - ~~`getShipment`/`updateShipment`~~ **已完成（2026-10-15，见 §S12）**：Procurement 已接
     `listShipments`/`createShipment`，本轮补单条详情 + 编辑（PUT），编辑不碰 status；
   - ~~`updateSupplier`~~ **已完成（2026-10-15，见 §S13）**：补编辑（PUT）+ 顺手落地同样孤儿的
     `getSupplier` 单条详情；评分与统计字段被证实是订单履约自动累计值，编辑白名单刻意排除；
-  - `calculateFreight`：LogisticsDashboard 已接 `compareQuotes`/`expireOutdatedQuotes`/`listQuotes`，
-    只差头程分摊（带 OPERATOR/ADMIN 守卫，接 UI 前先定入口门控）；
-  - `executeRules`：AdSearchTerms 已接 `executeRule`（单条），只差批量执行入口（同带 OPERATOR/ADMIN 守卫）。
+  - ~~`calculateFreight`~~ **已完成（2026-10-15，见 §S14）**：LogisticsDashboard 已接
+    `compareQuotes`/`expireOutdatedQuotes`/`listQuotes`，本轮补头程分摊（每未核算货件一行入口 +
+    OPERATOR/ADMIN 守卫）；
+  - ~~`executeRules`~~ **已完成（2026-10-15，见 §S14）**：AdSearchTerms 已接 `executeRule`（单条），
+    本轮补批量执行入口（独立面板逐行展示失败行 + 同样 OPERATOR/ADMIN 守卫）；
 - **权限注意**：`calculateFreight`/`executeRules`/`updateWarehouse` 带 `@RequireRole(OPERATOR/ADMIN)`，
   接 UI 时非该角色会 403（页面应做入口门控或如实提示）。
 - 纪律不变：TDD → 实现 → E2E → 变异验证 → 全量门禁 → 提交推送；
