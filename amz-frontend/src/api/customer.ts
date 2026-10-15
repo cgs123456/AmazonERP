@@ -198,6 +198,16 @@ export const matchReviewToOrder = (reviewId: number) =>
 export const followUpNegativeReview = (reviewId: number) =>
   request.post<void, ApiResponse<EmailTask>>(`/customer/email/negative-review/${reviewId}/followup`)
 
+/**
+ * 差评结案：DETECTED/MATCHED/CONTACTED → RESOLVED。
+ * <p>
+ * 后端 `@RequireRole({"OPERATOR","ADMIN"})`，且结案**幂等**（已 RESOLVED 时返回当前行），
+ * 但**非上述三态会被拒**（`IllegalStateException`「差评当前状态为 X，不可结案」）——
+ * 所以前端要按状态给按钮，别让用户去撞那条错误。
+ */
+export const resolveNegativeReview = (reviewId: number) =>
+  request.post<void, ApiResponse<NegativeReview>>(`/customer/email/negative-review/${reviewId}/resolve`)
+
 /* ==================== RMA ==================== */
 
 export const createRma = (body: Partial<Rma>) =>

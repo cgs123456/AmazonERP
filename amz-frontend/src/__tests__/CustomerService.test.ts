@@ -80,6 +80,7 @@ const happy = () => {
   vi.mocked(cust.triggerEmail).mockResolvedValue(ok({ id: 22 }))
   vi.mocked(cust.matchReviewToOrder).mockResolvedValue(ok({ matchedOrderId: '114-7712567-000001' }))
   vi.mocked(cust.followUpNegativeReview).mockResolvedValue(ok({ id: 23 }))
+  vi.mocked(cust.resolveNegativeReview).mockResolvedValue(ok({ id: 31, status: 'RESOLVED' }))
   vi.mocked(cust.solicitReviews).mockResolvedValue(ok(5))
   vi.mocked(cust.createRma).mockResolvedValue(ok({ id: 52 }))
   vi.mocked(cust.updateRmaStatus).mockResolvedValue(ok({ id: 51, status: 'APPROVED' }))
@@ -259,6 +260,42 @@ describe('CustomerService 视图（客服中心）', () => {
     expect(cust.matchReviewToOrder).not.toHaveBeenCalled()
     await clickBtn(wrapper, '确认执行')
     expect(cust.matchReviewToOrder).toHaveBeenCalledWith(31)
+  })
+
+  it('差评可以结案（此前 resolveNegativeReview 前端零调用，跟进完只能停在 CONTACTED）', async () => {
+    const wrapper = await mountPage()
+    await openTab(wrapper, '差评与索评')
+    await rowBtn(wrapper, '[data-panel="review"]', 0, '结案')
+    await clickBtn(wrapper, '确认执行')
+    expect(cust.resolveNegativeReview).toHaveBeenCalledWith(31)
+    // 结案后重拉列表，让状态标签从 CONTACTED/DETECTED 变成 RESOLVED
+    expect(cust.listNegativeReviews).toHaveBeenCalledTimes(2)
+  })
+
+  it('已结案的差评不再给结案按钮（后端结案幂等，前端不该诱导重复点）', async () => {
+    vi.mocked(cust.listNegativeReviews).mockResolvedValue(ok([
+      { id: 31, shopId: 1, asin: 'B0TEST01', reviewerName: 'Ana', reviewRating: 1, reviewTitle: 'Terrible',
+        reviewDate: '2026-09-28', verifiedPurchase: 1, status: 'RESOLVED', matchedOrderId: '114-7712567-000001',
+        contactEmailTaskId: 23 }
+    ], pageOf(null)))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '差评与索评')
+    const row = wrapper.find('[data-panel="review"]').findAll('tbody tr')[0]
+    expect(row.findAll('button').some((b: any) => b.text() === '结案')).toBe(false)
+  })
+
+  it('结案被后端拒绝时原因留在页面上，且不重拉列表掩盖', async () => {
+    // 后端对非法起始态抛 IllegalStateException → 网关回非 200 + message
+    vi.mocked(cust.resolveNegativeReview).mockResolvedValue({ code: 500, message: '差评当前状态为「RESOLVED」，不可结案', data: null } as any)
+    const wrapper = await mountPage()
+    await openTab(wrapper, '差评与索评')
+    const before = vi.mocked(cust.listNegativeReviews).mock.calls.length
+    await rowBtn(wrapper, '[data-panel="review"]', 0, '结案')
+    await clickBtn(wrapper, '确认执行')
+    expect(cust.resolveNegativeReview).toHaveBeenCalledWith(31)
+    // 失败不得重拉：重拉会把刚渲染出来的失败原因从屏幕上抹掉
+    expect(vi.mocked(cust.listNegativeReviews).mock.calls.length).toBe(before)
+    expect(wrapper.text()).toContain('不可结案')
   })
 
   it('事件下拉只列启用中模板的 triggerEvent，不在前端编枚举', async () => {

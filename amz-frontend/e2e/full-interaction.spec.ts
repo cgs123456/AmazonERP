@@ -905,6 +905,33 @@ test.describe('CustomerService 交互（客服中心）', () => {
     await expect(page.locator('.modal-mask')).toHaveCount(0)
     await expect(page.locator('.error-zone')).toHaveCount(0)
   })
+
+  test('差评可以结案：确认后走 resolve，状态翻成 RESOLVED 且按钮消失', async ({ page }) => {
+    const resolves: string[] = []
+    page.on('request', (r) => {
+      if (r.url().includes('/api/customer/email/negative-review/') && r.url().endsWith('/resolve')) {
+        resolves.push(r.method())
+      }
+    })
+    await page.goto('/customer')
+    await page.locator('.tab', { hasText: '差评与索评' }).click()
+    const panel = page.locator('.tab-panel[data-panel="review"]')
+    await expect(panel).toContainText('DETECTED')
+
+    await page.locator('.action-btn', { hasText: '结案' }).click()
+    // 取消时一条请求都不发
+    await page.locator('.modal-actions button', { hasText: '取消' }).click()
+    expect(resolves.length).toBe(0)
+
+    await page.locator('.action-btn', { hasText: '结案' }).click()
+    await page.locator('.modal-actions button', { hasText: '确认执行' }).click()
+    await expect.poll(() => resolves.length).toBe(1)
+    expect(resolves[0]).toBe('POST')
+    // 后端回 RESOLVED：状态标签翻过去，「结案」按钮按状态收回
+    await expect(panel).toContainText('RESOLVED')
+    await expect(page.locator('.action-btn', { hasText: '结案' })).toHaveCount(0)
+    await expect(page.locator('.error-zone')).toHaveCount(0)
+  })
 })
 
 test.describe('OrderAudit 交互（订单审单）', () => {

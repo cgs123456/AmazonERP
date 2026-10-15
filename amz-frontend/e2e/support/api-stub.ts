@@ -1371,6 +1371,16 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
   { match: /^\/customer\/email\/process\//, data: { processed: 1, failed: 0, skipped: 0 } },
   { match: /^\/customer\/review\/solicit\//, data: 2 },
   { match: /^\/customer\/email\/negative-review\/\d+\/match$/, data: { reviewId: 31, matchedOrderId: '114-7712567-000001' } },
+  // 差评结案（DETECTED/MATCHED/CONTACTED → RESOLVED）。桩做成有状态的：
+  // 真实后端 resolve 后会改库，再拉列表那一行就是 RESOLVED。静态桩会让
+  // 「结案后按钮收回」这条行为根本测不到（列表永远回 DETECTED，按钮永远在）。
+  { match: /^\/customer\/email\/negative-review\/\d+\/resolve$/, data: () => {
+      CUSTOMER_REVIEWS[0].status = 'RESOLVED'
+      return { ...CUSTOMER_REVIEWS[0] }
+    } },
+  // 差评结案（DETECTED/MATCHED/CONTACTED → RESOLVED）：回一条 RESOLVED 行，
+  // 页面据此把状态标签翻过去并让「结案」按钮消失
+  { match: /^\/customer\/email\/negative-review\/\d+\/resolve$/, data: { ...CUSTOMER_REVIEWS[0], status: 'RESOLVED' } },
 
   // ===== 审单 /order-audit =====
   // 顺序敏感：/rule/{id} 的宽模式必须排在 /rule/list/{shopId} 之后，否则列表请求会被当成 id 命中。

@@ -204,6 +204,7 @@
                   <td>
                     <button class="action-btn" :disabled="busy || !!r.matchedOrderId" @click="confirm(matchConfirm(r))">匹配订单</button>
                     <button class="action-btn" :disabled="busy" @click="followUp(r)">生成跟进邮件</button>
+                    <button v-if="r.status !== 'RESOLVED'" class="action-btn" :disabled="busy" @click="confirm(resolveConfirm(r))">结案</button>
                   </td>
                 </tr>
                 <tr v-if="!reviews.loading.value && !reviews.rows.value.length">
@@ -654,6 +655,26 @@ const followUp = async (r: NegativeReview) => {
     await Promise.all([loadReviews(), loadTasks()])
   }
 }
+
+/**
+ * 差评结案：DETECTED/MATCHED/CONTACTED → RESOLVED。
+ * <p>
+ * 后端 `resolveNegativeReview` 是 `@RequireRole(OPERATOR/ADMIN)` 且**幂等**，但只接受
+ * 上述三个起始态——其它态会被 `IllegalStateException` 拒掉。所以按钮按状态给，
+ * 不诱导用户去撞后端错误；已结案的行连按钮都不渲染。
+ * <p>
+ * 在此之前这条链路是断的：能匹配订单、能生成跟进邮件，却没有「结案」入口，
+ * 差评永远停在 CONTACTED，列表里看不出哪些已经处理完。
+ */
+const resolveConfirm = (r: NegativeReview) => ({
+  title: `结案差评 ${r.asin}`,
+  detail: '把差评标为已处理（RESOLVED）。结案可重复点击（后端幂等），'
+    + '但不再改变其它状态；只是不再出现在「待处理」的默认筛选里。',
+  run: async () => {
+    const ok = await call('差评结案', () => cust.resolveNegativeReview(r.id as number), () => undefined)
+    if (ok) await loadReviews()
+  }
+})
 
 const changeRmaStatus = async (r: Rma, ev: Event) => {
   const status = (ev.target as HTMLSelectElement).value
