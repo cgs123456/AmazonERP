@@ -1255,6 +1255,52 @@ test.describe('Procurement 交互（采购供应链）', () => {
     expect(puts[0]).not.toContain('status')
     expect(puts[0]).not.toContain('shopId')
   })
+
+  test('供应商：详情拉单条看完整主数据，编辑先拉单条再 PUT 且不碰评分与状态', async ({ page }) => {
+    const gets: string[] = []
+    const puts: string[] = []
+    page.on('request', (r) => {
+      const u = new URL(r.url())
+      if (r.method() === 'GET' && /\/procurement\/supplier\/\d+$/.test(u.pathname)) gets.push(u.pathname)
+      if (r.method() === 'PUT') puts.push(u.pathname + '|' + (r.postData() || ''))
+    })
+    await page.goto('/procurement')
+    await waitReady(page)
+    // 供应商 Tab 是默认 Tab，不用切
+    const row = page.locator('tbody tr', { hasText: '深圳市华强北电子' }).first()
+
+    // 详情：单条接口拉主数据，展示列表 9 列看不到的字段（邮箱/地址/1688 店页/备注）
+    await row.locator('button', { hasText: '详情' }).click()
+    const detail = page.locator('[data-panel="supplier-detail"]')
+    await expect(detail).toBeVisible()
+    await expect(detail).toContainText('zhang@hqb-electronics.cn')
+    await expect(detail).toContainText('华强北街道1001号')
+    await expect(detail).toContainText('ali-member-7788')
+    await expect(detail).toContainText('优先走顺丰到付')
+    await expect(detail).toContainText('评分/准时率/合格率/累计单数由订单履约自动累计')
+    await expect.poll(() => gets.length).toBe(1)
+    expect(gets[0]).toContain('/supplier/1')
+
+    // 编辑：再拉一次单条（回填取服务端真值，不是列表行），标题点名编辑、不给评分输入
+    await row.locator('button', { hasText: '编辑' }).click()
+    const modal = page.locator('.modal')
+    await expect(modal).toBeVisible()
+    await expect(modal.locator('h3')).toContainText('编辑供应商')
+    await expect(modal.locator('input')).toHaveCount(7)
+    await expect(modal).toContainText('自动累计')
+    await expect(modal).toContainText('唯一')
+    await expect.poll(() => gets.length).toBe(2)
+
+    // 提交走 PUT：body 带主数据字段，不带评分/状态/店铺（统计与状态各有归属）
+    await modal.locator('label', { hasText: '联系人' }).locator('input').fill('张经理（新）')
+    await modal.locator('button', { hasText: '提交' }).click()
+    await expect.poll(() => puts.length).toBe(1)
+    expect(puts[0]).toContain('/supplier/1')
+    expect(puts[0]).toContain('contactName')
+    expect(puts[0]).not.toContain('rating')
+    expect(puts[0]).not.toContain('status')
+    expect(puts[0]).not.toContain('shopId')
+  })
 })
 
 test.describe('ListingPriceRules 交互（调价规则）', () => {

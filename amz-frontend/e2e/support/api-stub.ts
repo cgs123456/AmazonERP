@@ -636,6 +636,20 @@ const PROCUREMENT_SHIPMENT_DETAIL = {
   status: 'CREATED', eta: '2026-10-30', actualArrival: null
 }
 
+/**
+ * 供应商单条详情与编辑提交（GET/PUT 同路径 /supplier/{id}）：含列表 9 列不展示的
+ * 邮箱/地址/1688 店页/会员号/备注。评分与三项统计照实体形状给（只读展示，
+ * 编辑白名单刻意排除——它们由订单履约自动累计）。
+ */
+const PROCUREMENT_SUPPLIER_DETAIL = {
+  id: 1, shopId: 1, supplierName: '深圳市华强北电子科技有限公司', supplierCode: 'SUP-001',
+  contactName: '张经理', contactPhone: '13800138001', contactEmail: 'zhang@hqb-electronics.cn',
+  address: '广东省深圳市福田区华强北街道1001号', alibabaShopUrl: 'https://shop1688.example/hqb',
+  alibabaMemberId: 'ali-member-7788', paymentTerms: '月结60天', rating: 4.5,
+  onTimeDeliveryRate: 95.5, qualityPassRate: 97.0, priceCompetitiveness: null, responseSpeed: null,
+  totalOrders: 15, totalAmount: 125000.0, status: 'ACTIVE', remark: '优先走顺丰到付'
+}
+
 /** 供应商付款单（/procurement/payment/list）。形状对齐后端 SupplierPayment 实体。 */
 const SUPPLIER_PAYMENTS = [
   { id: 51, shopId: 1, paymentNo: 'PAY-2026-0051', purchaseOrderId: 31, purchaseNo: 'PO-2026-0031',
@@ -1339,6 +1353,8 @@ const STUBS: Array<{ match: RegExp; data: StubData; page?: StubPage }> = [
     page: FULL_PAGE(1)
   },
   { match: /^\/procurement\/supplier\/list\//, data: PROCUREMENT_SUPPLIERS, page: FULL_PAGE(PROCUREMENT_SUPPLIERS.length) },
+  // 供应商单条详情与编辑提交同路径（GET 详情 / PUT 更新），桩按形状返回实体即可覆盖两者
+  { match: /^\/procurement\/supplier\/\d+$/, data: PROCUREMENT_SUPPLIER_DETAIL },
   { match: /^\/procurement\/plan\/list\//, data: PROCUREMENT_PLANS, page: FULL_PAGE(PROCUREMENT_PLANS.length) },
   { match: /^\/procurement\/order\/list\//, data: PURCHASE_ORDERS, page: FULL_PAGE(PURCHASE_ORDERS.length) },
   { match: /^\/procurement\/fba\/shipment\/list\//, data: PROCUREMENT_SHIPMENTS, page: FULL_PAGE(PROCUREMENT_SHIPMENTS.length) },

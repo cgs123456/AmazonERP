@@ -81,6 +81,8 @@
                 <td>{{ s.totalOrders ?? 0 }}</td>
                 <td><span class="status-tag" :class="supplierClass(s.status)">{{ s.status }}</span></td>
                 <td class="row-actions">
+                  <button class="action-btn" @click="loadSupplierDetail(s)">详情</button>
+                  <button class="action-btn" :disabled="busy || !s.id" @click="openEditSupplier(s)">编辑</button>
                   <button class="action-btn" @click="showKpi(s)">KPI</button>
                   <button class="action-btn" @click="openModal('offer', { supplierId: s.id, supplierName: s.supplierName })">关联 SKU</button>
                   <button class="action-btn" :disabled="busy" @click="setSupplierStatus(s, 'DISABLED')">停用</button>
@@ -102,6 +104,32 @@
             <div class="page-actions">
               <button v-if="suppliers.truncated.value" class="page-btn" :disabled="suppliers.loading.value"
                       @click="loadSuppliers(true)">加载下一页</button>
+            </div>
+          </div>
+
+          <!-- 单条主数据详情（getSupplier）：列表只有 9 列，邮箱/地址/1688 店页/备注看不到 -->
+          <div v-if="supplierDetail" class="sub-block" data-panel="supplier-detail">
+            <div class="sub-title">供应商 {{ supplierDetail.supplierName || supplierDetail.id }} 主数据（单条详情）</div>
+            <dl class="kv">
+              <dt>编码</dt><dd class="mono">{{ supplierDetail.supplierCode || '-' }}</dd>
+              <dt>联系人</dt><dd>{{ supplierDetail.contactName || '-' }}</dd>
+              <dt>联系电话</dt><dd class="mono">{{ supplierDetail.contactPhone || '-' }}</dd>
+              <dt>邮箱</dt><dd>{{ supplierDetail.contactEmail || '-' }}</dd>
+              <dt>地址</dt><dd>{{ supplierDetail.address || '-' }}</dd>
+              <dt>1688 店铺页</dt><dd class="mono">{{ supplierDetail.alibabaShopUrl || '-' }}</dd>
+              <dt>1688 会员号</dt><dd class="mono">{{ supplierDetail.alibabaMemberId || '-' }}</dd>
+              <dt>结算方式</dt><dd>{{ supplierDetail.paymentTerms || '-' }}</dd>
+              <dt>累计交易额</dt><dd>{{ supplierDetail.totalAmount ?? '-' }}</dd>
+              <dt>累计单数</dt><dd>{{ supplierDetail.totalOrders ?? 0 }}</dd>
+              <dt>评分</dt><dd>{{ supplierDetail.rating ?? '-' }}</dd>
+              <dt>准时率</dt><dd>{{ supplierDetail.onTimeDeliveryRate ?? '-' }}</dd>
+              <dt>合格率</dt><dd>{{ supplierDetail.qualityPassRate ?? '-' }}</dd>
+              <dt>状态</dt><dd>{{ supplierDetail.status || '-' }}</dd>
+              <dt>备注</dt><dd>{{ supplierDetail.remark || '无备注' }}</dd>
+            </dl>
+            <div class="inline-row">
+              <button class="action-btn" @click="supplierDetail = null">关闭</button>
+              <span class="muted">评分/准时率/合格率/累计单数由订单履约自动累计，不在编辑范围内</span>
             </div>
           </div>
 
@@ -769,7 +797,9 @@
           <label>联系邮箱<input v-model="form.contactEmail" /></label>
           <label>1688 offer 页<input v-model="form.alibabaShopUrl" /></label>
           <label>结算方式<input v-model="form.paymentTerms" /></label>
-          <label>评分(0-5)<input type="number" step="0.1" min="0" max="5" v-model="form.rating" /></label>
+          <!-- 评分只在新建时给初始值：编辑态它是订单履约自动累计的统计值，
+               放进来就是把 updateSupplierStats 算出的数冲掉 -->
+          <label v-if="!form.id">评分(0-5)<input type="number" step="0.1" min="0" max="5" v-model="form.rating" /></label>
         </div>
 
         <div v-else-if="modal === 'offer'" class="form-grid">
@@ -1075,6 +1105,7 @@ const pagerText = (list: CursorList<unknown>): string => {
 const suppliers = makeList<Supplier>()
 const supplierStatus = ref('')
 const supplierKeyword = ref('')
+const supplierDetail = ref<Supplier | null>(null)
 const offers = ref<SupplierProduct[]>([])
 const compareRows = ref<PriceCompareRow[]>([])
 const offerSku = ref('')
@@ -1087,6 +1118,47 @@ const loadSuppliers = (append = false) =>
     keyword: supplierKeyword.value || undefined,
     cursor
   }), '供应商列表', append)
+
+/**
+ * 供应商主数据可经「编辑」改写的字段白名单。
+ * 排除的字段各有归属，不能从主数据表单绕进去：
+ * - status：走「停用/启用/拉黑」专用按钮（后端单独端点）；
+ * - shopId：后端拒改店铺归属并强制按既有记录覆盖；
+ * - rating/onTimeDeliveryRate/qualityPassRate/totalOrders/totalAmount：
+ *   由订单履约自动累计（updateSupplierStats 按三单匹配/到货重算），
+ *   表单能改它们就是把统计冲掉——评分输入只保留在新建表单（初始值）。
+ */
+const SUPPLIER_EDITABLE_FIELDS = [
+  'supplierName', 'supplierCode', 'contactName', 'contactPhone', 'contactEmail',
+  'alibabaShopUrl', 'paymentTerms'
+] as const
+
+const pickSupplierEditable = (source: Record<string, any>) => {
+  const picked: Record<string, any> = {}
+  for (const key of SUPPLIER_EDITABLE_FIELDS) picked[key] = source[key]
+  return picked
+}
+
+/** 单条主数据详情（getSupplier）。失败时置空：不把上一家的详情留在页面上冒充这一家的。 */
+const loadSupplierDetail = async (s: Supplier) => {
+  if (!s.id) return
+  const data = await callApi('供应商详情', () => proc.getSupplier(s.id as number))
+  supplierDetail.value = data ?? null
+}
+
+/**
+ * 编辑入口（updateSupplier，PUT /supplier/{id}）。
+ * 先拉单条再回填——列表行可能已被他人改过，拿陈旧行回填等于把旧值写回去；
+ * 拉取被拒时不开弹窗，不用列表值拼一份看起来能提交的假表单。
+ */
+const openEditSupplier = async (s: Supplier) => {
+  if (!s.id) return
+  const data = await callApi('供应商详情', () => proc.getSupplier(s.id as number))
+  if (!data) return
+  // supplierName 只用于标题展示，不进提交体（提交按白名单挑字段）
+  form.value = { id: data.id, supplierName: data.supplierName, ...pickSupplierEditable(data as Record<string, any>) }
+  modal.value = 'supplier'
+}
 
 const loadOffers = async () => {
   const sku = offerSku.value.trim()
@@ -1746,17 +1818,26 @@ const modalNote = computed(() => {
           + '留空的字段保持原值不被修改（后端只更新非空字段）；'
           + '成本字段改动后需重新执行「费用分摊」，明细行的单位成本才会更新。'
         : '成本字段决定后续「费用分摊」按数量分摊的基数。'
+    case 'supplier':
+      return form.value.id
+        ? '编辑只改主数据：评分/准时率/合格率/累计单数由订单履约自动累计（改不动也不该在这里改）；'
+          + '状态请用「停用/启用/拉黑」按钮；'
+          + '编码同店铺内唯一（后端唯一索引），改成已存在的编码会被拒；'
+          + '留空的字段保持原值不被修改（后端只更新非空字段）。'
+        : ''
     case 'qc': return '后端按合格率判定：≥95% PASS，<90% FAIL，其间 CONDITIONAL（让步接收，状态仍会置 QC_PASSED）。'
     default: return ''
   }
 })
 
-/** 弹窗标题：货件新建与编辑共用一张表单，编辑时点名是编辑并带出货件号 */
+/** 弹窗标题：新建与编辑共用一张表单的模态，编辑时点名是编辑并带出标识 */
+const EDIT_MODAL_TITLE: Record<string, (form: Record<string, any>) => string> = {
+  shipment: f => `编辑 FBA 货件 ${f.shipmentNo || '#' + f.id}`,
+  supplier: f => `编辑供应商 ${f.supplierName || '#' + f.id}`
+}
 const modalTitle = computed(() => {
   if (!modal.value) return ''
-  if (modal.value === 'shipment' && form.value.id) {
-    return `编辑 FBA 货件 ${form.value.shipmentNo || '#' + form.value.id}`
-  }
+  if (form.value.id && EDIT_MODAL_TITLE[modal.value]) return EDIT_MODAL_TITLE[modal.value](form.value)
   return MODAL_TITLE[modal.value]
 })
 
@@ -1773,8 +1854,16 @@ const submitModal = async () => {
   let done = false
 
   if (key === 'supplier') {
-    if (!body.supplierName?.trim()) { pushError('新增供应商：名称必填'); return }
-    done = (await callApi('新增供应商', () => proc.createSupplier({ ...body, shopId }))) !== null
+    const label = body.id ? '编辑供应商' : '新增供应商'
+    if (!body.supplierName?.trim()) { pushError(`${label}：名称必填`); return }
+    if (body.id) {
+      // 编辑：只送可编辑字段白名单内的值（PUT /supplier/{id}）。
+      // 评分与三项统计是订单履约的自动累计值，放进来会把统计冲掉
+      done = (await callApi(label, () =>
+        proc.updateSupplier(body.id as number, pickSupplierEditable(body)))) !== null
+    } else {
+      done = (await callApi(label, () => proc.createSupplier({ ...body, shopId }))) !== null
+    }
   } else if (key === 'offer') {
     if (!body.sku?.trim()) { pushError('关联 SKU：SKU 必填'); return }
     done = (await callApi('关联供应商 SKU', () => proc.addSupplierProduct({ ...body, shopId }))) !== null
@@ -1815,7 +1904,11 @@ const submitModal = async () => {
 
   if (!done) return
   modal.value = null
-  if (key === 'supplier') await loadSuppliers()
+  if (key === 'supplier') {
+    // 编辑成功后，单条详情面板还是编辑前的快照——关掉，避免旧值和新列表混淆
+    if (body.id) supplierDetail.value = null
+    await loadSuppliers()
+  }
   else if (key === 'offer') await loadOffers()
   else if (key === 'plan') await loadPlans()
   else if (key === 'order' || key === 'qc') await loadOrders()

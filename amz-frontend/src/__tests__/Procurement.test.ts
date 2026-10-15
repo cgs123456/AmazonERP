@@ -16,6 +16,9 @@ vi.mock('@/api/procurement', async () => {
     getShipment: vi.fn(),
     createShipment: vi.fn(),
     updateShipment: vi.fn(),
+    createSupplier: vi.fn(),
+    getSupplier: vi.fn(),
+    updateSupplier: vi.fn(),
     suppliersBySku: vi.fn(),
     compareSuppliers: vi.fn(),
     supplierKpi: vi.fn(),
@@ -32,6 +35,7 @@ vi.mock('@/api/procurement', async () => {
 import {
   listSuppliers, listPlans, listOrders, listVoucherSourceOrders, listShipments, listShipmentItems,
   getShipment, createShipment, updateShipment,
+  createSupplier, getSupplier, updateSupplier,
   suppliersBySku, compareSuppliers, updateSupplierStatus,
   submitOrderTo1688, cancelOrder, receiveShipment, createPlan, approvePlan, listPlanApprovals
 } from '@/api/procurement'
@@ -48,13 +52,27 @@ const plain = <T,>(data: T) => ({ code: 200, message: '操作成功', data, _hid
 // PurchasePlan.planNo/suggestedQty/plannedQty、PurchaseOrder.orderNo/alibabaOrderNo、
 // FbaShipment.shipmentNo/destinationFbaCode、FbaShipmentItem.receivedQuantity/freightAllocation。
 const SUPPLIERS = paged([
+  // paymentTerms 是刻意放的陈旧哨兵值：编辑回填必须取 getSupplier 单条，
+  // 复用列表行就会把它带回表单（列表可能已被他人改过）
   { id: 1, shopId: 900000000000001000, supplierName: '深圳华强北电子', supplierCode: 'SUP-001',
     contactName: '张经理', contactPhone: '13800138001', rating: 4.5, onTimeDeliveryRate: 95.5,
-    qualityPassRate: 97.0, totalOrders: 15, totalAmount: 125000.0, status: 'ACTIVE' },
+    qualityPassRate: 97.0, totalOrders: 15, totalAmount: 125000.0, paymentTerms: '月结30天', status: 'ACTIVE' },
   { id: 2, shopId: 900000000000001000, supplierName: '义乌小商品供应链', supplierCode: 'SUP-002',
     contactName: '李小姐', rating: 3.8, onTimeDeliveryRate: 88.0, qualityPassRate: 92.5,
     totalOrders: 4, totalAmount: 21000.0, status: 'BLACKLISTED' }
 ])
+
+// getSupplier 单条：含列表表格不展示的主数据（邮箱/地址/1688 店页/会员号/备注/累计金额）。
+// rating/onTimeDeliveryRate/qualityPassRate/totalOrders/totalAmount 由后端按订单履约自动累计
+// （updateSupplierStats），编辑白名单刻意排除——表单能改它们就会把统计冲掉。
+const SUPPLIER_DETAIL = plain({
+  id: 1, shopId: 900000000000001000, supplierName: '深圳华强北电子', supplierCode: 'SUP-001',
+  contactName: '张经理', contactPhone: '13800138000', contactEmail: 'zhang@hqb-electronics.cn',
+  address: '广东省深圳市福田区华强北街道1001号', alibabaShopUrl: 'https://shop1688.example/hqb',
+  alibabaMemberId: 'ali-member-7788', paymentTerms: '月结60天', rating: 4.5,
+  onTimeDeliveryRate: 95.5, qualityPassRate: 97.0, priceCompetitiveness: null, responseSpeed: null,
+  totalOrders: 15, totalAmount: 125000.0, status: 'ACTIVE', remark: '优先走顺丰到付'
+})
 
 const PLANS = paged([
   { id: 11, planNo: 'PLAN-0011', shopId: 900000000000001000, sku: 'SKU-001', suggestedQty: 200,
@@ -509,6 +527,125 @@ describe('Procurement FBA 货件详情/编辑（getShipment + updateShipment）'
       shopId: '900000000000001000', status: 'CREATED'
     }))
     expect(updateShipment).not.toHaveBeenCalled()
+  })
+})
+
+describe('Procurement 供应商详情/编辑（getSupplier + updateSupplier）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    withShop()
+    vi.clearAllMocks()
+  })
+
+  const mountSupplierTab = async () => {
+    happyPath()
+    const wrapper = await mountPage()
+    // 供应商 Tab 是默认 Tab，无需切换
+    return wrapper
+  }
+
+  const rowButton = (wrapper: any, label: string) =>
+    wrapper.findAll('tbody tr')[0].findAll('button').find((b: any) => b.text() === label)
+
+  it('详情按钮拉单条，展示列表表格不展示的主数据（邮箱/地址/1688 店页/备注）', async () => {
+    const wrapper = await mountSupplierTab()
+    vi.mocked(getSupplier).mockResolvedValue(SUPPLIER_DETAIL)
+    await rowButton(wrapper, '详情')!.trigger('click')
+    await flushPromises()
+    expect(getSupplier).toHaveBeenCalledWith(1)
+    const detail = wrapper.find('[data-panel="supplier-detail"]')
+    expect(detail.exists()).toBe(true)
+    expect(detail.text()).toContain('zhang@hqb-electronics.cn')
+    expect(detail.text()).toContain('华强北街道1001号')
+    expect(detail.text()).toContain('https://shop1688.example/hqb')
+    expect(detail.text()).toContain('ali-member-7788')
+    expect(detail.text()).toContain('优先走顺丰到付')
+  })
+
+  it('详情失败按标签前缀点名原因，不铺空详情面板', async () => {
+    const wrapper = await mountSupplierTab()
+    vi.mocked(getSupplier).mockResolvedValue({ code: 403, message: '无权操作该店铺的供应商', data: null } as any)
+    await rowButton(wrapper, '详情')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-panel="supplier-detail"]').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('供应商详情：无权操作该店铺的供应商')
+  })
+
+  it('编辑入口先拉单条再回填：表单值来自单条而非列表行', async () => {
+    const wrapper = await mountSupplierTab()
+    vi.mocked(getSupplier).mockResolvedValue(SUPPLIER_DETAIL)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    expect(getSupplier).toHaveBeenCalledWith(1)
+    expect(wrapper.text()).toContain('编辑供应商')
+    // input 顺序：供应商名称 / 编码 / 联系人 / 联系电话 / 邮箱 / 1688 店页 / 结算方式
+    const inputs = wrapper.findAll('.form-grid input')
+    expect(inputs.length).toBe(7)
+    expect((inputs[6].element as HTMLInputElement).value).toBe('月结60天')
+    expect((inputs[6].element as HTMLInputElement).value).not.toBe('月结30天')
+  })
+
+  it('编辑拉取被拒时不开弹窗：不拿列表陈旧值回填出一份假表单', async () => {
+    const wrapper = await mountSupplierTab()
+    vi.mocked(getSupplier).mockResolvedValue({ code: 404, message: '供应商不存在', data: null } as any)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.modal').exists()).toBe(false)
+    expect(wrapper.find('.error-zone').text()).toContain('供应商详情：供应商不存在')
+  })
+
+  it('编辑提交走 PUT：body 不碰评分/状态/店铺等系统管辖字段', async () => {
+    const wrapper = await mountSupplierTab()
+    vi.mocked(getSupplier).mockResolvedValue(SUPPLIER_DETAIL)
+    vi.mocked(updateSupplier).mockResolvedValue(SUPPLIER_DETAIL)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('.form-grid input')[0].setValue('深圳华强北电子（新名）')
+    await clickText(wrapper, '提交')
+    await flushPromises()
+    expect(updateSupplier).toHaveBeenCalledTimes(1)
+    expect(updateSupplier).toHaveBeenCalledWith(1, expect.objectContaining({
+      supplierName: '深圳华强北电子（新名）'
+    }))
+    const body = vi.mocked(updateSupplier).mock.calls[0][1] as Record<string, unknown>
+    // 评分与三项统计由订单履约自动累计（updateSupplierStats），表单能改就会把统计冲掉
+    expect(body).not.toHaveProperty('rating')
+    expect(body).not.toHaveProperty('onTimeDeliveryRate')
+    expect(body).not.toHaveProperty('qualityPassRate')
+    expect(body).not.toHaveProperty('totalOrders')
+    expect(body).not.toHaveProperty('totalAmount')
+    // 状态走停用/启用/拉黑专用按钮，店铺归属后端按既有记录定
+    expect(body).not.toHaveProperty('status')
+    expect(body).not.toHaveProperty('shopId')
+    expect(createSupplier).not.toHaveBeenCalled()
+    expect(listSuppliers).toHaveBeenCalledTimes(2)
+  })
+
+  it('编辑弹窗不给评分输入：评分是自动累计的统计值，并披露编码唯一与留空语义', async () => {
+    const wrapper = await mountSupplierTab()
+    vi.mocked(getSupplier).mockResolvedValue(SUPPLIER_DETAIL)
+    await rowButton(wrapper, '编辑')!.trigger('click')
+    await flushPromises()
+    const modal = wrapper.find('.modal')
+    expect(modal.text()).toContain('评分')
+    expect(modal.text()).toContain('唯一')
+    expect(modal.text()).toContain('留空')
+    // 新建表单 8 个输入（含评分），编辑 7 个——评分输入整个不出现
+    expect(modal.findAll('input').length).toBe(7)
+  })
+
+  it('新建供应商仍保留评分输入（初始值），不受编辑白名单影响', async () => {
+    const wrapper = await mountSupplierTab()
+    vi.mocked(createSupplier).mockResolvedValue(plain({ id: 99, supplierCode: 'SUP-0099' }))
+    await clickText(wrapper, '新增供应商')
+    expect(wrapper.find('.modal').findAll('input').length).toBe(8)
+    await wrapper.find('.form-grid input').setValue('新供应商')
+    await clickText(wrapper, '提交')
+    await flushPromises()
+    expect(createSupplier).toHaveBeenCalledWith(expect.objectContaining({
+      shopId: '900000000000001000', rating: 4.0
+    }))
+    expect(updateSupplier).not.toHaveBeenCalled()
   })
 })
 
