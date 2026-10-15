@@ -11,15 +11,16 @@
 
 ## 项目现状一句话
 
-**本机门禁全绿（HEAD `0fb183d` 之上，工作区见 §S12；推送后 CI 结论以 `gh run list` 为准）**：
-前端 vitest **564/564**（含 FBA 货件详情/编辑 +7）+ vue-tsc 0 错 + E2E **160 passed**
-（另有 3 例已知冷启动抖动，单跑全过——坑 19 家族，与本轮无关）；
-stub-shape 0 RED（**188 注册/121 过**，+2 为新发货单端点）、param-name 0 findings、
-hygiene 0 / entity_column_drift 0 / release tools 全 OK；后端零改动（纯前端班）。
-上一班 CI 全绿基线：run `38571169004`（2026-10-14，HEAD `a4bb626`）11 job 全过——后端
-2283/0F/0E/2S、前端 vitest 557/557 + E2E 159 passed、迁移 65 / 活表 116 / 实体 110 / 0 漂移。
+**CI 全绿（run `38664125678`，2026-10-15，HEAD `497526e`）**：11 个 job 全过（test / frontend /
+hygiene / stub-shape / param-name / docker / checkstyle 双档 / mysql-import / runtime-smoke /
+synthetic-data / release-manifest / ad-v7-preflight-gate）。本机实测：前端 vitest **564/564**
+（含 FBA 货件详情/编辑 +7）+ vue-tsc 0 错 + E2E **160 passed**（另有 3 例已知冷启动抖动，
+单跑全过——坑 19 家族）、stub-shape RED 0（**188 注册/121 过**）、param-name 0、hygiene 0、
+entity_column_drift 0、release tools 全 OK；后端零改动（纯前端班）。
+上一班基线（run `38571169004`，HEAD `a4bb626`）：后端 2283/0F/0E/2S、vitest 557/557 +
+E2E 159 passed、迁移 65 / 活表 116 / 实体 110 / 0 漂移。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S12.9。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S12.5。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
@@ -81,7 +82,10 @@ modalNote 另披露两条边界：**留空字段保持原值**（后端按非空
   `calculateFreight`/`executeRules`（带 `@RequireRole(OPERATOR/ADMIN)`，接 UI 前先定入口
   门控还是如实提示）；广告域 CRUD 6 个未点名优先级。
 - 真实凭证仍缺（非代码可推进）。
-- **CI 结论以推送后 `gh run list --branch master --limit 1` 为准**（本班未推前不预写绿）。
+- **推送通道备忘（本班）**：本机代理 `127.0.0.1:7897` 一度停摆（Test-NetConnection False），
+  配置通道 push 失败；改用 `git -c http.proxy= push`（直连）成功。直连 TCP 握手通但偶发
+  reset——同坑 54/55 口径：两条通道各试一次即换，不连珠重试。
+- **CI**：run `38664125678`（HEAD `497526e`）**11 job 全绿**，本班收口。
 
 ## S9. 交接：2026-10-14 通知红点 + 用户管理 + 店铺管理 + 仓库编辑 + 四个详情/汇总/明细（已完成）
 
