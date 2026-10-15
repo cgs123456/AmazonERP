@@ -1,7 +1,10 @@
 # HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S17）：仓库新建/编辑入口补角色门禁——后端 `POST/PUT /logistics/warehouse`
+> 本次更新（§S18）：清空 ② 类队列后**重跑 `endpoint_coverage_audit.py` 又抓到一个真缺口**——
+> 差评结案 `resolveNegativeReview`（差评能匹配订单、能生成跟进邮件，却不能结案，
+> 记录永远停在 CONTACTED）。已落地，候选清单里现已无「该接而未接」的用户面向端点。
+> 上一班（§S17）：仓库新建/编辑入口补角色门禁——后端 `POST/PUT /logistics/warehouse`
 > 是 `@RequireRole({"OPERATOR","ADMIN"})`，而这两个按钮此前无任何门控，VIEWER 点了只会 403。
 > 同时纠正一个过期口径：**`updateWarehouse` 早在 §S9.4（`8ad6c43`）就接完了**，
 > §S15/§S9.12 队列里「仍无 UI」是漏回填，真正缺的只有守卫。
@@ -36,13 +39,12 @@
 
 ## 项目现状一句话
 
-**CI 全绿（run `38721593255`，2026-10-15，HEAD `76c008f`）**：11 个 job 全过。
-本机门禁同样全绿（纯前端班，无 Java/SQL 改动）：前端 vitest **600/600**（含仓库门禁 +4）+
-vue-tsc 0 错 + `npm run build` 通过 +
-E2E Warehouse **7/7**（`--repeat-each=3` 15/15）；stub-shape RED 0（**195 注册/131 可比**）、
+**CI 以推送后 run 为准；本班 HEAD `e86856d`**（纯前端班，无 Java/SQL 改动）。
+本机门禁全绿：前端 vitest **603/603**（含差评结案 +3）+ vue-tsc 0 错 + `npm run build` 通过 +
+E2E CustomerService **10/10**；stub-shape RED 0（**197 注册/131 可比**）、
 param-name 0、hygiene 0（两种模式）、entity_column_drift **110 实体/0 漂移**、release tools **91/91**；
 endpoint 自测 25/25。
-上一班（HEAD `1ac8f85`，CI run `38717713962` 全绿）：vitest 596/596、AdManager E2E 9/9。
+上一班（run `38721593255` 全绿，HEAD `76c008f`）：vitest 600/600、Warehouse E2E 7/7。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
 业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（见 §S9.12 / §S17.4）。
 
@@ -175,6 +177,65 @@ endpoint 自测 25/25。
 - 后续只剩**真凭据阻塞**：A5/E4–E5 端到端验收（runbook §3）。
 - 业务侧待做见 §S10。
 - HANDOFF 顶部单入口与 §S9.12 已同步（§S17 完成回填）。
+
+## S18. 交接：2026-10-15 差评结案 `resolveNegativeReview`（② 类之外又抓一个真缺口）
+
+> 本段是**当前会话的交接**。§S17 清空 ② 类队列后，跑了一遍
+> `endpoint_coverage_audit.py`（不设 `--self-test`，直接看候选），**又抓到一个真缺口**。
+> 仍为**纯前端班**，无 Java/SQL 改动。
+
+### 1. 怎么找到的（这个方法值得留下）
+
+② 类队列来自 §S8 的人工分类，只覆盖当时枚举到的 41 个候选；
+`endpoint_coverage_audit.py` 是**按后端 controller 全量扫**的，两者不是同一个集合。
+清空队列后再跑一次审计，才能发现「队列说自己空了，其实还有漏网的真缺口」。
+
+但**候选清单在这类端点是过度报的**，必须逐条判：
+- `POST /logistics/fulfillment/check` 与 `/fulfillment/outbound`：`@InternalServiceAccess("amz-service-order")`，
+  **仅内部服务令牌可达**，本就不该有用户界面——照着接 UI 是造一个用户点了必然 403 的按钮；
+- `/spapi/*` 一批：等真实凭证，属 §S10 的 🔴 类；
+- `/ai/*`、`/ops/selection/*`、`/ops/rank/capture` 等：同属 🔴；
+- `/order/list/export`、`/report/v2/profit/export/{shopId}`：导出已在 §S7c 交付
+  （走的是页面侧调用路径），审计按路径名匹配判成候选，属误报。
+
+真正没接的只有 **`POST /customer/email/negative-review/{reviewId}/resolve`**。
+
+### 2. 缺口定性
+
+差评链路原本是**断的**：能匹配订单（`matchReviewToOrder`）、能生成跟进邮件
+（`followUpNegativeReview`），但**没有结案入口**——记录永远停在 CONTACTED，
+列表里看不出哪些已经处理完。后端 `resolveNegativeReview` 早就写好：
+`@RequireRole({"OPERATOR","ADMIN"})`、结案**幂等**、只接受
+`DETECTED/MATCHED/CONTACTED` 三个起始态（其它态抛 `IllegalStateException`
+「差评当前状态为 X，不可结案」）。
+
+### 3. 落地内容
+
+- `api/customer.ts`：补 `resolveNegativeReview`，注释写清三个起始态与幂等语义
+  （前端据此决定按钮怎么给，而不是让用户去撞那条错误）；
+- `CustomerService.vue`：差评行按状态给「结案」按钮——**已 RESOLVED 的行整个不渲染按钮**；
+  二次确认后提交，**成功才重拉列表**（失败时重拉会把刚渲染出来的失败原因从屏幕上抹掉）；
+- E2E 桩改成**有状态**：resolve 后 `CUSTOMER_REVIEWS[0].status` 真的变 RESOLVED。
+  静态桩下「结案后按钮收回」这条行为根本测不到——列表永远回 DETECTED，按钮永远在。
+
+### 4. 测试与验证
+
+- 新增 Vitest **3 例**：结案走 resolve 并重拉 / 已结案不给按钮 / 被拒时原因留在页面上且不重拉；
+  全量 **603/603**（50 文件）。
+- E2E：新追「差评可以结案」——先点取消证明不发请求，再确认后断言 `POST .../resolve`
+  发出、状态翻 RESOLVED、按钮消失；CustomerService 相关 **10/10**。
+- 门禁：`vue-tsc --noEmit` 0 错、`npm run build` 通过、stub-shape RED 0（**197 注册**，
+  195→197）、param-name 0、hygiene 0（两种模式）、entity_column_drift 110 实体 0 漂移、
+  release tools 91/91、endpoint 自测 25/25。
+- 变异验证 2 项逐一红后还原：按钮不按状态收 / 失败也重拉。
+- E2E 全量 143 passed / 2 failed，2 例单跑与串跑均过，属坑 19 冷启动抖动家族。
+
+### 5. 下一步
+
+- **候选清单里已无「该接而未接」的用户面向端点**（见 §1 的逐条判定）。
+- 剩余全是 🔴 需凭证（A5/E4–E5）或已拍板不做（§S10）。
+- 若还要找活：下一个可做的是把 §S10 的 🔴 类逐条做**前端边界披露**复查
+  （确认每处都如实说明「未接入」而不是留空），但那属打磨，不是缺口。
 
 ## S14. 交接：2026-10-15 广告 `executeRules` + 物流 `calculateFreight` 接孤儿 API（已完成）
 
