@@ -1,26 +1,89 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件详情/编辑（2026-10-15 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑（2026-10-15 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S12）：接上 FBA 货件的两个孤儿 api——`getShipment`（单条主数据详情）与
-> `updateShipment`（编辑，PUT）。此前 Procuremement 只接了 list/create/status：详情面板无从
-> 看全主数据（列表只有 9 列），「编辑货件」这条路径完全不存在（弹窗保存恒走新建）。落点上
-> 刻意不让主数据编辑碰 `status`——状态推进有专用端点（确认发货带承运商/运单号、标记到货带
-> 实际到货日），从表单绕进去会造第二条写路径。详见 §S12。
-> 上一班（§S9）：通知未读红点、用户管理角色分配收口、店铺管理页、仓库编辑、Buybox 汇总、
-> 费用差异详情、RMA 详情、有效报价明细。
+> 本次更新（§S13）：接上供应商域两个孤儿 api——`getSupplier`（单条主数据详情）与
+> `updateSupplier`（编辑，PUT），承接 §S12 的货件模式（详情+编辑、先拉单条再回填、
+> 提交按白名单挑字段）。真正的结构性发现是**评分与三项统计是 `updateSupplierStats`
+> 按订单履约自动累计的**——新建表单的评分输入只是初始值，编辑白名单刻意排除
+> rating/onTimeDeliveryRate/qualityPassRate/totalOrders/totalAmount，否则表单会把
+> 统计冲掉。详见 §S13。
+> 上两班（§S12/§S9）：FBA 货件详情/编辑、通知未读红点、用户管理角色分配收口、
+> 店铺管理页、仓库编辑、Buybox 汇总、费用差异详情、RMA 详情、有效报价明细。
 
 ## 项目现状一句话
 
 **CI 全绿（run `38664125678`，2026-10-15，HEAD `497526e`）**：11 个 job 全过（test / frontend /
 hygiene / stub-shape / param-name / docker / checkstyle 双档 / mysql-import / runtime-smoke /
-synthetic-data / release-manifest / ad-v7-preflight-gate）。本机实测：前端 vitest **564/564**
-（含 FBA 货件详情/编辑 +7）+ vue-tsc 0 错 + E2E **160 passed**（另有 3 例已知冷启动抖动，
-单跑全过——坑 19 家族）、stub-shape RED 0（**188 注册/121 过**）、param-name 0、hygiene 0、
-entity_column_drift 0、release tools 全 OK；后端零改动（纯前端班）。
+synthetic-data / release-manifest / ad-v7-preflight-gate）。本班实测（HEAD 之上，推送后 CI
+结论以 `gh run list` 为准）：前端 vitest **571/571**（含供应商详情/编辑 +7）+ vue-tsc 0 错 +
+采购域 E2E **15/15**；stub-shape RED 0（**189 注册/130 可比**）、param-name 0、hygiene 0、
+entity_column_drift 0、release tools **91/91**；后端零改动（纯前端班）。
 上一班基线（run `38571169004`，HEAD `a4bb626`）：后端 2283/0F/0E/2S、vitest 557/557 +
 E2E 159 passed、迁移 65 / 活表 116 / 实体 110 / 0 漂移。
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S12.5。
+业务侧剩余待做见 §S10；孤儿 api 清理的 ② 类剩余项见 §S9.12 / §S13.5。
+
+## S13. 交接：2026-10-15 供应商详情/编辑（getSupplier/updateSupplier 落地，已完成）
+
+> 本段是**当前会话的交接**。承接 §S9.12「下一步」第 2 项：`updateSupplier`——
+> 「Procurement 已接 createSupplier/listSuppliers，只差编辑」。核实结论：
+> 后端早已就绪（归属校验 + 拒改店铺 + `updateById` 只写非空字段），且 **`getSupplier`
+> 也是零调用孤儿**（§S9.12 未登记，本班顺手落地，模式与 §S12 货件相同），**无角色守卫**、
+> 不涉门控未决项。本班仍为**纯前端班**，无 Java/SQL 改动。
+
+### 1. 定性结论（回应 §S9.12「是否真实业务需求」）
+
+供应商主数据的联系人/结算方式/1688 店铺页**页面在展示却没有修改入口**（换联系人、
+改结算周期是常态），与 §S9.4 仓库编辑同型——是补标准 CRUD 缺口，
+非「为接 api 造功能」。但有一个 §S9.12 没预见的结构性约束（见 §2），编辑范围因此
+比「新建表单同款字段」更窄。
+
+### 2. 落地内容
+
+| 能力 | 落点 | 行为 |
+|---|---|---|
+| `getSupplier` 详情 | 供应商列表行「详情」按钮 + `[data-panel="supplier-detail"]` 面板 | 单条接口拉主数据全字段（列表 9 列看不到的邮箱/地址/1688 店页/会员号/备注/累计金额）；失败按「供应商详情：」前缀点名且**不铺面板** |
+| `updateSupplier` 编辑 | 行内「编辑」按钮 + 新建同款弹窗（标题变「编辑供应商 <名称>」） | **先拉单条再回填**；拉取被拒不开弹窗；提交走 PUT，成功后关掉过期详情面板并刷新列表 |
+
+### 3. 关键设计：评分与统计字段不进编辑白名单
+
+`rating/onTimeDeliveryRate/qualityPassRate/totalOrders/totalAmount` 由
+`updateSupplierStats` 按订单履约**自动累计重算**（评分=0.4·准时率+0.4·合格率+0.1·价格竞争力+0.1·响应速度）。
+提交体白名单 `SUPPLIER_EDITABLE_FIELDS` 只有
+supplierName/supplierCode/contactName/contactPhone/contactEmail/alibabaShopUrl/paymentTerms——
+**评分输入仅保留在新建表单（初始值），编辑态整个不渲染**。modalNote 披露三条边界：
+统一索引（同店铺编码唯一，撞车会被拒）、留空保持原值（后端只写非空字段）、
+统计字段自动累计。`status` 同样不进城（走停用/启用/拉黑专用按钮）。
+
+### 4. 测试与验证
+
+- **前端 vitest +7 例**（修前 7 红）：详情拉单条展示隐藏字段 / 详情失败点名且不铺面板 /
+  编辑先拉单条回填（列表行埋 `paymentTerms` 陈旧哨兵，断言表单取单条值）/
+  编辑拉取被拒不开弹窗 / 编辑走 PUT 且 body 不含 rating·三项统计·status·shopId /
+  编辑弹窗 7 个输入（无评分）并披露唯一/留空 / 新建保留评分输入走 create；
+- **E2E +1 条**：供应商 Tab（默认 Tab）——详情 GET `/procurement/supplier/1`、
+  面板含邮箱/地址/会员号/备注；编辑再 GET 后 PUT，断言 body 含 contactName、
+  **不含 rating/status/shopId**；
+- **桩**：新登记 `/procurement/supplier/{id}`（GET 详情与 PUT 响应同路径同形状，
+  `Result<Supplier>`），此前 `list` 桩也顺手确认仍与表格列数一致；
+- **变异验证 5 处均红**（均已还原）：详情复用列表行（2 红）/ 编辑不预拉单条（2 红）/
+  编辑恒走 create（1 红）/ 白名单带 rating 等统计字段（1 红，断言点名 `rating`）/
+  去掉编辑入口（4 红）；
+- **门禁**：vitest **571/571**（564+7）、vue-tsc 0 错、采购域 E2E 15/15（含本班+上轮新测）、
+  stub-shape RED 0（**189 注册/130 可比**）、param-name 0、hygiene 0（两种模式）、
+  drift 0、release tools **91/91**；
+- **全量 E2E 判据**：本机三轮失败集合互不相同（3 例 / 4 例 / 0 例），彼此无关、与本轮改动
+  无关的域（Finance/多平台/核心页），采购域 15/15、all-pages + core-pages 单跑全绿——
+  属已知冷启动抖动（坑 19 家族，见 §S9.9），判据以 CI frontend 腿为准。
+
+### 5. 卡住的问题 / 下一步
+
+- ② 类剩余：`calculateFreight`（比价 Tab 头程分摊重算）/`executeRules`（搜索词规则批量
+  执行）——两者带 `@RequireRole(OPERATOR/ADMIN)`，但仓库已有成熟门控模式
+  （`canUseRole` +「未知角色不隐藏、后端为权威」，见 `utils/identity.ts` + §S7d 取消付款
+  按钮级门控先例）：**门控已不再是未决项**，下一班可直接按该模式接；
+  广告域 CRUD 6 个未点名优先级。
+- 真实凭证仍缺（非代码可推进）。
 
 > 注：上段的数字是**快照**，每次改 HANDOFF 都会推进一步。判定"当前 CI 是否全绿"以
 > `git log -1` + `gh run list --branch master --limit 1` 为准，不要把上面当作权威指针。
@@ -292,11 +355,11 @@ keyset 分页），前端 `listQuotes` 却零调用。故：
 
 - **② 类剩余约 9 项**，已核实**全部候选的后端都真就绪**（用只读子代理逐个核过，非占位实现）。
   继续按「页面已有相邻功能、只差这一步」挑（已完成：店铺 CRUD、仓库编辑、Buybox 汇总、
-  差异详情、RMA 详情、有效报价明细、**货件详情/编辑**）：
+  差异详情、RMA 详情、有效报价明细、货件详情/编辑、**供应商详情/编辑**）：
   - ~~`getShipment`/`updateShipment`~~ **已完成（2026-10-15，见 §S12）**：Procurement 已接
     `listShipments`/`createShipment`，本轮补单条详情 + 编辑（PUT），编辑不碰 status；
-  - `updateSupplier`：Procurement 已接 `createSupplier`/`listSuppliers`，只差编辑（注意 supplier 无「死分支」，
-    需确认页面是否该加编辑入口）；
+  - ~~`updateSupplier`~~ **已完成（2026-10-15，见 §S13）**：补编辑（PUT）+ 顺手落地同样孤儿的
+    `getSupplier` 单条详情；评分与统计字段被证实是订单履约自动累计值，编辑白名单刻意排除；
   - `calculateFreight`：LogisticsDashboard 已接 `compareQuotes`/`expireOutdatedQuotes`/`listQuotes`，
     只差头程分摊（带 OPERATOR/ADMIN 守卫，接 UI 前先定入口门控）；
   - `executeRules`：AdSearchTerms 已接 `executeRule`（单条），只差批量执行入口（同带 OPERATOR/ADMIN 守卫）。
