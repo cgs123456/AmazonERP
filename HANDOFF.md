@@ -1,6 +1,19 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空 + WMS 写入口门控与业务拒绝修复 + 四页写入口按后端实际角色集分三类处理（2026-10-15 最新更新）
+# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空 + WMS 写入口门控与业务拒绝修复 + 四页写入口按后端实际角色集分三类处理 + Finance 拆分与快照缺口披露（2026-10-16 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
+> 本次更新（§S21，2026-10-16）：处理 §S20.6 的三条待办。**`Finance.vue` 1489 → 762 行**
+> （六个提交，每步保持全绿）：抽出 `useCursorList`/`FinanceCursorBar`/`useFinanceErrors`/
+> `useFinanceApi`/`FinanceConfirmBox`/`FinanceSettlementOps`/`FinanceClaimFlow`，
+> 「首次进入才拉」的把关与错误条留在页壳。**两个子组件始终挂载、靠 `tab` prop 决定
+> 渲染哪个面板**——`v-if` 挂卸载会让「切走再切回」变成空表 + 空态文案（主动误导）。
+> **`amz_warehouse_stock` 的原待办前提不准确**：写入端点存在，只是零调用者且有
+> 明确的有意不接决策记录；改为在库龄空态披露缺口，不做手填入口。
+> 另修正 `identity.ts` 财务写端点计数 14→15（漏数了 procurement 凭证生产者）。
+> `§S20.6` 第 1 条（后端角色门禁）仍是产品决策，本班交付了影响分析，见 §S21.5。
+> 验证：vitest **645/645**、vue-tsc 0 错、`vite build` 通过、五个变异全部由断言打红、
+> Finance E2E 8/8、仓库门禁 + release tools 91/91 全绿。
+> 上一班（§S20/§S20.7）：四页写入口按「后端到底锁没锁」分三类处理，并自纠错
+> 「读被写门控一起拦掉」。详见下方。
 > 本次更新（§S20）：§S19.6 那条「四页补 `canUseRole` 门控」的待办已落地，**同时更正它的错误前提**——
 > 逐条读 `@RequireRole` 后发现四页并非都锁着 OPERATOR/ADMIN：OrderList 与 Finance 的后端确实锁了，
 > 而 ListingMonitor 与 CustomerService 的**绝大多数写端点根本没有 `@RequireRole`**，VIEWER 与
@@ -3460,3 +3473,125 @@ const call  = async <T>(label, fn, apply) => { if (financeWriteBlocked(label)) r
 判断方法只有一种——把该页每个 API 的 URL 和 method 取出来，逐个对后端
 `public Result<...>` 前的注解块。§S20.7.1 那张表就是这么做出来的，
 25 个端点无一漏。**不要凭「这个方法看起来像写」或「旁边那个方法有注解」推断。**
+
+---
+
+## §S21. 交接：2026-10-16 P1/P2 四项处理（快照披露 / Finance 拆分 / E2E flake 记录 / 口径防复发）
+
+> **纯前端班**，无 Java/SQL 改动。承接 §S20.6 的三条待办，逐条给出落地或判定。
+> 结论先说：**P1-2（Finance 拆分）做完了，1489 → 762 行**；P1-1 的前提更正为
+> 「有意未接线」并只补披露；P1-3 只记录不修；P2-1 固化成脚本。
+
+### 1. P1-1 `amz_warehouse_stock` 恒空 —— **前提不准确，且不该在本班修**
+
+原待办写「无写入方」。逐条核实后：**写入方存在**，
+`POST /logistics/warehouse/stock` → `MultiWarehouseController:40` →
+`MultiWarehouseServiceImpl` → `warehouseStockMapper.insert`；真实情况是这个端点
+**零调用者**（前端 `src/` 全量 grep 无命中，后端无定时任务写它），且
+`api/warehouseAlerts.ts:13-15` 有一份**明确的有意不接的决策记录**（手工写快照会让
+任何人往快照表造数、覆盖同一 sku+仓 的历史口径）。所以这是「有意未接线 + 无替代
+数据源」，不是实现遗漏。
+
+**做的是**：把缺口说在明处。`Warehouse.vue` 的库龄空态（原「尚未加载：切到本标签
+会自动算一次」）补上「快照只能由 `POST /logistics/warehouse/stock` 写入，目前没有
+自动同步方（入/出库单写的是各自的表，不回写快照）」，并说明**前端刻意不提供手填
+入口**的理由。守卫：`WarehouseAging.test.ts` 新增用例，断言文本包含
+「快照是空的」「POST /logistics/warehouse/stock」「没有自动同步方」。
+
+**明确不做**：前端手填快照表单、定时任务伪造数据。要补数据得先有「海外仓回传」
+这个外部数据源。
+
+### 2. P1-2 `Finance.vue` 拆分 —— 做完，1489 → 762 行
+
+按 §S20.6 第 3 条的约束做（**`read()`/`call()` 一起搬，不按 tab 横切**）。六个提交，
+每步单独绿：
+
+| 提交 | 内容 | Finance.vue |
+|---|---|---|
+| `43582e4` | `useCursorList.ts` + `FinanceCursorBar.vue` + `useFinanceErrors.ts` + `useFinanceApi.ts` | 1489 → 1369 |
+| `6761a30` | `FinanceConfirmBox.vue`（确认弹窗从 tax 模板里搬出） | 1369 → 1366 |
+| `74b4c99` | `FinanceSettlementOps.vue`（回款+结算）+ `useCursorLoader()` | → 1180 |
+| `d172787` | 护栏：补 `listClaims`/`listDiscrepancies` 回读断言 | 1180 |
+| `2aae5b6` | `FinanceClaimFlow.vue`（差异+索赔+登记表单）+ 清死 CSS | → 762 |
+| `0923624` | `identity.ts` 财务写端点计数 14→15 | 762 |
+
+留在 `Finance.vue` 的 4 个 tab：voucher / profit / skuprofit / tax（无游标状态、
+无跨 tab 刷新，且 voucher 的 `loadVouchers` 被 `onMounted` 与 tax 的补数调用）。
+
+**关键设计决策（下一班改这里之前先读）**：
+
+1. **两个子组件都「始终挂载」，靠 `tab` prop 决定渲染哪个面板**，不是父组件
+   `v-if` 挂卸载。原因：清单数据必须活过「切走再切回」——`v-if` 挂卸载会让切回来
+   变成**空表 + 空态文案**（「暂无回款记录：需先同步结算并重算回款」），那是主动
+   误导，不是没数据。内部 `v-if` 保证 DOM 只在该 tab 激活时存在，选择器行为不变。
+2. **「首次进入才拉」的把关只在页壳**（`loadedTabs`），子组件只 `defineExpose`
+   loader、不自己 watch tab。两处把关 = 两套「已加载」集合，漏一处的症状是重复
+   请求或永远不请求。
+3. **差异与索赔合并成一个组件**（`FinanceClaimFlow`），不是各切一个：`claimFrom`
+   与 `submitForm` 的短收分支都要同时回读两张表（`Promise.all` 原先在 4 处），
+   按 tab 各切一个就得让兄弟组件互相调 loader 或架事件总线。
+4. **子组件只 `defineExpose` loader，不为测试放宽生产 API**。测试要调内部函数时
+   走 `wrapper.findComponent({name}).vm.$.setupState`（§S21.3 那条就是这么写的）。
+5. **scoped CSS 不跨组件边界**。搬 markup 必须把类定义一起搬（照
+   `MasterCsvImport.vue` 先例），否则按钮/弹窗渲染成无样式——症状看起来像逻辑
+   bug。搬走后 Finance.vue 里失去使用者的规则已删（`reconcile`/`recon-*`/
+   `modal*`/`form-grid`/`detail-grid`）。**未做**：把这些类上提到 `style.css`
+   （19 文件影响面，属独立改动，见 §S21.5 待办）。
+
+**变异验证（每步都做，全部由断言打红而非崩溃）**：
+
+| 变异 | 结果 |
+|---|---|
+| `TAB_LOADERS.collection` 去掉 `loadCollectionSummary` | 3 红 |
+| `@confirm` 换成空函数（确认框事件断线） | 2 红 |
+| `:tab` 把 collection/settlement 对调（渲染错面板） | 5 红 |
+| `claimFrom` 的 `Promise.all` 只留 `loadDiscrepancies` | 1 红 |
+| `runScan` 的 `call` 改回 `read` | 1 红（**需 §S21.3 那条加强后的断言**） |
+
+**最后一条值得单说**：最初只断言「按钮 disabled + 点了不发请求」，这个变异
+**活下来了**——因为禁用态本身挡住了点击。补上 `setupState.runScan()` 绕过 DOM
+直接调一次之后才红。教训：**只测 disabled 属性等于没测门控**，门控必须验证
+「即使调到了写出口也不会发请求」。
+
+### 3. P1-3 全量 E2E flake —— 只记录，不修
+
+§S20.7.4 已记（三次跑失败集合互不相同：4 / 7 / 3）。本节再跑一次全量，
+结果见本节末「验证」。判定依据不变：**失败集合每次不同 + 单独跑全绿 + 集中在与
+改动无关的用例**。怀疑模块预取/chunk 加载竞态，需要独立一班定位。
+**不要在功能班里顺手修**——会把失败原因变得不可归因。
+
+### 4. P2-1「凭印象推断」防复发 —— 脚本固化（已在 §S20 班完成）
+
+`tools/schema/endpoint_role_audit.py` 已入库（`db53b02`），用法：
+
+```bash
+python tools/schema/endpoint_role_audit.py            # 全量
+python tools/schema/endpoint_role_audit.py --table Finance   # 单页
+```
+
+现状：解析 114 个 API、比对 48 个端点的后端角色，**4 findings 全部是
+`ConnectorQueue.vue` 的 `rewriteProxyPath` 伪影**（该页自己拼路径，脚本取不到
+字面量），已在输出里标注为「未匹配=只披露，不当作前端该补门控」。Finance 表
+27/27 精确匹配、0 未匹配。**改任何读/写共用出口前先跑它。**
+
+### 5. 下一班待办
+
+1. **§S20.6 第 1 条仍在**：ListingMonitor / CustomerService 的写端点后端没锁角色，
+   是否补 `@RequireRole` 是产品决策。本班交付了决策影响分析（见会话记录），
+   核心是**先查「VIEWER 账号现在有没有人在做这些写操作」再决定**；`CustomerController`
+   4 个写端点里只有 1 个带 `@OperLog`，建单/回复/索评三类写操作**根本没进审计日志**，
+   事后无法回溯。建议先补 `@OperLog` 观察一段时间，或先查真实数据。
+   另一个前置变量：`amz_user_shop.role` 是**另一套被完全丢弃的角色源**
+   （`LoginServiceImpl:128` 只把 `amz_user.role` 写进 JWT）——若「运营 A 在店铺 1 是
+   OPERATOR、店铺 2 是 VIEWER」是真实需求，现在补 `@RequireRole` 是在**错误的角色模型
+   上加锁**，锁完要支持店铺级角色得推翻重做。
+2. **`.modal-mask` 等类上提到 `style.css`**：现在 `modal-mask` 在 19 个 view 各定义
+   一份、`.filter-btn` 在 2+ 个文件重复。收敛是独立改动，别混进下一次拆分。
+3. **`LogisticsDashboard.vue` 3259 行 / `Procurement.vue` 2045 行 / `Warehouse.vue`
+   1629 行**同样超 500 行上限，是**系统性问题**不是单点。本班只解决了排第 4 的
+   Finance。下一班拆之前先读 §S21.2 的五条设计决策——尤其第 1 条（挂载策略）
+   和第 5 条（scoped CSS），这两条是这类拆分最容易踩的坑。
+4. **`useCursorLoader()` 可以给上面三页复用**吗？现在它在
+   `composables/useCursorList.ts` 里且只服务 Finance（依赖 `useFinanceErrors` 的
+   `name：` 前缀约定）。若另两页也有服务端游标列表，先看它们的错误上报是不是同一
+   套约定——**不是同一套就不要硬合并**，把错误的归属方式统一是独立的一件事。
