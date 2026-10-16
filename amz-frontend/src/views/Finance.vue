@@ -198,7 +198,7 @@
             </tbody>
           </table>
         </div>
-        <cursor-bar :state="col" :load="loadCollections" />
+        <FinanceCursorBar :state="col" :load="loadCollections" />
       </div>
 
       <!-- 结算原表 -->
@@ -263,7 +263,7 @@
             </tbody>
           </table>
         </div>
-        <cursor-bar :state="settle" :load="loadSettlements" />
+        <FinanceCursorBar :state="settle" :load="loadSettlements" />
       </div>
 
       <!-- 费用差异 -->
@@ -341,7 +341,7 @@
             </tbody>
           </table>
         </div>
-        <cursor-bar :state="disc" :load="loadDiscrepancies" />
+        <FinanceCursorBar :state="disc" :load="loadDiscrepancies" />
 
         <div v-if="discrepancyDetail" class="table-card" data-panel="discrepancy-detail">
           <div class="panel-title">
@@ -487,7 +487,7 @@
             </tbody>
           </table>
         </div>
-        <cursor-bar :state="claimList" :load="loadClaims" />
+        <FinanceCursorBar :state="claimList" :load="loadClaims" />
       </div>
 
       <!-- 单品利润 -->
@@ -649,14 +649,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, defineComponent, h, type PropType, type Ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import FinanceCursorBar from '../components/FinanceCursorBar.vue'
+import { makeCursor, type CursorList } from '@/composables/useCursorList'
+import { useFinanceErrors } from '@/composables/useFinanceErrors'
+import { useFinanceApi } from '@/composables/useFinanceApi'
 import { listVouchers, syncToKingdee, calculateProfit } from '@/api/finance'
 import type { AccountingVoucher } from '@/api/finance'
 import { useShopGuard } from '@/composables/useShopGuard'
-import { canUseRole, FINANCE_WRITE_ROLES, WRITE_LOCKED_HINT, ROLE_CHANGED_EVENT } from '@/utils/identity'
+import { WRITE_LOCKED_HINT } from '@/utils/identity'
 import { useToast } from '@/composables/useToast'
 import type { ApiResponse } from '@/api/types'
 import * as ext from '@/api/finance-ext'
@@ -902,77 +906,12 @@ const syncStatusClass = (s: string): string => {
 
 type TabKey = 'voucher' | 'profit' | 'collection' | 'settlement' | 'discrepancy' | 'claim' | 'skuprofit' | 'tax'
 
-interface CursorList<T> {
-  rows: Ref<T[]>
-  cursor: Ref<string | null>
-  truncated: Ref<boolean>
-  loading: Ref<boolean>
-}
-
-const makeCursor = <T>(): CursorList<T> => ({
-  rows: ref<T[]>([]) as Ref<T[]>,
-  cursor: ref<string | null>(null),
-  truncated: ref(false),
-  loading: ref(false)
-})
-
 /**
  * 游标分页条：与凭证列表同规则——是否还有下一页由服务端 _page 说了算。
  * 走 props 回调而不是 emit，是为了让「加载更多」始终调用该页自己的 loader，
  * 避免多个列表共用一个全局游标。
  */
-const CursorBar = defineComponent({
-  name: 'CursorBar',
-  props: {
-    state: { type: Object as PropType<CursorList<unknown>>, required: true },
-    load: { type: Function as PropType<(append: boolean) => void>, required: true }
-  },
-  setup: (props) => () => h('div', [
-    h('div', { class: 'pagination' }, [
-      h('span', { class: 'page-info' }, `已加载 ${props.state.rows.value.length} 条${props.state.truncated.value ? '，仍有更多未加载' : ''}`),
-      h('div', { class: 'page-actions' }, props.state.truncated.value
-        ? [h('button', {
-            class: 'page-btn',
-            disabled: props.state.loading.value,
-            onClick: () => props.load(true)
-          }, props.state.loading.value ? '加载中...' : '加载更多')]
-        : [])
-    ]),
-    props.state.truncated.value
-      ? h('div', { class: 'truncated-tip', role: 'status' },
-          '结果已被服务端截断：当前列表不是全量。对账、导出或金额汇总请继续翻页取完。')
-      : null
-  ])
-})
 
-const busy = ref(false)
-const errors = ref<string[]>([])
-
-/**
- * 财务写入口的角色门控（详见 {@link call} 的说明）。
- * <p>
- * 未知角色不隐藏、不拦截：硬刷新时 AppHeader 的 getInfo 可能还没回来，
- * 因「还没取到角色」就拦住操作，等于让前端状态否决后端能力（identity.ts 的口径）。
- */
-const financeWriteAllowed = ref(canUseRole(FINANCE_WRITE_ROLES))
-
-const syncFinanceWriteRole = () => {
-  financeWriteAllowed.value = canUseRole(FINANCE_WRITE_ROLES)
-}
-
-const financeWriteBlocked = (label: string): boolean => {
-  if (financeWriteAllowed.value) return false
-  pushFinanceError(label, '需要 OPERATOR 或 ADMIN 角色')
-  return true
-}
-
-onMounted(() => window.addEventListener(ROLE_CHANGED_EVENT, syncFinanceWriteRole))
-onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncFinanceWriteRole))
-
-const pushFinanceError = (tag: string, detail: unknown) => {
-  const msg = detail instanceof Error ? detail.message : (detail as string | undefined) || '后端返回异常'
-  if (!errors.value.some((x) => x.startsWith(`${tag}：`))) errors.value.push(`${tag}：${msg}`)
-}
 const confirmBox = ref<null | { title: string; detail: string; run: () => Promise<void> }>(null)
 
 const col = makeCursor<PaymentCollection>()
@@ -1014,72 +953,6 @@ const reimburseAmount = ref<number | string>('')
 
 const PAGE = 50
 
-const pushError = (text: string) => {
-  if (!errors.value.includes(text)) errors.value.push(text)
-}
-
-/**
- * 只读查询的统一出口。**刻意不加角色门控**，原因见下方 {@link call} 的说明：
- * 本页的查询端点后端普遍没有 {@code @RequireRole}，VIEWER 查得到。
- * <p>
- * 读与写分成两个函数而不是给 {@link call} 加一个布尔参数：布尔参数会被漏传
- * （本班第一版就是这么写的，漏了 4 个查询点，VIEWER 被挡在「回款汇总」「索赔汇总」
- * 「索赔对账」「差异详情」之外），而漏传的方向恰好是「把允许的读也拦掉」。
- * 拆成两个函数后，写必须显式写 {@code call}，读显式写 {@code read}，
- * 想漏也漏不掉——这才是能防住复发的形状。
- */
-const read = async <T>(label: string, fn: () => Promise<ApiResponse<T>>, apply: (v: T) => void): Promise<boolean> => {
-  busy.value = true
-  try {
-    const res = await fn()
-    if (res?.code !== 200) {
-      pushError(`${label}：${res?.message || '后端返回非 200'}`)
-      return false
-    }
-    apply(res.data as T)
-    return true
-  } catch (e) {
-    pushError(`${label}：${e instanceof Error ? e.message : '调用失败'}`)
-    return false
-  } finally {
-    busy.value = false
-  }
-}
-
-/**
- * 财务写操作的统一出口。**只有它能改数据，也只有它做角色门控。**
- * <p>
- * 本页 14 个写端点（FinanceController ×4、SettlementController、FeeDiscrepancyController ×3、
- * ReimbursementClaimController ×5、PaymentCollectionController、VatController 的 monthly-close）
- * 在后端都声明了 {@code @RequireRole({"OPERATOR","ADMIN"})}，此前页面上对 VIEWER 全绿可点。
- * 点了之后拿到的是 HTTP 200 + code=400（Result.failure 不改状态码），界面只显示一句
- * 「无权限执行该操作」——用户看到的是「功能点了报错」，而不是「这个功能不归你用」。
- * <p>
- * 同页的查询端点（{@code /collection/summary}、{@code /claim/summary}、{@code /claim/reconcile}、
- * {@code /discrepancy/{id}}、{@code /profit/sku}、{@code /vat/calculate|rate|threshold-check}）
- * 后端**没有** {@code @RequireRole}，VIEWER 查得到，所以那些走 {@link read}。
- * 门控放在这里而不是逐个按钮 v-if：confirm() 弹窗可能在角色变更前就已打开，
- * 或者角色信息比弹窗晚到（AppHeader 的 getInfo 与页面挂载是并发的），
- * 禁用态挡不住这种时序，而这里是所有写操作的必经之路。
- */
-const call = async <T>(label: string, fn: () => Promise<ApiResponse<T>>, apply: (v: T) => void): Promise<boolean> => {
-  if (financeWriteBlocked(label)) return false
-  busy.value = true
-  try {
-    const res = await fn()
-    if (res?.code !== 200) {
-      pushError(`${label}：${res?.message || '后端返回非 200'}`)
-      return false
-    }
-    apply(res.data as T)
-    return true
-  } catch (e) {
-    pushError(`${label}：${e instanceof Error ? e.message : '调用失败'}`)
-    return false
-  } finally {
-    busy.value = false
-  }
-}
 
 const loadCursor = async <T>(
   state: CursorList<T>,
@@ -1093,7 +966,7 @@ const loadCursor = async <T>(
     state.rows.value = []
     state.cursor.value = null
     // 只清本列表的错误（按「name：」前缀），并发 loader 互不擦横幅
-    errors.value = errors.value.filter((x) => !x.startsWith(`${name}：`))
+    clearErrorsFor(name)
   }
   state.loading.value = true
   try {
@@ -1113,6 +986,9 @@ const loadCursor = async <T>(
     state.loading.value = false
   }
 }
+
+const { errors, pushError, pushFinanceError, clearErrorsFor } = useFinanceErrors()
+const { busy, financeWriteAllowed, financeWriteBlocked, read, call, installRoleListener, removeRoleListener } = useFinanceApi()
 
 const shop = () => refreshShop()
 
@@ -1398,7 +1274,11 @@ const gotoTab = async (t: TabKey) => {
 
 onMounted(() => {
   errors.value = []          // 整页入口清一次；loader 只按各自前缀追加/移除
+  installRoleListener()      // 角色变更监听只由页壳装一次，子组件不要各自装（见 useFinanceApi 注释）
   void loadVouchers(false)
+})
+onUnmounted(() => {
+  removeRoleListener()
 })
 </script>
 
