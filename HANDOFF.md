@@ -4369,3 +4369,88 @@ order / finance 调进来）。
 3. 本班发现本机 **loopback 不可用**导致一批测试必红（DeepSeek / product 两个）。
    这是环境事实、不是回归，但会一直干扰本地全量判断——**建议单独一班确认是
    本机代理/防火墙还是 JDK 配置**，否则每次本地 `mvn test` 都要重新排查一遍。
+
+---
+
+## §S30. 交接：2026-10-16 推送恢复 + 本机 loopback 根因定位（环境事实，非回归）
+
+### 1. 推送：代理没起来，但**直连已经恢复**
+
+§S29 那三个 commit 卡在 `127.0.0.1:7897` 不可达上。重探时发现的不是「代理又坏了」，
+而是一个更省事的事实：**代理仍不可达（000），但 GitHub 直连返回 200**。
+
+本仓库级配置里 `http.proxy = http://127.0.0.1:7897` 此刻是**纯负担**——它把一条本来
+能通的直连路强制拐进一个死掉的端口。绕过办法（**不修改用户配置**）：
+
+```bash
+git -c http.proxy= push origin master
+```
+
+推送结果 `8cf342e..94d6aea`，三个 commit 全部上去。
+
+**给下一班的判断顺序**（别一上手就等代理）：
+1. 探直连：`curl -m 8 -o /dev/null -w "%{http_code}" https://github.com`
+2. 直连通 → 用上面那条 `-c http.proxy=` 推，不用等代理、不用改配置
+3. 直连也不通 → 才是真的需要代理，那时再看 7897
+
+### 2. CI 全绿 11/11 —— 这条比推送本身信息量大
+
+run 38887873389：**test / hygiene / frontend / checkstyle×2 / runtime-smoke / docker
+等 11 个 job 全 success**。
+
+关键推论：§S29 里我 stash 验证过的那批 loopback 失败（`DeepSeekAgentConfigurationContractTest`、
+product 的 `TranslationCacheWriteFailureTest` / `OrderServiceFeignDecodeIT`），
+**在 CI 上一个都没出现**。所以它们是**本机环境事实**，不是代码问题——这个区分很重要：
+以后本地 `mvn test` 看到这几个红，**不需要**再去 stash 复现一遍确认，直接按环境失败处理。
+
+### 3. loopback 根因：Windows AF_UNIX 的 `connect` 失败，与 JDK 无关
+
+排查过程（每一步都留了可复现的探针，不是"看着像"）：
+
+| 层 | 结果 |
+|---|---|
+| `ServerSocket` + `Socket` TCP 回环 | ✅ 通 |
+| `ServerSocketChannel` NIO bind | ✅ 通 |
+| **`Selector.open()`** | ❌ `Unable to establish loopback connection` |
+| JDK `UnixDomainSocket` bind | ✅ 通 |
+| JDK `UnixDomainSocket` **connect** | ❌ `Invalid argument` |
+| **.NET `UnixDomainSocketEndPoint` connect** | ❌ 同一错误（WSAEINVAL） |
+
+`Selector.open` 是唯一失败点，而它内部走 `PipeImpl$Initializer` —— JDK 21 在 Windows 上
+用 **AF_UNIX 自连**做 pipe 自检。最后一行是关键：**换 .NET 实现报同一个错**。
+两个互不相关的运行时在同一系统调用上失败，就排除了「JDK 的 bug / JDK 的配置」。
+
+已排除的假设（都验证过，别再走一遍）：
+- ❌ JDK 版本/配置问题 —— 换 .NET 同样失败
+- ❌ `-Djdk.nio.ch.disableUnixDomainSockets=true` 能救 —— 实测无效
+- ❌ 强制 `WindowsSelectorProvider` 能救 —— 实测无效
+- ❌ Windows 版本太老（AF_UNIX 需 Win10 1803+）—— 本机 25H2 / build 26200
+- ❌ 组策略/注册表显式禁用 —— `AFD\Parameters` 键存在但**无任何值**
+- ❌ Docker Desktop 运行时干扰 —— `com.docker.service` 状态 Stopped
+- ❌ 第三方网络驱动/LSP —— 网卡列表只有 Realtek + Hyper-V 官方项，
+  WFP 驱动（`hnswfpdriver` / `MsSecWfp` / `NdisCap`）全是 Microsoft 自家
+
+剩下的最可能成因：**Hyper-V / 容器网络栈（HNS）在 AF_UNIX 路径上的拦截**。
+本机装了 Hyper-V Virtual Switch Extension Adapter 与 `NdisCap`（NDIS 抓包过滤器，Running）。
+
+**排查到此为止的原因**：再往下要动网络栈（停 HNS 相关服务、或重启）——那是会影响
+这台机器上其他东西的操作，**属于需要你决定的范围，我没有自行执行**。
+
+### 4. 如果只想让本地 `mvn test` 不再被这几条干扰
+
+按侵入性从低到高，**每一条都要你自己判断要不要做**：
+
+1. **最省事**：接受它。CI 全绿，本地判定回归时把这 3 个测试名当白名单
+   （`DeepSeekAgentConfigurationContractTest` / `TranslationCacheWriteFailureTest` /
+   `OrderServiceFeignDecodeIT`），失败名单只在这些之外才算回归。
+   §S22.6 的基线本来就是这个用法。
+2. 想彻底修：先试**重启**（AF_UNIX 异常在 Windows 上常见于服务/网络栈状态残留）；
+   无效再看 Docker Desktop 的「使用 WSL2 虚拟化」设置与 HNS 服务。
+3. 别试 `-Djava.nio.channels.spi.SelectorProvider=...` 之类的 JDK 开关，已验证无用。
+
+### 5. 顺带记一条踩坑（写 Java/PowerShell 探针时）
+
+`javac` 在本机**默认编码不是 UTF-8**，探针源码里带中文会直接编译失败
+（`unmappable character (0xBB)`）。加 `-encoding UTF-8` 或干脆别用中文。
+另外 Windows 上的 Python **没有 `socket.AF_UNIX`**，别拿它做交叉验证——
+要用交叉验证就换 .NET/PowerShell。
