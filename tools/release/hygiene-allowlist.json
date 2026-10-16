@@ -9,12 +9,12 @@
     {
       "path": "amz-common/src/main/java/com/amz/config/FeignAuthRelayConfig.java",
       "rule": "secret-like-assignment",
-      "sha256": "d4f088a44cc1a7e6f59842868ce7e8a85cecc2ef763edf2edd2d4dca31ee3acf"
+      "sha256": "5e3cf5823ea058e34ff2b35d0e8c590b4cde1b54829cd2f8ffbb21c4cd540a71"
     },
     {
       "path": "amz-common/src/main/java/com/amz/interceptor/BaseAuthInterceptor.java",
       "rule": "secret-like-assignment",
-      "sha256": "d77ca859b3481e3ff7d0056654dae6e845560a65802c1d59f77251981619843d"
+      "sha256": "a9d315e8288d2a234c25e082661745e17356976e60fc1a276404c22fa9d0cfdc"
     },
     {
       "path": "amz-common/src/main/java/com/amz/lock/DistributedJobLock.java",
@@ -49,7 +49,7 @@
     {
       "path": "amz-frontend/src/api/auth.ts",
       "rule": "secret-like-assignment",
-      "sha256": "f08277e564c4e4ceb48360c7d0fbef95f04bc33cedf0c318881a1f297ce1dfde"
+      "sha256": "0f41a7b5d9e17173ae2e6376c759c938e00005837646b9bd3109d2168e41b321"
     },
     {
       "path": "amz-frontend/src/components/AgentChat.vue",
@@ -59,7 +59,7 @@
     {
       "path": "amz-frontend/src/components/AppHeader.vue",
       "rule": "secret-like-assignment",
-      "sha256": "287414979d60e7c9efae40f5b0828199885530d2ac8bae1bd90c76c320dc0501"
+      "sha256": "8e2fcd08d42be99b50162bfc7cb9608d2d1d9c355eb707bf027e86d71af3353b"
     },
     {
       "path": "amz-frontend/src/components/LoginModal.vue",
@@ -254,7 +254,7 @@
     {
       "path": "amz-service/amz-service-user/src/main/java/com/amz/service/impl/LoginServiceImpl.java",
       "rule": "secret-like-assignment",
-      "sha256": "5440c50338a59c5bd10819e500cc19d6b581bc673f470994d68ee60450f8c660"
+      "sha256": "3a1cb66f91c04601c795be62ee3ba0481f6634c3497639ae092f678ace9b1690"
     },
     {
       "path": "amz-service/amz-service-user/src/test/java/com/amz/migration/OperLogAuditMySqlIT.java",

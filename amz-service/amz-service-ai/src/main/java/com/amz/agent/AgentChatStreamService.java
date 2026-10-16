@@ -109,7 +109,8 @@ public class AgentChatStreamService {
      * 在请求线程捕获不可变身份快照，并在固定线程池 worker 中恢复。
      * userId 是操作权限的必要条件；role/shops 缺失时由工具层继续 fail-closed。
      */
-    private record UserContextSnapshot(Integer userId, String role, List<Long> shops, Long shopId) {
+    private record UserContextSnapshot(Integer userId, String role, List<Long> shops, Long shopId,
+                                       java.util.Map<Long, String> shopRoles) {
 
         static UserContextSnapshot capture() {
             Integer userId = UserContext.getUserId();
@@ -121,7 +122,12 @@ public class AgentChatStreamService {
                     userId,
                     UserContext.getRole(),
                     shops == null ? null : List.copyOf(shops),
-                    UserContext.getShopId());
+                    UserContext.getShopId(),
+                    // 店铺级角色必须一起快照：SSE 是异步线程，UserContext 的 ThreadLocal
+                    // 不跨线程，少带这一项下游 resolveRole 会回落全局角色——
+                    // 「店 A 是 OPERATOR、店 B 是 VIEWER」的用户在店 B 通过助手就能写。
+                    UserContext.getShopRoles() == null ? null
+                            : java.util.Map.copyOf(UserContext.getShopRoles()));
         }
 
         void bind() {
@@ -129,6 +135,7 @@ public class AgentChatStreamService {
             UserContext.setRole(role);
             UserContext.setShops(shops);
             UserContext.setShopId(shopId);
+            UserContext.setShopRoles(shopRoles);
         }
     }
 

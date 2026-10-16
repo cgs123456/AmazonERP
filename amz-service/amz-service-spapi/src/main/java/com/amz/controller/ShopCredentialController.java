@@ -71,8 +71,12 @@ public class ShopCredentialController {
         return Result.success(service.delete(shopId));
     }
 
+    /**
+     * 能否管理该店凭证。角色按**目标店铺**解析——凭证是店铺级的，
+     * 「在店 A 是 ADMIN、店 B 是 VIEWER」的用户不该能改店 B 的凭证。
+     */
     private static boolean canManageCredentials(Long shopId) {
-        return "ADMIN".equalsIgnoreCase(UserContext.getRole())
+        return "ADMIN".equalsIgnoreCase(UserContext.resolveRole(shopId))
                 && UserContext.isShopAllowedStrict(shopId);
     }
 

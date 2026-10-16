@@ -355,6 +355,14 @@ public class ConnectorController {
         return shops != null && !shops.isEmpty();
     }
 
+    /**
+     * 是否是**全局** ADMIN。
+     * <p>
+     * 刻意读全局角色而不是 {@code resolveRole(shopId)}：本方法回答的是
+     * 「空 shops 能不能被解释成全库范围」这个**跨店**问题，不是「在这个店里有没有权限」。
+     * 用店铺级角色会让「只在店 A 是 ADMIN」的用户拿到全库 Outbox 的读范围——
+     * 那是提权，不是精细化。单店范围的判定在 {@link #canAccessShop(Long)}。
+     */
     private static boolean isAdmin() {
         return "ADMIN".equalsIgnoreCase(UserContext.getRole());
     }

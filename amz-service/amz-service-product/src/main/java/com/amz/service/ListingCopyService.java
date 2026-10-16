@@ -628,7 +628,8 @@ public class ListingCopyService {
     /**
      * 请求线程的用户身份快照。shops 做防御性拷贝，避免异步线程读取到可变集合。
      */
-    public record UserContextSnapshot(Integer userId, String role, List<Long> shops, Long shopId) {
+    public record UserContextSnapshot(Integer userId, String role, List<Long> shops, Long shopId,
+                                      java.util.Map<Long, String> shopRoles) {
 
         static UserContextSnapshot capture() {
             Integer userId = UserContext.getUserId();
@@ -640,7 +641,11 @@ public class ListingCopyService {
                     userId,
                     UserContext.getRole(),
                     shops == null ? null : List.copyOf(shops),
-                    UserContext.getShopId());
+                    UserContext.getShopId(),
+                    // 店铺级角色一并快照：复制任务的执行线程是异步的，ThreadLocal 不跨线程，
+                    // 漏掉这一项下游 resolveRole 就回落全局角色（等于店铺级收窄失效）。
+                    UserContext.getShopRoles() == null ? null
+                            : java.util.Map.copyOf(UserContext.getShopRoles()));
         }
 
         void bind() {
@@ -648,6 +653,7 @@ public class ListingCopyService {
             UserContext.setRole(role);
             UserContext.setShops(shops);
             UserContext.setShopId(shopId);
+            UserContext.setShopRoles(shopRoles);
         }
     }
 }

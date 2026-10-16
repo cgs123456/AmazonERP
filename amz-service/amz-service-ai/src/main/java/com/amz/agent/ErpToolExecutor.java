@@ -205,10 +205,14 @@ public class ErpToolExecutor {
     /**
      * 当前调用方是否有 operate 权限（包可见，供单测直接断言）。
      * userId 或 role 缺失时拒绝（fail-closed）。
+     * <p>
+     * 角色按**当前选定店铺**解析（{@code UserContext.getShopId()}，来自请求头）：
+     * 助手执行写工具时作用的就是用户当前在看的店，用全局角色会让「店 B 是 VIEWER」
+     * 的用户在店 B 里也能通过助手改数据。
      */
     static boolean hasOperatePermission() {
         Integer userId = UserContext.getUserId();
-        String role = UserContext.getRole();
+        String role = UserContext.resolveRole(UserContext.getShopId());
         return userId != null && userId > 0
                 && ("OPERATOR".equals(role) || "ADMIN".equals(role));
     }
