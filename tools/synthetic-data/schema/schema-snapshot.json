@@ -1126,6 +1126,21 @@
       "db_source": "application.yml",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql",
       "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1483,
+      "lines": 25,
+      "sha256": "33108e4304a441f5bd17112b10a31a49468e0045a32b6bfe5e79c5fd89009eae",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 1,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V6__shop_role_default_viewer.sql",
+      "dynamic_ddl": 0
     }
   ],
   "stats": {
@@ -1135,7 +1150,7 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 74,
+        "files": 75,
         "tables": 124
       }
     },
@@ -1165,9 +1180,9 @@
     ],
     "tables_with_conditional_columns": [],
     "conditional_columns_total": 0,
-    "alter_table_statements": 46,
+    "alter_table_statements": 47,
     "add_column_statements": 30,
-    "applied_alter_operations": 60,
+    "applied_alter_operations": 61,
     "unapplied_alter_operations": 0,
     "renamed_columns": [
       [
@@ -39177,7 +39192,7 @@
           "args": "20",
           "unsigned": false,
           "nullable": true,
-          "default": "'OPERATOR'",
+          "default": "'VIEWER'",
           "auto_increment": false,
           "generated": false,
           "on_update": false,
@@ -39227,13 +39242,13 @@
       "engine": "InnoDB",
       "charset": "utf8mb4",
       "comment": null,
-      "table_hash": "1ac4bbceb8a439f52a22825165d8edeff20491432dd3ed409aa80811f4fe13ba",
+      "table_hash": "a0007da927ea31b4639c445911de559391cedc0a86dd0a9d933b61da37eacdaf",
       "definitions": [
         {
           "path": "amz-service/amz-service-user/src/main/resources/db/migration/V1__init.sql",
           "line": 51,
           "group": "flyway-migration",
-          "hash": "1ac4bbceb8a439f52a22825165d8edeff20491432dd3ed409aa80811f4fe13ba"
+          "hash": "a0007da927ea31b4639c445911de559391cedc0a86dd0a9d933b61da37eacdaf"
         }
       ]
     }
@@ -41358,6 +41373,35 @@
       "database": "amz_user",
       "sql": "ALTER TABLE amz_user ADD COLUMN status TINYINT NOT NULL DEFAULT 1 COMMENT '账号状态：1=正常 0=禁用'",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V4__user_status.sql"
+    },
+    {
+      "table": "amz_user_shop",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [
+        {
+          "kind": "modify_column",
+          "column": "role",
+          "definition": {
+            "name": "role",
+            "type": "VARCHAR",
+            "args": "20",
+            "unsigned": false,
+            "nullable": true,
+            "default": "'VIEWER'",
+            "auto_increment": false,
+            "generated": false,
+            "on_update": false,
+            "inline_primary_key": false,
+            "inline_unique": false,
+            "comment": "ADMIN/OPERATOR/VIEWER"
+          }
+        }
+      ],
+      "line": 23,
+      "database": "amz_user",
+      "sql": "ALTER TABLE amz_user_shop MODIFY COLUMN role VARCHAR(20) DEFAULT 'VIEWER' COMMENT 'ADMIN/OPERATOR/VIEWER'",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V6__shop_role_default_viewer.sql"
     }
   ],
   "parse_issues": [],

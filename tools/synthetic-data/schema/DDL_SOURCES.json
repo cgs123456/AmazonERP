@@ -1125,6 +1125,21 @@
       "db_source": "application.yml",
       "path": "amz-service/amz-service-user/src/main/resources/db/migration/V5__notification.sql",
       "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
+      "bytes": 1483,
+      "lines": 25,
+      "sha256": "33108e4304a441f5bd17112b10a31a49468e0045a32b6bfe5e79c5fd89009eae",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_user",
+      "alter_table_statements": 1,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-user/src/main/resources/db/migration/V6__shop_role_default_viewer.sql",
+      "dynamic_ddl": 0
     }
   ]
 }
