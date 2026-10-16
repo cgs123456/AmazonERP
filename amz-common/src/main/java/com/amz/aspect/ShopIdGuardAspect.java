@@ -8,16 +8,9 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.springframework.core.DefaultParameterNameDiscoverer;
-import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestParam;
-
-import java.lang.annotation.Annotation;
 
 import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
 import java.util.List;
 
 /**
@@ -40,10 +33,6 @@ import java.util.List;
 @Aspect
 @Component
 public class ShopIdGuardAspect {
-
-    private static final String SHOP_ID_PARAM = "shopId";
-
-    private final ParameterNameDiscoverer paramNameDiscoverer = new DefaultParameterNameDiscoverer();
 
     @Around("@annotation(com.amz.annotation.ShopScoped)")
     public Object guard(ProceedingJoinPoint pjp) throws Throwable {
@@ -87,55 +76,12 @@ public class ShopIdGuardAspect {
     }
 
     /**
-     * 解析方法签名中名为 {@code shopId}、类型为 {@code Long} 的参数值。
-     * 优先匹配 {@link PathVariable}，其次匹配 {@link RequestParam}。
-     *
-     * @return shopId 参数值；未找到返回 null
+     * 解析本次调用面向的店铺。实现已抽到 {@link ShopIdParameterResolver}——
+     * {@code RequireRoleAspect} 需要同一套解析（店铺级角色要按「这次操作的店」判定，
+     * 而不是按请求头里客户端当前选中的店），两份实现一定会漂。
      */
     private Long resolveShopId(ProceedingJoinPoint pjp) {
         Method method = ((MethodSignature) pjp.getSignature()).getMethod();
-        Parameter[] params = method.getParameters();
-        Object[] args = pjp.getArgs();
-        String[] paramNames = paramNameDiscoverer.getParameterNames(method);
-        // 优先 @PathVariable（RESTful 路径参数更常见），其次 @RequestParam
-        Long value = matchShopId(params, args, paramNames, PathVariable.class);
-        if (value != null) {
-            return value;
-        }
-        return matchShopId(params, args, paramNames, RequestParam.class);
-    }
-
-    /**
-     * 按指定注解类型匹配名为 {@code shopId}、类型为 {@code Long} 的参数值。
-     */
-    private Long matchShopId(Parameter[] params, Object[] args, String[] paramNames,
-                             Class<? extends Annotation> annType) {
-        for (int i = 0; i < params.length; i++) {
-            if (params[i].getAnnotation(annType) == null) {
-                continue;
-            }
-            Class<?> type = params[i].getType();
-            if (type != Long.class && type != Long.TYPE) {
-                continue;
-            }
-            String name = annotationName(params[i].getAnnotation(annType));
-            if (name == null || name.isBlank()) {
-                name = (paramNames != null && i < paramNames.length) ? paramNames[i] : params[i].getName();
-            }
-            if (SHOP_ID_PARAM.equals(name) && i < args.length && args[i] instanceof Long) {
-                return (Long) args[i];
-            }
-        }
-        return null;
-    }
-
-    private static String annotationName(Annotation annotation) {
-        if (annotation instanceof PathVariable pathVariable) {
-            return pathVariable.value();
-        }
-        if (annotation instanceof RequestParam requestParam) {
-            return requestParam.name().isBlank() ? requestParam.value() : requestParam.name();
-        }
-        return null;
+        return ShopIdParameterResolver.resolve(method, pjp.getArgs());
     }
 }

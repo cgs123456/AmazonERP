@@ -118,6 +118,8 @@ public class BaseAuthInterceptor implements HandlerInterceptor {
             List<Long> shops = jwtUtil.parseTokenShops(token);
             // 写入授权店铺列表，供下游 ShopIdGuardAspect 二次校验使用
             UserContext.setShops(shops);
+            // 店铺级角色：老 token 无此 claim 时为空 Map，下游 resolveRole 回落全局角色
+            UserContext.setShopRoles(jwtUtil.parseTokenShopRoles(token));
             String shopId = request.getHeader("shopId");
             if (shopId != null && !shopId.isBlank()) {
                 Long shopIdVal = Long.valueOf(shopId);

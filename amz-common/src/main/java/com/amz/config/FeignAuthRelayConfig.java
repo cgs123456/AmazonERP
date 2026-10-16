@@ -94,7 +94,10 @@ public class FeignAuthRelayConfig {
             JwtUtil jwtUtil = jwtUtilProvider.getIfAvailable();
             if (userId != null && jwtUtil != null) {
                 List<Long> shops = UserContext.getShops();
-                String minted = jwtUtil.createToken(userId, shops == null ? List.of() : shops, UserContext.getRole());
+                // shop_roles 必须一起带上：漏了它，下游服务 resolveRole 会回落到全局角色，
+                // 「店 A 是 OPERATOR、店 B 是 VIEWER」的用户在下游就变成了全店 OPERATOR。
+                String minted = jwtUtil.createToken(userId, shops == null ? List.of() : shops,
+                        UserContext.getRole(), UserContext.getShopRoles());
                 template.header(TOKEN_HEADER, minted);
                 Long shopId = UserContext.getShopId();
                 if (shopId != null) {

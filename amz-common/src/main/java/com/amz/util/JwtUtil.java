@@ -1,6 +1,7 @@
 package com.amz.util;
 
 import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTCreator;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTDecodeException;
 import com.auth0.jwt.interfaces.DecodedJWT;
@@ -11,7 +12,9 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * jwt 工具类（Spring Bean）。
@@ -41,6 +44,14 @@ public class JwtUtil {
     private static final String SHOPS_CLAIM = "shops";
     /** 角色 claim，值为 ADMIN/OPERATOR/VIEWER，未携带时默认 VIEWER（最小权限） */
     private static final String ROLE_CLAIM = "role";
+    /**
+     * 店铺级角色 claim：{@code {shopId: "OPERATOR", ...}}，只含该用户已绑定的店铺。
+     * <p>
+     * 与 {@link #SHOPS_CLAIM} 分开而不是把 shops 改成对象数组：{@code shops} 已被
+     * 网关、各服务切面、前端多处按「字符串 id 列表」消费，改结构会波及全部读方。
+     * 新 claim 缺席时下游自动回落全局 role，老 token 无需失效。
+     */
+    private static final String SHOP_ROLES_CLAIM = "shop_roles";
     /** 默认角色：JWT 未显式携带 role 时使用 */
     private static final String DEFAULT_ROLE = "VIEWER";
 
@@ -75,25 +86,53 @@ public class JwtUtil {
     }
 
     /**
-     * 生成 token（携带角色 claim）
+     * 生成 token（携带全局角色 claim，不带店铺级角色）
      * @param userId 用户 id
      * @param shops  用户授权访问的店铺 id 列表（写入 shops claim）
      * @param role   角色代码 ADMIN/OPERATOR/VIEWER（写入 role claim）
      */
     public String createToken(Integer userId, List<Long> shops, String role) {
+        return createToken(userId, shops, role, null);
+    }
+
+    /**
+     * 生成 token（携带全局角色 + 店铺级角色）。
+     *
+     * @param userId    用户 id
+     * @param shops     用户授权访问的店铺 id 列表（写入 shops claim）
+     * @param role      全局角色代码，见 {@link #ROLE_CLAIM}
+     * @param shopRoles 店铺级角色（shopId → 角色）。传 {@code null} 或空表示不带该 claim，
+     *                  下游按 {@code resolveRole} 回落全局角色——这正是老 token 的行为，
+     *                  所以本 claim 的引入不需要让已签发的 token 失效。
+     */
+    public String createToken(Integer userId, List<Long> shops, String role,
+                              Map<Long, String> shopRoles) {
         Algorithm algorithm = Algorithm.HMAC256(secretKey);
         List<String> shopStr = (shops == null || shops.isEmpty())
                 ? List.of()
                 : shops.stream().map(String::valueOf).toList();
         String roleVal = (role == null || role.isBlank()) ? DEFAULT_ROLE : role;
-        return JWT.create()
+        JWTCreator.Builder builder = JWT.create()
                 .withSubject(String.valueOf(userId))
                 .withIssuer(issuer)
                 .withAudience(audience)
                 .withClaim(SHOPS_CLAIM, shopStr)
                 .withClaim(ROLE_CLAIM, roleVal)
-                .withExpiresAt(new Date(System.currentTimeMillis() + expireTime))
-                .sign(algorithm);
+                .withExpiresAt(new Date(System.currentTimeMillis() + expireTime));
+        if (shopRoles != null && !shopRoles.isEmpty()) {
+            // 键统一转 String：JSON 对象的键只能是字符串，这里转一次，
+            // 解析侧就不用猜 java-jwt 有没有替我们转。
+            Map<String, String> asStrings = new LinkedHashMap<>(shopRoles.size());
+            for (Map.Entry<Long, String> e : shopRoles.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null && !e.getValue().isBlank()) {
+                    asStrings.put(String.valueOf(e.getKey()), e.getValue());
+                }
+            }
+            if (!asStrings.isEmpty()) {
+                builder.withClaim(SHOP_ROLES_CLAIM, asStrings);
+            }
+        }
+        return builder.sign(algorithm);
     }
 
     /**
@@ -147,6 +186,45 @@ public class JwtUtil {
                 .verify(token);
         String role = jwt.getClaim(ROLE_CLAIM).asString();
         return (role == null || role.isBlank()) ? DEFAULT_ROLE : role;
+    }
+
+    /**
+     * 解析 token 中的 {@code shop_roles} claim，返回 shopId → 角色。
+     * <p>
+     * 老 token 没有该 claim（或 claim 为空）时返回空 Map，调用方据此回落全局角色。
+     * 脏条目逐个跳过，与 {@link #parseTokenShops} 同口径——不让一个非法键把整个请求打成 500。
+     */
+    public Map<Long, String> parseTokenShopRoles(String token) {
+        Algorithm algorithm = Algorithm.HMAC256(secretKey);
+        DecodedJWT jwt = JWT.require(algorithm)
+                .withIssuer(issuer)
+                .withAudience(audience)
+                .build()
+                .verify(token);
+        Map<String, Object> raw;
+        try {
+            raw = jwt.getClaim(SHOP_ROLES_CLAIM).asMap();
+        } catch (JWTDecodeException e) {
+            // claim 存在但不是对象（例如被塞了字符串）：当作「没有店铺级角色」，
+            // 不抛给调用方——鉴权不该因为一个畸形可选 claim 整体失败。
+            log.warn("shop_roles claim 结构非法，已忽略并回落全局角色: {}", e.getMessage());
+            return new LinkedHashMap<>();
+        }
+        if (raw == null || raw.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        Map<Long, String> result = new LinkedHashMap<>(raw.size());
+        for (Map.Entry<String, Object> e : raw.entrySet()) {
+            if (e.getValue() == null) {
+                continue;
+            }
+            try {
+                result.put(Long.valueOf(e.getKey()), String.valueOf(e.getValue()));
+            } catch (NumberFormatException ignored) {
+                // 忽略非法店铺 id
+            }
+        }
+        return result;
     }
 
     /**
