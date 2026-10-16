@@ -362,7 +362,7 @@
         </div>
 
         <!-- 商品主数据：FBA 计费与跨站复制的依赖数据 -->
-        <div v-if="tab === 'master'" class="table-card">
+        <div v-if="tab === 'master'" class="table-card" data-panel="master">
           <div class="filter-row">
             <input v-model="masterKeyword" class="fee-input" placeholder="按标题/SKU/ASIN 搜索"
                    @keyup.enter="reloadMaster" />

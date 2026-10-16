@@ -2741,3 +2741,144 @@ test.describe('自建下单（B2C）', () => {
     await expect.poll(() => posts.length).toBe(1)
   })
 })
+
+// ============================================================================
+// 店铺级角色端到端（P0-1，§S22.7 第 1 条 / §S24.5）
+// ----------------------------------------------------------------------------
+// 此前所有角色用例都是 addInitScript 直接写 user_role，或覆盖 getInfo 里的
+// **全局 role**——也就是说「同一账号在不同店铺角色不同」这条接通后的主链路
+// （JWT shop_roles claim → getInfo 按请求头 shopId 解析 effectiveRole →
+//  AppHeader 写 localStorage → 页面 canUseRole 门控）**从未在浏览器里跑通过**。
+// 后端那两条 WebMvc 集成测试（UserInfoEffectiveRoleWebMvcIntegrationTest /
+// ListingShopScopedRoleWebMvcIntegrationTest）钉住了服务端；这里钉前端消费端。
+//
+// 场景就是接通要解决的那个本身：运营在店 1 是 OPERATOR、在店 2 是 VIEWER。
+// getInfo 的桩按**请求头 shopId** 返回 effectiveRole——形状与真后端一致
+// （真后端在 UserInfoEffectiveRoleWebMvcIntegrationTest 里就是这么被判的），
+// 这样 AppHeader 重取一次的真实时序也在测之内。
+// ============================================================================
+test.describe('店铺级角色端到端（店 1 OPERATOR / 店 2 VIEWER）', () => {
+  const SHOPS = [
+    { id: '1', name: 'E2E Alpha' },
+    { id: '2', name: 'E2E Beta' }
+  ]
+
+  /**
+   * 按请求头 shopId 回 effectiveRole 的 getInfo 桩。
+   * 全局角色固定 OPERATOR——若前端错误地读 user.role（全局），店 2 的
+   * 写入口会亮着（OPERATOR 在全局是允许的），下面两条 VIEWER 用例就会红；
+   * 反过来若把门控做过头拦了读，读用例红。两头都钉。
+   */
+  async function stubRolePerShop(page: Page) {
+    await page.route(/\/api\/user\/getInfo/, (route) => {
+      const shopHeader = route.request().headers().shopid || ''
+      const effectiveRole = shopHeader === '2' ? 'VIEWER' : 'OPERATOR'
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          code: 200,
+          data: {
+            user: { id: 1, phone: '13800000000', nickname: 'E2E', role: 'OPERATOR' },
+            effectiveRole,
+            shops: SHOPS
+          }
+        })
+      })
+    })
+  }
+
+  test('店 2（VIEWER）：客服写入口隐藏，但只读入口照常拉数据', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('current_shop_id', '2'))
+    await stubRolePerShop(page)
+
+    const listCalls: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname.includes('/customer/ticket/list')) listCalls.push(r.url())
+    })
+
+    await page.goto('/customer')
+    await waitReady(page)
+
+    // 角色按店 2 判成 VIEWER：写入口全部消失
+    await expect(page.locator('button', { hasText: '新建工单' })).toHaveCount(0)
+    await expect(page.locator('.tab-panel[data-panel="ticket"]')).toContainText('需 OPERATOR/ADMIN')
+
+    // §S20.7 的教训反向钉住：门控只拦写。列表查询必须照发、照渲染。
+    await expect.poll(() => listCalls.length).toBeGreaterThan(0)
+    await expect(page.locator('.tab-panel[data-panel="ticket"] tbody tr').first()).toBeVisible()
+
+    // 行内写按钮同样不在（回复/关闭），但只读的下一页/筛选照常
+    const row = page.locator('.tab-panel[data-panel="ticket"] tbody tr').first()
+    await expect(row.locator('button', { hasText: '回复' })).toHaveCount(0)
+    await expect(row.locator('button', { hasText: '关闭' })).toHaveCount(0)
+  })
+
+  test('同一账号切到店 1（OPERATOR）：写入口回来', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('current_shop_id', '1'))
+    await stubRolePerShop(page)
+
+    await page.goto('/customer')
+    await waitReady(page)
+
+    // 与上一条唯一差别是请求头指向的店——角色跟着请求头 shopId 走。
+    // 若 getInfo 或 AppHeader 读了全局 role，这里也「恰好」是 OPERATOR，
+    // 所以上一条（店 2）才是区分性证据；这一条防的是「一律隐藏」的过度门控。
+    await expect(page.locator('button', { hasText: '新建工单' })).toBeVisible()
+  })
+
+  test('店 2（VIEWER）：ListingMonitor 的商品主数据与自查登记入口隐藏', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('current_shop_id', '2'))
+    await stubRolePerShop(page)
+
+    await page.goto('/listings')
+    await waitReady(page)
+
+    // 商品主数据 tab：CSV 导入禁用（roleAllowed=false 自带说明）、创建/保存隐藏。
+    // **必须先断言容器与后端数据行可见再数「0 个按钮」**——不存在的容器同样
+    // 「0 个按钮」，那样 toHaveCount(0) 是空过（本班第一版就空过了，
+    // 靠 .ci-locked 才炸出来；这个顺序要留在测试里）。
+    await page.locator('.tab', { hasText: '商品主数据' }).click()
+    const master = page.locator('[data-panel="master"]')
+    await expect(master).toBeVisible()
+    await expect(master.locator('tbody tr').first()).toBeVisible()
+    await expect(master.locator('button', { hasText: '创建' })).toHaveCount(0)
+    await expect(master.locator('button', { hasText: '保存' })).toHaveCount(0)
+    await expect(page.locator('[data-panel="master-csv-import"] .ci-locked')).toBeVisible()
+    // 只读的「标签」打印不受角色影响（本地渲染，不发请求）
+    await expect(master.locator('button', { hasText: '标签' }).first()).toBeVisible()
+
+    // 健康度 tab 的「登记自查结果」是写入口（后端每次 upsert），同样隐藏
+    await page.locator('.tab', { hasText: 'Listing 健康度' }).click()
+    await expect(page.locator('[data-panel="check"] button', { hasText: '登记自查结果' })).toHaveCount(0)
+    await expect(page.locator('[data-panel="check"]')).toContainText('需 OPERATOR/ADMIN')
+  })
+
+  test('店 1（OPERATOR）：ListingMonitor 写入口可用且只读入口不受影响', async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('current_shop_id', '1'))
+    await stubRolePerShop(page)
+
+    const checks: string[] = []
+    page.on('request', (r) => {
+      if (new URL(r.url()).pathname.endsWith('/product/listing-monitor/health/check')) checks.push(r.url())
+    })
+
+    await page.goto('/listings')
+    await waitReady(page)
+
+    // 店 1 是 OPERATOR：主数据「创建」回来（与上一条 VIEWER 的 toHaveCount(0) 成对）
+    await page.locator('.tab', { hasText: '商品主数据' }).click()
+    const master = page.locator('[data-panel="master"]')
+    await expect(master.locator('button', { hasText: '创建' })).toBeVisible()
+
+    await page.locator('.tab', { hasText: 'Listing 健康度' }).click()
+    const panel = page.locator('[data-panel="check"]')
+    await expect(panel.locator('button', { hasText: '登记自查结果' })).toBeVisible()
+
+    // 填齐必填并登记，请求真的发出——证明门控隐藏的是入口，不是能力本身
+    await panel.locator('input').first().fill('B000026108')
+    await panel.locator('textarea').fill('第一条\n第二条\n第三条\n第四条\n第五条')
+    await panel.locator('button', { hasText: '登记自查结果' }).click()
+    await expect.poll(() => checks.length).toBe(1)
+  })
+})
