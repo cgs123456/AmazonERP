@@ -314,22 +314,14 @@
                   </tr>
                 </tbody>
               </table>
-              <div class="pagination">
-                <span class="page-info">
-                  已加载 {{ shipments.length }} 条<template v-if="shipmentsTruncated">，仍有更多未加载</template><template v-else-if="shipmentsPageMetaMissing">，完整性未知</template>
-                </span>
-                <div class="page-actions">
-                  <button v-if="shipmentsTruncated" class="page-btn" :disabled="shipmentsLoadingMore || !shipmentsNextCursor" @click="loadMoreShipments">
-                    {{ shipmentsLoadingMore ? '加载中...' : '加载更多' }}
-                  </button>
-                </div>
-              </div>
-              <div v-if="shipmentsTruncated" class="truncated-tip" role="status">
-                结果已被服务端截断：当前列表不是全量。请继续加载后再用于对账、导出或汇总。
-              </div>
-              <div v-else-if="shipmentsPageMetaMissing" class="truncated-tip" role="status">
-                服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
-              </div>
+              <LogisticsCursorBar
+                :loaded="shipments.length"
+                :truncated="shipmentsTruncated"
+                :page-meta-missing="shipmentsPageMetaMissing"
+                :loading-more="shipmentsLoadingMore"
+                :has-next="!!shipmentsNextCursor"
+                @load-more="loadMoreShipments"
+              />
             </div>
           </section>
 
@@ -953,22 +945,14 @@
                   </tr>
                 </tbody>
               </table>
-              <div class="pagination">
-                <span class="page-info">
-                  已加载 {{ transfers.length }} 条<template v-if="transfersTruncated">，仍有更多未加载</template><template v-else-if="transfersPageMetaMissing">，完整性未知</template>
-                </span>
-                <div class="page-actions">
-                  <button v-if="transfersTruncated" class="page-btn" :disabled="transfersLoadingMore || !transfersNextCursor" @click="loadMoreTransfers">
-                    {{ transfersLoadingMore ? '加载中...' : '加载更多' }}
-                  </button>
-                </div>
-              </div>
-              <div v-if="transfersTruncated" class="truncated-tip" role="status">
-                结果已被服务端截断：当前列表不是全量。请继续加载后再用于对账、导出或汇总。
-              </div>
-              <div v-else-if="transfersPageMetaMissing" class="truncated-tip" role="status">
-                服务端未返回分页元数据，列表完整性无法确认：当前列表不能视为全量。
-              </div>
+              <LogisticsCursorBar
+                :loaded="transfers.length"
+                :truncated="transfersTruncated"
+                :page-meta-missing="transfersPageMetaMissing"
+                :loading-more="transfersLoadingMore"
+                :has-next="!!transfersNextCursor"
+                @load-more="loadMoreTransfers"
+              />
             </div>
           </section>
 
@@ -1395,6 +1379,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
+import LogisticsCursorBar from '../components/LogisticsCursorBar.vue'
 import { useToast } from '../composables/useToast'
 import { useShopGuard } from '../composables/useShopGuard'
 import { canUseRole } from '../utils/identity'
