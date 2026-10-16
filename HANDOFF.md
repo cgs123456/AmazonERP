@@ -1,7 +1,19 @@
-# HANDOFF — 店铺/用户管理 + 通知红点 + 仓库编辑 + 四个详情/汇总/明细 + FBA 货件/供应商详情/编辑 + ad 域 CRUD + 孤儿 API ② 类清空 + WMS 写入口门控与业务拒绝修复 + 四页写入口按后端实际角色集分三类处理 + Finance 拆分与快照缺口披露（2026-10-16 最新更新）
+# HANDOFF — P0 收尾（请求体 shopId 跨租户写洞 + 两页写端点加锁）+ 决策①定案（amz_user_shop.role 不回填）+ CI 修（V6 schema 快照）+ Finance 拆分 + 店铺级角色接通 + 四页写入口分三类处理 + WMS 门控与业务拒绝修复 + ad 域 CRUD + 通知红点 + 店铺/用户管理（2026-10-16 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
-> 本次更新（§S21，2026-10-16）：处理 §S20.6 的三条待办。**`Finance.vue` 1489 → 762 行**
+> 最新（§S23/§S24，2026-10-16）：**P0 已收口**——`§S20.6` 第 1 条不再是悬而未决的产品决策。
+> 侦察时发现比「角色没锁」更严重的**跨租户写洞**（网关只看请求头、切面只看方法参数、
+> 请求体里的 shopId 两边都够不着 → 两层防线同时让开；本仓 32 个 @ShopScoped 写端点的
+> shopId 只在请求体里，其中 amz-service-product 的 5 个连 service 层兜底都没有）。
+> 修复：`ShopIdParameterResolver` 增读 `@RequestBody` 的 shopId（刻意不支持 Map）+
+> 两页 20 个写端点补 `@RequireRole`/`@OperLog` + 前端同步门控。
+> 顺带修掉 `endpoint_role_audit` 对命名空间导入的**漏报**（此前 CustomerService
+> 报「命中 0 个 API」，伪装成「查过了没问题」；修后 API 命中 114→210）。
+> **决策①定案：`amz_user_shop.role` 不回填**（§S24，经逐条核实不存在需要回填的东西）。
+> CI 修：V6 迁移的 schema 快照漏同步（§S23.7），synthetic-data job 从红转绿。
+> 验证：后端 CI 11 job 全绿（含真 MySQL 8 导入与全量迁移）、vitest 655/655、
+> 变异 5 处全部由断言打红、仓库门禁 + release tools 91/91。
+> 上一班（§S21，2026-10-16）：处理 §S20.6 的三条待办。**`Finance.vue` 1489 → 762 行**
 > （六个提交，每步保持全绿）：抽出 `useCursorList`/`FinanceCursorBar`/`useFinanceErrors`/
 > `useFinanceApi`/`FinanceConfirmBox`/`FinanceSettlementOps`/`FinanceClaimFlow`，
 > 「首次进入才拉」的把关与错误条留在页壳。**两个子组件始终挂载、靠 `tab` prop 决定
@@ -3833,6 +3845,7 @@ ProductSearch/ReportCenter/Warehouse/WarehouseAlerts）。
    V6 迁移**只改了列默认值，没有回填存量行**（理由见该迁移注释：批量改写等于
    替管理员做授权决策）。**系统从未部署 → 无存量用户 → 当前风险为零**，
    但这一条与「上线前必须回填/复核 `amz_user_shop.role`」是同一件事。
+   **【已定案 → 见 §S24：不回填。经逐条核实不存在需要回填的东西，本条关闭。】**
 2. **两处仍未加锁的写端点 —— 已逐条核实，结论是不加**（修好扫描器后才浮出来）：
    - `DELETE /search/deleteHistory`（`HistoryController`）——
      **不加是对的**。`HistoryServiceImpl` 的删除与查询都带
@@ -3880,3 +3893,66 @@ synthetic-data job 的全部步骤已本地复跑绿（见该提交信息）。
    （CI 已有步骤内、还是 `precheck`）。在决定之前，加迁移时的清单是：
    `python tools/synthetic-data/snapshot_schema.py` 然后 `--check` 确认。
    这条已写进 §G「变更速查」应补的位置——**下一班若加了新迁移，先跑这一步**。
+
+## §S24. 决策定案：① `amz_user_shop.role` 存量数据 —— 不回填（2026-10-16）
+
+> **这是 §S23.6 第 1 条「上线前必须回填/复核 amz_user_shop.role」的正式定案。**
+> 用户把决策①交下来后，先逐条核实了它的事实前提，结论是**不存在需要回填的东西**，
+> 三个候选方案（报告/回填/重置）里只有「不回填」站得住。留档防止下一班重复排查。
+
+### 1. 定案
+
+**不做任何数据迁移。** V6（改列默认值）已经是这件事需要的全部改动。
+
+### 2. 事实依据（每条都可复查，非推断）
+
+1. **`assignUser` 是 `amz_user_shop` 的唯一写入方**
+   （`ShopServiceImpl:199-203`，全仓 grep `userShopMapper.insert` / `new UserShop()` 仅此一处）。
+   它**永远显式赋 role**：`:179` 先把 null 归一成 VIEWER，再按 ADMIN/OPERATOR/VIEWER
+   白名单校验（`:180-182`），从不依赖列默认值。`createShop` 不自动绑定创建者。
+   没有任何**迁移或库初始化脚本**对这张表做 INSERT（逐类核实：Flyway 各 V*.sql、
+   legacy `07-init-tables-shop.sql` 只有 CREATE）。唯一插这张表的东西是
+   `tools/synthetic-data` 生成的**测试数据集**——而它写的也是显式合法角色
+   （ci tier 实测 ADMIN 11 / OPERATOR 11 / VIEWER 10，无一空值），
+   同样不依赖列默认值。**这条反而加强了结论**：连测试造数都走显式赋值。
+   → **V6 注释里「插入绑定时不显式给 role」这个担忧场景不可能经由应用发生**；
+   V6 改默认值的实际作用是**纵深防御**，挡的是带外 SQL 直插（人工运维/将来批量脚本）。
+2. **即使存在 role 为空/空白/非法的历史行，也是 fail-safe 的**：
+   `toShopRoleMap`（`LoginServiceImpl:187-196`）跳过空值 → `resolveRole` 回落**全局角色**
+   （后端签发的权威值）；非法值（如带外插一个 'ROOT'）不在任何 `@RequireRole` 白名单里
+   → 拒绝。不存在「空行被当成 OPERATOR」的路径。
+3. **没有任何持久库上有真实行**：系统未部署过（无 kubeconfig，release.yml 只构建/发布
+   制品、从不 apply），本地 MySQL 是 IT 的一次性容器库。没有东西可回填。
+
+### 3. 重新审视的条件（写清楚，避免变成僵尸决策）
+
+出现下列任一情况，本定案作废、需要重新走（报告→人工复核→按需 V7 修正）流程：
+
+- 上线前发现**带外写入**这张表的运维脚本/人工 SQL（此时先出差异报告，不自动改写——
+  批量改写等于替管理员做授权决策，这是 V6 的原意，仍然成立）；
+- 角色枚举要扩展（新角色名会让存量行的语义判断变复杂）。
+
+### 4. 为什么「修 V6 注释」也被否决（本班的弯路，值得留档）
+
+本班一度把上述事实写进 V6 的头注释（「那个场景不可能经由应用发生」），跑门禁时发现两件事：
+
+1. **改注释会让 DDL drift gate 红**——`snapshot_schema.py` 按迁移文件的 **sha256**
+   钉快照，改一个字符都算漂移（今天的修复 `e5bc12b` 就是这个门禁）。红不可怕，
+   重生成即可；但这是「改已提交迁移」的第一个信号。
+2. 真正的否决理由是本仓**有测试钉住的契约**：**已提交的迁移文件不可改**
+   （`FlywayBaselineContractTest:97`「V1 不可改，checksum 不可变」、
+   `OperLogCoverageContractTest:135`「重建必须走新的 V3 而不是改 V1」、
+   `OrderV4IndexMigrationContractTest` 带着修复 runbook——改已应用的迁移会让
+   存量库启动直接 `Migration checksum mismatch` 拒绝）。
+   注释也是文件内容的一部分，同样进 checksum。**已还原。**
+
+所以本节的定案与对 V6 注释的更正**只落在这里**。V6 的注释保持原样，
+读的人以本节为准——这正是 CLAUDE.md 第 8 条要的形态：更正要有出处，不留悬空。
+
+### 5. 决策①关闭后，权限主题剩余待办（下一班的入口不变）
+
+- **P0-端到端验证**（§S22.7 第 1 条 / §S23.6 第 3 条）：仍然没有一条测试验证
+  「全局 ADMIN 但店 B 是 VIEWER」的用户在店 B 的 UI 与后端两侧都被正确约束。
+  需要真 DB 造两个角色不同的绑定，属 E4/E5 验收。
+- **决策②**：MultiplatformController 要不要整体加 `@RequireRole`（含外部端点，
+  见 §S23.6 的一致性理由）——仍是产品拍板。
