@@ -146,7 +146,8 @@
             <label class="filter wide">后台搜索词（规则：非空）
               <input v-model="checkForm.searchTerms" />
             </label>
-            <button class="action-btn" :disabled="checkBusy || !checkReady" @click="submitCheck">登记自查结果</button>
+            <button v-if="masterWriteAllowed" class="action-btn" :disabled="checkBusy || !checkReady" @click="submitCheck">登记自查结果</button>
+            <span v-else class="muted write-locked" role="note">登记自查 {{ WRITE_LOCKED_HINT }}</span>
           </div>
           <p class="muted form-hint">
             留空的项按「没做好」扣分——这是后端既有的判定口径，页面不替它改。
@@ -385,7 +386,8 @@
                 <td><input class="cell-input" type="number" :value="m.weightG" @input="patch[m.id as number] = {...(patch[m.id as number] || {}), weightG: Number(($event.target as HTMLInputElement).value)}" /></td>
                 <td>{{ m.status || '-' }}</td>
                 <td class="row-actions">
-                  <button class="page-btn" :disabled="!patch[m.id as number] || masterBusy" @click="saveMaster(m)">保存</button>
+                  <button v-if="masterWriteAllowed" class="page-btn" :disabled="!patch[m.id as number] || masterBusy" @click="saveMaster(m)">保存</button>
+                  <!-- 打印标签是只读操作（本地渲染），VIEWER 也保留 -->
                   <button class="page-btn" @click="printLabel(m)">标签</button>
                 </td>
               </tr>
@@ -407,7 +409,8 @@
               <input v-model="masterForm.brand" class="fee-input" placeholder="品牌" />
               <input v-model="masterForm.sizeTier" class="fee-input" placeholder="尺寸档 SIZE_TIER" />
               <input v-model="masterForm.weightG" class="fee-input" type="number" placeholder="重量(g)" />
-              <button class="page-btn" :disabled="masterBusy" @click="createMasterRow">创建</button>
+              <button v-if="masterWriteAllowed" class="page-btn" :disabled="masterBusy" @click="createMasterRow">创建</button>
+              <span v-else class="muted write-locked" role="note">新建商品主数据 {{ WRITE_LOCKED_HINT }}</span>
             </div>
           </div>
         </div>
@@ -443,7 +446,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import MasterCsvImport from '../components/MasterCsvImport.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
-import { canUseRole, PRODUCT_MASTER_WRITE_ROLES, ROLE_CHANGED_EVENT } from '@/utils/identity'
+import { canUseRole, LISTING_WRITE_ROLES, ROLE_CHANGED_EVENT, WRITE_LOCKED_HINT } from '@/utils/identity'
 import { usePagination } from '@/composables/usePagination'
 import { renderLabelHtml } from '@/utils/packingSlip'
 import {
@@ -470,21 +473,20 @@ const loading = ref(false)
 const { currentShopId, refreshShop } = useShopGuard()
 
 /**
- * 商品主数据 CSV 导入的角色门控。
+ * 本页写入口的角色门控（P0 加锁后）。
  * <p>
- * **本页只有这一个写入口需要门控**，其余写端点（POST /product/master 的建/改、
- * /product/listing-monitor 的 health/check、ranking、competitor、buybox）后端
- * <b>都没有声明 @RequireRole</b>，VIEWER 与 OPERATOR 权限相同——给它们加前端门控
- * 等于前端否决后端已有的能力，而这类不一致没有任何测试会发现。
+ * 此前只有 CSV 导入需要门控——因为 POST /product/master 的建/改与
+ * /product/listing-monitor 的 health/check、ranking、competitor、buybox 在后端
+ * <b>都没有声明 @RequireRole</b>，给它们加前端门控等于前端否决后端已有的能力。
  * <p>
- * 这个「只有一处要门控」的状态是后端现状的快照，不是设计目标：后端哪天给这些端点
- * 补上 @RequireRole，这里必须跟着补门控（identity.ts 里对同类的说明见
- * WMS_WRITE_ROLES 的注释）。
+ * 现在后端已逐个补上 @RequireRole({"OPERATOR","ADMIN"})，门控同步覆盖全部写入口：
+ * 建/改商品主数据、CSV 导入、登记自查、登记 BuyBox、等等。
+ * 常量按 identity.ts 的说明重命名为 LISTING_WRITE_ROLES（从「一个端点」变成「一族端点」）。
  */
-const masterWriteAllowed = ref(canUseRole(PRODUCT_MASTER_WRITE_ROLES))
+const masterWriteAllowed = ref(canUseRole(LISTING_WRITE_ROLES))
 
 const syncMasterWriteRole = () => {
-  masterWriteAllowed.value = canUseRole(PRODUCT_MASTER_WRITE_ROLES)
+  masterWriteAllowed.value = canUseRole(LISTING_WRITE_ROLES)
 }
 
 onMounted(() => {
@@ -824,6 +826,9 @@ const runFee = async () => {
 .filter { font-size: 0.8125rem; color: var(--color-muted); display: inline-flex; align-items: center; gap: 0.375rem; }
 .filter select { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); }
 .muted { color: var(--color-muted); font-size: 0.75rem; }
+
+/* 写入口被角色门控隐藏时的说明：不解释「为什么没有按钮」用户只会以为功能坏了 */
+.write-locked { display: inline-block; padding: 0.25rem 0; }
 
 .health-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .health-tag.ok, .health-tag.healthy { background: var(--color-primary-light); color: var(--color-success); }

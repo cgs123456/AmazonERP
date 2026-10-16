@@ -102,6 +102,14 @@ def scan_view(path, known_api=None):
     Vue 响应式 API（`ref`/`computed`/`onMounted`）和常量（`WRITE_LOCKED_HINT`）
     也收进来，产出 385 条噪声——**噪声正是这类尺失效的方式**：真正的未匹配
     会淹在里面看不见。所以未匹配要在过滤后才统计，且只留真的像 API 的。
+
+    <h2>命名空间导入（`import * as X`）必须解析出来</h2>
+    此前这里硬编码了三种前缀（`ext`/`api`/`warehouseApi`），于是
+    `import * as cust from '@/api/customer'` 这种写法**整个文件都扫不到**——
+    CustomerService.vue 一度报「前端 API 命中 0 个」，看起来像「这页没有写操作」，
+    实际它是 P0 要加锁的两个页面之一。<b>扫描器漏报比误报危险得多</b>：
+    误报会被人肉忽略，漏报则伪装成「已经查过了，没问题」。
+    所以前缀改为从文件里按其真实别名解析，不再维护白名单。
     """
     src = path.read_text(encoding='utf-8')
     script = src[src.find('<script setup'):] if '<script setup' in src else src
@@ -112,9 +120,15 @@ def scan_view(path, known_api=None):
         if n in known_api:
             names[n] = names.get(n, 0) + 1
 
-    for m in re.finditer(r'\b(?:ext|api|warehouseApi)\.(\w+)\b', script):
-        add(m.group(1))
-    # 只认从 api 模块 import 进来的名字：import { x } from '@/api/...'
+    # 1. 命名空间导入：import * as <alias> from '@/api/...'
+    ns_aliases = set()
+    for m in re.finditer(r"import\s*\*\s*as\s+(\w+)\s+from\s*['\"][^'\"]*api[^'\"]*['\"]",
+                         script):
+        ns_aliases.add(m.group(1))
+    for alias in ns_aliases:
+        for m in re.finditer(r'\b' + re.escape(alias) + r'\.(\w+)\b', script):
+            add(m.group(1))
+    # 2. 具名导入：import { x } from '@/api/...'（同样接受 `as` 别名）
     for m in re.finditer(r"import\s*\{([^}]+)\}\s*from\s*['\"][^'\"]*api[^'\"]*['\"]",
                          script, re.S):
         for raw in m.group(1).split(','):

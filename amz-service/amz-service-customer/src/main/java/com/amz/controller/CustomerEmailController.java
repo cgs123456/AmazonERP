@@ -41,6 +41,8 @@ public class CustomerEmailController {
     // ==================== 邮件模板 ====================
 
     /** 创建邮件模板 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "客服邮件", action = "新建模板", description = "创建邮件模板")
     @ShopScoped
     @PostMapping("/template")
     public Result<EmailTemplate> createTemplate(@RequestBody EmailTemplate template) {
@@ -48,6 +50,8 @@ public class CustomerEmailController {
     }
 
     /** 更新模板 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "客服邮件", action = "更新模板", description = "更新邮件模板")
     @ShopScoped
     @PutMapping("/template/{id}")
     public Result<EmailTemplate> updateTemplate(@PathVariable Long id, @RequestBody EmailTemplate template) {
@@ -67,7 +71,8 @@ public class CustomerEmailController {
     }
 
     /** 启用/禁用模板 */
-    @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "客服邮件", action = "启停模板", description = "启用/禁用邮件模板")
     @PostMapping("/template/{id}/toggle")
     public Result<Boolean> toggleTemplate(@PathVariable Long id, @RequestParam boolean enabled) {
         return Result.success(customerEmailService.toggleTemplate(id, enabled));
@@ -76,6 +81,8 @@ public class CustomerEmailController {
     // ==================== 自动化邮件 ====================
 
     /** 触发事件邮件（订单确认/发货/索评等） */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "客服邮件", action = "触发邮件", description = "触发事件邮件")
     @ShopScoped
     @PostMapping("/trigger/{shopId}")
     public Result<EmailTask> triggerEmail(@PathVariable Long shopId,
@@ -89,6 +96,8 @@ public class CustomerEmailController {
     }
 
     /** 执行待发送邮件 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "客服邮件", action = "发送待发", description = "执行待发送邮件")
     @ShopScoped
     @PostMapping("/process/{shopId}")
     public Result<Map<String, Object>> processPendingEmails(@PathVariable Long shopId) {
@@ -106,6 +115,8 @@ public class CustomerEmailController {
     }
 
     /** 手动创建邮件任务 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "客服邮件", action = "建任务", description = "手动创建邮件任务")
     @ShopScoped
     @PostMapping("/task/manual")
     public Result<EmailTask> createManualTask(@RequestBody EmailTask task) {
@@ -115,6 +126,8 @@ public class CustomerEmailController {
     // ==================== 差评监控 ====================
 
     /** 保存差评数据 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "差评跟进", action = "登记", description = "保存差评数据")
     @ShopScoped
     @PostMapping("/negative-review")
     public Result<NegativeReview> saveNegativeReview(@RequestBody NegativeReview review) {
@@ -134,14 +147,13 @@ public class CustomerEmailController {
     }
 
     /** 差评-订单匹配 */
-    @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "差评跟进", action = "匹配订单", description = "差评-订单匹配")
     @PostMapping("/negative-review/{reviewId}/match")
     public Result<Map<String, Object>> matchReviewToOrder(@PathVariable Long reviewId) {
         return Result.success(customerEmailService.matchNegativeReviewToOrder(reviewId));
     }
 
-    /** 差评自动跟进（创建跟进邮件） */
-    @ShopScoped
     /**
      * 差评跟进结案（DETECTED/MATCHED/CONTACTED → RESOLVED）。结案幂等。
      */
@@ -159,6 +171,9 @@ public class CustomerEmailController {
         }
     }
 
+    /** 差评自动跟进（创建跟进邮件） */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "差评跟进", action = "跟进", description = "差评自动跟进")
     @PostMapping("/negative-review/{reviewId}/followup")
     public Result<EmailTask> followUpNegativeReview(@PathVariable Long reviewId) {
         return Result.success(customerEmailService.followUpNegativeReview(reviewId));
@@ -167,6 +182,8 @@ public class CustomerEmailController {
     // ==================== RMA 退货 ====================
 
     /** 创建 RMA 退货申请 */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "RMA 退货", action = "建单", description = "创建 RMA 退货申请")
     @ShopScoped
     @PostMapping("/rma")
     public Result<Rma> createRma(@RequestBody Rma rma) {
@@ -185,7 +202,8 @@ public class CustomerEmailController {
     }
 
     /** 更新 RMA 状态 */
-    @ShopScoped
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "RMA 退货", action = "改状态", description = "更新 RMA 状态")
     @PostMapping("/rma/{rmaId}/status")
     public Result<Rma> updateRmaStatus(@PathVariable Long rmaId, @RequestParam String status) {
         return Result.success(customerEmailService.updateRmaStatus(rmaId, status));

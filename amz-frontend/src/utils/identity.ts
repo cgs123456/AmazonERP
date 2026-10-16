@@ -122,18 +122,36 @@ export const ORDER_FULFILLMENT_WRITE_ROLES = ['OPERATOR', 'ADMIN']
 export const FINANCE_WRITE_ROLES = ['OPERATOR', 'ADMIN']
 
 /**
- * 商品主数据 CSV 导入（POST /product/master/import/csv）的守卫角色。
+ * Listing / 商品主数据写入的守卫角色（ListingMonitor 页的写入口）。
  * <p>
- * **只覆盖这一个端点**，不要因为「都是 ListingMonitor 页的写操作」就把它扩成
- * 「ListingMonitor 页写角色」：同一个页面上的 POST /product/master（建/改）与
- * /product/listing-monitor 的 health/check、ranking、competitor、buybox 在后端
- * <b>都没有 @RequireRole</b>，VIEWER 与 OPERATOR 权限相同。用这个常量去门控那些入口，
- * 就是前端否决后端已有的能力，而且没有任何测试会发现这种不一致。
+ * **P0 加锁后的口径**：此前这个常量叫 {@code PRODUCT_MASTER_WRITE_ROLES}，只覆盖
+ * CSV 导入一个端点——因为当时 POST /product/master（建/改）与 /product/listing-monitor 的
+ * health/check、ranking、competitor、buybox 在后端**都没有 @RequireRole**，
+ * VIEWER 与 OPERATOR 等权。那时扩展它的用途就是「前端否决后端已有的能力」。
  * <p>
- * 后端哪天给那些端点补上 @RequireRole，这里要按新角色集逐个补门控——那是改这个常量
- * 的语义（从「一个端点」变成「一族端点」）的信号，届时应重命名而不是就地扩用途。
+ * 现在后端这些写端点已<b>逐条</b>补上 {@code @RequireRole({"OPERATOR","ADMIN"})}
+ * （ListingMonitorController.saveRanking/saveCompetitor/saveBuyBox/checkListing、
+ * ProductMasterController.create/update），取值完全一致，所以按原注释的要求
+ * <b>重命名</b>为「一族端点」的语义，而不是就地扩用途。
+ * <p>
+ * 与 {@code FINANCE_WRITE_ROLES} 等分开：改商品主数据与记账不是同一个授权决策。
+ * 后端哪天对其中某一类放开，就必须拆开——继续共用会让前端对已放开的那类仍然隐藏入口。
  */
-export const PRODUCT_MASTER_WRITE_ROLES = ['OPERATOR', 'ADMIN']
+export const LISTING_WRITE_ROLES = ['OPERATOR', 'ADMIN']
+
+/**
+ * 客服写入（工单建单/回复/结案/索评、邮件模板与任务、差评跟进、RMA）的守卫角色。
+ * <p>
+ * 后端 CustomerController 与 CustomerEmailController 的写端点**逐条**声明同一个
+ * {@code @RequireRole({"OPERATOR","ADMIN"})}（共 14 个），用户可见语义也确实是同一件事——
+ * 「代表店铺与买家往来」，所以这里合并。
+ * <p>
+ * 合并是有条件的：一旦后端对某一族放开（例如工单回复允许 VIEWER、只有结案要 OPERATOR），
+ * 就必须拆成 TICKET_WRITE_ROLES / EMAIL_WRITE_ROLES / RMA_WRITE_ROLES。
+ * 继续共用的后果是前端对已放开的那一族仍然隐藏入口——**前端用旧判断否决了后端的新能力**，
+ * 而这类不一致没有任何测试会发现（后端放开了，前端却藏着）。
+ */
+export const CUSTOMER_SERVICE_WRITE_ROLES = ['OPERATOR', 'ADMIN']
 
 /** 门控隐藏时给用户的说明文案：不解释「为什么没有按钮」用户只会以为功能没了。 */
 export const WRITE_LOCKED_HINT = '需 OPERATOR/ADMIN'

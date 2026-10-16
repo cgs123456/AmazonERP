@@ -39,7 +39,8 @@
               </label>
               <label class="filter">分类<input v-model="ticketCategory" @keyup.enter="loadTickets()" /></label>
               <button class="action-btn" :disabled="tickets.loading.value" @click="loadTickets()">刷新</button>
-              <button class="action-btn" @click="openModal('ticket')">新建工单</button>
+              <button v-if="writeAllowed" class="action-btn" @click="openModal('ticket')">新建工单</button>
+              <span v-else class="muted" role="note">本页写操作{{ WRITE_LOCKED_HINT }}</span>
             </div>
             <table class="data-table">
               <thead>
@@ -57,8 +58,8 @@
                   <td class="cell-clip" :title="t.content">{{ t.content || '-' }}</td>
                   <td class="cell-clip" :title="t.reply">{{ t.reply || '-' }}</td>
                   <td>
-                    <button class="action-btn" :disabled="busy || t.status === 'CLOSED'" @click="openModal('reply', { ticket: t })">回复</button>
-                    <button v-if="canCloseTicket(t.status)" class="action-btn" :disabled="busy"
+                    <button v-if="writeAllowed" class="action-btn" :disabled="busy || t.status === 'CLOSED'" @click="openModal('reply', { ticket: t })">回复</button>
+                    <button v-if="writeAllowed && canCloseTicket(t.status)" class="action-btn" :disabled="busy"
                             @click="confirm(closeTicketConfirm(t))">关闭</button>
                   </td>
                 </tr>
@@ -88,7 +89,7 @@
                 </select>
               </label>
               <button class="action-btn" :disabled="templates.loading.value" @click="loadTemplates()">刷新</button>
-              <button class="action-btn" @click="openModal('template')">新建模板</button>
+              <button v-if="writeAllowed" class="action-btn" @click="openModal('template')">新建模板</button>
               <span class="muted">「按事件触发邮件」的下拉项来自这里启用中的 triggerEvent</span>
             </div>
             <table class="data-table">
@@ -106,8 +107,8 @@
                   <td class="cell-clip" :title="tp.body">{{ tp.body }}</td>
                   <td><span class="status-tag" :class="truthy(tp.enabled) ? 'healthy' : 'unknown'">{{ truthy(tp.enabled) ? '启用' : '停用' }}</span></td>
                   <td>
-                    <button class="action-btn" :disabled="busy" @click="toggleTpl(tp, !truthy(tp.enabled))">{{ truthy(tp.enabled) ? '停用' : '启用' }}</button>
-                    <button class="action-btn" @click="openModal('template', { template: tp })">编辑</button>
+                    <button v-if="writeAllowed" class="action-btn" :disabled="busy" @click="toggleTpl(tp, !truthy(tp.enabled))">{{ truthy(tp.enabled) ? '停用' : '启用' }}</button>
+                    <button v-if="writeAllowed" class="action-btn" @click="openModal('template', { template: tp })">编辑</button>
                   </td>
                 </tr>
                 <tr v-if="!templates.loading.value && !templates.rows.value.length">
@@ -136,9 +137,9 @@
                 </select>
               </label>
               <button class="action-btn" :disabled="tasks.loading.value" @click="loadTasks()">刷新</button>
-              <button class="action-btn" @click="openModal('manualTask')">手动建任务</button>
-              <button class="action-btn" @click="openModal('trigger')">按事件触发</button>
-              <button class="action-btn danger" :disabled="busy" @click="confirm(processConfirm)">处理待发队列</button>
+              <button v-if="writeAllowed" class="action-btn" @click="openModal('manualTask')">手动建任务</button>
+              <button v-if="writeAllowed" class="action-btn" @click="openModal('trigger')">按事件触发</button>
+              <button v-if="writeAllowed" class="action-btn danger" :disabled="busy" @click="confirm(processConfirm)">处理待发队列</button>
             </div>
             <table class="data-table">
               <thead>
@@ -184,8 +185,8 @@
               </label>
               <label class="filter">最高评分<input class="cell-input" type="number" min="1" max="5" v-model="reviewMaxRating" /></label>
               <button class="action-btn" :disabled="reviews.loading.value" @click="loadReviews()">刷新</button>
-              <button class="action-btn" @click="openModal('review')">登记差评</button>
-              <button class="action-btn danger" :disabled="busy" @click="confirm(solicitConfirm)">批量索评</button>
+              <button v-if="writeAllowed" class="action-btn" @click="openModal('review')">登记差评</button>
+              <button v-if="writeAllowed" class="action-btn danger" :disabled="busy" @click="confirm(solicitConfirm)">批量索评</button>
             </div>
             <table class="data-table">
               <thead>
@@ -202,9 +203,9 @@
                   <td class="mono">{{ r.matchedOrderId || '-' }}</td>
                   <td class="mono">{{ r.contactEmailTaskId || '-' }}</td>
                   <td>
-                    <button class="action-btn" :disabled="busy || !!r.matchedOrderId" @click="confirm(matchConfirm(r))">匹配订单</button>
-                    <button class="action-btn" :disabled="busy" @click="followUp(r)">生成跟进邮件</button>
-                    <button v-if="r.status !== 'RESOLVED'" class="action-btn" :disabled="busy" @click="confirm(resolveConfirm(r))">结案</button>
+                    <button v-if="writeAllowed" class="action-btn" :disabled="busy || !!r.matchedOrderId" @click="confirm(matchConfirm(r))">匹配订单</button>
+                    <button v-if="writeAllowed" class="action-btn" :disabled="busy" @click="followUp(r)">生成跟进邮件</button>
+                    <button v-if="writeAllowed && r.status !== 'RESOLVED'" class="action-btn" :disabled="busy" @click="confirm(resolveConfirm(r))">结案</button>
                   </td>
                 </tr>
                 <tr v-if="!reviews.loading.value && !reviews.rows.value.length">
@@ -250,7 +251,7 @@
                 </select>
               </label>
               <button class="action-btn" :disabled="rmas.loading.value" @click="loadRmas()">刷新</button>
-              <button class="action-btn" @click="openModal('rma')">新建 RMA</button>
+              <button v-if="writeAllowed" class="action-btn" @click="openModal('rma')">新建 RMA</button>
               <span class="muted">订单号后端不校验是否存在或属于本店铺，请自行核对</span>
             </div>
             <table class="data-table">
@@ -428,11 +429,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, type Ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted, type Ref } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
+import { canUseRole, CUSTOMER_SERVICE_WRITE_ROLES, ROLE_CHANGED_EVENT, WRITE_LOCKED_HINT } from '@/utils/identity'
 import type { ApiResponse } from '@/api/types'
 import * as cust from '@/api/customer'
 import {
@@ -470,6 +472,22 @@ const { currentShopId, refreshShop } = useShopGuard()
 const tab = ref<TabKey>('ticket')
 const errors = ref<string[]>([])
 const busy = ref(false)
+
+/**
+ * 本页写入口的角色门控（P0 加锁后）。
+ * <p>
+ * 本页所有写端点（工单建单/回复/关闭/索评、邮件模板与任务、差评跟进、RMA）
+ * 在后端都声明了 {@code @RequireRole({"OPERATOR","ADMIN"})}，所以入口按同一角色集隐藏。
+ * <p>
+ * 注意「未知角色不隐藏」的语义来自 {@code canUseRole}：硬刷新时 AppHeader 的 getInfo
+ * 可能还没回来，因为「还没取到角色」就把功能藏掉，等于让前端状态去否决后端能力。
+ * 权限的权威判定始终在后端——这里只是不让用户点了才被拒。
+ */
+const writeAllowed = ref(canUseRole(CUSTOMER_SERVICE_WRITE_ROLES))
+
+const syncWriteRole = () => {
+  writeAllowed.value = canUseRole(CUSTOMER_SERVICE_WRITE_ROLES)
+}
 
 const tickets = mkList<CustomerTicket>()
 const ticketStatus = ref('')
@@ -814,9 +832,12 @@ const gotoTab = async (key: TabKey) => {
 }
 
 onMounted(async () => {
+  window.addEventListener(ROLE_CHANGED_EVENT, syncWriteRole)
   if (!shop()) return
   await gotoTab('ticket')
 })
+
+onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncWriteRole))
 </script>
 
 <style scoped>

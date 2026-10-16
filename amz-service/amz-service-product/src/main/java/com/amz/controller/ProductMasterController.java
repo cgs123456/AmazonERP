@@ -111,6 +111,15 @@ public class ProductMasterController {
         }
     }
 
+    /**
+     * 新建商品主数据。
+     * <p>
+     * shopId 只在请求体（{@code AmzProduct.shopId}）里，两个切面此前都解析不到：
+     * {@code @ShopScoped} 走「未找到 shopId 参数 → 兼容放行」，而 service 层没有行级校验，
+     * 等于任何已登录用户都能往任意店铺建商品。角色按请求体里的店铺判定。
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "商品主数据", action = "新建", description = "新建商品主数据")
     @ShopScoped
     @PostMapping
     public Result<AmzProduct> create(@RequestBody AmzProduct product) {
@@ -121,6 +130,14 @@ public class ProductMasterController {
         }
     }
 
+    /**
+     * 更新商品主数据。
+     * <p>
+     * shopId 在路径里，两个切面都能解析到（角色按该店铺判定）。
+     * 请求体里的 shopId 刻意不参与判定——路径才是这次操作真正要改的店。
+     */
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "商品主数据", action = "更新", description = "更新商品主数据")
     @ShopScoped
     @PutMapping("/{shopId}/{id}")
     public Result<AmzProduct> update(@PathVariable Long shopId,
