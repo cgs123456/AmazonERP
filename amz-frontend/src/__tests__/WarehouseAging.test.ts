@@ -124,6 +124,23 @@ describe('海外仓 · 库龄分析面板', () => {
     expect(wrapper.find('[data-panel="aging"]').text()).toContain('本次扫描触顶（已扫 5000 行）')
   })
 
+  // `amz_warehouse_stock` 目前没有自动写入方：唯一入口是 POST /logistics/warehouse/stock，
+  // 而前端按 api/warehouseAlerts.ts 的有意决策不接它（手填表单 = 允许任何人往快照造数）。
+  // 这条用例钉住「空态必须把这个缺口说出来」——否则运营只会看到 0 而不知道缺的是数据。
+  it('快照为空时必须说明缺口来源，不能只显示一行「没数据」', async () => {
+    mockedAging.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: { ...AGING_OK, totalSkus: 0, oldestTop10: [] }
+    } as any)
+    const wrapper = await mountPage()
+    await openInventoryTab(wrapper)
+    const text = wrapper.find('[data-panel="aging"]').text()
+    expect(text).toContain('快照是空的')
+    // 必须点名唯一写入端点与「目前没有自动同步方」这个事实
+    expect(text).toContain('POST /logistics/warehouse/stock')
+    expect(text).toContain('没有自动同步方')
+  })
+
   it('后端失败时给出原因，不渲染四个 0 冒充「没有滞销」', async () => {
     mockedAging.mockResolvedValue({ code: 500, message: '库存快照服务没起', data: null } as any)
     const wrapper = await mountPage()

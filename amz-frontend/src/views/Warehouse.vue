@@ -212,6 +212,11 @@
                 <tr v-if="!aging.oldestTop10.length">
                   <td colspan="5" class="page-info">
                     没有「可用库存 &gt; 0」的快照行。这不代表仓里没货，代表这条店铺的库存快照是空的。
+                    <br />
+                    快照只能由 <code>POST /logistics/warehouse/stock</code> 写入，
+                    目前没有自动同步方（入/出库单写的是各自的表，不回写快照）——
+                    要补数据需由海外仓回传后调用该端点，前端刻意不提供手填入口，
+                    避免任何人往快照表造数并覆盖同一 sku+仓 的历史口径。
                   </td>
                 </tr>
               </tbody>
