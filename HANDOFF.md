@@ -4366,9 +4366,9 @@ order / finance 调进来）。
 2. **角色覆盖已从 46 缺口收敛到 7 个有据豁免**；审计缺口仍是 57 个
    （`python tools/schema/operlog_coverage_audit.py`）。剩下 25 个「角色也没有」里，
    多数是自助端点（不该锁），真缺口见 `--gaps` 的 `N` 标记。
-3. 本班发现本机 **loopback 不可用**导致一批测试必红（DeepSeek / product 两个）。
-   这是环境事实、不是回归，但会一直干扰本地全量判断——**建议单独一班确认是
-   本机代理/防火墙还是 JDK 配置**，否则每次本地 `mvn test` 都要重新排查一遍。
+3. ~~建议单独一班确认本机 loopback~~ → **已确认并已定案**：根因是 Windows
+   AF_UNIX 的 connect 失败（JDK 与 .NET 同错，排除 JDK 问题），用户拍板**本机不修、
+   以 CI 为准**。详见 §S30.3 / §S30.4，三条环境失败名单也在记忆里。
 
 ---
 
@@ -4444,17 +4444,26 @@ product 的 `TranslationCacheWriteFailureTest` / `OrderServiceFeignDecodeIT`）�
 **排查到此为止的原因**：再往下要动网络栈（停 HNS 相关服务、或重启）——那是会影响
 这台机器上其他东西的操作，**属于需要你决定的范围，我没有自行执行**。
 
-### 4. 如果只想让本地 `mvn test` 不再被这几条干扰
+### 4. 定案（2026-10-16 用户拍板）：**本机不修，以 CI 为准**
 
-按侵入性从低到高，**每一条都要你自己判断要不要做**：
+> 用户原话：「代码没问题就行，不必过于深究，在此电脑跑不了没关系，在其他设备上能运行就可以。」
 
-1. **最省事**：接受它。CI 全绿，本地判定回归时把这 3 个测试名当白名单
-   （`DeepSeekAgentConfigurationContractTest` / `TranslationCacheWriteFailureTest` /
-   `OrderServiceFeignDecodeIT`），失败名单只在这些之外才算回归。
-   §S22.6 的基线本来就是这个用法。
-2. 想彻底修：先试**重启**（AF_UNIX 异常在 Windows 上常见于服务/网络栈状态残留）；
-   无效再看 Docker Desktop 的「使用 WSL2 虚拟化」设置与 HNS 服务。
-3. 别试 `-Djava.nio.channels.spi.SelectorProvider=...` 之类的 JDK 开关，已验证无用。
+所以这一节从「给下一班三个选项」改成「已经选定了哪一个」：
+
+- **选 1（接受环境失败）**。三个测试名当环境白名单：
+  `DeepSeekAgentConfigurationContractTest` / `TranslationCacheWriteFailureTest` /
+  `OrderServiceFeignDecodeIT`。
+- **选项 2（重启 + 动 HNS/Docker 网络栈）不做**——收益只是让本地全绿，
+  代价可能影响这台机器上其他依赖容器网络的工具，而 §S29 的推送已经证明
+  **CI 11/11 全绿、这三条在 CI 上一条都没红**。继续排查不增加信息。
+- 选项 3（JDK 开关）已实测无效，别再试。
+
+**判定回归的方法（不变，只是写清适用边界）**：看失败集合是否**超出**这三条。
+集合内 = 环境问题；出现新名字 = 真回归，要查。
+**这条豁免只适用于环境类失败**（网络 / 套接字 / 端口 / 文件权限）——
+断言失败、编译错误、契约测试红仍照常追，不能当「本地红都可以忽略」的通行证。
+
+已同步写入记忆 `local-env-failures-defer-to-ci.md`，下个工作会话不用重看本节。
 
 ### 5. 顺带记一条踩坑（写 Java/PowerShell 探针时）
 
