@@ -609,17 +609,14 @@
         </div>
       </div>
 
-      <!-- 确认弹窗 -->
-      <div v-if="confirmBox" class="modal-mask" @click.self="confirmBox = null">
-        <div class="modal" role="dialog" aria-modal="true">
-          <h3>{{ confirmBox.title }}</h3>
-          <p class="confirm-detail">{{ confirmBox.detail }}</p>
-          <div class="modal-actions">
-            <button class="filter-btn" @click="confirmBox = null">取消</button>
-            <button class="filter-btn" :disabled="busy || !financeWriteAllowed" @click="runConfirm">确认执行</button>
-          </div>
-        </div>
-      </div>
+      <!-- 确认弹窗：状态（confirmBox / runConfirm）留在本组件，弹窗只渲染并回传事件 -->
+      <FinanceConfirmBox
+        :box="confirmBox"
+        :busy="busy"
+        :write-allowed="financeWriteAllowed"
+        @cancel="confirmBox = null"
+        @confirm="runConfirm"
+      />
 
       <!-- 短收登记 / 赔付登记 -->
       <div v-if="formKind" class="modal-mask" @click.self="formKind = null">
@@ -654,6 +651,7 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import FinanceCursorBar from '../components/FinanceCursorBar.vue'
+import FinanceConfirmBox from '../components/FinanceConfirmBox.vue'
 import { makeCursor, type CursorList } from '@/composables/useCursorList'
 import { useFinanceErrors } from '@/composables/useFinanceErrors'
 import { useFinanceApi } from '@/composables/useFinanceApi'
@@ -1305,7 +1303,6 @@ onUnmounted(() => {
 .form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--color-on-surface); }
 .form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-background); color: var(--color-on-surface); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
-.confirm-detail { font-size: 0.875rem; color: var(--color-on-surface); line-height: 1.5; margin: 0; }
 
 @media (max-width: 768px) { .recon-cols { grid-template-columns: 1fr; } .form-grid { grid-template-columns: 1fr; } }
 
