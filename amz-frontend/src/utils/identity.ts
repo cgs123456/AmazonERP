@@ -100,12 +100,17 @@ export const ORDER_FULFILLMENT_WRITE_ROLES = ['OPERATOR', 'ADMIN']
  * 财务写入（凭证 / 结算同步 / 差异扫描 / 索赔 / 回款重算 / VAT 月结）的守卫角色。
  * <p>
  * 后端 FinanceController、SettlementController、FeeDiscrepancyController、
- * ReimbursementClaimController、PaymentCollectionController、VatController 共 14 个
+ * ReimbursementClaimController、PaymentCollectionController、VatController 共 15 个
  * 写端点**逐条声明**同一个 {@code @RequireRole({"OPERATOR","ADMIN"})}。
  * <p>
  * 单独一个常量而不是复用 WMS_WRITE_ROLES：财务写的是账，「记账」与「仓里发生了什么」
- * 不是同一个授权决策。FinanceControllerGuardTest 已有断言钉住这 14 个端点的数量，
+ * 不是同一个授权决策。FinanceControllerGuardTest 已有断言钉住这 15 个端点的数量，
  * 新增财务写端点必须同步更新该测试——那正是这个常量该跟着改的信号。
+ * <p>
+ * 计数口径：`@Post/Put/Delete/PatchMapping` 方法数（`amz-service-finance/src/main`
+ * 下六个 Controller 合计 15，与 `tools/schema/endpoint_role_audit.py` 和
+ * FinanceControllerGuardTest 的断言三方一致）。此前这里写 14，是漏数了
+ * `/voucher/from-settlement` 与 `/voucher/procurement` 之一。
  */
 export const FINANCE_WRITE_ROLES = ['OPERATOR', 'ADMIN']
 
