@@ -3595,3 +3595,116 @@ python tools/schema/endpoint_role_audit.py --table Finance   # 单页
    `composables/useCursorList.ts` 里且只服务 Finance（依赖 `useFinanceErrors` 的
    `name：` 前缀约定）。若另两页也有服务端游标列表，先看它们的错误上报是不是同一
    套约定——**不是同一套就不要硬合并**，把错误的归属方式统一是独立的一件事。
+
+---
+
+## §S22. 交接：2026-10-16 店铺级角色接通（P0 的①：从「能配不生效」到真正生效）
+
+> **后端 + 前端**。承接 §S21.5 第 1 条的决策：用户拍板走**接通**而不是移除。
+> 结论先说：`amz_user_shop.role` 此前**能配、能存、能显示，但从不进入任何授权判断**；
+> 现在 JWT 携带 `shop_roles`，`@RequireRole` 按**目标店铺**判定。
+
+### 1. 缺陷本体（这条比 P0 的「VIEWER 能写」更前置）
+
+链条逐环节可验证：`ShopManagement.vue:105-115` 有店铺角色下拉框（ADMIN 可配）→
+`ShopServiceImpl.assignUser:195-203` 真写进 `amz_user_shop.role` →
+`listShopUsers:236-244` 真读出来渲染到表格。**但 `LoginServiceImpl:128` 生成 JWT 时
+用的是 `dbUser.getRole()`（即 `amz_user.role` 全局角色）**，绑定表的 role 从未进入判定。
+
+后果不是「少了个功能」，是**名实不符**：管理员以为收窄了某人的权限、UI 也显示 VIEWER，
+实际什么都没发生——而且静默，没有报错、没有日志、没有任何测试会红。
+
+另有一处：`V1__init.sql:55` 给 `amz_user_shop.role` 的默认值是 **OPERATOR**，
+比 `amz_user.role` 的 VIEWER 更宽。在接通之前不构成问题（只写不读），
+接通之后「插入绑定时不显式给 role」第一次有了安全后果。
+
+### 2. 方案：JWT 携带 shop_roles，判定时店铺级优先、全局兜底
+
+| 层 | 改动 |
+|---|---|
+| JWT | 新增 `shop_roles` claim `{shopId: "OPERATOR"}`；与 `shops` **分开**而不是改成对象数组（shops 已被网关/切面/前端多处按字符串 id 列表消费） |
+| `UserContext` | 新增 `resolveRole(shopId)`：店铺级优先、全局兜底。**唯一判定点** |
+| `RequireRoleAspect` | 店铺 id 取自**方法参数**，与 `ShopIdGuardAspect` 共用新抽出的 `ShopIdParameterResolver` |
+| 签发 | 登录 + **refresh 换发**都要带（只改登录是这类改动最常见的半成品，token 一续期角色就丢） |
+| 迁移 | `V6__shop_role_default_viewer.sql`：默认值 OPERATOR→VIEWER，**不改写存量行** |
+| 前端 | 读 `effectiveRole`（当前店铺上的有效角色）而不是 `user.role` |
+
+**「缺席即兼容」是本设计的关键取舍**：老 token 没有 `shop_roles`，解析返回空 Map、
+下游回落全局角色。上线**不需要**让已签发的 token 失效。若改成「缺失即拒绝」，
+上线瞬间所有在线用户的写操作会全部失效直到重新登录。
+
+### 3. 最要紧的一处：店铺 id 必须取方法参数，不能取请求头
+
+两者可以不一致——客户端把 header 设成自己有 OPERATOR 的**店 A**，请求却作用于**店 B**。
+只看 header 就会出现「拿店 A 的角色去写店 B」。
+
+**变异验证**（把 `resolveShopId(pjp)` 换成 `UserContext.getShopId()`，即请求头那家）
+→ 4 红，含专测这个洞的 `shopIdComesFromMethodParameterNotAmbientContext`。
+另一处变异（`resolveRole` 换成 `getRole`）→ 同样 4 红。
+
+签名里没有 shopId 参数的写端点（入库/出库单 `create/cancel/pick/pack/ship`、
+`/{userId}/role`、跨店同步等）**回落全局角色**——它们没有「面向哪个店」这一个
+可解析的答案，强行要求店铺上下文会让一批本来正常的端点在全量接入前失效。
+口径因此是：**能定位到店铺就按店铺判（精细），定位不到按全局判（兜底）**。
+
+### 4. 逐点分类：哪些换、哪些刻意不换
+
+**按店铺判**（收窄生效）：
+`ShopCredentialController.canManageCredentials`（凭证是店铺级的）、
+`ErpToolExecutor.hasOperatePermission`（助手作用于用户当前在看的店）、
+`ShopServiceImpl.requireAdminOn(shopId)`（改店铺信息/状态、分配/解绑用户、看该店授权列表）。
+
+**保持全局角色**（跨店问题，换掉会**提权**）：
+- `ConnectorController.isAdmin()`：回答的是「空 shops 能不能被解释成全库范围」这个
+  跨店问题。用店铺级角色会让「只在店 A 是 ADMIN」的用户拿到全库 Outbox 读范围。
+- `ShopServiceImpl.requireGlobalAdmin()`：建店。新店不属于任何现有店铺，
+  一个「只在店 A 是 ADMIN」的用户没资格建。
+
+**跨线程盲区（顺带修）**：`AgentChatStreamService` 与 `ListingCopyService` 的
+`UserContextSnapshot` 捕获了 role/shops 却漏了 shop_roles，`bind()` 也不回填。
+SSE 与复制任务的执行线程是异步的，ThreadLocal 不跨线程——漏这一项下游会静默
+回落全局角色，等于店铺级收窄在这两条路径上失效。
+
+### 5. 前端：首次登录必须重取一次
+
+`effectiveRole` 是「当前店铺上的角色」，而**首次登录时 localStorage 里还没有
+`current_shop_id`**，第一次 `getInfo` 不带 shopId 头，后端只能回落全局角色。
+所以 AppHeader 落完默认店铺后**重取一次**。
+
+判据用「**本次请求是否带了 shopId**」，不是「店铺选择是否变化」——
+后者被 `getCurrentShopId()` 的自动回填写成 `shops[0]` 之后永远为 false。
+（这个 bug 是新加的测试抓出来的，不是审出来的。）
+
+切店走 `window.location.reload()`，getInfo 带新 shopId 重跑，所以切店后自动是准的。
+
+### 6. 验证
+
+- `amz-common` 252/252（新增 16 条：`ShopScopedRoleResolutionContractTest` 9、
+  `RequireRoleShopScopeContractTest` 7、`JwtUtilShopRolesContractTest` 6）
+- `amz-service-user` 51/51；gateway/spapi/finance/logistics/order/customer/
+  procurement/report/ops/multiplatform/search/message **全部 SUCCESS**
+- **product / ai / ad 有 10 个失败，与本次改动无关**：`Unable to establish loopback
+  connection` ×9 + `DeepSeekAgentConfigurationContractTest` ×1。
+  已用 `git stash` 在**干净树**上逐模块复跑确认可复现——环境问题（本机不允许
+  测试占 loopback socket），不是回归。下一班不要试图修，除非换了环境。
+- 前端 vitest **649/649**、vue-tsc 0 错、`vite build` 通过
+- 仓库门禁：hygiene 0 findings、release tools 91/91、
+  entity_column_drift 110 实体 0 漂移、endpoint_role_audit（Finance 27/27）
+- 迁移计数 74→75 已逐处同步（`test_release_manifest` 断言+方法名+注释、ci.yml 三处）
+
+### 7. 下一班要注意的
+
+1. **店铺级角色只覆盖 `@RequireRole` 与上面点名的判定点。** 页面上那些前端
+   `canUseRole` 门控现在读的是 `effectiveRole`，与后端同口径——但**没有一条
+   端到端测试**验证「店 B 的 VIEWER 在 UI 上确实看不到写入口」。
+   真实多店铺权限需要先在 DB 里造两个角色不同的绑定，那是 E4/E5 验收的一部分。
+2. **`user.role`（全局角色）仍有 3 处消费**：`ConnectorController.isAdmin`、
+   `ShopServiceImpl.requireGlobalAdmin/isAdmin`、`UserContext.isShopAllowedStrict`
+   的 ADMIN 分支。前两处是刻意的跨店语义（见 §S22.4），
+   `isShopAllowedStrict` 的 ADMIN 分支意味着**全局 ADMIN 能访问任何店铺**——
+   与「店级 ADMIN 只管本店」并存时语义要讲清楚，别在下一轮误改成店铺级。
+3. **P0 第 1 条（ListingMonitor / CustomerService 的写端点后端没锁角色）仍未决**。
+   §S21.5 的分析不变：先查「有没有 VIEWER 在写」，但那两页的写操作
+   （建单/回复/索评）**根本没进审计日志**，事后无法回溯——先补 `@OperLog` 观察
+   一段时间是成本最低的前置动作。**现在补 `@RequireRole` 的前提条件比上一班更好了**：
+   角色模型已经能表达「在不同店不同权限」，不再是空架子。
