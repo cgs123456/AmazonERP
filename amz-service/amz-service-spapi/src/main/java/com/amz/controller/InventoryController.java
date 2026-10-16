@@ -108,6 +108,8 @@ public class InventoryController {
      * @return 本次同步落库的 SKU 数
      */
     @ShopScoped
+    // §S29：整店库存同步会打满 SP-API 配额并全量落库，属「让系统花钱」的运营动作。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/sync/{shopId}")
     public Result<Integer> sync(@PathVariable Long shopId) {
         if (shopId == null) {

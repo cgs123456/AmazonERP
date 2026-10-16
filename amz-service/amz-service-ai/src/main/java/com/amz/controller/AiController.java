@@ -10,6 +10,7 @@ import com.amz.mapper.AgentEvalLogMapper;
 import com.amz.model.AgentEvalLog;
 import com.amz.result.Result;
 import com.amz.service.AiService;
+import com.amz.annotation.RequireRole;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -109,6 +110,9 @@ public class AiController {
      * 说明：规划案曾建议新建 AgentEvalController，但本端点已存在，
      * 为避免路径冲突与双入口漂移，直接扩展 mode 参数（缺省行为不变）。
      */
+    // §S29：一次跑 12 个评测用例，mode=both 时每个都打 LLM（≈12 次付费调用），
+    // 且是「改 prompt 后手动触发」的研发动作，不该让任何登录用户随手按。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/eval/run")
     public Result<AgentEvalReport> runEval(@RequestParam(defaultValue = "keyword") String mode) {
         AgentEvalReport report;

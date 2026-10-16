@@ -4,6 +4,7 @@ import com.amz.agent.review.ReviewAnalysisResult;
 import com.amz.agent.review.ReviewAnalysisService;
 import com.amz.agent.review.ReviewInfo;
 import com.amz.result.Result;
+import com.amz.annotation.RequireRole;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,6 +34,8 @@ public class ReviewAnalysisController {
      * @return 分析结果（情感得分、痛点、建议、总结）
      */
     @PostMapping("/analyze")
+    // §S29：单次最多 500 条评论的 LLM 分析，属「让系统花钱」的运营动作。
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<ReviewAnalysisResult> analyze(@RequestBody List<ReviewInfo> reviews) {
         if (reviews == null || reviews.isEmpty()) {
             return Result.failure("评论列表不能为空");

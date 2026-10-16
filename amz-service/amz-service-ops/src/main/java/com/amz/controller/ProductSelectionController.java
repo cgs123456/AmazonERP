@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.KeywordResearch;
 import com.amz.result.Result;
@@ -28,6 +29,10 @@ public class ProductSelectionController {
      * POST /ops/selection/market
      * Body: { "keyword": "wireless earbuds", "marketplace": "US" }
      */
+    // §S29：选品分析三个端点都会消耗 LLM token（ai-suggestion 走 Feign 调
+    // amz-service-ai），属「让系统花钱」的运营决策；且 analyzeHour / researchKeyword
+    // 会把外部市场数据写进选品表。VIEWER 不应能触发。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/market")
     public Result analyzeMarket(@RequestBody java.util.Map<String, String> body) {
         String keyword = body.get("keyword");
@@ -65,6 +70,10 @@ public class ProductSelectionController {
      * POST /ops/selection/keyword
      * Body: { "keyword": "yoga mat", "marketplace": "US" }
      */
+    // §S29：选品分析三个端点都会消耗 LLM token（ai-suggestion 走 Feign 调
+    // amz-service-ai），属「让系统花钱」的运营决策；且 analyzeHour / researchKeyword
+    // 会把外部市场数据写进选品表。VIEWER 不应能触发。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/keyword")
     public Result<KeywordResearch> researchKeyword(@RequestBody java.util.Map<String, String> body) {
         String keyword = body.get("keyword");
@@ -76,6 +85,10 @@ public class ProductSelectionController {
      * AI 选品建议（基于已分析的机会记录）。
      * POST /ops/selection/ai-suggestion/{opportunityId}
      */
+    // §S29：选品分析三个端点都会消耗 LLM token（ai-suggestion 走 Feign 调
+    // amz-service-ai），属「让系统花钱」的运营决策；且 analyzeHour / researchKeyword
+    // 会把外部市场数据写进选品表。VIEWER 不应能触发。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/ai-suggestion/{opportunityId}")
     public Result aiSuggestion(@PathVariable Long opportunityId) {
         return productSelectionService.aiSuggestion(opportunityId);

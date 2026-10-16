@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.OrderAuditRule;
 import com.amz.model.OrderSplitLog;
@@ -35,6 +36,9 @@ public class OrderAuditController {
 
     /** 创建审单规则 */
     @ShopScoped
+    // §S29：审单规则决定「哪些订单被拦、哪些自动放行」，直接改变下单流向；
+    // 审单执行会写拆单/路由日志。VIEWER 不应能改规则或触发审单。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/rule")
     public Result<OrderAuditRule> createRule(@RequestBody OrderAuditRule rule) {
         return Result.success(orderAuditService.createRule(rule));
@@ -42,6 +46,9 @@ public class OrderAuditController {
 
     /** 更新规则 */
     @ShopScoped
+    // §S29：审单规则决定「哪些订单被拦、哪些自动放行」，直接改变下单流向；
+    // 审单执行会写拆单/路由日志。VIEWER 不应能改规则或触发审单。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PutMapping("/rule/{id}")
     public Result<OrderAuditRule> updateRule(@PathVariable Long id, @RequestBody OrderAuditRule rule) {
         rule.setId(id);
@@ -58,6 +65,9 @@ public class OrderAuditController {
 
     /** 启用/禁用规则 */
     @ShopScoped
+    // §S29：审单规则决定「哪些订单被拦、哪些自动放行」，直接改变下单流向；
+    // 审单执行会写拆单/路由日志。VIEWER 不应能改规则或触发审单。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/rule/{id}/toggle")
     public Result<Boolean> toggleRule(@PathVariable Long id, @RequestParam boolean enabled) {
         orderAuditService.toggleRule(id, enabled);
@@ -66,6 +76,9 @@ public class OrderAuditController {
 
     /** 删除规则 */
     @ShopScoped
+    // §S29：审单规则决定「哪些订单被拦、哪些自动放行」，直接改变下单流向；
+    // 审单执行会写拆单/路由日志。VIEWER 不应能改规则或触发审单。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @DeleteMapping("/rule/{id}")
     public Result<Boolean> deleteRule(@PathVariable Long id) {
         orderAuditService.deleteRule(id);
@@ -76,6 +89,9 @@ public class OrderAuditController {
 
     /** 对单个订单执行审单 */
     @ShopScoped
+    // §S29：审单规则决定「哪些订单被拦、哪些自动放行」，直接改变下单流向；
+    // 审单执行会写拆单/路由日志。VIEWER 不应能改规则或触发审单。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/order/{shopId}")
     public Result<Map<String, Object>> auditOrder(@PathVariable Long shopId,
                                                    @RequestBody Order order) {
@@ -84,6 +100,9 @@ public class OrderAuditController {
 
     /** 批量审单 */
     @ShopScoped
+    // §S29：审单规则决定「哪些订单被拦、哪些自动放行」，直接改变下单流向；
+    // 审单执行会写拆单/路由日志。VIEWER 不应能改规则或触发审单。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/batch/{shopId}")
     public Result<List<Map<String, Object>>> batchAudit(@PathVariable Long shopId,
                                                          @RequestBody List<Order> orders) {

@@ -105,6 +105,10 @@ public class ProductController {
      * 多语种翻译（供 Agent 工具调用）。
      * POST /product/translate
      */
+    // §S29：与 copyListing 同一条链路（Agent 工具经 Feign 调进来，同步、在请求线程，
+    // 用户 JWT 由 FeignAuthRelayConfig 透传——copyListing 早已带 @RequireRole 且线上正常，
+    // 是这条链路可行的实证）。翻译走付费 LLM，属「让系统花钱」的动作。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/translate")
     public Result<Map<String, Object>> translate(@RequestBody Map<String, Object> req) {
         String text = toStr(req.get("text"));

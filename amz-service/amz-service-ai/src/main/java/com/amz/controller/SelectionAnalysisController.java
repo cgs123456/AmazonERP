@@ -5,6 +5,7 @@ import com.amz.agent.selection.SelectionAnalysisService;
 import com.amz.agent.selection.SelectionOpportunityInput;
 import com.amz.result.Result;
 import com.amz.util.MapArgUtils;
+import com.amz.annotation.RequireRole;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +39,8 @@ public class SelectionAnalysisController {
      * @return { aiSummary, aiSuggestion }
      */
     @PostMapping("/analyze")
+    // §S29：选品分析走 LLM，同理。
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<Map<String, Object>> analyze(@RequestBody Map<String, Object> body) {
         if (body == null || body.isEmpty()) {
             return Result.failure("选品数据不能为空");

@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.HijackAlert;
 import com.amz.model.KeywordRankRecord;
@@ -62,6 +63,9 @@ public class OpsController {
      * 只有 alertId，加上去也不会生效。归属判定在 service 内逐行做（严格档），
      * 越权与不存在统一文案，避免这条端点变成告警 ID 的存在性探针。
      */
+    // §S29：差评/跟卖告警处置是「代表店铺做运营决策」——把告警标成 HANDLED/IGNORED
+    // 会影响后续跟进口径，VIEWER（语义=只读）不应能改。此前这四个端点无角色门禁。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/review/{alertId}/handle")
     public Result<Boolean> handleReviewAlert(@PathVariable Long alertId) {
         return Result.success(opsService.handleNegativeReviewAlert(alertId));
@@ -75,6 +79,9 @@ public class OpsController {
      * 运营只能把「不打算处理」的告警标成 HANDLED，等于在库里留下一个假的处理记录。
      * 这条端点把第三态接上；与 handle 共用同一套归属与终态判定。
      */
+    // §S29：差评/跟卖告警处置是「代表店铺做运营决策」——把告警标成 HANDLED/IGNORED
+    // 会影响后续跟进口径，VIEWER（语义=只读）不应能改。此前这四个端点无角色门禁。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/review/{alertId}/ignore")
     public Result<Boolean> ignoreReviewAlert(@PathVariable Long alertId) {
         return Result.success(opsService.ignoreNegativeReviewAlert(alertId));
@@ -99,6 +106,9 @@ public class OpsController {
      * <p>与差评的 handle 同形态：没有 {@code @ShopScoped}（只有 alertId），
      * 归属判定在 service 内逐行严格做。
      */
+    // §S29：差评/跟卖告警处置是「代表店铺做运营决策」——把告警标成 HANDLED/IGNORED
+    // 会影响后续跟进口径，VIEWER（语义=只读）不应能改。此前这四个端点无角色门禁。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/hijack/{alertId}/handle")
     public Result<Boolean> handleHijackAlert(@PathVariable Long alertId) {
         return Result.success(opsService.handleHijackAlert(alertId));
@@ -108,6 +118,9 @@ public class OpsController {
      * 标记跟卖告警已忽略（NEW → IGNORED）。
      * POST /ops/hijack/{alertId}/ignore
      */
+    // §S29：差评/跟卖告警处置是「代表店铺做运营决策」——把告警标成 HANDLED/IGNORED
+    // 会影响后续跟进口径，VIEWER（语义=只读）不应能改。此前这四个端点无角色门禁。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/hijack/{alertId}/ignore")
     public Result<Boolean> ignoreHijackAlert(@PathVariable Long alertId) {
         return Result.success(opsService.ignoreHijackAlert(alertId));

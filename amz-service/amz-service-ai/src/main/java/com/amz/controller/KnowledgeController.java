@@ -6,6 +6,7 @@ import com.amz.ai.knowledge.KnowledgeIndexService;
 import com.amz.ai.knowledge.KnowledgeSearchService;
 import com.amz.context.UserContext;
 import com.amz.result.Result;
+import com.amz.annotation.RequireRole;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -57,6 +58,8 @@ public class KnowledgeController {
      * 上传文档并入库。POST /ai/knowledge/documents（multipart）。
      */
     @PostMapping(value = "/documents", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    // §S29：知识文档按 shopId 归属，是店铺级资产（删除会整篇从 ES 移除）。
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<Map<String, Object>> uploadDocument(
             @RequestParam("file") MultipartFile file,
             @RequestParam("shopId") Long shopId) {
@@ -87,6 +90,8 @@ public class KnowledgeController {
      * 删除整篇文档（先校验归属）。DELETE /ai/knowledge/documents/{docId}?shopId=
      */
     @DeleteMapping("/documents/{docId}")
+    // §S29：同上——删的是整店可检索的知识，不只影响操作者自己。
+    @RequireRole({"OPERATOR", "ADMIN"})
     public Result<Map<String, Object>> deleteDocument(
             @PathVariable String docId,
             @RequestParam("shopId") Long shopId) {

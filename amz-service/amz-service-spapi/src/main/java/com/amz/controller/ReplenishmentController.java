@@ -74,6 +74,8 @@ public class ReplenishmentController {
      * @return 本次生成的补货建议条数
      */
     @ShopScoped
+    // §S29：补货建议重算按店铺扫全量库存，同样是有成本的运营动作。
+    @RequireRole({"OPERATOR", "ADMIN"})
     @PostMapping("/calc/{shopId}")
     public Result<Integer> calc(@PathVariable Long shopId) {
         if (shopId == null) {
