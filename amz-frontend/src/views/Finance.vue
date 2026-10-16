@@ -134,137 +134,12 @@
           利润 = 订单收入(ORDER) - 采购成本(PROCUREMENT) - 平台费用(PLATFORM_FEE) - 退款(REFUND)，按借贷方向汇总，单位 CNY。
         </div>
       </div>
-      <!-- 回款对账 -->
-      <div v-if="tab === 'collection'" class="tab-panel" data-panel="collection">
-        <div class="filter-bar">
-          <select v-model="colStatus" class="filter-select">
-            <option value="">全部状态</option>
-            <option v-for="s in COLLECTION_STATUS" :key="s" :value="s">{{ s }}</option>
-          </select>
-          <button class="filter-btn" :disabled="col.loading.value" @click="loadCollections(false)">刷新</button>
-          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
-                  :title="financeWriteAllowed ? '从结算原表重新聚合回款' : `重算回款${WRITE_LOCKED_HINT}`" @click="confirm(rebuildConfirm)">重算回款</button>
-        </div>
-
-        <div class="summary-grid">
-          <div class="summary-card">
-            <div class="summary-label">应回合计</div>
-            <div class="summary-value small">¥{{ colSummary?.receivableTotal ?? '-' }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">实收合计</div>
-            <div class="summary-value small">¥{{ colSummary?.netReceivedTotal ?? '-' }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">在途金额</div>
-            <div class="summary-value small">¥{{ colSummary?.inTransitAmount ?? '-' }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">短款（需追）</div>
-            <div class="summary-value small">{{ colSummary?.shortfallOrders ?? 0 }} 单 / ¥{{ colSummary?.shortfallAmount ?? '-' }}</div>
-          </div>
-        </div>
-        <p v-if="colSummary?.warnings?.length" class="profit-note">口径提示：{{ colSummary.warnings.join('；') }}</p>
-
-        <div class="table-card">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>亚马逊订单号</th><th>币种</th><th>应回</th><th>平台扣费</th><th>退款</th>
-                <th>赔付</th><th>实收</th><th>短款</th><th>到账日</th><th>状态</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="c in col.rows.value" :key="c.id">
-                <td class="mono">{{ c.amazonOrderId }}</td>
-                <td>{{ c.currency || '-' }}</td>
-                <td>{{ c.receivable }}</td>
-                <td>{{ c.feeDeducted }}</td>
-                <td>{{ c.refunded }}</td>
-                <td>{{ c.reimbursed }}</td>
-                <td>{{ c.netReceived }}</td>
-                <td :class="(Number(c.shortfall) || 0) > 0 ? 'profit-negative' : ''">{{ c.shortfall ?? 0 }}</td>
-                <td class="mono">{{ c.depositDate || '未到账' }}</td>
-                <td><span class="status-tag">{{ c.status }}</span></td>
-              </tr>
-              <tr v-if="!col.loading.value && col.rows.value.length === 0">
-                <td colspan="10" class="empty-row">
-                  <div class="empty-state">
-                    <Icon icon="mdi:bank-outline" width="32" class="empty-icon" />
-                    <span>暂无回款记录：需先同步结算并「重算回款」</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <FinanceCursorBar :state="col" :load="loadCollections" />
-      </div>
-
-      <!-- 结算原表 -->
-      <div v-if="tab === 'settlement'" class="tab-panel" data-panel="settlement">
-        <div class="filter-bar">
-          <input v-model="settleOrder" class="filter-date" placeholder="按亚马逊订单号过滤" />
-          <button class="filter-btn" :disabled="settle.loading.value" @click="loadSettlements(false)">刷新</button>
-          <button class="filter-btn" :disabled="busy || !financeWriteAllowed"
-                  :title="financeWriteAllowed ? '从 SP-API 拉取结算报告' : `同步结算${WRITE_LOCKED_HINT}`" @click="confirm(settlementSyncConfirm)">从 SP-API 同步结算</button>
-        </div>
-
-        <div v-if="ingest" class="summary-grid">
-          <div class="summary-card">
-            <div class="summary-label">读到的报表行数</div>
-            <div class="summary-value small">{{ ingest.dataLineCount ?? 0 }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">新入库</div>
-            <div class="summary-value small">{{ ingest.inserted ?? 0 }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">重复跳过</div>
-            <div class="summary-value small">{{ ingest.skipped ?? 0 }}</div>
-          </div>
-          <div class="summary-card">
-            <div class="summary-label">失败行</div>
-            <div class="summary-value small" :class="(ingest.failed ?? 0) > 0 ? 'profit-negative' : ''">{{ ingest.failed ?? 0 }}</div>
-          </div>
-        </div>
-        <p v-if="ingest" class="profit-note">
-          「读到 / 入库 / 跳过」是三个不同的数：全部等于「读了 N 行」会让重复拉取和数据没拉到长得一样。
-        </p>
-
-        <div class="table-card">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>结算单号</th><th>订单号</th><th>SKU</th><th>交易类型</th><th>金额类型</th>
-                <th>金额</th><th>币种</th><th>到账日</th><th>来源</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="d in settle.rows.value" :key="d.id">
-                <td class="mono">{{ d.settlementId }}</td>
-                <td class="mono">{{ d.amazonOrderId || '-' }}</td>
-                <td class="mono">{{ d.sku || '-' }}</td>
-                <td>{{ d.transactionType }}</td>
-                <td>{{ d.amountType || '-' }}</td>
-                <td :class="Number(d.amount) < 0 ? 'profit-negative' : 'profit-positive'">{{ d.amount }}</td>
-                <td>{{ d.currency || '-' }}</td>
-                <td class="mono">{{ d.depositDate || '-' }}</td>
-                <td>{{ d.source || '-' }}</td>
-              </tr>
-              <tr v-if="!settle.loading.value && settle.rows.value.length === 0">
-                <td colspan="9" class="empty-row">
-                  <div class="empty-state">
-                    <Icon icon="mdi:file-document-outline" width="32" class="empty-icon" />
-                    <span>暂无结算明细：差异扫描与回款都依赖它，请先同步</span>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <FinanceCursorBar :state="settle" :load="loadSettlements" />
-      </div>
+      <!-- 回款对账 + 结算原表：数据与 loader 在子组件内，靠 tab prop 决定渲染哪个 -->
+      <FinanceSettlementOps
+        ref="settlementOps"
+        :tab="tab === 'collection' || tab === 'settlement' ? tab : null"
+        @confirm="confirm"
+      />
 
       <!-- 费用差异 -->
       <div v-if="tab === 'discrepancy'" class="tab-panel" data-panel="discrepancy">
@@ -652,7 +527,8 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import FinanceCursorBar from '../components/FinanceCursorBar.vue'
 import FinanceConfirmBox from '../components/FinanceConfirmBox.vue'
-import { makeCursor, type CursorList } from '@/composables/useCursorList'
+import FinanceSettlementOps from '../components/FinanceSettlementOps.vue'
+import { makeCursor, useCursorLoader } from '@/composables/useCursorList'
 import { useFinanceErrors } from '@/composables/useFinanceErrors'
 import { useFinanceApi } from '@/composables/useFinanceApi'
 import { listVouchers, syncToKingdee, calculateProfit } from '@/api/finance'
@@ -664,10 +540,9 @@ import type { ApiResponse } from '@/api/types'
 import * as ext from '@/api/finance-ext'
 import { listReceiptShortages, type ReceiptShortage } from '@/api/procurement'
 import {
-  COLLECTION_STATUS, CLAIM_STATUS, DISCREPANCY_STATUS
+  CLAIM_STATUS, DISCREPANCY_STATUS
 } from '@/api/finance-ext'
 import type {
-  PaymentCollection, PaymentCollectionSummary, SettlementDetail, SettlementIngestReport,
   FeeDiscrepancy, FeeDiscrepancyScanReport, InboundShortageRequest, ReimbursementClaim,
   ReimbursementClaimSummary, ReimbursementReconcileReport, SkuProfitReport,
   SettlementVoucherReport, ProcurementVoucherReport
@@ -904,21 +779,17 @@ const syncStatusClass = (s: string): string => {
 
 type TabKey = 'voucher' | 'profit' | 'collection' | 'settlement' | 'discrepancy' | 'claim' | 'skuprofit' | 'tax'
 
-/**
- * 游标分页条：与凭证列表同规则——是否还有下一页由服务端 _page 说了算。
- * 走 props 回调而不是 emit，是为了让「加载更多」始终调用该页自己的 loader，
- * 避免多个列表共用一个全局游标。
- */
-
 const confirmBox = ref<null | { title: string; detail: string; run: () => Promise<void> }>(null)
 
-const col = makeCursor<PaymentCollection>()
-const colStatus = ref('')
-const colSummary = ref<PaymentCollectionSummary | null>(null)
-
-const settle = makeCursor<SettlementDetail>()
-const settleOrder = ref('')
-const ingest = ref<SettlementIngestReport | null>(null)
+/**
+ * 回款 / 结算两个分区的 loader 在子组件里（数据和游标也在那），
+ * 这里只拿它的方法调（见 TAB_LOADERS 与 onMounted 的注释）。
+ */
+const settlementOps = ref<{
+  loadCollections: (append?: boolean) => void
+  loadCollectionSummary: () => Promise<boolean>
+  loadSettlements: (append?: boolean) => void
+} | null>(null)
 
 const disc = makeCursor<FeeDiscrepancy>()
 const discStatus = ref('')
@@ -952,41 +823,9 @@ const reimburseAmount = ref<number | string>('')
 const PAGE = 50
 
 
-const loadCursor = async <T>(
-  state: CursorList<T>,
-  name: string,
-  fetcher: (cursor: string | undefined) => Promise<ApiResponse<T[]>>,
-  append: boolean
-) => {
-  const shopId = refreshShop()
-  if (!shopId) return
-  if (!append) {
-    state.rows.value = []
-    state.cursor.value = null
-    // 只清本列表的错误（按「name：」前缀），并发 loader 互不擦横幅
-    clearErrorsFor(name)
-  }
-  state.loading.value = true
-  try {
-    const res = await fetcher(append ? state.cursor.value ?? undefined : undefined)
-    if (res?.code !== 200) {
-      pushError(`${name}：${res?.message || '后端返回非 200'}`)
-      return
-    }
-    const rows = Array.isArray(res.data) ? res.data : []
-    state.rows.value = append ? state.rows.value.concat(rows) : rows
-    // 是否还有下一页只认服务端 _page；缺失时按「未知」处理，与凭证列表同口径
-    state.cursor.value = res._page ? res._page.nextCursor : null
-    state.truncated.value = res._page ? res._page.truncated : false
-  } catch (e) {
-    pushError(`${name}：${e instanceof Error ? e.message : '调用失败'}`)
-  } finally {
-    state.loading.value = false
-  }
-}
-
-const { errors, pushError, pushFinanceError, clearErrorsFor } = useFinanceErrors()
+const { errors, pushError, pushFinanceError } = useFinanceErrors()
 const { busy, financeWriteAllowed, financeWriteBlocked, read, call, installRoleListener, removeRoleListener } = useFinanceApi()
+const { loadCursor } = useCursorLoader()
 
 const shop = () => refreshShop()
 
@@ -999,37 +838,6 @@ const loadCursor2 = async <T>(target: { value: T[] }, name: string,
     target.value = Array.isArray(res.data) ? res.data : []
   } catch (e) {
     pushError(`${name}：${e instanceof Error ? e.message : '调用失败'}`)
-  }
-}
-
-/* ---------- 回款 ---------- */
-const loadCollections = (append = false) => {
-  void loadCursor(col, '回款列表', cursor => ext.listCollections(shop(), { status: colStatus.value || undefined, size: PAGE, cursor }), append)
-}
-const loadCollectionSummary = () =>
-  read('回款汇总', () => ext.collectionSummary(shop()), (d) => { colSummary.value = d })
-const rebuildConfirm = {
-  title: '重算回款',
-  detail: '从结算原表重新聚合每个订单的应回 / 扣费 / 退款 / 实收。结算原表若还没同步，重算只会得到空结果。',
-  run: async () => {
-    const ok = await call('重算回款', () => ext.rebuildCollections(shop()), (n) => showToast(`重算完成，影响 ${n} 个订单`, 'success'))
-    if (ok) {
-      await Promise.all([loadCollections(), loadCollectionSummary()])
-    }
-  }
-}
-
-/* ---------- 结算 ---------- */
-const loadSettlements = (append = false) => {
-  void loadCursor(settle, '结算明细', cursor =>
-    ext.listSettlements(shop(), { amazonOrderId: settleOrder.value || undefined, size: PAGE, cursor }), append)
-}
-const settlementSyncConfirm = {
-  title: '从 SP-API 同步结算报表',
-  detail: '会向亚马逊发起真实报表请求（创建报告 + 拉取 + 入库），数据量大时耗时较长；重复行按业务指纹跳过，不会重复入账。',
-  run: async () => {
-    const ok = await call('结算同步', () => ext.syncSettlement(shop()), (d) => { ingest.value = d })
-    if (ok) await loadSettlements()
   }
 }
 
@@ -1250,11 +1058,17 @@ const submitForm = async () => {
   }
 }
 
+/**
+ * 回款 / 结算两个分区的 loader 在 `FinanceSettlementOps` 里（数据与游标也在那），
+ * 这里调它 expose 出来的方法。其余分区仍在本组件。
+ */
 const TAB_LOADERS: Record<TabKey, () => Promise<unknown> | void> = {
   voucher: () => undefined,
   profit: () => undefined,
-  collection: async () => { await Promise.all([loadCollections(), loadCollectionSummary()]) },
-  settlement: () => loadSettlements(),
+  collection: async () => {
+    await Promise.all([settlementOps.value?.loadCollections(), settlementOps.value?.loadCollectionSummary()])
+  },
+  settlement: () => settlementOps.value?.loadSettlements(),
   discrepancy: async () => { await Promise.all([loadDiscrepancies(), loadShortages()]) },
   claim: async () => { await Promise.all([loadClaims(), loadClaimSummary()]) },
   skuprofit: () => undefined,
