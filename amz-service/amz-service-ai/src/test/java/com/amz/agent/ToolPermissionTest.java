@@ -43,6 +43,11 @@ class ToolPermissionTest {
             "optimize_shipping_route",
             "optimize_inventory_distribution");
 
+    /** 持有 @ToolPermission 的工具类（拆分后不止一个）。 */
+    private static final List<Class<?>> TOOL_CLASSES = List.of(
+            ErpToolExecutor.class,
+            ErpLogisticsTools.class);
+
     private static final Pattern CAMEL_BOUNDARY = Pattern.compile("([a-z0-9])([A-Z])");
 
     @AfterEach
@@ -127,11 +132,16 @@ class ToolPermissionTest {
         assertEquals(EXPECTED_OPERATE_TOOLS, ErpToolExecutor.OPERATE_TOOLS);
 
         // 2) 被标注为 operate 的方法集合（方法名转 snake 即工具名）必须与集合一致
+        // §S32：工具方法按依赖族拆到多个类后，扫描范围必须一并覆盖，
+        // 否则「新增 operate 工具必须两边同步」这条防漂移契约会漏掉拆出去的族——
+        // 那正是它存在的意义。新增一个工具类时，这里也要加进来。
         Set<String> annotated = new HashSet<>();
-        for (Method m : ErpToolExecutor.class.getDeclaredMethods()) {
-            ToolPermission ann = m.getAnnotation(ToolPermission.class);
-            if (ann != null && "agent:operate".equals(ann.value())) {
-                annotated.add(camelToSnake(m.getName()));
+        for (Class<?> owner : TOOL_CLASSES) {
+            for (Method m : owner.getDeclaredMethods()) {
+                ToolPermission ann = m.getAnnotation(ToolPermission.class);
+                if (ann != null && "agent:operate".equals(ann.value())) {
+                    annotated.add(camelToSnake(m.getName()));
+                }
             }
         }
         assertEquals(EXPECTED_OPERATE_TOOLS, annotated, "标注与集合不一致：新增 operate 工具必须两边同步");
