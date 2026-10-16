@@ -4471,3 +4471,94 @@ product 的 `TranslationCacheWriteFailureTest` / `OrderServiceFeignDecodeIT`）�
 （`unmappable character (0xBB)`）。加 `-encoding UTF-8` 或干脆别用中文。
 另外 Windows 上的 Python **没有 `socket.AF_UNIX`**，别拿它做交叉验证——
 要用交叉验证就换 .NET/PowerShell。
+
+---
+
+## §S31. 交接：2026-10-16 P1 第一步——源码行数棘轮门禁（冻结存量、禁止增长）
+
+用户指令「先做 p1」。P1 是「拆分超 500 行的文件」。这一班做的是**前置的那半件**：
+先把闸门建起来，否则一边拆一边长，数字永远降不下去。真正还债（逐个拆）从这之后按价值做。
+
+### 1. 数字更正：上一班记的「前端 16 + 后端 15 = 31」实测是错的，真值 59
+
+`find … | xargs wc -l | awk '$1>500'` 跑出来：
+
+| 桶 | 个数 | 总行 |
+|---|---|---|
+| 前端（views/components/api/**e2e**/`__tests__`）| 31 | 31061 |
+| 后端 main | 22 | 15678 |
+| 后端 test | 6 | 3934 |
+| **合计** | **59** | **50673** |
+
+差异来源，不是工具错、是上一班**手数时口径不一致**：
+- 上一班用 `grep -v __tests__` 把前端测试排掉了，却把后端 `src/test` 计了进去——两边尺度不同；
+- e2e 的 `.ts`（`full-interaction.spec.ts` 2884 行、`support/api-stub.ts` 1719 行）也漏了。
+
+**59 是正确口径**：「单文件 ≤500 行」这条规则不分测试与生产、不分前端后端，
+否则等于给一半文件开后门。1497 行的 `LogisticsDashboard.test.ts` 和 3259 行的同名
+view 是同一块债的两面，没有理由一个算一个不算。
+
+**记这条而不是就地改掉上一班的数字**：那版已经推出去了（`fa95889`），按 §S26 的同一
+做法，更正要显式留着，不能让读者以为结论从来没变过。
+
+### 2. 门禁的三个方向（缺一个就不是棘轮）
+
+`tools/release/file_size_ratchet.py` + 基线 `file-size-baseline.json`（59 条）：
+
+1. 新超限文件 → `oversized-new-file` 红（闸门的全部意义：不再多一个）
+2. 已登记文件**变长** → `oversized-file-grew` 红；**变短** → 放行
+3. **基线陈旧条目** → `stale-baseline-entry` 红
+
+第 3 条是这班我自己写错、被工具纠正的一条。我原本断言「文件从 900 还到 480（合规）
+不该报任何东西」，工具报了 stale。查过才知道工具对：
+
+```
+基线留 {Big:900}，文件还到 480 → 不报 → 基线仍 900
+→ 文件涨回 899 → 899 > 900 为假 → 不报 grew
+→ 债无声涨回原额，棘轮形同虚设
+```
+
+所以「降到阈值以下但基线还挂着」必须报，逼人 `--update-baseline` 摘掉那行。
+这不是拦还款，是**还款的记账步骤不能省**。
+
+两个变异验证都过：去掉「新文件判定」→ 测试红；把「变长判定」退化成「超过 500 才报」
+（即允许存量悄悄涨回 500）→ 测试红。还原皆绿。
+
+### 3. 当场修掉的两个扫描器缺陷
+
+- **忘了给合规文件 continue**：第一版把「不在基线里」直接当违规，于是**每个** 500 行
+  以下的源码文件都被报成「107 行超过 500 行」。报错与判据脱节比漏报更难查——它会
+  把人引去查那个文件，而坏的是扫描器。`test_compliant_file_is_never_flagged` 钉住。
+- **git 不可用时静默通过**：原实现只靠 `git ls-files`，`--root` 指向非 git 目录时
+  「什么都没扫到」→ 输出长得和「全部合规」一模一样。补 `os.walk` 兜底 + 空分母 exit 2。
+
+### 4. 接入两条 CI workflow 是被治理测试逼出来的（不是自觉）
+
+只改了 `ci.yml` 的话，`test_release_workflow` 两个测试直接红——它们**强制 ci.yml 与
+release.yml 跑同一套 release tool 测试**。补上 `release.yml` 后 release tools **110/110** 绿。
+
+另外 `ReleaseGovernanceContractTest`（spapi）会 `glob` `tools/release/test_*.py` 逐个断言
+它在 CI 命令里——**新测试不接进 CI 就直接红**。这套自我约束本来就在，我只是走通了它。
+（spapi 5/5 过。）
+
+### 5. 附带发现：CLAUDE.md 的变更速查表与现实不符（未动）
+
+速查表写「提交前 `bun run precheck`」「改前端额外 `bun run build:web`」，但：
+- 仓库根**没有 `package.json`**，只有 `amz-frontend/package.json`，且它只定义了 `preview`；
+- 全仓 grep 不到 `precheck` 这个脚本。
+
+**这不是我能替用户改的**（CLAUDE.md 是用户的全局指令）。可能：①速查表描述的是别的仓库/
+更早的结构；②`precheck` 靠某个我找不到的封装（但 grep 无命中）。**留给用户核对**。
+本班因此用「逐条手跑门禁」替代：`repository_hygiene` + `file_size_ratchet` +
+`unittest discover tools/release` + 相关 `mvn -Dtest`。
+
+### 6. 下一班还债入口
+
+- 看 `file-size-baseline.json` 挑目标（已排序，最大在前）。
+- 建议顺序：**先烧最集中的**（`LogisticsDashboard.vue` 3259、`Procurement.vue` 2045、
+  `ErpToolExecutor.java` 1556），而非从 504 行的「快赢」开始——快赢只把数字从 59 挪到 58，
+  风险敞口没变。但注意每个大文件拆分都要跑它所属模块的**全套测试**才敢合，别只看编译过。
+- 拆完务必 `python tools/release/file_size_ratchet.py --update-baseline`，让基线随债务递减——
+  **这是「在还债」唯一的客观证据**，比在 HANDOFF 里写「拆了几个」可信。
+- 若某文件确属合理例外（如自动生成的 `SpApiOperationCatalog` 这类数据表），
+  加进 `GENERATED_NAME_HINTS` / `EXCLUDED_PATH_PARTS` 是**决策**，要在评审里说明，不能顺手。
