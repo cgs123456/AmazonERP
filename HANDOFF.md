@@ -3951,8 +3951,74 @@ synthetic-data job 的全部步骤已本地复跑绿（见该提交信息）。
 
 ### 5. 决策①关闭后，权限主题剩余待办（下一班的入口不变）
 
-- **P0-端到端验证**（§S22.7 第 1 条 / §S23.6 第 3 条）：仍然没有一条测试验证
-  「全局 ADMIN 但店 B 是 VIEWER」的用户在店 B 的 UI 与后端两侧都被正确约束。
-  需要真 DB 造两个角色不同的绑定，属 E4/E5 验收。
+- **~~P0-端到端验证~~（§S22.7 第 1 条 / §S23.6 第 3 条）→ 已交付，见 §S25**。
+  三层各钉一段。其中「真 DB 造两个角色不同绑定」这一步用的是**进程内真实链**
+  （真实 JWT 签发 + 真实拦截器 + 真实切面代理，只 mock Service），
+  不是起 MySQL——两端点判据与角色解析都不依赖数据库内容，进程内足以钉死；
+  真 DB 那层（assignUser 写入的角色确实进 claim）由既有 LoginServiceImplTest 覆盖。
 - **决策②**：MultiplatformController 要不要整体加 `@RequireRole`（含外部端点，
   见 §S23.6 的一致性理由）——仍是产品拍板。
+
+
+## §S25. 交接：2026-10-16 P0-1 端到端打通（店铺级角色三层各钉一段，已完成）
+
+> 承接 §S24.5 关闭的第一项。**此前 `effectiveRole` 在后端链路上一条测试都没有**——
+> 只有前端 `AppHeaderShopSource.test.ts` 那条（mock 掉 api/auth 自己喂自己），
+> 接线断在 JWT/拦截器/切面 任一环它都全绿。本班补三层，每层只钉一段，互不重叠。
+
+### 1. 三层与各自的独占职责
+
+| 层 | 文件 | 钉什么 | 真实件 / 桩件 |
+|---|---|---|---|
+| 服务端 getInfo | `UserInfoEffectiveRoleWebMvcIntegrationTest`（新增 6） | 请求头指哪家店，`effectiveRole` 就是哪家店的角色 | 真 JWT+真 BaseAuthInterceptor+真 `UserServiceImpl`，只 mock `UserMapper` |
+| 写端点判据 | `ListingShopScopedRoleWebMvcIntegrationTest`（新增 6） | `@RequireRole` 按**方法参数/请求体**解析出的店判定，不按请求头 | 真 MVC+`AspectJProxyFactory` 挂双切面，mock `ListingMonitorService` |
+| 浏览器门控 | `full-interaction.spec.ts`（新增 4） | getInfo→localStorage→`canUseRole` 全链；店 2 隐藏写入口但**只读照常** | Playwright，`api-stub` + 按请求头回 effectiveRole 的桩 |
+
+与既有 `ListingWriteEndpointGuardContractTest` 的分工要说清：那个反射契约测试钉
+「**注解声明在不在**」，这两个 WebMvc 测试钉「**接上之后判得对不对**」——
+两者测的不是同一件事，都要留。
+
+### 2. 钉住的关键语义（挑最容易「好心改坏」的四条）
+
+- **老 token 回落**：无 `shop_roles` claim 时任何店都得全局角色（写端点与 getInfo
+  各钉一条）。改成「缺 claim 即拒绝」会让存量会话上线瞬间大面积 403。
+- **店铺级对 ADMIN 同样生效**（getInfo 钉）：全局 ADMIN 在配了 VIEWER 的店就是 VIEWER。
+  §S22.7 第 2 条警告的是反方向（`isShopAllowedStrict` 的 ADMIN 分支是**故意**全局的）——
+  两头都有测试才不会被「统一口径」顺手改错。
+- **错配洞的正面证据**（写端点钉）：token=店 A OPERATOR / 店 B VIEWER，
+  请求头店 A + 请求体店 B → **必须按店 B 判（拒）**。变异「角色改回只看请求头」
+  → 该条 `expected:<400> but was:<200>` 红，正是当年那个洞复活的形状。
+- **两个切面都没有 `@Order`**（`RequireRoleAspect`/`ShopIdGuardAspect` 实测无注解）：
+  「店铺不在授权列表」那条**故意只断言「拒绝 + 不触达 Service」**，不断言是哪个切面
+  先说话——钉执行顺序等于给将来的无害改动埋假红。
+
+### 3. 过程坑（会复发，单列）
+
+1. **`toHaveCount(0)` 的空过陷阱**（本轮唯一真 bug，靠 e2e 炸出来）：
+   第一版断言 `[data-panel="master"]` 内「创建/保存按钮为 0」，而该属性**不存在**——
+   不存在的容器同样满足「0 个」。是 `.ci-locked` 的可见性断言把它炸出来的。
+   修法两件套：① 给 `ListingMonitor.vue` 的 master 区按同文件既有约定补
+   `data-panel="master"`（changelog 区同缺，未动——不为测试造钩子）；
+   ② 测试里写死顺序：**先断言容器+数据行可见，再数 0**。这个顺序注释留在测试里。
+2. **变异验证 ×3 全部由断言打红**（不是崩溃）：
+   角色判据改回「只看请求头」→ 写端点链 1 红；`effectiveRole` 退回读全局 role →
+   getInfo 2 红；`AppHeader` 同样变异 → e2e 两个 VIEWER 用例红而 OPERATOR 用例绿
+   （与注释「店 2 那条才是区分性证据」的设计一致，OPERATOR 侧对全局/店铺同值
+   时无区分力，这是预期而非漏洞）。
+3. 纯 `tsc --noEmit` 会报一堆 `.vue` 找不到模块——**那是噪声**，用 `vue-tsc`。
+
+### 4. 验证
+
+- 后端：user **60/60**；product 仅 3 个既有 loopback 环境失败（§S22.6 基线逐条同名，无新增）
+- 前端：vitest **655/655**、vue-tsc 0 错；e2e grep 范围 **17/17**
+  （既有的 ListingMonitor/CustomerService 用例未受 data-panel 改动影响）
+- 门禁：hygiene 0、release tools 91/91、endpoint-role / param-name / stub-shape 全 0
+
+### 5. 这一层仍然没覆盖的（别误判为「已全验」）
+
+- **真 MySQL 上 assignUser→JWT→判定 的完整数据往返**。`LoginServiceImplTest` 是
+  mock mapper 的单元级；本班两个 WebMvc 测试从 `createToken` 真签发起步，绕过了 DB。
+  E4/E5 验收真上环境时仍要跑一遍「配角色→重登录→按店判」的人工链路。
+- **SSE/异步链的店铺级角色**：`AgentChatStreamService`/`ListingCopyService` 的快照
+  已带 `shopRoles`（§S22 做的），但那是快照搬运，没有端到端断言「异步线程里
+  店 B VIEWER 被拒」。

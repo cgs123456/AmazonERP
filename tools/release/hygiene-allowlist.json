@@ -262,6 +262,11 @@
       "sha256": "3a1cb66f91c04601c795be62ee3ba0481f6634c3497639ae092f678ace9b1690"
     },
     {
+      "path": "amz-service/amz-service-user/src/test/java/com/amz/controller/UserInfoEffectiveRoleWebMvcIntegrationTest.java",
+      "rule": "secret-like-assignment",
+      "sha256": "5dee2b29d795c7ff5253f5b2ec9adaff5e28c27d22610cb70e02432b4a65df18"
+    },
+    {
       "path": "amz-service/amz-service-user/src/test/java/com/amz/migration/OperLogAuditMySqlIT.java",
       "rule": "secret-like-assignment",
       "sha256": "62a7f16dd0451f5259286f24451aaaedb02db41ac82f61919cf9ff1ef774353a"
