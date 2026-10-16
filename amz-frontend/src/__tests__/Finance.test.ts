@@ -322,12 +322,19 @@ describe('Finance 写入口角色门控', () => {
     expect(wrapper.text()).toContain('需要 OPERATOR 或 ADMIN 角色')
   })
 
-  it('VIEWER 走 call() 的写操作（扫描差异）应被拦住', async () => {
+  // 「VIEWER 走 call() 的写操作（扫描差异）应被拦住」已移到 FinanceOps.test.ts。
+  // 原因：runScan 随差异 tab 搬进 FinanceClaimFlow，而本文件用 shallow 挂载——
+  // 子组件被桩化后其按钮不渲染，子实例也只暴露 defineExpose 的那几个 loader
+  // （不为测试放宽生产 API）。FinanceOps.test.ts 本就是全量挂载 + finance-ext
+  // 全 mock，在那里点真实按钮比在这里调内部函数更接近真实路径。
+  it('VIEWER 时确认弹窗的「确认执行」禁用（弹窗在页壳，含子组件发起的写入）', async () => {
     localStorage.setItem('user_role', 'VIEWER')
-    const wrapper = mount(Finance, { shallow: true, global: globalStubs })
+    const wrapper = mount(Finance, { global: globalStubs })
     await flushPromises()
-    await (wrapper.vm as any).runScan()
+    await (wrapper.vm as any).confirm({ title: 't', detail: 'd', run: async () => undefined })
     await flushPromises()
-    expect(wrapper.text()).toContain('需要 OPERATOR 或 ADMIN 角色')
+    const ok = wrapper.findAll('button').find((b) => b.text() === '确认执行')
+    expect(ok, '确认弹窗未渲染').toBeTruthy()
+    expect(ok!.attributes('disabled')).toBeDefined()
   })
 })

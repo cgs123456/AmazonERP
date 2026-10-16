@@ -508,6 +508,33 @@ describe('Finance 只读端点不得被角色门控挡住（写才拦）', () =>
     expect(ext.reconcileClaims).toHaveBeenCalled()
   })
 
+  it('VIEWER 点「扫描差异」被拦住且不发请求（POST + @RequireRole）', async () => {
+    localStorage.setItem('user_role', 'VIEWER')
+    vi.mocked(ext.scanDiscrepancies).mockResolvedValue(ok({ created: 0 }))
+    const wrapper = mount(Finance, { global: globalStubs })
+    await flushPromises()
+    await openTab(wrapper, '费用差异')
+    // 按钮本身禁用（说明缺角色），这里再点一次证明门控在调用处而非只靠 disabled——
+    // 禁用态挡不住「弹窗在角色变更前已打开」那类时序，门控必须落在写出口上。
+    const btn = wrapper.findAll('button').find((b: any) => b.text() === '扫描差异')
+    expect(btn!.attributes('disabled')).toBeDefined()
+    expect(btn!.attributes('title')).toContain('OPERATOR/ADMIN')
+    await btn!.trigger('click')
+    await flushPromises()
+    expect(ext.scanDiscrepancies).not.toHaveBeenCalled()
+    // 上面那三条只证明「按钮禁用了」——**禁用态挡不住「弹窗在角色变更前已打开」
+    // 那类时序**，所以还要绕过 DOM 直接调一次：门控必须落在写出口上，不是靠 disabled。
+    // （变体验证过：把 call 改成 read，只有这一段会红。）
+    // 子组件只 defineExpose 了 loader，这里走 setupState——不为了测试放宽生产 API。
+    const flow: any = wrapper.findComponent({ name: 'FinanceClaimFlow' })
+    await flow.vm.$.setupState.runScan()
+    await flushPromises()
+    expect(ext.scanDiscrepancies).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('需要 OPERATOR 或 ADMIN 角色')
+    // 这条原先在 Finance.test.ts（shallow 挂载下直接调 runScan）。差异 tab 搬进
+    // FinanceClaimFlow 后，shallow 会把它桩化，故移到本文件的全量挂载下按真实路径测。
+  })
+
   it('VIEWER 仍可拉索赔汇总（GET /finance/claim/summary 只有 @ShopScoped）', async () => {
     localStorage.setItem('user_role', 'VIEWER')
     vi.mocked(ext.claimSummary).mockResolvedValue(ok({} as any))
