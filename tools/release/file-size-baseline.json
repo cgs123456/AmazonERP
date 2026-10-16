@@ -3,8 +3,8 @@
   "rulesVersion": 1,
   "limitLines": 500,
   "summary": {
-    "files": 58,
-    "totalLines": 50135,
+    "files": 57,
+    "totalLines": 48650,
     "largest": "amz-frontend/src/views/LogisticsDashboard.vue"
   },
   "files": {
@@ -42,8 +42,7 @@
     "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java": 738,
     "amz-service/amz-service-ad/src/main/java/com/amz/scheduler/AdReportSyncScheduler.java": 508,
     "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 713,
-    "amz-service/amz-service-ai/src/main/java/com/amz/agent/ErpToolExecutor.java": 1556,
-    "amz-service/amz-service-ai/src/test/java/com/amz/agent/ErpToolExecutorTest.java": 978,
+    "amz-service/amz-service-ai/src/test/java/com/amz/agent/ErpToolExecutorTest.java": 1049,
     "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java": 549,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/FinanceServiceImpl.java": 580,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/ReimbursementClaimServiceImpl.java": 555,

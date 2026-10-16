@@ -91,11 +91,6 @@ class ErpToolExecutorTest {
         selectionAnalysisService = mock(SelectionAnalysisService.class);
 
         executor = new ErpToolExecutor();
-        ReflectionTestUtils.setField(executor, "orderServiceClient", orderServiceClient);
-        ReflectionTestUtils.setField(executor, "inventoryServiceClient", inventoryServiceClient);
-        ReflectionTestUtils.setField(executor, "adServiceClient", adServiceClient);
-        ReflectionTestUtils.setField(executor, "productServiceClient", productServiceClient);
-        ReflectionTestUtils.setField(executor, "procurementServiceClient", procurementServiceClient);
         // §S32：物流工具已拆到 ErpLogisticsTools，客户端改为两注入
         // （先注入到工具类，再把工具类注入 executor）。工具类用手工 new 而不是容器，
         // 与本测试「不依赖 Spring 容器」的既有约定一致。
@@ -109,6 +104,22 @@ class ErpToolExecutorTest {
         ReflectionTestUtils.setField(analysisTools, "selectionAnalysisService", selectionAnalysisService);
         ReflectionTestUtils.setField(analysisTools, "reportServiceClient", reportServiceClient);
         ReflectionTestUtils.setField(executor, "analysisTools", analysisTools);
+        // §S32：按依赖族拆出的工具类，各自持有自己那一个 Feign 客户端
+        ErpOrderTools orderTools = new ErpOrderTools();
+        ReflectionTestUtils.setField(orderTools, "orderServiceClient", orderServiceClient);
+        ReflectionTestUtils.setField(executor, "orderTools", orderTools);
+        ErpInventoryTools inventoryTools = new ErpInventoryTools();
+        ReflectionTestUtils.setField(inventoryTools, "inventoryServiceClient", inventoryServiceClient);
+        ReflectionTestUtils.setField(executor, "inventoryTools", inventoryTools);
+        ErpAdTools adTools = new ErpAdTools();
+        ReflectionTestUtils.setField(adTools, "adServiceClient", adServiceClient);
+        ReflectionTestUtils.setField(executor, "adTools", adTools);
+        ErpProductTools productTools = new ErpProductTools();
+        ReflectionTestUtils.setField(productTools, "productServiceClient", productServiceClient);
+        ReflectionTestUtils.setField(executor, "productTools", productTools);
+        ErpProcurementTools procurementTools = new ErpProcurementTools();
+        ReflectionTestUtils.setField(procurementTools, "procurementServiceClient", procurementServiceClient);
+        ReflectionTestUtils.setField(executor, "procurementTools", procurementTools);
     }
 
     @AfterEach
@@ -240,6 +251,11 @@ class ErpToolExecutorTest {
         ReflectionTestUtils.setField(noClientAnalysisTools, "selectionAnalysisService", selectionAnalysisService);
         ReflectionTestUtils.setField(noClientExecutor, "analysisTools", noClientAnalysisTools);
         ReflectionTestUtils.setField(noClientExecutor, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(noClientExecutor, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(noClientExecutor, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(noClientExecutor, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(noClientExecutor, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(noClientExecutor, "procurementTools", new ErpProcurementTools());
 
         FunctionCall call = new FunctionCall();
         call.setName("query_orders");
@@ -456,9 +472,19 @@ class ErpToolExecutorTest {
         ErpToolExecutor noClient = new ErpToolExecutor();
         // 工具类要注入（内部客户端保持 null 才是被测的降级路径）
         ReflectionTestUtils.setField(noClient, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(noClient, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(noClient, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(noClient, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(noClient, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(noClient, "procurementTools", new ErpProcurementTools());
         ReflectionTestUtils.setField(noClient, "analysisTools", new ErpAnalysisTools());
         // 工具类本身要注入，但其内部客户端保持 null —— 这正是本用例要测的降级路径
         ReflectionTestUtils.setField(noClient, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(noClient, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(noClient, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(noClient, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(noClient, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(noClient, "procurementTools", new ErpProcurementTools());
         ReflectionTestUtils.setField(noClient, "analysisTools", new ErpAnalysisTools());
         FunctionCall call = new FunctionCall();
         call.setName("analyze_listing_health");
@@ -794,9 +820,19 @@ class ErpToolExecutorTest {
         ErpToolExecutor noClient = new ErpToolExecutor();
         // 工具类要注入（内部客户端保持 null 才是被测的降级路径）
         ReflectionTestUtils.setField(noClient, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(noClient, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(noClient, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(noClient, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(noClient, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(noClient, "procurementTools", new ErpProcurementTools());
         ReflectionTestUtils.setField(noClient, "analysisTools", new ErpAnalysisTools());
         // 工具类本身要注入，但其内部客户端保持 null —— 这正是本用例要测的降级路径
         ReflectionTestUtils.setField(noClient, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(noClient, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(noClient, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(noClient, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(noClient, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(noClient, "procurementTools", new ErpProcurementTools());
         ReflectionTestUtils.setField(noClient, "analysisTools", new ErpAnalysisTools());
         FunctionCall call = new FunctionCall();
         call.setName("optimize_shipping_route");
@@ -874,9 +910,19 @@ class ErpToolExecutorTest {
         ErpToolExecutor noClient = new ErpToolExecutor();
         // 工具类要注入（内部客户端保持 null 才是被测的降级路径）
         ReflectionTestUtils.setField(noClient, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(noClient, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(noClient, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(noClient, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(noClient, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(noClient, "procurementTools", new ErpProcurementTools());
         ReflectionTestUtils.setField(noClient, "analysisTools", new ErpAnalysisTools());
         // 工具类本身要注入，但其内部客户端保持 null —— 这正是本用例要测的降级路径
         ReflectionTestUtils.setField(noClient, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(noClient, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(noClient, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(noClient, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(noClient, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(noClient, "procurementTools", new ErpProcurementTools());
         ReflectionTestUtils.setField(noClient, "analysisTools", new ErpAnalysisTools());
         FunctionCall call = new FunctionCall();
         call.setName("optimize_inventory_distribution");

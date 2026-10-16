@@ -47,7 +47,12 @@ class ToolPermissionTest {
     private static final List<Class<?>> TOOL_CLASSES = List.of(
             ErpToolExecutor.class,
             ErpLogisticsTools.class,
-            ErpAnalysisTools.class);
+            ErpAnalysisTools.class,
+            ErpOrderTools.class,
+            ErpInventoryTools.class,
+            ErpAdTools.class,
+            ErpProductTools.class,
+            ErpProcurementTools.class);
 
     private static final Pattern CAMEL_BOUNDARY = Pattern.compile("([a-z0-9])([A-Z])");
 
@@ -70,6 +75,14 @@ class ToolPermissionTest {
         UserContext.setRole("VIEWER");
         UserContext.setShops(List.of(1L));
         ErpToolExecutor executor = new ErpToolExecutor();
+        // §S32：工具实现已按依赖族拆出，未注入会 NPE（客户端为 null 走降级分支）
+        ReflectionTestUtils.setField(executor, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());
+        ReflectionTestUtils.setField(executor, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(executor, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(executor, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(executor, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(executor, "procurementTools", new ErpProcurementTools());
 
         for (String tool : EXPECTED_OPERATE_TOOLS) {
             JsonObject json = call(executor, tool);
@@ -88,6 +101,14 @@ class ToolPermissionTest {
         UserContext.setRole("ADMIN");
         UserContext.setShops(List.of(1L));
         ErpToolExecutor executor = new ErpToolExecutor();
+        // §S32：工具实现已按依赖族拆出，未注入会 NPE（客户端为 null 走降级分支）
+        ReflectionTestUtils.setField(executor, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());
+        ReflectionTestUtils.setField(executor, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(executor, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(executor, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(executor, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(executor, "procurementTools", new ErpProcurementTools());
 
         FunctionCall call = new FunctionCall();
         call.setName("create_purchase_plan");
@@ -106,6 +127,14 @@ class ToolPermissionTest {
         assertFalse(ErpToolExecutor.hasOperatePermission());
 
         ErpToolExecutor executor = new ErpToolExecutor();
+        // §S32：工具实现已按依赖族拆出，未注入会 NPE（客户端为 null 走降级分支）
+        ReflectionTestUtils.setField(executor, "logisticsTools", new ErpLogisticsTools());
+        ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());
+        ReflectionTestUtils.setField(executor, "orderTools", new ErpOrderTools());
+        ReflectionTestUtils.setField(executor, "inventoryTools", new ErpInventoryTools());
+        ReflectionTestUtils.setField(executor, "adTools", new ErpAdTools());
+        ReflectionTestUtils.setField(executor, "productTools", new ErpProductTools());
+        ReflectionTestUtils.setField(executor, "procurementTools", new ErpProcurementTools());
         JsonObject json = call(executor, "create_purchase_plan");
         assertFalse(json.get("ok").getAsBoolean(), "role=null 不得执行 operate 工具");
         assertTrue(json.get("message").getAsString().contains("OPERATOR"),
