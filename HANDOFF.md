@@ -3853,5 +3853,30 @@ ProductSearch/ReportCenter/Warehouse/WarehouseAlerts）。
      是否整体给多平台账号管理加角色门禁，**是产品决策，留给下一班**。
 3. **没有一条端到端测试**验证「店 B 的 VIEWER 在 UI 上确实看不到写入口」
    （§S22.7 第 1 条仍成立）。需要在 DB 里造两个角色不同的绑定，属 E4/E5 验收。
-4. **`git push` 未成功**：本机到 GitHub 不通（配置的代理 127.0.0.1:7897 未运行，
-   直连被 reset）。提交已在本地 `7aa9057`，网络恢复后 `git push origin master`。
+4. **~~`git push` 未成功~~ 已推送**（`a7ca8bf..dcfd9e0`，代理恢复后成功）。
+   **本次推送一次性带了 17 个提交**，把此前积压的 §S21/§S22 也一起送上了 CI。
+
+### 7. CI 红与修复：schema 快照未同步 V6（已修）
+
+CI run `38864021869` 的 `synthetic-data` job 红在 "Schema snapshot freshness (DDL drift gate)"。
+
+**定位过程（不猜，用 V6 之前的工作树复现）**：在 `8db5879`（V6 之前）上跑同一门禁
+→ `OK: snapshot matches repository DDL (111 tables, 14 databases)`；
+在当前 HEAD 上跑 → `FAIL: DDL drift detected`。**即 §S22 加 V6 迁移时漏了同步快照**，
+与 §S23 的 P0 改动无关——只是那批提交此前一直没推送，CI 没机会发现。
+
+修复 `e5bc12b`：重跑 `python tools/synthetic-data/snapshot_schema.py`（写模式），
+重新生成 `schema-snapshot.json` / `DDL_SOURCES.json` / `SCHEMA_REPORT.md`。
+diff 逐条核对**只有 V6 的内容**（74→75 文件、role 默认值 OPERATOR→VIEWER、
+table_hash 更新、alter 46→47 / applied 60→61）。
+synthetic-data job 的全部步骤已本地复跑绿（见该提交信息）。
+
+**⚠️ 下一班必须知道的两件事**：
+
+1. **本地 `mvn test` 绿 ≠ CI 绿**（HANDOFF 里早有这句），但这条有个**具体的坑**：
+   「加了 Flyway 迁移却忘同步 schema 快照」在本机**任何**常规门禁里都不会红——
+   那个检查只在 CI 的 `synthetic-data` job 里跑。这次就是本机全绿而 CI 红。
+2. **防复发需要一条本地可跑的门禁**，但**刻意没在本次做**：挂在哪需要先决定
+   （CI 已有步骤内、还是 `precheck`）。在决定之前，加迁移时的清单是：
+   `python tools/synthetic-data/snapshot_schema.py` 然后 `--check` 确认。
+   这条已写进 §G「变更速查」应补的位置——**下一班若加了新迁移，先跑这一步**。
