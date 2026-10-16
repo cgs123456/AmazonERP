@@ -19,7 +19,9 @@ Why this exists (HANDOFF §S31 / P1):
 口径刻意收窄（否则会误报成一堆与代码质量无关的违规）：
     - 只扫**源码**：`*.java`（main + test）、`*.vue`、`*.ts`。
     - **排除**构建产物与依赖（target / node_modules / dist / build）、
-      自动生成的类型（见 GENERATED_NAME_HINTS）、Flyway 迁移目录。
+      自动生成的类型（见 GENERATED_NAME_HINTS）、Flyway 迁移目录，
+      以及**静态数据表**（见 STATIC_DATA_TABLE_RULES）——后者是「整文件都是常量条目、
+      零控制流」的目录型文件，把它拆成几块只会更难维护。
     - 空行与注释**照常计入**——判据是「这个文件读起来有多长」，不是「有多少逻辑行」。
       去掉注释计数的话，加注释会变成规避手段，而注释恰恰是长文件最需要的东西。
 
@@ -32,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import json
 import subprocess
 import sys
@@ -135,12 +138,72 @@ def source_files(root: Path) -> list[Path]:
             relative = path.relative_to(root)
         except ValueError:
             continue
-        if qualifies(relative):
+        if qualifies(relative, path):
             selected.append(path)
     return sorted(selected, key=lambda p: p.relative_to(root).as_posix())
 
 
-def qualifies(relative: Path) -> bool:
+CONTROL_FLOW = re.compile(r"\b(if|for|while|switch|try|catch)\b\s*\(")
+STATIC_FINAL = re.compile(r"\bstatic\s+final\b")
+# 判据阈值。static final >= 2 是为了避开那些「恰好声明了 1 个常量」的普通文件
+# （实测 LogisticsOpsDashboardServiceImplTest 只有 1 个，不该被豁免）。
+MIN_STATIC_FINALS = 2
+
+
+def _strip_java_comments(text: str) -> str:
+    """去掉 Java 注释与字符串字面量，避免把注释里的 if/for 算成控制流。"""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch == '"':
+            i += 1
+            while i < n and text[i] != '"':
+                if text[i] == chr(92):
+                    i += 1
+                i += 1
+        elif text.startswith("//", i):
+            while i < n and text[i] != chr(10):
+                i += 1
+        elif text.startswith("/*", i):
+            i += 2
+            while i + 1 < n and not (text[i] == "*" and text[i + 1] == "/"):
+                i += 1
+            i += 2
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def is_static_data_table(path: Path) -> bool:
+    """是否「整文件都是静态数据条目」的目录型文件（不该按代码模块拆分）。
+
+    <b>判据是内容特征，不是文件名</b>：名字里没有 generated 的目录表（如
+    {@code SpApiOperationCatalog}，751 行全部是 {@code new SpApiOperationSpec(...)}
+    条目、0 个 if/for/switch）同样该豁免。按名字判会漏掉它，而它的"长"是数据的长，
+    不是复杂度的长——拆成几块只会让一条完整的操作定义被撕开。
+
+    三条同时成立才豁免（实测全仓 .java 中只有 SpApiOperationCatalog 命中）：
+      1. 控制流语句为 0；
+      2. static final 声明 >= 2（避开"恰好有 1 个常量"的普通文件与测试）；
+      3. 非测试文件——测试的"长"往往是 fixture 数据，但该由测试自己重构，不由本门禁豁免。
+    """
+    try:
+        text = _strip_java_comments(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+    if len(CONTROL_FLOW.findall(text)) != 0:
+        return False
+    return len(STATIC_FINAL.findall(text)) >= MIN_STATIC_FINALS
+
+
+def qualifies(relative: Path, absolute: Path | None = None) -> bool:
+    """该相对路径是否参与行数统计。
+
+    `absolute` 用于需要读文件内容的判据（静态数据表）。测试可只传 relative，
+    此时跳过按内容判定——判据与路径规则分开测，失败原因才好归因。
+    """
     """该相对路径是否参与行数统计。"""
     parts = [part.lower() for part in relative.parts[:-1]]
     if any(part in EXCLUDED_PATH_PARTS for part in parts):
@@ -150,7 +213,12 @@ def qualifies(relative: Path) -> bool:
     name = relative.name.lower()
     if any(hint in name for hint in GENERATED_NAME_HINTS):
         return False
-    return relative.suffix.lower() in SOURCE_SUFFIXES
+    if relative.suffix.lower() != ".java":
+        return relative.suffix.lower() in SOURCE_SUFFIXES
+    # 静态数据表豁免：只针对非测试的 java（测试的长该由测试自己重构）
+    if absolute is not None and "/src/test/" not in relative.as_posix()             and is_static_data_table(absolute):
+        return False
+    return True
 
 
 def scan(

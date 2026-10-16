@@ -3,8 +3,8 @@
   "rulesVersion": 1,
   "limitLines": 500,
   "summary": {
-    "files": 57,
-    "totalLines": 48650,
+    "files": 56,
+    "totalLines": 47899,
     "largest": "amz-frontend/src/views/LogisticsDashboard.vue"
   },
   "files": {
@@ -60,7 +60,6 @@
     "amz-service/amz-service-report/src/main/java/com/amz/service/impl/ReportUpgradeServiceImpl.java": 542,
     "amz-service/amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java": 501,
     "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiGateway.java": 756,
-    "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiOperationCatalog.java": 751,
     "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialStore.java": 595,
     "amz-service/amz-service-spapi/src/main/java/com/amz/outbox/SpApiCallOutboxService.java": 702,
     "amz-service/amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java": 646,

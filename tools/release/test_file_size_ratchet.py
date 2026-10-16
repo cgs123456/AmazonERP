@@ -191,6 +191,62 @@ class TestCollectionScope(unittest.TestCase):
         ]:
             self.assertFalse(ratchet.qualifies(Path(name)), f"不该统计：{name}")
 
+    def test_static_data_table_exemption_needs_zero_control_flow(self):
+        """静态数据表豁免必须同时满足「零控制流」与「多个静态常量」。
+
+        只放宽任一条都会误豁免：
+        - 只看 static final 数量 → 会放过那些「常量多但也有大量分支」的业务类；
+        - 只看控制流 → 会放过只有一个常量的普通文件与测试。
+
+        用真实形状的文件验证，而不是断言源码里的字符串。
+        """
+        # 目录型：一堆 static final 条目、没有任何 if/for/switch
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        base = Path(tmp.name)
+        catalog = base / "Catalog.java"
+        catalog.write_text(chr(10).join([
+            "public final class Catalog {",
+            "    private static final List<String> A = List.of(",
+            '            "x",',
+            '            "y");',
+            "    private static final List<String> B = List.of(",
+            '            "z");',
+            "}",
+            "",
+        ]), encoding="utf-8")
+        self.assertTrue(ratchet.is_static_data_table(catalog),
+                        "零控制流 + 多个静态常量应被判为静态数据表")
+
+        # 有控制流的业务类：即使有静态常量也不豁免
+        service = base / "Service.java"
+        service.write_text(chr(10).join([
+            "public class Service {",
+            "    private static final int MAX = 10;",
+            "    private static final int MIN = 1;",
+            "    public int run(int v) {",
+            "        if (v > MAX) {",
+            "            return MAX;",
+            "        }",
+            "        return MIN;",
+            "    }",
+            "}",
+            "",
+        ]), encoding="utf-8")
+        self.assertFalse(ratchet.is_static_data_table(service),
+                         "有控制流的文件不得被豁免——那是有逻辑的代码模块")
+
+        # 只有一个常量：不豁免（实测测试文件常是这种形状）
+        lonely = base / "Lonely.java"
+        lonely.write_text(chr(10).join([
+            "public class Lonely {",
+            '    private static final String K = "v";',
+            "}",
+            "",
+        ]), encoding="utf-8")
+        self.assertFalse(ratchet.is_static_data_table(lonely),
+                         "只有 1 个静态常量不得豁免（会把普通文件与测试误放进豁免名单）")
+
     def test_real_repo_baseline_is_not_empty(self):
         """口径核对（跑真实仓库）：基线必须非空且与磁盘一致。
 
