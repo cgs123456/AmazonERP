@@ -48,7 +48,12 @@ class QueryKnowledgeToolTest {
                 .content("退货政策说明").score(2.0).build();
         when(searchService.search(1L, "退货政策", 5)).thenReturn(List.of(chunk));
         ErpToolExecutor executor = new ErpToolExecutor();
-        ReflectionTestUtils.setField(executor, "knowledgeSearchService", searchService);
+        // §S32：query_knowledge_base 在 ErpAnalysisTools 里，未注入会 NPE
+        ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());
+        // §S32：query_knowledge_base 已拆到 ErpAnalysisTools，客户端改为两层注入
+        ErpAnalysisTools analysisTools = new ErpAnalysisTools();
+        ReflectionTestUtils.setField(analysisTools, "knowledgeSearchService", searchService);
+        ReflectionTestUtils.setField(executor, "analysisTools", analysisTools);
 
         JsonObject json = JsonParser.parseString(
                 executor.execute(call(1, "退货政策", 5))).getAsJsonObject();
@@ -63,6 +68,8 @@ class QueryKnowledgeToolTest {
     @DisplayName("空 query 直接失败")
     void testBlankQueryFails() {
         ErpToolExecutor executor = new ErpToolExecutor();
+        // §S32：query_knowledge_base 在 ErpAnalysisTools 里，未注入会 NPE
+        ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());
         JsonObject json = JsonParser.parseString(
                 executor.execute(call(1, "  ", 5))).getAsJsonObject();
         assertFalse(json.get("ok").getAsBoolean());
@@ -73,6 +80,8 @@ class QueryKnowledgeToolTest {
     @DisplayName("服务未注入时降级失败")
     void testServiceNullFails() {
         ErpToolExecutor executor = new ErpToolExecutor();
+        // §S32：query_knowledge_base 在 ErpAnalysisTools 里，未注入会 NPE
+        ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());
         JsonObject json = JsonParser.parseString(
                 executor.execute(call(1, "退货政策", 5))).getAsJsonObject();
         assertFalse(json.get("ok").getAsBoolean());

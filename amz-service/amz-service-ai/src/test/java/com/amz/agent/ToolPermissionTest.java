@@ -46,7 +46,8 @@ class ToolPermissionTest {
     /** 持有 @ToolPermission 的工具类（拆分后不止一个）。 */
     private static final List<Class<?>> TOOL_CLASSES = List.of(
             ErpToolExecutor.class,
-            ErpLogisticsTools.class);
+            ErpLogisticsTools.class,
+            ErpAnalysisTools.class);
 
     private static final Pattern CAMEL_BOUNDARY = Pattern.compile("([a-z0-9])([A-Z])");
 
