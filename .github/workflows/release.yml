@@ -153,7 +153,7 @@ jobs:
         working-directory: amz-frontend
         run: npm run build
       - name: Release tool tests
-        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_verify_clean_clone -v
+        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_migration_snapshot_parity tools.release.test_verify_clean_clone -v
       - name: Extract version
         id: meta
         run: |

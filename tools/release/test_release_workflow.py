@@ -1,4 +1,5 @@
 """Static contract tests for .github/workflows/release.yml (TDD RED first)."""
+import glob
 import os
 import re
 import unittest
@@ -245,6 +246,29 @@ class TestReleaseWorkflow(unittest.TestCase):
         with open(CI_YML, "r", encoding="utf-8") as fh:
             ci_cmd = release_tool_test_commands(fh.read())
         self.assertEqual(release_cmd, ci_cmd, "ci.yml and release.yml must run identical release tool tests")
+
+    def test_every_release_test_module_is_enforced_by_both_workflows(self):
+        # 上一条保证两份清单**彼此**一致，但清单本身靠手工维护：
+        # 新建 tools/release/test_x.py 而没加进 unittest 命令时，两条测试都不会红——
+        # 门禁「存在于仓库、CI 里从不跑」，与 §S23.3 修掉的那类扫描器漏报同形
+        # （误报会被人肉忽略，漏报伪装成「已经查过了」）。
+        # 这里按磁盘枚举钉「每个模块都在两份清单里」。pytest 本地照 glob 全跑，
+        # 所以本地绿不等于 CI 跑过——只有这条能发现那种分裂。
+        on_disk = sorted(
+            "tools.release." + os.path.basename(path)[: -len(".py")]
+            for path in glob.glob(os.path.join(os.path.dirname(__file__), "test_*.py"))
+        )
+        self.assertTrue(on_disk, "tools/release 下没发现任何测试模块，枚举本身失效了")
+        with open(CI_YML, "r", encoding="utf-8") as fh:
+            ci_modules = set(_TOOL_TEST.findall(fh.read()))
+        release_modules = set(_TOOL_TEST.findall(self.raw))
+        for module in on_disk:
+            self.assertIn(
+                module, ci_modules,
+                f"{module} 存在于磁盘但不在 ci.yml 的 Release tool tests 清单里（新增测试文件"
+                "必须同步加进 ci.yml 与 release.yml 两处）。",
+            )
+            self.assertIn(module, release_modules, f"{module} 不在 release.yml 的 Release tool tests 清单里。")
 
     def test_boot_smoke_marker_match_is_pipefail_and_regex_safe(self):
         # v0.1.13-v0.1.19: five consecutive release runs died in the prod boot

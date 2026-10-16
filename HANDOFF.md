@@ -3889,10 +3889,11 @@ synthetic-data job 的全部步骤已本地复跑绿（见该提交信息）。
 1. **本地 `mvn test` 绿 ≠ CI 绿**（HANDOFF 里早有这句），但这条有个**具体的坑**：
    「加了 Flyway 迁移却忘同步 schema 快照」在本机**任何**常规门禁里都不会红——
    那个检查只在 CI 的 `synthetic-data` job 里跑。这次就是本机全绿而 CI 红。
-2. **防复发需要一条本地可跑的门禁**，但**刻意没在本次做**：挂在哪需要先决定
-   （CI 已有步骤内、还是 `precheck`）。在决定之前，加迁移时的清单是：
-   `python tools/synthetic-data/snapshot_schema.py` 然后 `--check` 确认。
-   这条已写进 §G「变更速查」应补的位置——**下一班若加了新迁移，先跑这一步**。
+2. **~~防复发门禁刻意没做~~ → 已交付（§S26，2026-10-16 同日补）**：
+   `tools/release/test_migration_snapshot_parity.py` 把 CI 的 "Schema snapshot
+   freshness" 变成 `pytest tools/release` 里本地必跑的一条。**下一班不需要再背
+   「加迁移先跑 snapshot_schema」这条人工清单**——忘了就会被自己常跑的门禁拦下，
+   且拦在提交时而不是推送后。人工清单仍成立的场合只剩非 Flyway 根（compose-init）。
 
 ## §S24. 决策定案：① `amz_user_shop.role` 存量数据 —— 不回填（2026-10-16）
 
@@ -4022,3 +4023,76 @@ synthetic-data job 的全部步骤已本地复跑绿（见该提交信息）。
 - **SSE/异步链的店铺级角色**：`AgentChatStreamService`/`ListingCopyService` 的快照
   已带 `shopRoles`（§S22 做的），但那是快照搬运，没有端到端断言「异步线程里
   店 B VIEWER 被拒」。
+
+
+## §S26. 交接：2026-10-16 P2-5 交付（快照漂移门禁本地化 + 测试清单完整性，已完成）
+
+> 纯工具班（Python + 两处 workflow 一行清单），无 Java/SQL 变更。
+> 承接 §S23.7 第 2 条「防复发需要一条本地可跑的门禁，刻意没做——挂在哪需要先决定」。
+> 决定过程本身修正了一个前提，先记这个。
+
+### 1. 挂载点的决定（含一个被推翻的候选）
+
+全局 CLAUDE.md 写着「涉及存量数据搬迁要跑 `bun run run-data-migrations`」，
+本班开场先核实：**这仓没有根 package.json、没有 precheck、也没有 run-data-migrations**
+——那是别处项目的约定。候选「挂到 precheck」当场作废，不能再凭全局模板的既视感设计挂载点
+（P2-1 那类「凭邻近代码印象」的错误的工具版）。
+
+实际挂载点选 `tools/release` 测试套：每班本来就跑 `pytest tools/release -q`，
+CI 的 hygiene job 也显式枚举跑同一套。零新增习惯即生效。
+
+### 2. 交付物与各自钉的事
+
+| 件 | 钉什么 |
+|---|---|
+| `tools/release/test_migration_snapshot_parity.py`（2 例） | ① 以子进程跑 **CI 同一个入口** `snapshot_schema.py --check`；② 快照 sources 的 flyway 集合与磁盘一一对应（missing/ghost 分开点名） |
+| `test_release_workflow.py` 新增 `test_every_release_test_module_is_enforced_by_both_workflows` | 磁盘上每个 `tools/release/test_*.py` 必须同时出现在 ci.yml 与 release.yml 的 unittest 清单里 |
+| 两份 workflow 各加一个模块名 | 既有 parity 测试保证两文件不漂 |
+
+**为什么①是调 CI 同入口而不是重实现比较**：「再实现一遍结构比较」会和真门漂开——
+解析器一改，这里绿着、CI 红着，假绿正是 §S23.7 事故要防的形状。多花约 0.4 秒子进程（实测 2 例合计 0.39s）
+买的是「本地绿 ⇒ 那道门绿」这个等价关系。
+②存在的理由：`--check` 只报笼统 "DDL drift"；幽灵路径/解析根变化时它可能照绿，
+点名差异是另一种修法。
+
+### 3. 清单完整性测试——它抓的第一个人是我自己
+
+写新门禁时**没有**先把它加进两份 workflow 清单，先跑的 TDD 断言当场红：
+`'tools.release.test_migration_snapshot_parity' not found in {...}`。
+这不是巧合，是设计：既有 parity 测试只钉「两份清单**彼此**一致」，
+清单本身靠手工维护，新测试文件不在清单里时没有任何检查会红——
+「门禁存在于仓库、CI 里从不跑」与 §S23.3 修掉的扫描器漏报同形
+（误报会被人肉忽略，漏报伪装成「已经查过了」）。
+pytest 本地按 glob 全跑，**本地绿 ≠ CI 跑过**，这条分裂只有枚举磁盘能发现。
+
+### 4. 变异证据（原样复刻 §S23.7 事故，非设想）
+
+往 V6 迁移头部加一行注释、**不重生成快照**，然后分别问：
+
+| 门禁 | 事故状态下的结果 |
+|---|---|
+| hygiene | **绿**（exit 0） |
+| entity_column_drift --gate | **绿**（exit 0） |
+| 新本地门禁 `test_migration_snapshot_parity` | **红**：`DDL drift detected` + 「这些迁移文件不在 schema 快照里」 |
+| CI 那道门（对照组） | 红（同源，符合预期） |
+
+前一行绿、后两行红的组合**正是 §S22 那次的完整复现**：当时本机常规四件套全绿，
+积压 17 个推送后 CI 才红。现在同样的操作在 `pytest tools/release`（每班提交前常跑）就拦下，
+不必等推送。注意它不是 git hook——依赖的是「跑门禁」这个纪律本身。V6 已逐字节还原（`git diff` 迁移目录为空）。
+
+### 5. 验证
+
+- `pytest tools/release`：**94 passed**（91→+2 门禁 +1 完整性）；unittest 直跑新模块 2/2
+- ci.yml 与 release.yml 各 +1 模块名，既有 parity 测试随之绿
+- 完整性测试在「未接线」状态先 RED、接线后 GREEN（TDD 顺序真实发生）
+- 还原 V6 后全量复核：94/94、hygiene 0
+- 纯工具改动，未动 Java/前端/e2e，无需重跑后端/前端套件
+
+### 6. 仍然没覆盖的（别误判为全防住了）
+
+- **非 Flyway 根的 DDL**（compose-init/legacy）新增文件时，若解析器 glob 没扩，
+  `--check` 可能无感——测试②的 ghost 分支防快照侧，磁盘侧只覆盖 flyway-migration 组。
+  真要钉死得让②对 `generated_from` 里的全部来源组做并集核对，收益不抵当前风险，留作台账。
+- 这条门禁**红的时候教的是修法**（错误信息里带重生成命令），但没做自动重生成——
+  刻意不做：快照内容进提交必须是人的决定（§S23.7「不替管理员做授权决策」同款理由，
+  适用于「不替解析器做重生成决定」）。
