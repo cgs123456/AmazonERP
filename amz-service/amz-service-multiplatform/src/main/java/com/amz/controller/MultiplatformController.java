@@ -1,5 +1,7 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
+import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.OauthApp;
 import com.amz.model.OauthToken;
@@ -47,12 +49,16 @@ public class MultiplatformController {
 
     // ==================== 平台账号管理 ====================
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "绑定账号", description = "绑定第三方平台账号")
     @ShopScoped
     @PostMapping("/account")
     public Result<PlatformAccount> createAccount(@RequestBody PlatformAccount account) {
         return Result.success(multiplatformService.createAccount(account));
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "改账号", description = "修改第三方平台账号")
     @ShopScoped
     @PutMapping("/account/{id}")
     public Result<PlatformAccount> updateAccount(@PathVariable Long id, @RequestBody PlatformAccount account) {
@@ -67,12 +73,19 @@ public class MultiplatformController {
         return Result.paged(multiplatformService.listAccounts(shopId, PageRequest.of(size, cursor)));
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "解绑账号", description = "解绑第三方平台账号")
     @ShopScoped
     @DeleteMapping("/account/{id}")
     public Result<Boolean> deleteAccount(@PathVariable Long id) {
         return Result.success(multiplatformService.deleteAccount(id));
     }
 
+    // 无 shopId 参数（id 是平台账号主键），切面解析不到 → 不能挂 @ShopScoped；
+    // 归属由 service 层 requireShopOnRow 按行判定。加锁只为了挡住 VIEWER
+    // 拿别人账号反复探测外部平台（会刷对方 API 配额）。
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "测连接", description = "探测第三方平台账号连通性")
     @PostMapping("/account/{id}/test")
     public Result<Boolean> testConnection(@PathVariable Long id) {
         // 亚马逊这类本模块不探测的平台会点名拒绝，要走成前端读得懂的业务失败，
@@ -95,6 +108,8 @@ public class MultiplatformController {
     }
     // ==================== 商品映射 ====================
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "同步商品", description = "从第三方平台同步商品")
     @ShopScoped
     @PostMapping("/product/sync/{shopId}/{platform}")
     public Result<Integer> syncProducts(@PathVariable Long shopId, @PathVariable String platform) {
@@ -111,6 +126,8 @@ public class MultiplatformController {
                 shopId, platform, PageRequest.of(size, cursor)));
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "映射商品", description = "把平台商品映射到亚马逊 ASIN/SKU")
     @ShopScoped
     @PostMapping("/product/{productId}/map")
     public Result<Boolean> mapProduct(@PathVariable Long productId,
@@ -121,6 +138,8 @@ public class MultiplatformController {
 
     // ==================== 消息管理 ====================
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "同步消息", description = "从第三方平台同步买家消息")
     @ShopScoped
     @PostMapping("/message/sync/{shopId}/{platform}")
     public Result<Integer> syncMessages(@PathVariable Long shopId, @PathVariable String platform) {
@@ -138,6 +157,8 @@ public class MultiplatformController {
                 shopId, platform, status, PageRequest.of(size, cursor)));
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "回复消息", description = "以店铺身份回复第三方平台买家消息")
     @ShopScoped
     @PostMapping("/message/{messageId}/reply")
     public Result<Boolean> replyMessage(@PathVariable Long messageId,
@@ -147,6 +168,8 @@ public class MultiplatformController {
         return guarded(() -> multiplatformService.replyMessage(messageId, replyContent));
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "指消息", description = "指派平台消息处理人")
     @ShopScoped
     @PostMapping("/message/{messageId}/assign")
     public Result<Boolean> assignMessage(@PathVariable Long messageId,
@@ -156,6 +179,8 @@ public class MultiplatformController {
 
     // ==================== 库存聚合 ====================
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "同步库存", description = "从第三方平台同步库存")
     @ShopScoped
     @PostMapping("/inventory/sync/{shopId}/{platform}")
     public Result<Integer> syncInventory(@PathVariable Long shopId, @PathVariable String platform) {
@@ -201,12 +226,16 @@ public class MultiplatformController {
 
     // ==================== OAuth 开放 API ====================
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "注册应用", description = "注册第三方平台 OAuth 应用")
     @ShopScoped
     @PostMapping("/oauth/app")
     public Result<Map<String, Object>> registerApp(@RequestBody OauthApp app) {
         return Result.success(multiplatformService.registerApp(app));
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "轮换密钥", description = "轮换第三方应用密钥")
     @ShopScoped
     @PostMapping("/oauth/app/{id}/rotate")
     public Result<Map<String, Object>> rotateAppSecret(@PathVariable Long id) {
@@ -229,12 +258,16 @@ public class MultiplatformController {
 
     // ==================== 原有端点 ====================
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "全平台同步", description = "触发全平台订单同步")
     @ShopScoped
     @PostMapping("/sync/all/{shopId}")
     public Result<MultiplatformServiceImpl.OrderSyncSummary> syncAll(@PathVariable Long shopId) {
         return Result.success(multiplatformService.syncAllPlatforms(shopId));
     }
 
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "同步订单", description = "触发单平台订单同步")
     @ShopScoped
     @PostMapping("/sync/{shopId}/{platform}")
     public Result<Integer> syncByPlatform(@PathVariable Long shopId, @PathVariable String platform) {
@@ -276,6 +309,10 @@ public class MultiplatformController {
         return Result.paged(multiplatformService.listByPlatform(shopId, platform, PageRequest.of(size, cursor)));
     }
 
+    // 无 shopId 参数 → 不能挂 @ShopScoped；归属由 service 层按行判定。
+    // 这是本模块最危险的端点：VIEWER 此前可把任意平台订单标记为已发货。
+    @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "多平台", action = "标记发货", description = "把第三方平台订单标记为已发货")
     @PostMapping("/order/{orderId}/ship")
     public Result<Boolean> markShipped(@PathVariable Long orderId, @RequestParam String trackingNo) {
         return Result.success(multiplatformService.markShipped(orderId, trackingNo));

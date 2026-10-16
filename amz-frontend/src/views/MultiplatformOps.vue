@@ -39,7 +39,8 @@
               <button class="action-btn" :disabled="accounts.loading.value" @click="loadAccounts()">刷新</button>
               <button v-if="accounts.truncated.value" class="action-btn"
                       :disabled="accounts.loading.value" @click="loadAccounts(true)">下一页</button>
-              <button class="action-btn primary" @click="resetAccountForm()">新增平台账号</button>
+              <button v-if="writeAllowed" class="action-btn primary" @click="resetAccountForm()">新增平台账号</button>
+              <span v-else class="muted" role="note">平台账号写操作{{ WRITE_LOCKED_HINT }}</span>
               <span class="muted">{{ pagerText(accounts) }}</span>
             </div>
             <table class="data-table">
@@ -56,9 +57,9 @@
                   <td class="mono">{{ a.tokenExpiresAt || '-' }}</td>
                   <td class="mono">{{ a.lastSyncTime || '从未' }}</td>
                   <td class="row-actions">
-                    <button class="action-btn" :disabled="busy" @click="testAccount(a)">测试连接</button>
-                    <button class="action-btn" :disabled="busy" @click="editAccount(a)">编辑</button>
-                    <button class="action-btn danger" :disabled="busy" @click="askDeleteAccount(a)">删除</button>
+                    <button v-if="writeAllowed" class="action-btn" :disabled="busy" @click="testAccount(a)">测试连接</button>
+                    <button v-if="writeAllowed" class="action-btn" :disabled="busy" @click="editAccount(a)">编辑</button>
+                    <button v-if="writeAllowed" class="action-btn danger" :disabled="busy" @click="askDeleteAccount(a)">删除</button>
                   </td>
                 </tr>
                 <tr v-if="!accounts.loading.value && !accounts.rows.value.length">
@@ -130,7 +131,7 @@
                   <td><span class="status-tag" :class="productClass(p.status)">{{ p.status || '-' }}</span></td>
                   <td class="mono">{{ p.amazonAsin || '未映射' }}</td>
                   <td class="mono">{{ p.amazonSku || '-' }}</td>
-                  <td><button class="action-btn" :disabled="busy" @click="openMapForm(p)">映射</button></td>
+                  <td><button v-if="writeAllowed" class="action-btn" :disabled="busy" @click="openMapForm(p)">映射</button></td>
                 </tr>
                 <tr v-if="!products.loading.value && !products.rows.value.length">
                   <td colspan="9" class="empty-row">
@@ -191,7 +192,7 @@
                   <td class="cell-clip" :title="m.subject || ''">{{ m.subject || '-' }}</td>
                   <td><span class="status-tag" :class="messageClass(m.status)">{{ m.status || '-' }}</span></td>
                   <td>{{ m.assignedTo || '未分配' }}</td>
-                  <td><button class="action-btn" :disabled="busy" @click="askAssign(m)">分配处理人</button></td>
+                  <td><button v-if="writeAllowed" class="action-btn" :disabled="busy" @click="askAssign(m)">分配处理人</button></td>
                 </tr>
                 <tr v-if="!messages.loading.value && !messages.rows.value.length">
                   <td colspan="8" class="empty-row">
@@ -304,7 +305,7 @@
               <button class="action-btn" :disabled="apps.loading.value" @click="loadApps()">刷新</button>
               <button v-if="apps.truncated.value" class="action-btn"
                       :disabled="apps.loading.value" @click="loadApps(true)">下一页</button>
-              <button class="action-btn primary" @click="resetAppForm()">注册新应用</button>
+              <button v-if="writeAllowed" class="action-btn primary" @click="resetAppForm()">注册新应用</button>
               <span class="muted">{{ pagerText(apps) }}</span>
             </div>
             <table class="data-table">
@@ -320,7 +321,7 @@
                   <td class="mono cell-clip" :title="a.redirectUris || ''">{{ a.redirectUris || '-' }}</td>
                   <td>{{ a.rateLimitRpm ?? '-' }}</td>
                   <td><span class="status-tag" :class="appClass(a.status)">{{ a.status || '-' }}</span></td>
-                  <td><button class="action-btn danger" :disabled="busy" @click="askRotate(a)">轮换密钥</button></td>
+                  <td><button v-if="writeAllowed" class="action-btn danger" :disabled="busy" @click="askRotate(a)">轮换密钥</button></td>
                 </tr>
                 <tr v-if="!apps.loading.value && !apps.rows.value.length">
                   <td colspan="7" class="empty-row">这家店还没有 ISV 应用。</td>
@@ -377,11 +378,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
+import { canUseRole, MULTIPLATFORM_WRITE_ROLES, ROLE_CHANGED_EVENT, WRITE_LOCKED_HINT } from '@/utils/identity'
 import type { ApiResponse } from '@/api/types'
 import * as api from '@/api/multiplatform'
 import {
@@ -406,6 +408,20 @@ const { currentShopId, refreshShop } = useShopGuard()
 const tab = ref<TabKey>('accounts')
 const errors = ref<string[]>([])
 const busy = ref(false)
+
+/**
+ * 本页写入口的角色门控（P0 第 4 批，决策②定案后同步）。
+ * <p>
+ * 后端已逐条给账号绑定/编辑/删除/测连、商品映射、消息分配、ISV 应用注册/轮换
+ * 补上 @RequireRole(OPERATOR/ADMIN)；两个机器端点（webhook 回调、oauth token）
+ * 刻意不加锁，本页也没有它们的入口。未知角色不隐藏（canUseRole 的既有语义：
+ * getInfo 还没回来时不该让前端状态否决后端能力）。
+ */
+const writeAllowed = ref(canUseRole(MULTIPLATFORM_WRITE_ROLES))
+
+const syncWriteRole = () => {
+  writeAllowed.value = canUseRole(MULTIPLATFORM_WRITE_ROLES)
+}
 
 const accounts = mkList<PlatformAccount>()
 const products = mkList<PlatformProduct>()
@@ -748,8 +764,11 @@ const gotoTab = async (key: TabKey) => {
 }
 
 onMounted(() => {
+  window.addEventListener(ROLE_CHANGED_EVENT, syncWriteRole)
   void gotoTab('accounts')
 })
+
+onUnmounted(() => window.removeEventListener(ROLE_CHANGED_EVENT, syncWriteRole))
 </script>
 
 <style scoped>

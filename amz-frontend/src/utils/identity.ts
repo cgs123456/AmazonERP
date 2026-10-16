@@ -155,3 +155,24 @@ export const CUSTOMER_SERVICE_WRITE_ROLES = ['OPERATOR', 'ADMIN']
 
 /** 门控隐藏时给用户的说明文案：不解释「为什么没有按钮」用户只会以为功能没了。 */
 export const WRITE_LOCKED_HINT = '需 OPERATOR/ADMIN'
+
+/**
+ * 多平台写入（账号绑定/编辑/删除/测连、商品映射、消息分配、ISV 应用注册/轮换）的守卫角色。
+ * <p>
+ * **P0 第 4 批（决策②定案，2026-10-16 用户拍板「加锁」）**：后端
+ * MultiplatformController 的 17 个写端点此前一个 `@RequireRole` 都没有，VIEWER
+ * 可代表店铺对第三方平台写（最危险的两个：把任意平台订单标记为已发货
+ * `/order/{id}/ship`、轮换 ISV 应用密钥——后者会把对方系统踢下线）。
+ * 现在人操作端点逐条声明 `@RequireRole({"OPERATOR","ADMIN"})`，这里同步门控入口，
+ * 否则用户会点到一个必然被后端拒绝的按钮。
+ * <p>
+ * **两个刻意豁免的机器端点不在此列，也不该加**（已写进后端的
+ * MultiplatformWriteEndpointGuardContractTest.MACHINE_ENDPOINTS）：
+ * `POST /multiplatform/webhook/**`（Temu/TikTok/Shein 回调，白名单放行、HMAC 验签）、
+ * `POST /multiplatform/oauth/token`（外部系统凭 appKey+appSecret 换 token）。
+ * 给这两个加前端门控没有意义（没有前端入口），加后端门禁会打死真实调用方。
+ * <p>
+ * 与其它常量分开的理由同 FINANCE_WRITE_ROLES：对第三方平台做写操作不是
+ * 「自己店里的账」，是「以店铺身份对外动作」——错发一条消息、错绑一个账号都是对外可见的。
+ */
+export const MULTIPLATFORM_WRITE_ROLES = ['OPERATOR', 'ADMIN']
