@@ -79,7 +79,12 @@ const globalStubs = {
   stubs: {
     AppHeader: { template: '<div />' },
     AppSidebar: { template: '<div />' },
-    Icon: { template: '<span />' }
+    Icon: { template: '<span />' },
+    // §S32：盘点已拆为 StocktakePanel，但本文件有一组断言直接读「盘点写入口」的
+    // 可见性与说明文案。shallow 会把子组件桩成一个空标签，那些断言就查不到——
+    // 那不是功能坏了，是挂载方式让被测内容不存在。这里显式放行真实组件。
+    // （不整体改成 full mount，是为了避免其余子组件真实渲染引入无关请求。）
+    StocktakePanel: false
   }
 }
 
@@ -682,7 +687,11 @@ describe('Warehouse WMS 单据写入口的角色门禁（入库/出库/盘点）
     await vm.doPick(2)
     await vm.doPack(2)
     await vm.confirmShip()
-    await vm.applyStocktakeRow({ id: 3 })
+    // §S32：落账等盘点操作已随面板拆进 StocktakePanel，父实例上不再有这些方法。
+    // 这里仍要验证「入口隐藏之外的兜底」——即直接调方法也会被角色守卫挡下——
+    // 所以改为从子组件实例调用，断言的语义不变。
+    const panel = wrapper.findComponent({ name: 'StocktakePanel' })
+    await (panel.vm as any).applyStocktakeRow({ id: 3 })
     await flushPromises()
     expect(mockedPickOutbound).not.toHaveBeenCalled()
     expect(mockedPackOutbound).not.toHaveBeenCalled()
