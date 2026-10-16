@@ -213,6 +213,11 @@ describe('Finance 视图：财务运营分区（回款/结算/差异/索赔/单�
     expect(ext.createClaimFromDiscrepancy).not.toHaveBeenCalled()
     await clickBtn(wrapper, '确认执行')
     expect(ext.createClaimFromDiscrepancy).toHaveBeenCalledWith('900000000000001000', 21)
+    // 建完索赔单要同时回读差异表与索赔表：只刷一个，另一个 tab 会停在建单前的状态。
+    // （这条断言在差异/索赔尚未合并成同一组件前就补上，是为了让那次合并**不可能**
+    //   悄悄把 cross-refresh 丢掉——合并后它是组件内部行为，外部只能靠这两行守。）
+    expect(ext.listDiscrepancies).toHaveBeenCalled()
+    expect(ext.listClaims).toHaveBeenCalled()
   })
 
   it('索赔状态机决定操作：CANDIDATE 提交平台，ACCEPTED 才让登记赔付', async () => {
