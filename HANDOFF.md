@@ -4649,3 +4649,55 @@ tracking（文案写「轨迹」、外层带 v-if）**不是同构用例**，强
 - `Warehouse.vue`（1634 行）测试覆盖也强（916 行 + 3 个测试文件），是另一个好目标。
 - **每次拆完务必** `python tools/release/file_size_ratchet.py --update-baseline`——
   这是「在还债」唯一的客观证据。
+
+### 8. StocktakePanel 拆分（Warehouse.vue 1634 → 1364）
+
+把库存盘点域拆成 `StocktakePanel.vue`（386 行）：列表 + 新建弹窗 + 明细弹窗 + 落账/取消。
+
+**接口设计（两个刻意的决定）**：
+- 角色 `wmsWriteAllowed` **由父组件传入**，组件不自己监听 `ROLE_CHANGED_EVENT`。
+  角色变更监听是页级关注点（三个角色 ref 一起同步），每个面板各注册监听器会让
+  同步时机分裂。
+- 首次激活才拉数据：用 `props.active` 驱动 watch，语义与原来父组件的 `watch(activeTab)` 一致。
+
+**scoped CSS 只搬本地类**（panel / modal / form-grid / status-tag 等）；
+`table-card` / `data-table` / `empty-row` / `row-btn` 是 `src/style.css` 的全局类，
+不需要重复声明——照 `MasterCsvImport.vue` 的既有做法。
+
+**测试适配两处，都不是删断言**：
+1. 一组断言直接读「盘点写入口」可见性与说明文案，而挂载用 `shallow: true`
+   （子组件被桩成空标签）。在 stubs 里显式放行 `StocktakePanel`
+   （不是改成 full mount，避免无关子组件真实渲染）。
+2. 「VIEWER 直接调落账不发写请求」用 `vm.applyStocktakeRow` 调父实例，
+   方法已随面板移走 → 改为从子组件实例调用，**断言语义不变**。
+
+### 9. 入库单域：分析过，暂不拆（留给下一班的判断依据）
+
+`Warehouse.vue` 的入库单域（849–1151，约 300 行）依赖面明显大于盘点域：
+`showToast` 13 处、`shopIdNum` 8 处、`wmsWriteBlocked` 5 处、`ok` 5 处、
+`pushListError` 4 处，另加 warehouses / warehouseName / refreshShop。
+
+**暂不拆的理由**：就算拆成组件，这些页级工具函数要么逐个当 props 传（接口会很丑），
+要么先抽 `useWarehouseErrors` 一类的 composable（那是一次独立重构，
+不该混进「拆组件」的 diff——§S28 的同一教训）。且拆完 Warehouse.vue 仍约 1050 行、
+依然超限，**收益/风险比不如先做更大的文件**。
+
+**要做时的建议顺序**：先把 `pushListError`（页级错误区，按 tag 前缀去重，
+与 Finance 的 `useFinanceErrors` 同构——这是它的**第二个真实用例**了）
+抽成 composable，再拆入库单域，两步分开提交。
+
+### 10. 本轮累计（P1 从「只有门禁」到「真的还了债」）
+
+| 项 | 前 | 后 |
+|---|---|---|
+| 棘轮基线 | 59 文件 / 50135 行 | **56 文件 / 47623 行** |
+| ProcurementController | 538 | 372 |
+| ErpToolExecutor | 1556 | 241（+ 7 个工具类） |
+| SpApiOperationCatalog | 751（待拆） | 豁免（静态数据表） |
+| LogisticsDashboard | 3259 | 3243（第一刀） |
+| Warehouse | 1634 | 1364 |
+
+**下一班优先级建议**（按「收益 ÷ 风险」排）：
+1. `LogisticsDashboard.vue`（3243）按 tab 拆子组件——1497 行测试保护，最大块。
+2. `Procurement.vue`（2045）——701 行测试。
+3. `Warehouse.vue` 入库单域——先抽 `useWarehouseErrors` 再拆（见上）。
