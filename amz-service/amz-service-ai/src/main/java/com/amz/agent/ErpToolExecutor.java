@@ -34,6 +34,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import static com.amz.agent.ErpToolSupport.fail;
+import static com.amz.agent.ErpToolSupport.ok;
+import static com.amz.agent.ErpToolSupport.isSuccess;
+import static com.amz.agent.ErpToolSupport.inferLanguage;
+import static com.amz.agent.ErpToolSupport.toLong;
+import static com.amz.agent.ErpToolSupport.toInt;
+import static com.amz.agent.ErpToolSupport.toDouble;
+import static com.amz.agent.ErpToolSupport.toBool;
+import static com.amz.agent.ErpToolSupport.toStr;
+import static com.amz.agent.ErpToolSupport.truncate;
 
 /**
  * ERP 运营 Agent 工具调度器。
@@ -220,13 +230,6 @@ public class ErpToolExecutor {
     /**
      * SSE 事件载荷截断，避免大 JSON 撑爆事件帧（无 trace 时调用方已短路，此处纯工具函数）。
      */
-    private static String truncate(String text, int maxLength) {
-        if (text == null) {
-            return null;
-        }
-        return text.length() <= maxLength ? text : text.substring(0, maxLength) + "…";
-    }
-
     /**
      * 工具 1：查询最近 N 天订单汇总。
      * 通过 Feign 调用 amz-service-order 的 /order/list 端点。
@@ -1487,70 +1490,10 @@ public class ErpToolExecutor {
 
     // ===== 工具方法 =====
 
-    private String ok(String message, Object data) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("ok", true);
-        result.put("message", message);
-        result.put("data", data == null ? "" : data);
-        return gson.toJson(result);
-    }
-
-    private String fail(String message) {
-        Map<String, Object> result = new HashMap<>();
-        result.put("ok", false);
-        result.put("message", message);
-        return gson.toJson(result);
-    }
-
     /**
      * 判断 Feign 调用返回的 Result 是否成功。
      */
-    private boolean isSuccess(Result<?> result) {
-        return result != null && result.getCode() == 200 && result.getData() != null;
-    }
-
     /**
      * 根据 Marketplace ID 推断目标语言。
      */
-    private String inferLanguage(String marketplaceId) {
-        if (marketplaceId == null) return "en";
-        return switch (marketplaceId) {
-            case "A1PA6795UKMFR9" -> "de";  // DE
-            case "A13V1IB3VIYZZH" -> "fr";  // FR
-            case "APJ6JRA9NG5V4" -> "it";   // IT
-            case "A1RKKUPIHCS9HS" -> "es";  // ES
-            case "A1VC38T7YXB528" -> "ja";  // JP
-            case "A1F83G8C2ARO7P" -> "en";  // UK
-            default -> "en";
-        };
-    }
-
-    private Long toLong(Object obj) {
-        if (obj == null) return null;
-        if (obj instanceof Number) return ((Number) obj).longValue();
-        try { return Long.valueOf(obj.toString()); } catch (Exception e) { return null; }
-    }
-
-    private Integer toInt(Object obj, int defaultValue) {
-        if (obj == null) return defaultValue;
-        if (obj instanceof Number) return ((Number) obj).intValue();
-        try { return Integer.valueOf(obj.toString()); } catch (Exception e) { return defaultValue; }
-    }
-
-    private double toDouble(Object obj) {
-        if (obj == null) return 0;
-        if (obj instanceof Number) return ((Number) obj).doubleValue();
-        try { return Double.parseDouble(obj.toString()); } catch (Exception e) { return 0; }
-    }
-
-    private Boolean toBool(Object obj) {
-        if (obj == null) return null;
-        if (obj instanceof Boolean b) return b;
-        if (obj instanceof Number n) return n.intValue() != 0;
-        return Boolean.parseBoolean(obj.toString());
-    }
-
-    private String toStr(Object obj) {
-        return obj == null ? null : obj.toString();
-    }
 }
