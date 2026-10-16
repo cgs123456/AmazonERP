@@ -3833,12 +3833,24 @@ ProductSearch/ReportCenter/Warehouse/WarehouseAlerts）。
    V6 迁移**只改了列默认值，没有回填存量行**（理由见该迁移注释：批量改写等于
    替管理员做授权决策）。**系统从未部署 → 无存量用户 → 当前风险为零**，
    但这一条与「上线前必须回填/复核 `amz_user_shop.role`」是同一件事。
-2. **两处仍未加锁的写端点**（不在本次范围，**未改**，修好扫描器后才看见）：
-   - `DELETE /multiplatform/account/{id}`（`MultiplatformController:71`）——
-     有 `@ShopScoped`，但该端点无 shopId 参数 → 切面解析不到；
-     service 层 `deleteAccount` 的 `requireShopOnRow` **有没有覆盖到**需要单独核实。
+2. **两处仍未加锁的写端点 —— 已逐条核实，结论是不加**（修好扫描器后才浮出来）：
    - `DELETE /search/deleteHistory`（`HistoryController`）——
-     语义是「删自己的搜索历史」，无 `@RequireRole` 可能是合理的，但**应显式登记**。
+     **不加是对的**。`HistoryServiceImpl` 的删除与查询都带
+     `.eq(History::getUserId, UserContext.getUserId())`，作用域由调用者身份决定，
+     与店铺和角色都无关，不存在跨用户/跨租户面。加 OPERATOR/ADMIN 会让 VIEWER
+     连自己的搜索历史都清不掉。**已新增 `HistoryOwnershipScopeTest` 钉住这个判断依据**
+     （变异「删除时不按 userId 过滤」→ 变红），并写明了「将来去掉 userId 条件
+     就是必须重新审视权限的时点」。
+     ⚠️ 这条特别值得记：它是「扫出未加锁 → 顺手加上」这个错误动作的典型诱饵。
+   - `DELETE /multiplatform/account/{id}`（`MultiplatformController:71`）——
+     **同样未改，但理由不同：租户隔离是好的，只是没有角色门禁。**
+     `MultiplatformServiceImpl.deleteAccount:181` 有 `requireShopOnRow`（已核实），
+     所以不存在跨店写入。**不加 `@RequireRole` 的理由是一致性**：
+     该 controller 通篇 **0 个** `@RequireRole`（account CRUD 一致地未加锁，
+     不是漏了一个），且同文件含**外部端点**（`/webhook/{platform}/{eventType}`、
+     `/oauth/token`）——给其中一条加锁而不动其余，会造成「这页已经管控了」的错觉，
+     比一致地不加更危险（正是 §S20.7 那类事故的形状）。
+     是否整体给多平台账号管理加角色门禁，**是产品决策，留给下一班**。
 3. **没有一条端到端测试**验证「店 B 的 VIEWER 在 UI 上确实看不到写入口」
    （§S22.7 第 1 条仍成立）。需要在 DB 里造两个角色不同的绑定，属 E4/E5 验收。
 4. **`git push` 未成功**：本机到 GitHub 不通（配置的代理 127.0.0.1:7897 未运行，
