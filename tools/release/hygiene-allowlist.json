@@ -32,6 +32,11 @@
       "sha256": "bc7d6cf2647edece59e5f23bb60200ddab4fdb08f1b39a06ee6b956d365c6158"
     },
     {
+      "path": "amz-common/src/test/java/com/amz/util/JwtUtilShopRolesContractTest.java",
+      "rule": "secret-like-assignment",
+      "sha256": "d0f9c5b53b440846ebef978c83fc543f84f958f1b244228d174efa7a3a648116"
+    },
+    {
       "path": "amz-frontend/src/__tests__/ConnectorCenter.test.ts",
       "rule": "secret-like-assignment",
       "sha256": "1853b8a1e6af6aa48cbf7c4b6a121f373d6b52de1de7079e2be0eb69cbbc7657"
