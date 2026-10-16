@@ -3708,3 +3708,138 @@ SSE 与复制任务的执行线程是异步的，ThreadLocal 不跨线程——�
    （建单/回复/索评）**根本没进审计日志**，事后无法回溯——先补 `@OperLog` 观察
    一段时间是成本最低的前置动作。**现在补 `@RequireRole` 的前提条件比上一班更好了**：
    角色模型已经能表达「在不同店不同权限」，不再是空架子。
+
+## §S23. 交接：2026-10-16 P0 收尾 —— 请求体 shopId 的跨租户写洞 + 两页写端点加锁
+
+> **后端 + 前端 + 工具**。本班做 §S22.7 第 3 条（P0 第 1 条：ListingMonitor /
+> CustomerService 写端点没锁角色）。**开工第一件事就发现待办的前提不完整**：
+> 真正的问题不是「角色没锁」，是**这两页（以及另外 5 个模块）的写端点能被跨店写入**。
+
+### 1. 缺陷本体：两层防线同时让开（比「VIEWER 能写」严重）
+
+网关 `MyGlobalFilter:124-143` 只校验**请求头** `shopId` 是否属于当前用户；
+而请求头是「客户端当前选中的店」，请求体里的 `shopId` 是**另一个完全独立的值**。
+`ShopIdParameterResolver`（`ShopIdGuardAspect` 与 `RequireRoleAspect` 共用）
+只认 `@PathVariable`/`@RequestParam`——**请求体它看不见**。
+
+于是 `resolveShopId` 返回 null，`ShopIdGuardAspect:52-56` 走既有分支：
+
+```java
+if (shopIdValue == null) {
+    return pjp.proceed();   // 「未找到 shopId 参数 → 兼容放行」
+}
+```
+
+攻击者：请求头设成**自己的店**（过网关）→ 请求体填**受害者的店**（过切面）。
+
+**规模**：全仓 32 个 `@ShopScoped` 写端点的 shopId 只在请求体里。
+其中 **amz-service-product 的 5 个连 service 层行级校验都没有**
+（该模块 `UserContext` 零引用，`requireShopOnRow` 那套模式它一个都没用）：
+
+| 端点 | 后果 |
+|---|---|
+| `POST /product/master`（建商品主数据） | 任何已登录用户（含 VIEWER）可往任意店铺建 |
+| `POST /product/listing-monitor/ranking` | 同上 |
+| `POST /product/listing-monitor/competitor` | 同上 |
+| `POST /product/listing-monitor/buybox` | 同上 |
+| `PUT /product/master/{shopId}/{id}` | 路径参数，切面能拦——**这一个当时是好的** |
+
+其余 6 个模块（ad/customer/logistics/multiplatform/order/procurement）
+有 service 层 `requireShopOnRow` 兜底，越权会被拒——但那是**唯一的**防线。
+
+**为什么之前没发现**：`tools/schema/endpoint_role_audit.py` 只回答「锁没锁角色」，
+不回答「租户校验能不能真的触发」；而租户校验的这个洞**在注解层面完全看不见**——
+`@ShopScoped` 明明写着，只是它读不到值。
+
+### 2. 修复
+
+1. **`ShopIdParameterResolver` 增读 `@RequestBody` 实体的 `shopId` 属性**
+   （优先 `getShopId()`，退化到字段；只接受已装箱的 `Long`，不做宽松转换；
+   缓存类型→读取器，每请求不再反射查找）。
+   **刻意不支持 `@RequestBody Map`**：无声明字段只能靠猜 key，把业务 Map 里
+   恰好叫 shopId 的键当租户标识、或漏掉真正承载租户的键，两个方向都会错。
+   这类端点必须自行校验（先例：`ProductController.copyListing:74` 显式调
+   `isShopAllowedStrict`）。`ProductController.translate` 之类不含店铺语义的
+   Map 端点不受影响。路径/查询参数仍**优先于**请求体（同方法两种来源时以路径为准）。
+2. **ListingMonitorController**：`saveRanking`/`saveCompetitor`/`saveBuyBox`/
+   `checkListing` 补 `@RequireRole` + `@OperLog`。
+   注意 `checkListing` 是**写端点**（每次 upsert 进 `amz_listing_health`），不是查询。
+3. **ProductMasterController**：`create`/`update` 补 `@RequireRole` + `@OperLog`。
+4. **CustomerController**：`receiveMessage`/`replyTicket` 补
+   `@RequireRole` + `@OperLog`；`solicitReviews` 补三个注解。
+   **原先那行 `@ShopScoped` 误挂在 `closeTicket` 上**——`closeTicket` 没有 shopId
+   参数，切面解析不到直接放行，而真正带 `@PathVariable Long shopId` 的
+   `solicitReviews` 反而一个租户注解都没有。两个端点实际都没被保护。
+5. **CustomerEmailController**：11 个写端点补 `@RequireRole` + `@OperLog`。
+   （本班在写守卫测试时才发现的——见下）
+6. **前端**：`identity.ts` 的 `PRODUCT_MASTER_WRITE_ROLES` 按它自己的注释要求
+   **重命名**为 `LISTING_WRITE_ROLES`（从「一个端点」变成「一族端点」的语义），
+   新增 `CUSTOMER_SERVICE_WRITE_ROLES`；两页写入口按角色隐藏，并监听
+   `ROLE_CHANGED_EVENT`（角色异步到达，只在 setup 读一次会稳定读到「未知」）。
+
+### 3. 顺带修掉一把尺的**漏报**（这条方法论值得单独记）
+
+`endpoint_role_audit.py` 原本硬编码三种调用前缀（`ext`/`api`/`warehouseApi`），
+**对 `import * as cust from '@/api/customer'` 这种写法整个文件扫不到**。
+
+此前 `CustomerService.vue` 报「前端 API 命中 **0** 个」——看起来像「这页没有写操作」，
+而它正是本次要加锁的两页之一。改为按文件真实别名解析命名空间导入后：
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| 前端 API 命中 | 114 | **210** |
+| CustomerService.vue | 0 | **23**（其中 16 个写端点） |
+
+受影响的是 **14 个 view**（AdBidSchedule/AdManager/AdSearchTerms/ConnectorQueue/
+CustomerService/Finance/MultiplatformOps/MultiplatformOrders/OrderAudit/Procurement/
+ProductSearch/ReportCenter/Warehouse/WarehouseAlerts）。
+
+**教训：扫描器漏报比误报危险得多。** 误报会被人肉忽略（前面那 4 条未匹配就是），
+漏报则**伪装成「已经查过了，没问题」**——正是 §S20.7 那类事故的成因。
+修好之后立刻多查出 2 个真缺口（见 §5）。
+
+### 4. 测试（纪律：先红 → 修绿 → 变异证明确实钉住）
+
+- `ShopIdBodyResolutionContractTest`（amz-common，新增 6 例）：先写红再修绿。
+  **变异「去掉 body 解析」→ 2 条断言变红**（`expected: <1002> but was: <null>`）。
+- `CustomerWriteEndpointGuardContractTest` / `ListingWriteEndpointGuardContractTest`
+  （各新增）：**反射**钉住每个写端点的 `@RequireRole`。
+  **为什么不用 MockMvc**：`standaloneSetup` 不装载 AOP，切面注解在同一进程里
+  根本不会被触发——用 MockMvc 断言「VIEWER 被拒」会得到一个**永远通过的空测试**。
+  变异「撤掉 `saveBuyBox` 的 `@RequireRole`」→ 2 条变红。
+- `CustomerServiceRoleGate.test.ts`（前端，新增 6 例）：VIEWER 隐藏 / OPERATOR·ADMIN
+  可见 / 未知角色不隐藏 / **响应 `role-changed` 事件**。
+  变异「门控恒真」→ 2 红；变异「去掉事件监听」→ 2 红。
+- **第一版的后端守卫测试当场就抓到了 11 个漏网端点**（CustomerEmailController 全部写端点），
+  这正是「把事实摆出来」而不是「凭印象补注解」的价值。
+
+### 5. 验证
+
+- 后端 `mvn test -fae`：**仅 11 个既有环境失败**，与 §S22.6 基线逐条同名
+  （`Unable to establish loopback connection` ×10 + `DeepSeekAgentConfigurationContractTest` ×1），
+  **无新增**。product 3 / ad 7 / ai 1，与基线完全一致。
+- 前端 vitest **655/655**（643 → 649【§S22】 → 655）、`vue-tsc --noEmit` 0 错、
+  `vite build` 通过。
+- 仓库门禁：hygiene **0**、param-name **0**、stub-shape **0**、
+  entity_column_drift **110 实体 / 0 漂移**、release tools **91/91**。
+- `endpoint_role_audit`：ListingMonitor 与 CustomerService 的**全部写端点**
+  均显示 `OPERATOR/ADMIN`（明细表可逐条核对）。
+
+### 6. 未做 / 需要下一班接着看
+
+1. **`@RequireRole` 现按「请求体里的店铺」判定角色，涉及 27 个既有端点**
+   （仓储/采购/广告/物流等）。这正是 `UserContext.resolveRole` 的**既定**语义
+   （店铺级优先、全局兜底），但**只有当 `amz_user_shop.role` 可信时才安全**。
+   V6 迁移**只改了列默认值，没有回填存量行**（理由见该迁移注释：批量改写等于
+   替管理员做授权决策）。**系统从未部署 → 无存量用户 → 当前风险为零**，
+   但这一条与「上线前必须回填/复核 `amz_user_shop.role`」是同一件事。
+2. **两处仍未加锁的写端点**（不在本次范围，**未改**，修好扫描器后才看见）：
+   - `DELETE /multiplatform/account/{id}`（`MultiplatformController:71`）——
+     有 `@ShopScoped`，但该端点无 shopId 参数 → 切面解析不到；
+     service 层 `deleteAccount` 的 `requireShopOnRow` **有没有覆盖到**需要单独核实。
+   - `DELETE /search/deleteHistory`（`HistoryController`）——
+     语义是「删自己的搜索历史」，无 `@RequireRole` 可能是合理的，但**应显式登记**。
+3. **没有一条端到端测试**验证「店 B 的 VIEWER 在 UI 上确实看不到写入口」
+   （§S22.7 第 1 条仍成立）。需要在 DB 里造两个角色不同的绑定，属 E4/E5 验收。
+4. **`git push` 未成功**：本机到 GitHub 不通（配置的代理 127.0.0.1:7897 未运行，
+   直连被 reset）。提交已在本地 `7aa9057`，网络恢复后 `git push origin master`。
