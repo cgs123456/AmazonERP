@@ -3,8 +3,8 @@
   "rulesVersion": 1,
   "limitLines": 500,
   "summary": {
-    "files": 59,
-    "totalLines": 50673,
+    "files": 58,
+    "totalLines": 50135,
     "largest": "amz-frontend/src/views/LogisticsDashboard.vue"
   },
   "files": {
@@ -54,7 +54,6 @@
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsOpsDashboardServiceImplTest.java": 583,
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsUpgradeServiceImplTest.java": 652,
     "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java": 969,
-    "amz-service/amz-service-procurement/src/main/java/com/amz/controller/ProcurementController.java": 538,
     "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java": 886,
     "amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java": 659,
     "amz-service/amz-service-product/src/test/java/com/amz/service/ListingCopyServiceTest.java": 575,
