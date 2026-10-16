@@ -4166,9 +4166,77 @@ ISV app 注册与轮换、订单 sync/all/sync-by-platform/order-ship。
 - ✅ 决策① 不回填（§S24）、端到端三层（§S25）
 - ✅ P2-5 快照漂移门禁本地化（§S26）
 - ✅ 决策② 多平台加锁（本节）
-- ⏳ **仍有一条未做，别误判为全清了**：`DELETE /search/deleteHistory` 与
-  `DELETE /multiplatform/account/{id}` 之外的「审计日志覆盖」——
-  本轮补了 MultiplatformController 14 个端点的 @OperLog，
-  但**全仓其它模块写端点是否有 @OperLog 尚未成体系盘点**。要盘点就跑
-  `tools/schema/endpoint_role_audit.py`（它只答「角色锁没锁」，OperLog 是另一个维度）。
+- **~~审计日志覆盖未盘点~~ → 已盘点并补到 74%（见 §S28，2026-10-16）**：
+  工具 `tools/schema/operlog_coverage_audit.py`，本轮补了 ad 25 + spapi 14 + finance 2
+  共 41 个端点。剩余 57 个的性质已分层写在 §S28.5——别当成「还没做完」。
 - ⏳ P1 超 500 行文件（前端 16 / 后端 15）、P2-6 E2E flake——都是既有待办，未动。
+
+
+## §S28. 交接：2026-10-16 审计覆盖盘点（工具落地 + ad/spapi/finance 补齐，已完成）
+
+> 承接 §S27.6。那节说「全仓写端点的审计日志覆盖尚未成体系盘点」——本节把它做成
+> 常驻工具并补掉其中三批。**这是盘点，不是全覆盖**：剩余 57 个的性质与归属见 §S28.5。
+
+### 1. 起点数据（盘点脚本输出，非估算）
+
+写端点总数 **234**（含 @PatchMapping），已有 @OperLog **134（57%）**，人操作缺口 **98**，
+机器端点 2（webhook / oauth token，不计缺口——没有操作人可记）。
+
+### 2. 工具（刻意不进 CI 做闸门）
+
+`tools/schema/operlog_coverage_audit.py`（`--gaps` 看明细、`--module ad` 看单模块）。
+**不做成 CI 闸门是刻意的**：哪些端点值得审计是产品决策；机械设阈值会把「有人故意
+不审计的低价值端点」变成必须填的注解，正是既有 `OperLogCoverageContractTest`
+注释里警告过的「稀释审计表」。两者分工：**门禁守「受管域不能退化」，本工具答
+「还有什么没进受管」**。
+
+三条纪律与那个门禁测试一致（方法级判定、不看文件级），三处刻意不同：
+覆盖全部模块、把 @PatchMapping 算写、机器端点单列。**分母必须打印**——扫不到端点
+直接 exit 2 报「扫描逻辑失效」，绝不输出 0 缺口（那会被读成全覆盖）。
+
+### 3. 工具自身出过的事故（留档，会复发）
+
+第一版用 `controller.parts[1]` 取模块名。`parts` 是**绝对路径**切片，[1] 在 Windows 上
+是当前用户名（Users）——于是 13 个模块全并成一行「Users」，**汇总看着完全正常、
+分布全是错的**。已改 `relative_to(root/"amz-service").parts[0]` 并把这条写进测试
+（`test_modules_are_attributed_per_service_not_a_single_bucket` 断言模块名形如
+`amz-service-*` 且至少 10 个）。同类错误在写盘点脚本时犯了两次（另一次是
+`@(Post|Put|Delete)Mapping` 正则要求 `\(...\)` 而漏掉裸 `@PostMapping`）。
+
+### 4. 补了哪些（41 个，全部原本已有 @RequireRole）
+
+| 模块 | 数量 | 为什么值得追责 |
+|---|---|---|
+| ad | 25 | **花钱/改投放**：建活动、改出价、删定向、启停与执行自动规则。误操作直接烧预算 |
+| spapi | 14 | 凭证保存、报表请求、发货确认、Outbox 重放、Feed 提交、文件上传 |
+| finance | 2 | 回款对账重建、VAT 月结 |
+
+只补「已有角色锁」的——剩下 46 个连角色都没有的端点属于另一个决策（§S28.5），
+不混进这一班。
+
+### 5. 剩余 57 个缺口的分层（别当成「还没做完」）
+
+- **11 个：已有角色锁，但判定为低审计价值**（如 ad 的报表同步类、report 的明细导出）
+  要要补是产品决策，逐条列出即可，不必机械加。
+- **46 个：连 `@RequireRole` 都没有**（ai 12 / ops 10 / order 7 / report 7 / user 5 /
+  spapi 2 / product 1 / message 1 / search 1）。**这些要先解决角色门禁，再谈审计**——
+  顺序反了会在「任何人都能写」的端点上记一堆无从追责的行。
+  逐模块明细：`python tools/schema/operlog_coverage_audit.py --gaps`。
+
+### 6. 验证
+
+- 后端 `mvn test -fae`：失败名单与 §S22.6 基线**逐条同名**（11 个 loopback/DeepSeek
+  环境失败），无新增
+- 前端 662/662、release tools **97/97**（+3 新尺子契约）、hygiene 0
+- 新测试模块已接进 ci.yml 与 release.yml（`ReleaseGovernanceContractTest`
+  自己 glob 出缺失并红——它比我 §S26 加的那条 Python 版更早、更严，两处都留）
+- 盘点数字 57% → **74%**（234 端点中 175 个已审计）
+
+### 7. 下一班的两个入口
+
+1. **先看 §S28.5 的 46 个无角色端点**：那是比审计更前置的问题。要模块清单就跑上面的
+   `--gaps`；要单模块就 `--module ops --gaps`。
+2. **`OperLogCoverageContractTest` 的两个小缺陷本轮没动**（刻意）：它仍不含
+   `@PatchMapping`（全仓当前 0 个 PATCH 端点，改口径是预防性的、无人走过该分支），
+   且有三个未使用的死方法（`addBlock`/`firstLine`/三层注释里有段被取代的实现说明）。
+   要清理就单独一班——**混进来会让「补审计」的 diff 与「改门禁口径」的 diff 无法归因**。
