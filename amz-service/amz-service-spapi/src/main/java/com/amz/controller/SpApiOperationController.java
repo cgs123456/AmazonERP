@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.client.SpApiOperationCatalog;
@@ -103,6 +104,7 @@ public class SpApiOperationController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "SP-API 操作", action = "执行操作", description = "执行操作（需追责）")
     @PostMapping("/{operationId}")
     public Result<JsonObject> execute(@PathVariable String operationId,
                                       @RequestBody(required = false) OperationExecutionRequest request) {

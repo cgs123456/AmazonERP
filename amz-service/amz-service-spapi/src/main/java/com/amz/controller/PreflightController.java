@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.connector.ErrorSummary;
 import com.amz.context.UserContext;
@@ -58,6 +59,7 @@ public class PreflightController {
      *                          否则复用旧 token 会给出假绿灯）
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "预检", action = "预检单店", description = "预检单店（需追责）")
     @PostMapping("/shop/{shopId}")
     public Result<PreflightReport> one(@PathVariable Long shopId,
                                        @RequestParam(defaultValue = "false") boolean forceTokenRefresh) {
@@ -76,6 +78,7 @@ public class PreflightController {
      * <p>只自检该用户有权限的店铺；ADMIN 之外不把「无店铺授权」解释成全量范围。
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "预检", action = "预检全店", description = "预检全店（需追责）")
     @PostMapping
     public Result<List<PreflightReport>> all(@RequestParam(defaultValue = "false") boolean forceTokenRefresh,
                                              @RequestParam(defaultValue = "20") int limit) {

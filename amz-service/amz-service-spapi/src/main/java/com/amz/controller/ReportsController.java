@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.InternalServiceAccess;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
@@ -49,6 +50,7 @@ public class ReportsController {
     @InternalServiceAccess("amz-service-logistics")
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "报表", action = "请求报表", description = "请求报表（需追责）")
     @PostMapping("/request")
     public Result<String> requestReport(@RequestParam Long shopId,
                                         @RequestParam String marketplaceId,

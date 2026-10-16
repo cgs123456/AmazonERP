@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.dto.PaymentCollectionSummary;
@@ -64,6 +65,7 @@ public class PaymentCollectionController {
      */
     @ShopScoped
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "回款对账", action = "重建回款", description = "重建回款（需追责）")
     @PostMapping("/rebuild")
     public Result<Integer> rebuild(@RequestParam Long shopId) {
         try {

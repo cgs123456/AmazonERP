@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.AdCampaignExt;
@@ -39,6 +40,7 @@ public class AdCampaignExtController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告活动", action = "新建广告活动", description = "新建广告活动（广告投放操作，需追责）")
     @PostMapping
     public Result<AdCampaignExt> create(@RequestParam Long shopId,
                                         @RequestBody AdCampaignExt campaign) {
@@ -51,6 +53,7 @@ public class AdCampaignExtController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告活动", action = "修改广告活动", description = "修改广告活动（广告投放操作，需追责）")
     @PutMapping
     public Result<AdCampaignExt> update(@RequestParam Long shopId,
                                         @RequestBody AdCampaignExt campaign) {
@@ -76,6 +79,7 @@ public class AdCampaignExtController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告活动", action = "批量新建广告活动", description = "批量新建广告活动（广告投放操作，需追责）")
     @PostMapping("/batch")
     public Result<List<AdCampaignExt>> batchCreate(@RequestParam Long shopId,
                                                    @RequestBody List<AdCampaignExt> campaigns) {
@@ -88,6 +92,7 @@ public class AdCampaignExtController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告活动", action = "批量改广告活动状态", description = "批量改广告活动状态（广告投放操作，需追责）")
     @PutMapping("/batch/status")
     public Result<List<AdCampaignExt>> batchUpdateStatus(@RequestParam Long shopId,
                                                          @RequestParam List<Long> ids,

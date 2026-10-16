@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.AdTargeting;
@@ -35,6 +36,7 @@ public class AdTargetingController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告定向", action = "新建定向", description = "新建定向（广告投放操作，需追责）")
     @PostMapping
     public Result<AdTargeting> create(@RequestParam Long shopId,
                                       @RequestBody AdTargeting targeting) {
@@ -47,6 +49,7 @@ public class AdTargetingController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告定向", action = "修改定向", description = "修改定向（广告投放操作，需追责）")
     @PutMapping
     public Result<AdTargeting> update(@RequestParam Long shopId,
                                       @RequestBody AdTargeting targeting) {
@@ -74,6 +77,7 @@ public class AdTargetingController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告定向", action = "删除定向", description = "删除定向（广告投放操作，需追责）")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@RequestParam Long shopId, @PathVariable Long id) {
         adTargetingService.delete(shopId, id);

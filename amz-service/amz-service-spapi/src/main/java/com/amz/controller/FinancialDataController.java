@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.InternalServiceAccess;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
@@ -54,6 +55,7 @@ public class FinancialDataController {
     @InternalServiceAccess("amz-service-finance")
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "财务数据", action = "请求报表", description = "请求报表（需追责）")
     @PostMapping("/report/request")
     public Result<String> requestReport(@RequestParam Long shopId,
                                         @RequestParam String marketplaceId,
@@ -127,6 +129,7 @@ public class FinancialDataController {
     @InternalServiceAccess("amz-service-finance")
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "财务数据", action = "估算费用", description = "估算费用（需追责）")
     @PostMapping("/fees/estimate")
     public Result<FeeEstimate> estimateFees(@RequestParam Long shopId,
                                             @RequestParam String marketplaceId,

@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.client.AmazonMessagingRealClient;
@@ -74,6 +75,7 @@ public class MessagingController {
 
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "买家消息", action = "发送消息", description = "发送消息（需追责）")
     @PostMapping("/send")
     public Result<Map<String, Object>> send(@RequestParam Long shopId,
                                             @RequestParam String amazonOrderId,

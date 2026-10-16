@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.InternalServiceAccess;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
@@ -54,6 +55,7 @@ public class ShipmentConfirmationController {
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
     @InternalServiceAccess("amz-service-order")
+    @OperLog(module = "发货确认", action = "确认发货", description = "确认发货（需追责）")
     @PostMapping("/confirm")
     public Result<Boolean> confirm(@RequestBody ConfirmShipmentRequest request) {
         if (request == null || request.getShopId() == null) {

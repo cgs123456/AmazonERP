@@ -1,4 +1,5 @@
 package com.amz.controller;
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.context.UserContext;
@@ -65,6 +66,7 @@ public class AdController {
      * POST /ad/bidSchedule
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "广告分时调价", action = "新建分时调价", description = "新建分时调价（广告投放操作，需追责）")
     @PostMapping("/bidSchedule")
     public Result<BidSchedule> createBidSchedule(@RequestBody BidSchedule schedule) {
         if (schedule == null || schedule.getShopId() == null) {
@@ -99,6 +101,7 @@ public class AdController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告分时调价", action = "修改分时调价", description = "修改分时调价（广告投放操作，需追责）")
     @PutMapping("/bidSchedule/{id}")
     public Result<BidSchedule> updateBidSchedule(@PathVariable Long id,
                                                   @RequestBody BidSchedule schedule) {
@@ -112,6 +115,7 @@ public class AdController {
     /** 启用/停用分时调价规则：停用后下一个整点起不再改价 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告分时调价", action = "启停分时调价", description = "启停分时调价（广告投放操作，需追责）")
     @PostMapping("/bidSchedule/{id}/toggle")
     public Result<Boolean> toggleBidSchedule(@PathVariable Long id, @RequestParam boolean enabled) {
         return Result.success(adService.toggleBidSchedule(id, enabled));
@@ -120,6 +124,7 @@ public class AdController {
     /** 删除分时调价规则 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告分时调价", action = "删除分时调价", description = "删除分时调价（广告投放操作，需追责）")
     @DeleteMapping("/bidSchedule/{id}")
     public Result<Boolean> deleteBidSchedule(@PathVariable Long id) {
         return Result.success(adService.deleteBidSchedule(id));
@@ -164,6 +169,7 @@ public class AdController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告分时调价", action = "同步店铺广告报表", description = "同步店铺广告报表（广告投放操作，需追责）")
     @PostMapping(value = "/reports/sync", params = "shopId")
     public Result<Map<String, Object>> syncReports(
             @RequestParam Long shopId,
@@ -181,6 +187,7 @@ public class AdController {
      * POST /ad/reports/sync?days=7
      */
     @RequireRole({"ADMIN"})
+    @OperLog(module = "广告分时调价", action = "同步全店广告报表", description = "同步全店广告报表（广告投放操作，需追责）")
     @PostMapping(value = "/reports/sync", params = "!shopId")
     public Result<Map<String, Object>> syncAllReports(
             @RequestParam(required = false, defaultValue = "7") Integer days) {

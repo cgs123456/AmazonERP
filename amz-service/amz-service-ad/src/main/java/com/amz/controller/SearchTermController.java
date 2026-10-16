@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.AdAutoRule;
@@ -42,6 +43,7 @@ public class SearchTermController {
     /** 保存搜索词报表数据 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "登记搜索词", description = "登记搜索词（广告投放操作，需追责）")
     @PostMapping
     public Result<AdSearchTerm> saveSearchTerm(@RequestBody AdSearchTerm searchTerm) {
         return Result.success(searchTermService.saveSearchTerm(searchTerm));
@@ -82,6 +84,7 @@ public class SearchTermController {
     /** 自动提取出单词 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "提取转化词", description = "提取转化词（广告投放操作，需追责）")
     @PostMapping("/converting/extract/{shopId}")
     public Result<List<ConvertingTerm>> extractConvertingTerms(@PathVariable Long shopId,
                                                                 @RequestParam(defaultValue = "7") Integer days) {
@@ -115,6 +118,7 @@ public class SearchTermController {
     /** 批量保存 ASIN 关键词反查数据 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "保存 ASIN 反查词", description = "保存 ASIN 反查词（广告投放操作，需追责）")
     @PostMapping("/asin-reverse/batch")
     public Result<List<AdAsinKeyword>> saveAsinKeywords(@RequestBody List<AdAsinKeyword> keywords) {
         return Result.success(searchTermService.saveAsinKeywords(keywords));
@@ -125,6 +129,7 @@ public class SearchTermController {
     /** 创建自动规则 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "新建自动规则", description = "新建自动规则（广告投放操作，需追责）")
     @PostMapping("/rule")
     public Result<AdAutoRule> createRule(@RequestBody AdAutoRule rule) {
         return Result.success(adAutoRuleService.createRule(rule));
@@ -133,6 +138,7 @@ public class SearchTermController {
     /** 更新规则 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "修改自动规则", description = "修改自动规则（广告投放操作，需追责）")
     @PutMapping("/rule/{id}")
     public Result<AdAutoRule> updateRule(@PathVariable Long id, @RequestBody AdAutoRule rule) {
         rule.setId(id);
@@ -152,6 +158,7 @@ public class SearchTermController {
     /** 启用/禁用规则 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "启停自动规则", description = "启停自动规则（广告投放操作，需追责）")
     @PostMapping("/rule/{id}/toggle")
     public Result<Boolean> toggleRule(@PathVariable Long id, @RequestParam boolean enabled) {
         return Result.success(adAutoRuleService.toggleRule(id, enabled));
@@ -160,6 +167,7 @@ public class SearchTermController {
     /** 删除规则 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "删除自动规则", description = "删除自动规则（广告投放操作，需追责）")
     @DeleteMapping("/rule/{id}")
     public Result<Boolean> deleteRule(@PathVariable Long id) {
         return Result.success(adAutoRuleService.deleteRule(id));
@@ -168,6 +176,7 @@ public class SearchTermController {
     /** 扫描全部启用规则并产出建议（不下发到广告账号，也没有调度器自动跑） */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "执行全部自动规则", description = "执行全部自动规则（广告投放操作，需追责）")
     @PostMapping("/rule/execute/{shopId}")
     public Result<Map<String, Object>> executeRules(@PathVariable Long shopId) {
         return Result.success(adAutoRuleService.executeRules(shopId));
@@ -176,6 +185,7 @@ public class SearchTermController {
     /** 按单条规则的口径产出建议 */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "搜索词与自动规则", action = "执行单条自动规则", description = "执行单条自动规则（广告投放操作，需追责）")
     @PostMapping("/rule/{ruleId}/execute")
     public Result<Map<String, Object>> executeRule(@PathVariable Long ruleId) {
         return Result.success(adAutoRuleService.executeRule(ruleId));

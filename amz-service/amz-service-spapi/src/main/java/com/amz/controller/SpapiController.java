@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.InternalServiceAccess;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
@@ -116,6 +117,7 @@ public class SpapiController {
      */
     @Deprecated
     @RequireRole({"ADMIN"})
+    @OperLog(module = "SP-API 凭证", action = "保存凭证", description = "保存凭证（需追责）")
     @PostMapping("/credential")
     public Result<String> saveCredential(@RequestBody ShopCredential credential) {
         if (credential == null || credential.getShopId() == null) {
@@ -164,6 +166,7 @@ public class SpapiController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "订单同步", action = "同步订单", description = "同步订单（需追责）")
     @PostMapping("/sync/orders")
     public Result<Integer> syncOrders(@RequestParam Long shopId) {
         if (shopId == null) {

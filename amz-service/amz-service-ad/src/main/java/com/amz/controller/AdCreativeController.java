@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.model.AdCreative;
@@ -34,6 +35,7 @@ public class AdCreativeController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告素材", action = "新建素材", description = "新建素材（广告投放操作，需追责）")
     @PostMapping
     public Result<AdCreative> create(@RequestParam Long shopId,
                                      @RequestBody AdCreative creative) {
@@ -46,6 +48,7 @@ public class AdCreativeController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告素材", action = "修改素材", description = "修改素材（广告投放操作，需追责）")
     @PutMapping
     public Result<AdCreative> update(@RequestParam Long shopId,
                                      @RequestBody AdCreative creative) {
@@ -72,6 +75,7 @@ public class AdCreativeController {
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "广告素材", action = "审核素材", description = "审核素材（广告投放操作，需追责）")
     @PutMapping("/{id}/review")
     public Result<AdCreative> review(@RequestParam Long shopId,
                                      @PathVariable Long id,

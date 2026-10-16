@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.InternalServiceAccess;
 import com.amz.annotation.RequireRole;
 import com.amz.client.FeedsClient;
@@ -45,6 +46,7 @@ public class FeedsController {
      */
     @InternalServiceAccess("amz-service-product")
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "Feeds 提交", action = "提交 Feed", description = "提交 Feed（需追责）")
     @PostMapping("/submit")
     public Result<String> submit(@RequestBody FeedSubmitRequest request) {
         if (request == null || request.getShopId() == null

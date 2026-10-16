@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.result.Result;
@@ -42,6 +43,7 @@ public class VatController {
     }
 
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "VAT 月结", action = "VAT 月", description = "VAT 月（需追责）")
     @PostMapping("/monthly-close/{shopId}/{year}/{month}")
     @ShopScoped
     public Result<Object> monthlyClosing(@PathVariable Long shopId, @PathVariable int year, @PathVariable int month) {

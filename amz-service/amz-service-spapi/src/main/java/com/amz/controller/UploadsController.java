@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
 import com.amz.client.AmazonUploadsRealClient;
@@ -46,6 +47,7 @@ public class UploadsController {
 
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped
+    @OperLog(module = "文件上传", action = "上传文件", description = "上传文件（需追责）")
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Result<String> upload(@RequestParam Long shopId,
                                  @RequestParam String marketplaceId,

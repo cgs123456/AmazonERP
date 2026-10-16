@@ -1,5 +1,6 @@
 package com.amz.controller;
 
+import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.client.OrdersClient;
 import com.amz.connector.ConnectorRegistry;
@@ -164,6 +165,7 @@ public class ConnectorController {
      * 人工重放单条 Outbox 记录；写操作只允许 OPERATOR/ADMIN 显式触发。
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "连接器", action = "重放 Outbox", description = "重放 Outbox（需追责）")
     @PostMapping("/outbox/{id}/replay")
     public Result<SpApiOutboxReplayExecutor.ReplayResult> replayOutbox(@PathVariable Long id) {
         if (outboxService == null || replayExecutor == null) {
@@ -223,6 +225,7 @@ public class ConnectorController {
      * @return 自检摘要；凭证缺失等前置失败也返回结构化 data，不返回 null
      */
     @RequireRole({"OPERATOR", "ADMIN"})
+    @OperLog(module = "连接器", action = "自检连接", description = "自检连接（需追责）")
     @PostMapping("/{code}/self-test")
     public Result<Map<String, Object>> selfTest(@PathVariable String code,
                                                 @RequestBody(required = false) SelfTestRequest body) {
