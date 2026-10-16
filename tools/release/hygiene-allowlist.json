@@ -127,6 +127,11 @@
       "sha256": "af2b2a250a633aa5021771c29d80afbbd318aec7ee279026f08aee3ebc3090c7"
     },
     {
+      "path": "amz-service/amz-service-multiplatform/src/test/java/com/amz/controller/MultiplatformWriteEndpointGuardContractTest.java",
+      "rule": "secret-like-assignment",
+      "sha256": "eb52251bcdde3bc0949d216db38eae913dfc2b5225bbc195b003f1615e50b8b6"
+    },
+    {
       "path": "amz-service/amz-service-procurement/src/test/java/com/amz/client/Alibaba1688TokenManagerTest.java",
       "rule": "secret-like-assignment",
       "sha256": "cdd4346535034c9de6358dc1ed3112274033e331b5a83c239a971eb54d98a48e"

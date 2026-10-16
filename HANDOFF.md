@@ -3957,8 +3957,7 @@ synthetic-data job 的全部步骤已本地复跑绿（见该提交信息）。
   （真实 JWT 签发 + 真实拦截器 + 真实切面代理，只 mock Service），
   不是起 MySQL——两端点判据与角色解析都不依赖数据库内容，进程内足以钉死；
   真 DB 那层（assignUser 写入的角色确实进 claim）由既有 LoginServiceImplTest 覆盖。
-- **决策②**：MultiplatformController 要不要整体加 `@RequireRole`（含外部端点，
-  见 §S23.6 的一致性理由）——仍是产品拍板。
+- **~~决策②~~ 已定案并交付（2026-10-16，用户拍板「加锁」，见 §S27）**
 
 
 ## §S25. 交接：2026-10-16 P0-1 端到端打通（店铺级角色三层各钉一段，已完成）
@@ -4096,3 +4095,80 @@ pytest 本地按 glob 全跑，**本地绿 ≠ CI 跑过**，这条分裂只有�
 - 这条门禁**红的时候教的是修法**（错误信息里带重生成命令），但没做自动重生成——
   刻意不做：快照内容进提交必须是人的决定（§S23.7「不替管理员做授权决策」同款理由，
   适用于「不替解析器做重生成决定」）。
+
+
+## §S27. 交接：2026-10-16 决策②落地（多平台写端点加锁，已完成）
+
+> 承接 §S23.6 第 2 条与 §S24.5 的决策②。用户拍板「加锁」。纯加锁班，
+> 未改任何既有端点行为（除了从「不判角色」变成「判角色」）。
+
+### 1. 事实基础（逐条核实，含对我自己此前判断的撤回）
+
+**该 Controller 17 个写端点，`@RequireRole` 数量 0。** VIEWER（语义=只读）此前可以
+代表店铺对第三方平台做写操作。最危险的两个：
+`POST /order/{id}/ship`（把**任意平台订单**标记为已发货）、
+`POST /oauth/app/{id}/rotate`（轮换 ISV 应用密钥 = 把对方系统踢下线）。
+
+⚠️ **我在 §S23.6 与口头分析里说过「已穷举」并只列了 9 个端点——那是错的，实际 17 个。**
+真实写端点数是用脚本按 `@*Mapping` 枚举 + 注解块解析得出的；先前凭 grep 行号跳变的印象
+只看到 9 个，漏掉的 8 个里正好包含上面那两个最危险的。这与 §S20.7 那类
+「凭邻近代码印象」是同一类错误，我在同一件事上犯了第二次。**记在这里作为下一次的提醒：
+枚举端点只能用脚本，不能靠眼睛扫。**
+
+### 2. 锁了哪些 / 豁免哪些
+
+锁 14 个（全部补 `@RequireRole` + `@OperLog`——顺带补上审计，此前这 14 个端点
+一个 `@OperLog` 都没有，「谁以店铺身份对外做了什么」不可追溯）：
+账号 CRUD 与测连、商品 sync/map、消息 sync/reply/assign、库存 sync、
+ISV app 注册与轮换、订单 sync/all/sync-by-platform/order-ship。
+
+豁免 2 个机器端点（没有「当前用户」可判，锁了直接打死真实调用方）：
+- `POST /webhook/{platform}/{eventType}`：平台回调，`BaseAuthInterceptor` 白名单放行
+  （不带用户 JWT），鉴权 = 自身 HMAC 验签
+- `POST /oauth/token`：开放 API，外部系统凭 appKey+appSecret 换 token
+  **（我口头说过它「照样过 JWT 所以加了无害」——错了：能过 JWT ≠ 调用方是前端用户。）**
+
+豁免写进 `MultiplatformWriteEndpointGuardContractTest.MACHINE_ENDPOINTS`，
+不是散在注释里——让「以后想给这两个加锁」必须先改测试、从而读到说明。
+
+### 3. 撤回一个我自己的论证
+
+§S23.6 的不加理由是「一致性：通篇 0 个，部分加锁比一致地不加危险」。
+**该理由撤回**：webhook 与 oauth/token 本来就必须豁免，剩下 14 个端点
+不存在「中间态」——要么全锁要么全不锁。我担心的「加一半漏一半」在正确穷举后不存在。
+
+### 4. 三层测试与变异证据
+
+1. `MultiplatformWriteEndpointGuardContractTest`（2）：反射钉 14 个有人端点有注解、
+   2 个豁免端点干净
+2. `MultiplatformAuthorizationWebMvcIntegrationTest`（6）：真实 JWT+拦截器+切面链。
+   **豁免验收**：webhook 带合法 token 也不被角色门禁拦、能到达 Service——
+   真实调用方是平台而非测试里的用户，豁免失效时任何角色测试都不会红，必须正面钉住
+3. `MultiplatformOpsRoleGate.test.ts`（7 例，前端）：VIEWER 隐藏 / OPERATOR·ADMIN 可见 /
+   未知不隐藏 / 响应 role-changed / 只读「刷新」不被拦（§S20.7 反向钉法）
+   新增 `MULTIPLATFORM_WRITE_ROLES` 常量，注释按 identity.ts 既有同类说明写全
+   「为什么独立一个常量」与「何时必须拆」
+
+变异 ×3 全部由断言打红：① `@RequireRole` 误加 webhook → 集成 1 红；
+② 撤掉 markShipped 的注解 → 契约点名 markShipped + 集成 1 红（双保险）；
+③ `writeAllowed` 恒真 → 前端 2 红。
+
+### 5. 验证
+
+- multiplatform **127/127**（原 115 + 新增 12）
+- 前端 **662/662**（655+7）、vue-tsc 0 错；e2e 多平台相关 **11/11**
+  （既有写入口用例以 admin 跑，未被门控影响）
+- 门禁：hygiene 0、release tools 94/94、endpoint-role / param-name / stub-shape 全 0
+
+### 6. 这批加锁后，权限主题的全局状态（下一班的入口）
+
+- ✅ 跨租户写洞 + P0 两页加锁（§S23）
+- ✅ 决策① 不回填（§S24）、端到端三层（§S25）
+- ✅ P2-5 快照漂移门禁本地化（§S26）
+- ✅ 决策② 多平台加锁（本节）
+- ⏳ **仍有一条未做，别误判为全清了**：`DELETE /search/deleteHistory` 与
+  `DELETE /multiplatform/account/{id}` 之外的「审计日志覆盖」——
+  本轮补了 MultiplatformController 14 个端点的 @OperLog，
+  但**全仓其它模块写端点是否有 @OperLog 尚未成体系盘点**。要盘点就跑
+  `tools/schema/endpoint_role_audit.py`（它只答「角色锁没锁」，OperLog 是另一个维度）。
+- ⏳ P1 超 500 行文件（前端 16 / 后端 15）、P2-6 E2E flake——都是既有待办，未动。
