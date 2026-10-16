@@ -4562,3 +4562,90 @@ release.yml 跑同一套 release tool 测试**。补上 `release.yml` 后 releas
   **这是「在还债」唯一的客观证据**，比在 HANDOFF 里写「拆了几个」可信。
 - 若某文件确属合理例外（如自动生成的 `SpApiOperationCatalog` 这类数据表），
   加进 `GENERATED_NAME_HINTS` / `EXCLUDED_PATH_PARTS` 是**决策**，要在评审里说明，不能顺手。
+
+---
+
+## §S32. 交接：2026-10-16 P1 真正还债（棘轮下的第一刀）
+
+§S31 建了棘轮门禁（冻结存量、禁止增长）。这一节是**真正削减债务**的第一次实践。
+基线从 **59 → 56 文件**，总行数 50135 → 47899。
+
+### 1. ProcurementController 拆分（538 → 372，首次压到 500 以下）
+
+拆出 `FbaShipmentController`（207 行）：`/procurement/fba/shipment*` 11 个端点 +
+`/procurement/batch*` 6 个端点 + `FbaShipmentService` 依赖与相关 DTO/model。
+
+**分组依据是子域内聚**：FBA 收货 → 回补批次 → 成本分摊 → 短收登记是一条完整业务流，
+与供应商/计划/订单互不引用；`fbaShipmentService` 是唯一共享依赖且只在抽取块里用。
+路由逐字不变（类级 `@RequestMapping("/procurement")` + 方法路径 byte-identical），
+守卫注解（`@ShopScoped`/`@RequireRole`/`@OperLog`）一个没删——**拆文件不是放松门禁的时机**。
+
+### 2. ErpToolExecutor 按依赖族拆为 7 个工具类（1556 → 241）
+
+| 类 | 依赖 | 行数 |
+|---|---|---|
+| ErpOrderTools | OrderServiceClient | 132 |
+| ErpInventoryTools | InventoryServiceClient | 205 |
+| ErpAdTools | AdServiceClient | 214 |
+| ErpProductTools | ProductServiceClient | 248 |
+| ErpProcurementTools | ProcurementServiceClient | 224 |
+| ErpLogisticsTools | LogisticsServiceClient | 260 |
+| ErpAnalysisTools | 本地 service + report | 480 |
+| ErpToolSupport | 纯函数 helper | 103 |
+| **ErpToolExecutor** | **仅分发 + 权限校验** | **241** |
+
+拆分前逐方法核对过「零互调用」，共享 helper（fail 90 处、toStr 53 处）收进
+`ErpToolSupport`——否则每个工具类复制一份，会出现「同一个 toLong 两套空值口径」。
+
+### 3. 三个反复出现的坑（下一班会再遇到，先看这里）
+
+1. **花括号配平切片会提前闭合**：方法含 lambda / `Map.of` / 匿名类时会切出半个方法。
+   本轮 3 个方法（queryInventory / queryPurchaseOrders / querySuppliers）因此丢失，
+   靠 `git show <上一版>` 取回补全。可靠切法是「方法签名 → 下一个方法签名」。
+2. **删方法会留下孤立 javadoc**：`*/` 无开头或类 javadoc 未闭合，编译器只报
+   `illegal start of type` / `unclosed comment`，看不出真因。逐个补回。
+3. **测试注入点必须跟改**（同一模式遇到三次）：
+   - `ErpToolExecutorTest`：setUp 改为给 7 个工具类各自注入其 client；
+     `noClient` / `noClientExecutor` 两类降级用例要注入**空工具类**
+     （内部客户端保持 null 才是被测路径）。
+   - `ToolPermissionTest`（防漂移契约）：扫描列表 `TOOL_CLASSES` 扩到 8 个类，
+     且 `new ErpToolExecutor()` 的每处都要注入空工具类。
+     字段名是 `logisticsTools` / `analysisTools`（不是 `erpXxxTools`），第一次写错过。
+   - `QueryKnowledgeToolTest`：同理改为注入 `ErpAnalysisTools`。
+
+### 4. 静态数据表豁免（判据按内容，不按文件名）
+
+`SpApiOperationCatalog`（751 行）是从官方 OpenAPI 快照派生的静态目录：
+0 个 if/for/switch，几乎全是 `new SpApiOperationSpec(...)` 条目。
+它的「长」是数据的长，不是复杂度的长——拆开只会撕碎一条完整的操作定义。
+
+棘轮新增三条判据（全仓超限 .java 中只有它命中）：控制流为 0 + `static final` >= 2 +
+非测试文件。`LogisticsOpsDashboardServiceImplTest` 只有 1 个 static final，被正确排除。
+
+### 5. LogisticsCursorBar 抽取（前端第一刀）
+
+`LogisticsDashboard.vue` 的 template 有 4 处游标分页条，其中 **shipments 与 transfers
+两处逐字同构**，抽成组件后每处从 ~16 行 markup 降到 8 行。
+
+**刻意只替换这 2 处**：quotes（`.table-pager`、按钮「加载下一页」、文案不同）与
+tracking（文案写「轨迹」、外层带 v-if）**不是同构用例**，强行并进来只会让组件
+长出文案参数——那是用配置掩盖差异，不是消除重复。按 CLAUDE.md 的原则，
+2 个完全同构的用例已满足抽取门槛。
+
+### 6. 验证
+
+- 后端：`mvn test` 各模块回到基线（ai 137 跑 136 过，procurement 148/148；
+  失败仍是 §S30 已定案的 loopback 环境失败）
+- 前端：`vue-tsc` 0 错、`vitest` **662/662**、`vite build` 成功
+- 棘轮：基线 59 → 56 文件；新豁免判据有测试 + 变异验证
+
+### 7. 下一班入口
+
+- 剩余 **56 个**超限文件（`file-size-baseline.json`，已按行数排序）。
+- `LogisticsDashboard.vue`（3243 行）已开了第一刀，下一步建议**按 tab 拆子组件**
+  （overview / shipments / quotes / transfers / freight / receipts / import），
+  它有 1497 行测试保护。注意 scoped CSS 会随组件搬移（§S27 记过同类坑），
+  以及 `switchTab` 的并发刷新（类似 Finance 的 discrepancy ↔ claim 缠结）。
+- `Warehouse.vue`（1634 行）测试覆盖也强（916 行 + 3 个测试文件），是另一个好目标。
+- **每次拆完务必** `python tools/release/file_size_ratchet.py --update-baseline`——
+  这是「在还债」唯一的客观证据。
