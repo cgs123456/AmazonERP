@@ -63,7 +63,8 @@ public class LoginController {
             if (user == null) {
                 return Result.failure("用户不存在");
             }
-            String newAccessToken = jwtUtil.createToken(userId, user.getShops(), user.getRole());
+            String newAccessToken = jwtUtil.createToken(
+                    userId, user.getShops(), user.getRole(), user.getShopRoles());
             String newRefreshToken = jwtUtil.createRefreshToken(userId);
             Map<String, String> tokens = new HashMap<>();
             tokens.put("token", newAccessToken);

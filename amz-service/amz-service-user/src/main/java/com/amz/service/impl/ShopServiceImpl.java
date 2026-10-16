@@ -121,7 +121,7 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public Shop createShop(Shop shop) {
-        requireAdmin();
+        requireGlobalAdmin();
         validateShop(shop, false);
         shop.setId(null);
         shopMapper.insert(shop);
@@ -132,7 +132,7 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public Shop updateShop(Long shopId, Shop patch) {
-        requireAdmin();
+        requireAdminOn(shopId);
         if (shopId == null) {
             throw new CodeErrorException("店铺 ID 不能为空");
         }
@@ -153,7 +153,7 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public Shop updateShopStatus(Long shopId, Integer status) {
-        requireAdmin();
+        requireAdminOn(shopId);
         if (shopId == null) {
             throw new CodeErrorException("店铺 ID 不能为空");
         }
@@ -172,7 +172,7 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public void assignUser(Long shopId, Long userId, String role) {
-        requireAdmin();
+        requireAdminOn(shopId);
         if (shopId == null || userId == null) {
             throw new CodeErrorException("店铺 ID 与用户 ID 均不能为空");
         }
@@ -206,7 +206,7 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public void unassignUser(Long shopId, Long userId) {
-        requireAdmin();
+        requireAdminOn(shopId);
         if (shopId == null || userId == null) {
             throw new CodeErrorException("店铺 ID 与用户 ID 均不能为空");
         }
@@ -221,7 +221,7 @@ public class ShopServiceImpl implements ShopService {
 
     @Override
     public List<ShopUserVo> listShopUsers(Long shopId) {
-        requireAdmin();
+        requireAdminOn(shopId);
         if (shopId == null) {
             throw new CodeErrorException("店铺 ID 不能为空");
         }
@@ -264,10 +264,33 @@ public class ShopServiceImpl implements ShopService {
 
     // ============ 内部 ============
 
-    private void requireAdmin() {
+    /**
+     * 要求**全局** ADMIN——用于「跨店」的店铺主数据操作：建店、看全部店铺列表。
+     * <p>
+     * 刻意不用店铺级角色：一个「只在店 A 是 ADMIN」的用户没有资格建新店
+     * （新店不属于任何现有店铺），也不该通过 {@link #listMyShops()} 看到全部店铺。
+     * 用店铺级角色会让这类用户越出授权店铺范围。
+     */
+    private void requireGlobalAdmin() {
         String role = UserContext.getRole();
         if (!"ADMIN".equalsIgnoreCase(role)) {
             throw new CodeErrorException("无权限执行该操作（需要角色：ADMIN）");
+        }
+    }
+
+    /**
+     * 要求**目标店铺**上的 ADMIN——用于作用范围明确落在某一家店的操作：
+     * 改店铺信息、改状态、分配/解绑用户、看该店授权列表。
+     * <p>
+     * 这些操作的语义是「管理这家店」，所以按该店的店铺级角色判定：
+     * 「在店 A 是 ADMIN、店 B 是 VIEWER」的用户能管店 A，不能管店 B。
+     */
+    private void requireAdminOn(Long shopId) {
+        if (shopId == null) {
+            throw new CodeErrorException("店铺 ID 不能为空");
+        }
+        if (!"ADMIN".equalsIgnoreCase(UserContext.resolveRole(shopId))) {
+            throw new CodeErrorException("无权限管理该店铺（需要该店铺的 ADMIN 角色）");
         }
     }
 

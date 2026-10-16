@@ -140,6 +140,55 @@ class ShopServiceImplTest {
     }
 
     @Test
+    @DisplayName("店铺：店级 ADMIN 能管本店，不能管别家店（店铺级角色接通 §S22）")
+    void shopLevelAdminIsScopedToOwnShop() {
+        ShopMapper shops = mock(ShopMapper.class);
+        ShopServiceImpl service = serviceWith(shops, mock(UserShopMapper.class));
+        UserContext.setUserId(1);
+        // 全局只是 OPERATOR，但在店 1 是 ADMIN、店 2 是 VIEWER
+        UserContext.setRole("OPERATOR");
+        UserContext.setShopRoles(java.util.Map.of(1L, "ADMIN", 2L, "VIEWER"));
+        Shop patch = shop(1L, "改了名");
+        when(shops.selectById(1L)).thenReturn(shop(1L, "A"));
+
+        // 本店是 ADMIN → 通过
+        assertEquals("改了名", service.updateShop(1L, patch).getShopName());
+
+        // 别家店只给了 VIEWER → 拒绝
+        assertThrows(CodeErrorException.class, () -> service.updateShop(2L, patch));
+        assertThrows(CodeErrorException.class, () -> service.updateShopStatus(2L, 1));
+        assertThrows(CodeErrorException.class, () -> service.assignUser(2L, 5L, "VIEWER"));
+        assertThrows(CodeErrorException.class, () -> service.unassignUser(2L, 5L));
+        assertThrows(CodeErrorException.class, () -> service.listShopUsers(2L));
+    }
+
+    @Test
+    @DisplayName("店铺：建店要求**全局** ADMIN，店级 ADMIN 不够（新店不属于任何现有店铺）")
+    void createShopRequiresGlobalAdmin() {
+        ShopServiceImpl service = serviceWith(mock(ShopMapper.class), mock(UserShopMapper.class));
+        UserContext.setUserId(1);
+        UserContext.setRole("VIEWER");
+        // 只在某一家店是 ADMIN —— 不得因此获得建店（跨店）能力
+        UserContext.setShopRoles(java.util.Map.of(1L, "ADMIN"));
+
+        assertThrows(CodeErrorException.class, () -> service.createShop(shop(9L, "新店")));
+    }
+
+    @Test
+    @DisplayName("店铺：全局 ADMIN 不受店铺级收窄影响（跨店管理语义保留）")
+    void globalAdminKeepsCrossShopManagement() {
+        ShopMapper shops = mock(ShopMapper.class);
+        ShopServiceImpl service = serviceWith(shops, mock(UserShopMapper.class));
+        UserContext.setUserId(1);
+        UserContext.setRole("ADMIN");
+        // 即使在店 2 被显式配成 VIEWER，全局 ADMIN 仍可建店（跨店动作）
+        UserContext.setShopRoles(java.util.Map.of(2L, "VIEWER"));
+        when(shops.selectById(1L)).thenReturn(shop(1L, "A"));
+
+        assertNotNull(service.createShop(shop(9L, "新店")));
+    }
+
+    @Test
     @DisplayName("店铺：拒绝接收凭证字段（唯一入口是 spapi 的 /spapi/credentials）")
     void rejectsCredentialFields() {
         ShopServiceImpl service = serviceWith(mock(ShopMapper.class), mock(UserShopMapper.class));

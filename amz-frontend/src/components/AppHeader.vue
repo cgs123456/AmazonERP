@@ -169,23 +169,39 @@ const defaultAvatar = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   '</svg>'
 )
 
-const loadUserInfo = async () => {
+const loadUserInfo = async (retryOnShopSync = true) => {
   const token = localStorage.getItem('token')
   if (!token) {
     userInfo.value = null
     unreadCount.value = 0
     return
   }
+  // 本次请求**是否带了** shopId 头。必须在发请求前取：effectiveRole 是「当前店铺上的
+  // 角色」，没带店时后端只能回落全局角色。首次登录 localStorage 里还没有
+  // current_shop_id，正是这种情况——此时拿到的 effectiveRole 不可信，落完店铺要重取。
+  const requestHadShop = !!getCurrentShopId()
   try {
     const response = await getUserInfo()
     if (response.code === 200 && response.data && response.data.user) {
       userInfo.value = response.data.user
-      // 角色随用户信息一起落到 localStorage：这是全站唯一的角色来源（后端响应一直带 role）
-      setUserRole(response.data.user.role)
       // 店铺来自后端而不是本地占位：此前 main.ts 写死 Shop A/B/C，而 axios 拦截器
       // 会把选中的 id 当 shopId 头发给网关——等于用编造的 ID 去撞店铺隔离边界。
       // 后端返回空数组 = 该账号确实没被分配店铺，此时清空而不是保留旧值。
+      //
+      // **顺序要紧**：先落店铺、再定角色，这样重取时请求才带得上新选的店。
       syncShopsFromServer(response.data.shops)
+      // 角色落到 localStorage：全站唯一的角色来源。
+      // 读 effectiveRole（当前店铺上的有效角色）而不是 user.role（全局角色）——
+      // 后者会让「店 A 是 OPERATOR、店 B 是 VIEWER」的用户在店 B 看到 OPERATOR 的界面。
+      // 老后端没这个字段时回落 user.role，行为与改动前一致。
+      setUserRole(response.data.effectiveRole ?? response.data.user.role)
+      // 首次登录（或选中店铺被回收回退）时本次没带 shopId → 上面的角色是全局角色，
+      // 不是这家店的。现在店铺已落好，重问一次后端拿该店的有效角色。
+      // 只重试一次，避免后端始终不返回 shops 时无限递归。
+      if (!requestHadShop && getCurrentShopId() && retryOnShopSync) {
+        await loadUserInfo(false)
+        return
+      }
       // 登录态确认后再拉未读数（未登录的请求会被后端拒绝，也没意义）
       refreshUnreadCount()
     } else if (response.code === 401) {

@@ -1,9 +1,12 @@
 /**
- * 当前登录用户的角色（后端 JWT 里的 role）。
+ * 当前登录用户**在当前店铺上**的角色。
  *
- * 以前前端没有任何角色来源：LoginModal 只写 token/refreshToken/token_expiry，
- * 而 GET /user/getInfo 的响应里其实一直带着 `user.role`，只是前端 UserVo 类型没声明它。
- * 这里把它读出来存住，用于「点了必然 403」的入口提前给出理由；
+ * 唯一来源是 GET /user/getInfo 的 `effectiveRole`（店铺级角色优先、全局角色兜底，
+ * 与后端鉴权同一口径）。**不要改成读 `user.role`**：那是全局角色，用它做显隐会让
+ * 「店 A 是 OPERATOR、店 B 是 VIEWER」的用户在店 B 看到 OPERATOR 的界面——
+ * 按钮亮着、点下去报无权限。切店会整页刷新（AppHeader.handleShopChange），
+ * getInfo 带新 shopId 头重跑，所以本值在切店后自动是新的。
+ *
  * 它只是显示优化，权限的权威判定始终在后端。
  */
 const ROLE_KEY = 'user_role'
@@ -42,6 +45,10 @@ export const clearUserRole = (): void => {
 /**
  * 未知角色不隐藏按钮：硬刷新某个页面时 AppHeader 的 getInfo 可能还没回来，
  * 因为「还没取到角色」就把功能藏掉，等于让前端状态去否决后端能力。
+ *
+ * 注意「未知」的意思：`effectiveRole` 取不到值（老后端没这个字段、或请求还没回来）。
+ * 后端既然能返回 `user.role`，`effectiveRole` 缺席只可能是版本落后，
+ * 此时放行按钮、由后端按真实角色判定，比前端猜一个更保守的值更安全。
  */
 export const canUseRole = (allowed: string[]): boolean => {
   const role = getUserRole()

@@ -151,8 +151,10 @@ const loadAll = async () => {
     if (res?.code === 200 && res.data?.user) {
       applyUser(res.data.user)
       age.value = typeof res.data.age === 'number' ? res.data.age : null
-      // 角色顺带刷新到 localStorage（AppHeader 是主来源，这里保证硬刷进本页时也有值）
-      setUserRole(res.data.user.role)
+      // 角色顺带刷新到 localStorage（AppHeader 是主来源，这里保证硬刷进本页时也有值）。
+      // 与 AppHeader 同口径：读 effectiveRole（当前店上的有效角色），
+      // 老后端无该字段时回落全局 role。
+      setUserRole(res.data.effectiveRole ?? res.data.user.role)
     } else {
       error.value = `无法读取账号信息：${res?.message || 'GET /user/getInfo 返回异常'}`
     }

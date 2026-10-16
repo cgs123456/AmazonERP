@@ -135,8 +135,10 @@ public class LoginServiceImpl implements LoginService {
                 .map(UserShop::getShopId)
                 .collect(Collectors.toList());
 
-        // 7.生成token（携带 shops + role claim）
-        String token = jwtUtil.createToken(userId, shopIds, role);
+        // 7.生成token（携带 shops + role + shop_roles claim）
+        // shop_roles 是店铺级角色地图：同一用户可以在店 A 是 OPERATOR、店 B 是 VIEWER。
+        // 之前这张表只写不读（配了、显示了、判定时从不生效），见 HANDOFF §S22。
+        String token = jwtUtil.createToken(userId, shopIds, role, toShopRoleMap(userShops));
         String refreshToken = jwtUtil.createRefreshToken(userId);
 
         // 向mq中发送消息
@@ -166,6 +168,32 @@ public class LoginServiceImpl implements LoginService {
         dto.setPhone(dbUser.getPhone());
         dto.setRole(dbUser.getRole() == null ? "VIEWER" : dbUser.getRole());
         dto.setShops(shopIds);
+        dto.setShopRoles(toShopRoleMap(userShops));
         return dto;
+    }
+
+    /**
+     * 用户-店铺绑定列表 → 店铺级角色地图（shopId → 角色）。
+     * <p>
+     * <b>role 为空或空白的绑定行被跳过</b>，等于「这家店没配店铺级角色」，下游
+     * {@code UserContext.resolveRole} 会回落到全局角色。这是**刻意**的选择，不是漏判：
+     * <ul>
+     *   <li>回落到的仍是后端签发的全局角色，不是前端传入的值，安全性不打折；</li>
+     *   <li>反过来把它当 VIEWER 处理会让「绑定行 role 为空」这一种历史脏数据
+     *       静默降权——而该行在改动之前根本不参与判定，突然降权是没人预期的行为变更。</li>
+     * </ul>
+     * 显式放 null 进 claim 没有意义：下游本来就按缺席处理。
+     */
+    private static Map<Long, String> toShopRoleMap(List<UserShop> userShops) {
+        if (userShops == null || userShops.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> roles = new java.util.LinkedHashMap<>(userShops.size());
+        for (UserShop binding : userShops) {
+            if (binding.getShopId() != null && binding.getRole() != null && !binding.getRole().isBlank()) {
+                roles.put(binding.getShopId(), binding.getRole());
+            }
+        }
+        return roles;
     }
 }

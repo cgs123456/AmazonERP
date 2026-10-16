@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import org.mockito.ArgumentMatchers;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -42,6 +43,10 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("登录服务单元测试")
 class LoginServiceImplTest {
+
+    /** 捕获登录时传给 JwtUtil 的店铺级角色，用于断言它确实被签发进 token。 */
+    private java.util.Map<Long, String> capturedShopRoles;
+
 
     @Mock
     private RedisTemplate<String, String> redisTemplate;
@@ -142,9 +147,17 @@ class LoginServiceImplTest {
         UserShop us = new UserShop();
         us.setUserId(1L);
         us.setShopId(10L);
+        // 绑定行带店铺级角色（V1 建表默认 OPERATOR，V6 改为 VIEWER；此处显式给 ADMIN）
+        us.setRole("ADMIN");
         when(userShopMapper.selectList(any())).thenReturn(List.of(us));
 
-        when(jwtUtil.createToken(eq(1), any(), eq("ADMIN"))).thenReturn("jwt-token");
+        // 四参重载：登录要把店铺级角色一并写进 token（HANDOFF §S22）。
+        // 用 thenAnswer 取值而不是 any() 吞掉——any() 会让「实现根本忘了传店铺角色」
+        // 也通过，那正是这次要钉的地方。
+        when(jwtUtil.createToken(eq(1), any(), eq("ADMIN"), ArgumentMatchers.<Map<Long, String>>any())).thenAnswer(inv -> {
+            capturedShopRoles = inv.getArgument(3);
+            return "jwt-token";
+        });
         when(jwtUtil.createRefreshToken(eq(1))).thenReturn("refresh-jwt-token");
 
         Result<Map<String, String>> result = loginService.verify(dto);
@@ -157,6 +170,9 @@ class LoginServiceImplTest {
         verify(rabbitTemplate).convertAndSend(
                 MqConstant.MESSAGE_NOTICE_EXCHANGE, MqConstant.LOGIN_KEY, 1);
         verify(userMapper, org.mockito.Mockito.never()).insert(any(User.class));
+        // 店铺级角色必须随 token 签发（HANDOFF §S22）：只发全局角色的话，
+        // 「店 A 是 ADMIN、店 B 是 VIEWER」这个用户在店 B 会拿到 ADMIN。
+        assertEquals(Map.of(10L, "ADMIN"), capturedShopRoles);
     }
 
     @Test
@@ -178,7 +194,7 @@ class LoginServiceImplTest {
         }).when(userMapper).insert(any(User.class));
 
         when(userShopMapper.selectList(any())).thenReturn(List.of());
-        when(jwtUtil.createToken(eq(2), any(), eq("VIEWER"))).thenReturn("new-token");
+        when(jwtUtil.createToken(eq(2), any(), eq("VIEWER"), ArgumentMatchers.<Map<Long, String>>any())).thenReturn("new-token");
         when(jwtUtil.createRefreshToken(eq(2))).thenReturn("new-refresh-token");
 
         Result<Map<String, String>> result = loginService.verify(dto);

@@ -229,6 +229,17 @@ export interface UserInfoResponse {
      * 登录成功但这里为空 = 该账号确实没被分配店铺，前端提示联系管理员。
      */
     shops?: ShopOption[]
+    /**
+     * 当前选中店铺上的**有效角色**（店铺级优先、全局兜底）。
+     *
+     * 与 `user.role`（全局角色）是两件事：同一用户可以在店 A 是 OPERATOR、店 B 是 VIEWER。
+     * 前端必须读这个字段做写入口显隐——读 `user.role` 会让用户在店 B 看到 OPERATOR 的界面，
+     * 按钮亮着、点下去报无权限。鉴权一直在后端，这里只是让两边看同一个值。
+     *
+     * 切店会整页刷新（AppHeader.handleShopChange），getInfo 带新的 shopId 头重跑，
+     * 所以本字段在切店后是准的。
+     */
+    effectiveRole?: string | null
 }
 
 /** 我的店铺列表（含凭证与角色状态；ADMIN 可见全部店铺） */

@@ -70,6 +70,10 @@ public class UserServiceImpl implements UserService {
         // 2.设置userVo
         UserVo userVo = new UserVo();
         userVo.setUser(user);
+        // 2a.当前店铺上的有效角色：前端据此显隐写入口，必须与后端鉴权同口径，
+        //     否则「店 A 是 OPERATOR、店 B 是 VIEWER」的用户在店 B 会看到亮的按钮、
+        //     点下去报无权限。user.role 仍是全局角色，不改语义（别处按它判跨店问题）。
+        userVo.setEffectiveRole(UserContext.resolveRole(UserContext.getShopId()));
         // 2b.附带授权店铺：前端店铺选择器此前没有任何真实来源（只能写死 Shop A/B/C），
         //     登录 → getInfo → 写 localStorage 这条链路补全后，店铺切换才建立在真数据上。
         //     查询失败不阻断登录——拿不到店铺只影响选择器，不该让用户连系统都进不去。

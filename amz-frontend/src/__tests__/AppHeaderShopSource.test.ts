@@ -105,4 +105,91 @@ describe('AppHeader 店铺来源', () => {
     expect(JSON.parse(localStorage.getItem('shops') || '[]')).toEqual([])
     expect(wrapper.findAll('option')).toHaveLength(0)
   })
+
+  // 店铺级角色接通（HANDOFF §S22）：前端显隐必须按**当前店铺上的有效角色**，
+  // 而不是全局角色。读 user.role 会让「店 A 是 OPERATOR、店 B 是 VIEWER」的用户
+  // 在店 B 看到 OPERATOR 的界面——按钮亮着，点下去报无权限。
+  it('角色存的是 effectiveRole（当前店上的有效角色）而不是全局 role', async () => {
+    localStorage.setItem('token', 'fake-token')
+    getUserInfoMock.mockResolvedValue({
+      code: 200,
+      data: {
+        user: { id: 1, nickname: '运营', role: 'ADMIN' },   // 全局 ADMIN
+        effectiveRole: 'VIEWER',                            // 但这家店只给了 VIEWER
+        shops: [{ id: 9001, name: '美国站主店' }]
+      }
+    })
+
+    mount(AppHeader, { global: { stubs: { Icon: true } } })
+    await flushPromises()
+
+    expect(localStorage.getItem('user_role')).toBe('VIEWER')
+  })
+
+  it('老后端没有 effectiveRole 字段时回落 user.role，行为不变', async () => {
+    localStorage.setItem('token', 'fake-token')
+    getUserInfoMock.mockResolvedValue({
+      code: 200,
+      data: {
+        user: { id: 1, nickname: '运营', role: 'OPERATOR' },
+        shops: [{ id: 9001, name: '美国站主店' }]
+      }
+    })
+
+    mount(AppHeader, { global: { stubs: { Icon: true } } })
+    await flushPromises()
+
+    expect(localStorage.getItem('user_role')).toBe('OPERATOR')
+  })
+
+  // 首次登录时 localStorage 里还没有 current_shop_id，第一次 getInfo 不带 shopId 头，
+  // 后端只能按「无店铺上下文」算 effectiveRole（= 全局角色）。若不重取，
+  // 「店 A 是 OPERATOR、店 B 是 VIEWER」的用户在默认登录店会拿到错的角色。
+  it('首次登录定下默认店铺后必须重取一次，拿到该店的有效角色', async () => {
+    localStorage.setItem('token', 'fake-token')
+    // 第一次调用：无店铺上下文 → effectiveRole 回落全局 ADMIN
+    getUserInfoMock.mockResolvedValueOnce({
+      code: 200,
+      data: {
+        user: { id: 1, nickname: '运营', role: 'ADMIN' },
+        effectiveRole: 'ADMIN',
+        shops: [{ id: 9001, name: '美国站主店' }]
+      }
+    })
+    // 第二次调用：已选中 9001 → effectiveRole 是该店的真实角色 VIEWER
+    getUserInfoMock.mockResolvedValueOnce({
+      code: 200,
+      data: {
+        user: { id: 1, nickname: '运营', role: 'ADMIN' },
+        effectiveRole: 'VIEWER',
+        shops: [{ id: 9001, name: '美国站主店' }]
+      }
+    })
+
+    mount(AppHeader, { global: { stubs: { Icon: true } } })
+    await flushPromises()
+
+    expect(getUserInfoMock).toHaveBeenCalledTimes(2)
+    expect(localStorage.getItem('current_shop_id')).toBe('9001')
+    expect(localStorage.getItem('user_role')).toBe('VIEWER')
+  })
+
+  it('店铺选择未变时不重取（避免每次挂载都多打一次 getInfo）', async () => {
+    localStorage.setItem('token', 'fake-token')
+    localStorage.setItem('current_shop_id', '9001')
+    getUserInfoMock.mockResolvedValue({
+      code: 200,
+      data: {
+        user: { id: 1, nickname: '运营', role: 'OPERATOR' },
+        effectiveRole: 'OPERATOR',
+        shops: [{ id: 9001, name: '美国站主店' }]
+      }
+    })
+
+    mount(AppHeader, { global: { stubs: { Icon: true } } })
+    await flushPromises()
+
+    expect(getUserInfoMock).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('user_role')).toBe('OPERATOR')
+  })
 })
