@@ -47,6 +47,10 @@ jobs:
           python-version: '3.11'
       - name: Repository hygiene
         run: python tools/release/repository_hygiene.py --root .
+      # 源码行数棘轮：CLAUDE.md 的 500 行规则。存量 59 个超限文件冻结进基线，
+      # 新文件超限或存量变长都红——只许变短。防的是"债一边拆一边长"。
+      - name: File size ratchet
+        run: python tools/release/file_size_ratchet.py --root .
       # 实体-表列名漂移闸门：新漂移必红；已登记的两条待决策项一旦「不再匹配」也红，防止豁免烂成永久绿灯。
       - name: Entity/column drift self-test + gate
         run: |
@@ -71,7 +75,7 @@ jobs:
           python tools/schema/param_name_audit.py --self-test .
           python tools/schema/param_name_audit.py .
       - name: Release tool tests
-        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_migration_snapshot_parity tools.release.test_operlog_coverage_audit tools.release.test_verify_clean_clone -v
+        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_migration_snapshot_parity tools.release.test_operlog_coverage_audit tools.release.test_file_size_ratchet tools.release.test_verify_clean_clone -v
 
   # Job 1.2: prove the manifest CLI works from the exact checked-in source.
   release-manifest:
