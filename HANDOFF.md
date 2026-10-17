@@ -6334,3 +6334,59 @@ if (orderCount <= 0) {
 独立 try-catch 记 error、`finally` 清 UserContext、warnings 显式落 warn；
 `SettlementServiceImpl` 按业务指纹幂等（重复行计入 skipped），
 所以 `paymentCollectionService.rebuild` 失败导致的重跑是安全的。
+
+## §S33.54 资金链路审查结论 + 一个待决策的观测缺口
+
+沿资金链路逐段读了三处（利润计算 / 结算同步 / 凭证生成），
+修掉一个真缺陷（§S33.52 广告费分摊），确认两处设计良好，
+发现一个**待用户决策**的观测缺口。
+
+### 54. 结算同步：设计良好，无需改动
+
+`SettlementSyncScheduler` 每店独立抢分布式锁、独立 try-catch 记 `log.error`、
+`finally` 里 `UserContext.clear()`、`report.getWarnings()` 非空即显式 `log.warn`。
+`SettlementServiceImpl` 按业务指纹幂等（重复行进 `skipped` 计数），
+所以 `paymentCollectionService.rebuild` 失败导致的重跑是安全的——
+已核实不存在「重建失败让整店同步白做」的隐患。
+
+### 55. 凭证生成：幂等完备，含并发窗口兜底
+
+`generateOrderVoucher` 三重防护：先查既有（返回不重复生成）→ 插入 →
+`DuplicateKeyException` 时重查并**显式禁止返回 null**（注释写明
+「若重查仍为空必须抛异常，禁止返回 null 把 NPE 抛给上游」）。
+`FinanceVoucherConsumer` 手动 ack，字段缺失与处理异常都 `basicNack(requeue=false)`
+进 DLQ 并记 error，没有静默吞错。
+
+### 56. 待决策：1:1 兜底折算的金额，落库后无从识别
+
+`GlobalExchangeRateService.rateOrPolicy` 对未配置币种走 1:1 兜底
+（`amz.exchange.strict-unknown` **默认 false 且三处 yml 都没配**）。
+已配置 USD/EUR/GBP/JPY 且三模块数值一致，所以只在遇到
+CAD/AUD/MXN 等未列币种时触发。
+
+问题不在折算本身，在**落库后的不可识别性**：
+
+- 凭证表只存 `exchange_rate` 与 `cny_amount`。兜底折算出的凭证
+  `exchange_rate = 1`，与「真实 1:1 的币种」完全同形；
+- 告警每币种只发一次（防日志冲爆），仅存在于日志里；
+- `unknownCurrencyHits(String)` 计数器**没有任何端点或指标暴露**，
+  运维想查也查不到；
+- `Finance.vue` 凭证列表把 `originalAmount + currency` 与 `cnyAmount`
+  并列展示，审核者要自己记得 JPY≈0.046 才能看出 `1000 JPY → ¥1000` 不对。
+
+**为什么没有直接改**：干净的修法要加一个 schema 列（如 `rate_source`
+= LIVE/FALLBACK/CONFIG），那意味着动持久化财务记录 + 前端列表列 +
+金蝶推送 payload 三处，属对外契约与数据模型变更，按 CLAUDE.md
+「对外契约按协议契约单独评估」应交由用户决定，不由我自主改。
+
+**不建议的两种半修**（都试过并否决）：
+1. 把「汇率兜底」写进 `AccountingVoucher.summary`——那是要推给金蝶的
+   会计摘要，塞技术告警会污染业务语义，且列宽只有 200；
+2. 只加一个查询端点暴露 `unknownCurrencyHits`——能看到命中次数，
+   但看不出**哪几张凭证**被兜底折算过，审计仍然断链。
+
+**建议方案（供决策）**：加 `rate_source CHAR(8)` 列 +
+`buildVoucher` 写入 + 凭证列表加一列 + 金蝶推送时对 FALLBACK 记警告。
+若嫌重，最小可用版是「把 `unknownCurrencyHits` 暴露成 actuator 指标 +
+兜底命中时发一条 error 级日志（带 shopId/currency/amount）」，
+至少让「有钱算错了」这件事在监控上可见。
