@@ -6359,12 +6359,19 @@ if (orderCount <= 0) {
 
 ### 56. 待决策：1:1 兜底折算的金额，落库后无从识别
 
-`GlobalExchangeRateService.rateOrPolicy` 对未配置币种走 1:1 兜底
-（`amz.exchange.strict-unknown` **默认 false 且三处 yml 都没配**）。
-已配置 USD/EUR/GBP/JPY 且三模块数值一致，所以只在遇到
-CAD/AUD/MXN 等未列币种时触发。
+> **更正（本节写完后通读 `GlobalExchangeRateService` 全类修正）**：
+> 初版写「遇到 CAD/AUD/MXN 就会触发 1:1」是**错的**。
+> `refreshRates()` 遍历的是 API 返回的**整个 rates map**（该类 L220-231），
+> 不是 yml 里那四个币种——刷新成功后 CAD/AUD/MXN 都有真实汇率。
+> 真正的触发窗口是「**API 拉取失败**（保留旧缓存）**且** 该币种不在 yml
+> 兜底表里」，比初版描述窄得多。缺陷本身（落库后无从识别）仍成立，
+> 但触发条件与影响面以下方修正后描述为准。
 
-问题不在折算本身，在**落库后的不可识别性**：
+`GlobalExchangeRateService.rateOrPolicy` 对「缓存与兜底表里都没有」的币种
+走 1:1（`amz.exchange.strict-unknown` **默认 false 且三处 yml 都没配**）。
+yml 兜底表只配了 USD/EUR/GBP/JPY（三模块数值一致，无漂移）。
+
+问题不在折算本身，在**落库后的不可识别性**（触发窗口窄，但一旦触发后果是静默的）：
 
 - 凭证表只存 `exchange_rate` 与 `cny_amount`。兜底折算出的凭证
   `exchange_rate = 1`，与「真实 1:1 的币种」完全同形；
