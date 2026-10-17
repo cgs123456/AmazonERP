@@ -6219,3 +6219,52 @@ loopback 失败（stash 后在干净树上复现同样失败，§S30 已定案�
 | 新增测试 | Java 5 条 + Python 门禁 8 条 |
 | 新增门禁 | 1 个（`test_shoppointer_scope.py`，4 个变异方向全捕获） |
 | 门禁自身被变异抓到 | 2 次（豁免写得比理由宽） |
+
+## §S33.50 前端侧的同一个洞：空 shopId 被当成答案提交
+
+§S33.41 修的是「`@ShopScoped` 在服务端够不着」。前端有一个同型问题：
+**空店铺 ID 被当成有效值发给后端**。
+
+`Dashboard.vue` 三个并行请求里，两个写了 `getCurrentShopId() || undefined`，
+只有 KPI 那个是 `getKpiData(getCurrentShopId())`。而 `getCurrentShopId()`
+取不到值时**按设计返回空串**（`utils/shop.ts`：回退空串，让调用方提示选店）。
+
+后果不是「查不到」：axios 把 `shopId: ''` 序列化成 `?shopId=`，后端
+`@RequestParam Long shopId` 绑到空串后转 Long 失败，抛
+`MethodArgumentTypeMismatchException` → **500**，而不是控制器自己那句
+`Result.failure("shopId must not be null")`。页面显示一次服务端错误，
+运营看不出「该先选店铺」。
+
+修法：改用仓里已有的 `params()`（`utils/query.ts`）——它的文档就是为这件事写的
+（「后端把空串 @RequestParam 绑成 ''，等于把「未知」当答案提交」）。
+新增 `DashboardKpiParams.test.ts` 4 条，变异验证（把 `params()` 换回字面量）：
+红，`expected { shopId: '' } to deeply equal {}`。
+
+### 51. 一次过宽的扫描：58 个「风险」里只有 1 个是真的
+
+顺着这条线扫了全部 api 文件，用正则找出 58 处「raw `params: {...}` 且键名可能为空」。
+逐个核实后**只有 Dashboard 那一处是真的**，原因是我的扫描器判错了层：
+
+- 其余 `shopId` 都是函数的**必填参数**（`shopId: number | string`），
+  调用方（视图）在用之前已经拦过——`ConnectorCenter.vue` 每个调用点都是
+  `const shopId = Number(refreshShop()); if (!Number.isFinite(shopId) || shopId <= 0) return`；
+- `searchKnowledgeBase` 的 `query`、`getRankTrend` 的 `keyword`/`asin`
+  同样由视图先 trim + 非空判断（`KnowledgeBase.vue:201`、`OpsAlerts.vue:363`）；
+- `AgentChat` 的 SSE 用的是 `...(shopId ? { shopId } : {})`，本来就对。
+
+**教训（第四次同型，但换了一层）**：扫描器只能看到「这里有个可能为空的键」，
+看不到「值到这儿之前有没有被拦过」。把「可疑」当「缺陷」会导向 21 个文件的大规模改写，
+而其中 20 个本来是对的。判据要判到**值真正不可信的那一层**——
+`getCurrentShopId()` 的特殊之处正是它按设计返回空串且调用方不拦。
+
+### 52. 顺带确认：`getShopDistribution(null)` 不是越权
+
+`@ShopScoped` 的 resolver 用 `args[i] instanceof Long` 判定，**值为 null 时返回 false**
+→ 切面走「未找到 shopId 参数，跳过」。所以 `shopId` 传 null 与不传参数一样会绕过切面。
+
+`getShopDistribution` 走这条路径时会调 `orderFeignClient.getOrderList()`。
+一开始以为这是跨租户泄露，核实后**不是**：`OrderServiceImpl.getOrderListByUserId`
+按 `userId` 过滤（`eq(Order::getUserId, userId)`），返回的是**同一用户**名下
+所有店铺的订单。而这个端点语义就是「店铺销售额分布」饼图，跨店聚合是它的设计目的。
+
+已把这个区别写进代码注释，避免下一位按「绕过了 @ShopScoped」误判成漏洞。

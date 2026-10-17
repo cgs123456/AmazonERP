@@ -1,5 +1,6 @@
 import request from './auth'
 import type { ApiResponse } from './types'
+import { params } from '@/utils/query'
 
 // KPI 数据（图标统一使用单 accent 渲染，color 保留为后端兼容可选字段）
 export interface KpiItem {
@@ -56,7 +57,10 @@ export const mapKpiItems = (d: KpiRaw): KpiItem[] => {
 export const getKpiData = (shopId: number | string) => {
   return request
     .get<void, ApiResponse<KpiRaw>>('/report/dashboard/kpi', {
-      params: { shopId }
+      // 必须过 params()：未选中店铺时 getCurrentShopId() 返回空串，直接塞进去会发出
+      // `?shopId=`，后端把空串绑成 '' 再转 Long 失败 → 500（MethodArgumentTypeMismatch），
+      // 而不是它自己那句 `shopId must not be null`。同一口径见 utils/query 的说明。
+      params: params({ shopId })
     })
     .then((res) => {
       if (res?.code === 200 && res.data) {
