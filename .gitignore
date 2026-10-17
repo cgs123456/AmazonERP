@@ -84,3 +84,12 @@ secrets/
 # Python bytecode caches (all toolchains)
 __pycache__/
 *.pyc
+
+# Playwright MCP 的运行产物（控制台日志、页面快照）。属本机调试残留，
+# 不是仓库内容；提交它们会让 diff 里混入与代码无关的时点数据。
+.playwright-mcp/
+
+# Claude Code 的会话级设置与锁文件。settings.local.json 含本机审批过的
+# 命令白名单，随机器不同而不同，不应进版本库。
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
