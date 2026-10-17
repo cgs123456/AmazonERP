@@ -5852,3 +5852,69 @@ procurement 域连促销表都没有，真实方案需要历史销量与转化�
 vitest 712 全绿；product 模块 95/96、ad 模块 144/151（其余为 §S30 loopback）；
 vue-tsc 0 错；vite build 通过；棘轮基线 46906 行。
 每个修复都做了变异验证，全部 CAUGHT。
+
+## §S33.31–35 后半程：从「静默失败」扫到「从未成功过的端点」
+
+### 31. 净利少扣一整块成本却标成「完整」
+
+`ProfitCalculator.fetchAdCost` 在广告服务失败时返回 `BigDecimal.ZERO`，
+而 `dataComplete` 只覆盖采购成本与佣金率。于是「广告费取不到」与
+「广告费确实是 0」在报告上完全一样——广告费通常占营收 10–30%，
+净利却显示成 `dataComplete=true` 的完整数字。
+
+改：`fetchAdCost` 取不到返回 `null`（与真 0 区分），纳入 `dataComplete`。
+两条既有断言随语义一起改（它们原先依赖「未注入 = 降级 0 且完整」）。
+
+### 32. 定时任务假装「扫描完成」
+
+`OpsMonitorScheduler.listActiveShops` 查询异常时返回空列表，两个任务随后打印
+「共扫描 0 个店铺」——与「确实没有已授权店铺」在日志里完全一样。
+
+**这条的变异测试第一次是 MISSED**：空列表循环本来就不碰 mapper，
+「提前 return」与「循环空列表」在 mock 交互上等价。改用 logback
+`ListAppender` 断言日志内容（不得出现「扫描完成」）后才 CAUGHT。
+**这是「断言选错了观测面」的又一例**——不是测试写少了，是盯错了东西。
+
+### 33/34. 一个有实现、有表、没调度；且它从未成功过一次
+
+`/spapi/performance/*` 有 controller、有 sync handler、有落库表，**没有调度**。
+表永远是空的，而空表无法区分「还没同步过」与「绩效一直正常」。
+
+补调度时写测试，才暴露出更严重的问题：
+
+```java
+LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+String dataEnd = now.format(ISO_INSTANT);   // UnsupportedTemporalTypeException
+```
+
+`ISO_INSTANT` 需要瞬时/时区信息，`LocalDateTime` 没有。
+**这个端点从写出来那天起就每次都失败**，而它没有任何测试。
+
+两件事都修了：`OffsetDateTime` + 默认关闭的调度（与结算同步同一取舍）。
+
+**教训**：`mvn compile` 通过 + 端点存在 ≠ 端点可用。运行时才会炸的类型错误
+（日期格式化、反射、正则）需要至少一次真实调用路径的测试。
+
+### 35. 精确计数断言是定时炸弹
+
+财务/物流的 GuardTest 用 `assertEquals(N, writeEndpoints.size())`。
+采购模块因为这个写法在拆分当天就红了，且**红了一整天没人管**——
+而它正是「防止写接口漏掉 @RequireRole」的那道门禁。
+
+改为 `assertTrue(size >= MIN_WRITE_ENDPOINTS)`。新增端点只会让下限变大，
+不需要有人记得改测试；而「改测试」恰恰是最容易被顺手放宽的一步。
+
+### 36. 本轮累计
+
+| 项 | 结果 |
+|---|---|
+| 提交 | 20 个（§S33.17–35） |
+| 修复的静默失败 | 12 处（前端 8、后端 4） |
+| 修复的启动/运行级缺陷 | 2 个（Bean 注册、日期格式化） |
+| 新增门禁 | 1 个（Spring 注入点） |
+| vitest | 705 → 714 |
+| 后端模块 | spapi 722 / finance 192 / logistics 193 / product 95/96 / ad 144/151 / order 96 / ops 61 |
+| 棘轮基线 | 46962 行 |
+
+**剩余失败全部是 §S30 已定案的 loopback**（本机 Windows AF_UNIX connect），
+不是回归，用户已定案以 CI 为准。
