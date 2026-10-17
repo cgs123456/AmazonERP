@@ -6709,3 +6709,90 @@ ProductSearch / AgentMemory` 都用 `Promise.all` 并行拉数，
 
 （代价是切店铺要整页刷新，体验上偏重。但那是明确取舍而非疏漏：
 注释写着「切换店铺影响所有页面的数据视图，整页刷新以重新拉取」。）
+
+## §S33.81 实时利润快照：「小时级」从未成立过，口径改为数据支撑的「天」
+
+### 缺陷本体
+
+`RealtimeProfitServiceImpl.snapshotProfit` 注释写「从 ProfitDetail 聚合本小时数据」，
+构造 `hourStart/hourEnd` 再传 `getProfitDetailsInRange`；但该私有方法做的是
+`LocalDate.parse(startTime.substring(0, 10))` —— 小时信息被整个丢掉。聚合源
+`amz_profit_detail` 的 DDL 只有 `report_date DATE`，没有小时列。于是：
+
+- 每条快照实际聚合的是该 SKU **当天全部明细**；
+- 快照表 `uk_shop_sku_time (shop_id, sku, stat_time)` 按小时覆写——同一天里
+  第 10 点和第 11 点的快照内容一模一样（都是「截止查询时刻的当天累计」）；
+- `profitTrend`/`profitSummary` 再按小时求和这些快照 → **同一天被重复计数**。
+
+表注释「小时级」、类名 `RealtimeProfit`、前端「趋势小时」输入框，全链都在
+描述一个数据层根本不存在的粒度。这不是漂移，是**功能从未按声称的口径工作过**。
+
+### 为什么改「天」而不是补「小时列」
+
+补 `report_date` 之外的小时列要动迁移、动摄取方（现在唯一摄取方是测试夹具与
+合成数据）、动历史数据回填——那是数据模型变更，不是一个 review 周期该做的决定。
+而按天实现不需要任何 schema 变更就自洽：明细一行=一个订单，天=它的自然聚合粒度。
+**先按数据真实支撑的粒度实现，想要更细再升 schema**，不能反过来。
+
+### 连锁修正（同一个前提，四处口径）
+
+| 位置 | 旧 | 新 |
+|---|---|---|
+| `snapshotProfit` stat_time | `now`（截断到小时） | `statDay.atStartOfDay()` |
+| `getProfitDetailsInRange` 入参 | 时间串 + substring | `LocalDate from, to` |
+| `profitTrend` 参数 | `hours`，`minusHours` 开窗 | `days`，整日边界 `[今天-(N-1), 明天)` |
+| 前端 | 「趋势小时」默认 24 | 「趋势天数」默认 7，`days` 参数 |
+| `salesQuantity` | 注释无、表头「销量」 | 钉住=订单数（明细无件数列），表头「订单数」 |
+
+`hours=24` 在按天存的快照上只命中今天一条——趋势图退化成单个点。默认值从 24
+改 7 不是审美：24 天在新口径下仍是合法窗口，但旧界面用户填 24 想看的是「一天」，
+参数名与单位一起换掉才不会继续误导。
+
+### 已应用迁移不可改（本次踩到的契约）
+
+一度把口径真相写进 `V1__init.sql` 与 `docker/init-sql-legacy` 的列 COMMENT。
+回退，依据不是风格而是测试钉住的契约：
+`FlywayBaselineContractTest`「V1 不可改，checksum 不可变」、
+`OperLogCoverageContractTest`「重建必须走新的 V3 而不是改 V1」。
+Flyway 的校验和是**整文件字节**——改一个注释字符，存量库启动即
+`validation failed: checksum mismatch`。要记录 DDL 层面的口径，写新迁移或写代码注释；
+本次选择代码注释 + 提交信息，本提交不含任何 SQL 文件。
+
+### ratchet 逼出的拆分：HeadhaulCostCalculator
+
+`RealtimeProfitServiceImpl` 因 §S33.81 的注释增长 640 行、超 600 基线被 ratchet 拦下。
+没有走 `--update-baseline`，而是把「读分摊账 + TTL/LRU 缓存 + evict」拆成独立
+`@Component`（同包先例：`ReportTenantGuard`）——这个接缝本来就对：缓存失效、
+LRU、扫描触顶告警的不变式自成一界，快照服务只该管「明细 → 快照」的聚合口径。
+impl 640→548。
+
+拆出的**跨对象契约**必须有新测试形态：evict 从私有方法调用变成 mock 协作者调用后，
+删掉 `evictShop` 整行、原有分摊测试全绿（变异存活）——私有方法时代漏调同理也测不出，
+只是那时根本没有可 verify 的边界。补
+`verify(headhaulCostCalculator).evictShop(...)`，并钉「幂等跳过时不 evict」——
+入账必须过期缓存，不入账没有过期的理由。
+
+### 变异账目（7 项，2 项初版漏杀后补强）
+
+| 变异 | 初版 | 终版 |
+|---|---|---|
+| stat_time 回退成 `now` | 杀 | 杀 |
+| 明细窗口放宽成 [昨天,今天] | **存活**——只断言 ge/le 算子存在，没钉边界值 | 杀（断言参数表含今天、不含昨天/明天） |
+| profitTrend 回退 minusHours | 杀 | 杀 |
+| allocateCost 删 evictShop | **存活**（verify 测试补上前） | 杀（verify + 幂等不 evict） |
+| setHeadhaulCost 丢弃 costFor 返回值（改 BigDecimal.ZERO） | —（拆分后才存在） | 杀（strict stubs：未消费的 stub 直接报错） |
+| 前端 trendDays 默认 24 | 杀 | 杀 |
+| costFor(shopId, **sku.trim()**) 改变量实参 | 存活 | **接受**——等价变异 |
+
+第 7 项存活是**预期内**：`sku` 在进入快照服务前已由控制器与调用方保证非空且
+无需再 trim，`.trim()` 不改变任何已测路径的结果。把它列出来而不是不提，
+是为了让「哪些存活是漏杀、哪些是等价变异」在账目上可区分——
+第 2、4 项的存活是真漏杀（断言没钉值/契约没 verify），必须补；第 7 项不用。
+
+### 盘点结论（report 模块其余部分干净）
+
+`RealReportServiceImpl` 的降级可见性（fallback 空信封 vs 合法 200-null 两档区分、
+degradedSources 进响应）、`ReportUpgradeServiceImpl` 的 keyset 分页与
+`ReportTenantGuard` 严格档、`allocateCost` 的尾差归尾行与来源幂等、游标解码拒绝
+跨端点混用——都有测试钉住且口径自洽。`conversionRate` 恒 null 显示「未统计」
+而非 0 的处理（§S33.19 发现的）也在 `mapKpiItems` 里。
