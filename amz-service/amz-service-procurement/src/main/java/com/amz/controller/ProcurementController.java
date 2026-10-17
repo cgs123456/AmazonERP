@@ -29,7 +29,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -338,7 +337,30 @@ public class ProcurementController {
 
     // ==================== 促销方案（供 Agent 工具调用） ====================
 
-    /** 查询促销计划 */
+    /**
+     * 生成促销方案。
+     *
+     * <h2>§S33.22：此前这里返回写死的模板常量</h2>
+     * 原实现无论传什么 shopId / asin / goal，都返回同一套数字：
+     * {@code Lightning Deal}、{@code discountRate=0.20}、
+     * {@code estimatedSalesUplift="150%"}、{@code budget="$500 广告预算"}。
+     * <p>
+     * 前端**故意没接**这个端点（见 {@code amz-frontend/src/api/procurement.ts}
+     * 顶部注释：「接进 UI 等于把模板文案显示成经营建议」）。
+     * 但 Agent 工具 {@code generate_promotion_plan} **正在调它**
+     * （{@code ErpProcurementTools} → {@code ProcurementServiceClient}），
+     * 于是 LLM 会把这段模板当成真实建议讲给运营听——前端守住了，Agent 这条路没守住。
+     *
+     * <h2>为什么改成显式失败而不是继续返回常量</h2>
+     * 真实促销方案需要：历史销量与转化、竞品价格、库存与在途、平台活动日历、
+     * 毛利下限。本服务一条都没有（procurement 域连促销表都没有），
+     * 在缺这些数据的情况下给出「降价 20% + 加投 $500」不是建议，是**编造**。
+     * <p>
+     * 与索评（{@code CustomerServiceImpl.sendReviewSolicitations}）、
+     * 差评订单匹配（{@code CustomerEmailServiceImpl.matchNegativeReviewToOrder}）
+     * 同一处理口径：**能力没做就诚实失败，绝不返回看起来像结果的东西**。
+     * 失败信息里写清楚缺哪些数据，让调用方（Agent / 前端）能原样转达给运营。
+     */
     @ShopScoped
     @GetMapping("/promotion/plan")
     public Result<Map<String, Object>> getPromotionPlan(
@@ -348,25 +370,12 @@ public class ProcurementController {
         if (shopId == null) {
             return Result.failure("shopId must not be null");
         }
-        if (goal == null || goal.isBlank()) goal = "提升销量";
-
-        LocalDate today = LocalDate.now();
-        LocalDate start = today.plusDays(1);
-        LocalDate end = start.plusDays(2);
-
-        Map<String, Object> plan = new HashMap<>();
-        plan.put("promotionType", "Lightning Deal");
-        plan.put("discountRate", 0.20);
-        plan.put("duration", start.toString() + " 至 " + end.toString() + "（48 小时）");
-        plan.put("estimatedSalesUplift", "150%");
-        plan.put("budget", "$500 广告预算");
-        plan.put("strategy", "Prime 会员定向 8 折 + SP 广告加投 + 关联流量词竞价上调 30%");
-
-        Map<String, Object> data = new HashMap<>();
-        data.put("shopId", shopId);
-        data.put("asin", asin);
-        data.put("goal", goal);
-        data.put("plan", plan);
-        return Result.success(data);
+        log.info("促销方案请求被拒绝（数据源未接入）：shopId={} asin={} goal={}", shopId, asin, goal);
+        // 文案里刻意**不复述**被移除的那套模板数字：这段文字会原样交给 LLM，
+        // 带上「Lightning Deal / 20% / $500」反而可能被模型复述成方案。
+        return Result.failure("促销方案尚未接入：生成方案需要历史销量与转化、竞品价格、"
+                + "库存与在途、平台活动日历与毛利下限，本服务目前没有这些数据源。"
+                + "此前该端点返回的是与店铺无关的模板常量，已移除——"
+                + "把模板当经营建议的风险高于「暂时没有建议」。");
     }
 }
