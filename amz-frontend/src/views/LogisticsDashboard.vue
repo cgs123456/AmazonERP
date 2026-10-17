@@ -583,7 +583,7 @@
             <div class="chart-card mt" data-panel="quotes">
               <div class="card-head">
                 <h3>有效报价明细</h3>
-                <label class="inline-filter">
+                <label>
                   服务类型
                   <select v-model="quoteServiceType" @change="loadQuotes()">
                     <option value="">全部</option>
@@ -1347,6 +1347,8 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import LogisticsCursorBar from '../components/LogisticsCursorBar.vue'
 import LogisticsTrackingModal from '../components/LogisticsTrackingModal.vue'
+// 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
+import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'
 import { useShopGuard } from '../composables/useShopGuard'
 import { canUseRole } from '../utils/identity'
@@ -2695,107 +2697,12 @@ onUnmounted(() => {
 
 /* 看板提示条：口径说明与数据质量提醒。
    单独做一个条而不是塞进正文，是为了让「有口径需要注意」这件事无法被忽略 */
-.warn-banner {
-  display: flex;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  margin-bottom: 1rem;
-  border-radius: var(--radius-md);
-  background: var(--color-warning-light);
-  color: var(--color-warning-dark);
-  font-size: var(--font-size-2);
-  line-height: var(--line-height-relaxed);
-}
-.warn-banner.strong {
-  background: var(--color-light-red);
-  color: var(--color-error);
-}
-.wb-icon { flex-shrink: 0; margin-top: 0.125rem; }
-.wb-body { flex: 1; }
 
 /* KPI */
-.kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-.kpi-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  padding: 1.25rem;
-  display: flex;
-  gap: 1rem;
-  box-shadow: var(--shadow-sm);
-}
-.kpi-icon {
-  width: 3rem;
-  height: 3rem;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-.kpi-icon.tone-danger { background: var(--color-error); color: #fff; }
-.kpi-icon.tone-warn { background: var(--color-warning); color: #fff; }
-.kpi-info { flex: 1; }
-.kpi-value {
-  font-size: var(--font-size-6);
-  font-weight: 700;
-  color: var(--color-on-surface);
-  line-height: var(--line-height-tight);
-}
-.kpi-label {
-  font-size: var(--font-size-2);
-  color: var(--color-on-surface);
-  margin-top: 0.25rem;
-}
-.kpi-sub {
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-  margin-top: 0.125rem;
-}
 /* KPI 卡在「这项不该有值却有值」时描红边：否则一眼扫过去数字大小看不出异常 */
-.kpi-card.kpi-alert {
-  box-shadow: inset 0 0 0 1px var(--color-error);
-}
 
 /* 次级指标 */
-.mini-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-.mini-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 1rem;
-}
 /* 需要处理时描红边：这些指标为 0 才是正常，非 0 就要有人去看 */
-.mini-card.alert {
-  border-color: var(--color-error);
-  background: var(--color-light-red);
-}
-.mini-value {
-  font-size: var(--font-size-5);
-  font-weight: 700;
-  color: var(--color-on-surface);
-}
-.mini-label {
-  font-size: var(--font-size-2);
-  color: var(--color-on-surface);
-  margin-top: 0.25rem;
-}
-.mini-hint {
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-  margin-top: 0.125rem;
-}
 
 /* 图表区 */
 .chart-row {
@@ -2803,21 +2710,7 @@ onUnmounted(() => {
   grid-template-columns: 2fr 1fr;
   gap: 1.5rem;
 }
-.chart-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  padding: 1.25rem;
-  box-shadow: var(--shadow-sm);
-}
-.chart-card h3 {
-  font-size: var(--font-size-4);
-  font-weight: 600;
-  margin: 0 0 1rem 0;
-  color: var(--color-on-surface);
-}
-.chart-card h3.mt { margin-top: 1.5rem; }
 /* 卡片之间的间距：同层级卡片紧跟，跨层级的卡片用 .mt 拉开 */
-.chart-card.mt { margin-top: 1.5rem; }
 
 /* 表格里的次要补充行（SKU、运单号等），不与主值抢注意力 */
 .sub-line {
@@ -2880,20 +2773,6 @@ onUnmounted(() => {
   background: var(--color-surface);
   color: var(--color-on-surface);
   font-size: var(--font-size-2);
-}
-.card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-.card-head h3 { margin: 0; }
-.card-desc {
-  font-size: var(--font-size-2);
-  color: var(--color-muted);
-  margin: 0 0 0.75rem 0;
-  line-height: var(--line-height-relaxed);
 }
 .legend {
   display: flex;
@@ -2971,18 +2850,6 @@ onUnmounted(() => {
   color: var(--color-muted);
   margin-top: 0.125rem;
 }
-.ops { white-space: nowrap; }
-.link-btn {
-  padding: 0.125rem 0.375rem;
-  border: none;
-  background: transparent;
-  color: var(--color-primary);
-  font-size: var(--font-size-2);
-  cursor: pointer;
-}
-.link-btn:hover { text-decoration: underline; }
-.link-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.cell-alert { color: var(--color-error); font-weight: 600; }
 .foot-note {
   margin-top: 0.75rem;
   font-size: var(--font-size-1);
@@ -3008,7 +2875,6 @@ onUnmounted(() => {
   font-size: var(--font-size-2);
 }
 .filter-count { margin-left: auto; }
-.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
 
 /* 数据导入 */
 .import-grid {
@@ -3114,14 +2980,10 @@ onUnmounted(() => {
 .fade-enter-from, .fade-leave-to { opacity: 0; }
 
 @media (max-width: 1024px) {
-  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-  .mini-grid { grid-template-columns: repeat(2, 1fr); }
   .chart-row { grid-template-columns: 1fr; }
   .import-grid { grid-template-columns: 1fr; }
   .report-grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 768px) {
-  .kpi-grid { grid-template-columns: 1fr; }
-  .mini-grid { grid-template-columns: 1fr; }
 }
 </style>

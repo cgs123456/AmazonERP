@@ -1,0 +1,228 @@
+/*
+ * 物流看板各子域面板共用的表现层词汇表（从 LogisticsDashboard.vue 的
+ * <style scoped> 拆出，§S33）。
+ *
+ * ## 为什么抽成共享样式而不是每个子组件复制一份
+ * scoped CSS 不跨组件边界，而 LogisticsDashboard 的九个 tab 里有五个
+ * （overview / quotes / transfers / freight / receipts）用的是**同一套**
+ * KPI 卡片 + 小指标格 + 警告横幅 + 图表卡。逐组件复制的话，
+ * 这 136 行要乘以 5 ≈ 680 行——那是用重复换取"组件自包含"，
+ * 而重复的代价（改一处漏四处）比收益大得多。
+ *
+ * 前置条件已核实，不是照搬：四个子域里这些类的**语义完全一致**——
+ * `kpi-icon tone-danger` 在所有四处都表示"问题指标的红图标"，
+ * `kpi-alert` 在所有七处都表示"该指标 > 0 时要描红边"。
+ * 语义一致 + 多个真实使用者，才够得上抽共享样式的门槛。
+ *
+ * ## 与 style.css 的关系
+ * style.css 已有先例且写法相同：`mock-badge` 的注释写着
+ * 「B4 收敛：AdManager / ProfitReport 的 scoped 副本已删除，统一走全局」。
+ * 本文件是同一模式的第二次应用，只是范围收在物流域内——
+ * 没有直接进 style.css，是因为这里的 `.kpi-card` 与 Dashboard.vue /
+ * ReportCenter.vue 的同名类**刻意不同**（本域 padding 1.25rem + flex 布局，
+ * ReportCenter 是 padding 1rem + 居中），合进去会互相覆盖。
+ *
+ * ## 不要在别处改这些值
+ * 若某个视图需要不同的 KPI 卡片外形，给它起自己的类名，
+ * 不要在这里加变体参数——那会让这张表变成第二个组件系统。
+ */
+
+/* ------------------------------------------------------------
+ * 警告横幅（服务端 warnings / 需要人注意的口径说明）
+ * 原注释：选择权重最高的提示放最上面，说明"可以继续但结果不完整"；
+ *         不能让用户以为已经拿到全量。
+ * ------------------------------------------------------------ */
+.warn-banner {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-md);
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+  font-size: var(--font-size-2);
+  line-height: var(--line-height-relaxed);
+}
+.warn-banner.strong {
+  background: var(--color-light-red);
+  color: var(--color-error);
+}
+.wb-icon { flex-shrink: 0; margin-top: 0.125rem; }
+.wb-body { flex: 1; }
+
+/* ------------------------------------------------------------
+ * KPI 卡片
+ * ------------------------------------------------------------ */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.kpi-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  display: flex;
+  gap: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+.kpi-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.kpi-icon.tone-danger { background: var(--color-error); color: #fff; }
+.kpi-icon.tone-warn { background: var(--color-warning); color: #fff; }
+.kpi-info { flex: 1; }
+.kpi-value {
+  font-size: var(--font-size-6);
+  font-weight: 700;
+  color: var(--color-on-surface);
+  line-height: var(--line-height-tight);
+}
+.kpi-label {
+  font-size: var(--font-size-2);
+  color: var(--color-on-surface);
+  margin-top: 0.25rem;
+}
+.kpi-sub {
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+  margin-top: 0.125rem;
+}
+/* KPI 告警描边：不等业务异常值，等业务值归零时才撤；
+   统一用一圈细描边，视觉上比整卡变底色轻，不会和 tone-danger 图标抢注意力 */
+.kpi-card.kpi-alert {
+  box-shadow: inset 0 0 0 1px var(--color-error);
+}
+
+/* ------------------------------------------------------------
+ * 小指标格（比 KPI 卡片更轻的次级汇总）
+ * ------------------------------------------------------------ */
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.mini-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+}
+/* 需要立刻处理时高亮：这些指标为 0 是好事，大于 0 才需要人动手 */
+.mini-card.alert {
+  border-color: var(--color-error);
+  background: var(--color-light-red);
+}
+.mini-value {
+  font-size: var(--font-size-5);
+  font-weight: 700;
+  color: var(--color-on-surface);
+}
+.mini-label {
+  font-size: var(--font-size-2);
+  color: var(--color-on-surface);
+  margin-top: 0.25rem;
+}
+.mini-hint {
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+  margin-top: 0.125rem;
+}
+
+/* ------------------------------------------------------------
+ * 图表卡（看板里每个区块的外壳）
+ * ------------------------------------------------------------ */
+.chart-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+.chart-card h3 {
+  font-size: var(--font-size-4);
+  font-weight: 600;
+  margin: 0 0 1rem 0;
+  color: var(--color-on-surface);
+}
+.chart-card h3.mt { margin-top: 1.5rem; }
+/* 卡片之间的间距：同一张卡里的段落用 h3.mt，卡片之间用 .mt */
+.chart-card.mt { margin-top: 1.5rem; }
+
+/* ------------------------------------------------------------
+ * 卡片头部（标题 + 右侧操作/筛选）
+ * ------------------------------------------------------------ */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.card-head h3 { margin: 0; }
+.card-desc {
+  font-size: var(--font-size-2);
+  color: var(--color-muted);
+  margin: 0 0 0.75rem 0;
+  line-height: var(--line-height-relaxed);
+}
+
+/* ------------------------------------------------------------
+ * 表格行内的操作列与文字按钮
+ * ------------------------------------------------------------ */
+.ops { white-space: nowrap; }
+.link-btn {
+  padding: 0.125rem 0.375rem;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-size: var(--font-size-2);
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+.link-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ------------------------------------------------------------
+ * 表格内的告警数值（少收件数、负差异等）
+ * ------------------------------------------------------------ */
+.cell-alert { color: var(--color-error); font-weight: 600; }
+
+/* ------------------------------------------------------------
+ * 分页完整性提示（截断 / 元数据缺失）
+ * 与 style.css 的 .pagination / .page-btn 配套使用。
+ * ------------------------------------------------------------ */
+.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
+
+/* ------------------------------------------------------------
+ * 表尾分页条（.pagination / .page-btn 在全局，这条是它的容器）
+ * 与 Warehouse / CustomerService / InventoryMonitor / ListingMonitor /
+ * ReportCenter / WarehouseAlerts 六处同形；这里补上物流页漏掉的那份。
+ * ------------------------------------------------------------ */
+.table-pager { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; margin-top: 1rem; }
+
+/* ------------------------------------------------------------
+ * 次要说明文字（本页两处用到：分摊口径提示、分摊平衡提示）
+ * ------------------------------------------------------------ */
+.muted { color: var(--color-muted); font-size: var(--font-size-1); }
+
+/* ------------------------------------------------------------
+ * 响应式：窄屏下四列改两列、再改一列
+ * ------------------------------------------------------------ */
+@media (max-width: 1024px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .mini-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .kpi-grid { grid-template-columns: 1fr; }
+  .mini-grid { grid-template-columns: 1fr; }
+}

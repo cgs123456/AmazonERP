@@ -75,7 +75,7 @@ jobs:
           python tools/schema/param_name_audit.py --self-test .
           python tools/schema/param_name_audit.py .
       - name: Release tool tests
-        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_migration_snapshot_parity tools.release.test_operlog_coverage_audit tools.release.test_file_size_ratchet tools.release.test_verify_clean_clone -v
+        run: python -m unittest tools.release.test_repository_hygiene tools.release.test_release_manifest tools.release.test_services_manifest tools.release.test_release_workflow tools.release.test_rollback_drill tools.release.test_cve_gate tools.release.test_migration_snapshot_parity tools.release.test_operlog_coverage_audit tools.release.test_file_size_ratchet tools.release.test_css_scope_parity tools.release.test_verify_clean_clone -v
 
   # Job 1.2: prove the manifest CLI works from the exact checked-in source.
   release-manifest:
