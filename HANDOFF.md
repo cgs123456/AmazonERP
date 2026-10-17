@@ -6397,3 +6397,74 @@ yml 兜底表只配了 USD/EUR/GBP/JPY（三模块数值一致，无漂移）。
 若嫌重，最小可用版是「把 `unknownCurrencyHits` 暴露成 actuator 指标 +
 兜底命中时发一条 error 级日志（带 shopId/currency/amount）」，
 至少让「有钱算错了」这件事在监控上可见。
+
+## §S33.57 库存链路审查：一个「不可达但该失败」的分支，和一个我写错又删掉的测试
+
+### 57. FIFO 出库的短名单风险
+
+`FbaShipmentServiceImpl.fifoOutbound` 末尾有一段：
+
+```java
+if (remaining > 0) {
+    log.warn("FIFO出库库存不足：...", shopId, sku, quantity, remaining);
+}
+return outboundDetails;   // 可能是短名单
+```
+
+而 `FbaShipmentController` 直接 `Result.success(fbaShipmentService.fifoOutbound(...))`。
+所以真走到这里，调用方拿到的是 **200 + 一份不足的明细**，会以为请求的数量都扣成功了。
+
+对照同类的 `fifoReturn`（回补）——它的同一位置是
+`throw new CodeErrorException("回补未完成，剩余 N 件无处可补，事务已回滚")`。
+同一个类、同一作者、两个相反的策略。
+
+**已证明该分支当前不可达**：入口的 `availableTotal` 与循环用同一套「> 0」过滤，
+原子扣减是精确扣减（SQL 带 `available_quantity >= qty` 且 `affected != 1` 即抛），
+所以 `remaining = max(0, quantity - availableTotal)`，而入口已保证其 ≥ quantity。
+并发 depletion 由 `affected != 1` 那道抛错 + 事务回滚拦住
+（`FbaShipmentFifoAtomicDeductionTest` 100 轮双线程竞争钉住了这一点）。
+
+仍改成抛错，理由是**不可达不等于该静默**：这段代码的价值在于
+「万一将来的改动让入口守卫失效，失败模式是整体回滚，而不是静默丢库存」。
+
+### 58. 我写了一个假测试，然后删掉了它
+
+为了钉住上面的改动，先写了一条「扣减结果对不上请求数必须整体失败」。
+跑绿了。但**变异验证时它没红**——把抛错改回 log.warn，测试依然通过。
+
+原因是那条测试的 mock 让 `decreaseAvailableQuantityAtomic` 返回 0，
+于是代码在**更早的** `affected != 1` 处就抛了，根本没走到我改的那一行。
+测试绿是因为撞上了另一道防线，不是因为守住了目标行为。
+
+这正是 §S33.37 记过的「红得对但理由错」的同类，只是这次发生在
+「绿得对但理由错」上。**一条不会因目标行为被移除而失败的测试，
+比没有测试更危险**——它让人以为这里守住了。
+
+处理：删掉该测试（连同为此引入的 import），改动保留但不配假测试。
+如未来真要覆盖这个分支，得先构造出让入口守卫与循环结果不一致的输入——
+按上面的证明，当前代码结构下不存在这样的输入。
+
+### 59. 库存/采购链路其余部分结论
+
+- `parseBatchCursor` 的 `return null` 是「无游标」的合法语义，解析失败一律
+  抛 `InvalidParamException` 并带上原始 payload，不静默；
+- `loadAllBatchesForFifo` 对超过安全上限的批次数**显式失败**而非截断，
+  避免「看起来成功的部分出库」；
+- 入库短收扫描命中货件上限时有 warn 说明「之后的货件未扫描，结果不是全量」，
+  观测到位。
+
+procurement 模块 151 个测试全绿。
+
+### 60. 流程错误：我先提交、后跑门禁，被棘轮抓出来
+
+改完 `FbaShipmentServiceImpl` 后**先 commit 再跑 `file_size_ratchet`**，
+结果 `5054119` 让该文件 886 → 893 行（+8，那段注释写得太长），
+门禁在**已提交的树**上报红。正确顺序是改完先跑门禁再提交。
+
+后续把注释压缩到一行、异常消息压到一行，文件回到 887 行
+（比 `5054119` 少 6 行，比基线多 1 行），基线随之从 886 更到 887
+（`--update-baseline`，全仓仅此一项变化）。**基线只允许往上改 1 行**——
+这个文件已经 887 行、离 500 行规则差得远，再涨就必须先拆它。
+
+教训与 §S33.6「先跑门禁再提交」同源，这次是自己犯的：
+改一个**本来就已经超限**的文件时，最容易忘记「只许变短」这条依然有效。

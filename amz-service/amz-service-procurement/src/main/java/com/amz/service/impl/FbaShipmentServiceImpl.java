@@ -782,8 +782,9 @@ public class FbaShipmentServiceImpl implements FbaShipmentService {
             remaining -= deductQty;
         }
 
+        // §S33.57：当前不可达，但不可达 ≠ 该静默（旧代码 warn 后返回短名单，调用方会以为全扣成功）
         if (remaining > 0) {
-            log.warn("FIFO出库库存不足：shopId={}, sku={}, 请求={}, 缺={}", shopId, sku, quantity, remaining);
+            throw new CodeErrorException("FIFO出库未完成，缺 " + remaining + "/" + quantity + " 件，事务已回滚：shopId=" + shopId + " sku=" + sku);
         }
 
         return outboundDetails;
