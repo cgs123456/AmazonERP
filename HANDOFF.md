@@ -6038,3 +6038,72 @@ was thrown` —— 授权分支这次真的在测试之下。
 
 两者都是**产品决策**（对外契约 + 删除用户可见能力），按 CLAUDE.md
 「对外契约按协议契约单独评估」留给用户，不自主删。
+
+## §S33.41 第二个真洞：`@ShopScoped` 注解在Controller里也可能够不着
+
+### 41. 缺陷原貌
+
+上一轮（§S33.36）的审计口径是「`@ShopScoped` 不得出现在非 Controller 类上」，
+默认了 Controller 内就是安全的。这个前提是错的。
+
+`ShopIdGuardAspect` 用 `ShopIdParameterResolver` 只认**名为 `shopId`** 的
+`@RequestParam`/`@PathVariable` 参数（外加 `@RequestBody` 实体的 `shopId` 属性）。
+解析不到就返回 null，切面走「未找到 shopId 参数，跳过」直接 `proceed()`。
+
+于是 `GET /spapi/performance/{id}` 上的 `@ShopScoped` 是装饰：路径参数叫 `id`。
+而 `amz_shop_performance` 是 `id BIGINT AUTO_INCREMENT` +
+`raw_content LONGTEXT`（整份 SP-API 报表原文）。**任何已登录用户按 id 递增
+就能逐条读遍所有店铺的绩效原文。** 这不是「看不到数据」，是「看得到别人的数据」。
+
+修法：方法内逐行严格判定（`isShopAllowedStrict`），越权与不存在**共用同一句文案
+和同一个 code**——分开就能把这端点当成「哪条留痕存在」的探针。
+
+### 42. 全仓同类扫描：91 个，88 个有防线，3 个是纯装饰
+
+按「`@ShopScoped` + 签名无 shopId」扫出 91 个。逐个核实后：
+
+- **85 个委托给 service**，service 内有逐行校验（`requireRuleAccess` /
+  `mustGetAuthorized` / `requireShopOnRow` / `LogisticsShopGuard.requireShopAllowed`）。
+  `CustomerEmailServiceImpl` 的 javadoc 写得很清楚：「模板/启停/RMA 端点仅携带记录
+  ID、无 shopId 参数，ShopScoped 切面无法按参数名拦截，故在服务层显式校验」。
+- **3 个是纯装饰**：`KeepaController` 的 price/rank/competitor。参数是
+  `asin` + `domain`（Keepa 自己的站点编码，不本仓 shopId），根本没有店铺维度。
+  按「删除优于兼容」摘掉注解，并在类 javadoc 里写明缺口与移除条件。
+- 剩下 3 个在扫描边缘（阈值类端点，见 43 的门禁口径）。
+
+**这 88 个不是缺陷，是一套成型的设计**——切面管得住路径参数，管不住就由
+service 逐行管。问题只在于「切面管不住时，注解会骗人」。
+
+### 43. 门禁：让「注解够不着」变成可见的
+
+`tools/release/test_shoppointer_scope.py` 加第二条判据：Controller 内
+`@ShopScoped` 若签名里没有 shopId，则必须三者有其一——
+① 方法体有店铺判定调用；② 委托给 service；③ 注释自陈「这枚注解在这里无效」。
+
+**为什么判据取「形态」而不是「service 里有没有校验」**：service 层的内容用正则
+不可靠（跨文件、可能是父类/接口方法）。而可以可靠断言的是：一个切面够不着的端点，
+绝不允许自己直连 mapper 做增删改查——那意味着归属判定无处可去。
+`PerformanceController.detail` 原实现正是 `Result.success(mapper.selectById(id))`。
+
+变异验证（三个方向）：
+| 变异 | 结果 |
+|---|---|
+| 还原 `PerformanceController.detail` 的裸实现 + 加回 `@ShopScoped` | **红**，报出 `PerformanceController.java::detail` |
+| 只加回 `@ShopScoped`（guard 还在） | 绿——**预期**：有真防线时注解只是冗余，不是危险 |
+| 只删 guard（不加注解） | 绿——**预期**：没有 `@ShopScoped` 就没有骗人的表面，Java 测试负责这一半 |
+
+第三行是关键：门禁和 `PerformanceDetailTenantGuardTest`（5 条）分工——
+**门禁管「别让注解撒谎」，业务测试管「防线真的在」**。删 guard 的变异由后者抓
+（已验：3 条红，`越权时不得拒绝，实际 code=200`）。
+
+### 44. 顺带发现：`ControllerFailureContractTest` 的精确计数闸门抓到了我
+
+给 `detail` 补校验，spapi 模块 `Tests run: 727, Failures: 1`——
+`everyFailureCarriesStructuredError: expected: <80> but was: <82>`。
+
+我新增的两个 `Result.failure` 没带结构化 error。这正是那道闸门该做的事
+（§S33.35 刚把它从精确计数改成下限断言，但这条仍是精确值——因为它数的是
+**失败出口总数**，新增端点就是该重新审查）。补上
+`ErrorSummary.localError(...)` 并把 80 → 82，注释写清是哪两个。
+
+**这是一次门禁按设计工作的证据**，不是麻烦。

@@ -3,6 +3,9 @@ package com.amz.controller;
 import com.amz.annotation.OperLog;
 import com.amz.annotation.RequireRole;
 import com.amz.annotation.ShopScoped;
+import com.amz.connector.ErrorSummary;
+import com.amz.connector.LocalApiException;
+import com.amz.context.UserContext;
 import com.amz.model.ShopPerformance;
 import com.amz.result.Result;
 import com.amz.service.ShopPerformanceSyncHandler;
@@ -84,10 +87,37 @@ public class PerformanceController {
 
     /**
      * 留痕详情（含原文）。
+     *
+     * <p><b>为什么这里的 {@code @ShopScoped} 是空的</b>：切面只认名为 {@code shopId} 的
+     * {@code @RequestParam}/{@code @PathVariable} 参数（{@code ShopIdParameterResolver}），
+     * 而本方法的路径参数叫 {@code id}——解析不到就按「兼容放行」处理。
+     * 也就是说这枚注解在这里不设防，与 {@code /sync/{shopId}}、{@code /list/{shopId}}
+     * 那两条不是一回事。
+     *
+     * <p>后果不是「看不到」而是「看得到别人的」：{@code amz_shop_performance.id} 是
+     * 自增主键，{@code raw_content} 是整份 SP-API 报表原文（含该店绩效数据）。
+     * 任何已登录用户按 id 递增就能逐条读遍所有店铺的原文。
+     *
+     * <p>因此归属判定必须在方法内逐行做，且用严格档——本端点没有
+     * {@code @InternalServiceAccess}，不存在需要宽松档兼容的内部调用方。
+     * 越权与不存在共用同一句文案：否则这个端点会退化成「哪条留痕存在」的探针。
      */
-    @ShopScoped
+    @RequireRole({"VIEWER", "OPERATOR", "ADMIN"})
     @GetMapping("/{id}")
     public Result<ShopPerformance> detail(@PathVariable Long id) {
-        return Result.success(performanceMapper.selectById(id));
+        if (id == null) {
+            return Result.failure("留痕 ID 不能为空",
+                    ErrorSummary.localError(LocalApiException.CODE_INVALID_REQUEST));
+        }
+        ShopPerformance row = performanceMapper.selectById(id);
+        if (row == null || !UserContext.isShopAllowedStrict(row.getShopId())) {
+            log.warn("[performance] 留痕详情越权或不存在：userId={} role={} 授权店铺={} id={}",
+                    UserContext.getUserId(), UserContext.getRole(), UserContext.getShops(), id);
+            // 越权与不存在共用同一句文案与同一个 code：分开就能把这个端点当成
+            // 「哪条留痕存在」的探针，按 id 递增摸清全表规模。
+            return Result.failure("留痕不存在或无权访问",
+                    ErrorSummary.localError(LocalApiException.CODE_FORBIDDEN));
+        }
+        return Result.success(row);
     }
 }
