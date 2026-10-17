@@ -1282,6 +1282,79 @@ describe('LogisticsDashboard 运营子域看板', () => {
     expect(wrapper.text()).toContain('TRF-3')
     expect(wrapper.text()).not.toContain('TRF-1')
   })
+  // ------------------------------------------------------------
+  // 轨迹状态中文名（回归：拆 LogisticsTrackingModal 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这条钉住本班实际犯的错**：拆 LogisticsTrackingModal 时，我凭印象重写了状态中文表，
+   * 把 IN_TRANSIT 的「运输中」写成「在途」、RECEIVED 的「FBA已入库」写成「FBA已签收」，
+   * 另外三处同样。**没有任何既有测试断言这些中文串**，所以 vue-tsc / vitest / vite build
+   * 全绿，五处用户可见文案却在一次纯重构里静默改变了。
+   *
+   * 所以这里把整张表钉死。它保护的是一类更广的问题：重构改了文案但机器查不出来。
+   * 断言用 JSON 字面量逐字比对，不用 toContain——toContain 只能证明某个串出现过，
+   * 证明不了「没被改成别的」。
+   */
+  it('轨迹状态中文名表必须与拆分前逐字一致', async () => {
+    const statuses = [
+      ['CREATED', '已创建'],
+      ['IN_TRANSIT', '运输中'],
+      ['CUSTOMS', '清关中'],
+      ['DELIVERED', '已送达'],
+      ['RECEIVED', 'FBA已入库'],
+      ['CLOSED', '已关闭'],
+      ['DELAYED', '延误'],
+      ['EXCEPTION', '异常'],
+      ['DEPARTED', '已起运'],
+      ['CUSTOMS_CLEARANCE', '清关中'],
+      ['ARRIVED', '已到港'],
+      ['OUT_FOR_DELIVERY', '派送中']
+    ]
+    const events = statuses.map(([eventStatus, description], idx) => ({
+      id: 1000 + idx,
+      shipmentId: 11,
+      eventStatus,
+      description,
+      eventTime: '2026-09-01T08:00:00'
+    }))
+
+    const shipment = {
+      id: 11,
+      shipmentNo: 'SHP-LABELS',
+      carrier: 'COSCO',
+      masterTrackingNo: 'COSU-LABELS',
+      shippingMethod: 'SEA',
+      status: 'IN_TRANSIT',
+      eta: null,
+      lastTrackTime: null,
+      dataSource: 'API'
+    }
+    mockedShipments.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: [shipment],
+      _page: pageMeta([shipment])
+    } as never)
+    mockedTracking.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: events
+    } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+    const trackingBtn = wrapper.findAll('button').find((b) => b.text() === '轨迹')
+    await trackingBtn!.trigger('click')
+    await flushPromises()
+
+    const rendered = wrapper.findAll('.tl-status').map((el) => el.text())
+    expect(rendered).toEqual(statuses.map(([, label]) => label))
+  })
+
 })
 
 describe('LogisticsDashboard 有效报价明细（此前 listQuotes 零调用）', () => {

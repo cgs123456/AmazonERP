@@ -1320,52 +1320,18 @@
       </template>
     </main>
 
-    <!-- 轨迹时间线浮层 -->
-    <div v-if="trackingOpen" class="modal-mask" @click.self="trackingOpen = false">
-      <div class="modal" role="dialog" aria-label="轨迹时间线">
-        <div class="modal-head">
-          <h3>轨迹时间线</h3>
-          <button class="link-btn" @click="trackingOpen = false">关闭</button>
-        </div>
-        <div v-if="trackingLoading" class="empty-row">加载中…</div>
-        <div v-else-if="!timeline.length" class="empty-row">
-          暂无轨迹数据。可点「同步」拉取，或在「数据导入」中导入轨迹。
-        </div>
-        <ul v-else class="timeline">
-          <li v-for="(e, i) in timeline" :key="i" class="timeline-item">
-            <span class="tl-dot" :class="statusTone(e.eventStatus)"></span>
-            <div class="tl-body">
-              <div class="tl-head">
-                <span class="tl-status">{{ statusLabel(e.eventStatus) }}</span>
-                <span class="tl-time mono">{{ fmtTime(e.eventTime) }}</span>
-              </div>
-              <div class="tl-loc">{{ e.location || '—' }}</div>
-              <div v-if="e.description" class="tl-desc">{{ e.description }}</div>
-              <div class="tl-meta">
-                <span v-if="e.rawStatus" class="tl-raw">原文：{{ e.rawStatus }}</span>
-                <span v-if="e.source" class="tl-src">{{ e.source }}</span>
-              </div>
-            </div>
-          </li>
-        </ul>
-        <div v-if="timeline.length || trackingTruncated || trackingPageMetaMissing" class="pagination">
-          <span class="page-info">
-            已加载 {{ timeline.length }} 条<template v-if="trackingTruncated">，仍有更多未加载</template><template v-else-if="trackingPageMetaMissing">，完整性未知</template>
-          </span>
-          <div class="page-actions">
-            <button v-if="trackingTruncated" class="page-btn" :disabled="trackingLoadingMore || !trackingNextCursor" @click="loadMoreTracking">
-              {{ trackingLoadingMore ? '加载中...' : '加载更多' }}
-            </button>
-          </div>
-        </div>
-        <div v-if="trackingTruncated" class="truncated-tip" role="status">
-          结果已被服务端截断：当前轨迹不是全量。请继续加载后再据此判断最新状态。
-        </div>
-        <div v-else-if="trackingPageMetaMissing" class="truncated-tip" role="status">
-          轨迹完整性无法确认：服务端未返回分页元数据，当前轨迹不能视为全量。
-        </div>
-      </div>
-    </div>
+    <!-- 轨迹时间线浮层（渲染与样式都在子组件，loader 留在本页） -->
+    <LogisticsTrackingModal
+      :open="trackingOpen"
+      :loading="trackingLoading"
+      :timeline="timeline"
+      :truncated="trackingTruncated"
+      :page-meta-missing="trackingPageMetaMissing"
+      :loading-more="trackingLoadingMore"
+      :has-next="!!trackingNextCursor"
+      @close="trackingOpen = false"
+      @load-more="loadMoreTracking"
+    />
 
     <!-- 全局 toast -->
     <Transition name="fade">
@@ -1380,6 +1346,7 @@ import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import LogisticsCursorBar from '../components/LogisticsCursorBar.vue'
+import LogisticsTrackingModal from '../components/LogisticsTrackingModal.vue'
 import { useToast } from '../composables/useToast'
 import { useShopGuard } from '../composables/useShopGuard'
 import { canUseRole } from '../utils/identity'
@@ -3125,90 +3092,6 @@ onUnmounted(() => {
   margin: 0.75rem 0 0 0;
   font-size: var(--font-size-2);
   color: var(--color-success);
-}
-
-/* 轨迹浮层 */
-.modal-mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-.modal {
-  width: min(44rem, 100%);
-  max-height: 80vh;
-  overflow-y: auto;
-  background: var(--color-surface);
-  border-radius: var(--radius-md);
-  padding: 1.25rem;
-  box-shadow: var(--shadow-md);
-}
-.modal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1rem;
-}
-.modal-head h3 {
-  margin: 0;
-  font-size: var(--font-size-4);
-  color: var(--color-on-surface);
-}
-.timeline { list-style: none; margin: 0; padding: 0; }
-.timeline-item {
-  display: flex;
-  gap: 0.75rem;
-  padding-bottom: 1rem;
-  position: relative;
-}
-.timeline-item:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  left: 0.3125rem;
-  top: 1rem;
-  bottom: 0;
-  width: 1px;
-  background: var(--color-border);
-}
-.tl-dot {
-  width: 0.75rem;
-  height: 0.75rem;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-  margin-top: 0.25rem;
-  z-index: 1;
-  background: var(--color-muted);
-}
-.tl-dot.tone-danger { background: var(--color-error); }
-.tl-dot.tone-success { background: var(--color-success); }
-.tl-dot.tone-info { background: var(--color-primary); }
-.tl-body { flex: 1; }
-.tl-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-.tl-status { font-size: var(--font-size-2); font-weight: 600; color: var(--color-on-surface); }
-.tl-time { color: var(--color-muted); }
-.tl-loc { font-size: var(--font-size-2); color: var(--color-on-surface); margin-top: 0.125rem; }
-.tl-desc { font-size: var(--font-size-2); color: var(--color-muted); margin-top: 0.125rem; }
-.tl-meta {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-}
-.tl-raw { font-family: var(--font-mono); }
-.tl-src {
-  padding: 0 0.375rem;
-  border-radius: var(--radius-xs);
-  background: var(--color-muted-light);
 }
 
 /* toast */
