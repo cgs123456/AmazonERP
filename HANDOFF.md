@@ -4949,9 +4949,9 @@ overview / shipments / carrier / import 五个不引用子域状态的区。
 判据是「需要依赖什么」：比价只依赖自己那份表单，填完调 `compareQuotes` 就出结果，
 不读看板数据、不写单据、失败只需 toast。所以表单状态（cmpForm / cmpResult /
 cmpLoading）连请求逻辑一起搬进来，页壳不必再为一份表单持有三个 ref。
-剩下两块（覆盖看板、有效报价明细）还留在页壳——`quoteBoard` 除了比价页还有三个
-消费者（tab 角标、`singleSourceRoutes`、`currencyCount` 两个 computed），整体搬走
-要么拖上一堆无关状态，要么新增一条子→父数据回传通道。**两者都更差，所以不搬。**
+剩下两块（覆盖看板、有效报价明细）这一刀没动——它们共享 `quoteBoard`，
+而拆「只读一块」不如一次把两块连着 `quoteBoard` 一起搬（搬一半会留下两份真相）。
+**具体怎么搬见 §9.5，我在下面这段写的理由是错的。**
 
 #### 9.1 这一刀真正的教训：变异测试骗了我一次，然后救了我一次
 
@@ -5003,4 +5003,26 @@ vitest 670 → 672，全绿；15 个 Python 门禁全绿。
 
 下一刀：quotes 里剩下的**覆盖看板 + 有效报价明细**，或转去
 overview / shipments / carrier / import 四个不引用子域状态的区。
-比价这块若还要再拆，先解决 `quoteBoard` 的三个外部消费者（见 9 开头）。
+
+#### 9.5 勘误：§9 开头说「`quoteBoard` 有三个外部消费者」——错了
+
+写完上面那段我又数了一遍，**实际只有一个**：tab 角标
+（`amz-frontend/src/views/LogisticsDashboard.vue` 962–963 行，
+`staleByDate` → `badge-warn`）。
+
+我当时把 `singleSourceRoutes` 和 `currencyCount` 当成了另外两个消费者。
+它们确实是 computed，但**引用点全在 quotes 区块内**（529 / 531 / 536 行）——
+它们是从 `quoteBoard` **派生**出来的，不是 `quoteBoard` 的独立消费者。
+区块外的其余引用全是管道而非消费：`ref` 声明（767）、loader 赋值（1192）、
+懒加载把关（1316）、`doExpireQuotes` 读 count（1430，而它的按钮在区块内）、
+登出复位（1580）。
+
+**所以「整体搬走要么拖上一堆无关状态、要么新增子→父回传通道，两者都更差」这个结论是错的**，
+它不该挡住这一刀。一个数而已，调拨面板已经趟过同一条路：
+`defineExpose({ riskCount })` + 页壳读它算角标（理由见 `LogisticsTransferPanel.vue`
+文件头——页壳再存一份 board 就是两个真相来源）。覆盖看板照搬这个模式即可，
+角标暴露 `staleByDate`。
+
+教训：**「不拆」的理由和「拆」的理由一样需要核对。** 这次是先写了结论再去找支撑，
+找到两个看起来像支撑的东西就没再往下查那些 computed 的引用点在区块内还是区块外。
+
