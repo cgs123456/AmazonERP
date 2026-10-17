@@ -652,108 +652,9 @@
               </div>
             </div>
 
-            <div class="chart-card mt">
-              <h3>运费比价</h3>
-              <p class="card-desc">
-                填写货量即可比较该航线上所有有效报价。
-                计费口径为<strong>重量价与体积价取高</strong>，再叠加最低收费与燃油附加费——
-                这也是承运商的实际计费规则，只按重量算会低估运费。
-                不同币种的金额不可直接比较，因此按币种分别给出推荐。
-              </p>
-              <div class="cmp-form">
-                <label>
-                  起运港
-                  <input v-model="cmpForm.originPort" placeholder="如 Shenzhen" />
-                </label>
-                <label>
-                  目的港
-                  <input v-model="cmpForm.destinationPort" placeholder="如 Los Angeles" />
-                </label>
-                <label>
-                  重量 (kg)
-                  <input v-model.number="cmpForm.weightKg" type="number" min="0" placeholder="可留空" />
-                </label>
-                <label>
-                  体积 (m³)
-                  <input v-model.number="cmpForm.volumeCbm" type="number" min="0" step="0.01" placeholder="可留空" />
-                </label>
-                <button
-                  class="primary-btn"
-                  :disabled="cmpLoading || !cmpForm.originPort || !cmpForm.destinationPort
-                    || (!cmpForm.weightKg && !cmpForm.volumeCbm)"
-                  @click="doCompare"
-                >
-                  计算比价
-                </button>
-              </div>
-
-              <div v-if="cmpResult" class="cmp-result">
-                <div v-if="cmpResult.warnings.length" class="report-block">
-                  <ul class="err-list note">
-                    <li v-for="(w, i) in cmpResult.warnings" :key="i">{{ w }}</li>
-                  </ul>
-                </div>
-                <div v-if="cmpResult.scanTruncated" class="cmp-best multi">
-                  报价扫描达到上限：仅使用前 {{ cmpResult.scanLimit }} 条报价，本次结果不完整，
-                  已禁用最低价推荐。请缩小航线范围后重试。
-                </div>
-                <div v-else-if="cmpResult.recommended" class="cmp-best">
-                  推荐承运商：<b>{{ cmpResult.recommended }}</b>
-                </div>
-                <div v-else class="cmp-best multi">
-                  本航线存在多种币种，无法给出唯一的「最便宜」结论，请按下方币种分组分别判断。
-                </div>
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>承运商</th>
-                      <th>方式</th>
-                      <th>时效</th>
-                      <th>计费口径</th>
-                      <th>运费</th>
-                      <th>燃油附加</th>
-                      <th>合计</th>
-                      <th>币种</th>
-                      <th>失效日期</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="!cmpResult.quotes.length">
-                      <td colspan="9" class="empty-row">该航线没有有效报价</td>
-                    </tr>
-                    <tr v-for="q in cmpResult.quotes" :key="q.quoteId">
-                      <td>
-                        {{ q.carrierName }}
-                        <span
-                          v-if="cmpResult.recommendedByCurrency[q.currency] === q.carrierName"
-                          class="status-tag tone-success"
-                        >该币种最低</span>
-                      </td>
-                      <td>{{ methodLabel(q.serviceType) }}</td>
-                      <td>{{ q.transitDays != null ? q.transitDays + ' 天' : '—' }}</td>
-                      <td>
-                        {{ basisLabel(q.chargeableBasis) }}
-                        <span v-if="q.minChargeApplied" class="status-tag tone-muted">已套最低收费</span>
-                      </td>
-                      <td class="mono">{{ fmtAmount(q.freightCost) }}</td>
-                      <td class="mono">{{ fmtAmount(q.fuelSurcharge) }}</td>
-                      <td class="mono"><b>{{ fmtAmount(q.totalCost) }}</b></td>
-                      <td>{{ q.currency }}</td>
-                      <td class="mono">{{ q.expiryDate || '不限' }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <LogisticsQuoteComparePanel />
           </section>
 
-          <!-- ================= 调拨 ================= -->
-          <!-- ================= 调拨 ================= -->
-          <!-- 常驻挂载而不是 v-else-if：页壳的 switchTab 要通过 ref 调它的 load()，
-               而 v-else-if 下的组件在切到该 tab 之前不存在，ref 取到 null，
-               懒加载就永远不会触发（症状是列表一直空、接口一次都没调）。
-               与 Finance.vue 用 tab prop 常驻挂载 FinanceSettlementOps 同一先例。 -->
-          <!-- ================= 头程成本 ================= -->
           <!-- ================= 头程成本 ================= -->
           <section v-else-if="tab === 'freight'">
             <LogisticsFreightPanel
@@ -763,7 +664,6 @@
             />
           </section>
 
-          <!-- ================= 签收差异 ================= -->
           <!-- ================= 签收差异 ================= -->
           <section v-else-if="tab === 'receipts'">
             <LogisticsReceiptPanel
@@ -807,6 +707,7 @@ import LogisticsTrackingModal from '../components/LogisticsTrackingModal.vue'
 import LogisticsReceiptPanel from '../components/LogisticsReceiptPanel.vue'
 import LogisticsFreightPanel from '../components/LogisticsFreightPanel.vue'
 import LogisticsTransferPanel from '../components/LogisticsTransferPanel.vue'
+import LogisticsQuoteComparePanel from '../components/LogisticsQuoteComparePanel.vue'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
 import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'
@@ -825,7 +726,6 @@ import {
   getQuoteBoard,
   getFreightCostBoard,
   getReceiptBoard,
-  compareQuotes,
   expireOutdatedQuotes,
   listQuotes,
   investigateDiscrepancy,
@@ -840,7 +740,6 @@ import {
   type ImportShipmentRow,
   type ImportTrackingRow,
   type QuoteBoard,
-  type QuoteCompareResult,
   type CarrierQuote,
   type FreightCostBoard,
   type ReceiptBoard,
@@ -878,12 +777,6 @@ const freightBoard = ref<FreightCostBoard | null>(null)
 const receiptBoard = ref<ReceiptBoard | null>(null)
 
 /** 比价入参。重量与体积至少填一个，两者都填时服务端按计费价取高 */
-const cmpForm = ref<{ originPort: string; destinationPort: string; weightKg?: number; volumeCbm?: number }>({
-  originPort: '',
-  destinationPort: ''
-})
-const cmpResult = ref<QuoteCompareResult | null>(null)
-const cmpLoading = ref(false)
 
 type TabKey = 'overview' | 'alerts' | 'shipments' | 'carrier' | 'quotes' | 'transfers' | 'freight' | 'receipts' | 'import'
 
@@ -984,19 +877,12 @@ const ALERT_TYPE_LABELS: Record<string, string> = {
 
 
 
-/** 比价实际采用的计费口径，必须展示：否则看不懂为什么金额和「重量 × 单价」对不上 */
-const BASIS_LABELS: Record<string, string> = {
-  WEIGHT: '按重量',
-  VOLUME: '按体积',
-  NO_PRICING_DATA: '无可用单价'
-}
 
 
 
 const statusLabel = (s?: string) => (s ? STATUS_LABELS[s] || s : '—')
 const methodLabel = (m?: string) => (m ? METHOD_LABELS[m] || m : '—')
 const alertTypeLabel = (t: string) => ALERT_TYPE_LABELS[t] || t
-const basisLabel = (b?: string) => (b ? BASIS_LABELS[b] || b : '—')
 
 
 
@@ -1031,7 +917,6 @@ const fmtTime = (v?: string | null) => {
 }
 
 /** 金额/数量：null 与 undefined 都显示占位，避免出现 NaN 或误读成 0 */
-const fmtAmount = (v?: number | null) => (v === null || v === undefined ? '—' : v.toFixed(2))
 
 
 /** 比率（0~1）→ 百分比；null / undefined 表示无样本，显示占位而非 0% */
@@ -1538,29 +1423,6 @@ const loadMoreTracking = () => {
 
 // ---- 比价 ----
 
-const doCompare = async () => {
-  const shopId = refreshShop()
-  if (!shopId) return
-  cmpLoading.value = true
-  try {
-    const res = await compareQuotes(shopId, {
-      originPort: cmpForm.value.originPort.trim(),
-      destinationPort: cmpForm.value.destinationPort.trim(),
-      weightKg: cmpForm.value.weightKg || undefined,
-      volumeCbm: cmpForm.value.volumeCbm || undefined
-    })
-    if (res?.code === 200 && res.data) {
-      cmpResult.value = res.data
-    } else {
-      // 后端会说明具体缺什么（例如「请至少提供重量或体积」），直接透出比笼统提示有用
-      showToast(res?.message || '比价失败', 'error')
-    }
-  } catch (e) {
-    showToast('比价失败，请稍后重试', 'error')
-  } finally {
-    cmpLoading.value = false
-  }
-}
 
 const doExpireQuotes = async () => {
   const shopId = refreshShop()
@@ -1718,7 +1580,6 @@ const onAuthChanged = () => {
     quoteBoard.value = null
     freightBoard.value = null
     receiptBoard.value = null
-    cmpResult.value = null
     loading.value = false
   }
 }

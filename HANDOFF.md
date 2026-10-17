@@ -4938,3 +4938,69 @@ scoped 块里；`.filter-inline` 同理（状态筛选器搬走了，规则没�
 下一刀：**quotes tab（281 行，剩余最大）**。已确认含比价表单 + 有效报价明细
 两个 `data-panel`，测试已按 panel 定位，可直接开工。之后再轮到
 overview / shipments / carrier / import 五个不引用子域状态的区。
+
+---
+
+### 9. 比价面板拆分（LogisticsDashboard 2047 → 1908，§S33.9）
+
+比价 tab 拆成三块，这一刀切的是**最自助的那块**：`LogisticsQuoteComparePanel.vue`
+（169 行）+ `logisticsQuoteLabels.ts`（32 行）。
+
+判据是「需要依赖什么」：比价只依赖自己那份表单，填完调 `compareQuotes` 就出结果，
+不读看板数据、不写单据、失败只需 toast。所以表单状态（cmpForm / cmpResult /
+cmpLoading）连请求逻辑一起搬进来，页壳不必再为一份表单持有三个 ref。
+剩下两块（覆盖看板、有效报价明细）还留在页壳——`quoteBoard` 除了比价页还有三个
+消费者（tab 角标、`singleSourceRoutes`、`currencyCount` 两个 computed），整体搬走
+要么拖上一堆无关状态，要么新增一条子→父数据回传通道。**两者都更差，所以不搬。**
+
+#### 9.1 这一刀真正的教训：变异测试骗了我一次，然后救了我一次
+
+先记下**差点写错的测试**。我按老套路加了一条「登出后页面不含推荐承运商」，
+变异测试（把面板里的清理逻辑改成 no-op）显示它**照样绿**。追下去发现两件事：
+
+1. **断言了一个结构上不可能出现的串。** 整个 tab 区在 `<template v-else>` 下，
+   登出后 `hasToken` 变 false，**整块 DOM 卸载**——比价结果根本不在页面上，
+   `not.toContain` 当然恒真。这是本轮第一次遇到「测试绿但什么都没测」。
+2. 于是我在面板里加了 `clearCompareState`（监听 `amz:auth-changed`），
+   **那其实是死代码**：加了挂载计数器实测 `mounts: 2`——`v-else` 子树翻转时
+   Vue 重建了面板，状态自然丢弃。已按规则 10 删掉。
+
+最终那条测试钉的是**行为契约**而非实现：「登出再登录后，上一个店铺的比价
+推荐不得出现在页面上」。它当前靠 remount 兜底，但**这正是它该存在的理由**——
+以后有人给面板加 `keep-alive` 或改成常驻挂载，remount 不再兜底，这条测试
+就会抓到残留。测试的 docstring 里完整记了这三步，免得下一班重复走一遍。
+
+**方法论上的收获：变异测试说 MISSED 时，先分清是「实现漏了」还是「测试测了个空」。**
+前者补代码，后者补测试——这次是后者，而中间那次「补代码」是多余的。
+
+#### 9.2 `<script setup>` 的绑定 import 不到
+
+同一天在调拨状态表（§S33.8）上用了 `import { TRANSFER_STATUS_LABELS } from '...vue'`，
+**能跑**；比价这张表照抄同样的 import，`toEqual` 报 `expected undefined`。
+差别在于 `.vue` 文件里那两段当时是**独立的纯脚本行**，被 vitest 的 vue 插件
+提升到了模块作用域；而 `BASIS_LABELS` 在 `<script setup>` 块内，`<script setup>`
+的绑定不导出，import 只得到 `undefined`。
+
+所以文案表一律放独立 `.ts` 模块（`logisticsTransferStatus.ts` /
+`logisticsQuoteLabels.ts`），理由写进了文件头：一是测试能逐字断言，
+二是以后有第二个使用者不必复制一份表——**复制一份表就多一个 CJK 文案出错点**，
+本班已经在同一个坑里踩过四次。
+
+#### 9.3 顺手清掉的重复注释
+
+上一轮把 transfers / freight / receipts 三个面板换成组件时，区块分隔注释被留成了
+两份（`<!-- === 调拨 === -->` 出现两次），其中「调拨」那份连带的「常驻挂载」说明
+也已搬进 `LogisticsTransferPanel.vue`，成了孤儿。三处重复已删。
+
+#### 9.4 累计与下一刀
+
+`LogisticsDashboard.vue`：**3244 → 1908 行**。ratchet 基线 50135 → 46673。
+新产物（累计）：`LogisticsTrackingModal.vue`、`LogisticsReceiptPanel.vue`、
+`LogisticsFreightPanel.vue`、`LogisticsTransferPanel.vue`、
+`LogisticsTransferRiskPanel.vue`、`LogisticsQuoteComparePanel.vue`、
+`logisticsTransferStatus.ts`、`logisticsQuoteLabels.ts`、`logistics-panels.css`。
+vitest 670 → 672，全绿；15 个 Python 门禁全绿。
+
+下一刀：quotes 里剩下的**覆盖看板 + 有效报价明细**，或转去
+overview / shipments / carrier / import 四个不引用子域状态的区。
+比价这块若还要再拆，先解决 `quoteBoard` 的三个外部消费者（见 9 开头）。

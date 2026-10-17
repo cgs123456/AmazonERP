@@ -4,6 +4,9 @@ import LogisticsDashboard from '../views/LogisticsDashboard.vue'
 // 直接引用真实文案表：这条要钉的正是「表里的字没被改」，
 // 若从组件内部取，就无法分辨「表被改了组件也跟着改」和「表没变」两种情况。
 import { TRANSFER_STATUS_LABELS } from '../components/logisticsTransferStatus'
+// 直接引用真实文案表：钉的是「表里的字没被改」，从组件内部取就无法区分
+// 「表被改了组件也跟着改」和「表没变」两种情况。
+import { BASIS_LABELS, basisLabel } from '../components/logisticsQuoteLabels'
 
 // 整体 mock 物流 API，避免测试触发真实请求
 vi.mock('@/api/logistics', () => ({
@@ -1016,6 +1019,125 @@ describe('LogisticsDashboard 运营子域看板', () => {
     expect(text).not.toContain('推荐承运商')
     expect(text).toContain('无法给出唯一的「最便宜」结论')
     expect(text).toContain('该币种最低')
+  })
+
+  // ------------------------------------------------------------
+  // 计费口径文案与登出清理（回归：拆 LogisticsQuoteComparePanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这一刀的变异测试抓到两处空洞，这是第一处。**
+   *
+   * `chargeableBasis` 是「为什么这个金额和重量 × 单价对不上」的唯一解释：
+   * 后端可能按体积价计费、也可能因为缺单价而根本没算。把它显示成别的字，
+   * 用户会拿页面上的运费去和承运商对账然后得出错误结论——那是业务损失，
+   * 而测试不红，因为没有任何断言钉住这三个词。
+   *
+   * 逐字比对整张表，不用 toContain：toContain 证明不了「没被改成别的」。
+   */
+  it('计费口径中文名表必须与拆分前逐字一致', () => {
+    expect(BASIS_LABELS).toEqual({
+      WEIGHT: '按重量',
+      VOLUME: '按体积',
+      NO_PRICING_DATA: '无可用单价'
+    })
+    // 兜底：未知口径原样显示，而不是被映射成某个具体口径（那会给出错的解释）
+    expect(basisLabel('WEIGHT_OR_SOMETHING_NEW')).toBe('WEIGHT_OR_SOMETHING_NEW')
+    expect(basisLabel(undefined)).toBe('—')
+  })
+
+  /**
+   * **第二处空洞，也是本刀唯一一处「职责搬家」的正确性验证。**
+   *
+   * 比价表单状态（含 `cmpResult`）搬进 LogisticsQuoteComparePanel 后，
+   * 「登出/切店铺时清空」这条责任也跟着搬——原先在页壳的 `onAuthChanged` 里。
+   * 忘记搬的后果很具体：**下一个用户登进来，看到上一个店铺算出来的推荐承运商**。
+   * 页面此时显示「请先登录」，那段比价结果却还挂在 DOM 里。
+   *
+   * 这条就是盯「有没有搬」。它保护的是一类更广的问题：
+   * 状态搬进子组件时，同一事件上的清理责任必须一起搬。
+   */
+  /**
+   * **这条测试的两版都失败了，记下来免得下一班再走一遍。**
+   *
+   * 第一版断言「登出后页面不含推荐承运商」——**永远通过**。整个 tab 区在
+   * `<template v-else>` 下，登出后 `hasToken` 变 false，**整块 DOM 卸载**，
+   * 结果根本不在页面上：断言一个结构上不可能出现的串，当然不红。
+   *
+   * 第二版改成「登出再登录后 cmp-result 不存在」，红了也能被变异躲过。
+   * 我一度以为找到了真 bug，在面板里加了 `clearCompareState`，变异测试
+   * （把它改成 no-op）显示测试**照样绿**——于是加挂载计数器实测，
+   * **`mounts: 2`**：`v-else` 子树翻转时 Vue 重建了面板，状态自然丢弃，
+   * 那段清理代码是死代码。已删（CLAUDE.md 规则 10）。
+   *
+   * 所以这条测试现在钉的是**行为契约**而非实现：无论靠卸载重建还是主动清理，
+   * 「登出再登录后，上一个店铺的比价推荐不得出现在页面上」。覆盖的是
+   * 「以后有人给面板加 keep-alive 或把 active 改成常驻挂载」这种情况——
+   * 那时 remount 不再兜底，这条测试就会抓到残留。
+   */
+  it('登出再登录后比价结果必须已清掉，不能残留上一个店铺的推荐', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '比价')
+
+    mockedCompare.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: {
+        shopId: 1,
+        billingBasis: '按重量价与体积价取高',
+        quotes: [
+          {
+            quoteId: 1,
+            carrierName: 'COSCO',
+            currency: 'USD',
+            chargeableBasis: 'WEIGHT',
+            costByWeight: 350,
+            costByVolume: null,
+            minChargeApplied: false,
+            freightCost: 350,
+            fuelSurcharge: 0,
+            totalCost: 350
+          }
+        ],
+        byCurrency: { USD: [] },
+        recommendedByCurrency: { USD: 'COSCO' },
+        recommended: 'COSCO',
+        excludedExpiredCount: 0,
+        scannedQuoteCount: 1,
+        scanLimit: 5000,
+        scanTruncated: false,
+        comparisonComplete: true,
+        warnings: []
+      }
+    } as never)
+
+    const inputs = wrapper.findAll('.cmp-form input')
+    await inputs[0].setValue('Shenzhen')
+    await inputs[1].setValue('Los Angeles')
+    await inputs[2].setValue('100')
+    await flushPromises()
+    await wrapper.findAll('button').find((b) => b.text().includes('计算比价'))!.trigger('click')
+    await flushPromises()
+    console.log('DBG1 cmp-result exists:', wrapper.find('.cmp-result').exists())
+    expect(wrapper.text()).toContain('推荐承运商')
+
+    // 登出：整块卸载（所以这一步看不出问题），再登录让面板回到 DOM
+    localStorage.removeItem('token')
+    window.dispatchEvent(new Event('amz:auth-changed'))
+    await flushPromises()
+    localStorage.setItem('token', 'test-token')
+    window.dispatchEvent(new Event('amz:auth-changed'))
+    await flushPromises()
+
+    // 面板回到页面上了，但结果必须已经不在。
+    // 断言限定在 .cmp-result 上：整个页面文本里 COSCO 也会出现在「航线报价覆盖」
+    // 表的承运商列里，那是看板自己的数据，与比价结果无关——用整页文本断言会误判。
+    console.log('DBG2 mounts:', (window as any).__cmpMounts)
+    console.log('DBG2 cmp-result exists:', wrapper.find('.cmp-result').exists(), 'form:', wrapper.find('.cmp-form').exists(), 'has400:', wrapper.text().includes('推荐承运商'))
+    expect(wrapper.find('.cmp-form').exists()).toBe(true)
+    expect(wrapper.find('.cmp-result').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('推荐承运商')
   })
 
   it('比价扫描截断时明确结果不完整，并隐藏所有最低价推荐', async () => {
