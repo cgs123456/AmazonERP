@@ -22,9 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("物流 Controller 写接口角色守卫契约测试")
 class LogisticsControllerGuardTest {
+
+    /** 物流域写接口数量下限。新增端点只会让它变大。 */
+    private static final int MIN_WRITE_ENDPOINTS = 43;
+
 
     private static final List<Class<? extends Annotation>> WRITE_MAPPINGS = List.of(
             PostMapping.class, PutMapping.class, DeleteMapping.class, PatchMapping.class);
@@ -48,8 +53,10 @@ class LogisticsControllerGuardTest {
         }
 
         assertFalse(writeEndpoints.isEmpty(), "必须扫描到物流写接口，扫到 0 个会使测试假通过");
-        assertEquals(43, writeEndpoints.size(),
-                "当前有 43 个物流写接口（新增 FulfillmentController 的 check/outbound + batch-receive）（新增 StocktakeController 的 4 个写端点）（新增 WarehouseController 的 inventory/import/csv）；新增接口必须同步声明 @RequireRole 并更新本断言");
+        // 下限而非精确值，理由见 FinanceControllerGuardTest 同处注释（§S33.23）
+        assertTrue(writeEndpoints.size() >= MIN_WRITE_ENDPOINTS,
+                "物流域只扫到 " + writeEndpoints.size() + " 个写接口，少于下限 "
+                        + MIN_WRITE_ENDPOINTS + "——要么有 Controller 没被扫描到，要么扫描逻辑坏了");
 
         for (Method method : writeEndpoints) {
             RequireRole requireRole = method.getAnnotation(RequireRole.class);

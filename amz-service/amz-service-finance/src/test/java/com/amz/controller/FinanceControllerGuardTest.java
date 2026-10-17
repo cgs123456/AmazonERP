@@ -30,6 +30,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("财务 Controller 写接口角色守卫契约测试")
 class FinanceControllerGuardTest {
 
+    /** 财务域写接口数量下限。新增端点只会让它变大。 */
+    private static final int MIN_WRITE_ENDPOINTS = 15;
+
+
     private static final List<Class<? extends Annotation>> WRITE_MAPPINGS = List.of(
             PostMapping.class, PutMapping.class, DeleteMapping.class, PatchMapping.class);
 
@@ -52,8 +56,11 @@ class FinanceControllerGuardTest {
         }
 
         assertFalse(writeEndpoints.isEmpty(), "必须扫描到财务写接口，扫到 0 个会使测试假通过");
-        assertEquals(15, writeEndpoints.size(),
-                "当前有 15 个财务写接口（含 /voucher/from-settlement 与 /voucher/procurement）；新增接口必须同步声明 @RequireRole 并更新本断言");
+        // 下限而非精确值：精确值会让每次新增端点都要改测试，而改测试恰恰是
+        // 最容易被顺手放宽的一步（采购模块就因此红了一整天，见 §S33.23）。
+        assertTrue(writeEndpoints.size() >= MIN_WRITE_ENDPOINTS,
+                "财务域只扫到 " + writeEndpoints.size() + " 个写接口，少于下限 "
+                        + MIN_WRITE_ENDPOINTS + "——要么有 Controller 没被扫描到，要么扫描逻辑坏了");
 
         for (Method method : writeEndpoints) {
             RequireRole requireRole = method.getAnnotation(RequireRole.class);
