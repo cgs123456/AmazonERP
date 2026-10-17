@@ -6,6 +6,7 @@ import com.amz.connector.ErrorSummary;
 import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -50,7 +51,12 @@ public class ShopPerformanceSyncHandler {
      * @return 落库行
      */
     public ShopPerformance syncShop(Long shopId, String marketplaceId, int windowDays) {
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        // §S33.34：原实现用 ISO_INSTANT 格式化 LocalDateTime，会抛
+        // UnsupportedTemporalTypeException: Unsupported field: InstantSeconds ——
+        // ISO_INSTANT 需要时区/瞬时信息，LocalDateTime 没有。结果是这个同步
+        // **从未成功过一次**：手动端点每次都失败，而它没有任何测试。
+        // 改为 OffsetDateTime（带 UTC 偏移），语义与结算同步一致。
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         String dataEnd = now.format(ISO_INSTANT);
         String dataStart = now.minusDays(Math.max(1, windowDays)).format(ISO_INSTANT);
 
