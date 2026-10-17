@@ -72,6 +72,18 @@
             </button>
           </div>
 
+          <!-- 调拨面板：常驻挂载，内部按 active prop 决定渲染（见组件注释）。
+               不能放进下面的 v-else-if——页壳要用 ref 调它的 load()，
+               而 v-else-if 下的组件在切到该 tab 之前不存在，ref 是 null，
+               懒加载就永远不会触发（症状：列表一直空、接口一次都没调）。
+               与 Finance.vue 常驻挂载 FinanceSettlementOps 是同一先例。 -->
+          <LogisticsTransferPanel
+            ref="transferPanel"
+            :active="tab === 'transfers'"
+            :busy="busy"
+            @report-error="pushBlockError"
+          />
+
           <!-- ================= 概览 ================= -->
           <section v-if="tab === 'overview'">
             <div class="kpi-grid">
@@ -736,226 +748,11 @@
           </section>
 
           <!-- ================= 调拨 ================= -->
-          <section v-else-if="tab === 'transfers'">
-            <div v-if="transferBoard?.warnings?.length" class="warn-banner">
-              <Icon icon="mdi:information-outline" width="16" class="wb-icon" />
-              <div class="wb-body">
-                <div v-for="(w, i) in transferBoard.warnings" :key="i">{{ w }}</div>
-              </div>
-            </div>
-
-            <div class="kpi-grid">
-              <div class="kpi-card">
-                <div class="kpi-icon"><Icon icon="mdi:swap-horizontal" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ transferBoard?.total ?? 0 }}</div>
-                  <div class="kpi-label">调拨单总数</div>
-                  <div class="kpi-sub">仓间库存移动</div>
-                </div>
-              </div>
-              <div class="kpi-card" :class="{ 'kpi-alert': (transferBoard?.pendingApproval ?? 0) > 0 }">
-                <div class="kpi-icon tone-warn"><Icon icon="mdi:account-clock-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ transferBoard?.pendingApproval ?? 0 }}</div>
-                  <div class="kpi-label">待审批</div>
-                  <div class="kpi-sub">草稿 + 待审批</div>
-                </div>
-              </div>
-              <div class="kpi-card" :class="{ 'kpi-alert': (transferBoard?.approvedNotShipped ?? 0) > 0 }">
-                <div class="kpi-icon tone-warn"><Icon icon="mdi:package-variant-closed" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ transferBoard?.approvedNotShipped ?? 0 }}</div>
-                  <div class="kpi-label">已批待发出</div>
-                  <div class="kpi-sub">货还在源仓</div>
-                </div>
-              </div>
-              <div class="kpi-card" :class="{ 'kpi-alert': (transferBoard?.staleInTransit ?? 0) > 0 }">
-                <div class="kpi-icon tone-danger"><Icon icon="mdi:truck-alert-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ transferBoard?.staleInTransit ?? 0 }}</div>
-                  <div class="kpi-label">在途卡单</div>
-                  <div class="kpi-sub">
-                    超过 {{ transferBoard?.staleThresholdDays ?? 7 }} 天未收货
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mini-grid">
-              <div class="mini-card">
-                <div class="mini-value">{{ transferBoard?.inTransit ?? 0 }}</div>
-                <div class="mini-label">运输中</div>
-                <div class="mini-hint">正常在途的单据</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ transferBoard?.received ?? 0 }}</div>
-                <div class="mini-label">已收货</div>
-                <div class="mini-hint">已完成的调拨</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ transferBoard?.cancelled ?? 0 }}</div>
-                <div class="mini-label">已取消</div>
-                <div class="mini-hint">驳回或作废</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ fmtAmount(transferBoard?.totalShippingCost) }}</div>
-                <div class="mini-label">调拨运费合计</div>
-                <div class="mini-hint">全部调拨单累计</div>
-              </div>
-            </div>
-
-            <div class="chart-card">
-              <h3>待跟进调拨单</h3>
-              <p class="card-desc">
-                状态字段本身只说明「在途」，看不出已经卡了多久——因此这里按在途天数挑出卡单，
-                并区分「审批卡住」与「货卡在路上」两类，处理动作完全不同。
-              </p>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>级别</th>
-                    <th>类型</th>
-                    <th>调拨单号</th>
-                    <th>货</th>
-                    <th>数量</th>
-                    <th>状态</th>
-                    <th>已停留</th>
-                    <th>承运商 / 单号</th>
-                    <th>说明与建议</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!transferBoard?.risks?.length">
-                    <td colspan="9" class="empty-row">当前没有需要跟进的调拨单</td>
-                  </tr>
-                  <tr v-for="r in transferBoard?.risks || []" :key="r.type + '-' + r.id">
-                    <td>
-                      <span class="status-tag" :class="severityTone(r.severity)">
-                        {{ severityLabel(r.severity) }}
-                      </span>
-                    </td>
-                    <td>{{ transferRiskLabel(r.type) }}</td>
-                    <td class="mono">{{ r.transferNo }}</td>
-                    <td>
-                      <div>{{ r.asin }}</div>
-                      <div class="sub-line">{{ r.sku }}</div>
-                    </td>
-                    <td>{{ r.quantity }}</td>
-                    <td>{{ transferStatusLabel(r.status) }}</td>
-                    <td>{{ r.daysSinceCreated != null ? r.daysSinceCreated + ' 天' : '—' }}</td>
-                    <td class="mono">
-                      {{ r.carrier || '—' }}
-                      <div class="sub-line">{{ r.trackingNo || '未登记' }}</div>
-                    </td>
-                    <td class="hint-cell">
-                      <div class="hint-msg">{{ r.message }}</div>
-                      <div class="hint-action">建议：{{ r.actionHint }}</div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div class="chart-card mt">
-              <div class="card-head">
-                <h3>调拨单</h3>
-                <div class="filter-inline">
-                  <label for="trf-status">状态</label>
-                  <select id="trf-status" v-model="transferStatusFilter" @change="loadTransfers()">
-                    <option value="">全部</option>
-                    <option v-for="(label, key) in TRANSFER_STATUS_LABELS" :key="key" :value="key">
-                      {{ label }}
-                    </option>
-                  </select>
-                </div>
-              </div>
-              <p class="card-desc">
-                状态只能沿既定路径前进：草稿 → 待审批 → 已审批 → 运输中 → 已收货。
-                因此「发出」只对已审批的单据可用，「收货」只对运输中的单据可用——
-                跳过前置状态会被服务端拒绝，避免出现「没发货就收货」导致库存账凭空多出来。
-              </p>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>调拨单号</th>
-                    <th>货</th>
-                    <th>数量</th>
-                    <th>源 → 目标仓</th>
-                    <th>状态</th>
-                    <th>承运商 / 单号</th>
-                    <th>运费</th>
-                    <th>建单时间</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!transfers.length">
-                    <td colspan="9" class="empty-row">暂无调拨单</td>
-                  </tr>
-                  <tr v-for="t in transfers" :key="t.id">
-                    <td class="mono">{{ t.transferNo }}</td>
-                    <td>
-                      <div>{{ t.asin }}</div>
-                      <div class="sub-line">{{ t.sku }}</div>
-                    </td>
-                    <td>{{ t.quantity }}</td>
-                    <td>{{ t.fromWarehouseId }} → {{ t.toWarehouseId }}</td>
-                    <td>
-                      <span class="status-tag" :class="transferStatusTone(t.status)">
-                        {{ transferStatusLabel(t.status) }}
-                      </span>
-                    </td>
-                    <td class="mono">
-                      {{ t.carrier || '—' }}
-                      <div class="sub-line">{{ t.trackingNo || '未登记' }}</div>
-                    </td>
-                    <td class="mono">{{ fmtAmount(t.shippingCost) }}</td>
-                    <td class="mono">{{ fmtTime(t.createTime) }}</td>
-                    <td class="ops">
-                      <template v-if="canApprove(t.status)">
-                        <button class="link-btn" :disabled="busy" @click="doApproveTransfer(t, true)">通过</button>
-                        <button class="link-btn" :disabled="busy" @click="doApproveTransfer(t, false)">驳回</button>
-                      </template>
-                      <button
-                        v-else-if="t.status === 'APPROVED'"
-                        class="link-btn"
-                        :disabled="busy"
-                        @click="doShipTransfer(t)"
-                      >
-                        确认发出
-                      </button>
-                      <button
-                        v-else-if="t.status === 'IN_TRANSIT'"
-                        class="link-btn"
-                        :disabled="busy"
-                        @click="doShipTransfer(t)"
-                      >
-                        更正单号
-                      </button>
-                      <button
-                        v-if="t.status === 'IN_TRANSIT'"
-                        class="link-btn"
-                        :disabled="busy"
-                        @click="doReceiveTransfer(t)"
-                      >
-                        确认收货
-                      </button>
-                      <span v-if="isTransferDone(t.status)" class="sub-line">已结束</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <LogisticsCursorBar
-                :loaded="transfers.length"
-                :truncated="transfersTruncated"
-                :page-meta-missing="transfersPageMetaMissing"
-                :loading-more="transfersLoadingMore"
-                :has-next="!!transfersNextCursor"
-                @load-more="loadMoreTransfers"
-              />
-            </div>
-          </section>
-
+          <!-- ================= 调拨 ================= -->
+          <!-- 常驻挂载而不是 v-else-if：页壳的 switchTab 要通过 ref 调它的 load()，
+               而 v-else-if 下的组件在切到该 tab 之前不存在，ref 取到 null，
+               懒加载就永远不会触发（症状是列表一直空、接口一次都没调）。
+               与 Finance.vue 用 tab prop 常驻挂载 FinanceSettlementOps 同一先例。 -->
           <!-- ================= 头程成本 ================= -->
           <!-- ================= 头程成本 ================= -->
           <section v-else-if="tab === 'freight'">
@@ -1009,6 +806,7 @@ import LogisticsCursorBar from '../components/LogisticsCursorBar.vue'
 import LogisticsTrackingModal from '../components/LogisticsTrackingModal.vue'
 import LogisticsReceiptPanel from '../components/LogisticsReceiptPanel.vue'
 import LogisticsFreightPanel from '../components/LogisticsFreightPanel.vue'
+import LogisticsTransferPanel from '../components/LogisticsTransferPanel.vue'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
 import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'
@@ -1025,16 +823,11 @@ import {
   importShipments,
   importTracking,
   getQuoteBoard,
-  getTransferBoard,
   getFreightCostBoard,
   getReceiptBoard,
   compareQuotes,
   expireOutdatedQuotes,
   listQuotes,
-  listTransfers,
-  approveTransfer,
-  shipTransfer,
-  receiveTransfer,
   investigateDiscrepancy,
   resolveDiscrepancy,
   type DashboardOverview,
@@ -1049,10 +842,8 @@ import {
   type QuoteBoard,
   type QuoteCompareResult,
   type CarrierQuote,
-  type TransferBoard,
   type FreightCostBoard,
   type ReceiptBoard,
-  type InventoryTransfer,
 } from '../api/logistics'
 
 const { toastVisible, toastMessage, toastType, showToast } = useToast()
@@ -1082,15 +873,9 @@ const quotesTruncated = ref(false)
 const quotesPageMetaMissing = ref(false)
 const quotesLoadingMore = ref(false)
 const quoteServiceType = ref('')
-const transferBoard = ref<TransferBoard | null>(null)
+const transferPanel = ref<InstanceType<typeof LogisticsTransferPanel> | null>(null)
 const freightBoard = ref<FreightCostBoard | null>(null)
 const receiptBoard = ref<ReceiptBoard | null>(null)
-const transfers = ref<InventoryTransfer[]>([])
-const transfersNextCursor = ref<string | null>(null)
-const transfersTruncated = ref(false)
-const transfersPageMetaMissing = ref(false)
-const transfersLoadingMore = ref(false)
-const transferStatusFilter = ref('')
 
 /** 比价入参。重量与体积至少填一个，两者都填时服务端按计费价取高 */
 const cmpForm = ref<{ originPort: string; destinationPort: string; weightKg?: number; volumeCbm?: number }>({
@@ -1197,21 +982,7 @@ const ALERT_TYPE_LABELS: Record<string, string> = {
   MISSING_TRACKING_NO: '缺运单号'
 }
 
-/** 调拨单状态。流转只能单向推进，前端据此决定显示哪些操作 */
-const TRANSFER_STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  PENDING_APPROVAL: '待审批',
-  APPROVED: '已审批待发出',
-  IN_TRANSIT: '运输中',
-  RECEIVED: '已收货',
-  CANCELLED: '已取消'
-}
 
-const TRANSFER_RISK_LABELS: Record<string, string> = {
-  STALE_IN_TRANSIT: '在途超期',
-  PENDING_APPROVAL_TOO_LONG: '审批超期',
-  MISSING_TRACKING_NO: '缺物流单号'
-}
 
 /** 比价实际采用的计费口径，必须展示：否则看不懂为什么金额和「重量 × 单价」对不上 */
 const BASIS_LABELS: Record<string, string> = {
@@ -1225,30 +996,10 @@ const BASIS_LABELS: Record<string, string> = {
 const statusLabel = (s?: string) => (s ? STATUS_LABELS[s] || s : '—')
 const methodLabel = (m?: string) => (m ? METHOD_LABELS[m] || m : '—')
 const alertTypeLabel = (t: string) => ALERT_TYPE_LABELS[t] || t
-const transferStatusLabel = (s?: string) => (s ? TRANSFER_STATUS_LABELS[s] || s : '—')
-const transferRiskLabel = (t?: string) => (t ? TRANSFER_RISK_LABELS[t] || t : '—')
 const basisLabel = (b?: string) => (b ? BASIS_LABELS[b] || b : '—')
 
-const transferStatusTone = (s?: string) => {
-  switch (s) {
-    case 'CANCELLED':
-      return 'tone-muted'
-    case 'RECEIVED':
-      return 'tone-success'
-    case 'IN_TRANSIT':
-      return 'tone-info'
-    case 'APPROVED':
-    case 'PENDING_APPROVAL':
-      return 'tone-warn'
-    default:
-      return 'tone-muted'
-  }
-}
 
 
-/** 只有草稿与待审批可以改判；已发出 / 已收货 / 已取消不再显示审批按钮 */
-const canApprove = (status?: string) => status === 'DRAFT' || status === 'PENDING_APPROVAL'
-const isTransferDone = (status?: string) => status === 'RECEIVED' || status === 'CANCELLED'
 
 const severityLabel = (s: string) => (s === 'HIGH' ? '高' : s === 'MEDIUM' ? '中' : '低')
 const severityTone = (s: string) => (s === 'HIGH' ? 'tone-danger' : s === 'MEDIUM' ? 'tone-warn' : 'tone-muted')
@@ -1329,8 +1080,8 @@ const tabs = computed(() => [
   {
     key: 'transfers' as const,
     label: '调拨',
-    badge: transferBoard.value?.risks.length ? String(transferBoard.value.risks.length) : '',
-    badgeTone: transferBoard.value?.risks.length ? 'badge-danger' : ''
+    badge: transferPanel.value?.riskCount() ? String(transferPanel.value.riskCount()) : '',
+    badgeTone: transferPanel.value?.riskCount() ? 'badge-danger' : ''
   },
   {
     key: 'freight' as const,
@@ -1601,12 +1352,6 @@ const loadMoreQuotes = () => {
   void loadQuotes(true)
 }
 
-const loadTransferBoard = async (shopId: string) => {
-  const res = await getTransferBoard(shopId)
-  if (res?.code === 200 && res.data) {
-    transferBoard.value = res.data
-  }
-}
 
 const loadFreightBoard = async (shopId: string) => {
   const res = await getFreightCostBoard(shopId)
@@ -1622,52 +1367,7 @@ const loadReceiptBoard = async (shopId: string) => {
   }
 }
 
-const loadTransfers = async (append = false) => {
-  const shopId = refreshShop()
-  if (!shopId) {
-    if (!append) {
-      transfers.value = []
-      transfersNextCursor.value = null
-      transfersTruncated.value = false
-      transfersPageMetaMissing.value = false
-    }
-    return
-  }
-  if (!append) {
-    transfersNextCursor.value = null
-    transfersTruncated.value = false
-    transfersPageMetaMissing.value = false
-  }
-  if (append) transfersLoadingMore.value = true
-  try {
-    const cursor = append ? (transfersNextCursor.value ?? undefined) : undefined
-    const res = await listTransfers(shopId, transferStatusFilter.value || undefined, PAGE_SIZE, cursor)
-    if (res?.code === 200 && Array.isArray(res.data)) {
-      const rows = res.data
-      transfers.value = append ? transfers.value.concat(rows) : rows
-      const page = res._page
-      const hasMore = page ? (page.truncated || page.hasMore) : false
-      const metaMissing = !page || (hasMore && !page.nextCursor)
-      transfersPageMetaMissing.value = metaMissing
-      transfersTruncated.value = !metaMissing && hasMore
-      transfersNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
-    } else {
-      pushBlockError('调拨列表', res?.message)
-      if (!append) transfers.value = []
-    }
-  } catch (e) {
-    console.warn('[Logistics] 加载调拨列表失败', e)
-    pushBlockError('调拨列表', e)
-    if (!append) transfers.value = []
-  } finally {
-    if (append) transfersLoadingMore.value = false
-  }
-}
 
-const loadMoreTransfers = () => {
-  if (!transfersTruncated.value || !transfersNextCursor.value || transfersLoadingMore.value) return
-  void loadTransfers(true)
-}
 
 /** 加载首屏四组核心数据（概览 / 趋势 / 承运商 / 告警） */
 const reload = async () => {
@@ -1704,8 +1404,8 @@ const refreshCurrent = async () => {
     } else if (tab.value === 'quotes') {
       await safeLoad('quotes', () => loadQuoteBoard(shopId))
     } else if (tab.value === 'transfers') {
-      await safeLoad('transfers', () => loadTransferBoard(shopId))
-      await loadTransfers()
+      // 列表与看板都在子组件里，刷新整块交给它（错误经 report-error 回流页级错误区）
+      await transferPanel.value?.load()
     } else if (tab.value === 'freight') {
       await safeLoad('freight', () => loadFreightBoard(shopId))
     } else if (tab.value === 'receipts') {
@@ -1732,8 +1432,9 @@ const switchTab = async (key: TabKey) => {
     // 逐条报价与看板同源但不同端点：也按「首次打开才拉」，切店铺时由上面的 reload 分支重拉
     if (!quotes.value.length) await loadQuotes()
   } else if (key === 'transfers') {
-    if (!transferBoard.value) await safeLoad('transfers', () => loadTransferBoard(shopId))
-    if (!transfers.value.length) await loadTransfers()
+    // 首次进入才拉。把关留在这里而不下沉到子组件：两处把关就是两套
+    // 「已加载」集合，改一处漏一处的症状是重复请求或永不请求。
+    await transferPanel.value?.load()
   } else if (key === 'freight') {
     if (!freightBoard.value) await safeLoad('freight', () => loadFreightBoard(shopId))
   } else if (key === 'receipts') {
@@ -1886,82 +1587,9 @@ const doExpireQuotes = async () => {
 
 // ---- 调拨 ----
 
-/** 审批后会改变状态分布，同时刷新看板与列表，避免两处数字对不上 */
-const refreshTransferViews = async () => {
-  const shopId = refreshShop()
-  await loadTransfers()
-  await safeLoad('transfers', () => loadTransferBoard(shopId))
-}
 
-const doApproveTransfer = async (t: InventoryTransfer, approved: boolean) => {
-  if (busy.value || t.id === undefined) return
-  const action = approved ? '审批通过' : '驳回'
-  if (!window.confirm(`确认${action}调拨单 ${t.transferNo}？`)) return
-  busy.value = true
-  try {
-    const res = await approveTransfer(t.id, approved)
-    if (res?.code === 200) {
-      showToast(`调拨单已${action}`, 'success')
-      await refreshTransferViews()
-    } else {
-      showToast(res?.message || `${action}失败`, 'error')
-    }
-  } catch (e) {
-    showToast(`${action}失败，请稍后重试`, 'error')
-  } finally {
-    busy.value = false
-  }
-}
 
-const doShipTransfer = async (t: InventoryTransfer) => {
-  if (busy.value || t.id === undefined) return
-  const carrier = window.prompt('承运商名称', t.carrier || '')
-  if (carrier === null) return
-  if (!carrier.trim()) {
-    showToast('承运商不能为空', 'error')
-    return
-  }
-  const trackingNo = window.prompt('物流单号', t.trackingNo || '')
-  if (trackingNo === null) return
-  // 单号决定了后续能否自动跟单，因此这里只做非空校验而不静默跳过
-  if (!trackingNo.trim()) {
-    showToast('物流单号不能为空', 'error')
-    return
-  }
-  busy.value = true
-  try {
-    const res = await shipTransfer(t.id, carrier.trim(), trackingNo.trim())
-    if (res?.code === 200) {
-      showToast('调拨单已标记发出', 'success')
-      await refreshTransferViews()
-    } else {
-      showToast(res?.message || '操作失败', 'error')
-    }
-  } catch (e) {
-    showToast('操作失败，请稍后重试', 'error')
-  } finally {
-    busy.value = false
-  }
-}
 
-const doReceiveTransfer = async (t: InventoryTransfer) => {
-  if (busy.value || t.id === undefined) return
-  if (!window.confirm(`确认调拨单 ${t.transferNo} 已到货？确认后单据结束。`)) return
-  busy.value = true
-  try {
-    const res = await receiveTransfer(t.id)
-    if (res?.code === 200) {
-      showToast('调拨单已确认收货', 'success')
-      await refreshTransferViews()
-    } else {
-      showToast(res?.message || '确认收货失败', 'error')
-    }
-  } catch (e) {
-    showToast('确认收货失败，请稍后重试', 'error')
-  } finally {
-    busy.value = false
-  }
-}
 
 // ---- 签收差异 ----
 
@@ -2078,10 +1706,7 @@ const onAuthChanged = () => {
       safeLoad('quotes', () => loadQuoteBoard(shopId))
       loadQuotes()
     }
-    if (tab.value === 'transfers') {
-      safeLoad('transfers', () => loadTransferBoard(shopId))
-      loadTransfers()
-    }
+    if (tab.value === 'transfers') void transferPanel.value?.load()
     if (tab.value === 'freight') safeLoad('freight', () => loadFreightBoard(shopId))
     if (tab.value === 'receipts') safeLoad('receipts', () => loadReceiptBoard(shopId))
   } else {
@@ -2091,10 +1716,8 @@ const onAuthChanged = () => {
     alerts.value = []
     shipments.value = []
     quoteBoard.value = null
-    transferBoard.value = null
     freightBoard.value = null
     receiptBoard.value = null
-    transfers.value = []
     cmpResult.value = null
     loading.value = false
   }
@@ -2244,30 +1867,7 @@ onUnmounted(() => {
 }
 /* 卡片之间的间距：同层级卡片紧跟，跨层级的卡片用 .mt 拉开 */
 
-/* 表格里的次要补充行（SKU、运单号等），不与主值抢注意力 */
-.sub-line {
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-  margin-top: 0.125rem;
-}
 
-
-/* 卡片标题行内的小筛选器 */
-.filter-inline {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: var(--font-size-2);
-  color: var(--color-muted);
-}
-.filter-inline select {
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-on-surface);
-  font-size: var(--font-size-2);
-}
 .legend {
   display: flex;
   gap: 0.75rem;
@@ -2329,15 +1929,6 @@ onUnmounted(() => {
   font-size: var(--font-size-1);
 }
 
-
-/* 表格补充 */
-.hint-cell { max-width: 22rem; }
-.hint-msg { font-size: var(--font-size-2); color: var(--color-on-surface); }
-.hint-action {
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-  margin-top: 0.125rem;
-}
 
 /* 过滤条 */
 .filter-bar {
@@ -2451,5 +2042,6 @@ onUnmounted(() => {
 @media (max-width: 768px) {
 }
 </style>
+
 
 

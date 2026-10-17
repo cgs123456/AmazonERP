@@ -87,6 +87,11 @@ EXTRACTED_TO_COMPONENTS: dict[str, list[str]] = {
     "amz-frontend/src/views/LogisticsDashboard.vue": [
         # §S33：轨迹时间线浮层的样式随组件搬进 LogisticsTrackingModal.vue。
         "amz-frontend/src/components/LogisticsTrackingModal.vue",
+        # §S33 之二：调拨面板二次拆分后，`.filter-inline` 随「调拨单列表的状态
+        # 筛选器」搬进 LogisticsTransferPanel.vue。登记标准见上方说明——
+        # 该规则拆完后全仓库只此一处使用（页壳自己的模板已不再用它），
+        # 所以放共享表会让它脱离唯一的使用者。
+        "amz-frontend/src/components/LogisticsTransferPanel.vue",
     ],
 }
 

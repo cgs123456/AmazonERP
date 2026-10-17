@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import LogisticsDashboard from '../views/LogisticsDashboard.vue'
+// 直接引用真实文案表：这条要钉的正是「表里的字没被改」，
+// 若从组件内部取，就无法分辨「表被改了组件也跟着改」和「表没变」两种情况。
+import { TRANSFER_STATUS_LABELS } from '../components/logisticsTransferStatus'
 
 // 整体 mock 物流 API，避免测试触发真实请求
 vi.mock('@/api/logistics', () => ({
@@ -1308,6 +1311,143 @@ describe('LogisticsDashboard 运营子域看板', () => {
     expect(mockedTransfers).toHaveBeenLastCalledWith('1', 'IN_TRANSIT', 50, undefined)
     expect(wrapper.text()).toContain('TRF-3')
     expect(wrapper.text()).not.toContain('TRF-1')
+  })
+
+  // ------------------------------------------------------------
+  // 写操作后的刷新路径（回归：拆 LogisticsTransferPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这条钉住本班实际犯的错**。把调拨列表拆成 LogisticsTransferPanel 时，
+   * 我把 `refreshTransferViews`（审批/发出/收货成功后重拉列表+看板）从记忆里重写了一遍，
+   * 结果漏掉了一个分支、调换了一次调用顺序，而且**变异测试证明这两种改动都不会让任何既有测试变红**：
+   * 1. 无店铺时不再清空列表 —— 切走店铺后旧店的调拨单还挂在屏上，那是跨租户数据残留；
+   * 2. 成功后不重拉列表 —— 看板数字更新了、用户在看的列表还是旧状态，只能靠手动刷新。
+   *
+   * 断言刻意用 mock 的调用次数而不是文案：这两个缺陷在 UI 上都表现为「数字没变」，
+   * 没有专属错误文案，用 toContain 抓不到。
+   */
+  it('调拨写操作成功后必须重拉列表与看板，且切走店铺要清空旧店数据', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '调拨')
+    expect(wrapper.text()).toContain('TRF-1')
+
+    // 基准调用数（进 tab 时的那一拉），后面只关心「写操作后有没有再加拉」
+    const beforeApprove = mockedTransfers.mock.calls.length
+    const boardCallsBeforeApprove = mockedTransferBoard.mock.calls.length
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedApprove.mockResolvedValue({ code: 200, message: 'ok', data: {} } as never)
+    const appRow = wrapper.findAll('.chart-card.mt tbody tr').find((r) => r.text().includes('TRF-1'))
+    await appRow!.findAll('button').find((b) => b.text() === '通过')!.trigger('click')
+    await flushPromises()
+
+    // 两个都得拉：只拉看板会让用户看的列表停在旧状态，只拉列表会让看板数字过期
+    expect(mockedTransfers.mock.calls.length).toBeGreaterThan(beforeApprove)
+    expect(mockedTransferBoard.mock.calls.length).toBeGreaterThan(boardCallsBeforeApprove)
+
+    // 店铺被切走（换店铺不清 localStorage 也不会重挂载组件）时，列表必须清空——
+    // 否则旧店的调拨单继续显示在新店铺下，是多租户隔离缺口
+    localStorage.setItem('current_shop_id', '')
+    mockedTransfers.mockClear()
+    await wrapper.find('#trf-status').setValue('')
+    await flushPromises()
+
+    expect(mockedTransfers).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('TRF-1')
+  })
+
+  // ------------------------------------------------------------
+  // 调拨状态文案与配色（回归：拆 LogisticsTransferRiskPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **第二次拆分（风险预警从调拨面板拆出）的变异测试抓到三处测试空洞**，
+   * 其中第一处是本班已经犯过四次的同一个错：凭记忆重写中文文案。
+   *
+   * 拆出 LogisticsTransferRiskPanel 时，「状态」列要用中文名，而同一张表
+   * 调拨单列表也要用——我把表抽成共享模块 logisticsTransferStatus.ts，
+   * 这是对的（两处不一致会让同一张单在同一个 tab 里显示成两个状态）。
+   * 但把 APPROVED 的「已审批待发出」写成「已审批未」时，**没有任何测试变红**：
+   * 已有的中文表回归测试只覆盖轨迹浮层那 12 条，不覆盖调拨这 6 条。
+   *
+   * 所以这里把调拨状态表一并钉死。断言用 JSON 字面量逐字比对，不用 toContain——
+   * toContain 只能证明某个串出现过，证明不了「没被改成别的」。
+   */
+  it('调拨状态中文名表必须与拆分前逐字一致', () => {
+    expect(TRANSFER_STATUS_LABELS).toEqual({
+      DRAFT: '草稿',
+      PENDING_APPROVAL: '待审批',
+      APPROVED: '已审批待发出',
+      IN_TRANSIT: '运输中',
+      RECEIVED: '已收货',
+      CANCELLED: '已取消'
+    })
+  })
+
+  /**
+   * 同一张单的「风险行状态」与「列表行状态」必须显示成同一个中文名。
+   *
+   * 拆成两个组件后，两边各自 import 同一个表；一旦有人为图省事在其中一处
+   * 内联一份，两处就会各说各话——用户看到同一张 TRF-3 在上下两处状态不同，
+   * 会认为系统有 bug。这条同时钉住「不要内联复制」这个决定本身。
+   */
+  it('风险清单与调拨单列表对同一状态必须显示同一个中文名', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '调拨')
+
+    // TRF-3 同时出现在风险清单（IN_TRANSIT）与调拨单列表里，两处文案必须一致
+    const riskRow = wrapper.findAll('.data-table tbody tr').find((r) => r.text().includes('TRF-3'))
+    const listRow = wrapper.findAll('.chart-card.mt tbody tr').find((r) => r.text().includes('TRF-3'))
+    expect(riskRow!.text()).toContain('运输中')
+    expect(listRow!.text()).toContain('运输中')
+  })
+
+  /**
+   * 风险级别配色（高=红 / 中=黄 / 低=灰）是用户扫表时最先看到的东西：
+   * 「哪几张单最要紧」全凭这一眼。抹平成同一个色（或让 HIGH 落到灰色）
+   * 不会让任何文案断言变红，但会把「优先处理」这件事整个毁掉。
+   *
+   * 所以直接断言 class，而不是只断言文字——文字在三种级别下本来就相同。
+   */
+  it('风险级别配色：高/中必须落到不同的状态色', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '调拨')
+
+    const highTag = wrapper
+      .findAll('.data-table tbody tr')
+      .find((r) => r.text().includes('TRF-3'))!
+      .find('.status-tag')
+    const mediumTag = wrapper
+      .findAll('.data-table tbody tr')
+      .find((r) => r.text().includes('TRF-5'))!
+      .find('.status-tag')
+
+    expect(highTag.classes()).toContain('tone-danger')
+    expect(mediumTag.classes()).toContain('tone-warn')
+    expect(mediumTag.classes()).not.toContain('tone-danger')
+  })
+
+  /**
+   * 在途单的状态色。`tone-info` 是「正常在途」的中性提示色；
+   * 若被改成 `tone-muted`，运输中的调拨单会和已取消单一个颜色——
+   * 用户会分不清「这批在路上」和「这批已经作废」。
+   */
+  it('在途调拨单状态必须用 info 色，不得与已取消同色', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '调拨')
+
+    const inTransitTag = wrapper
+      .findAll('.chart-card.mt tbody tr')
+      .find((r) => r.text().includes('TRF-3'))!
+      .find('.status-tag')
+
+    expect(inTransitTag.classes()).toContain('tone-info')
+    expect(inTransitTag.classes()).not.toContain('tone-muted')
   })
   // ------------------------------------------------------------
   // 轨迹状态中文名（回归：拆 LogisticsTrackingModal 时的教训）

@@ -4845,3 +4845,96 @@ dist/assets/LogisticsDashboard-*.css
   这意味着子域组件要把 board 数据回传，或页壳保留一份汇总。建议后者
   （页壳已有 `loadQuoteBoard` 等 loader，汇总值从 loader 里顺手取），
   **不要为此新增一条子→父的数据回传通道**。
+
+---
+
+### 8. 后续三刀 + 一个二次拆分（receipts / freight / transfers / 风险预警）
+
+上一节列的四个目标已全部做完，顺序就是表里的顺序。逐刀记录，因为**每一刀都踩到了
+§S33.3 / §S33.4 那两类静默缺陷的不同变体**：
+
+| 刀 | 产物 | 页壳行数 | 新学到的 |
+|---|---|---|---|
+| receipts | `LogisticsReceiptPanel.vue` 260 行 | 3127 → 2989 | 面板可以既无本地状态又无 emit（investigate/resolve 都只是转发） |
+| freight | `LogisticsFreightPanel.vue` 359 行 | 2989 → 2806 | **表单状态该跟着组件走**：`calcForm` 等四个 ref 只服务这块面板，实测全文件无第二处引用 |
+| transfers | `LogisticsTransferPanel.vue` | 2806 → 2082 | **列表状态该跟着组件走**：`transfers` + 4 个分页标志 + 1 个筛选，收 6 个 prop 是把父组件当状态仓库 |
+| transfers 二次 | `LogisticsTransferRiskPanel.vue` 171 行 + `logisticsTransferStatus.ts` 41 行 | 2082 → 2047 | 534 行踩到 500 硬限，**按领域边界再拆**（见下） |
+
+#### 8.1 二次拆分的判据：一个文件混了两件事
+
+transfers 拆出来是 534 行，**超过 CLAUDE.md 的 500 行硬限**。硬拆不如看清楚
+再拆：这个面板里实际是两件事——
+
+- **风险预警**（board + KPI + 待跟进清单）：只读，面向「哪张单卡住了」；
+- **单据管理**（列表 + 审批/发出/收货状态机）：全是写操作，面向「把单推到下一步」。
+
+判据是**读写属性与变化原因不同**：改一个审批动作不会碰 KPI，加一张 KPI 不会
+碰状态机。合成一个件时两者互相挤占同一个文件。拆开后 171 + 402，都在限内。
+
+#### 8.2 这次真正的回归：`.sub-line` / `.hint-*` / `.filter-inline` 三处漏搬
+
+**§S33.4 那类缺陷的第三次出现，而且这次是拆出的组件向页壳「借」样式。**
+
+`scoped` 不跨边界是双向的：页壳 scoped 块里的规则，子组件模板用了同样会失效。
+前三刀都只检查「页壳用到的类还在不在」，**漏掉了反方向**——`.sub-line`
+`.hint-cell/.hint-msg/.hint-action` 随风险清单搬进了新组件，但定义仍留在页壳
+scoped 块里；`.filter-inline` 同理（状态筛选器搬走了，规则没搬）。
+
+处置按「有几个使用者」分，不是一律搬共享表：
+
+| 类 | 使用者 | 去处 |
+|---|---|---|
+| `.sub-line` `.hint-*` | 页壳 alerts 面板 + 风险面板（两个） | 共享表 `logistics-panels.css` |
+| `.filter-inline` | **只有**调拨单列表一个 | 搬进 `LogisticsTransferPanel.vue` 自己的 scoped 块 |
+
+`DUPLICATED_BY_DESIGN` 那个登记表的登记标准「只服务被拆出去的那个子组件」在这里
+不够用了——它是「父视图自己还在用」。已把这两个方向分开写进注释。
+
+**验证方法**：`amz-frontend/src/__tests__/` 下没有样式断言（vitest 不断言 CSS，
+`vite build` 只证明编译通过）。用的是「共享表 + 两个新组件的 scoped 块」取并集，
+再逐个比对模板里静态 `class=` 与动态 `:class` 的类名 token，最后按 Playwright
+`getComputedStyle` 在 1440/768 两个视口比对计算值。
+
+#### 8.3 共享文案模块：`logisticsTransferStatus.ts`
+
+风险清单的「状态」列和调拨单列表的状态标签都显示状态中文名。**两处必须一致**——
+同一张 TRF-3 在同一个 tab 上下两行显示成两个名字，用户会认为系统有两个真相。
+所以抽成 41 行的共享模块，两个组件都 import。本班已经在 CJK 文案上凭记忆
+重写出错四次（§S33.3），复制一份表就多一个出错点。
+
+顺带发现：页壳里 `transferBoard` 这个 ref 在 transfers 拆出后成了**死状态**—
+声明、`logout` 时置 null、但从未加载也从未读取。按「删除优于兼容」删掉，
+连同 `type TransferBoard` 的 import。
+
+#### 8.4 变异测试：这一轮抓到 7 个测试空洞
+
+**变异测试不是可选的。**这一轮每刀都做了「改一处 → 看测试红不红」，抓到：
+
+| 变异 | 结果 | 说明 |
+|---|---|---|
+| 无店铺时不清空调拨列表 | **漏** | 旧店数据跨租户残留，UI 上只表现为「数字没变」 |
+| 写操作后不重拉列表 | **漏** | 同上，无专属错误文案可断言 |
+| 通过按钮调驳回 | 抓到 | 已有测试碰巧覆盖 |
+| 状态文案 `已审批待发出` → `已审批未` | **漏** | **本班实际犯过的错**，已有中文表测试只覆盖轨迹那 12 条 |
+| 风险级别配色抹平成同色 | **漏** | 文字在三种级别下相同，`toContain` 抓不到 |
+| 在途状态 `tone-info` → `tone-muted` | **漏** | 同上，且会让「在路上」和「已作废」同色 |
+| 风险面板内联复制一份状态表 | **漏** | 「不要内联复制」这个决定本身没被测 |
+
+已全部补测试（`LogisticsDashboard.test.ts` 40 → 44 条，全量 670 条全绿），
+并**逐条重放变异确认真的变红**。共用的判据：**文案用 `toEqual` 逐字比对而不是
+`toContain`**（toContain 只能证明某个串出现过，证明不了没被改成别的），
+**配色直接断言 class**（文字不变时只有 class 会变）。
+
+#### 8.5 累计与下一刀
+
+`LogisticsDashboard.vue`：**3244 → 2047 行**。ratchet 基线 50135 → 46690。
+新产物：`LogisticsTrackingModal.vue`、`LogisticsReceiptPanel.vue`、
+`LogisticsFreightPanel.vue`、`LogisticsTransferPanel.vue`、
+`LogisticsTransferRiskPanel.vue`、`logisticsTransferStatus.ts`、
+`logistics-panels.css`。门禁 `test_css_scope_parity.py` 已登记
+`EXTRACTED_TO_COMPONENTS` 的两条链，并**变异验证过**（删掉 `.filter-inline`
+能让门禁变红）。
+
+下一刀：**quotes tab（281 行，剩余最大）**。已确认含比价表单 + 有效报价明细
+两个 `data-panel`，测试已按 panel 定位，可直接开工。之后再轮到
+overview / shipments / carrier / import 五个不引用子域状态的区。

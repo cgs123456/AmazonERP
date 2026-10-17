@@ -303,6 +303,31 @@
 .err-list.note { color: var(--color-warning-dark); }
 
 /* ------------------------------------------------------------
+ * 表格补充
+ *
+ * 这两组（sub-line / hint-*）原先在页壳的 scoped 块里。调拨风险清单
+ * （LogisticsTransferRiskPanel.vue）与告警清单（仍在页壳）用的是同一套，
+ * 拆出后 scoped 不跨边界，两处都会失效——所以搬进共享表。
+ * 搬的是原样，未改一个声明。
+ * ------------------------------------------------------------ */
+
+/* 表格里的次要补充行（SKU、运单号等），不与主值抢注意力 */
+.sub-line {
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+  margin-top: 0.125rem;
+}
+
+/* 说明与建议列：正文一行 + 建议一行，整体限宽避免把表撑开 */
+.hint-cell { max-width: 22rem; }
+.hint-msg { font-size: var(--font-size-2); color: var(--color-on-surface); }
+.hint-action {
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+  margin-top: 0.125rem;
+}
+
+/* ------------------------------------------------------------
  * 响应式：窄屏下四列改两列、再改一列
  * ------------------------------------------------------------ */
 @media (max-width: 1024px) {
