@@ -203,14 +203,36 @@ def shopscoped_without_reachable_shopid(sources: list[Path]) -> list[str]:
                 continue  # 切面从 @RequestParam/@PathVariable 解析得到
             if _GUARD_CALL.search(body):
                 continue  # 方法内有逐行店铺判定
-            if _SERVICE_CALL.search(body):
-                continue  # 委托给 service——归属判定按本仓惯例在那一层
             if _SELF_AWARE.search(head + "\n" + body):
                 continue  # 注释已说明「这枚注解在这里无效、防线在别处」
             if "@RequestBody" in sig and re.search(r"\.(?:get|set)ShopId\s*\(", body):
                 continue  # shopId 在请求体实体里，切面读得到（ShopIdParameterResolver.matchBody）
+            if _SERVICE_CALL.search(body) and _addresses_a_row(sig):
+                # 委托给 service 且这次调用面向某条具体记录——service 按本仓惯例
+                # 逐行校验归属。**必须同时满足**：无状态计算器（如 VAT 的
+                # calculate/rate/threshold-check）也委托 service，但它们不面向任何
+                # 记录，service 里没有可校验的 shopId，注解同样是装饰。
+                continue
             out.append(f"{_display(path)}::{m.group(1)}")
     return out
+
+
+# 「这次调用面向某条具体记录」：签名里有 id 类路径/查询参数，或整个请求体实体。
+_ROW_PARAM = re.compile(
+    r"@(?:RequestParam|PathVariable)(?:\([^)]*\))?\s*(?:final\s+)?"
+    r"(?:Long|Integer|String)\s+(?:id|ids|\w*Id)\b"
+    r"|@RequestBody\s"
+)
+
+
+def _addresses_a_row(sig: str) -> bool:
+    """方法是否面向某条具体记录（决定「委托给 service」能否算作防线）。
+
+    VAT 三个计算端点（amount + country）不面向记录 → 返回 False，
+    `@ShopScoped` 在它们身上是装饰，必须报出来。
+    `/{id}` / `/{shopId}` / `@RequestBody` 实体 → True。
+    """
+    return bool(_ROW_PARAM.search(sig))
 
 
 def _display(path: Path) -> str:
@@ -348,6 +370,35 @@ class ShopScopePlacementTest(unittest.TestCase):
             "        return Result.success(svc.get(id));\n    }\n}\n"
         )
         self.assertEqual(shopscoped_without_reachable_shopid([_write_probe(self_aware)]), [])
+
+    def test_stateless_calculator_delegating_to_service_is_still_flagged(self):
+        """自检：委托 service 但**不面向任何记录**时，不得算作有防线。
+
+        §S33.45 的变异教训：第一版判据把「委托给 service」直接当成防线，
+        于是 VAT 的 `calculate(amount, country)` 也被放过——它调
+        `vatService.calculateVat(...)`，但那是无状态计算器，service 里没有
+        可校验的 shopId，注解同样是装饰。收紧为「委托 service **且**面向某条记录」。
+        """
+        stateless = (
+            "@RestController\nclass VatController {\n"
+            "    @ShopScoped\n    @GetMapping(\"/calculate\")\n"
+            "    public Result<String> calculate(@RequestParam BigDecimal amount,\n"
+            "                                     @RequestParam String country) {\n"
+            "        return Result.success(vatService.calculateVat(amount, country));\n"
+            "    }\n}\n"
+        )
+        found = shopscoped_without_reachable_shopid([_write_probe(stateless)])
+        self.assertEqual([f.split("::")[-1] for f in found], ["calculate"],
+                         "无状态计算器上的 @ShopScoped 必须被抓到，实际：" + str(found))
+
+        # 对照组：同样委托 service，但面向具体记录 → 不得报（防线按惯例在 service 层）
+        row_addressed = (
+            "@RestController\nclass DController {\n"
+            "    @ShopScoped\n    @PostMapping(\"/{id}/cancel\")\n"
+            "    public Result<Boolean> cancel(@PathVariable Long id) {\n"
+            "        return Result.success(orderService.cancel(id));\n    }\n}\n"
+        )
+        self.assertEqual(shopscoped_without_reachable_shopid([_write_probe(row_addressed)]), [])
 
 
 _PROBE_DIR: list[Path] = []

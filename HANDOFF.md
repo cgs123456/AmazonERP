@@ -6107,3 +6107,41 @@ service 逐行管。问题只在于「切面管不住时，注解会骗人」。
 `ErrorSummary.localError(...)` 并把 80 → 82，注释写清是哪两个。
 
 **这是一次门禁按设计工作的证据**，不是麻烦。
+
+## §S33.45 门禁自己的变异教训：`@ShopScoped` 在无状态计算器上也是装饰
+
+上一轮给 `test_shoppointer_scope.py` 加第二条判据时，「委托给 service」被我
+当成了充分防线。变异验证时给 `VatController.calculate`（amount + country 的
+无状态计算器）加回 `@ShopScoped`，**门禁没红**。
+
+原因是它调 `vatService.calculateVat(...)`，命中了「委托 service」这条豁免。
+但那是无状态计算器——service 里没有任何 shopId 可校验，注解和
+`PerformanceController.detail` 一样是装饰。
+
+收紧为「委托 service **且** 这次调用面向某条具体记录」（签名有 id 类
+路径/查询参数，或整个 `@RequestBody` 实体）。重放同一变异：红，报出
+`VatController.java::calculateVat`。同时确认另一变异没被收紧破坏——
+`PerformanceController.detail` 的裸读 + 注解仍然红。
+
+顺带把 VAT 三个计算端点（`/calculate`、`/rate/{country}`、
+`/threshold-check`）的 `@ShopScoped` 摘掉了。真正碰店铺数据的是
+`monthlyClosing`，它的 shopId 路径参数让切面真的生效，保留。
+finance 模块 192 个测试全绿，无一条断言依赖被摘掉的注解。
+
+**教训（第三次同型）**：豁免条件要按「为什么可以豁免」写，不能按「看起来像」写。
+「委托给 service」是表象，真理由是「service 能拿到这条记录的 shopId」。
+把表象当理由，豁免就会放过一整类形状相似但前提不同的端点。
+
+### 46. 本轮累计
+
+| 项 | 结果 |
+|---|---|
+| 真洞 | 2 个（`@ShopScoped` 在 Service 层 / 在 Controller 层但路径参数不叫 shopId） |
+| 摘掉的装饰性注解 | 7 处（AdServiceImpl 1 + KeepaController 3 + VatController 3） |
+| 新增 Java 测试 | `PerformanceDetailTenantGuardTest` 5 条 |
+| 新增 Python 门禁 | `test_shoppointer_scope.py`（8 条，两个方向共 4 次变异全捕获） |
+| 门禁自身被变异抓到的次数 | 2 次（「委托 service 即豁免」过宽） |
+| spapi | 727 绿 |
+| finance | 192 绿 |
+| product | 96 跑完，仅 §S30 loopback IT 1 条 |
+| ad | 151 跑完，仅 §S30 loopback 7 条 |
