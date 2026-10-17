@@ -48,7 +48,8 @@ import {
   listTransfers,
   approveTransfer,
   calculateFreight,
-  resolveDiscrepancy
+  resolveDiscrepancy,
+  investigateDiscrepancy
 } from '@/api/logistics'
 
 const mockedOverview = vi.mocked(getLogisticsOverview)
@@ -68,6 +69,7 @@ const mockedTransfers = vi.mocked(listTransfers)
 const mockedApprove = vi.mocked(approveTransfer)
 const mockedCalculate = vi.mocked(calculateFreight)
 const mockedResolve = vi.mocked(resolveDiscrepancy)
+const mockedInvestigate = vi.mocked(investigateDiscrepancy)
 
 const globalStubs = {
   stubs: {
@@ -1190,6 +1192,31 @@ describe('LogisticsDashboard 运营子域看板', () => {
     await flushPromises()
 
     expect(mockedResolve).toHaveBeenCalledWith(401, '已向亚马逊提交索赔')
+  })
+
+  it('开始核查：把差异转入核查中，并重拉看板', async () => {
+    // **这条钉住一个真实的覆盖空洞**：investigateDiscrepancy 一直被 mock，
+    // 但此前没有任何测试点过「开始核查」按钮——拆成 LogisticsReceiptPanel 后
+    // 我把它的 @click 从 investigate 换成 resolve，37 条测试全绿。
+    // 一个从不断言的按钮，等于没有测试。
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '签收差异')
+
+    mockedInvestigate.mockResolvedValue({
+      code: 200,
+      message: 'ok',
+      data: {}
+    } as never)
+    const investigateBtn = wrapper.findAll('button').find((b) => b.text() === '开始核查')
+    expect(investigateBtn).toBeTruthy()
+    await investigateBtn!.trigger('click')
+    await flushPromises()
+
+    expect(mockedInvestigate).toHaveBeenCalledWith(401)
+    expect(mockedResolve).not.toHaveBeenCalled()
+    // 核查成功后要重拉看板，否则状态栏还停在「待处理」
+    expect(mockedReceiptBoard).toHaveBeenCalledTimes(2)
   })
 
   it('登出后清空子域看板数据，避免残留上一个店铺的数字', async () => {

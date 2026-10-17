@@ -1144,177 +1144,14 @@
           </section>
 
           <!-- ================= 签收差异 ================= -->
+          <!-- ================= 签收差异 ================= -->
           <section v-else-if="tab === 'receipts'">
-            <div v-if="receiptBoard?.warnings?.length" class="warn-banner">
-              <Icon icon="mdi:information-outline" width="16" class="wb-icon" />
-              <div class="wb-body">
-                <div v-for="(w, i) in receiptBoard.warnings" :key="i">{{ w }}</div>
-              </div>
-            </div>
-
-            <div class="kpi-grid">
-              <div class="kpi-card">
-                <div class="kpi-icon"><Icon icon="mdi:clipboard-check-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ receiptBoard?.total ?? 0 }}</div>
-                  <div class="kpi-label">差异记录</div>
-                  <div class="kpi-sub">含 {{ receiptBoard?.matched ?? 0 }} 条对账无差异</div>
-                </div>
-              </div>
-              <div class="kpi-card" :class="{ 'kpi-alert': (receiptBoard?.openShortageUnits ?? 0) > 0 }">
-                <div class="kpi-icon tone-danger"><Icon icon="mdi:package-variant-minus" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ receiptBoard?.openShortageUnits ?? 0 }}</div>
-                  <div class="kpi-label">未结案少收 (件)</div>
-                  <div class="kpi-sub">还在等处理，可直接索赔</div>
-                </div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-icon tone-warn"><Icon icon="mdi:trending-down" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ receiptBoard?.shortageUnits ?? 0 }}</div>
-                  <div class="kpi-label">少收合计 (件)</div>
-                  <div class="kpi-sub">{{ receiptBoard?.shortageRows ?? 0 }} 条记录</div>
-                </div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-icon"><Icon icon="mdi:trending-up" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ receiptBoard?.overreceivedUnits ?? 0 }}</div>
-                  <div class="kpi-label">多收合计 (件)</div>
-                  <div class="kpi-sub">{{ receiptBoard?.overreceivedRows ?? 0 }} 条记录</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mini-grid">
-              <div class="mini-card" :class="{ alert: (receiptBoard?.pending ?? 0) > 0 }">
-                <div class="mini-value">{{ receiptBoard?.pending ?? 0 }}</div>
-                <div class="mini-label">待处理</div>
-                <div class="mini-hint">尚未开始核查</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ receiptBoard?.investigating ?? 0 }}</div>
-                <div class="mini-label">核查中</div>
-                <div class="mini-hint">已有人跟进</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ receiptBoard?.resolved ?? 0 }}</div>
-                <div class="mini-label">已结案</div>
-                <div class="mini-hint">已有处理结论</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ fmtRate(receiptBoard?.discrepancyRate) }}</div>
-                <div class="mini-label">差异率</div>
-                <div class="mini-hint">
-                  应收 {{ receiptBoard?.totalExpected ?? 0 }} / 实收 {{ receiptBoard?.totalReceived ?? 0 }}
-                </div>
-              </div>
-            </div>
-
-            <div v-if="receiptBoard?.overreceivedUnits && receiptBoard?.shortageUnits" class="warn-banner strong">
-              <Icon icon="mdi:swap-horizontal-bold" width="16" class="wb-icon" />
-              <div class="wb-body">
-                同时存在少收与多收：净差异（{{ receiptBoard?.totalDifference ?? 0 }} 件）
-                会把两个方向互相抵消。差异率因此按「绝对差异之和 / 应收合计」计算，
-                避免量级很大的问题被净额掩盖。
-              </div>
-            </div>
-
-            <div class="chart-card">
-              <h3>少收最多的 ASIN</h3>
-              <p class="card-desc">
-                按少收件数降序。集中少收通常指向一个具体环节：某个 SKU 的装箱数量申报不准、
-                或某个 FBA 仓对该品类的收货流程有系统性问题。
-              </p>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>ASIN</th>
-                    <th>SKU</th>
-                    <th>涉及货件</th>
-                    <th>应收</th>
-                    <th>实收</th>
-                    <th>少收</th>
-                    <th>多收</th>
-                    <th>净差异</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!receiptBoard?.topShortageAsins?.length">
-                    <td colspan="8" class="empty-row">没有差异记录</td>
-                  </tr>
-                  <tr v-for="a in receiptBoard?.topShortageAsins || []" :key="a.asin">
-                    <td>{{ a.asin }}</td>
-                    <td class="mono">{{ a.sku || '—' }}</td>
-                    <td>{{ a.shipmentCount }}</td>
-                    <td>{{ a.expected }}</td>
-                    <td>{{ a.received }}</td>
-                    <td :class="{ 'cell-alert': a.shortageUnits > 0 }">{{ a.shortageUnits }}</td>
-                    <td>{{ a.overreceivedUnits }}</td>
-                    <td>{{ a.netDifference }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div class="chart-card mt">
-              <h3>待处理签收差异</h3>
-              <p class="card-desc">
-                差异数量由「实收 − 应收」自动算出，不接受手工填写，
-                因此不会出现「差异值与两个数量互相矛盾」的记录。
-                结案必须填写处理结果——否则这条差异会变成一条没有下文的数据，后续无法复盘。
-              </p>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>货件号</th>
-                    <th>ASIN</th>
-                    <th>SKU</th>
-                    <th>应收</th>
-                    <th>实收</th>
-                    <th>差异</th>
-                    <th>类型</th>
-                    <th>状态</th>
-                    <th>登记时间</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!receiptBoard?.pendingItems?.length">
-                    <td colspan="10" class="empty-row">没有待处理的签收差异</td>
-                  </tr>
-                  <tr v-for="d in receiptBoard?.pendingItems || []" :key="d.id">
-                    <td class="mono">{{ d.shipmentNo || d.shipmentId || '—' }}</td>
-                    <td>{{ d.asin || '—' }}</td>
-                    <td class="mono">{{ d.sku || '—' }}</td>
-                    <td>{{ d.expectedQuantity ?? '—' }}</td>
-                    <td>{{ d.receivedQuantity ?? '—' }}</td>
-                    <td :class="{ 'cell-alert': (d.difference ?? 0) < 0 }">
-                      {{ d.difference ?? 0 }}
-                    </td>
-                    <td>
-                      <span class="status-tag" :class="discTypeTone(d.discrepancyType)">
-                        {{ discTypeLabel(d.discrepancyType) }}
-                      </span>
-                    </td>
-                    <td>{{ discStatusLabel(d.status) }}</td>
-                    <td class="mono">{{ fmtTime(d.createTime) }}</td>
-                    <td class="ops">
-                      <button
-                        v-if="d.status === 'PENDING'"
-                        class="link-btn"
-                        :disabled="busy"
-                        @click="doInvestigate(d.id)"
-                      >
-                        开始核查
-                      </button>
-                      <button class="link-btn" :disabled="busy" @click="doResolve(d.id)">结案</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <LogisticsReceiptPanel
+              :board="receiptBoard"
+              :busy="busy"
+              @investigate="doInvestigate"
+              @resolve="doResolve"
+            />
           </section>
         </template>
       </template>
@@ -1347,6 +1184,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import LogisticsCursorBar from '../components/LogisticsCursorBar.vue'
 import LogisticsTrackingModal from '../components/LogisticsTrackingModal.vue'
+import LogisticsReceiptPanel from '../components/LogisticsReceiptPanel.vue'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
 import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'
@@ -1568,19 +1406,6 @@ const ALLOCATION_METHOD_LABELS: Record<string, string> = {
   QUANTITY: '按数量'
 }
 
-const DISC_TYPE_LABELS: Record<string, string> = {
-  OVERRECEIVED: '多收',
-  UNDERRECEIVED: '少收',
-  MATCHED: '无差异',
-  DAMAGED: '破损',
-  NEGATIVE: '负数签收'
-}
-
-const DISC_STATUS_LABELS: Record<string, string> = {
-  PENDING: '待处理',
-  INVESTIGATING: '核查中',
-  RESOLVED: '已结案'
-}
 
 const statusLabel = (s?: string) => (s ? STATUS_LABELS[s] || s : '—')
 const methodLabel = (m?: string) => (m ? METHOD_LABELS[m] || m : '—')
@@ -1589,8 +1414,6 @@ const transferStatusLabel = (s?: string) => (s ? TRANSFER_STATUS_LABELS[s] || s 
 const transferRiskLabel = (t?: string) => (t ? TRANSFER_RISK_LABELS[t] || t : '—')
 const basisLabel = (b?: string) => (b ? BASIS_LABELS[b] || b : '—')
 const allocationMethodLabel = (m?: string) => (m ? ALLOCATION_METHOD_LABELS[m] || m : '—')
-const discTypeLabel = (t?: string) => (t ? DISC_TYPE_LABELS[t] || t : '—')
-const discStatusLabel = (s?: string) => (s ? DISC_STATUS_LABELS[s] || s : '—')
 
 const transferStatusTone = (s?: string) => {
   switch (s) {
@@ -1608,12 +1431,6 @@ const transferStatusTone = (s?: string) => {
   }
 }
 
-const discTypeTone = (t?: string) => {
-  if (t === 'UNDERRECEIVED') return 'tone-danger'
-  if (t === 'OVERRECEIVED') return 'tone-warn'
-  if (t === 'MATCHED') return 'tone-success'
-  return 'tone-muted'
-}
 
 /** 只有草稿与待审批可以改判；已发出 / 已收货 / 已取消不再显示审批按钮 */
 const canApprove = (status?: string) => status === 'DRAFT' || status === 'PENDING_APPROVAL'
