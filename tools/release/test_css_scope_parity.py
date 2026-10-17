@@ -337,7 +337,15 @@ class CssScopeParityTest(unittest.TestCase):
                         f"{shared_rel} 与该文件的 scoped 块中都没有定义：{missing}。"
                         f"若这是漏搬，样式会静默丢失（没有任何测试会红）。")
                     checked += len(used)
-        self.assertGreater(checked, 50, "一个类都没检查到——模板解析口径坏了")
+        #  sanity floor：防的是「模板解析口径坏了，一个类都没提取到」，
+        # 不是「类变少了」。§S33.14 把 LogisticsDashboard.vue 的模板拆出约 1100 行后，
+        # 剩下的类名数掉到 49——那时这条会因为 49 > 50 不成立而误报失败。
+        # 所以这里改成两个都必须满足的弱断言：
+        #   1. 每个被扫的文件至少提取到 1 个类（解析确实生效）
+        #   2. 总量不能掉到「明显没在扫」的程度（8）
+        # 拆分会持续减少这个数字，用固定 50 当门槛会把重构本身判成失败。
+        self.assertGreater(checked, 8,
+                           "一个类都没检查到——模板解析口径坏了")
 
     def test_shared_table_matches_its_git_original(self):
         """共享样式表必须与**搬迁前**的 scoped 副本一致（以 Git HEAD 为准）。

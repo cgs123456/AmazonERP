@@ -15,3 +15,9 @@
 /** 比率（0~1）→ 百分比；null / undefined 表示无样本，显示占位而非 0% */
 export const fmtRate = (v?: number | null) =>
   v === null || v === undefined ? '—' : (v * 100).toFixed(1) + '%'
+
+/** ISO 时间 → 「YYYY-MM-DD HH:mm:ss」；空值显示占位而不是 Invalid Date */
+export const fmtTime = (v?: string | null) => {
+  if (!v) return '—'
+  return v.replace('T', ' ').slice(0, 19)
+}

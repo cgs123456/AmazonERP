@@ -84,6 +84,21 @@
             @report-error="pushBlockError"
           />
 
+          <!-- ================= 在途货件 ================= -->
+          <!-- 常驻挂载而不是 v-else-if：switchTab 要通过 ref 调它的 load()，
+               而 v-else-if 下的组件在切到该 tab 之前不存在，ref 取到 null，
+               懒加载就永远不会触发（症状：列表一直空、listShipments 一次都没调）。
+               与调拨面板同一先例。 -->
+          <LogisticsShipmentPanel
+            ref="shipmentPanel"
+            :active="tab === 'shipments'"
+            :busy="busy"
+            @report-error="(tag, detail) => pushBlockError(tag, detail)"
+            @sync="doSync"
+            @track="openTracking"
+            @close="doClose"
+          />
+
           <!-- ================= 概览 ================= -->
           <!-- 概览是这条 v-if/v-else-if 链的**头**：后面每个 tab 都是 v-else-if，
                所以头必须是 v-if。组件内部再按 active 决定渲染（与调拨面板同一先例）——
@@ -108,69 +123,6 @@
             />
 
           <!-- ================= 在途货件 ================= -->
-          <section v-else-if="tab === 'shipments'">
-            <div class="filter-bar">
-              <label for="lg-status">状态</label>
-              <select id="lg-status" v-model="shipmentStatus" @change="loadShipments()">
-                <option value="">全部</option>
-                <option v-for="s in statusOptions" :key="s" :value="s">
-                  {{ statusLabel(s) }}
-                </option>
-              </select>
-              <span class="filter-count">
-              已加载 {{ shipments.length }} 条<template v-if="shipmentsTruncated">，仍有更多未加载</template><template v-else-if="shipmentsPageMetaMissing">，完整性未知</template>
-            </span>
-            </div>
-            <div class="table-card">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>货件号</th>
-                    <th>承运商</th>
-                    <th>运单号</th>
-                    <th>状态</th>
-                    <th>方式</th>
-                    <th>ETA</th>
-                    <th>最近取数</th>
-                    <th>来源</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!shipments.length">
-                    <td colspan="9" class="empty-row">暂无货件</td>
-                  </tr>
-                  <tr v-for="s in shipments" :key="s.id">
-                    <td class="mono">{{ s.shipmentNo }}</td>
-                    <td>{{ s.carrier || '—' }}</td>
-                    <td class="mono">{{ s.masterTrackingNo || '—' }}</td>
-                    <td>
-                      <span class="status-tag" :class="statusTone(s.status)">
-                        {{ statusLabel(s.status) }}
-                      </span>
-                    </td>
-                    <td>{{ methodLabel(s.shippingMethod) }}</td>
-                    <td class="mono">{{ s.eta || '—' }}</td>
-                    <td class="mono">{{ fmtTime(s.lastTrackTime) }}</td>
-                    <td>{{ s.dataSource || 'AUTO' }}</td>
-                    <td class="ops">
-                      <button class="link-btn" :disabled="busy" @click="doSync(s.id!)">同步</button>
-                      <button class="link-btn" @click="openTracking(s.id!)">轨迹</button>
-                      <button class="link-btn" :disabled="busy" @click="doClose(s.id!)">关单</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <LogisticsCursorBar
-                :loaded="shipments.length"
-                :truncated="shipmentsTruncated"
-                :page-meta-missing="shipmentsPageMetaMissing"
-                :loading-more="shipmentsLoadingMore"
-                :has-next="!!shipmentsNextCursor"
-                @load-more="loadMoreShipments"
-              />
-            </div>
-          </section>
 
           <!-- ================= 承运商 ================= -->
           <section v-else-if="tab === 'carrier'">
@@ -365,7 +317,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
-import LogisticsCursorBar from '../components/LogisticsCursorBar.vue'
 import LogisticsTrackingModal from '../components/LogisticsTrackingModal.vue'
 import LogisticsReceiptPanel from '../components/LogisticsReceiptPanel.vue'
 import LogisticsFreightPanel from '../components/LogisticsFreightPanel.vue'
@@ -374,9 +325,9 @@ import LogisticsQuoteComparePanel from '../components/LogisticsQuoteComparePanel
 import LogisticsQuoteListPanel from '../components/LogisticsQuoteListPanel.vue'
 import LogisticsOverviewPanel from '../components/LogisticsOverviewPanel.vue'
 import LogisticsAlertPanel from '../components/LogisticsAlertPanel.vue'
-import { statusLabel, statusTone } from '../components/logisticsStatus'
+import LogisticsShipmentPanel from '../components/LogisticsShipmentPanel.vue'
 import LogisticsQuoteBoardPanel from '../components/LogisticsQuoteBoardPanel.vue'
-import { fmtRate } from '../components/logisticsFormat'
+import { fmtTime, fmtRate } from '../components/logisticsFormat'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
 import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'
@@ -386,7 +337,6 @@ import {
   getLogisticsTrend,
   getCarrierPerformance,
   getLogisticsAlerts,
-  listShipments,
   syncShipment,
   closeShipment,
   getShipmentTracking,
@@ -401,7 +351,6 @@ import {
   type TrendPoint,
   type CarrierPerformance,
   type ShipmentAlert,
-  type Shipment,
   type TrackingEvent,
   type ImportReport,
   type ImportShipmentRow,
@@ -422,18 +371,13 @@ const overview = ref<DashboardOverview | null>(null)
 const trend = ref<TrendPoint[]>([])
 const carriers = ref<CarrierPerformance[]>([])
 const alerts = ref<ShipmentAlert[]>([])
-const PAGE_SIZE = 50
-const shipments = ref<Shipment[]>([])
-const shipmentsNextCursor = ref<string | null>(null)
-const shipmentsTruncated = ref(false)
-const shipmentsPageMetaMissing = ref(false)
-const shipmentsLoadingMore = ref(false)
 
 // 运营子域看板
 const quoteBoard = ref<QuoteBoard | null>(null)
 /** 逐条有效报价（与看板/比价互补的后端读侧；只含有效期内且 ACTIVE 的报价） */
 const transferPanel = ref<InstanceType<typeof LogisticsTransferPanel> | null>(null)
 const quoteListPanel = ref<InstanceType<typeof LogisticsQuoteListPanel> | null>(null)
+const shipmentPanel = ref<InstanceType<typeof LogisticsShipmentPanel> | null>(null)
 const freightBoard = ref<FreightCostBoard | null>(null)
 const receiptBoard = ref<ReceiptBoard | null>(null)
 
@@ -442,7 +386,6 @@ const receiptBoard = ref<ReceiptBoard | null>(null)
 type TabKey = 'overview' | 'alerts' | 'shipments' | 'carrier' | 'quotes' | 'transfers' | 'freight' | 'receipts' | 'import'
 
 const tab = ref<TabKey>('overview')
-const shipmentStatus = ref('')
 
 // 轨迹浮层
 const TRACKING_PAGE_SIZE = 200
@@ -502,14 +445,6 @@ const trackingPlaceholder = `[\n  { "shipmentNo": "SHP20260818001", "events": [ 
 // ============================================================
 
 
-const statusOptions = ['CREATED', 'IN_TRANSIT', 'CUSTOMS', 'DELIVERED', 'RECEIVED', 'DELAYED', 'EXCEPTION', 'CLOSED']
-
-const METHOD_LABELS: Record<string, string> = {
-  SEA: '海运',
-  AIR: '空运',
-  EXPRESS: '快递',
-  TRUCK: '卡车'
-}
 
 
 
@@ -517,16 +452,10 @@ const METHOD_LABELS: Record<string, string> = {
 
 
 
-const methodLabel = (m?: string) => (m ? METHOD_LABELS[m] || m : '—')
 
 
 
 
-
-const fmtTime = (v?: string | null) => {
-  if (!v) return '—'
-  return v.replace('T', ' ').slice(0, 19)
-}
 
 /** 金额/数量：null 与 undefined 都显示占位，避免出现 NaN 或误读成 0 */
 
@@ -648,52 +577,6 @@ const loadAlerts = async (shopId: string) => {
   }
 }
 
-const loadShipments = async (append = false) => {
-  const shopId = refreshShop()
-  if (!shopId) {
-    if (!append) {
-      shipments.value = []
-      shipmentsNextCursor.value = null
-      shipmentsTruncated.value = false
-      shipmentsPageMetaMissing.value = false
-    }
-    return
-  }
-  if (!append) {
-    shipmentsNextCursor.value = null
-    shipmentsTruncated.value = false
-    shipmentsPageMetaMissing.value = false
-  }
-  if (append) shipmentsLoadingMore.value = true
-  try {
-    const cursor = append ? (shipmentsNextCursor.value ?? undefined) : undefined
-    const res = await listShipments(shopId, shipmentStatus.value || undefined, PAGE_SIZE, cursor)
-    if (res?.code === 200 && Array.isArray(res.data)) {
-      const rows = res.data
-      shipments.value = append ? shipments.value.concat(rows) : rows
-      const page = res._page
-      const hasMore = page ? (page.truncated || page.hasMore) : false
-      const metaMissing = !page || (hasMore && !page.nextCursor)
-      shipmentsPageMetaMissing.value = metaMissing
-      shipmentsTruncated.value = !metaMissing && hasMore
-      shipmentsNextCursor.value = metaMissing ? null : (page?.nextCursor ?? null)
-    } else {
-      pushBlockError('货件列表', res?.message)
-      if (!append) shipments.value = []
-    }
-  } catch (e) {
-    console.warn('[Logistics] 加载货件列表失败', e)
-    pushBlockError('货件列表', e)
-    if (!append) shipments.value = []
-  } finally {
-    if (append) shipmentsLoadingMore.value = false
-  }
-}
-
-const loadMoreShipments = () => {
-  if (!shipmentsTruncated.value || !shipmentsNextCursor.value || shipmentsLoadingMore.value) return
-  void loadShipments(true)
-}
 
 // ---- 运营子域看板 ----
 
@@ -754,7 +637,8 @@ const refreshCurrent = async () => {
     if (tab.value === 'overview') {
       await reload()
     } else if (tab.value === 'shipments') {
-      await loadShipments()
+      // 列表与分页都在子组件里，刷新整块交给它（错误经 report-error 回流页级错误区）
+      await shipmentPanel.value?.load()
     } else if (tab.value === 'quotes') {
       await safeLoad('quotes', () => loadQuoteBoard(shopId))
     } else if (tab.value === 'transfers') {
@@ -780,7 +664,8 @@ const switchTab = async (key: TabKey) => {
   if (!shopId) return
   // 按标签懒加载：子域看板只在第一次打开时拉取，避免进来就把六七个接口全打一遍
   if (key === 'shipments') {
-    if (!shipments.value.length) await safeLoad('shipments', loadShipments)
+    // 「已加载」判据归面板，页壳再存一份就是两套真相（与调拨同一处理）
+    await shipmentPanel.value?.load()
   } else if (key === 'quotes') {
     if (!quoteBoard.value) await safeLoad('quotes', () => loadQuoteBoard(shopId))
     // 逐条报价与看板同源但不同端点：也按「首次打开才拉」。
@@ -809,7 +694,7 @@ const doSync = async (shipmentId: number) => {
     const res = await syncShipment(shipmentId)
     if (res?.code === 200) {
       showToast('同步完成', 'success')
-      await Promise.all([loadShipments(), loadOverview(refreshShop())])
+      await Promise.all([shipmentPanel.value?.load(), loadOverview(refreshShop())])
     } else {
       showToast(res?.message || '同步失败', 'error')
     }
@@ -828,7 +713,7 @@ const doClose = async (shipmentId: number) => {
     const res = await closeShipment(shipmentId, refreshShop())
     if (res?.code === 200) {
       showToast('货件已关闭', 'success')
-      await Promise.all([loadShipments(), reload()])
+      await Promise.all([shipmentPanel.value?.load(), reload()])
     } else {
       showToast(res?.message || '关闭失败', 'error')
     }
@@ -991,7 +876,7 @@ const runImport = async (
       )
       // 导入会改变看板数字，直接刷新让使用者立刻看到结果，省去手动再点一次刷新
       await reload()
-      if (tab.value === 'shipments') await loadShipments()
+      if (tab.value === 'shipments') await shipmentPanel.value?.load()
     } else {
       showToast(res?.message || `${label}导入失败`, 'error')
     }
@@ -1011,7 +896,7 @@ const onAuthChanged = () => {
   hasToken.value = !!localStorage.getItem('token')
   if (hasToken.value) {
     reload()
-    if (tab.value === 'shipments') loadShipments()
+    if (tab.value === 'shipments') void shipmentPanel.value?.load()
     // 子域看板同样要跟着换店铺重拉，否则会残留上一个店铺的数字
     const shopId = refreshShop()
     if (tab.value === 'quotes') {
@@ -1026,7 +911,6 @@ const onAuthChanged = () => {
     trend.value = []
     carriers.value = []
     alerts.value = []
-    shipments.value = []
     quoteBoard.value = null
     freightBoard.value = null
     receiptBoard.value = null

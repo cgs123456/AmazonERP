@@ -8,6 +8,7 @@ import { TRANSFER_STATUS_LABELS } from '../components/logisticsTransferStatus'
 // 「表被改了组件也跟着改」和「表没变」两种情况。
 import { BASIS_LABELS, basisLabel } from '../components/logisticsQuoteLabels'
 import { STATUS_LABELS, statusLabel, statusTone } from '../components/logisticsStatus'
+import { METHOD_LABELS, methodLabel } from '../components/logisticsMethodLabels'
 
 // 整体 mock 物流 API，避免测试触发真实请求
 vi.mock('@/api/logistics', () => ({
@@ -164,6 +165,14 @@ const alertsFixture = [
 ]
 
 const mountView = () => mount(LogisticsDashboard, { global: globalStubs })
+
+/**
+ * 取页壳实例。用于调子组件 defineExpose 出来的方法（如 shipmentPanel.load()）——
+ * 有些分支（无店铺清空列表）在真实 UI 路径上会被「整块卸载」掩盖，只能直接调。
+ */
+const vmOf = (wrapper: ReturnType<typeof mountView>) => wrapper.vm as unknown as {
+  shipmentPanel: { load: () => Promise<void> }
+}
 
 // ------------------------------------------------------------
 // 运营子域看板 fixtures
@@ -1069,6 +1078,8 @@ describe('LogisticsDashboard 视图', () => {
         code: 200,
         message: 'ok',
         data: [filtered],
+        // 第二页**不**给新游标：这样「换筛选后有没有重置」就变成可观测的——
+        // 若没重置，残留的 OLD-CUR 会出现在这里的请求参数里。
         _page: pageMeta([filtered])
       } as never)
 
@@ -1081,9 +1092,149 @@ describe('LogisticsDashboard 视图', () => {
     await wrapper.find('#lg-status').setValue('DELAYED')
     await flushPromises()
 
+    // 关键：游标必须是 undefined。只断言「带了 DELAYED 筛选」不够——若忘了重置游标，
+    // 这里会变成 ('1', 'DELAYED', 50, 'OLD-CUR')，服务端从旧筛选的第二页开始取，
+    // 把两批不同筛选的结果拼在一起给用户看。
     expect(mockedShipments).toHaveBeenLastCalledWith('1', 'DELAYED', 50, undefined)
+    expect(mockedShipments).not.toHaveBeenCalledWith('1', 'DELAYED', 50, 'OLD-CUR')
     expect(wrapper.text()).toContain('SHP-DELAYED')
     expect(wrapper.text()).not.toContain('SHP-ALL')
+
+    // 换筛选后不得还有「加载更多」：第二页没给游标，说明这一筛选已取完。
+    // 若重置失效，残留的 OLD-CUR 会让按钮继续可点，并把旧筛选的第二页拼进来。
+    expect(wrapper.findAll('button').some((b) => b.text().includes('加载更多'))).toBe(false)
+  })
+
+  // ------------------------------------------------------------
+  // 在途货件面板（回归：拆 LogisticsShipmentPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这一刀变异测试抓到 5 处空洞。** 拆出货件面板后，原页壳上那些
+   * 「游标 / 分页 / 清空 / 按钮」的保障都还在测页面整体，但没有一条是
+   * 对着**新面板自己的那段代码**的——变异全部落在面板里，测试全绿。
+   *
+   * 调拨列表、报价明细拆时都逐个补过，这一刀照同一份清单补齐。
+   */
+
+  /**
+   * 无店铺时必须清空列表。切走店铺后 `refreshShop()` 返回空串，
+   * 不清空则**上一个店铺的货件继续显示在新店铺下**——多租户隔离缺口。
+   * UI 上只表现为「数字没变」，没有任何错误文案可断言，所以只能盯接口调用与文案。
+   */
+  it('切走店铺后货件列表必须清空，不得残留上一个店铺的货件', async () => {
+    const row = {
+      id: 11,
+      shipmentNo: 'SHP-OTHER-SHOP',
+      carrier: 'COSCO',
+      masterTrackingNo: 'COSU1',
+      shippingMethod: 'SEA',
+      status: 'IN_TRANSIT',
+      eta: null,
+      lastTrackTime: null,
+      dataSource: 'IMPORT'
+    }
+    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [row], _page: pageMeta([row]) } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('SHP-OTHER-SHOP')
+
+    // 直接调面板的 load()，让「无店铺则清空」那段真正执行。
+    //
+    // 为什么不能靠切 tab 模拟：shopId 为空时页壳走「请先选择店铺」分支，
+    // 整块 tab 区（含货件面板）卸载，清不清空都看不出来，断言恒真。
+    // 这也是这条测试必须直接调 load() 的唯一原因。
+    localStorage.setItem('current_shop_id', '')
+    await vmOf(wrapper).shipmentPanel.load()
+    await flushPromises()
+
+    expect(mockedShipments).not.toHaveBeenCalledWith('', undefined, 50, undefined)
+    expect(wrapper.text()).not.toContain('SHP-OTHER-SHOP')
+    expect(wrapper.text()).toContain('暂无货件')
+  })
+
+  /**
+   * 缺分页元数据时不得冒充全量。「不是全量」配一个点不动的按钮，
+   * 等于告诉用户「你能看完」——货件漏看一张就可能漏一次延误处理。
+   * 这条与调拨/报价明细同属 `truncated` / `pageMetaMissing` 互斥约定。
+   */
+  it('有更多但没有游标时必须说「完整性未知」，且不给加载下一页', async () => {
+    mockedShipments.mockResolvedValue({
+      code: 200, message: 'ok', data: [],
+      _page: pageMeta([], { hasMore: true, truncated: false, nextCursor: null })
+    } as never)
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('完整性未知')
+    expect(wrapper.findAll('button').some((b) => b.text().includes('加载更多'))).toBe(false)
+  })
+
+  /**
+   * 三个按钮必须真的把货件号交出去。改成空函数后按钮和文字都在，
+   * 点下去毫无反应——而面板是刚拆出来的，没有任何测试点过它们。
+   * （待处理 tab 那三个按钮已补过同样一条，这里是对货件表的对应版本。）
+   */
+  it('货件行的同步/轨迹/关单按钮必须把货件号交给页壳', async () => {
+    const row = {
+      id: 11,
+      shipmentNo: 'SHP-BTN',
+      carrier: 'COSCO',
+      masterTrackingNo: 'COSU1',
+      shippingMethod: 'SEA',
+      status: 'IN_TRANSIT',
+      eta: null,
+      lastTrackTime: null,
+      dataSource: 'IMPORT'
+    }
+    mockedShipments.mockResolvedValue({ code: 200, message: 'ok', data: [row], _page: pageMeta([row]) } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('在途货件'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    const rowEl = wrapper.findAll('tbody tr').find((r) => r.text().includes('SHP-BTN'))
+    expect(rowEl, '未找到货件行').toBeTruthy()
+
+    mockedSync.mockResolvedValue({ code: 200, message: 'ok', data: {} } as never)
+    await rowEl!.findAll('button').find((b) => b.text() === '同步')!.trigger('click')
+    await flushPromises()
+    expect(mockedSync).toHaveBeenCalledWith(11)
+
+    await rowEl!.findAll('button').find((b) => b.text() === '轨迹')!.trigger('click')
+    await flushPromises()
+    expect(mockedTracking).toHaveBeenCalledWith(11, expect.anything(), undefined)
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedClose.mockResolvedValue({ code: 200, message: 'ok', data: {} } as never)
+    await rowEl!.findAll('button').find((b) => b.text() === '关单')!.trigger('click')
+    await flushPromises()
+    expect(mockedClose).toHaveBeenCalledWith(11, '1')
+  })
+
+  /**
+   * 运输方式中文表。SEA/AIR/EXPRESS/TRUCK 四个值的字数不同，
+   * 改一个字在表格里几乎看不出来，但它是运营判断走货方式的直接依据。
+   */
+  it('运输方式中文名表必须与拆分前逐字一致', () => {
+    expect(METHOD_LABELS).toEqual({
+      SEA: '海运',
+      AIR: '空运',
+      EXPRESS: '快递',
+      TRUCK: '卡车'
+    })
+    // 未知方式原样显示，而不是归成「其他」
+    expect(methodLabel('RAIL')).toBe('RAIL')
+    expect(methodLabel(undefined)).toBe('—')
   })
 })
 
