@@ -1103,6 +1103,50 @@ describe('LogisticsDashboard 视图', () => {
     expect(failedItem.classes()).not.toContain('cell-alert')
   })
 
+  /**
+   * **这一条钉住本刀引入的第二个回归。**
+   *
+   * `runImport` 搬进面板后，页壳的 `busy` 不再为导入置位——请求期间
+   * `props.busy` 一直是 false，模板的 `:disabled="busy || ..."` 于是**不禁用**。
+   * 实测过：请求进行中按钮 `disabled` 属性不存在，连点会重复提交同一批数据。
+   * （后端按货件号 upsert 是幂等的，但用户要白等两轮，结果面板也会被覆盖两次。）
+   *
+   * 其他写操作面板都有本地互斥（freight 的 calcBusy / transfers 的 panelBusy /
+   * quoteBoard 的 busyLocal），只有导入这块漏了——因为它同时把 handler 搬走了，
+   * 而页壳的 busy 只服务仍留在页壳的 handler。
+   */
+  it('导入请求进行中按钮必须禁用，不得重复提交', async () => {
+    let release: (() => void) | undefined
+    mockedImportShipments.mockImplementation(
+      () => new Promise((resolve) => {
+        release = () => resolve({ code: 200, message: 'ok', data: importReportOk } as never)
+      }) as never
+    )
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('数据导入'))
+    await tab!.trigger('click')
+    await flushPromises()
+    await wrapper.find('textarea').setValue('[{"shipmentNo":"SHP-BUSY"}]')
+    await flushPromises()
+
+    const btn = () => wrapper.findAll('button').find((b) => b.text().includes('导入货件主单'))!
+    await btn().trigger('click')
+    await flushPromises()
+
+    // 请求未返回：按钮必须禁用，且再点一次不得发出第二个请求
+    expect(btn().attributes('disabled'), '请求进行中按钮必须禁用').toBeDefined()
+    await btn().trigger('click')
+    await flushPromises()
+    expect(mockedImportShipments).toHaveBeenCalledTimes(1)
+
+    release!()
+    await flushPromises()
+    // 请求结束后恢复可点（否则一次导入之后整块面板就废了）
+    expect(btn().attributes('disabled')).toBeUndefined()
+  })
+
   /** 结果面板的「清除」按钮。不生效的话上一次的结果会一直压在页面上。 */
   it('导入结果的清除按钮必须真的清掉结果面板', async () => {
     mockedImportShipments.mockResolvedValue({ code: 200, message: 'ok', data: importReportOk } as never)
@@ -1820,6 +1864,44 @@ describe('LogisticsDashboard 运营子域看板', () => {
     await btn!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('该店铺无过期报价可标记')
+  })
+
+  /**
+   * **这条钉住 §S33.10 引入、直到 §S33.17 review 才发现的缺陷。**
+   *
+   * 「标记过期」是按 shopId 批量改状态、**不可逐条回滚**的写操作
+   * （EXPIRED 之后要逐条改回 ACTIVE）。拆出面板时我加了 `busyLocal`
+   * 并在 `doExpireQuotes` 里置位/复位，**但模板的 `:disabled` 忘了带上它**——
+   * 于是请求进行中按钮仍可点，连点会重复提交。
+   *
+   * 当时的测试只断言「成功后重拉看板」，没测请求期间的按钮状态，所以一直绿。
+   * 用同一份探针实测确认过：`disabledDuringRequest=false`。
+   */
+  it('标记过期请求进行中按钮必须禁用，不得重复提交', async () => {
+    let release: (() => void) | undefined
+    mockedExpire.mockImplementation(
+      () => new Promise((resolve) => {
+        release = () => resolve({ code: 200, message: 'ok', data: 2 } as never)
+      }) as never
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '比价')
+
+    const btn = () => wrapper.findAll('button').find((b) => b.text().includes('标记过期报价'))!
+    await btn().trigger('click')
+    await flushPromises()
+
+    expect(btn().attributes('disabled'), '请求进行中按钮必须禁用').toBeDefined()
+    await btn().trigger('click')
+    await flushPromises()
+    expect(mockedExpire).toHaveBeenCalledTimes(1)
+
+    release!()
+    await flushPromises()
+    expect(btn().attributes('disabled')).toBeUndefined()
   })
 
   /**

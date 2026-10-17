@@ -261,8 +261,113 @@ const chart = computed(() => {
 </template>
 
 <style scoped>
-/* 不定义任何样式：kpi-* / mini-* / chart-card / card-head / legend /
- * dot / line-* / dist-* / source-* / mt 全部来自共享样式表与 src/style.css。
- * 由 tools/release/test_css_scope_parity.py 盯住。
- */
+/* ------------------------------------------------------------
+ * 以下规则从 LogisticsDashboard.vue 的 scoped 块搬来（§S33.17 review）。
+ *
+ * 它们原本留在页壳里，而使用它们的模板已经搬进本组件——scoped 不跨组件边界，
+ * 于是这些样式对本组件**完全无效**：概览的折线图与分布条、导入的表单与结果卡片
+ * 全都掉成浏览器默认样式。所有测试与构建都是绿的，因为没人断言样式。
+ *
+ * 搬运时未改一个声明；等价性由 tools/release/test_css_scope_parity.py 的
+ * test_no_orphan_rules_left_in_view_after_extraction 盯住。
+ * ------------------------------------------------------------ */
+
+/* 看板提示条：口径说明与数据质量提醒。
+   单独做一个条而不是塞进正文，是为了让「有口径需要注意」这件事无法被忽略 */
+
+/* KPI */
+/* KPI 卡在「这项不该有值却有值」时描红边：否则一眼扫过去数字大小看不出异常 */
+
+/* 次级指标 */
+/* 需要处理时描红边：这些指标为 0 才是正常，非 0 就要有人去看 */
+
+/* 图表区 */
+.chart-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+}
+
+/* 卡片之间的间距：同层级卡片紧跟，跨层级的卡片用 .mt 拉开 */
+.legend {
+  display: flex;
+  gap: 0.75rem;
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+}
+
+.lg { display: inline-flex; align-items: center; gap: 0.25rem; }
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  display: inline-block;
+}
+
+.dot-created { background: var(--color-primary); }
+
+.dot-delivered { background: var(--color-success); }
+
+.chart { width: 100%; height: auto; display: block; }
+
+.grid-line { stroke: var(--color-border); stroke-width: 1; }
+
+.axis-text {
+  font-size: 10px;
+  fill: var(--color-muted);
+}
+
+.line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.line-created { stroke: var(--color-primary); }
+
+.line-delivered { stroke: var(--color-success); }
+
+/* 状态分布 */
+.dist-list { display: flex; flex-direction: column; gap: 0.625rem; }
+
+.dist-item { display: flex; align-items: center; gap: 0.5rem; }
+
+.dist-bar {
+  flex: 1;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--color-muted-light);
+  overflow: hidden;
+}
+
+.dist-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius-full);
+}
+
+.dist-value {
+  width: 2.5rem;
+  text-align: right;
+  font-size: var(--font-size-2);
+  color: var(--color-on-surface);
+}
+
+.source-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.source-chip {
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-muted-light);
+  color: var(--color-muted);
+  font-size: var(--font-size-1);
+}
+
+/* 响应式覆盖：随 .chart-row 一起从页壳搬来，保留 @media 包裹
+   （丢掉包裹会让窄屏规则在宽屏生效——§S33 立项时的第三类失败） */
+@media (max-width: 1024px) {
+  .chart-row { grid-template-columns: 1fr; }
+}
 </style>

@@ -5413,3 +5413,76 @@ POST-CHANGE (mine): card=false
 （概览 / 待处理 / 在途货件 / 承运商 / 数据导入 / 报价比价 / 头程 / 签收 / 调拨）。
 剩余 1049 行是页壳本身：tab 框架、数据加载、`blockErrors` 页级错误区、
 生命周期与轨迹浮层装配。下一班若继续，入口见 §S33.17 的建议。
+
+## §S33.17 收尾 review：两个重复提交缺陷 + 34 条孤儿样式
+
+这一轮不是拆组件，是对前面九刀的回看。结论：**拆得对，但拆完的边界上漏了东西**。
+
+### 17.1 重复提交（两个面板）
+
+`LogisticsImportPanel` 与 `LogisticsQuoteBoardPanel` 的按钮 `:disabled`
+只看了父组件传下来的 `busy`。而 `busy` 是**异步**的：点击 → 父组件收到事件 →
+父组件把 `busy` 置真，这中间有一次 tick 的窗口，第二次点击仍能通过。
+导入是幂等的吗？不是——重复导入会生成两批数据。
+
+修法：面板内加 `busyLocal`，进入请求前置真、`finally` 清掉，按钮
+`:disabled="busy || busyLocal || ..."`。两处都做了变异验证
+（去掉 `busyLocal` → 测试报 `disabledDuringRequest=false`）。
+
+**通用判据：任何会触发写操作、且父组件用异步 prop 控制 busy 的组件，
+自己也要有本地 busy 锁。** 父组件的 `busy` 只能防「同时多个子组件并发」，
+防不住「同一按钮连点两次」。
+
+### 17.2 34 条孤儿样式（本轮最严重的发现）
+
+`test_no_orphan_rules_left_in_view_after_extraction` 是这一轮新加的门禁方向：
+**视图 scoped 块里残留「模板已不用、但拆出的子组件在用」的规则。**
+
+症状是静默的：scoped 不跨组件边界，规则留在页壳对子组件完全无效，
+子组件掉成默认样式。而 vitest / vue-tsc / build 三者全绿——**它们都不看 CSS 作用域**。
+
+实测残留 34 条，分布在三个面板：
+
+| 面板 | 条数 | 用户可见后果 |
+|---|---|---|
+| `LogisticsOverviewPanel` | 19 | 概览图表与分布区完全无样式 |
+| `LogisticsImportPanel` | 12 | 整个导入表单与结果卡片无样式 |
+| `LogisticsShipmentPanel` | 3 | 在途货件筛选栏无样式 |
+
+搬迁后页壳 scoped 块 308 → 150 行。
+
+### 17.3 @media 里的三条差点再漏一次
+
+第一版搬迁脚本的正则只匹配顶层规则，`@media (max-width: 1024px)` 内的
+`.chart-row` / `.import-grid` / `.report-grid` 被留在页壳——**新的门禁方向立刻抓到了**。
+
+处理时保留了 `@media` 包裹（`.chart-row` → 概览，`.import-grid`/`.report-grid` → 导入），
+并删掉搬空后残留的 `@media (max-width: 768px) { }` 空块。
+
+### 17.4 门禁的两处修正
+
+1. **新增 media-aware 存活比对**：`test_shared_table_matches_its_git_original`
+   原来把顶层与 `@media` 内规则并成一张 `{选择器: 声明体}` 表。同名规则
+   （`.chart-row` 顶层基础 + media 覆盖）会互相遮蔽，「media 里那条还在不在」
+   看不见。改为**按条件分开核对**，并让子组件 scoped 块参与存活判定
+   （它们是合法的搬迁终点）。
+   变异验证：删 media 规则 → CAUGHT；拍平 media 包裹 → CAUGHT。
+
+2. **删除 `test_media_queries_match`**：它比「共享表与**当前** scoped 块共有的
+   media 条件」，而这次搬迁的终点就是 scoped 里一条 media 都不剩，
+   共有集合为空 → 断言变成 `assertTrue(common)` 直接红，修不了只能删。
+   它防的拍平由上面第 1 条（对搬迁前基线）与
+   `test_media_queries_are_preserved_not_flattened`（共享表内部）覆盖，后者更强。
+   删除理由已写进保留方法的 docstring。
+
+### 17.5 已知未修（记录在案，非本刀引入）
+
+- **报价 tab 的 `refreshCurrent` 只刷看板，不刷有效报价明细列表。**
+  在 `git log -S` 里确认是重构前就有的行为，不是拆分引入。用户点刷新时
+  列表可能停留在旧数据。下一班若要修，注意 `LogisticsQuoteListPanel`
+  暴露的是 `load`/`reload`，页壳的刷新分支需要显式调它。
+
+### 17.6 收尾状态
+
+`LogisticsDashboard.vue` **1049 → 883 行**（样式搬走后）。vitest 705 全绿，
+`vue-tsc` 0 错，`vite build` 通过，Python 门禁全绿，ratchet 基线 46594 行。

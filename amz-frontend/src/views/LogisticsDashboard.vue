@@ -852,170 +852,12 @@ onUnmounted(() => {
   color: var(--color-warning-dark);
 }
 
-/* 看板提示条：口径说明与数据质量提醒。
-   单独做一个条而不是塞进正文，是为了让「有口径需要注意」这件事无法被忽略 */
-
-/* KPI */
-/* KPI 卡在「这项不该有值却有值」时描红边：否则一眼扫过去数字大小看不出异常 */
-
-/* 次级指标 */
-/* 需要处理时描红边：这些指标为 0 才是正常，非 0 就要有人去看 */
-
-/* 图表区 */
-.chart-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 1.5rem;
-}
-/* 卡片之间的间距：同层级卡片紧跟，跨层级的卡片用 .mt 拉开 */
 
 
-.legend {
-  display: flex;
-  gap: 0.75rem;
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-}
-.lg { display: inline-flex; align-items: center; gap: 0.25rem; }
-.dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: var(--radius-full);
-  display: inline-block;
-}
-.dot-created { background: var(--color-primary); }
-.dot-delivered { background: var(--color-success); }
-
-.chart { width: 100%; height: auto; display: block; }
-.grid-line { stroke: var(--color-border); stroke-width: 1; }
-.axis-text {
-  font-size: 10px;
-  fill: var(--color-muted);
-}
-.line {
-  fill: none;
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-.line-created { stroke: var(--color-primary); }
-.line-delivered { stroke: var(--color-success); }
-
-/* 状态分布 */
-.dist-list { display: flex; flex-direction: column; gap: 0.625rem; }
-.dist-item { display: flex; align-items: center; gap: 0.5rem; }
-.dist-bar {
-  flex: 1;
-  height: 0.5rem;
-  border-radius: var(--radius-full);
-  background: var(--color-muted-light);
-  overflow: hidden;
-}
-.dist-fill {
-  height: 100%;
-  background: var(--color-primary);
-  border-radius: var(--radius-full);
-}
-.dist-value {
-  width: 2.5rem;
-  text-align: right;
-  font-size: var(--font-size-2);
-  color: var(--color-on-surface);
-}
-.source-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.source-chip {
-  padding: 0.25rem 0.625rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-muted-light);
-  color: var(--color-muted);
-  font-size: var(--font-size-1);
-}
 
 
-/* 过滤条 */
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  font-size: var(--font-size-2);
-  color: var(--color-muted);
-}
-.filter-bar select {
-  padding: 0.375rem 0.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-on-surface);
-  font-size: var(--font-size-2);
-}
-.filter-count { margin-left: auto; }
 
-/* 数据导入 */
-.import-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-.json-input {
-  width: 100%;
-  min-height: 12rem;
-  padding: 0.75rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-background);
-  color: var(--color-on-surface);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-1);
-  line-height: var(--line-height-normal);
-  resize: vertical;
-  box-sizing: border-box;
-}
-.import-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
 
-/* 导入报告 */
-.report-card { margin-top: 0.5rem; }
-.report-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-.report-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  padding: 0.75rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-muted-light);
-}
-.report-item b { font-size: var(--font-size-5); color: var(--color-on-surface); }
-.report-item span { font-size: var(--font-size-1); color: var(--color-muted); }
-.report-title {
-  font-size: var(--font-size-2);
-  color: var(--color-on-surface);
-  margin-bottom: 0.5rem;
-}
-.chip-wrap { display: flex; flex-wrap: wrap; gap: 0.375rem; }
-.chip {
-  padding: 0.125rem 0.5rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-warning-light);
-  color: var(--color-warning-dark);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-1);
-}
-.report-ok {
-  margin: 0.75rem 0 0 0;
-  font-size: var(--font-size-2);
-  color: var(--color-success);
-}
 
 /* toast */
 .toast {
@@ -1035,14 +877,6 @@ onUnmounted(() => {
 .toast.info { background: var(--color-primary); }
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-
-@media (max-width: 1024px) {
-  .chart-row { grid-template-columns: 1fr; }
-  .import-grid { grid-template-columns: 1fr; }
-  .report-grid { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 768px) {
-}
 </style>
 
 

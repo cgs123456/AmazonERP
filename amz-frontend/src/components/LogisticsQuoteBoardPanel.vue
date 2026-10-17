@@ -182,7 +182,7 @@ const doExpireQuotes = async () => {
                 <h3>航线报价覆盖</h3>
                 <button
                   class="link-btn"
-                  :disabled="busy || !(board?.staleByDate ?? 0)"
+                  :disabled="busy || busyLocal || !(board?.staleByDate ?? 0)"
                   @click="doExpireQuotes"
                 >
                   标记过期报价

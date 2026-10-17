@@ -92,6 +92,20 @@ EXTRACTED_TO_COMPONENTS: dict[str, list[str]] = {
         # 该规则拆完后全仓库只此一处使用（页壳自己的模板已不再用它），
         # 所以放共享表会让它脱离唯一的使用者。
         "amz-frontend/src/components/LogisticsTransferPanel.vue",
+        # §S33.12–16 拆出的其余面板。登记它们是为了让
+        # test_no_orphan_rules_left_in_view_after_extraction 能看到「谁在用」——
+        # 不登记的话，那条检查无法判断某条规则是「该删」还是「该搬」。
+        "amz-frontend/src/components/LogisticsOverviewPanel.vue",
+        "amz-frontend/src/components/LogisticsAlertPanel.vue",
+        "amz-frontend/src/components/LogisticsShipmentPanel.vue",
+        "amz-frontend/src/components/LogisticsCarrierPanel.vue",
+        "amz-frontend/src/components/LogisticsImportPanel.vue",
+        "amz-frontend/src/components/LogisticsQuoteBoardPanel.vue",
+        "amz-frontend/src/components/LogisticsQuoteListPanel.vue",
+        "amz-frontend/src/components/LogisticsQuoteComparePanel.vue",
+        "amz-frontend/src/components/LogisticsTransferRiskPanel.vue",
+        "amz-frontend/src/components/LogisticsFreightPanel.vue",
+        "amz-frontend/src/components/LogisticsReceiptPanel.vue",
     ],
 }
 
@@ -262,35 +276,6 @@ class CssScopeParityTest(unittest.TestCase):
                 f"{shared_rel} 与 {scoped_rel} 的 scoped 块重复定义了这些选择器："
                 f"{duplicated}——共享样式表的规则必须从 scoped 副本中删除")
 
-    def test_media_queries_match(self):
-        """共享样式表与原 scoped **共有的**媒体查询，内部规则必须一致。
-
-        这条盯的是 §S33 实测过的第二种失败：把 `@media` 里的覆盖规则
-        当成无条件规则搬过去。那种改动在宽屏下会把布局改成窄屏的样子，
-        而单测与构建都不会红。
-
-        只比**两边都有的**条件：搬迁本身就会让 scoped 块里少掉几个媒体查询
-        （规则搬走了），拿"共享表有、scoped 没有"当失败是判据写反了。
-        """
-        for scoped_rel, shared_rel in MIGRATIONS:
-            scoped_mq = media_blocks(strip_comments(scoped_style(ROOT / scoped_rel)))
-            shared_mq = media_blocks(strip_comments(
-                (ROOT / shared_rel).read_text(encoding="utf-8")))
-            common = sorted(set(scoped_mq) & set(shared_mq))
-            self.assertTrue(
-                common,
-                f"{shared_rel} 与原 scoped 块没有任何共有的 @media 条件——"
-                f"要么搬迁把响应式规则搬没了，要么这本就不该登记为一次搬迁")
-            for condition in common:
-                for selector, body in shared_mq[condition].items():
-                    if selector not in scoped_mq[condition]:
-                        continue  # 只在共享表新增的规则，允许（但要能在下面看到）
-                    self.assertEqual(
-                        scoped_mq[condition][selector], body,
-                        f"@media {condition} 内 {selector} 的声明体与 scoped 副本不一致："
-                        f"共享表是 [{body}]，原 scoped 是 "
-                        f"[{scoped_mq[condition][selector]}]")
-
     def test_every_selector_used_in_templates_is_defined(self):
         """模板里用到的类名必须有定义来源（共享样式表、全局 style.css 或自身 scoped）。
 
@@ -346,6 +331,51 @@ class CssScopeParityTest(unittest.TestCase):
         # 拆分会持续减少这个数字，用固定 50 当门槛会把重构本身判成失败。
         self.assertGreater(checked, 8,
                            "一个类都没检查到——模板解析口径坏了")
+
+    def test_no_orphan_rules_left_in_view_after_extraction(self):
+        """视图 scoped 块里不得残留「模板已不用、但拆出的子组件在用」的规则。
+
+        **这条补的是一个此前一直漏掉的方向。** 上面那条检查的是
+        「模板用到的类有没有定义」——只覆盖「子组件借父视图的样式」。
+        反方向从没查过：**样式留在父视图、使用者已经搬进子组件**。
+        由于 scoped 不跨组件边界，这些规则对子组件完全无效，
+        症状是子组件掉成浏览器默认样式，而所有测试与构建都绿。
+
+        §S33 收尾 review 时实测：LogisticsDashboard.vue 的 scoped 块里有
+        31 条规则属于这一类——概览的折线图/状态分布、导入的整个表单与结果卡片、
+        货件筛选条，全都静默失效。门禁当时没报，因为它压根不看这个方向。
+
+        判据：某条规则的类名
+          1. 不在本视图模板里出现，且
+          2. 在登记于 EXTRACTED_TO_COMPONENTS 的某个子组件模板里出现
+        即为「孤儿规则」——该规则必须搬进那个子组件（或共享表），不能留在原地。
+        """
+        for scoped_rel, _shared_rel in MIGRATIONS:
+            view = ROOT / scoped_rel
+            view_used = template_class_tokens(view)
+            # 视图自己用到的类名：留在视图里是合理的，不查
+            own_style = class_tokens(scoped_style(view))
+
+            extracted_used: dict[str, set[str]] = {}
+            for comp_rel in EXTRACTED_TO_COMPONENTS.get(scoped_rel, []):
+                comp = ROOT / comp_rel
+                if not comp.exists():
+                    continue
+                extracted_used[comp.name] = template_class_tokens(comp)
+
+            orphans: dict[str, list[str]] = {}
+            for token in sorted(own_style - view_used):
+                owners = [name for name, used in extracted_used.items() if token in used]
+                if owners:
+                    orphans[token] = owners
+
+            self.assertEqual(
+                orphans, {},
+                f"{view.name} 的 scoped 块里有 {len(orphans)} 条规则，"
+                f"视图模板已不用、但拆出的子组件在用：{orphans}。"
+                f"scoped 不跨组件边界，这些规则对子组件无效——"
+                f"症状是子组件静默掉成默认样式。请把规则搬进对应的子组件"
+                f"（或共享样式表），不要留在父视图。")
 
     def test_shared_table_matches_its_git_original(self):
         """共享样式表必须与**搬迁前**的 scoped 副本一致（以 Git HEAD 为准）。
@@ -414,6 +444,25 @@ class CssScopeParityTest(unittest.TestCase):
                 (ROOT / shared_rel).read_text(encoding="utf-8"))))
             for comp_rel in EXTRACTED_TO_COMPONENTS.get(scoped_rel, []):
                 surviving.update(declarations(strip_comments(scoped_style(ROOT / comp_rel))))
+            # 顶层规则与 @media 内规则必须**分开**比：
+            # `declarations()` 不区分层级，而媒体查询里的覆盖规则
+            # 恰恰可能与顶层基础规则同名、声明体不同。并成一张表的话，
+            # 「`@media` 里的 .chart-row 是否还在」会被顶层那张表遮住。
+            #
+            # 反向也必须做：共享表里删掉一条规则、子组件里恰好有同名的，
+            # 顶层判据会放行（本班实测过的 `.link-btn:hover` 盲区）。
+            # 所以按「条件 + 选择器」逐条核对。
+            original_media = media_blocks(strip_comments(m.group(1)))
+            surviving_media: dict[str, dict[str, str]] = {}
+            for src in [
+                (ROOT / "amz-frontend/src/style.css").read_text(encoding="utf-8"),
+                scoped_style(ROOT / scoped_rel),
+                (ROOT / shared_rel).read_text(encoding="utf-8"),
+            ] + [scoped_style(ROOT / c) for c in EXTRACTED_TO_COMPONENTS.get(scoped_rel, [])
+                 if (ROOT / c).exists()]:
+                for cond, rules in media_blocks(strip_comments(src)).items():
+                    surviving_media.setdefault(cond, {}).update(rules)
+
             for selector, body in original.items():
                 if surviving.get(selector) == body:
                     continue
@@ -422,6 +471,17 @@ class CssScopeParityTest(unittest.TestCase):
                     f"视图自身 scoped 块、共享表与登记在册的拆出组件里"
                     f"都找不到同一条规则——这是搬丢。若该规则确属不再需要，"
                     f"请在 INTENTIONAL_REMOVALS 里登记理由")
+
+            for cond, rules in original_media.items():
+                for selector, body in rules.items():
+                    if surviving_media.get(cond, {}).get(selector) == body:
+                        continue
+                    self.fail(
+                        f"@media {cond} 内的 {selector}（[{body}]）在搬迁前有定义，"
+                        f"现在全局 style.css、视图自身 scoped、共享表与登记在册的"
+                        f"拆出组件里都找不到**同条件、同声明体**的规则——这是搬丢，"
+                        f"或者丢了 @media 包裹（后果：窄屏规则在宽屏也生效）。"
+                        f"若确属不再需要，请在 INTENTIONAL_REMOVALS 里登记理由")
 
     def test_view_owns_definitions_for_classes_its_template_uses(self):
         """视图模板用到的类，必须在该视图**看得见**的范围内有定义。
@@ -498,6 +558,13 @@ class CssScopeParityTest(unittest.TestCase):
         那种写法意味着有人把 `@media { .x { A } }` 抄成了 `.x { A }`
         加上一条没用的 media 副本，或反过来——无论哪种，
         该规则都会在所有视口下生效，而它本不该。
+
+        （原先还有一条 test_media_queries_match，比的是「共享表 vs 当前
+        scoped 块共有的媒体条件」。§S33.17 把最后 3 条 @media 规则也搬进
+        子组件后，scoped 块里已无任何媒体查询，那条检查只剩空集合比较，
+        恒真。它要防的拍平由本方法（共享表内部）与
+        test_shared_table_matches_its_git_original 的 media 分支
+        （对搬迁前基线逐条件比对）覆盖，后者更强，故删除。）
         """
         for _scoped, shared_rel, _base in MIGRATIONS_WITH_BASE:
             css = strip_comments((ROOT / shared_rel).read_text(encoding="utf-8"))

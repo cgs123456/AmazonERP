@@ -44,6 +44,19 @@ const emit = defineEmits<{
 const { showToast } = useToast()
 const { refreshShop } = useShopGuard()
 
+/**
+ * 本面板自己的操作互斥标记。
+ *
+ * 不能只靠 `props.busy`：导入的请求由本组件发起，页壳并不知道它在跑，
+ * 所以 props.busy 在整个请求期间一直是 false。漏掉这个 ref 的后果实测过：
+ * 请求进行中按钮**仍可点**（`disabled` 属性不存在），连点会重复提交同一批数据。
+ * 虽然后端按货件号 upsert 是幂等的，但重复提交会让用户白等两轮、
+ * 也可能在结果面板里看到两次覆盖。
+ *
+ * props.busy 仍要参与判断：用户在别处触发页级操作时，这里的按钮同样不该可点。
+ */
+const busyLocal = ref(false)
+
 const shipmentJson = ref('')
 const trackingJson = ref('')
 const importReport = ref<ImportReport | null>(null)
@@ -120,7 +133,8 @@ const runImport = async (
   fn: () => Promise<{ code: number; message: string; data: ImportReport }>,
   label: string
 ) => {
-  if (props.busy) return
+  if (props.busy || busyLocal.value) return
+  busyLocal.value = true
   try {
     const res = await fn()
     if (res?.code === 200 && res.data) {
@@ -146,6 +160,8 @@ const runImport = async (
     }
   } catch (e) {
     showToast(`${label}导入失败，请稍后重试`, 'error')
+  } finally {
+    busyLocal.value = false
   }
 }
 </script>
@@ -168,7 +184,7 @@ const runImport = async (
                   aria-label="货件主单 JSON"
                 ></textarea>
                 <div class="import-actions">
-                  <button class="primary-btn" :disabled="busy || !shipmentJson.trim()" @click="doImportShipments">
+                  <button class="primary-btn" :disabled="busy || busyLocal || !shipmentJson.trim()" @click="doImportShipments">
                     导入货件主单
                   </button>
                   <button class="link-btn" @click="shipmentJson = shipmentExample">填入示例</button>
@@ -189,7 +205,7 @@ const runImport = async (
                   aria-label="运单轨迹 JSON"
                 ></textarea>
                 <div class="import-actions">
-                  <button class="primary-btn" :disabled="busy || !trackingJson.trim()" @click="doImportTracking">
+                  <button class="primary-btn" :disabled="busy || busyLocal || !trackingJson.trim()" @click="doImportTracking">
                     导入运单轨迹
                   </button>
                   <button class="link-btn" @click="trackingJson = trackingExample">填入示例</button>
@@ -242,9 +258,96 @@ const runImport = async (
 </template>
 
 <style scoped>
-/* 不定义任何样式：import-grid / chart-card / card-desc / json-input /
- * import-actions / primary-btn / report-* / chip-wrap / chip / err-list /
- * cell-alert / link-btn 全部来自 src/style.css 与共享样式表。
- * 由 tools/release/test_css_scope_parity.py 盯住。
- */
+/* ------------------------------------------------------------
+ * 以下规则从 LogisticsDashboard.vue 的 scoped 块搬来（§S33.17 review）。
+ *
+ * 它们原本留在页壳里，而使用它们的模板已经搬进本组件——scoped 不跨组件边界，
+ * 于是这些样式对本组件**完全无效**：概览的折线图与分布条、导入的表单与结果卡片
+ * 全都掉成浏览器默认样式。所有测试与构建都是绿的，因为没人断言样式。
+ *
+ * 搬运时未改一个声明；等价性由 tools/release/test_css_scope_parity.py 的
+ * test_no_orphan_rules_left_in_view_after_extraction 盯住。
+ * ------------------------------------------------------------ */
+
+/* 数据导入 */
+.import-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.json-input {
+  width: 100%;
+  min-height: 12rem;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-1);
+  line-height: var(--line-height-normal);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.import-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+/* 导入报告 */
+.report-card { margin-top: 0.5rem; }
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.report-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-muted-light);
+}
+
+.report-item b { font-size: var(--font-size-5); color: var(--color-on-surface); }
+
+.report-item span { font-size: var(--font-size-1); color: var(--color-muted); }
+
+.report-title {
+  font-size: var(--font-size-2);
+  color: var(--color-on-surface);
+  margin-bottom: 0.5rem;
+}
+
+.chip-wrap { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+
+.chip {
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-1);
+}
+
+.report-ok {
+  margin: 0.75rem 0 0 0;
+  font-size: var(--font-size-2);
+  color: var(--color-success);
+}
+
+/* 响应式覆盖：随 .import-grid / .report-grid 一起从页壳搬来 */
+@media (max-width: 1024px) {
+  .import-grid { grid-template-columns: 1fr; }
+  .report-grid { grid-template-columns: repeat(2, 1fr); }
+}
 </style>

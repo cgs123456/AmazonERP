@@ -183,9 +183,35 @@ defineExpose({ load: loadShipments })
 </template>
 
 <style scoped>
-/* 不定义任何样式：filter-bar / filter-count / table-card / data-table /
- * status-tag / mono / empty-row / ops / link-btn / table-pager / truncated-tip
- * 全部自共享样式表与 src/style.css。
- * 由 tools/release/test_css_scope_parity.py 盯住。
- */
+/* ------------------------------------------------------------
+ * 以下规则从 LogisticsDashboard.vue 的 scoped 块搬来（§S33.17 review）。
+ *
+ * 它们原本留在页壳里，而使用它们的模板已经搬进本组件——scoped 不跨组件边界，
+ * 于是这些样式对本组件**完全无效**：概览的折线图与分布条、导入的表单与结果卡片
+ * 全都掉成浏览器默认样式。所有测试与构建都是绿的，因为没人断言样式。
+ *
+ * 搬运时未改一个声明；等价性由 tools/release/test_css_scope_parity.py 的
+ * test_no_orphan_rules_left_in_view_after_extraction 盯住。
+ * ------------------------------------------------------------ */
+
+/* 过滤条 */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: var(--font-size-2);
+  color: var(--color-muted);
+}
+
+.filter-bar select {
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  font-size: var(--font-size-2);
+}
+
+.filter-count { margin-left: auto; }
 </style>
