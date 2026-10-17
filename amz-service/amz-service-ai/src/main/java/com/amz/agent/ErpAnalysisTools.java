@@ -12,6 +12,7 @@ import com.amz.agent.review.ReviewAnalysisService;
 import com.amz.agent.selection.SelectionAnalysisService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -40,6 +41,7 @@ import static com.amz.agent.ErpToolSupport.toStr;
  * 工具名与回结构逐字保留，分发改为委托调用。
  */
 @Slf4j
+@Component
 public class ErpAnalysisTools {
 
     /**

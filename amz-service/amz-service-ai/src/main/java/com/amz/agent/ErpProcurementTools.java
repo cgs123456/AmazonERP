@@ -5,6 +5,7 @@ import com.amz.result.Result;
 import com.amz.result.PageMeta;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -30,6 +31,7 @@ import java.math.RoundingMode;
  * 工具名与返回结构逐字保留，ErpToolExecutor 的分发改为委托调用。
  */
 @Slf4j
+@Component
 public class ErpProcurementTools {
 
     private static final String DEMO_DATA_NOTE = "[演示估算·非真实业务数据] ";

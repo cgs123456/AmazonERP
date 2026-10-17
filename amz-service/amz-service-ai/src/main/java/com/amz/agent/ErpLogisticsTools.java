@@ -5,6 +5,7 @@ import com.amz.result.PageMeta;
 import com.amz.result.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -33,6 +34,7 @@ import static com.amz.agent.ErpToolSupport.toStr;
  * 的分发改为委托调用，对 LLM 与 SSE 事件链路零可见变化。
  */
 @Slf4j
+@Component
 public class ErpLogisticsTools {
 
     @Autowired(required = false)

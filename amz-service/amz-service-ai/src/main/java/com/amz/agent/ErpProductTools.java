@@ -4,6 +4,7 @@ import com.amz.client.ProductServiceClient;
 import com.amz.result.Result;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -30,6 +31,7 @@ import static com.amz.agent.ErpToolSupport.toBool;
  * 工具名与返回结构逐字保留，ErpToolExecutor 的分发改为委托调用。
  */
 @Slf4j
+@Component
 public class ErpProductTools {
 
     @Autowired(required = false)
