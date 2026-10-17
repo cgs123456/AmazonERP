@@ -5128,3 +5128,51 @@ vitest 679，全绿；15 个 Python 门禁全绿。
 注：`test_repository_hygiene` 每次运行都会打印一行 `repository hygiene failed:
 1 finding(s)`，但测试结果是 **OK**。已用 `git stash` 在干净 HEAD 上复现过，
 与本轮改动无关，属既有噪音，不必追。
+
+---
+
+### 12. 物流概览拆分（LogisticsDashboard 1645 → 1407，§S33.12）
+
+转出子域 tab 后第一个非子域区块。产物 `LogisticsOverviewPanel.vue`（268 行）+
+`logisticsStatus.ts`（52 行）。它只读 `overview` + `trend` 两份数据、
+**没有任何写操作、不引用其他 tab 的状态**，所以三个派生 computed
+（statusDist / sourceDist / chart）一起搬走，页壳只留两个 ref 给 loader 用。
+
+**触发了 v-if 链的一个真实约束**：概览是整条 `v-if`/`v-else-if` 链的**头**，
+后面七个 tab 全是 `v-else-if`。直接换成组件会报
+`v-else/v-else-if has no adjacent v-if`（vitest 表现为整个测试文件加载失败、
+"no tests"）。所以组件上带 `v-if="tab === 'overview'"`，**内部再按 active 渲染**。
+这与调拨面板「常驻挂载 + 内部 active」是同一个模式的另一个理由。
+
+`statusLabel` / `statusTone` 有**三个**使用者（概览状态分布、待处理告警表、
+在途货件表），抽成 `logisticsStatus.ts` 共用——复制一份就会出现同一张单在两处
+显示成两个状态。
+
+#### 12.1 变异测试 7/7 全 MISSED——概览此前只有冒烟测试
+
+它是打开页面就看到的第一屏，此前却只有「KPI 文案在」和「有两条折线」两条断言。
+七处全无人看：状态中文表、状态配色、分布百分比分母、分布排序、折线图 Y 轴
+上界、X 轴抽稀、取数来源标签。已补 7 条（vitest 679 → 686），全部转为 CAUGHT。
+
+其中两条特别值得记，因为**画面看起来完全正常**：
+
+| 变异 | 为什么看不出来 |
+|---|---|
+| `maxV = 0` | 所有点塌到 X 轴上仍是一条合法折线，只会被当成「没有波动」 |
+| 分布排序反转 | 每条 bar 的宽度和数字都对，只是要从右往左读 |
+
+#### 12.2 ratchet 为什么一度上涨（以及一个自造的脏文件）
+
+第一次 `--update-baseline` 报 46600 → **48162**，方向反了。原因是核查模板时
+我用 `git show HEAD:... > _ov_ref.vue` 在工作区根目录留了一个 1645 行的临时文件，
+被 ratchet 扫描进去了。删掉后重算 → **46517**。
+
+教训：**ratchet 上涨先查是不是自己往工作区丢了文件**，不要先怀疑门禁。
+（`_ov_ref.vue` 这类比对用文件应该写在会话临时目录，不要放仓库根。）
+
+#### 12.3 累计
+
+`LogisticsDashboard.vue`：**3244 → 1407 行**。ratchet 50135 → 46517。
+vitest 686，全绿；15 个 Python 门禁全绿。
+
+下一刀：在途货件（约 63 行，含 `LogisticsCursorBar`）或待处理（约 48 行）。

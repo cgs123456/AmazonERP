@@ -7,6 +7,7 @@ import { TRANSFER_STATUS_LABELS } from '../components/logisticsTransferStatus'
 // 直接引用真实文案表：钉的是「表里的字没被改」，从组件内部取就无法区分
 // 「表被改了组件也跟着改」和「表没变」两种情况。
 import { BASIS_LABELS, basisLabel } from '../components/logisticsQuoteLabels'
+import { STATUS_LABELS, statusLabel, statusTone } from '../components/logisticsStatus'
 
 // 整体 mock 物流 API，避免测试触发真实请求
 vi.mock('@/api/logistics', () => ({
@@ -540,6 +541,160 @@ describe('LogisticsDashboard 视图', () => {
     expect(alertTab!.text()).toContain('2')
   })
 
+  // ------------------------------------------------------------
+  // 概览：状态分布 / 取数来源 / 折线图几何（回归：拆 LogisticsOverviewPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这一刀变异测试 7/7 全 MISSED——概览此前只有 KPI 与折线的冒烟测试。**
+   *
+   * 概览是打开页面就看到的第一屏，却没有任何断言覆盖：状态中文表、状态配色、
+   * 分布百分比、分布排序、折线图几何、X 轴抽稀、取数来源标签。
+   * 下面七条逐一对上那七个变异，每条注明它抓的是哪种改坏。
+   */
+
+  /**
+   * 状态分布用的中文表与配色，和待处理 tab（告警表）、在途货件 tab（货件表）
+   * **共用同一份**（logisticsStatus.ts）。抽共享模块正是为了避免出现
+   * 「同一张单在两处显示成两个状态」。这里钉住文案本身。
+   */
+  it('状态中文名表必须与拆分前逐字一致', () => {
+    expect(STATUS_LABELS).toEqual({
+      CREATED: '已创建',
+      IN_TRANSIT: '运输中',
+      CUSTOMS: '清关中',
+      DELIVERED: '已送达',
+      RECEIVED: 'FBA已入库',
+      CLOSED: '已关闭',
+      DELAYED: '延误',
+      EXCEPTION: '异常',
+      DEPARTED: '已起运',
+      CUSTOMS_CLEARANCE: '清关中',
+      ARRIVED: '已到港',
+      OUT_FOR_DELIVERY: '派送中'
+    })
+    // 未知状态原样显示，而不是被映射成某个具体状态（那会给错信息）
+    expect(statusLabel('SOME_NEW_STATE')).toBe('SOME_NEW_STATE')
+    expect(statusLabel(undefined)).toBe('—')
+  })
+
+  /**
+   * 状态配色是用户扫表时最先看到的东西：延误/异常必须红、正常推进蓝/绿、
+   * 兜底灰。全部抹成同一个色之后，「哪几张单最要紧」这件事就看不见了。
+   */
+  it('状态配色：延误与异常为红，在途为蓝，未知为灰', () => {
+    expect(statusTone('DELAYED')).toBe('tone-danger')
+    expect(statusTone('EXCEPTION')).toBe('tone-danger')
+    expect(statusTone('IN_TRANSIT')).toBe('tone-info')
+    expect(statusTone('DELIVERED')).toBe('tone-success')
+    expect(statusTone('SOMETHING_UNKNOWN')).toBe('tone-muted')
+  })
+
+  /**
+   * 状态分布的百分比分母必须是**总货件数**。写成 0 或写成状态数之和时，
+   * 条形长度就不反映真实占比——「运输中占 42%」变成「占 100%」，
+   * 用户会误判船队结构。
+   */
+  it('状态分布条形宽度按占总货件数的比例计算', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    // 夹具：totalShipments 12，IN_TRANSIT 5 → 约 41.67%
+    const inTransit = wrapper.findAll('.dist-item').find((d) => d.text().includes('运输中'))
+    expect(inTransit, '未找到「运输中」分布条').toBeTruthy()
+    const fill = inTransit!.find('.dist-fill')
+    expect(fill.exists()).toBe(true)
+    const width = fill.attributes('style') || ''
+    // 5/12 → 41.666…%（模板直接拼百分数，不做四舍五入）
+    expect(width).toContain('41.66666666666667%')
+
+    // 计数本身要对：12 个货件里 5 个在途
+    expect(inTransit!.find('.dist-value').text()).toBe('5')
+  })
+
+  /**
+   * 分布条按「流程顺序」排，不按数量也不按字母序。运营看状态分布是顺着
+   * 货态流转看的，顺序打乱后要从右往左读。夹具里 IN_TRANSIT 在 CUSTOMS 之前。
+   */
+  it('状态分布按货态转顺序列，不按数量排序', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const labels = wrapper.findAll('.dist-item .status-tag').map((s) => s.text())
+    expect(labels.length).toBeGreaterThan(1)
+    expect(labels.indexOf('运输中')).toBeLessThan(labels.indexOf('清关中'))
+    // 计数为 0 的状态不出现（夹具里 RECEIVED / CLOSED / EXCEPTION 都是 0）
+    expect(labels).not.toContain('FBA已入库')
+    expect(labels).not.toContain('已关闭')
+  })
+
+  /**
+   * 折线图的 Y 轴上界必须由数据最大值决定。`maxV = 0` 会让所有点塌到坐标轴上，
+   * 而**画面仍然渲染得出来**——一条平线，看不出任何问题，只会被当成「没有波动」。
+   */
+  it('折线图 Y 轴由上界由数据最大值决定，不得塌成平线', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    // 夹具趋势里 created 最大 4，网格线应标到 4（以及 0、2）
+    const gridLabels = wrapper.findAll('text').map((n) => n.text())
+    expect(gridLabels.some((t) => t === '4')).toBe(true)
+
+    // 两条折线的 points 不能全部落在同一条水平线上（塌成平线的直接特征）
+    const polys = wrapper.findAll('polyline')
+    expect(polys.length).toBe(2)
+    const ys = (polys[0].attributes('points') || '').split(' ').map((p) => Number(p.split(',')[1]))
+    expect(new Set(ys).size).toBeGreaterThan(1)
+  })
+
+  /**
+   * 30 天趋势若每条都打一个日期标签会重叠成一团黑。抽稀后仍要能看到
+   * 「起点日期」和「终点日期」这两个锚点，否则用户无法判断时间范围。
+   */
+  it('X 轴日期标签按间隔抽稀，且保留首尾可读', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const svg = wrapper.find('svg.chart')
+    expect(svg.exists()).toBe(true)
+    // 夹具给出 2 个点位，抽稀后标签数 ≤ 点，且不能一个都不显示
+    const pointCount = 2
+    // 标签文本是 date.slice(5)，即 MM-DD（年月挤在轴外）
+    const labels = svg.findAll('text.axis-text').filter((n) => /^\d{2}-\d{2}$/.test(n.text()))
+    expect(labels.length).toBeGreaterThan(0)
+    expect(labels.length).toBeLessThanOrEqual(pointCount)
+    // 首末日期要能在标签里找到（夹具 2026-08-17 / 2026-08-18）
+    expect(labels.some((l) => l.text() === '08-17')).toBe(true)
+  })
+
+  /**
+   * 取数来源标签（外部导入 / 第三方API / 自动）是三个**来源口径**，
+   * 改成单字会让运营分不清这批轨迹是导进来的还是接口拉的——
+   * 出问题时该找谁查全靠这三行字。
+   */
+  it('取数来源标签区分三种口径，且只显示有数据的来源', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const chips = wrapper.findAll('.source-chip')
+    const texts = chips.map((c) => c.text())
+    // 夹具 dataSourceCounts: IMPORT 4 / API 6 / AUTO 2
+    expect(texts.some((x) => x.includes('外部导入'))).toBe(true)
+    expect(texts.some((x) => x.includes('第三方API'))).toBe(true)
+    expect(texts.some((x) => x.includes('自动'))).toBe(true)
+    expect(chips.length).toBe(3)
+
+    // 没有数据的来源不渲染（否则满屏 0）
+    mockedOverview.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: overviewFixture({ dataSourceCounts: { API: 3 } })
+    } as never)
+    const wrapper2 = mountView()
+    await flushPromises()
+    const texts2 = wrapper2.findAll('.source-chip').map((c) => c.text())
+    expect(texts2.length).toBe(1)
+    expect(texts2[0]).toContain('第三方API')
+  })
   it('趋势数据存在时渲染折线图', async () => {
     const wrapper = mountView()
     await flushPromises()
