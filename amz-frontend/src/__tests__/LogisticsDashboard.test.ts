@@ -1000,6 +1000,126 @@ describe('LogisticsDashboard 视图', () => {
     expect(wrapper.text()).toContain('内容必须是 JSON 数组')
   })
 
+  // ------------------------------------------------------------
+  // 数据导入面板（回归：拆 LogisticsImportPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这一刀变异测试 6 条抓到 4 处空洞。** 导入面板原有的两条测试只覆盖
+   * 「JSON 解析失败」与「结构不是数组」两种前置校验，导入**成功之后**
+   * 发生的事（刷新看板、toast 级别、结果展示、清除）一条都没测。
+   */
+
+  const importReportOk = {
+    totalRows: 3,
+    succeededRows: 3,
+    failedRows: 0,
+    createdShipments: 1,
+    updatedShipments: 0,
+    acceptedEvents: 5,
+    skippedEvents: 0,
+    statusChangedShipments: 1,
+    unmatched: [],
+    errors: [],
+    errorsTruncated: false
+  }
+
+  /** 填一段合法 JSON 并点导入货件主单。 */
+  const runImportOk = async (wrapper: ReturnType<typeof mountView>) => {
+    await wrapper.find('textarea').setValue('[{"shipmentNo":"SHP-IMP-1"}]')
+    await flushPromises()
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('导入货件主单'))
+    await btn!.trigger('click')
+    await flushPromises()
+  }
+
+  /**
+   * 导入成功后必须重拉看板。不改的话：结果弹出来了、概览数字还是旧的，
+   * 用户会以为没导进去而再导一次（重复写入虽幂等，但白等一次）。
+   */
+  it('导入成功后须重拉看板数据', async () => {
+    mockedImportShipments.mockResolvedValue({ code: 200, message: 'ok', data: importReportOk } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    // 在**挂载之后**取计数。取在挂载前的话，首屏那四个接口的调用也会算进增量，
+    // 「导入后有没有重拉」就永远为真——这个错误让这条测试第一版完全失效。
+    const overviewCallsBefore = mockedOverview.mock.calls.length
+
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('数据导入'))
+    await tab!.trigger('click')
+    await flushPromises()
+    await runImportOk(wrapper)
+
+    expect(mockedImportShipments).toHaveBeenCalledWith('1', [{ shipmentNo: 'SHP-IMP-1' }])
+    expect(mockedOverview.mock.calls.length).toBeGreaterThan(overviewCallsBefore)
+  })
+
+  /**
+   * 有失败行时 toast 必须是 error。用 success 会让运营以为整批都进去了，
+   * 而实际有几行被拒——那几行货件/轨迹就静默缺失。
+   */
+  it('部分行失败时提示必须为 error 级，并如实报出成功/失败数', async () => {
+    mockedImportShipments.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: { ...importReportOk, succeededRows: 2, failedRows: 1,
+              errors: ['第 3 行：承运商不能为空'], errorsTruncated: false }
+    } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('数据导入'))
+    await tab!.trigger('click')
+    await flushPromises()
+    await runImportOk(wrapper)
+
+    const toast = wrapper.find('.toast')
+    expect(toast.classes()).toContain('error')
+    expect(toast.text()).toContain('成功 2 / 失败 1')
+    // 行级错误原文要出现在结果区，否则用户不知道该改哪一行
+    expect(wrapper.text()).toContain('第 3 行：承运商不能为空')
+  })
+
+  /**
+   * 结果面板必须真的渲染出来。整块删掉之后导入照样成功、toast 照样弹，
+   * 但用户看不到「写进多少条、跳过多少条」——那正是导入最该反馈的东西。
+   */
+  it('导入功后展示统计结果，且失败数标红', async () => {
+    mockedImportShipments.mockResolvedValue({ code: 200, message: 'ok', data: importReportOk } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('数据导入'))
+    await tab!.trigger('click')
+    await flushPromises()
+    await runImportOk(wrapper)
+
+    const card = wrapper.find('.report-card')
+    expect(card.exists(), '导入成功后必须展示结果面板').toBe(true)
+    expect(card.text()).toContain('总行数')
+    expect(card.text()).toContain('写入轨迹点')
+    // 全成功时「失败」那一项不标红（标红条件是可观测的：failedRows > 0）
+    const failedItem = card.findAll('.report-item').find((i) => i.text().includes('失败'))!
+    expect(failedItem.classes()).not.toContain('cell-alert')
+  })
+
+  /** 结果面板的「清除」按钮。不生效的话上一次的结果会一直压在页面上。 */
+  it('导入结果的清除按钮必须真的清掉结果面板', async () => {
+    mockedImportShipments.mockResolvedValue({ code: 200, message: 'ok', data: importReportOk } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((t) => t.text().includes('数据导入'))
+    await tab!.trigger('click')
+    await flushPromises()
+    await runImportOk(wrapper)
+    expect(wrapper.find('.report-card').exists()).toBe(true)
+
+    await wrapper.findAll('button').find((b) => b.text() === '清除')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.report-card').exists()).toBe(false)
+  })
+
   it('货件列表：截断必须可见，加载更多必须携带游标并追加数据', async () => {
     const first = {
       id: 11,

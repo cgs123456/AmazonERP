@@ -132,92 +132,6 @@
             />
 
           <!-- ================= 数据导入 ================= -->
-          <section v-else-if="tab === 'import'">
-            <div class="import-grid">
-              <div class="chart-card">
-                <h3>① 导入货件主单</h3>
-                <p class="card-desc">
-                  轨迹要挂在货件上，因此<strong>必须先有货件</strong>。按货件编号 upsert，
-                  同一份文件可安全重复导入（已存在则只补齐本次给出的字段）。
-                </p>
-                <textarea
-                  v-model="shipmentJson"
-                  class="json-input"
-                  spellcheck="false"
-                  :placeholder="shipmentPlaceholder"
-                  aria-label="货件主单 JSON"
-                ></textarea>
-                <div class="import-actions">
-                  <button class="primary-btn" :disabled="busy || !shipmentJson.trim()" @click="doImportShipments">
-                    导入货件主单
-                  </button>
-                  <button class="link-btn" @click="shipmentJson = shipmentExample">填入示例</button>
-                </div>
-              </div>
-
-              <div class="chart-card">
-                <h3>② 导入运单轨迹</h3>
-                <p class="card-desc">
-                  可提交<strong>全量历史轨迹</strong>：已存在的轨迹点会计入「跳过」而非重复插入，
-                  因此不必自行维护增量。状态填承运商原文即可，服务端统一映射。
-                </p>
-                <textarea
-                  v-model="trackingJson"
-                  class="json-input"
-                  spellcheck="false"
-                  :placeholder="trackingPlaceholder"
-                  aria-label="运单轨迹 JSON"
-                ></textarea>
-                <div class="import-actions">
-                  <button class="primary-btn" :disabled="busy || !trackingJson.trim()" @click="doImportTracking">
-                    导入运单轨迹
-                  </button>
-                  <button class="link-btn" @click="trackingJson = trackingExample">填入示例</button>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="importReport" class="chart-card report-card">
-              <div class="card-head">
-                <h3>最近一次导入结果</h3>
-                <button class="link-btn" @click="importReport = null">清除</button>
-              </div>
-              <div class="report-grid">
-                <div class="report-item"><b>{{ importReport.totalRows }}</b><span>总行数</span></div>
-                <div class="report-item"><b>{{ importReport.succeededRows }}</b><span>成功</span></div>
-                <div class="report-item" :class="{ 'cell-alert': importReport.failedRows > 0 }">
-                  <b>{{ importReport.failedRows }}</b><span>失败</span>
-                </div>
-                <div class="report-item"><b>{{ importReport.createdShipments }}</b><span>新建货件</span></div>
-                <div class="report-item"><b>{{ importReport.updatedShipments }}</b><span>补齐货件</span></div>
-                <div class="report-item"><b>{{ importReport.acceptedEvents }}</b><span>写入轨迹点</span></div>
-                <div class="report-item"><b>{{ importReport.skippedEvents }}</b><span>跳过（已存在）</span></div>
-                <div class="report-item"><b>{{ importReport.statusChangedShipments }}</b><span>状态变更</span></div>
-              </div>
-
-              <div v-if="importReport.unmatched.length" class="report-block">
-                <div class="report-title">以下运单在系统内没有对应货件，请先导入货件主单：</div>
-                <div class="chip-wrap">
-                  <span v-for="u in importReport.unmatched" :key="u" class="chip">{{ u }}</span>
-                </div>
-              </div>
-              <div v-if="importReport.errors.length" class="report-block">
-                <div class="report-title">行级错误：</div>
-                <ul class="err-list">
-                  <li v-for="(e, i) in importReport.errors" :key="i">{{ e }}</li>
-                </ul>
-                <div v-if="importReport.errorsTruncated" class="report-title">
-                  错误过多，仅展示前若干条
-                </div>
-              </div>
-              <p
-                v-if="!importReport.unmatched.length && !importReport.errors.length && importReport.failedRows === 0"
-                class="report-ok"
-              >
-                全部处理成功。若「写入轨迹点」为 0 而「跳过」大于 0，说明这批数据此前已导入过（幂等生效）。
-              </p>
-            </div>
-          </section>
 
           <!-- ================= 报价与比价 ================= -->
           <section v-else-if="tab === 'quotes'">
@@ -255,6 +169,17 @@
             />
           </section>
         </template>
+
+        <!-- 数据导入放在 tab 区**外面**、v-if="loading" 那对之外：
+             导入成功后 onImportDone 会把 loading 置 true，tab 区随即被骨架屏整块替换，
+             放在里面会让本组件卸载、importReport 丢失（症状：toast 说成功但结果面板不出现）。
+             这不是假想——拆这件时实测过，改前 card=true、改后 card=false。
+             常驻挂载 + 内部按 active 渲染，与调拨/在途货件同一先例。 -->
+        <LogisticsImportPanel
+          :active="tab === 'import'"
+          :busy="busy"
+          @reload-board="onImportDone"
+        />
       </template>
     </main>
 
@@ -293,6 +218,7 @@ import LogisticsOverviewPanel from '../components/LogisticsOverviewPanel.vue'
 import LogisticsAlertPanel from '../components/LogisticsAlertPanel.vue'
 import LogisticsShipmentPanel from '../components/LogisticsShipmentPanel.vue'
 import LogisticsCarrierPanel from '../components/LogisticsCarrierPanel.vue'
+import LogisticsImportPanel from '../components/LogisticsImportPanel.vue'
 import LogisticsQuoteBoardPanel from '../components/LogisticsQuoteBoardPanel.vue'
 import { fmtTime } from '../components/logisticsFormat'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
@@ -307,8 +233,6 @@ import {
   syncShipment,
   closeShipment,
   getShipmentTracking,
-  importShipments,
-  importTracking,
   getQuoteBoard,
   getFreightCostBoard,
   getReceiptBoard,
@@ -319,9 +243,6 @@ import {
   type CarrierPerformance,
   type ShipmentAlert,
   type TrackingEvent,
-  type ImportReport,
-  type ImportShipmentRow,
-  type ImportTrackingRow,
   type QuoteBoard,
   type FreightCostBoard,
   type ReceiptBoard,
@@ -365,47 +286,7 @@ const trackingPageMetaMissing = ref(false)
 const trackingLoadingMore = ref(false)
 const timeline = ref<TrackingEvent[]>([])
 
-// 导入
-const shipmentJson = ref('')
-const trackingJson = ref('')
-const importReport = ref<ImportReport | null>(null)
 
-const shipmentExample = JSON.stringify(
-  [
-    {
-      shipmentNo: 'SHP20260818001',
-      carrier: 'COSCO',
-      masterTrackingNo: 'COSU1234567',
-      shippingMethod: 'SEA',
-      originPort: 'Shenzhen',
-      destinationPort: 'LAX9',
-      boxCount: 120,
-      weight: 2400,
-      eta: '2026-09-20'
-    }
-  ],
-  null,
-  2
-)
-
-const trackingExample = JSON.stringify(
-  [
-    {
-      shipmentNo: 'SHP20260818001',
-      trackingNo: 'COSU1234567',
-      events: [
-        { status: '已开船', location: '深圳港', eventTime: '2026-08-05T09:00:00+08:00' },
-        { status: 'IN_TRANSIT', location: '太平洋', eventTime: '2026-08-12T09:00:00+08:00' },
-        { status: '清关中', location: '洛杉矶港', eventTime: '2026-08-16T21:30:00-07:00' }
-      ]
-    }
-  ],
-  null,
-  2
-)
-
-const shipmentPlaceholder = `[\n  { "shipmentNo": "SHP20260818001", "carrier": "COSCO", "masterTrackingNo": "COSU1234567", "eta": "2026-09-20" }\n]`
-const trackingPlaceholder = `[\n  { "shipmentNo": "SHP20260818001", "events": [ { "status": "已开船", "eventTime": "2026-08-05T09:00:00+08:00" } ] }\n]`
 
 // ============================================================
 // 展示映射（状态 / 类型 / 级别）
@@ -574,6 +455,19 @@ const loadReceiptBoard = async (shopId: string) => {
 
 
 /** 加载首屏四组核心数据（概览 / 趋势 / 承运商 / 告警） */
+/**
+ * 导入成功后的收尾。
+ *
+ * 由 LogisticsImportPanel 的 reload-board 事件触发。刷新范围比页壳自己的
+ * refreshCurrent 大：导入既改货件也改轨迹，概览四个接口和列表都得重拉。
+ * 在途货件列表要显式再拉一次——它不是 reload() 的一部分，不拉就会停在
+ * 「导入前的旧列表」，用户刚导进去的货件看不到。
+ */
+const onImportDone = async () => {
+  await reload()
+  if (tab.value === 'shipments') await shipmentPanel.value?.load()
+}
+
 const reload = async () => {
   if (!hasToken.value) return
   const shopId = refreshShop()
@@ -799,60 +693,6 @@ const doResolve = async (id: number) => {
   }
 }
 
-/** 解析粘贴的 JSON。解析失败时给出具体原因，而不是笼统的「导入失败」 */
-const parseRows = <T,>(text: string): T[] | null => {
-  try {
-    const parsed = JSON.parse(text)
-    if (!Array.isArray(parsed)) {
-      showToast('内容必须是 JSON 数组', 'error')
-      return null
-    }
-    return parsed as T[]
-  } catch (e) {
-    showToast('JSON 解析失败：' + (e instanceof Error ? e.message : '格式错误'), 'error')
-    return null
-  }
-}
-
-const doImportShipments = async () => {
-  const rows = parseRows<ImportShipmentRow>(shipmentJson.value)
-  if (!rows) return
-  await runImport(() => importShipments(refreshShop(), rows), '货件主单')
-}
-
-const doImportTracking = async () => {
-  const rows = parseRows<ImportTrackingRow>(trackingJson.value)
-  if (!rows) return
-  await runImport(() => importTracking(refreshShop(), rows), '运单轨迹')
-}
-
-const runImport = async (
-  fn: () => Promise<{ code: number; message: string; data: ImportReport }>,
-  label: string
-) => {
-  if (busy.value) return
-  busy.value = true
-  try {
-    const res = await fn()
-    if (res?.code === 200 && res.data) {
-      importReport.value = res.data
-      const r = res.data
-      showToast(
-        `${label}导入完成：成功 ${r.succeededRows} / 失败 ${r.failedRows}`,
-        r.failedRows > 0 ? 'error' : 'success'
-      )
-      // 导入会改变看板数字，直接刷新让使用者立刻看到结果，省去手动再点一次刷新
-      await reload()
-      if (tab.value === 'shipments') await shipmentPanel.value?.load()
-    } else {
-      showToast(res?.message || `${label}导入失败`, 'error')
-    }
-  } catch (e) {
-    showToast(`${label}导入失败，请稍后重试`, 'error')
-  } finally {
-    busy.value = false
-  }
-}
 
 // ============================================================
 // 生命周期
