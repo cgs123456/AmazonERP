@@ -152,7 +152,15 @@ public class ProfitCalculator {
             log.warn("利润计算数据缺失：shopId={}, sku={}, 缺失类型=广告花费(adCost)——净利将偏高",
                     shopId, sku);
         }
-        BigDecimal adCost = allocateAdCost(shopId, nullToZero(adCostRaw));
+        AdCostAllocation adAllocation = allocateAdCost(shopId, nullToZero(adCostRaw));
+        BigDecimal adCost = adAllocation.allocated();
+        // §S33.52：分摊分母拿不到同样是「缺失」——此时净利少扣了整块广告成本，
+        // 与 fetchAdCost 失败同性质，必须一起标记，否则净利看着精确其实是错数。
+        boolean adAllocationUnresolved = !adAllocation.resolved();
+        if (adAllocationUnresolved) {
+            log.warn("利润计算数据缺失：shopId={}, sku={}, 缺失类型=广告费分摊分母(近30天订单数)——净利将偏高",
+                    shopId, sku);
+        }
 
         // 5. VAT（欧盟）：亚马逊回传收入含税，按 含税价×r/(1+r) 还原税额；
         //    税率可通过 amz.profit.eu-vat-rate 配置（默认 20%）
@@ -197,7 +205,7 @@ public class ProfitCalculator {
         report.setGrossProfit(grossProfit);
         report.setNetProfit(netProfit);
         report.setNetMargin(netMargin);
-        boolean dataComplete = !costMissing && !rateMissing && !adCostMissing;
+        boolean dataComplete = !costMissing && !rateMissing && !adCostMissing && !adAllocationUnresolved;
         report.setDataComplete(dataComplete);
 
         log.info("利润计算完成 shopId={}, order={}, sku={}, revenue={}, grossProfit={}, netProfit={}, margin={}, dataComplete={}",
@@ -251,21 +259,50 @@ public class ProfitCalculator {
 
     /**
      * 将店铺级广告总花费按近 30 天订单数分摊到单订单。
+     *
+     * <p><b>§S33.52：分母拿不到时不能按全额计</b>。原实现在
+     * {@code orderCount <= 0} 时直接返回店铺总花费，注释写的是「保守按全额计」。
+     * 但 {@link #countRecentOrders} 在查询异常时返回 {@code -1}，与「真的没有订单」
+     * （返回 0）落进同一个分支——两种含义完全相反的情况被当成一回事：
      * <ul>
-     *   <li>总花费 ≤ 0 或订单数不可得 → 原样返回（保持可观测，不静默吞差异）；</li>
-     *   <li>分母使用带 TTL 的本地缓存，避免每条利润消息触发一次 count 查询。</li>
+     *   <li>真没有订单：全额计是合理的（没有分母可摊，成本确实还没被任何订单承担）；</li>
+     *   <li>查询失败 / {@code orderMapper} 未注入：全额计意味着**每条订单都扣一遍
+     *       整店广告费**。实测 revenue=100、广告费=300 时，净利从 +20（10 单分摊）
+     *       变成 -250（全额），一条订单差 270。</li>
      * </ul>
+     * 而这正是本类 javadoc 里写着「旧实现每单扣店铺总额，N 单即重复扣 N 倍」
+     * 要修掉的那个 bug——它在分母取不到时又回来了。
+     *
+     * <p>所以改为：分母不可得（含查询失败）时按 0 计并**标记 dataComplete=false**，
+     * 让净利明确显示为「不完整」而不是一个看起来精确的错数。
+     * 真没有订单（count == 0）仍按全额计，那是没有分母可摊，不是故障。
      */
-    private BigDecimal allocateAdCost(Long shopId, BigDecimal shopAdTotal) {
+    private AdCostAllocation allocateAdCost(Long shopId, BigDecimal shopAdTotal) {
         if (shopAdTotal == null || shopAdTotal.signum() <= 0) {
-            return BigDecimal.ZERO;
+            return AdCostAllocation.of(BigDecimal.ZERO, true);
         }
         long orderCount = countRecentOrders(shopId);
-        if (orderCount <= 0) {
-            // 无可分摊分母（新店铺/无订单）：保守按全额计，避免广告成本被静默抹零
-            return shopAdTotal;
+        if (orderCount < 0) {
+            // 分母不可得：查询失败或依赖未就绪。按 0 计并标记不完整——
+            // 宁可显示「广告费缺失」，也不能把整店广告费压到一条订单上。
+            log.warn("广告费分摊分母不可得，本条不计广告费并标记数据不完整：shopId={} shopAdTotal={}",
+                    shopId, shopAdTotal);
+            return AdCostAllocation.of(BigDecimal.ZERO, false);
         }
-        return shopAdTotal.divide(BigDecimal.valueOf(orderCount), MONEY_SCALE, RoundingMode.HALF_UP);
+        if (orderCount == 0) {
+            // 真的没有订单：没有分母可摊，成本尚未被任何订单承担，全额计入本条
+            return AdCostAllocation.of(shopAdTotal, true);
+        }
+        return AdCostAllocation.of(
+                shopAdTotal.divide(BigDecimal.valueOf(orderCount), MONEY_SCALE, RoundingMode.HALF_UP),
+                true);
+    }
+
+    /** 广告费分摊结果：{@code allocated} 是计入本条的数，{@code resolved} 表示分母是否拿得到。 */
+    private record AdCostAllocation(BigDecimal allocated, boolean resolved) {
+        static AdCostAllocation of(BigDecimal allocated, boolean resolved) {
+            return new AdCostAllocation(allocated, resolved);
+        }
     }
 
     /**

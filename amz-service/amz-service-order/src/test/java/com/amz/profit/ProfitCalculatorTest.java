@@ -3,6 +3,7 @@ package com.amz.profit;
 import com.amz.client.AdServiceClient;
 import com.amz.mapper.CategoryFeeRateMapper;
 import com.amz.mapper.FbaFeeTableMapper;
+import com.amz.mapper.OrderMapper;
 import com.amz.mapper.ProductCostMapper;
 import com.amz.model.CategoryFeeRate;
 import com.amz.model.FbaFeeTable;
@@ -48,6 +49,7 @@ class ProfitCalculatorTest {
     private ProductCostMapper productCostMapper;
     private CategoryFeeRateMapper categoryFeeRateMapper;
     private FbaFeeTableMapper fbaFeeTableMapper;
+    private OrderMapper orderMapper;
     private ProfitCalculator calculator;
 
     @BeforeEach
@@ -55,11 +57,25 @@ class ProfitCalculatorTest {
         productCostMapper = mock(ProductCostMapper.class);
         categoryFeeRateMapper = mock(CategoryFeeRateMapper.class);
         fbaFeeTableMapper = mock(FbaFeeTableMapper.class);
+        // §S33.52：必须注入 orderMapper。此前它是 null，countRecentOrders 抛 NPE
+        // 被 try-catch 吞成 -1，allocateAdCost 走「分母不可得」分支——于是全部用例
+        // 都在一条从未被断言过的路径上跑，分摊逻辑零覆盖。
+        orderMapper = mock(OrderMapper.class);
 
         calculator = new ProfitCalculator();
         ReflectionTestUtils.setField(calculator, "productCostMapper", productCostMapper);
         ReflectionTestUtils.setField(calculator, "categoryFeeRateMapper", categoryFeeRateMapper);
         ReflectionTestUtils.setField(calculator, "fbaFeeTableMapper", fbaFeeTableMapper);
+        ReflectionTestUtils.setField(calculator, "orderMapper", orderMapper);
+    }
+
+    /** 广告服务返回指定店铺总花费。 */
+    private void adTotalOf(String cost) {
+        AdServiceClient adClient = mock(AdServiceClient.class);
+        Map<String, Object> data = new HashMap<>();
+        data.put("cost", new BigDecimal(cost));
+        when(adClient.getShopSummary(any())).thenReturn(Result.success(data));
+        ReflectionTestUtils.setField(calculator, "adServiceClient", adClient);
     }
 
     /** 构造采购成本记录 */
@@ -328,5 +344,98 @@ class ProfitCalculatorTest {
         assertEquals("ORDER-XYZ", r.getAmazonOrderId());
         assertEquals("SKU-META", r.getSku());
         assertNotNull(r.getStatDate(), "statDate 应被设置为今天");
+    }
+
+    // ==================== §S33.52 广告费分摊 ====================
+    //
+    // 这一族用例补的是**从未被覆盖过**的分摊逻辑：此前 orderMapper 在 setUp 里
+    // 是 null，countRecentOrders 抛 NPE 被吞成 -1，allocateAdCost 因此永远走
+    // 「分母不可得」分支——而那条分支当时返回**整店广告总花费**。
+    // 实测 revenue=100 / 广告费=300：全额计净利 -250，按 10 单分摊净利 +20，
+    // 一条订单差 270，且两种情况下 dataComplete 都是 true。
+
+    @Test
+    @DisplayName("广告费按近30天订单数分摊：300 ÷ 10 = 30，不是整店 300")
+    void adCostIsDividedByRecentOrderCount() {
+        when(productCostMapper.selectOne(any())).thenReturn(costOf(new BigDecimal("30")));
+        when(fbaFeeTableMapper.selectOne(any())).thenReturn(fbaFeeOf(new BigDecimal("5"), new BigDecimal("2")));
+        when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
+        when(orderMapper.selectCount(any())).thenReturn(10L);
+        adTotalOf("300.00");
+
+        ProfitReport r = calculator.calculate(
+                1L, "AMZ-ALLOC", "SKU-ALLOC", new BigDecimal("100"),
+                "Electronics", "small-standard", 250, "NA", false);
+
+        assertEquals(0, new BigDecimal("30.00").compareTo(r.getAdCost()),
+                "店铺级总花费必须按订单数分摊，否则每条订单都扣一遍整店广告费");
+        // revenue 100 - cogs 30 - fba 5 - referral 15 = 50；再 - ad 30 - storage 0.07 = 19.93
+        assertEquals(0, new BigDecimal("19.93").compareTo(r.getNetProfit()));
+        assertTrue(r.getDataComplete(), "分摊成功时数据是完整的");
+    }
+
+    @Test
+    @DisplayName("分摊分母查询失败：广告费按 0 计且 dataComplete=false，不得按全额计")
+    void adAllocationDenominatorFailureIsNotFullAmount() {
+        when(productCostMapper.selectOne(any())).thenReturn(costOf(new BigDecimal("30")));
+        when(fbaFeeTableMapper.selectOne(any())).thenReturn(fbaFeeOf(new BigDecimal("5"), new BigDecimal("0")));
+        when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
+        // count 查询抛异常 → countRecentOrders 返回 -1
+        when(orderMapper.selectCount(any())).thenThrow(new RuntimeException("DB 超时"));
+        adTotalOf("300.00");
+
+        ProfitReport r = calculator.calculate(
+                1L, "AMZ-DENOM", "SKU-DENOM", new BigDecimal("100"),
+                "Electronics", "small-standard", 250, "NA", false);
+
+        assertEquals(0, BigDecimal.ZERO.compareTo(r.getAdCost()),
+                "分母拿不到时按 0 计——按全额计会让一条订单承担整店广告费");
+        assertFalse(r.getDataComplete(),
+                "分母不可得与广告费取不到同性质：净利少扣了一整块成本，必须标不完整");
+    }
+
+    @Test
+    @DisplayName("分母为 0（真的没有订单）：按全额计，因为没有分母可摊")
+    void zeroOrderCountStillChargesFullAmount() {
+        when(productCostMapper.selectOne(any())).thenReturn(costOf(new BigDecimal("30")));
+        when(fbaFeeTableMapper.selectOne(any())).thenReturn(fbaFeeOf(new BigDecimal("5"), new BigDecimal("0")));
+        when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
+        when(orderMapper.selectCount(any())).thenReturn(0L);
+        adTotalOf("300.00");
+
+        ProfitReport r = calculator.calculate(
+                1L, "AMZ-NOORD", "SKU-NOORD", new BigDecimal("100"),
+                "Electronics", "small-standard", 250, "NA", false);
+
+        assertEquals(0, new BigDecimal("300.00").compareTo(r.getAdCost()),
+                "真的没有订单时没有分母可摊，全额计入本条，且这不是故障");
+        assertTrue(r.getDataComplete(), "count==0 是真实状态，不是数据缺失");
+    }
+
+    @Test
+    @DisplayName("分母失败与查询失败必须区别对待：同一个 <=0 曾经把两者当成一回事")
+    void denominatorFailureAndZeroOrdersAreDistinguishable() {
+        when(productCostMapper.selectOne(any())).thenReturn(costOf(new BigDecimal("30")));
+        when(fbaFeeTableMapper.selectOne(any())).thenReturn(fbaFeeOf(new BigDecimal("5"), new BigDecimal("0")));
+        when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
+        adTotalOf("300.00");
+
+        // 查询失败 → 0 + 不完整
+        when(orderMapper.selectCount(any())).thenThrow(new RuntimeException("boom"));
+        ProfitReport failed = calculator.calculate(
+                1L, "AMZ-A", "SKU-A", new BigDecimal("100"),
+                "Electronics", "small-standard", 250, "NA", false);
+
+        // 真的 0 单 → 全额 + 完整
+        org.mockito.Mockito.reset(orderMapper);
+        when(orderMapper.selectCount(any())).thenReturn(0L);
+        ProfitReport zeroOrders = calculator.calculate(
+                1L, "AMZ-B", "SKU-B", new BigDecimal("100"),
+                "Electronics", "small-standard", 250, "NA", false);
+
+        assertFalse(failed.getDataComplete(), "查询失败必须标记不完整");
+        assertTrue(zeroOrders.getDataComplete(), "真的没有订单不是数据缺失");
+        assertEquals(0, BigDecimal.ZERO.compareTo(failed.getAdCost()), "失败按 0");
+        assertEquals(0, new BigDecimal("300.00").compareTo(zeroOrders.getAdCost()), "无订单按全额");
     }
 }

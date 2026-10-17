@@ -6268,3 +6268,69 @@ loopback 失败（stash 后在干净树上复现同样失败，§S30 已定案�
 所有店铺的订单。而这个端点语义就是「店铺销售额分布」饼图，跨店聚合是它的设计目的。
 
 已把这个区别写进代码注释，避免下一位按「绕过了 @ShopScoped」误判成漏洞。
+
+## §S33.52 广告费分摊：分母取不到时，旧 bug 原地复活
+
+追查资金链路（`ProfitCalculator`）时发现一处**被自己的修复掩盖的回归**。
+
+### 52. 缺陷原貌
+
+类 javadoc 写着本次修订的目的：「旧实现每单扣店铺总额，N 单即重复扣 N 倍」。
+但 `allocateAdCost` 里写着：
+
+```java
+long orderCount = countRecentOrders(shopId);
+if (orderCount <= 0) {
+    // 保守按全额计，避免广告成本被静默抹零
+    return shopAdTotal;
+}
+```
+
+而 `countRecentOrders` 查询异常时返回 **-1**，「真的没有订单」返回 **0**——
+两个含义相反的情况落进同一个 `<= 0` 分支：
+
+- 真没有订单：全额计合理（没有分母可摊）；
+- 查询失败 / `orderMapper` 未注入：全额计意味着**每条订单都扣一遍整店广告费**，
+  正是上面那句 javadoc 说要修掉的 bug。
+
+**实测**（revenue=100，店铺广告费 300）：
+
+| 分母 | adCost | netProfit | dataComplete |
+|---|---|---|---|
+| `orderMapper` 未注入（原有全部测试的状态） | 300.00 | **−250.00** | true |
+| 10 单 | 30.00 | **+20.00** | true |
+
+一条订单差 **270**，且两种情况下 `dataComplete` 都是 true——净利看着精确，其实是错数。
+
+### 53. 为什么一整个模块的测试都没发现
+
+`ProfitCalculatorTest.setUp` 注入了 3 个 mapper，**唯独没有 `orderMapper`**。
+于是 `countRecentOrders` 抛 NPE → 被 try-catch 吞掉 → 返回 -1 → 走「分母不可得」分支。
+全部 12 条用例都跑在一条从未被断言过的路径上，分摊逻辑**零覆盖**。
+
+这不是「测试写得不够」，是**测试的共同前提与生产不一致**：生产里
+`ProfitCalculator` 是 `@Component`、`orderMapper` 是 `@Autowired`，注入正常；
+测试里手工 `new ProfitCalculator()` + `ReflectionTestUtils.setField`，漏一个字段
+不会报错，只会静默改变代码路径。
+
+### 54. 修法
+
+`allocateAdCost` 改返回 `AdCostAllocation(allocated, resolved)`：
+
+| 情况 | allocated | resolved | dataComplete |
+|---|---|---|---|
+| 广告服务取不到 | 0 | — | false（§S33.31 已有） |
+| 分母查询失败（-1） | 0 | false | **false**（新增） |
+| 真的 0 单 | 全额 | true | true |
+| N > 0 | 全额 ÷ N | true | true |
+
+分母不可得时按 0 计并标记不完整——宁可显示「广告费缺失」，
+也不能把整店广告费压到一条订单上还标成完整。
+
+补 4 条测试（分摊、分母失败、真 0 单、两者可区分），order 模块 100/100 绿。
+变异验证（把 `orderCount < 0` 改回 `<= 0` 合并分支）：2 条红。
+
+**顺带确认结算链路没问题**：`SettlementSyncScheduler` 每店独立抢锁、
+独立 try-catch 记 error、`finally` 清 UserContext、warnings 显式落 warn；
+`SettlementServiceImpl` 按业务指纹幂等（重复行计入 skipped），
+所以 `paymentCollectionService.rebuild` 失败导致的重跑是安全的。
