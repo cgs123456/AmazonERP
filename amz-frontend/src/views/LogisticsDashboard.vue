@@ -125,45 +125,11 @@
           <!-- ================= 在途货件 ================= -->
 
           <!-- ================= 承运商 ================= -->
-          <section v-else-if="tab === 'carrier'">
-            <div class="table-card">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>承运商</th>
-                    <th>总货件</th>
-                    <th>在跟踪</th>
-                    <th>已送达</th>
-                    <th>延误</th>
-                    <th>异常</th>
-                    <th>平均时效</th>
-                    <th>延误率</th>
-                    <th>异常率</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!carriers.length">
-                    <td colspan="9" class="empty-row">暂无数据</td>
-                  </tr>
-                  <tr v-for="c in carriers" :key="c.carrier">
-                    <td>{{ c.carrier }}</td>
-                    <td>{{ c.total }}</td>
-                    <td>{{ c.active }}</td>
-                    <td>{{ c.delivered }}</td>
-                    <td :class="{ 'cell-alert': c.delayed > 0 }">{{ c.delayed }}</td>
-                    <td :class="{ 'cell-alert': c.exception > 0 }">{{ c.exception }}</td>
-                    <td>{{ c.avgTransitDays === null ? '暂无样本' : c.avgTransitDays + ' 天' }}</td>
-                    <td>{{ fmtRate(c.delayedRate) }}</td>
-                    <td>{{ fmtRate(c.exceptionRate) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p class="foot-note">
-              平均时效以「承运商确认送达」的轨迹事件时间为终点计算，样本不足时显示「暂无样本」而非 0，
-              避免把小样本误读为高效。
-            </p>
-          </section>
+            <LogisticsCarrierPanel
+              v-else-if="tab === 'carrier'"
+              :active="tab === 'carrier'"
+              :carriers="carriers"
+            />
 
           <!-- ================= 数据导入 ================= -->
           <section v-else-if="tab === 'import'">
@@ -326,8 +292,9 @@ import LogisticsQuoteListPanel from '../components/LogisticsQuoteListPanel.vue'
 import LogisticsOverviewPanel from '../components/LogisticsOverviewPanel.vue'
 import LogisticsAlertPanel from '../components/LogisticsAlertPanel.vue'
 import LogisticsShipmentPanel from '../components/LogisticsShipmentPanel.vue'
+import LogisticsCarrierPanel from '../components/LogisticsCarrierPanel.vue'
 import LogisticsQuoteBoardPanel from '../components/LogisticsQuoteBoardPanel.vue'
-import { fmtTime, fmtRate } from '../components/logisticsFormat'
+import { fmtTime } from '../components/logisticsFormat'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
 import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'

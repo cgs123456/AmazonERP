@@ -4,7 +4,7 @@
   "limitLines": 500,
   "summary": {
     "files": 56,
-    "totalLines": 46617,
+    "totalLines": 46718,
     "largest": "amz-frontend/e2e/full-interaction.spec.ts"
   },
   "files": {
@@ -14,7 +14,7 @@
     "amz-frontend/src/__tests__/ConnectorCenter.test.ts": 512,
     "amz-frontend/src/__tests__/FinanceOps.test.ts": 546,
     "amz-frontend/src/__tests__/ListingMonitor.test.ts": 506,
-    "amz-frontend/src/__tests__/LogisticsDashboard.test.ts": 2493,
+    "amz-frontend/src/__tests__/LogisticsDashboard.test.ts": 2627,
     "amz-frontend/src/__tests__/Procurement.test.ts": 701,
     "amz-frontend/src/__tests__/Warehouse.test.ts": 925,
     "amz-frontend/src/api/logistics.ts": 669,
@@ -32,7 +32,7 @@
     "amz-frontend/src/views/InventoryMonitor.vue": 545,
     "amz-frontend/src/views/KnowledgeBase.vue": 510,
     "amz-frontend/src/views/ListingMonitor.vue": 874,
-    "amz-frontend/src/views/LogisticsDashboard.vue": 1242,
+    "amz-frontend/src/views/LogisticsDashboard.vue": 1209,
     "amz-frontend/src/views/MultiplatformOps.vue": 826,
     "amz-frontend/src/views/OrderAudit.vue": 649,
     "amz-frontend/src/views/Procurement.vue": 2045,

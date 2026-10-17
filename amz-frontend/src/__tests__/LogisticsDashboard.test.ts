@@ -518,6 +518,140 @@ describe('LogisticsDashboard 视图', () => {
     expect(bar.text()).toContain('2026-08-18 10:30:00')
   })
 
+  // ------------------------------------------------------------
+  // 承运商表现表（回归：拆 LogisticsCarrierPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这一刀变异测试 6/6 全 MISSED——承运商 tab 此前零测试。**
+   *
+   * 它是独立的一个 tab，从没有任何断言碰过。下面六条逐一对上那六个变异。
+   */
+
+  /**
+   * 延误与异常只在**非零**时标红。全列都灰等于没标，而这张表要回答的正是
+   * 「哪几家有问题」——用户扫一眼红色就能定位，不用逐行读数字。
+   */
+  it('承运商表的延误与异常只在非零时标红，零值不标', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((x) => x.text().includes('承运商'))
+    expect(tab, '未找到「承运商」tab').toBeTruthy()
+    await tab!.trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('tbody tr').find((r) => r.text().includes('COSCO'))
+    expect(row, '未找到 COSCO 行').toBeTruthy()
+    const cells = row!.findAll('td')
+    expect(cells.length, '承运商表应有 9 列').toBe(9)
+
+    // 夹具：COSCO delayed=2 / exception=0 → 延误（第 5 列）标红，异常（第 6 列）不标。
+    // 按下标取而不是「找出带 cell-alert 的那些」——后者在「全都标红」时也会通过。
+    expect(cells[4].classes()).toContain('cell-alert')
+    expect(cells[5].classes()).not.toContain('cell-alert')
+  })
+
+  /**
+   * 平均时效样本不足时显示「暂无样本」而不是 0。示 0 天会让运营以为这家
+   * 承运商快得不合常理，**从而在选商时优先选它**——那是用错误数据做决策。
+   */
+  it('平均时效无样本时显示「暂无样本」，不得显示 0 天', async () => {
+    mockedCarriers.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: [{ carrier: 'NOSAMPLE', total: 1, active: 1, delivered: 0, delayed: 0,
+               exception: 0, avgTransitDays: null, delayedRate: null, exceptionRate: null }]
+    } as never)
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((x) => x.text().includes('承运商'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('tbody tr').find((r) => r.text().includes('NOSAMPLE'))
+    expect(row!.text()).toContain('暂无样本')
+    expect(row!.text()).not.toContain('0 天')
+  })
+
+  /**
+   * 比率无样本时显示占位而不是 0%。0% 会被读成「零延误」，那是结论性的错——
+   * 与平均时效同一个道理：没有基数就不给数字。
+   */
+  it('延误率与异常率无样本时显示占位，不得显示 0%', async () => {
+    mockedCarriers.mockResolvedValue({
+      code: 200, message: 'ok',
+      // 两行：一行全零（该全灰），一行延误非零（该标红）。
+      // 夹具默认只有 COSCO 一行且 delayed=2——那样 `> 0` 恒真，
+      // 把它改成 `true` 是等价变异，任何断言都抓不到。
+      data: [
+        { carrier: 'ALLZERO', total: 4, active: 4, delivered: 0, delayed: 0,
+          exception: 0, avgTransitDays: 5, delayedRate: null, exceptionRate: null },
+        { carrier: 'HASDELAY', total: 4, active: 2, delivered: 0, delayed: 2,
+          exception: 0, avgTransitDays: 5, delayedRate: 0.5, exceptionRate: 0 }
+      ]
+    } as never)
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((x) => x.text().includes('承运商'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    const zero = wrapper.findAll('tbody tr').find((r) => r.text().includes('ALLZERO'))!
+    const zCells = zero.findAll('td')
+    expect(zCells[7].text()).toBe('—')
+    expect(zCells[8].text()).toBe('—')
+    expect(zero.text()).not.toContain('0%')
+
+    // 全零行两列都不得标红：这是 `> 0` 这个条件唯一的可观测之处
+    expect(zCells[4].classes()).not.toContain('cell-alert')
+    expect(zCells[5].classes()).not.toContain('cell-alert')
+
+    // 有延误的那行要标红（否则上面那条「不标红」是因为压根没渲染数据）
+    const delayed = wrapper.findAll('tbody tr').find((r) => r.text().includes('HASDELAY'))!
+    expect(delayed.findAll('td')[4].classes()).toContain('cell-alert')
+  })
+
+  /** 有样本时比率要真按百分比显示（25% 而不是 0.25）。 */
+  it('有样本时延误率按百分比显示', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((x) => x.text().includes('承运商'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    const row = wrapper.findAll('tbody tr').find((r) => r.text().includes('COSCO'))!
+    const cells = row.findAll('td')
+    // 夹具 delayedRate 0.25 → 25.0%
+    expect(cells[7].text()).toBe('25.0%')
+  })
+
+  /** 空态文案。删掉它会让用户看到一张没有行的表，而不是「暂无数据」。 */
+  it('没有承运商数据时显示空态', async () => {
+    mockedCarriers.mockResolvedValue({ code: 200, message: 'ok', data: [] } as never)
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((x) => x.text().includes('承运商'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('暂无数据')
+  })
+
+  /**
+   * 表尾说明。它解释的是「平均时效」的算法口径与「为什么不是 0」——
+   * 删掉之后上面那个「暂无样本」就成了没有解释的怪数字。
+   */
+  it('表尾说明口径：平均时效以确认送达为终点，样本不足不显示 0', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const tab = wrapper.findAll('.tab').find((x) => x.text().includes('承运商'))
+    await tab!.trigger('click')
+    await flushPromises()
+
+    const note = wrapper.find('.foot-note')
+    expect(note.exists()).toBe(true)
+    expect(note.text()).toContain('承运商确认送达')
+    expect(note.text()).toContain('暂无样本')
+  })
   it('自动取数不可用时引导走数据导入，而不是让人反复刷新', async () => {
     mockedOverview.mockResolvedValue({
       code: 200,
