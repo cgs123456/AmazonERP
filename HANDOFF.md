@@ -5550,3 +5550,177 @@ if (key === 'shipments') { if (!shipments.value.length) await safeLoad(...) }
 `LogisticsDashboard.vue` 883 → **887 行**（判据下沉后页壳注释更详细）。
 vitest 705 → **708** 全绿；`vue-tsc` 0 错；`vite build` 通过；
 15 个 Python 门禁全绿；棘轮基线 46704 行。
+
+## §S33.19 业务功能盘点（2026-10-17，本轮 review 的第二半）
+
+用户要求「review 后梳理剩余业务功能方面的待做」。以下是**核实过代码**的清单，
+每条都标了依据；没有依据的推测不进这张表。
+
+### 19.1 先说结论：没有「页面点不动」的缺口
+
+- 前端 403 个 api 导出，**0 个从未被引用**（`src/api/*.ts` 之外全仓扫描）。
+- 后端 400 个端点，其中 **390 个**能被前端或其它后端服务找到调用方。
+- 剩下 8 个「两边都没人调」的，逐条查过，**没有一个是遗漏的接线**（见 19.3）。
+
+也就是说：业务功能的缺口集中在**后端能力本身没做**，而不是「做了没接」。
+这决定了下一阶段的性质——不是接线工作，是开发工作。
+
+### 19.2 值得做的（按「业务价值 ÷ 风险」排）
+
+#### A. 关键词级广告优化目前是空转（高价值，工作量小）
+
+`AdServiceImpl.optimizeKeywords` 直接调
+`keywordOptimizer.optimize(keywords, Collections.emptyList())`——第二个参数是
+**空的效果数据**，注释写明「日报表当前仅按 campaign/date 聚合，不能安全下推到
+单个关键词，在引入关键词级报表前只返回 OBSERVE」。
+
+- 影响：所有关键词建议恒为「观察」，不会产生任何调价建议。
+- 依赖：SP-API 的 `GET_SP_KEYWORDS_REPORT`（关键词级报表）。ad 服务已有
+  `AdvertisingApiRealClient` 与日报同步调度，**加一张关键词日报表 + 解析器**即可。
+- 这是「AI 广告托管」真正能出价值的前提——托管现在只能干跑。
+
+#### B. AI 广告托管是硬编码字符串，不是编排（中价值，工作量小）
+
+`AdPilotController.run` 只 `import` 了 Result / 注解 / LinkedHashMap，**没有注入
+`ErpToolExecutor` 或任何服务**。返回的 `analysis` 是一句说明文字
+（「由 Agent 工具链产出……」），`execution` 是另一句。也就是说：
+
+> `POST /ai/ad-pilot/run` 无论传什么 shopId / campaignId，返回内容完全相同。
+
+它自己文档里写着「执行通道经 ad 服务 POST /ad/keyword/optimize」，但代码里
+没有这个调用。**这不是诚实边界，是未完成的实现伪装成骨架。**
+两条路：接上 `ErpToolExecutor.execute(FunctionCall)` 让干跑真的产出方案；
+或者删掉这个 controller（前端零调用、无测试）。
+
+#### C. 采购促销方案是模板常量（中价值，工作量小）
+
+`ProcurementController.getPromotionPlan` 返回写死的
+`Lightning Deal / 20% / "$500 广告预算" / "150% uplift"`，与 shopId、asin、
+目标全都无关。前端**故意没接**（`api/procurement.ts` 顶部注释明确说明理由：
+「接进 UI 等于把模板文案显示成经营建议」）。
+
+但 Agent 工具 `generate_promotion_plan` **正在调它**（`ErpProcurementTools` →
+`ProcurementServiceClient.getPromotionPlan`），也就是说 LLM 会把这段模板当成
+经营建议讲给运营听。前端守住了，Agent 这条路没守住。
+
+#### D. 竞品价格监控是空壳（中价值，工作量中）
+
+`GET /ad/competitor` 返回四个 `null` + 一句「当前返回占位数据」。前端零调用。
+另一边 `KeepaController` 有三个端点（price / rank / competitor），
+`KeepaRealClient` 已实现且未配置 key 时**显式失败**（不造假），
+但**前端与 Agent 都没接**，实际使用者只有 `KeepaCompetitorScheduler`（写库）。
+
+缺的是「读出来给人看」：ListingMonitor 已有竞品表，但没有价格/排名历史。
+
+#### E. 多平台三家的同步能力全是 `unimplemented`（低价值，阻塞在外部）
+
+Shein / Temu / TikTok 的 `fetchProducts` / `fetchInventory` /
+`sendMessage` 一律抛 `UnsupportedOperationException`（显式失败，符合 fail-closed）。
+前端 `MultiplatformOps` 顶部已写明「三家的真实客户端对这些动作一律抛未接入」，
+**并且没有放同步按钮**——接线是对的，卡在 Open API 文档与字段映射。
+
+#### F. 客户域两条真实通道未接（中价值）
+
+- 索评：`sendReviewSolicitations` 非 mock 直接抛「尚未接入真实发送通道」。
+  需要 SP-API `Request a Review`（注意：官方对该接口有频率与资格限制）。
+- 差评订单匹配：`matchNegativeReviewToOrder` 非 mock 直接抛。需要按 ASIN +
+  留评日期回溯 7–30 天订单。
+- 两者都是**诚实失败**（不造假记录），属于「明确知道没做」而不是「悄悄坏掉」。
+
+### 19.3 那 8 个「无人调用」的端点，逐条结论
+
+| 端点 | 结论 |
+|---|---|
+| `/ai/ad-pilot/run` | 见 19.2 B。前端零调用、无测试，建议接上工具链或删除 |
+| `/ai/agent/memory/reminder/scan` | 正文是写死示例且会推 IM，非 mock 已拒绝（ADMIN 手动触发用），**保留** |
+| `/procurement/batch/fifo-return` | FIFO 退货回补，`@RequireRole(OPERATOR/ADMIN)`，供外部/后续 UI 用，**保留** |
+| `/spapi/messaging/actions` | 按订单查询当前可用的买家消息动作（真实 SP-API 调用，`MessagingController.getActions`）。前端与 Agent 都没接——客户沟通仍靠站内人工，**保留**（属可用的只读能力） |
+| `/spapi/performance/*`（3 个） | 店铺绩效**原文留痕**，无前端页面；`ShopPerformanceSyncHandler` 只被 controller 自己 new，**没有调度**——数据不会自动进来 |
+| `/spapi/sellers/marketplace-participations` | 供运维核对凭证授权范围，有契约测试，**保留** |
+
+`/spapi/performance/*` 是唯一一条「有完整实现、有落库表、但既无调度也无页面」
+的链路——要么加调度 + 报表页，要么承认它是运维工具。
+
+### 19.4 文档债（本轮已修两条）
+
+- README「调拨收货不改动库存账」**已过时**（`797058c` 已实现双向联动），已改。
+- README「入库短收金额需人工登记」表述不准，已改为「登记时仍需传单位成本，
+  生成索赔单时取差异差额」。
+- README「已知限制」表格中间有一个空行，把表断成两截，已修。
+- 第一次修改时我把第二条写成了「不再要求传单位成本」，与代码不符，
+  核实 `intakeInboundShortage` 后改回——**文档修改也必须逐条对代码核实**。
+
+### 19.5 工程债（与业务功能分开记）
+
+P1 文件行数（棘轮基线 56 个文件 / 46704 行）：
+
+| 类别 | 文件数 | 行数 | 备注 |
+|---|---|---|---|
+| 后端 main | 19 | 12833 | 最大 `MultiplatformServiceImpl` 969 |
+| 前端 view | 20 | 17141 | 最大 `Procurement.vue` 2045 |
+| 测试 | 15 | 15411 | `LogisticsDashboard.test.ts` 2829、`e2e/api-stub.ts` 1719 |
+| 前端 api | 2 | 1209 | `logistics.ts` 669 |
+
+下一刀建议 `Procurement.vue`（2045，701 行测试保护），而不是继续切已经降到
+887 行的 `LogisticsDashboard.vue`——后者剩下的就是页壳，再切收益递减。
+
+## §S33.20 P0：§S32 拆分时漏掉的 Bean 注册——AI 服务启动必失败
+
+盘点「哪些端点没人调」时追到 `AdPilotController`，顺手核对它的 Bean 依赖，
+发现了一件比 AdPilot 本身严重得多的事。
+
+### 20.1 缺陷
+
+§S32 把 `ErpToolExecutor`（类上有 `@Component`）里的 30 个工具方法按依赖族
+拆到 7 个新类。新类**只有 `@Slf4j`**，没有任何构造型注解：
+
+| 类 | 拆分前 | 拆分后 |
+|---|---|---|
+| ErpToolExecutor | `@Component` + 全部方法 | `@Component` + 仅分发 |
+| ErpLogisticsTools / ErpAnalysisTools / ErpOrderTools / ErpInventoryTools / ErpAdTools / ErpProductTools / ErpProcurementTools | （不存在） | 只有 `@Slf4j` |
+
+同时 `ErpToolExecutor` 把原来的字段改成了 `@Autowired`（**required=true**）：
+`private ErpLogisticsTools logisticsTools;` 等 7 个。
+
+容器里没有这 7 个类型的 Bean → 启动 `NoSuchBeanDefinitionException` → **AI 服务起不来**。
+
+### 20.2 为什么全绿了一整天
+
+41 条单测全是这个模式：
+
+```java
+ErpToolExecutor executor = new ErpToolExecutor();
+ReflectionTestUtils.setField(executor, "logisticsTools", new ErpLogisticsTools());
+```
+
+**没有一条测试经过 Spring 容器。** `mvn test` 全绿，`mvn compile` 也全绿——
+编译期看不出「这个类型会不会被注册」。
+
+这不是「测试覆盖率不够」，是**测试方式本身绕过了被测的机制**：
+单测手工构造依赖，恰好替容器把最可能出错的那一步做了。
+
+### 20.3 修法与门禁
+
+1. 7 个类补 `@Component`。
+2. 新增 `AutowiredBeanResolvableTest`：反射遍历 `ErpToolExecutor` 的
+   `@Autowired` 字段，要求类型带 `@Component/@Service/@Repository/@Controller/
+   @Configuration` 之一。接口与抽象类豁免（Feign 客户端由 `@EnableFeignClients`
+   生成代理，是另一套机制，且都是 `required=false`）。
+3. 变异验证：去掉 `ErpAdTools` 的 `@Component` → **CAUGHT**。
+
+**判据是必要条件，不是充分条件**：能抓「忘了加注解」，抓不住「注解在但扫描路径
+不对」。为什么不上 `@SpringBootTest`：需要 DB / Redis / Feign 全套依赖，
+本机与 CI 都不稳定（§S30 已定案 loopback 不修）。理由写在测试的 javadoc 里，
+避免下一班把它「升级」成一个跑不起来的集成测试。
+
+### 20.4 这一类缺陷的通用教训
+
+> **把方法从一个 `@Component` 里搬到新类时，新类的「怎么成为 Bean」必须显式决定。**
+> 编译器和单测都不会替你检查这一点。
+
+对纯重构尤其危险：拆分的动机是「文件太长」，注意力全在「方法搬全了吗、
+测试注入点改对了吗」，**没人问「新类怎么被容器看见」**。
+
+### 20.5 状态
+
+`mvn test`：138 跑 137 过，唯一失败是 §S30 已定案的 DeepSeek loopback。
