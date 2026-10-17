@@ -6565,3 +6565,56 @@ procurement 模块 151 个测试全绿。
 | 我写错又更正的记录 | 3 处（端点覆盖尺子、汇率兜底触发条件、假测试） |
 | 我犯的流程错误 | 1 次（先提交后跑棘轮，已 amend） |
 | 审查后确认无缺陷的实现 | 结算同步 / 凭证生成 / 回款台账 / SKU 利润 / 实时利润 / 异步凭证链路 |
+
+## §S33.74 logistics / ops / customer / selection 审查：未发现活缺陷
+
+接着把其余主要模块读完。**没有发现活缺陷**，但确认了一批值得记的设计口径。
+
+### 69. `LogisticsUpgradeServiceImpl` 头程分摊：残差处理正确
+
+`allocateWithResidual` 按比例分摊后，把 `total - sum(parts)` 的残差
+**加到占比最大的那一项**上，所以分摊结果恒等于总额，不会因四舍五入丢钱。
+分摊前有两道guard：基准总量为 0 直接抛错；方法名白名单校验
+（注释记着旧实现的坑：「任何拼错的方法名都会静默按 WEIGHT 算，
+使用者以为按体积分摊了，实际是按重量，且没有任何迹象可寻」）。
+
+`expireOutdatedQuotes` 的 `return 0` 是「无过期报价」的合法计数，非零路径有 log。
+
+### 70. `TrackingIngestServiceImpl` 两处值得学
+
+- **延误状态不回退**：已判定 DELAYED 的货件，不会因为拉到一条普通轨迹点
+  就回到 IN_TRANSIT——注释说明「延误是需要人工关注的信号，只有真正推进到
+  下一环节才解除」；
+- **扫描触顶即抛错回滚**：延误判定超过 `max-scan` 时抛
+  `IllegalStateException` 并回滚本轮，而不是返回「看起来正常的 partial 结果」。
+  理由写在配置注释里：「超过时抛错回滚，避免静默漏判」。
+
+`canonicalTime` 的四个 `catch (DateTimeParseException ignored)` 是**有意的
+格式回退链**（带时区 → ISO 本地 → 已规整 → 纯日期补零），全部失败才按原值
+保留并 `log.debug` 说明可能影响排序。不是静默吞错。
+
+### 71. 两个 `catch (Exception ignore)` 都是 fail-safe
+
+`CustomerServiceImpl` 与 `CustomerEmailServiceImpl` 各有一份完全相同的
+`isMockProfile()`：读 active profiles 失败时按**非 mock** 处理。
+方向选对了——失败会**阻止**模拟数据生成，而不是放开它。
+注释「无环境上下文时按非 mock 处理（诚实失败）」与行为一致。
+
+（两份逐字节相同是既有重复，属 §S33 已记的「不为单一用例提前抽象」范畴，
+且分散在两个模块无法共用，**未动**。）
+
+### 72. `CustomerEmailServiceImpl` 发送链路：不伪造 SENT
+
+非 mock 环境下没有真实发送通道（Amazon Messaging/SMTP 未接入），
+任务被标记 **FAILED** 并写明原因，绝不写成 SENT；mock 环境的日志明确带
+`[MOCK]` 前缀与「非真实发送」。积压超批次上限有 warn 说明「需再次调度」。
+每个失败都带 taskId / orderId / error 三项，可定位到单条。
+
+另有一处**键名语义收紧**：`totalPending` 沿用旧键名，但值从「批次大小」的
+含糊语义改成明确注释「本批次处理条数」——旧值容易被读成「全店待发总量」。
+
+### 73. `OpsServiceImpl`：一个 catch 都没有
+
+全类零 catch，所有失败直接抛。配合 §S33.38 确认过的
+「mock 造数端点生产环境恒拒绝」（返回错误而非假的 0 条），
+这个模块的失败姿态是全场最干净的。
