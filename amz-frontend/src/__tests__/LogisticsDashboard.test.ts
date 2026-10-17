@@ -1866,6 +1866,51 @@ describe('LogisticsDashboard 有效报价明细（此前 listQuotes 零调用）
     expect(mockedQuotes).toHaveBeenLastCalledWith('1', undefined, 50, 'c1')
   })
 
+  /**
+   * **这一刀变异测试抓到两处空洞，这是第一处。**
+   *
+   * `_page` 存在、`hasMore: true`、但**没有 nextCursor** 时，只能得出
+   * 「后端说还有更多，却没给翻页凭据」。此时必须显示「完整性未知」并**不给按钮**，
+   * 不能显示成「不是全量」再配一个点不动的下一页——那等于告诉用户
+   * 「你能看完，点那里」，而点了什么都不会发生，报价永远看不全。
+   *
+   * 原有测试只覆盖了两个分支：`truncated` 有游标（显示不是全量 + 按钮可用）、
+   * `_page` 整个缺失。中间这个组合没人测，所以把 `quotesTruncated = hasMore`
+   * （丢掉 metaMissing 判断）改坏也不会红。
+   */
+  it('有更多但没有游标时必须说「完整性未知」，且不给下一页按钮', async () => {
+    mockedQuotes.mockResolvedValue({
+      code: 200, message: 'ok', data: quoteListFixture,
+      _page: pageMeta(quoteListFixture, { hasMore: true, truncated: false, nextCursor: null })
+    } as never)
+    const wrapper = await mountQuotes()
+    const panel = wrapper.find('[data-panel="quotes"]')
+
+    // 本面板自己的那份文案（与 LogisticsCursorBar 内的措辞不同，两块各自成文）
+    expect(panel.text()).toContain('未拿到分页元数据，无法确认是否全量')
+    // 关键：不得伪装成「有下一页」。给了按钮却带不了游标，用户点了毫无反应
+    expect(panel.text()).not.toContain('后端声明还有更多未加载')
+    expect(panel.findAll('button').some((b: any) => b.text().includes('加载下一页'))).toBe(false)
+  })
+
+  /**
+   * **第二处空洞：抛异常时不再报页级错误区。**
+   *
+   * 非 200 有测试（上面那条），catch 分支没有——两条路都把原因写进页顶
+   * `.error-zone`，但只有前者被断言。改成静默吞掉后列表显示「暂无有效报价」，
+   * **看起来像真的没有报价，而不是加载失败**，运营会据此判断「这条航线没得选」。
+   */
+  it('报价列表请求抛异常时也要把原因落到页级错误区，不显示成「暂无报价」', async () => {
+    mockedQuotes.mockRejectedValue(new Error('网关超时') as never)
+    const wrapper = await mountQuotes()
+
+    // 走页顶 error-zone（与货件/调拨同模式），不在面板内自说自话
+    expect(wrapper.find('.error-zone').text()).toContain('网关超时')
+    const panel = wrapper.find('[data-panel="quotes"]')
+    expect(panel.text()).not.toContain('Matson')
+    expect(panel.text()).toContain('暂无有效报价')
+  })
+
   it('报价列表拉取失败时点名原因，不铺假报价', async () => {
     mockedQuotes.mockResolvedValue({ code: 400, message: '无权访问该店铺的报价', data: null as any })
     const wrapper = await mountQuotes()
