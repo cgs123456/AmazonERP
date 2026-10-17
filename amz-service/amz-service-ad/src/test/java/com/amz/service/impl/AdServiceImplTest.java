@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -127,7 +128,7 @@ class AdServiceImplTest {
     void getShopSummaryUsesLiveRowsAndReturnsNullWhenEmpty() {
         when(dailyReportMapper.aggregateShopReport(
                 eq(1L), any(LocalDate.class), any(LocalDate.class))).thenReturn(null);
-        assertNull(service.getShopSummary(1L));
+        assertNull(service.getShopSummary(1L, null));
 
         AdDailyReport summaryRow = row(null, LocalDate.now(), 150L, 15L,
                 "30.00", "100.00", 2);
@@ -135,7 +136,7 @@ class AdServiceImplTest {
         when(dailyReportMapper.aggregateShopReport(
                 eq(1L), any(LocalDate.class), any(LocalDate.class))).thenReturn(summaryRow);
 
-        AdReport summary = service.getShopSummary(1L);
+        AdReport summary = service.getShopSummary(1L, null);
 
         assertEquals(150L, summary.getImpressions());
         assertEquals(15L, summary.getClicks());
@@ -143,6 +144,38 @@ class AdServiceImplTest {
         assertEquals(0, new BigDecimal("100.00").compareTo(summary.getSales()));
         assertEquals(0, new BigDecimal("30.00").compareTo(summary.getAcos()));
         verify(dailyReportMapper, never()).aggregateCampaignReports(any(), any(), any(), any(), eq(51));
+    }
+
+    /**
+     * §S33.82：汇总窗口必须由调用方声明，且「N 天」= 含今天共 N 个自然日。
+     * <p>
+     * 此前窗口写死 7 天且不入参，利润分摊拿它当 30 天花费除以 30 天订单数——
+     * 分子分母窗口不一致，每条订单的广告费只有真实值的 7/30 ≈ 23%。
+     * 钉住端点界限而不只是「mapper 被调用」：默认 7、显式 30、超限封到 90，
+     * 三个值都按「含今天」口径算，与下游 ProfitCalculator 的下界口径对齐。
+     */
+    @Test
+    @DisplayName("汇总窗口：默认 7 天，声明 N 天即 N 个自然日（含今天），超 90 封顶")
+    void getShopSummaryHonoursDeclaredWindow() {
+        AdDailyReport row = row(null, LocalDate.now(), 1L, 1L, "1.00", "2.00", 1);
+        row.setId(99L);
+        when(dailyReportMapper.aggregateShopReport(eq(1L), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(row);
+
+        service.getShopSummary(1L, null);
+        service.getShopSummary(1L, 30);
+        service.getShopSummary(1L, 500);
+
+        @SuppressWarnings("rawtypes")
+        org.mockito.ArgumentCaptor<LocalDate> starts =
+                org.mockito.ArgumentCaptor.forClass(LocalDate.class);
+        verify(dailyReportMapper, times(3))
+                .aggregateShopReport(eq(1L), starts.capture(), any(LocalDate.class));
+
+        LocalDate today = LocalDate.now();
+        assertEquals(today.minusDays(6), starts.getAllValues().get(0), "默认 7 天：含今天共 7 个自然日");
+        assertEquals(today.minusDays(29), starts.getAllValues().get(1), "声明 30 天：含今天共 30 个自然日");
+        assertEquals(today.minusDays(89), starts.getAllValues().get(2), "500 天封顶到 90 天");
     }
 
     @Test

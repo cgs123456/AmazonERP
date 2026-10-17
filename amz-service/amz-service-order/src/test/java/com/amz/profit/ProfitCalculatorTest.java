@@ -20,8 +20,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -74,7 +74,7 @@ class ProfitCalculatorTest {
         AdServiceClient adClient = mock(AdServiceClient.class);
         Map<String, Object> data = new HashMap<>();
         data.put("cost", new BigDecimal(cost));
-        when(adClient.getShopSummary(any())).thenReturn(Result.success(data));
+        when(adClient.getShopSummary(any(), any())).thenReturn(Result.success(data));
         ReflectionTestUtils.setField(calculator, "adServiceClient", adClient);
     }
 
@@ -141,7 +141,7 @@ class ProfitCalculatorTest {
         when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
         // 广告服务返回失败：这是「取不到」，不是「确实是 0」
         AdServiceClient adClient = mock(AdServiceClient.class);
-        when(adClient.getShopSummary(any())).thenReturn(Result.failure("广告服务不可用"));
+        when(adClient.getShopSummary(any(), any())).thenReturn(Result.failure("广告服务不可用"));
         ReflectionTestUtils.setField(calculator, "adServiceClient", adClient);
 
         ProfitReport r = calculator.calculate(
@@ -162,7 +162,7 @@ class ProfitCalculatorTest {
         AdServiceClient adClient = mock(AdServiceClient.class);
         Map<String, Object> data = new HashMap<>();
         data.put("cost", 0);
-        when(adClient.getShopSummary(any())).thenReturn(Result.success(data));
+        when(adClient.getShopSummary(any(), any())).thenReturn(Result.success(data));
         ReflectionTestUtils.setField(calculator, "adServiceClient", adClient);
 
         ProfitReport r = calculator.calculate(

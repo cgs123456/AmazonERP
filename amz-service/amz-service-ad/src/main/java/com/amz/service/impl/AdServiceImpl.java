@@ -93,12 +93,17 @@ public class AdServiceImpl implements AdService {
     }
 
     @Override
-    public AdReport getShopSummary(Long shopId) {
+    public AdReport getShopSummary(Long shopId, Integer days) {
         if (shopId == null) {
             return null;
         }
+        // 窗口由调用方声明，缺省沿用广告首页的 7 天。
+        // §S33.82：利润分摊的分母是近 30 天订单数，分子必须同为 30 天花费——
+        // 固定 7 天窗口让它把「7 天的钱」摊到「30 天的单」上，每条订单的广告费
+        // 只有真实值的 7/30 ≈ 23%，净利系统性高估一个成本块（广告通常占营收 10–30%）。
+        int window = (days == null || days <= 0) ? SHOP_REPORT_LOOKBACK_DAYS : Math.min(days, 90);
         LocalDate end = LocalDate.now();
-        LocalDate start = end.minusDays(SHOP_REPORT_LOOKBACK_DAYS - 1L);
+        LocalDate start = end.minusDays(window - 1L);
 
         final AdDailyReport summary;
         try {

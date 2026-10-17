@@ -43,12 +43,17 @@ public class AdController {
 
     /**
      * 查询店铺整体汇总指标。
-     * GET /ad/summary/{shopId}
+     * GET /ad/summary/{shopId}?days=7
+     * <p>
+     * days 为回看天数，缺省 7（广告首页口径），上限 90。
+     * §S33.82：窗口必须由调用方显式声明——利润分摊的分母是近 30 天订单数，
+     * 分子若固定 7 天，就是把「7 天的钱」摊到「30 天的单」上。
      */
     @ShopScoped
     @GetMapping("/summary/{shopId}")
-    public Result<AdReport> getSummary(@PathVariable Long shopId) {
-        return Result.success(adService.getShopSummary(shopId));
+    public Result<AdReport> getSummary(@PathVariable Long shopId,
+                                       @RequestParam(required = false) Integer days) {
+        return Result.success(adService.getShopSummary(shopId, days));
     }
 
     /**

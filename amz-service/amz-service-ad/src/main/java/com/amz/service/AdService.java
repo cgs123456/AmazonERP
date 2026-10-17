@@ -22,8 +22,12 @@ public interface AdService {
 
     /**
      * 查询店铺整体汇总指标。
+     *
+     * @param days 统计窗口（回看天数）。null/非法取 7（广告首页口径）；上限 90。
+     *             §S33.82：窗口必须是调用方声明的——此前固定 7 天，
+     *             利润分摊拿它除 30 天订单数，每条订单摊到的广告费只有真实值的两成。
      */
-    AdReport getShopSummary(Long shopId);
+    AdReport getShopSummary(Long shopId, Integer days);
 
     /**
      * 查询店铺近 N 天每日 ACoS 趋势（供前端折线图）。

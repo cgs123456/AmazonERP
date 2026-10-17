@@ -69,7 +69,17 @@ public class ProfitCalculator {
     private BigDecimal euVatRate = new BigDecimal("0.20");
 
     /**
-     * 广告费分摊分母（近30天订单数）的本地缓存 TTL：10 分钟。
+     * 广告费分摊的统计窗口（天）：分子（广告花费）与分母（订单数）必须同窗口。
+     * <p>
+     * §S33.82：此前分母写死 30 天、分子取广告服务默认窗口（7 天），
+     * 两条链路各自硬编码一个数字且互不知情，于是「7 天的钱」被摊到「30 天的单」上
+     * ——每条订单的广告费只有真实值的 7/30 ≈ 23%，净利系统性高估。
+     * 抽成常量并让两处共用，窗口要改只改一处，不可能再漂移。
+     */
+    private static final int AD_ALLOCATION_WINDOW_DAYS = 30;
+
+    /**
+     * 广告费分摊分母（近 {@value #AD_ALLOCATION_WINDOW_DAYS} 天订单数）的本地缓存 TTL：10 分钟。
      * 避免同一店铺的每条利润消息都触发一次 count 查询。
      */
     private static final long ORDER_COUNT_CACHE_TTL_MS = 10 * 60 * 1000L;
@@ -316,14 +326,20 @@ public class ProfitCalculator {
             return cached.count;
         }
         try {
+            // 含今天共 AD_ALLOCATION_WINDOW_DAYS 天，故下界是 (N-1) 天前——
+            // 与广告侧 end.minusDays(window - 1) 同一口径。
+            // §S33.82：这里原来是 minusDays(30)，与广告侧差一天，
+            // 分子分母即使写成同一个数字，覆盖的天数仍不等。
             Long count = orderMapper.selectCount(new LambdaQueryWrapper<Order>()
                     .eq(Order::getShopId, shopId)
-                    .ge(Order::getPurchaseDate, LocalDate.now().minusDays(30).atStartOfDay()));
+                    .ge(Order::getPurchaseDate,
+                            LocalDate.now().minusDays(AD_ALLOCATION_WINDOW_DAYS - 1L).atStartOfDay()));
             long c = count != null ? count : 0L;
             orderCountCache.put(shopId, new OrderCountCacheEntry(c, now + ORDER_COUNT_CACHE_TTL_MS));
             return c;
         } catch (Exception e) {
-            log.warn("查询店铺近30天订单数失败，广告费暂不分摊：shopId={}", shopId, e);
+            log.warn("查询店铺近{}天订单数失败，广告费暂不分摊：shopId={}",
+                    AD_ALLOCATION_WINDOW_DAYS, shopId, e);
             return -1L;
         }
     }
@@ -340,7 +356,9 @@ public class ProfitCalculator {
      */
     private BigDecimal fetchAdCost(Long shopId) {
         try {
-            Result<Map<String, Object>> resp = adServiceClient.getShopSummary(shopId);
+            // 显式声明窗口：必须与分母 AD_ALLOCATION_WINDOW_DAYS 同值，见该常量的说明
+            Result<Map<String, Object>> resp =
+                    adServiceClient.getShopSummary(shopId, AD_ALLOCATION_WINDOW_DAYS);
             if (resp == null || resp.getCode() != 200 || resp.getData() == null) {
                 log.warn("广告服务返回异常或空数据，广告费按「缺失」处理：shopId={}", shopId);
                 return null;
