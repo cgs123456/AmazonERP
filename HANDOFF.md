@@ -6660,3 +6660,52 @@ procurement 模块 151 个测试全绿。
 后果是下一轮跳过而非数据重复——fail-closed 方向是安全的，
 且 `fixedDelay` 语义保证不会叠跑。**未加限制**：加上限会改变「拉全量」的语义，
 而这是个容量规划问题不是正确性问题，应由运行数据决定，不由我拍。
+
+## §S33.79 gateway 过滤器链 + 前端并发面
+
+### 79. `MyGlobalFilter`：四道关卡都对
+
+- **内部路径返回 404 而非 403**：`/internal/**` 经网关访问直接 404，
+  不泄露「这个路径存在但不能访问」；
+- **先剥离再写入权威头**：`userId` 头先 `remove` 再从 JWT 写入，
+  注释记着旧实现的坑（「mutate() 结果被丢弃、且从不剥离入站 userId——
+  一旦下游重新注册信任该头的拦截器即构成完整身份伪造链路」）；
+- **shopId 校验覆盖所有带该头的请求**，格式非法 403、不在授权列表 403；
+- **必须转发 mutate 后的 exchange**（注释：「直接透传原 exchange 会丢失所有头修改」）。
+
+`parseTokenShops` **不会返回 null**（无 claim 时返回空 `ArrayList`），
+脏 claim 逐个跳过而非整体抛错——所以网关第 7 步的 `shops.contains(...)`
+不存在 NPE 风险（我一度怀疑这里有 NPE，读完整后排除）。
+零店铺用户带 shopId 头 → 403；不带头 → 过网关，
+由下游 `ShopIdGuardAspect` 的「已认证用户无任何店铺授权，拒绝访问」接住。
+两层都 fail-closed。
+
+`CorsConfig` 默认只放行 localhost，生产必须显式配 `amz.cors.allowed-origins`；
+用 `addAllowedOriginPattern` + `allowCredentials(true)` 的正确组合
+（`allowedOrigin("*")` 与 credentials 同用在规范里是非法的）。
+
+### 80. 前端 11 个视图无请求序号守卫——但这是设计消除的，不是遗漏
+
+`Dashboard / Finance / ReportCenter / LogisticsDashboard / Procurement /
+ListingMonitor / InventoryMonitor / CustomerService / Warehouse /
+ProductSearch / AgentMemory` 都用 `Promise.all` 并行拉数，
+且**没有一个**有 `loadSeq` / `reqId` / AbortController 之类的
+「丢弃过期响应」守卫。
+
+按惯例这该判成缺陷（慢请求先返回、快请求后返回会渲染旧数据）。
+但触发路径已经被架构关掉：
+
+- `AppHeader.handleShopChange` 切店铺时 `window.location.reload()`
+  ——**整页刷新**，不是局部重拉。而切店铺是唯一会改变
+  「同一面板该显示哪份数据」的操作；
+- 剩下唯一的重叠窗口是 `amz:auth-changed` 事件落在 `onMounted` 那次加载途中，
+  后果是面板短暂显示旧数据、下次加载自愈，且需要用户在登录态切换的
+  毫秒级窗口内触发。
+
+**未加守卫**：为 11 个视图引入序号机制是推测性复杂度——
+真正能造成「显示别店数据」的触发点已经被 `location.reload()` 消掉了。
+按 CLAUDE.md「不做推测性抽象，抽象延迟到第二个真实用例出现时才引入」，
+这里连第一个真实用例都还没出现。
+
+（代价是切店铺要整页刷新，体验上偏重。但那是明确取舍而非疏漏：
+注释写着「切换店铺影响所有页面的数据视图，整页刷新以重新拉取」。）
