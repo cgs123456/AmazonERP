@@ -6179,3 +6179,43 @@ Agent 链路（偏好提取 + ChatMemory 历史 + Function Calling 多轮）。
 
 已确认 ai 模块 146 个测试跑完，仅 `DeepSeekAgentConfigurationContext` 1 条
 loopback 失败（stash 后在干净树上复现同样失败，§S30 已定案）。
+
+## §S33.49 删除 `KeepaController`：三个零调用的原始透传端点
+
+上一轮把「该删但属产品决策」的两个簇列给用户。逐个核实后 `KeepaController`
+的三个端点满足删除条件，且**删除前专门查了外部调用方**：
+
+| 查的面 | 结果 |
+|---|---|
+| k8s / docker / compose / alertmanager / prometheus / grafana / logstash | `keepa` 零命中 |
+| 前端 `src` 之外的所有文件 | 只有 Controller 自己 + HANDOFF 记录 |
+| `*IT.java` / `*IntegrationTest.java` | 零命中 |
+| e2e specs 与 `e2e/support/api-stub.ts` | 零命中 |
+| 跨服务 Feign 客户端声明该路径 | 无——`KeepaClient` 是**出向** `api.keepa.com` 的 HTTP 客户端，不是内部 Feign 接口 |
+| README | `KEEPA_API_KEY` 标为可选，用途写的是「Keepa 竞品数据」，即调度器那条链路 |
+
+网关确实宽泛路由 `/product/**`，所以端点**可达**；但本仓与其部署配置里
+没有任何消费方。`KeepaClient` 的唯一内部消费方是 `KeepaCompetitorScheduler`，
+删除 Controller 不影响它，也不影响 `KeepaRealClient`/`KeepaMockClient`
+（`@Profile("!mock")` / `@Profile("mock")` 区分，无 Bean 冲突）。
+
+同一数据的业务链路完好：`KeepaCompetitorScheduler` → `amz_competitor_monitor`
+→ `ListingMonitorServiceImpl` → `ListingMonitorController`（按 shopId 严格校验）。
+删掉的是绕过这层语义的裸透传。
+
+按 CLAUDE.md「删除优于兼容」整类删除（57 行）。这不是「已知消费者的稳定契约」，
+是零调用的冗余出口。
+
+端点盘点：76 → 75 controllers，64 → 61 无前端命名，42 → 39 user-facing-candidate
+（三个计数同步下降，删除确实登记上了）。
+
+### 50. 本轮累计
+
+| 项 | 结果 |
+|---|---|
+| 删除的端点 | 4 个（`/ai/chat` 1 + `/product/keepa/**` 3） |
+| 删除的装饰性 `@ShopScoped` | 7 处 |
+| 修复的真洞 | 1 个（绩效留痕跨店读原文） |
+| 新增测试 | Java 5 条 + Python 门禁 8 条 |
+| 新增门禁 | 1 个（`test_shoppointer_scope.py`，4 个变异方向全捕获） |
+| 门禁自身被变异抓到 | 2 次（豁免写得比理由宽） |
