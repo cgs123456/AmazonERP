@@ -97,54 +97,15 @@
           />
 
           <!-- ================= 待处理 ================= -->
-          <section v-else-if="tab === 'alerts'">
-            <div class="table-card">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>级别</th>
-                    <th>类型</th>
-                    <th>货件号</th>
-                    <th>承运商</th>
-                    <th>运单号</th>
-                    <th>状态</th>
-                    <th>ETA</th>
-                    <th>超期</th>
-                    <th>说明与建议</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!alerts.length">
-                    <td colspan="10" class="empty-row">当前没有需要人工处理的货件</td>
-                  </tr>
-                  <tr v-for="a in alerts" :key="a.type + '-' + a.shipmentId">
-                    <td>
-                      <span class="status-tag" :class="severityTone(a.severity)">
-                        {{ severityLabel(a.severity) }}
-                      </span>
-                    </td>
-                    <td>{{ alertTypeLabel(a.type) }}</td>
-                    <td class="mono">{{ a.shipmentNo }}</td>
-                    <td>{{ a.carrier || '—' }}</td>
-                    <td class="mono">{{ a.masterTrackingNo || '—' }}</td>
-                    <td>{{ statusLabel(a.status) }}</td>
-                    <td class="mono">{{ a.eta || '—' }}</td>
-                    <td>{{ a.daysOverdue !== null && a.daysOverdue > 0 ? a.daysOverdue + ' 天' : '—' }}</td>
-                    <td class="hint-cell">
-                      <div class="hint-msg">{{ a.message }}</div>
-                      <div class="hint-action">建议：{{ a.actionHint }}</div>
-                    </td>
-                    <td class="ops">
-                      <button class="link-btn" :disabled="busy" @click="doSync(a.shipmentId)">同步</button>
-                      <button class="link-btn" :disabled="busy" @click="openTracking(a.shipmentId)">轨迹</button>
-                      <button class="link-btn" :disabled="busy" @click="doClose(a.shipmentId)">关单</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </section>
+            <LogisticsAlertPanel
+              v-else-if="tab === 'alerts'"
+              :active="tab === 'alerts'"
+              :alerts="alerts"
+              :busy="busy"
+              @sync="doSync"
+              @track="openTracking"
+              @close="doClose"
+            />
 
           <!-- ================= 在途货件 ================= -->
           <section v-else-if="tab === 'shipments'">
@@ -412,6 +373,7 @@ import LogisticsTransferPanel from '../components/LogisticsTransferPanel.vue'
 import LogisticsQuoteComparePanel from '../components/LogisticsQuoteComparePanel.vue'
 import LogisticsQuoteListPanel from '../components/LogisticsQuoteListPanel.vue'
 import LogisticsOverviewPanel from '../components/LogisticsOverviewPanel.vue'
+import LogisticsAlertPanel from '../components/LogisticsAlertPanel.vue'
 import { statusLabel, statusTone } from '../components/logisticsStatus'
 import LogisticsQuoteBoardPanel from '../components/LogisticsQuoteBoardPanel.vue'
 import { fmtRate } from '../components/logisticsFormat'
@@ -549,14 +511,6 @@ const METHOD_LABELS: Record<string, string> = {
   TRUCK: '卡车'
 }
 
-const ALERT_TYPE_LABELS: Record<string, string> = {
-  DELAYED: '延误',
-  EXCEPTION: '异常',
-  ETA_OVERDUE: '超期未标',
-  ETA_APPROACHING: '临近到港',
-  STALE_DATA: '取数过期',
-  MISSING_TRACKING_NO: '缺运单号'
-}
 
 
 
@@ -564,13 +518,10 @@ const ALERT_TYPE_LABELS: Record<string, string> = {
 
 
 const methodLabel = (m?: string) => (m ? METHOD_LABELS[m] || m : '—')
-const alertTypeLabel = (t: string) => ALERT_TYPE_LABELS[t] || t
 
 
 
 
-const severityLabel = (s: string) => (s === 'HIGH' ? '高' : s === 'MEDIUM' ? '中' : '低')
-const severityTone = (s: string) => (s === 'HIGH' ? 'tone-danger' : s === 'MEDIUM' ? 'tone-warn' : 'tone-muted')
 
 const fmtTime = (v?: string | null) => {
   if (!v) return '—'

@@ -57,7 +57,9 @@ import {
   approveTransfer,
   calculateFreight,
   resolveDiscrepancy,
-  investigateDiscrepancy
+  investigateDiscrepancy,
+  syncShipment,
+  closeShipment
 } from '@/api/logistics'
 
 const mockedOverview = vi.mocked(getLogisticsOverview)
@@ -79,6 +81,8 @@ const mockedApprove = vi.mocked(approveTransfer)
 const mockedCalculate = vi.mocked(calculateFreight)
 const mockedResolve = vi.mocked(resolveDiscrepancy)
 const mockedInvestigate = vi.mocked(investigateDiscrepancy)
+const mockedSync = vi.mocked(syncShipment)
+const mockedClose = vi.mocked(closeShipment)
 
 const globalStubs = {
   stubs: {
@@ -539,6 +543,116 @@ describe('LogisticsDashboard 视图', () => {
     expect(text).toContain('缺运单号')
     // 标签页徽标展示待处理数量
     expect(alertTab!.text()).toContain('2')
+  })
+
+  // ------------------------------------------------------------
+  // 待处理面板（回归：拆 LogisticsAlertPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这一刀变异测试 6 条抓到 4 处空洞。** 上面那条既有测试只断言文案，
+   * 没碰配色、没碰三个按钮的行为、也没碰 v-else-if 在链里的位置（删掉它的表现是
+   * 编译失败/测试文件加载失败，那是**构建期**错误而不是行为错误，所以另行验证）。
+   */
+
+  /**
+   * 级别配色。HIGH 必须红、MEDIUM 必须黄：用户扫「待处理」表时先看级别列，
+   * 决定先处理哪一张。抹成同色之后这张表的排序意义就没了——
+   * 而文字在两种级别下都只有「高」「中」两个字，`toContain` 抓不到。
+   *
+   * 顺带说明：调拨风险清单也有 severityTone，但那是**另一个文件里的另一份实现**
+   * （`LogisticsTransferRiskPanel.vue` 自己定义），服务的是风险行不是告警行。
+   * 两边碰巧同值，但没有合成一个函数的真实用例，所以不提前抽象。
+   */
+  it('告警级别配色：高危红、中危黄、低危灰，不得抹成同色', async () => {
+    // 夹具默认只有 HIGH 与 LOW 两档，中危那一档（tone-warn）此前没人覆盖——
+    // 而 severityTone 是三级分支，少测一档等于没测那半个条件表达式。
+    mockedAlerts.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: [
+        { ...alertsFixture[0], severity: 'HIGH' },
+        { ...alertsFixture[1], shipmentId: 103, shipmentNo: 'SHP-103', severity: 'MEDIUM' },
+        { ...alertsFixture[1], shipmentId: 104, shipmentNo: 'SHP-104', severity: 'LOW' }
+      ]
+    } as never)
+
+    const wrapper = mountView()
+    await flushPromises()
+    // 本 describe 块没有 openTab 辅助函数（它在另一个 describe 里定义），
+    // 与上面几条既有测试一致地内联切 tab
+    const alertsTab = wrapper.findAll('.tab').find((x) => x.text().includes('待处理'))
+    await alertsTab!.trigger('click')
+    await flushPromises()
+
+    const tagOf = (no: string) =>
+      wrapper.findAll('tbody tr').find((r) => r.text().includes(no))!.find('.status-tag')
+
+    const high = tagOf('SHP-101')
+    const medium = tagOf('SHP-103')
+    const low = tagOf('SHP-104')
+
+    expect(high.classes()).toContain('tone-danger')
+    expect(medium.classes()).toContain('tone-warn')
+    expect(low.classes()).toContain('tone-muted')
+    // 三档必须互不相同，抹成同色就该红
+    expect(new Set([
+      high.classes().join(' '),
+      medium.classes().join(' '),
+      low.classes().join(' ')
+    ]).size).toBe(3)
+  })
+
+  /**
+   * 三个按钮必须真的把货件号交给页壳。改成空函数后按钮还在、字还在，
+   * 点下去什么都不会发生——而**没有任何既有测试点过这三个按钮**
+   * （「待处理清单展示级别、超期天数与建议动作」只断言了静态文案）。
+   */
+  it('待处理的同步/轨迹/关单按钮必须把货件号交给页壳', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    // 本 describe 块没有 openTab 辅助函数（它在另一个 describe 里定义），
+    // 与上面几条既有测试一致地内联切 tab
+    const alertsTab = wrapper.findAll('.tab').find((x) => x.text().includes('待处理'))
+    await alertsTab!.trigger('click')
+    await flushPromises()
+
+    mockedSync.mockResolvedValue({ code: 200, message: 'ok', data: {} } as never)
+    const row = wrapper.findAll('tbody tr').find((r) => r.text().includes('SHP-101'))!
+
+    await row.findAll('button').find((b) => b.text() === '同步')!.trigger('click')
+    await flushPromises()
+    expect(mockedSync).toHaveBeenCalledWith(101)
+
+    await row.findAll('button').find((b) => b.text() === '轨迹')!.trigger('click')
+    await flushPromises()
+    // 开浮层：这一按要让轨迹请求真的发出去，而不是只翻一个标记
+    expect(mockedTracking).toHaveBeenCalledWith(101, expect.anything(), undefined)
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedClose.mockResolvedValue({ code: 200, message: 'ok', data: {} } as never)
+    await row.findAll('button').find((b) => b.text() === '关单')!.trigger('click')
+    await flushPromises()
+    expect(mockedClose).toHaveBeenCalledWith(101, '1')
+  })
+
+  /**
+   * 未知告警类型要原样显示后端给的码。后端加了新类型而前端表没跟上时，
+   * 显示成「其他」会让运营不知道这个提醒说的是什么；显示原始码至少能查到。
+   */
+  it('未知告警类型原样透出，不归成「其他」', async () => {
+    mockedAlerts.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: [{ ...alertsFixture[0], type: 'CUSTOMS_HOLD' }]
+    } as never)
+    const wrapper = mountView()
+    await flushPromises()
+    // 本 describe 块没有 openTab 辅助函数（它在另一个 describe 里定义），
+    // 与上面几条既有测试一致地内联切 tab
+    const alertsTab = wrapper.findAll('.tab').find((x) => x.text().includes('待处理'))
+    await alertsTab!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('CUSTOMS_HOLD')
   })
 
   // ------------------------------------------------------------

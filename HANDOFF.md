@@ -5176,3 +5176,61 @@ vitest 679，全绿；15 个 Python 门禁全绿。
 vitest 686，全绿；15 个 Python 门禁全绿。
 
 下一刀：在途货件（约 63 行，含 `LogisticsCursorBar`）或待处理（约 48 行）。
+
+---
+
+### 13. 待处理面板拆分（LogisticsDashboard 1407 → 1358，§S33.13）
+
+先做待处理而不是在途货件，因为**待处理干净得多**：表格只渲染 `alerts`，
+三个按钮（同步 / 轨迹 / 关单）全是转发。产物 `LogisticsAlertPanel.vue`（115 行）。
+
+handler 没有搬进来——`doSync` / `openTracking` / `doClose` 在途货件 tab 也在用
+（那边同样有同步/轨迹/关单三个按钮），而且它们的成功路径都要动页壳的
+overview / shipments / trend。搬进来就要放两份，或者向上提一层，
+两者都会让「关单后为什么重拉了 overview」这条逻辑出现在两个地方。
+
+告警专属文案（`ALERT_TYPE_LABELS` / `severityLabel` / `severityTone`）随组件搬走；
+`statusLabel` 不搬——它有三个使用者，已抽成 `logisticsStatus.ts`。
+
+#### 13.1 又踩了一次 v-if 链（第二次）
+
+拆概览时踩过一次，这次又踩：组件**必须**带 `v-else-if="tab === 'alerts'"`，
+否则报 `v-else/v-else-if has no adjacent v-if`，而 vitest 的表现是整个测试文件
+加载失败、报 "no tests"——看起来像测试全丢了。**规律：这条链上任何一个 tab
+换成组件，都要把 `v-if` / `v-else-if` 一起搬到组件标签上。**
+
+#### 13.2 变异测试 6 条抓到 4 处空洞（外加一个工具链缺陷）
+
+| 变异 | 结果 |
+|---|---|
+| 告警类型文案被改 | CAUGHT |
+| 严重度配色抹平 | **漏 → 已补** |
+| 关单按钮不转发 | **漏 → 已补** |
+| 同步按钮不转发 | **漏 → 已补** |
+| 未知类型归成「其他」 | CAUGHT |
+| 删掉页壳的 `v-else-if` | **实测 CAUGHT，但我的检测脚本报 MISSED** |
+
+最后一行的教训：删掉 `v-else-if` 会让**整个测试文件加失败**（`Failed Suites`），
+不是某条用例变红（`×`）。我的检测只看 `×` 和 `FAIL`，所以漏判了。
+**变异检测要同时看 `Failed Suites` / `SyntaxError`**，否则构建期错误一律被误报成 MISSED。
+
+严重度那条特别值得记：夹具只有 HIGH 与 LOW 两档，**中危（tone-warn）此前从未被渲染过**，
+而 `severityTone` 是三级分支——少测一档等于没测那半个条件表达式。已补一条 MEDIUM 数据。
+
+另外：`syncShipment` / `closeShipment` 在 mock factory 里注册了，但从没被
+`vi.mocked` 绑定过，所以**没有任何断言能验证这两个接口的参数**。
+
+#### 13.3 ratchet 总数上涨是预期的，门禁不受影响
+
+基线 `totalLines` 46517 → 46582（测试文件 +114，`LogisticsDashboard.vue` −49）。
+这是补测试空洞的成本，不是回归。**门禁是逐文件判的**（`file_size_ratchet.py` 的
+`lines > allowed`），`totalLines` 只是汇总展示值，不参与判定——
+`python tools/release/file_size_ratchet.py --root .` 仍 `findings: 0`。
+
+#### 13.4 累计
+
+`LogisticsDashboard.vue`：**3244 → 1358 行**。vitest 689，全绿；
+15 个 Python 门禁全绿；ratchet 逐文件检查通过。
+
+下一刀：在途货件（约 64 行）。它比待处理耦合深——`shipments` 列表 + 4 个分页标志
++ 状态筛选，且 `#lg-status` 这个 id 被测试直接定位，切出去要保住它。
