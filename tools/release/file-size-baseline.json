@@ -3,8 +3,8 @@
   "rulesVersion": 1,
   "limitLines": 500,
   "summary": {
-    "files": 56,
-    "totalLines": 46963,
+    "files": 55,
+    "totalLines": 46403,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -40,7 +40,6 @@
     "amz-frontend/src/views/ReportCenter.vue": 984,
     "amz-frontend/src/views/Warehouse.vue": 1369,
     "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java": 738,
-    "amz-service/amz-service-ad/src/main/java/com/amz/scheduler/AdReportSyncScheduler.java": 508,
     "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 713,
     "amz-service/amz-service-ai/src/test/java/com/amz/agent/ErpToolExecutorTest.java": 1049,
     "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java": 549,
@@ -56,7 +55,7 @@
     "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java": 887,
     "amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java": 668,
     "amz-service/amz-service-product/src/test/java/com/amz/service/ListingCopyServiceTest.java": 628,
-    "amz-service/amz-service-report/src/main/java/com/amz/service/impl/RealtimeProfitServiceImpl.java": 600,
+    "amz-service/amz-service-report/src/main/java/com/amz/service/impl/RealtimeProfitServiceImpl.java": 548,
     "amz-service/amz-service-report/src/main/java/com/amz/service/impl/ReportUpgradeServiceImpl.java": 542,
     "amz-service/amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java": 501,
     "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiGateway.java": 756,

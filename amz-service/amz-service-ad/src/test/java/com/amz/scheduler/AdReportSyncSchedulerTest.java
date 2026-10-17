@@ -22,8 +22,12 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import com.amz.lock.DistributedJobLock;
+import static org.mockito.Mockito.doAnswer;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -43,6 +47,7 @@ class AdReportSyncSchedulerTest {
     private AdvertisingApiClient advertisingApiClient;
     private AdvertisingCredentialProvider credentialProvider;
     private AdReportSyncScheduler scheduler;
+    private AdCampaignMetadataSync metadataSync;
 
     @BeforeEach
     void setUp() {
@@ -56,6 +61,14 @@ class AdReportSyncSchedulerTest {
         ReflectionTestUtils.setField(scheduler, "adDailyReportMapper", dailyReportMapper);
         ReflectionTestUtils.setField(scheduler, "advertisingApiClient", advertisingApiClient);
         ReflectionTestUtils.setField(scheduler, "advertisingCredentialProvider", credentialProvider);
+        // §S33.83 拆分后元数据同步是独立协作者。这里注入**真实**组件而非 mock：
+        // 本类中「同步前刷新元数据」「元数据失败计告警」「adType 分页回填」三项验的
+        // 正是 scheduler 与元数据组件的协作契约，mock 掉就什么也验不到了。
+        // 元数据自身的单元测试见 AdCampaignMetadataSyncTest。
+        metadataSync = new AdCampaignMetadataSync();
+        ReflectionTestUtils.setField(metadataSync, "adCampaignExtMapper", campaignMapper);
+        ReflectionTestUtils.setField(metadataSync, "advertisingApiClient", advertisingApiClient);
+        ReflectionTestUtils.setField(scheduler, "campaignMetadataSync", metadataSync);
 
         when(advertisingApiClient.getReports(anyLong(), anyString(), anyString())).thenReturn(List.of());
     }
@@ -182,7 +195,8 @@ class AdReportSyncSchedulerTest {
     @Test
     @DisplayName("活动类型映射按 id keyset 分页加载并回填日报")
     void loadsAdTypeMapWithKeysetPages() {
-        ReflectionTestUtils.setField(scheduler, "campaignPageSize", 2);
+        // campaignPageSize 随 §S33.83 拆分迁到了 AdCampaignMetadataSync
+        ReflectionTestUtils.setField(metadataSync, "campaignPageSize", 2);
         when(campaignMapper.selectAdTypePage(101L, Long.MIN_VALUE, 2)).thenReturn(List.of(
                 campaignExt(1L, "c1", "SP"),
                 campaignExt(2L, "c2", "SB")));
@@ -284,4 +298,43 @@ class AdReportSyncSchedulerTest {
         assertEquals(3, rows.getValue().getUnits());
     }
 
+    /**
+     * §S33.83：定时同步的窗口必须覆盖数据消费方的窗口。
+     * <p>
+     * 本 scheduler 是 {@code amz_ad_daily_report} 的唯一写入方。定时只回补 7 天时，
+     * 利润分摊按 30 天窗口查花费，区间里有 23 天根本没行——聚合 SQL 用
+     * {@code COALESCE(SUM(cost),0)}，「没数据」与「花费确实是 0」完全同形，
+     * 不报错也不标缺失，静默地把净利抬高。
+     * <p>
+     * 断言的是<b>发给 API 的实际日期区间跨度</b>，而不是常量值：消费端窗口若再上调，
+     * 这里应当红，提醒同步侧一起改。
+     */
+    @Test
+    @DisplayName("定时同步窗口必须 ≥ 利润分摊的消费窗口（30 天），否则 30 天花费里有一半是空洞")
+    void scheduledWindowCoversConsumerWindow() {
+        // 把定时任务体在本线程内联执行，等价于「拿到锁」（同 DailyReportFabricationGateTest 的写法）
+        DistributedJobLock lock = mock(DistributedJobLock.class);
+        doAnswer(inv -> {
+            ((Runnable) inv.getArgument(2)).run();
+            return null;
+        }).when(lock).runWithLock(anyString(), anyLong(), any(Runnable.class));
+        ReflectionTestUtils.setField(scheduler, "distributedJobLock", lock);
+
+        when(campaignMapper.selectShopIdsAfter(anyLong(), anyInt())).thenReturn(List.of(101L));
+        when(campaignMapper.selectList(any())).thenReturn(List.of());
+        when(credentialProvider.configuredShopIds()).thenReturn(Set.of());
+
+        scheduler.syncDaily();
+
+        ArgumentCaptor<String> startCaptor = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> endCaptor = ArgumentCaptor.forClass(String.class);
+        verify(advertisingApiClient).getReports(eq(101L), startCaptor.capture(), endCaptor.capture());
+        long span = java.time.temporal.ChronoUnit.DAYS.between(
+                LocalDate.parse(startCaptor.getValue()), LocalDate.parse(endCaptor.getValue())) + 1;
+
+        assertEquals(LocalDate.now(), LocalDate.parse(endCaptor.getValue()), "窗口必须以今天为终点");
+        assertTrue(span >= 30,
+                "定时同步窗口(" + span + "天)必须覆盖利润分摊的消费窗口(30天)；"
+                        + "短于它等于让消费端在空洞上做除法——且不报错、不标缺失");
+    }
 }

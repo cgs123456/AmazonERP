@@ -50,8 +50,14 @@ import java.util.Set;
 @Component
 public class AdReportSyncScheduler {
 
-    /** 默认回补天数：覆盖 SP-API 约 72h 归因延迟窗口 */
-    private static final int DEFAULT_DAYS = 7;
+    /**
+     * §S33.83：定时回补天数。窗口由数据消费方决定：利润分摊按 30 天取花费，
+     * 本 scheduler 是 amz_ad_daily_report 的唯一写入方，只回补 7 天时 30 天窗口里
+     * 有 23 天查不到行，而聚合用 COALESCE(SUM(cost),0) —— 「没数据」与「花费是 0」
+     * 同形，不报错、不标缺失，净利照旧高估。可用 advertising.scheduler.sync-days 覆盖。
+     */
+    @Value("${advertising.scheduler.sync-days:30}")
+    private int defaultDays = 30;
     /** 回补上限：控制单次调度的 API 调用量（店铺数 × 天数） */
     private static final int MAX_DAYS = 30;
     /** 单次 keyset 查询的店铺/活动页大小上限，防止配置错误把整表重新拉回内存。 */
@@ -79,6 +85,9 @@ public class AdReportSyncScheduler {
     private AdvertisingCredentialProvider advertisingCredentialProvider;
 
     @Autowired
+    private AdCampaignMetadataSync campaignMetadataSync;
+
+    @Autowired
     private DistributedJobLock distributedJobLock;
 
     /**
@@ -86,7 +95,7 @@ public class AdReportSyncScheduler {
      */
     @Scheduled(cron = "0 0 2 * * *")
     public void syncDaily() {
-        distributedJobLock.runWithLock("amz:sched:ad-report-sync", 55 * 60L, () -> syncAllShops(DEFAULT_DAYS));
+        distributedJobLock.runWithLock("amz:sched:ad-report-sync", 55 * 60L, () -> syncAllShops(defaultDays));
     }
 
     /**
@@ -143,11 +152,11 @@ public class AdReportSyncScheduler {
         if (shopId == null) {
             return SyncSummary.skippedAttempt();
         }
-        int n = days <= 0 ? DEFAULT_DAYS : Math.min(days, MAX_DAYS);
+        int n = days <= 0 ? defaultDays : Math.min(days, MAX_DAYS);
         LocalDate end = LocalDate.now();
         LocalDate start = end.minusDays(n - 1L);
-        boolean metadataFailed = syncCampaignMetadata(shopId);
-        Map<String, String> adTypeMap = loadAdTypeMap(shopId);
+        boolean metadataFailed = campaignMetadataSync.syncMetadata(shopId);
+        Map<String, String> adTypeMap = campaignMetadataSync.loadAdTypeMap(shopId);
         int saved;
         try {
             List<AdReport> rows = advertisingApiClient.getReports(shopId, start.toString(), end.toString());
@@ -201,55 +210,6 @@ public class AdReportSyncScheduler {
                     metadataWarnings + other.metadataWarnings);
         }
     }
-    /**
-     * 从 Advertising API 刷新活动元数据。
-     * <p>
-     * 元数据失败不阻断日报同步：报表接口可能已授权，而活动列表接口暂不可用；
-     * 错误会记录日志，调用方可从同步统计识别。活动本身不返回性能字段，
-     * 因此 upsert 只覆盖名称、类型、预算、竞价策略和状态。
-     */
-    private boolean syncCampaignMetadata(Long shopId) {
-        List<AdCampaign> campaigns;
-        try {
-            campaigns = advertisingApiClient.listCampaigns(shopId);
-        } catch (Exception e) {
-            log.error("广告活动元数据同步失败 shopId={}", shopId, e);
-            return true;
-        }
-        if (campaigns == null || campaigns.isEmpty()) {
-            return false;
-        }
-        boolean failed = false;
-        for (AdCampaign campaign : campaigns) {
-            if (campaign == null || !hasText(campaign.getCampaignId())) {
-                continue;
-            }
-            String campaignId = campaign.getCampaignId();
-            String adType = hasText(campaign.getCampaignType()) ? campaign.getCampaignType() : "SP";
-            AdCampaignExt row = new AdCampaignExt();
-            row.setShopId(shopId);
-            row.setCampaignId(campaignId);
-            row.setCampaignName(hasText(campaign.getName()) ? campaign.getName() : campaignId);
-            row.setAdType(adType);
-            row.setCampaignType(adType);
-            row.setBudget(campaign.getDailyBudget());
-            row.setBudgetType("DAILY");
-            row.setBiddingStrategy(campaign.getBiddingStrategy());
-            row.setStatus(hasText(campaign.getState()) ? campaign.getState() : "UNKNOWN");
-            try {
-                adCampaignExtMapper.upsertMetadata(row);
-            } catch (Exception e) {
-                log.error("广告活动元数据落库失败 shopId={} campaignId={}", shopId, campaignId, e);
-                failed = true;
-            }
-        }
-        return failed;
-    }
-
-    private static boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
-
     /**
      * 将广告组粒度 DAILY 行按 (campaignId, reportDate) 聚合为日报行。
      * <p>数据库唯一键不包含 adGroupId；如果不先聚合，同一活动同一天会有多行，
@@ -353,47 +313,6 @@ public class AdReportSyncScheduler {
             return left;
         }
         return left.add(right);
-    }
-
-    /**
-     * 本店铺 campaignId → adType 映射（活动配置表自包含，无跨服务调用）。
-     */
-    private Map<String, String> loadAdTypeMap(Long shopId) {
-        Map<String, String> map = new HashMap<>();
-        int limit = boundedPageSize(campaignPageSize);
-        long cursor = Long.MIN_VALUE;
-        try {
-            while (true) {
-                List<AdCampaignExt> campaigns = adCampaignExtMapper.selectAdTypePage(shopId, cursor, limit);
-                if (campaigns == null || campaigns.isEmpty()) {
-                    break;
-                }
-                long nextCursor = cursor;
-                for (AdCampaignExt c : campaigns) {
-                    if (c == null) {
-                        continue;
-                    }
-                    if (c.getId() != null && c.getId() > nextCursor) {
-                        nextCursor = c.getId();
-                    }
-                    if (c.getCampaignId() != null && c.getAdType() != null) {
-                        map.put(c.getCampaignId(), c.getAdType());
-                    }
-                }
-                if (campaigns.size() < limit) {
-                    break;
-                }
-                if (nextCursor <= cursor) {
-                    log.error("广告日报同步：活动类型分页游标未推进 shopId={} cursor={} limit={}",
-                            shopId, cursor, limit);
-                    break;
-                }
-                cursor = nextCursor;
-            }
-        } catch (Exception e) {
-            log.error("广告日报同步：加载活动类型映射失败 shopId={}，adType 将留空", shopId, e);
-        }
-        return map;
     }
 
     private static int boundedPageSize(int configured) {
