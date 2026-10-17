@@ -468,128 +468,11 @@
 
           <!-- ================= 报价与比价 ================= -->
           <section v-else-if="tab === 'quotes'">
-            <div v-if="quoteBoard?.warnings?.length" class="warn-banner">
-              <Icon icon="mdi:information-outline" width="16" class="wb-icon" />
-              <div class="wb-body">
-                <div v-for="(w, i) in quoteBoard.warnings" :key="i">{{ w }}</div>
-              </div>
-            </div>
-
-            <div class="kpi-grid">
-              <div class="kpi-card">
-                <div class="kpi-icon"><Icon icon="mdi:file-document-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ quoteBoard?.validQuotes ?? 0 }}</div>
-                  <div class="kpi-label">有效报价</div>
-                  <div class="kpi-sub">共登记 {{ quoteBoard?.totalQuotes ?? 0 }} 条</div>
-                </div>
-              </div>
-              <div
-                class="kpi-card"
-                :class="{ 'kpi-alert': (quoteBoard?.staleByDate ?? 0) > 0 }"
-              >
-                <div class="kpi-icon tone-warn"><Icon icon="mdi:calendar-remove-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ quoteBoard?.staleByDate ?? 0 }}</div>
-                  <div class="kpi-label">已失效未收口</div>
-                  <div class="kpi-sub">比价时已自动排除</div>
-                </div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-icon tone-warn"><Icon icon="mdi:timer-sand" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ quoteBoard?.expiringIn30Days ?? 0 }}</div>
-                  <div class="kpi-label">30 天内失效</div>
-                  <div class="kpi-sub">需提前重新询价</div>
-                </div>
-              </div>
-              <div class="kpi-card" :class="{ 'kpi-alert': (quoteBoard?.unpricedQuotes ?? 0) > 0 }">
-                <div class="kpi-icon tone-danger"><Icon icon="mdi:currency-usd-off" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ quoteBoard?.unpricedQuotes ?? 0 }}</div>
-                  <div class="kpi-label">未填单价</div>
-                  <div class="kpi-sub">无法参与比价</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mini-grid">
-              <div class="mini-card">
-                <div class="mini-value">{{ quoteBoard?.carrierCount ?? 0 }}</div>
-                <div class="mini-label">覆盖承运商</div>
-                <div class="mini-hint">有有效报价的承运商数</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ quoteBoard?.routeCount ?? 0 }}</div>
-                <div class="mini-label">覆盖航线</div>
-                <div class="mini-hint">起运港 → 目的港</div>
-              </div>
-              <div
-                class="mini-card"
-                :class="{ alert: (singleSourceRoutes ?? 0) > 0 }"
-              >
-                <div class="mini-value">{{ singleSourceRoutes ?? 0 }}</div>
-                <div class="mini-label">单一来源航线</div>
-                <div class="mini-hint">只有一家承运商，无议价空间</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ currencyCount }}</div>
-                <div class="mini-label">涉及币种</div>
-                <div class="mini-hint">多币种报价不可直接比价</div>
-              </div>
-            </div>
-
-            <div class="chart-card">
-              <div class="card-head">
-                <h3>航线报价覆盖</h3>
-                <button
-                  class="link-btn"
-                  :disabled="busy || !(quoteBoard?.staleByDate ?? 0)"
-                  @click="doExpireQuotes"
-                >
-                  标记过期报价
-                </button>
-              </div>
-              <p class="card-desc">
-                按承运商数量升序排列——<strong>排最前面的航线最需要补供应商</strong>。
-                报价生效靠人工或定时任务置位，因此存在一段「已失效但仍是 ACTIVE」的窗口，比价时会自动排除。
-              </p>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>航线</th>
-                    <th>承运商</th>
-                    <th>时效</th>
-                    <th>每公斤价</th>
-                    <th>每立方价</th>
-                    <th>币种</th>
-                    <th>价差</th>
-                    <th>提示</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!quoteBoard?.routes?.length">
-                    <td colspan="8" class="empty-row">暂无有效报价</td>
-                  </tr>
-                  <tr v-for="r in quoteBoard?.routes || []" :key="r.originPort + '→' + r.destinationPort">
-                    <td>{{ r.originPort }} → {{ r.destinationPort }}</td>
-                    <td>
-                      <div>{{ r.carrierCount }} 家</div>
-                      <div class="sub-line">{{ r.carriers.join('、') }}</div>
-                    </td>
-                    <td>{{ transitRange(r) }}</td>
-                    <td class="mono">{{ priceRange(r.minPricePerKg, r.maxPricePerKg) }}</td>
-                    <td class="mono">{{ priceRange(r.minPricePerCbm, r.maxPricePerCbm) }}</td>
-                    <td>{{ r.currency }}</td>
-                    <td>{{ fmtRate(r.priceSpreadRate) }}</td>
-                    <td>
-                      <span v-if="r.singleSource" class="status-tag tone-warn">单一来源</span>
-                      <span v-else class="status-tag tone-muted">正常</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            <LogisticsQuoteBoardPanel
+              :board="quoteBoard"
+              :busy="busy"
+              @reload-board="safeLoad('quotes', () => loadQuoteBoard(refreshShop()))"
+            />
 
             <!-- 逐条有效报价（与看板/比价互补的读侧；服务端已按「有效期内」过滤） -->
             <div class="chart-card mt" data-panel="quotes">
@@ -708,6 +591,8 @@ import LogisticsReceiptPanel from '../components/LogisticsReceiptPanel.vue'
 import LogisticsFreightPanel from '../components/LogisticsFreightPanel.vue'
 import LogisticsTransferPanel from '../components/LogisticsTransferPanel.vue'
 import LogisticsQuoteComparePanel from '../components/LogisticsQuoteComparePanel.vue'
+import LogisticsQuoteBoardPanel from '../components/LogisticsQuoteBoardPanel.vue'
+import { fmtRate } from '../components/logisticsFormat'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
 import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'
@@ -726,7 +611,6 @@ import {
   getQuoteBoard,
   getFreightCostBoard,
   getReceiptBoard,
-  expireOutdatedQuotes,
   listQuotes,
   investigateDiscrepancy,
   resolveDiscrepancy,
@@ -919,27 +803,8 @@ const fmtTime = (v?: string | null) => {
 /** 金额/数量：null 与 undefined 都显示占位，避免出现 NaN 或误读成 0 */
 
 
-/** 比率（0~1）→ 百分比；null / undefined 表示无样本，显示占位而非 0% */
-const fmtRate = (v?: number | null) =>
-  v === null || v === undefined ? '—' : (v * 100).toFixed(1) + '%'
 
 /** 报价区间：两端相同只显示一个值，避免出现「3.50 ~ 3.50」这种噪音 */
-const priceRange = (min?: number | null, max?: number | null) => {
-  if (min === null || min === undefined) {
-    return max === null || max === undefined ? '—' : String(max)
-  }
-  if (max === null || max === undefined || min === max) {
-    return String(min)
-  }
-  return `${min} ~ ${max}`
-}
-
-const transitRange = (r: { minTransitDays: number; maxTransitDays: number }) => {
-  if (r.minTransitDays < 0) return '未填写'
-  return r.minTransitDays === r.maxTransitDays
-    ? `${r.minTransitDays} 天`
-    : `${r.minTransitDays} ~ ${r.maxTransitDays} 天`
-}
 
 // ============================================================
 // 派生数据
@@ -1017,12 +882,6 @@ const sourceDist = computed(() => {
     .map((k) => ({ key: k, label: labels[k], count: counts[k] || 0 }))
 })
 
-/** 单一来源航线数：无议价空间，是选商环节最该先补的缺口 */
-const singleSourceRoutes = computed(
-  () => (quoteBoard.value?.routes || []).filter((r) => r.singleSource).length
-)
-
-const currencyCount = computed(() => Object.keys(quoteBoard.value?.byCurrency || {}).length)
 
 
 /**
@@ -1424,27 +1283,6 @@ const loadMoreTracking = () => {
 // ---- 比价 ----
 
 
-const doExpireQuotes = async () => {
-  const shopId = refreshShop()
-  if (!shopId) return
-  const count = quoteBoard.value?.staleByDate ?? 0
-  if (!count) return
-  if (!window.confirm(`确认把 ${count} 条已失效的报价状态置为 EXPIRED？`)) return
-  busy.value = true
-  try {
-    const res = await expireOutdatedQuotes(shopId)
-    if (res?.code === 200) {
-      showToast(`已标记 ${res.data ?? 0} 条过期报价`, 'success')
-      await safeLoad('quotes', () => loadQuoteBoard(shopId))
-    } else {
-      showToast(res?.message || '标记失败', 'error')
-    }
-  } catch (e) {
-    showToast('标记失败，请稍后重试', 'error')
-  } finally {
-    busy.value = false
-  }
-}
 
 
 // ---- 调拨 ----

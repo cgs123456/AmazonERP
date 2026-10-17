@@ -50,6 +50,7 @@ import {
   getFreightCostBoard,
   getReceiptBoard,
   compareQuotes,
+  expireOutdatedQuotes,
   listQuotes,
   listTransfers,
   approveTransfer,
@@ -70,6 +71,7 @@ const mockedTransferBoard = vi.mocked(getTransferBoard)
 const mockedFreightBoard = vi.mocked(getFreightCostBoard)
 const mockedReceiptBoard = vi.mocked(getReceiptBoard)
 const mockedCompare = vi.mocked(compareQuotes)
+const mockedExpire = vi.mocked(expireOutdatedQuotes)
 const mockedQuotes = vi.mocked(listQuotes)
 const mockedTransfers = vi.mocked(listTransfers)
 const mockedApprove = vi.mocked(approveTransfer)
@@ -1019,6 +1021,149 @@ describe('LogisticsDashboard 运营子域看板', () => {
     expect(text).not.toContain('推荐承运商')
     expect(text).toContain('无法给出唯一的「最便宜」结论')
     expect(text).toContain('该币种最低')
+  })
+
+  // ------------------------------------------------------------
+  // 报价覆盖看板（回归：拆 LogisticsQuoteBoardPanel 时的教训）
+  // ------------------------------------------------------------
+
+  /**
+   * **这一刀变异测试 4/4 全 MISSED——覆盖看板此前零测试。**
+   *
+   * 它是报价 tab 的第一屏，却没有任何断言碰过它：KPI 数字、航线表、区间格式、
+   * 单一来源数、tab 角标、「标记过期」这条写操作，全都没人看。
+   * 下面四条逐一对上那四个变异，每条都注明它抓的是哪种改坏。
+   */
+
+  /**
+   * 角标是报价 tab 在**没打开时**唯一的提示（「有 2 条报价该收口了」）。
+   * 它是 `quoteBoard` 唯一一个区块外的消费者，也是这一刀唯一需要
+   * 跨组件仍然成立的行为——所以单独钉一条。
+   */
+  it('报价 tab 角标显示已失效未收口条数，且拉过一次后切走 tab 仍在', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    // 打开前没有角标：报价看板是**懒加载**的，没打开过就没有 staleByDate。
+    // 这一点本身要钉住——否则有人把它改成首屏全量拉，进来就打六个接口。
+    const before = wrapper.findAll('.tab').find((x) => x.text().includes('比价'))
+    expect(before!.text()).toBe('比价')
+
+    await openTab(wrapper, '比价')
+    // 角标是 tab 里的 .tab-badge span，tone class 也在它上面而不是 .tab 上
+    const openedBadge = quoteTabBadge(wrapper)
+    expect(openedBadge.text()).toBe('2')
+    expect(openedBadge.classes().join(' ')).toContain('badge-warn')
+
+    // 切走再回来：角标属于 tab 条，不该随面板卸载消失
+    await openTab(wrapper, '在途货件')
+    await flushPromises()
+    const afterBadge = quoteTabBadge(wrapper)
+    expect(afterBadge.text()).toBe('2')
+    expect(afterBadge.classes().join(' ')).toContain('badge-warn')
+  })
+
+  /** 取「比价」tab 内的角标元素。角标不存在时 find 会抛，所以调用方先断言存在。 */
+  const quoteTabBadge = (wrapper: ReturnType<typeof mountView>) => {
+    const tab = wrapper.findAll('.tab').find((x) => x.text().includes('比价'))
+    expect(tab, '未找到「比价」tab').toBeTruthy()
+    return tab!.find('.tab-badge')
+  }
+
+  /**
+   * 覆盖表里每公斤/每立方价是区间。只显示下限会让「这条航线报价 3.5 ~ 5.8」
+   * 看起来像「固定 3.5」——**运营据此估运费会低估约 40%**。
+   * 两端相同时必须只显示一个值，否则出现「8.5 ~ 8.5」这种噪音。
+   */
+  it('航线价格区间两端不同时显示区间，两端相同时只显示一个值', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '比价')
+
+    const text = wrapper.text()
+    // Shenzhen→LA：3.5 ~ 5，两端不同 → 必须成区间
+    expect(text).toContain('3.5 ~ 5')
+    // Ningbo→NYC：8.5 ~ 8.5，两端相同 → 不得出现噪音区间
+    expect(text).not.toContain('8.5 ~ 8.5')
+  })
+
+  /**
+   * 单一来源航线数。`.filter(...).length` 若被误写成 `.length`（ routes 总数），
+   * 数字会从 1 变 2——**看板上多一条「无议价空间」的航线，运营会去找一家
+   * 本来就有两家的供应商谈价**，纯属白跑。这类算法退化没有任何文案会变。
+   */
+  it('单一来源航线数只数 singleSource 为真的航线', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '比价')
+
+    const mini = wrapper.findAll('.mini-card').find((c) => c.text().includes('单一来源航线'))
+    expect(mini, '未找到「单一来源航线」小指标').toBeTruthy()
+    // 夹具里两条航线，只有 Ningbo→NYC 是 singleSource: true
+    expect(mini!.find('.mini-value').text()).toBe('1')
+    // 整块高亮：有单一来源时该卡要 alert（否则用户扫不到重点）
+    expect(mini!.classes().join(' ')).toContain('alert')
+  })
+
+  /**
+   * 「标记过期」是报价 tab 唯一的写操作按 shopId **批量改报价状态、不可逐条回滚**
+   * （EXPIRED 之后要逐条改回 ACTIVE）。两个必须钉住的点：
+   * 1. 成功后必须重拉看板——不改的话 toast 说成功、数字一个没变，用户会重复点；
+   * 2. 服务端拒绝时要把原因原样透出，而不是笼统的「标记失败」。
+   */
+  it('标记过期：确认后调用接口、重拉看板，服务端拒绝时原样透出原因', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '比价')
+
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('标记过期报价'))
+    expect(btn, '未找到「标记过期报价」按钮').toBeTruthy()
+    // staleByDate = 2 > 0 时才可用；为 0 时点了也是空操作
+    expect(btn!.attributes('disabled')).toBeUndefined()
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mockedQuoteBoard.mockClear()   // 只数这一次点击引发的重拉，排除打开 tab 时的那次
+    const boardCallsBefore = mockedQuoteBoard.mock.calls.length
+    mockedExpire.mockResolvedValue({ code: 200, message: 'ok', data: 2 } as never)
+    await btn!.trigger('click')
+    await flushPromises()
+
+    expect(mockedExpire).toHaveBeenCalledWith('1')
+    expect(wrapper.text()).toContain('已标记 2 条过期报价')
+    // 关键：数字已过期，必须重拉。少了这步就是「点了没反应」
+    expect(mockedQuoteBoard.mock.calls.length).toBeGreaterThan(boardCallsBefore)
+
+    // 用户取消确认：不得发出任何请求（批量写操作不能误触）
+    confirmSpy.mockReturnValue(false)
+    mockedExpire.mockClear()
+    await btn!.trigger('click')
+    await flushPromises()
+    expect(mockedExpire).not.toHaveBeenCalled()
+
+    // 服务端拒绝：原因原样透出
+    confirmSpy.mockReturnValue(true)
+    mockedExpire.mockResolvedValue({ code: 400, message: '该店铺无过期报价可标记', data: null } as never)
+    await btn!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('该店铺无过期报价可标记')
+  })
+
+  /**
+   * 没有可收口的报价时按钮必须禁用。让它可点会让用户点进一个必然空转的确认框，
+   * 点完接口再告诉他「没有」——那是把校验推给用户。
+   */
+  it('没有已失效报价时禁用「标记过期报价」按钮', async () => {
+    mockedQuoteBoard.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: quoteBoardFixture({ staleByDate: 0 })
+    } as never)
+    const wrapper = mountView()
+    await flushPromises()
+    await openTab(wrapper, '比价')
+
+    const btn = wrapper.findAll('button').find((b) => b.text().includes('标记过期报价'))
+    expect(btn).toBeTruthy()
+    expect(btn!.attributes('disabled')).toBeDefined()
   })
 
   // ------------------------------------------------------------
