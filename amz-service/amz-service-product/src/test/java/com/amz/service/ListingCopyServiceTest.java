@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -43,6 +44,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -169,7 +171,8 @@ class ListingCopyServiceTest {
         }).when(listingCopyTaskMapper).insert(any(ListingCopyTask.class));
         when(listingCopyTaskMapper.selectById(42L)).thenAnswer(invocation -> insertedTask.get());
 
-        when(translationService.translate("Source title", "en", "de")).thenReturn("Quellentitel");
+        when(translationService.translateWithOutcome("Source title", "en", "de"))
+                .thenReturn(new TranslationService.TranslationOutcome("Quellentitel", false));
         when(exchangeRateService.getRate("USD", "EUR")).thenReturn(new BigDecimal("0.90"));
 
         CountDownLatch submitObserved = new CountDownLatch(1);
@@ -202,6 +205,53 @@ class ListingCopyServiceTest {
 
         Integer leakedUserId = taskExecutor.submit(UserContext::getUserId).get(5, TimeUnit.SECONDS);
         assertNull(leakedUserId, "异步任务结束后必须清理 ThreadLocal，避免池复用串号");
+    }
+
+    @Test
+    @DisplayName("标题翻译降级时必须中止，绝不能带着原文提交 Feed")
+    void degradedTranslationAbortsBeforeSubmittingFeed() throws Exception {
+        UserContext.setUserId(7);
+        UserContext.setRole("OPERATOR");
+        UserContext.setShops(List.of(1L));
+        UserContext.setShopId(1L);
+
+        AmzProduct product = new AmzProduct();
+        product.setSku("SKU-1");
+        product.setTitle("Source title");
+        product.setPrice(new BigDecimal("10.00"));
+        product.setCategory("LUGGAGE");
+        product.setProductType("LUGGAGE");
+        when(amzProductMapper.selectOne(any(QueryWrapper.class))).thenReturn(product);
+
+        AtomicReference<ListingCopyTask> insertedTask = new AtomicReference<>();
+        doAnswer(invocation -> {
+            ListingCopyTask task = invocation.getArgument(0);
+            task.setId(44L);
+            insertedTask.set(task);
+            return 1;
+        }).when(listingCopyTaskMapper).insert(any(ListingCopyTask.class));
+        when(listingCopyTaskMapper.selectById(44L)).thenAnswer(invocation -> insertedTask.get());
+
+        // LLM 不可用：翻译服务返回原文并标记 degraded
+        when(translationService.translateWithOutcome("Source title", "en", "de"))
+                .thenReturn(new TranslationService.TranslationOutcome("Source title", true));
+
+        listingCopyService.createCopyTask(1L, "SKU-1", "ATVPDKIKX0DER",
+                "A1PA6795UKMFR9", "de", new BigDecimal("0.20"));
+
+        // 任务必须落成 FAILED，且**一次 Feed 都不该提交**
+        verify(listingCopyTaskMapper, timeout(5000).atLeastOnce())
+                .updateById(argThat((ListingCopyTask task) -> "FAILED".equals(task.getStatus())));
+        verify(listingsClient, after(500).never())
+                .submitFeed(any(), anyString(), anyString());
+
+        ListingCopyTask failed = insertedTask.get();
+        assertNotNull(failed, "任务必须已创建");
+        assertTrue(failed.getErrorMessage() != null && failed.getErrorMessage().contains("翻译失败"),
+                "失败原因必须点明是翻译，实际：" + failed.getErrorMessage());
+        // 目标标题不能被写成原文——那正是「看起来成功了」的形态
+        assertNotEquals("Source title", failed.getTargetTitle(),
+                "降级时不得把原文写进目标标题");
     }
 
     @Test
@@ -240,7 +290,8 @@ class ListingCopyServiceTest {
             return 1;
         }).when(listingCopyTaskMapper).insert(any(ListingCopyTask.class));
         when(listingCopyTaskMapper.selectById(43L)).thenAnswer(invocation -> insertedTask.get());
-        when(translationService.translate("Source title", "en", "de")).thenReturn("Quellentitel");
+        when(translationService.translateWithOutcome("Source title", "en", "de"))
+                .thenReturn(new TranslationService.TranslationOutcome("Quellentitel", false));
         when(exchangeRateService.getRate("USD", "EUR")).thenReturn(new BigDecimal("0.90"));
 
         CountDownLatch submitObserved = new CountDownLatch(1);
@@ -314,7 +365,8 @@ class ListingCopyServiceTest {
         }).when(listingCopyTaskMapper).insert(any(ListingCopyTask.class));
         when(listingCopyTaskMapper.selectById(42L)).thenAnswer(invocation -> insertedTask.get());
 
-        when(translationService.translate("Source title", "en", "de")).thenReturn("Quellentitel");
+        when(translationService.translateWithOutcome("Source title", "en", "de"))
+                .thenReturn(new TranslationService.TranslationOutcome("Quellentitel", false));
         when(exchangeRateService.getRate("USD", "EUR")).thenReturn(new BigDecimal("0.90"));
 
         CountDownLatch submitObserved = new CountDownLatch(1);
@@ -359,7 +411,8 @@ class ListingCopyServiceTest {
         }).when(listingCopyTaskMapper).insert(any(ListingCopyTask.class));
         when(listingCopyTaskMapper.selectById(44L)).thenAnswer(invocation -> persistedTask.get());
 
-        when(translationService.translate("Source title", "en", "de")).thenReturn("Quellentitel");
+        when(translationService.translateWithOutcome("Source title", "en", "de"))
+                .thenReturn(new TranslationService.TranslationOutcome("Quellentitel", false));
         when(exchangeRateService.getRate("USD", "EUR")).thenReturn(new BigDecimal("0.90"));
         when(listingsClient.submitFeed(eq(1L), eq("A1PA6795UKMFR9"), anyString()))
                 .thenReturn("feed-44");

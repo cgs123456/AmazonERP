@@ -219,10 +219,19 @@ public class ListingCopyService {
             listingCopyTaskMapper.updateById(task);
 
             // 1. 翻译标题（源语言默认 en）
+            //
+            // §S33.26：必须看 degraded。旧实现直接调 translate()，LLM 失败时它静默返回原文，
+            // 于是目标站点的标题是**英文原样**，而任务继续往下走直到提交 Feed——
+            // 运营以为复制成功，实际发出去的是没翻译的 Listing。
+            // 翻译是这条链路的前提，拿不到译文就该失败，不该带着原文继续。
             String targetLang = task.getTargetLanguage();
-            String translatedTitle = translationService.translate(
-                    task.getSourceTitle(), "en", targetLang);
-            task.setTargetTitle(translatedTitle);
+            TranslationService.TranslationOutcome translation =
+                    translationService.translateWithOutcome(task.getSourceTitle(), "en", targetLang);
+            if (translation.degraded()) {
+                throw new IllegalStateException("标题翻译失败（LLM 不可用），已中止复制："
+                        + "带着原文提交会发布未翻译的 Listing");
+            }
+            task.setTargetTitle(translation.text());
 
             // 2. 汇率换算
             String[] sourceInfo = MARKETPLACE_MAP.get(task.getSourceMarketplaceId());
@@ -248,7 +257,7 @@ public class ListingCopyService {
             task.setTargetPrice(targetPrice);
 
             log.info("Task {} computed: titleLen={} rate={} targetPrice={} {}",
-                    taskId, translatedTitle.length(), rate, targetPrice, targetCurrency);
+                    taskId, translation.text().length(), rate, targetPrice, targetCurrency);
 
             // 4. 提交 Feed
             String jsonlContent = buildJsonl(task, targetCurrency);

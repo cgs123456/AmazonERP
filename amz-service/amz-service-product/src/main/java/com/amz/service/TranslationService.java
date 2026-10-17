@@ -80,14 +80,32 @@ public class TranslationService {
     @Autowired(required = false)
     private StringRedisTemplate redisTemplate;
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    /**
+     * HTTP 客户端。**惰性创建**：{@code HttpClient.newBuilder().build()} 在
+     * 部分环境（含本机 Windows）会因 loopback 不可用而抛 IOException（§S30 已定案）。
+     * 在字段初始化时创建，等于让「这个 Bean 能否被构造」依赖于运行环境的网络栈——
+     * 而翻译是本服务的一个可选能力，不该因此拖垮整个上下文启动。
+     */
+    private HttpClient httpClient;
+
+    private HttpClient httpClient() {
+        if (httpClient == null) {
+            httpClient = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+        }
+        return httpClient;
+    }
 
     private final Gson gson = new Gson();
 
     /**
      * 翻译文本（带三级缓存）。LLM 不可用时降级返回原文。
+     *
+     * <p><b>调用方注意</b>：本方法**无法告诉调用方是否发生了降级**——失败时返回的
+     * 原文与「翻译后恰好相同」在返回值上不可区分。凡是需要如实汇报结果的链路
+     * （Agent 工具、跨站复制）必须用 {@link #translateWithOutcome}。
+     * 本方法保留给「拿到什么用什么」的旧调用方。
      *
      * @param sourceText 原文
      * @param sourceLang 源语言代码（如 en）
@@ -95,8 +113,29 @@ public class TranslationService {
      * @return 译文；调用失败时返回原文
      */
     public String translate(String sourceText, String sourceLang, String targetLang) {
+        return translateWithOutcome(sourceText, sourceLang, targetLang).text();
+    }
+
+    /**
+     * 翻译结果 + 是否降级。
+     *
+     * @param text     译文（降级时为原文）
+     * @param degraded 是否因 LLM 调用失败而降级
+     */
+    public record TranslationOutcome(String text, boolean degraded) {
+    }
+
+    /**
+     * 翻译文本，并如实报告是否降级。
+     *
+     * <p><b>为什么需要这个方法</b>：§S33.26 实测——`callDeepSeek` 失败时本服务
+     * 静默返回原文，而 Agent 工具的 message 固定写「已将 X 文本翻译为 Y」。
+     * 运营拿到的是未翻译的德文 Listing 标题，却以为翻译成功了。
+     * 缓存命中（L1/L2/L3）不算降级：那是有译文的结果。
+     */
+    public TranslationOutcome translateWithOutcome(String sourceText, String sourceLang, String targetLang) {
         if (sourceText == null || sourceText.trim().isEmpty()) {
-            return sourceText;
+            return new TranslationOutcome(sourceText, false);
         }
 
         String hash = sha256(sourceText);
@@ -106,14 +145,14 @@ public class TranslationService {
         String l1 = localCache.getIfPresent(key);
         if (l1 != null) {
             log.debug("L1 cache hit {}->{} hash={}", sourceLang, targetLang, hash);
-            return l1;
+            return new TranslationOutcome(l1, false);
         }
 
         // L2 Redis
         String l2 = readFromRedis(key);
         if (l2 != null) {
             localCache.put(key, l2);
-            return l2;
+            return new TranslationOutcome(l2, false);
         }
 
         // L3 MySQL
@@ -125,7 +164,7 @@ public class TranslationService {
         if (cached != null) {
             log.debug("L3 cache hit {}->{} hash={}", sourceLang, targetLang, hash);
             writeBack(key, cached.getTranslatedText());
-            return cached.getTranslatedText();
+            return new TranslationOutcome(cached.getTranslatedText(), false);
         }
 
         // 三级均未命中 → 调用 DeepSeek。
@@ -136,7 +175,7 @@ public class TranslationService {
             translated = callDeepSeek(sourceText, sourceLang, targetLang);
         } catch (Exception e) {
             log.warn("DeepSeek translation failed, degrade to source text: {}", e.getMessage());
-            return sourceText;
+            return new TranslationOutcome(sourceText, true);
         }
 
         // 写回 L3（持久化）。缓存是加速层，不是正确性的一部分：
@@ -161,7 +200,7 @@ public class TranslationService {
 
         log.info("Translation done {}->{} hash={} len={}", sourceLang, targetLang, hash,
                 translated.length());
-        return translated;
+        return new TranslationOutcome(translated, false);
     }
 
     /**
@@ -230,7 +269,7 @@ public class TranslationService {
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString(), StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request,
+        HttpResponse<String> response = httpClient().send(request,
                 HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
         if (response.statusCode() != 200) {

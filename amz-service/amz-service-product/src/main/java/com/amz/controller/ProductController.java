@@ -120,10 +120,14 @@ public class ProductController {
         if (text == null || text.trim().isEmpty()) {
             return Result.failure("text 不能为空");
         }
-        String translated = translationService.translate(text, sourceLang, targetLang);
+        // §S33.26：必须用带降级标记的版本。旧接口在 LLM 失败时静默返回原文，
+        // 调用方（Agent 工具）据此写「已翻译」——运营拿到未翻译文本却以为成功。
+        TranslationService.TranslationOutcome outcome =
+                translationService.translateWithOutcome(text, sourceLang, targetLang);
         Map<String, Object> data = new HashMap<>();
         data.put("sourceText", text);
-        data.put("translatedText", translated);
+        data.put("translatedText", outcome.text());
+        data.put("degraded", outcome.degraded());
         data.put("sourceLang", sourceLang);
         data.put("targetLang", targetLang);
         return Result.success(data);

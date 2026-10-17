@@ -155,6 +155,13 @@ public class ErpProductTools {
                 return fail("翻译失败: " + (result != null ? result.getMessage() : "无响应"));
             }
             Map<String, Object> data = result.getData();
+            // §S33.26：翻译服务在 LLM 不可用时静默返回原文。必须按 degraded 如实汇报，
+            // 否则运营拿到未翻译的标题，却以为已经翻译好了。
+            boolean degraded = Boolean.TRUE.equals(data.get("degraded"));
+            if (degraded) {
+                return ok(String.format("翻译未完成：%s → %s 的 LLM 调用失败，返回的是**原文**，"
+                        + "请勿直接用于目标站点 Listing", sourceLang, targetLang), data);
+            }
             return ok(String.format("已将 %s 文本翻译为 %s", sourceLang, targetLang), data);
         } catch (Exception e) {
             log.error("translate_listing Feign 调用失败 shopId={}", shopId, e);
