@@ -38,8 +38,10 @@ import {
   batchUpdateStatus,
   listCreatives,
   updateCreative,
+  reviewCreative,
   listTargeting,
-  updateTargeting
+  updateTargeting,
+  deleteTargeting
 } from '@/api/ad-ext'
 
 const mockedGetAdReports = vi.mocked(getAdReports)
@@ -55,6 +57,8 @@ const mockedListCreatives = vi.mocked(listCreatives)
 const mockedUpdateCreative = vi.mocked(updateCreative)
 const mockedListTargeting = vi.mocked(listTargeting)
 const mockedUpdateTargeting = vi.mocked(updateTargeting)
+const mockedReviewCreative = vi.mocked(reviewCreative)
+const mockedDeleteTargeting = vi.mocked(deleteTargeting)
 
 const globalStubs = {
   stubs: {
@@ -749,6 +753,72 @@ describe('AdManager ad 域 CRUD 收口', () => {
     const body = mockedUpdateCreative.mock.calls[0][1] as any
     expect(body.id).toBe(21)
     expect(body.headline).toBe('新标题')
+  })
+
+  // ===== 加载/写操作失败必须可见（§S33.28） =====
+  /**
+   * 这五处 catch 原本只 console.warn，而模板上的错误区只服务于表单保存。
+   * 症状是静默的：列表加载失败 → 一片空白 → 用户以为「这个活动没有素材」；
+   * 审核/删除失败 → 界面毫无反应 → 用户以为已经生效。
+   */
+  it('素材加载失败必须进错误区，不能只写 console', async () => {
+    mockedListCreatives.mockRejectedValue(new Error('网关超时'))
+    const wrapper = await mountAds()
+
+    await wrapper.findAll('.ad-tab-item').find((t: any) => t.text().includes('SB'))!.trigger('click')
+    await flushPromises()
+    const sb = wrapper.findAll('.ext-section').filter((s: any) => s.text().includes('SB 广告素材'))[0]
+    await sb.findAll('input')[0].setValue('C-1001')
+    await sb.findAll('button').find((b: any) => b.text() === '查询')!.trigger('click')
+    await flushPromises()
+
+    expect(sb.find('.ops-error').exists()).toBe(true)
+    expect(sb.find('.ops-error').text()).toContain('加载素材')
+    expect(sb.find('.ops-error').text()).toContain('网关超时')
+  })
+
+  it('素材审核失败必须进错误区，不能假装成功', async () => {
+    mockedListCreatives.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: [{ id: 21, campaignId: 'C-1001', creativeType: 'VIDEO', headline: 'h', brandName: 'b', status: 'PENDING' }]
+    } as any)
+    mockedReviewCreative.mockResolvedValue({ code: 500, message: '无权审核' } as any)
+    const wrapper = await mountAds()
+
+    await wrapper.findAll('.ad-tab-item').find((t: any) => t.text().includes('SB'))!.trigger('click')
+    await flushPromises()
+    const sb = wrapper.findAll('.ext-section').filter((s: any) => s.text().includes('SB 广告素材'))[0]
+    await sb.findAll('input')[0].setValue('C-1001')
+    await sb.findAll('button').find((b: any) => b.text() === '查询')!.trigger('click')
+    await flushPromises()
+
+    await sb.findAll('button').find((b: any) => b.text() === '通过')!.trigger('click')
+    await flushPromises()
+
+    expect(sb.find('.ops-error').text()).toContain('审核素材')
+    expect(sb.find('.ops-error').text()).toContain('无权审核')
+  })
+
+  it('定向删除失败必须进错误区', async () => {
+    mockedListTargeting.mockResolvedValue({
+      code: 200, message: 'ok',
+      data: [{ id: 31, campaignId: 'C-1002', targetingType: 'CONTEXTUAL', targetingValue: 'electronics', bid: 0.85 }]
+    } as any)
+    mockedDeleteTargeting.mockResolvedValue({ code: 403, message: '无权限' } as any)
+    const wrapper = await mountAds()
+
+    await wrapper.findAll('.ad-tab-item').find((t: any) => t.text().includes('SD'))!.trigger('click')
+    await flushPromises()
+    const sd = wrapper.findAll('.ext-section').filter((s: any) => s.text().includes('SD 受众定向'))[0]
+    await sd.findAll('input')[0].setValue('C-1002')
+    await sd.findAll('button').find((b: any) => b.text() === '查询')!.trigger('click')
+    await flushPromises()
+
+    await sd.findAll('button').find((b: any) => b.text() === '删除')!.trigger('click')
+    await flushPromises()
+
+    expect(sd.find('.ops-error').text()).toContain('删除定向')
+    expect(sd.find('.ops-error').text()).toContain('无权限')
   })
 
   // ===== 定向编辑 =====

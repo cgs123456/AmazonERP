@@ -757,18 +757,38 @@ const openCreativeDialog = () => {
 const loadCreatives = async () => {
   const shopId = refreshShop()
   if (!shopId || !creativeQuery.campaignId) return
+  // §S33.28：这里原本只 console.warn，而模板上方的 creativeError 错误区
+  // 只在保存表单时赋值——于是「加载素材失败」在界面上完全不可见，
+  // 用户看到的是一片空白列表，会以为「这个活动没有素材」。
+  creativeError.value = ''
   try {
     const res = await AdExt.listCreatives(shopId, creativeQuery.campaignId)
-    if (res?.code === 200) creatives.value = res.data || []
-  } catch (e) { console.warn('[AdManager] 加载素材失败', e) }
+    if (res?.code === 200) {
+      creatives.value = res.data || []
+    } else {
+      creativeError.value = `加载素材：${res?.message || '后端返回非 200'}`
+      creatives.value = []
+    }
+  } catch (e) {
+    creativeError.value = `加载素材：${e instanceof Error ? e.message : '调用失败'}`
+    creatives.value = []
+  }
 }
 const reviewCreative = async (id: number, status: 'APPROVED' | 'REJECTED') => {
   const shopId = refreshShop()
   if (!shopId) return
+  creativeError.value = ''
   try {
-    await AdExt.reviewCreative(shopId, id, status)
+    const res = await AdExt.reviewCreative(shopId, id, status)
+    // 写操作失败必须有反馈：只在 console 里报错，用户会以为审核已生效
+    if (res?.code !== 200) {
+      creativeError.value = `审核素材：${res?.message || '后端返回非 200'}`
+      return
+    }
     await loadCreatives()
-  } catch (e) { console.warn('[AdManager] 审核素材失败', e) }
+  } catch (e) {
+    creativeError.value = `审核素材：${e instanceof Error ? e.message : '调用失败'}`
+  }
 }
 const creativeStatusClass = (s?: string) => {
   if (s === 'APPROVED') return 'active'
@@ -791,18 +811,34 @@ const openTargetingDialog = () => {
 const loadTargetings = async () => {
   const shopId = refreshShop()
   if (!shopId || !targetingQuery.campaignId) return
+  targetingError.value = ''
   try {
     const res = await AdExt.listTargeting(shopId, targetingQuery.campaignId)
-    if (res?.code === 200) targetings.value = res.data || []
-  } catch (e) { console.warn('[AdManager] 加载定向失败', e) }
+    if (res?.code === 200) {
+      targetings.value = res.data || []
+    } else {
+      targetingError.value = `加载定向：${res?.message || '后端返回非 200'}`
+      targetings.value = []
+    }
+  } catch (e) {
+    targetingError.value = `加载定向：${e instanceof Error ? e.message : '调用失败'}`
+    targetings.value = []
+  }
 }
 const removeTargeting = async (id: number) => {
   const shopId = refreshShop()
   if (!shopId) return
+  targetingError.value = ''
   try {
-    await AdExt.deleteTargeting(shopId, id)
+    const res = await AdExt.deleteTargeting(shopId, id)
+    if (res?.code !== 200) {
+      targetingError.value = `删除定向：${res?.message || '后端返回非 200'}`
+      return
+    }
     await loadTargetings()
-  } catch (e) { console.warn('[AdManager] 删除定向失败', e) }
+  } catch (e) {
+    targetingError.value = `删除定向：${e instanceof Error ? e.message : '调用失败'}`
+  }
 }
 
 // ===== DSP 批量报表 =====
@@ -811,10 +847,17 @@ const loadSummaryByType = async () => {
   // 未选择店铺时不发请求
   const shopId = refreshShop()
   if (!shopId) return
+  syncErrors.value = syncErrors.value.filter((x) => !x.startsWith('批量报表：'))
   try {
     const res = await AdExt.getSummaryByType(shopId)
-    if (res?.code === 200 && res.data) summaryByType.value = res.data
-  } catch (e) { console.warn('[AdManager] 加载批量报表失败', e) }
+    if (res?.code === 200 && res.data) {
+      summaryByType.value = res.data
+    } else {
+      syncErrors.value.push(`批量报表：${res?.message || '后端返回非 200'}`)
+    }
+  } catch (e) {
+    syncErrors.value.push(`批量报表：${e instanceof Error ? e.message : '调用失败'}`)
+  }
 }
 const acosClass = (acos?: number) => {
   if (acos == null) return ''
