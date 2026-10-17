@@ -1,5 +1,6 @@
 package com.amz.profit;
 
+import com.amz.client.AdServiceClient;
 import com.amz.mapper.CategoryFeeRateMapper;
 import com.amz.mapper.FbaFeeTableMapper;
 import com.amz.mapper.ProductCostMapper;
@@ -7,12 +8,15 @@ import com.amz.model.CategoryFeeRate;
 import com.amz.model.FbaFeeTable;
 import com.amz.model.ProductCost;
 import com.amz.model.ProfitReport;
+import com.amz.result.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -94,7 +98,7 @@ class ProfitCalculatorTest {
 
         // referralFee = 100 × 0.15 = 15.00
         // grossProfit = 100 - 30 - 5 - 15 = 50.00
-        // adCost = 0（广告服务未注入，降级为 0），vat = 0（非欧盟）
+        // adCost = 0（广告服务未注入 → 视为缺失，金额按 0 计入），vat = 0（非欧盟）
         // storageFee 按天分摊 = 月费2 ÷ 30 = 0.07
         // netProfit = 50 - 0 - 0 - 0.07 = 49.93
         // netMargin = 49.93 / 100 = 0.4993
@@ -109,7 +113,48 @@ class ProfitCalculatorTest {
         assertEquals(0, new BigDecimal("50.00").compareTo(r.getGrossProfit()));
         assertEquals(0, new BigDecimal("49.93").compareTo(r.getNetProfit()));
         assertEquals(0, new BigDecimal("0.4993").compareTo(r.getNetMargin()));
-        assertTrue(r.getDataComplete(), "成本与佣金率齐全时 dataComplete 应为 true");
+        // §S33.31：广告费取不到时 dataComplete 必须为 false——净利少了整块成本
+        assertFalse(r.getDataComplete(), "广告费缺失时 dataComplete 必须为 false");
+    }
+
+    @Test
+    @DisplayName("广告费取不到时：净利仍按 0 计，但必须标记 dataComplete=false")
+    void adCostMissingMarksIncomplete() {
+        when(productCostMapper.selectOne(any())).thenReturn(costOf(new BigDecimal("30")));
+        when(fbaFeeTableMapper.selectOne(any())).thenReturn(fbaFeeOf(new BigDecimal("5"), new BigDecimal("2")));
+        when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
+        // 广告服务返回失败：这是「取不到」，不是「确实是 0」
+        AdServiceClient adClient = mock(AdServiceClient.class);
+        when(adClient.getShopSummary(any())).thenReturn(Result.failure("广告服务不可用"));
+        ReflectionTestUtils.setField(calculator, "adServiceClient", adClient);
+
+        ProfitReport r = calculator.calculate(
+                1L, "AMZ-002", "SKU-002", new BigDecimal("100"),
+                "Electronics", "small-standard", 250, "NA", false);
+
+        assertEquals(0, BigDecimal.ZERO.compareTo(r.getAdCost()), "金额仍按 0 计入");
+        assertFalse(r.getDataComplete(),
+                "广告费通常占营收 10–30%，取不到就标完整会让净利看起来是真实数字");
+    }
+
+    @Test
+    @DisplayName("广告费为 0 但服务正常时：dataComplete 仍为 true（真 0 不是缺失）")
+    void realZeroAdCostStaysComplete() {
+        when(productCostMapper.selectOne(any())).thenReturn(costOf(new BigDecimal("30")));
+        when(fbaFeeTableMapper.selectOne(any())).thenReturn(fbaFeeOf(new BigDecimal("5"), new BigDecimal("2")));
+        when(categoryFeeRateMapper.selectOne(any())).thenReturn(rateOf(new BigDecimal("0.15")));
+        AdServiceClient adClient = mock(AdServiceClient.class);
+        Map<String, Object> data = new HashMap<>();
+        data.put("cost", 0);
+        when(adClient.getShopSummary(any())).thenReturn(Result.success(data));
+        ReflectionTestUtils.setField(calculator, "adServiceClient", adClient);
+
+        ProfitReport r = calculator.calculate(
+                1L, "AMZ-003", "SKU-003", new BigDecimal("100"),
+                "Electronics", "small-standard", 250, "NA", false);
+
+        assertEquals(0, BigDecimal.ZERO.compareTo(r.getAdCost()));
+        assertTrue(r.getDataComplete(), "服务正常返回 0 是真实值，不能标成缺失");
     }
 
     @Test
@@ -173,7 +218,8 @@ class ProfitCalculatorTest {
         assertEquals(0, new BigDecimal("-16.50").compareTo(r.getGrossProfit()));
         assertEquals(0, new BigDecimal("-16.57").compareTo(r.getNetProfit()));
         assertEquals(0, new BigDecimal("-1.6570").compareTo(r.getNetMargin()));
-        assertTrue(r.getDataComplete());
+        // 广告服务未注入 = 广告费取不到 → dataComplete 必须为 false（§S33.31）
+        assertFalse(r.getDataComplete(), "广告费缺失时净利不完整");
     }
 
     @Test
@@ -195,7 +241,7 @@ class ProfitCalculatorTest {
         assertEquals(0, new BigDecimal("0.00").compareTo(r.getReferralFee()));
         assertEquals(0, BigDecimal.ZERO.compareTo(r.getVat()));
         assertEquals(0, BigDecimal.ZERO.compareTo(r.getNetMargin()), "零收入时 netMargin 应兜底为 0");
-        assertTrue(r.getDataComplete());
+        assertFalse(r.getDataComplete(), "广告费缺失时净利不完整");
     }
 
     @Test

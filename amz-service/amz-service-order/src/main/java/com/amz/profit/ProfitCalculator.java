@@ -142,7 +142,17 @@ public class ProfitCalculator {
 
         // 4. 广告费：取店铺级广告总花费后按近30天订单数分摊到单订单，
         //    避免每条订单利润消息都扣一遍店铺总额（系统性 N 倍重复扣费）
-        BigDecimal adCost = allocateAdCost(shopId, fetchAdCost(shopId));
+        //
+        // §S33.31：广告费拿不到时不能悄悄按 0 计入净利——那会让「净利」看起来
+        // 是完整数字，而它实际上少扣了一整块成本（广告费通常占营收 10–30%）。
+        // fetchAdCost 返回 null 表示「取不到」，与「确实是 0」区分开。
+        BigDecimal adCostRaw = fetchAdCost(shopId);
+        boolean adCostMissing = (adCostRaw == null);
+        if (adCostMissing) {
+            log.warn("利润计算数据缺失：shopId={}, sku={}, 缺失类型=广告花费(adCost)——净利将偏高",
+                    shopId, sku);
+        }
+        BigDecimal adCost = allocateAdCost(shopId, nullToZero(adCostRaw));
 
         // 5. VAT（欧盟）：亚马逊回传收入含税，按 含税价×r/(1+r) 还原税额；
         //    税率可通过 amz.profit.eu-vat-rate 配置（默认 20%）
@@ -187,7 +197,7 @@ public class ProfitCalculator {
         report.setGrossProfit(grossProfit);
         report.setNetProfit(netProfit);
         report.setNetMargin(netMargin);
-        boolean dataComplete = !costMissing && !rateMissing;
+        boolean dataComplete = !costMissing && !rateMissing && !adCostMissing;
         report.setDataComplete(dataComplete);
 
         log.info("利润计算完成 shopId={}, order={}, sku={}, revenue={}, grossProfit={}, netProfit={}, margin={}, dataComplete={}",
@@ -295,14 +305,14 @@ public class ProfitCalculator {
         try {
             Result<Map<String, Object>> resp = adServiceClient.getShopSummary(shopId);
             if (resp == null || resp.getCode() != 200 || resp.getData() == null) {
-                log.warn("广告服务返回异常或空数据，广告费降级为 0：shopId={}", shopId);
-                return BigDecimal.ZERO;
+                log.warn("广告服务返回异常或空数据，广告费按「缺失」处理：shopId={}", shopId);
+                return null;
             }
-            BigDecimal cost = toBigDecimal(resp.getData().get("cost"));
-            return cost != null ? cost : BigDecimal.ZERO;
+            // 拿不到 cost 字段同样是「缺失」，不是 0
+            return toBigDecimal(resp.getData().get("cost"));
         } catch (Exception e) {
-            log.warn("调用广告服务获取广告花费失败，广告费降级为 0：shopId={}", shopId, e);
-            return BigDecimal.ZERO;
+            log.warn("调用广告服务获取广告花费失败，广告费按「缺失」处理：shopId={}", shopId, e);
+            return null;
         }
     }
 
