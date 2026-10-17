@@ -55,14 +55,20 @@ public class RealtimeProfitController {
                 PageRequest.of(size, cursor)));
     }
 
-    /** 利润趋势（按小时） */
+    /**
+     * 利润趋势（按天）。
+     * <p>
+     * §S33.81：参数从 {@code hours} 改为 {@code days}。快照按天存（stat_time 记当天
+     * 00:00），小时窗口会漏掉整天且边界随调用时刻漂移。默认 7 天（原默认 24 小时
+     * 在天粒度下只会返回 1 条快照，趋势图等于只有一个点）。
+     */
     @ShopScoped
     @GetMapping("/trend/{shopId}")
     public Result<Map<String, Object>> profitTrend(@PathVariable Long shopId,
                                                     @RequestParam String sku,
                                                     @RequestParam(required = false) String asin,
-                                                    @RequestParam(defaultValue = "24") Integer hours) {
-        return Result.success(realtimeProfitService.profitTrend(shopId, sku, asin, hours));
+                                                    @RequestParam(defaultValue = "7") Integer days) {
+        return Result.success(realtimeProfitService.profitTrend(shopId, sku, asin, days));
     }
 
     /** 利润汇总（按 SKU 维度） */

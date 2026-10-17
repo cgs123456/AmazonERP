@@ -9,13 +9,17 @@ import { params } from '@/utils/query'
  * `/report/v2/**` 与 `/report/profit/**` 共 20 个端点零入口——利润明细、库存周转与滞销、
  * 日销趋势、经营概览、实时利润快照、成本分摊全都只能手工 curl。
  *
- * 两类刻意的做法：
+ * 几条刻意的做法：
  * 1. 不接 5 个 POST 入库端点（/report/v2/profit、/inventory-turnover、/sales-daily、
  *    /business-overview、/report/profit/allocation）。它们接收完整实体，是给调度器和其他
- *    服务写数用的；放进 UI 等于让人手工录入会计数据，而且这 5 个端点的 @ShopScoped
- *    是空转的（shopId 只在 body 里，切面按参数名找不到它），越权拦截形同不存在。
- * 2. 快照口径有已知缺口（后端把 vatCost/refundCost/otherCost 写成常量 0），
- *    页面必须显示这个缺口，不能把 netProfit 当最终利润。
+ *    服务写数用的；放进 UI 等于让人手工录入会计数据。
+ *    （旧注释说这 5 个端点的 @ShopScoped「空转」——那不再成立：切面已支持读
+ *    @RequestBody 实体里的 shopId 属性，且 report 侧另有 ReportTenantGuard 逐行校验。
+ *    不接它们的理由只剩「不该手工录入会计数据」这一条。）
+ * 2. 快照口径有已知缺口（后端把 vatCost/otherCost 写成常量 0；refundCost 自 V2
+ *    起随明细真实聚合，不再是 0），页面必须显示这个缺口，不能把 netProfit 当最终利润。
+ * 3. 快照粒度是「天」不是「小时」（§S33.81）：聚合源 amz_profit_detail 只有
+ *    report_date，没有小时列；趋势参数 days 按自然日计。
  */
 
 export interface ProfitDetail {
@@ -193,7 +197,8 @@ export interface ProfitSnapshot {
 export interface ProfitTrend {
   shopId?: number | string
   sku?: string
-  hours?: number
+  /** 实际生效的回看天数（后端会封顶，回显的是封顶后的值）。 */
+  days?: number
   snapshotCount?: number
   trendTruncated?: boolean
   totalSales?: number
@@ -283,8 +288,15 @@ export const listSnapshots = (shopId: number | string,
 export const buildSnapshot = (shopId: number | string, sku: string, asin?: string) =>
   request.post<void, ApiResponse<ProfitSnapshot>>('/report/profit/snapshot', null, { params: params({ shopId, sku, asin }) })
 
-export const profitTrend = (shopId: number | string, sku: string, hours?: number) =>
-  request.get<void, ApiResponse<ProfitTrend>>(`/report/profit/trend/${shopId}`, { params: params({ sku, hours }) })
+/**
+ * SKU 利润趋势。
+ *
+ * days 是自然日，不是小时：后端快照按天存（stat_time 记当天 00:00），
+ * 传 hours 会被当成天数解释但单位名不副实——之前前端传 24 想「看一天」，
+ * 后端按 24 小时开窗，只命中今天一条快照，趋势图退化成一个点。
+ */
+export const profitTrend = (shopId: number | string, sku: string, days?: number) =>
+  request.get<void, ApiResponse<ProfitTrend>>(`/report/profit/trend/${shopId}`, { params: params({ sku, days }) })
 
 export const realtimeSummary = (shopId: number | string, q: { startTime?: string; endTime?: string } = {}) =>
   request.get<void, ApiResponse<RealtimeProfitSummary>>(`/report/profit/summary/${shopId}`, { params: params(q) })

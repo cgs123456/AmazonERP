@@ -55,6 +55,9 @@ class ReportIngestTenantWiringTest {
     private CostAllocationMapper costAllocationMapper;
     @Mock
     private ObjectMapper objectMapper;
+    /** §S33.81 拆分后的协作者：allocateCost 成功后要 evictShop，不注入会 NPE。 */
+    @Mock
+    private HeadhaulCostCalculator headhaulCostCalculator;
 
     @Spy
     private ReportTenantGuard tenantGuard = new ReportTenantGuard();

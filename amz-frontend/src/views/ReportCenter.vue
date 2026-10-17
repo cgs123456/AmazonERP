@@ -335,7 +335,7 @@
             <label class="filter">止<input type="date" v-model="snapEnd" /></label>
             <button class="action-btn" @click="loadAllSnapshot">查询快照</button>
             <button class="action-btn" @click="confirm(buildSnapshotConfirm)">按 SKU 重算快照</button>
-            <label class="filter">趋势小时<input class="cell-input" type="number" min="1" max="168" v-model="trendHours" /></label>
+            <label class="filter">趋势天数<input class="cell-input" type="number" min="1" max="90" v-model="trendDays" /></label>
             <button class="action-btn" :disabled="!snapSku.trim()" @click="runTrend">看趋势</button>
           </div>
 
@@ -359,7 +359,7 @@
           </div>
 
           <div v-if="trend" class="table-card">
-            <div class="block-title">{{ trend.sku }} 利润趋势（近 {{ trend.hours }} 小时，{{ trend.snapshotCount }} 个快照）</div>
+            <div class="block-title">{{ trend.sku }} 利润趋势（近 {{ trend.days }} 天，{{ trend.snapshotCount }} 个快照）</div>
             <table class="data-table">
               <thead><tr><th>时间</th><th>销售</th><th>毛利</th><th>净利</th><th>毛利率</th></tr></thead>
               <tbody>
@@ -372,7 +372,7 @@
                 </tr>
               </tbody>
             </table>
-            <p v-if="trend.trendTruncated" class="muted">趋势被截断：后端最多取 168 小时内的快照。</p>
+            <p v-if="trend.trendTruncated" class="muted">趋势被截断：后端最多取 90 天内的快照。</p>
           </div>
 
           <div class="table-card">
@@ -380,7 +380,7 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>时间</th><th>SKU</th><th>ASIN</th><th>销售额</th><th>销量</th><th>商品成本</th><th>FBA</th>
+                  <th>时间</th><th>SKU</th><th>ASIN</th><th>销售额</th><th>订单数</th><th>商品成本</th><th>FBA</th>
                   <th>佣金</th><th>广告</th><th>仓储</th><th>头程</th><th>VAT</th><th>退款</th><th>其他</th>
                   <th>毛利</th><th>净利</th><th>毛利率</th><th>来源</th>
                 </tr>
@@ -612,7 +612,7 @@ const trend = ref<ProfitTrend | null>(null)
 const snapSku = ref('')
 const snapStart = ref('')
 const snapEnd = ref('')
-const trendHours = ref<number | string>(24)
+const trendDays = ref<number | string>(7) // 快照按天存，旧默认 24（小时口径）只会命中今天一条（§S33.81）
 
 const allocs = makeList<CostAllocation>()
 const allocType = ref('')
@@ -792,9 +792,9 @@ const loadAllSnapshot = async () => {
 }
 
 const buildSnapshotConfirm = {
-  title: '按 SKU 重算实时快照',
-  detail: `会用当前数据为该 SKU 生成一条新快照（后端 CALC 来源）。`
-    + '注意后端把 VAT/退款/其他成本写死为 0，所以新快照的净利仍会偏高。',
+  title: '按 SKU 重算快照',
+  detail: `会用当前数据为该 SKU 重新生成一条快照（后端 CALC 来源）。口径是当天累计不是小时`
+    + '（明细无小时列），同一天重复点会覆盖同一条。后端 VAT/其他成本仍写死 0，净利偏高。',
   run: async () => {
     const sku = snapSku.value.trim()
     if (!sku) { pushError('重算快照：请先填 SKU'); return }
@@ -806,7 +806,7 @@ const buildSnapshotConfirm = {
 const runTrend = async () => {
   const sku = snapSku.value.trim()
   if (!sku) { pushError('看趋势：请先填 SKU'); return }
-  await call('利润趋势', () => rpt.profitTrend(shop(), sku, asNumber(trendHours.value, 24)), (d) => { trend.value = d })
+  await call('利润趋势', () => rpt.profitTrend(shop(), sku, asNumber(trendDays.value, 7)), (d) => { trend.value = d })
 }
 
 /* ---------- 分摊 ---------- */

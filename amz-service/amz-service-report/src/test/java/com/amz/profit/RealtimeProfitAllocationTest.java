@@ -49,6 +49,14 @@ class RealtimeProfitAllocationTest {
     @Mock
     private CostAllocationMapper costAllocationMapper;
 
+    /** §S33.81 拆分后的协作者：allocate 成功后要 evictShop，不注入会 NPE。 */
+    @Mock
+    private com.amz.service.impl.HeadhaulCostCalculator headhaulCostCalculator;
+
+    /** saveAllocation 的入口守卫：本测试不验权限，放行即可（权限语义在 TenantWiring 测试钉）。 */
+    @Mock
+    private com.amz.service.impl.ReportTenantGuard tenantGuard;
+
     @InjectMocks
     private RealtimeProfitServiceImpl service;
 
@@ -170,5 +178,38 @@ class RealtimeProfitAllocationTest {
         assertThrows(InvalidParamException.class, () -> service.allocateCost(null, "HEADHAUL",
                 new BigDecimal("10.00"), List.of("SKU-A:10"), "FBA-SHIP-5", "USD"));
         verify(costAllocationMapper, never()).insert(any(CostAllocation.class));
+    }
+
+    /**
+     * 分摊入账后必须失效头程缓存（§S33.81 拆分后新增的跨对象契约）。
+     * <p>
+     * 拆出 HeadhaulCostCalculator 之前，evict 是同类的私有方法，漏掉它测试也测不出来；
+     * 现在它是独立协作者上的公开调用，mock verify 正好钉住这条边界：
+     * 入账后缓存不过期，快照会拿最多 5 分钟旧的头程成本算利润，
+     * 而「刚录入一笔头程、利润却没变」是没人能一眼看出来的错数。
+     */
+    @Test
+    @DisplayName("allocateCost / saveAllocation 成功后必须 evictShop；幂等跳过时不 evict")
+    void bookingInvalidatesHeadhaulCache() {
+        service.allocateCost(1L, "HEADHAUL", new BigDecimal("90.00"),
+                Arrays.asList("SKU-A", "SKU-B"), null, "CNY");
+        verify(headhaulCostCalculator).evictShop(1L);
+
+        CostAllocation alloc = new CostAllocation();
+        alloc.setShopId(2L);
+        alloc.setCostType("HEADHAUL");
+        alloc.setTotalAmount(new BigDecimal("10.00"));
+        service.saveAllocation(alloc);
+        verify(headhaulCostCalculator).evictShop(2L);
+
+        // 同来源第二次：不插入也就不产生新账，缓存没有过期的理由
+        org.mockito.Mockito.clearInvocations(headhaulCostCalculator);
+        CostAllocation existing = new CostAllocation();
+        existing.setAllocDetails("{\"SKU-A\":50.0,\"SKU-B\":40.0}");
+        when(costAllocationMapper.countBySource(1L, "HEADHAUL", "SHIP-DUP")).thenReturn(1);
+        when(costAllocationMapper.selectBySource(1L, "HEADHAUL", "SHIP-DUP")).thenReturn(existing);
+        service.allocateCost(1L, "HEADHAUL", new BigDecimal("90.00"),
+                Arrays.asList("SKU-A", "SKU-B"), "SHIP-DUP", "CNY");
+        verify(headhaulCostCalculator, never()).evictShop(1L);
     }
 }

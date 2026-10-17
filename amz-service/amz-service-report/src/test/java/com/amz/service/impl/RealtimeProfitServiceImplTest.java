@@ -5,6 +5,7 @@ import com.amz.mapper.CostAllocationMapper;
 import com.amz.mapper.ProfitDetailMapper;
 import com.amz.mapper.ProfitSnapshotMapper;
 import com.amz.model.CostAllocation;
+import com.amz.model.ProfitDetail;
 import com.amz.model.ProfitSnapshot;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
@@ -64,6 +65,10 @@ class RealtimeProfitServiceImplTest {
     @Mock
     private CostAllocationMapper costAllocationMapper;
 
+    /** §S33.81 拆分后 headhaulCostCalculator 是独立协作者：mock 掉，本测试只验快照口径。 */
+    @Mock
+    private HeadhaulCostCalculator headhaulCostCalculator;
+
     @Mock
     private ObjectMapper objectMapper;
 
@@ -116,6 +121,8 @@ class RealtimeProfitServiceImplTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, ProfitSnapshot.class);
         TableInfoHelper.initTableInfo(assistant, CostAllocation.class);
+        // snapshotProfit 也要断言明细查询的日期边界，ProfitDetail 的元信息同样要先注册
+        TableInfoHelper.initTableInfo(assistant, ProfitDetail.class);
     }
 
     @Test
@@ -186,13 +193,47 @@ class RealtimeProfitServiceImplTest {
     @DisplayName("profitTrend：结果必须暴露 trendTruncated 与 snapshotCount，不能假装聚合完整")
     void profitTrendExposesTruncationFlag() {
         when(profitSnapshotMapper.selectList(any()))
-                .thenReturn(List.of(snapshot(3L, "2026-09-27 10:00:00")));
+                .thenReturn(List.of(snapshot(3L, "2026-09-27 00:00:00")));
 
-        Map<String, Object> result = profitService.profitTrend(1L, "SKU-1", "ASIN-1", 24);
+        Map<String, Object> result = profitService.profitTrend(1L, "SKU-1", "ASIN-1", 7);
 
-        assertEquals(24, result.get("hours"));
+        assertEquals(7, result.get("days"), "回显的是实际生效的天数（可能已被封顶）");
         assertEquals(1, result.get("snapshotCount"));
         assertEquals(Boolean.FALSE, result.get("trendTruncated"));
+    }
+
+    /**
+     * §S33.81：趋势窗口必须按天算，且覆盖完整的 N 个自然日。
+     * <p>
+     * 旧实现用 {@code minusHours(days)}：快照按天存（stat_time 记当天 00:00）后，
+     * 传 24 只会命中「今天」一条，而调用时刻漂移会让窗口边界一起漂 ——
+     * 同一天上午 9 点和下午 11 点调同一个接口，命中的快照集合不同。
+     * 所以断言窗口两端都是 00:00 的整日边界，而不是 now-minus-N-days 的任意时刻。
+     */
+    @Test
+    @DisplayName("profitTrend：回看窗口按整日计算，边界不随调用时刻漂移")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void profitTrendWindowIsAlignedToWholeDays() {
+        when(profitSnapshotMapper.selectList(any())).thenReturn(List.of());
+
+        profitService.profitTrend(1L, "SKU-1", "ASIN-1", 7);
+
+        ArgumentCaptor<LambdaQueryWrapper<ProfitSnapshot>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(profitSnapshotMapper).selectList(captor.capture());
+        String segment = captor.getValue().getCustomSqlSegment();
+        assertTrue(segment.contains("stat_time >="), "趋势必须带起始下界：" + segment);
+        assertTrue(segment.contains("stat_time <="), "趋势必须带结束上界：" + segment);
+        // 注意 MyBatis 参数表里存的是 LocalDateTime 对象本身，不是格式化后的字符串
+        LocalDate today = LocalDate.now();
+        LocalDateTime expectedSince = today.minusDays(6).atStartOfDay();
+        LocalDateTime expectedUntil = today.plusDays(1).atStartOfDay();
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue(expectedSince),
+                "窗口起点必须是 7 天前（含今天共 7 个自然日）的 00:00，实际参数表="
+                        + captor.getValue().getParamNameValuePairs());
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue(expectedUntil),
+                "窗口终点必须是明天 00:00（保证今天整天被包含），实际参数表="
+                        + captor.getValue().getParamNameValuePairs());
     }
 
     @Test
@@ -215,6 +256,48 @@ class RealtimeProfitServiceImplTest {
     }
 
     // ---------------- helpers ----------------
+
+    /**
+     * §S33.81：快照统计口径必须是「当天」而不是「本小时」。
+     * <p>
+     * 明细表只有 {@code report_date DATE}，没有小时列 —— 声称按小时窗口聚合时，
+     * {@code hourStart.substring(0,10)} 把小时信息整个丢掉，实际聚合的是该 SKU
+     * **当天全部明细**。后果不是「少算一点」：同一天重复触发快照，每次都重报整天，
+     * 而快照按小时存、趋势与汇总再把多条小时快照求和 → 同一天被重复计数。
+     */
+    @Test
+    @DisplayName("snapshotProfit：stat_time 记当天 00:00，且只查当天明细")
+    void snapshotUsesDayGranularity() {
+        when(profitDetailMapper.selectList(any())).thenReturn(List.of());
+        when(profitSnapshotMapper.selectOne(any())).thenReturn(null);
+        when(profitSnapshotMapper.insert(any(ProfitSnapshot.class))).thenReturn(1);
+        // 头程计算器是独立协作者（§S33.81 拆分）：本测试不验它，给中性值避免 null 进加总
+        when(headhaulCostCalculator.costFor(eq(1L), eq("SKU-1"))).thenReturn(BigDecimal.ZERO);
+
+        ProfitSnapshot saved = profitService.snapshotProfit(1L, "SKU-1", "ASIN-1");
+
+        LocalDateTime statTime = saved.getStatTime();
+        assertEquals(LocalDate.now().atStartOfDay(), statTime,
+                "stat_time 必须是当天 00:00——明细没有小时列，小时粒度的快照从来没有成立过");
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<LambdaQueryWrapper<ProfitDetail>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(profitDetailMapper).selectList(captor.capture());
+        String segment = captor.getValue().getCustomSqlSegment();
+        assertTrue(segment.contains("report_date >="), "明细查询必须带日期下界：" + segment);
+        assertTrue(segment.contains("report_date <="), "明细查询必须带日期上界：" + segment);
+        // 只断言「有 ge/le 两个算子」不够：窗口放宽成 [昨天, 今天] 同样满足，
+        // 而那正是缺陷本身（把前一天的明细也算进今天）。必须钉住边界值。
+        LocalDate today = LocalDate.now();
+        Map<String, Object> params = captor.getValue().getParamNameValuePairs();
+        assertTrue(params.containsValue(today),
+                "明细窗口必须是闭区间 [今天, 今天]，实际参数表=" + params);
+        assertTrue(params.containsValue(today.minusDays(1)) == false,
+                "不能把昨天的明细算进今天的快照，实际参数表=" + params);
+        assertTrue(params.containsValue(today.plusDays(1)) == false,
+                "不能把明天的明细算进今天的快照，实际参数表=" + params);
+    }
 
     private static ProfitSnapshot snapshot(Long id, String statTime) {
         ProfitSnapshot s = new ProfitSnapshot();

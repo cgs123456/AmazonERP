@@ -228,12 +228,42 @@ describe('ReportCenter 视图（经营报表）', () => {
       expect.objectContaining({ cursor: 'v1:11' }))
   })
 
+  /**
+   * §S33.81：趋势参数的单位必须是「天」，默认 7。
+   *
+   * 后端快照按天存（stat_time 记当天 00:00）。之前这里默认填 24、标签写「趋势小时」，
+   * 而 24 小时窗口在按天存的快照上只命中「今天」一条——趋势图退化成一个点，
+   * 用户以为在看一天的趋势，实际只有一个数据点。改成天之后，
+   * 输入框、ref 初值、请求参数、以及后端默认值必须四者一致，
+   * 任何一处漏改都会让这个洞以另一种形态回来。
+   */
+  it('趋势参数是天不是小时，默认 7 天', async () => {
+    vi.mocked(rpt.profitTrend).mockResolvedValue(ok({
+      shopId: 1, sku: 'SKU-1', days: 7, snapshotCount: 1,
+      trendTruncated: false, totalSales: 1000, totalNetProfit: 220, trendData: []
+    }))
+    const wrapper = await mountPage()
+    await openTab(wrapper, '实时快照与成本分摊')
+    const inputs = wrapper.find('[data-panel="snapshot"]').findAll('input')
+    await inputs[0].setValue('SKU-1')
+    // 不动输入框：验默认值直接发出去的就是 7 天
+    await clickBtn(wrapper, '看趋势')
+    expect(rpt.profitTrend).toHaveBeenCalledWith('900000000000001000', 'SKU-1', 7)
+    // 输入框标签必须跟着改：写「小时」而传天数，用户会照小时理解
+    expect(wrapper.text()).toContain('趋势天数')
+
+    vi.mocked(rpt.profitTrend).mockClear()
+    await inputs[3].setValue('30')
+    await clickBtn(wrapper, '看趋势')
+    expect(rpt.profitTrend).toHaveBeenCalledWith('900000000000001000', 'SKU-1', 30)
+  })
+
   it('成本分摊执行前必须确认，SKU 列表按逗号（含全角）拆分', async () => {
     vi.mocked(rpt.allocateCost).mockResolvedValue(ok({ 'SKU-1': 50, 'SKU-2': 50 }))
     const wrapper = await mountPage()
     await openTab(wrapper, '实时快照与成本分摊')
     const inputs = wrapper.find('[data-panel="snapshot"]').findAll('input')
-    // 顺序：SKU / 起 / 止 / 趋势小时 / 总额 / 币种 / 来源 / 分摊项 /（导入区）币种
+    // 顺序：SKU / 起 / 止 / 趋势天数 / 总额 / 币种 / 来源 / 分摊项 /（导入区）币种
     await inputs[7].setValue('SKU-1，SKU-2 SKU-3')
     await inputs[4].setValue('100')
     await clickBtn(wrapper, '执行分摊')

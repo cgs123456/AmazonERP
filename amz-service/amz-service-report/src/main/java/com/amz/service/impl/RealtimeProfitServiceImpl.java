@@ -33,7 +33,14 @@ import java.util.stream.Collectors;
 /**
  * 实时利润核算服务实现。
  * <p>
- * 按小时更新 SKU 维度利润快照 + FIFO 成本 + 费用智能分摊。
+ * SKU 维度利润快照 + FIFO 成本 + 费用智能分摊。
+ * <p>
+ * <b>§S33.81 快照粒度是「天」不是「小时」</b>：类名带 Realtime、表注释写「小时级」、
+ * 控制器路径是 {@code /report/profit/**}，但聚合源 {@code amz_profit_detail} 只有
+ * {@code report_date DATE}，没有小时列。此前 {@link #snapshotProfit} 声称按小时窗口聚合，
+ * 实际取的是整天明细并在每小时覆写同一条快照——「小时级」从来没有成立过。
+ * 现在按数据真实支撑的粒度（天）实现，{@code stat_time} 记当天 00:00。
+ * 要恢复小时粒度必须给明细表补小时列，那是数据模型变更，不能靠改查询口径假装。
  */
 @Slf4j
 @Service
@@ -41,24 +48,24 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
 
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /** 趋势回看上限（小时）：防止 hours 传超大值拉全表。 */
-    private static final int MAX_TREND_HOURS = 168;
+    /**
+     * 趋势回看上限（天）：防止 days 传超大值拉全表。
+     * <p>
+     * §S33.81 从 168 小时改为 90 天：快照按天存后，「小时」这个单位已不存在，
+     * 而 168 天（原 168 小时按天理解）会让单次聚合 168 行。90 天约等于一个季度，
+     * 与经营查看习惯对齐，行数也仍在分页上限之内。
+     */
+    private static final int MAX_TREND_DAYS = 90;
 
     /**
      * 趋势内部聚合的单次取数上限。
      * <p>
-     * 快照按小时写入，趋势又按单 SKU 过滤，168 小时窗口内最多约 168 行，
-     * 远低于 {@link PageRequest#MAX_SIZE}。这里刻意不开「内部绕过上限」的口子：
-     * 一旦存在绕过入口，MAX_SIZE 就从硬约束退化成可协商的建议值，
-     * 分页保证会在下一个「内部调用」里被悄悄打破。
+     * 快照按天写入，趋势又按单 SKU 过滤，{@value #MAX_TREND_DAYS} 天窗口内最多约
+     * {@value #MAX_TREND_DAYS} 行，远低于 {@link PageRequest#MAX_SIZE}。
+     * 这里刻意不开「内部绕过上限」的口子：一旦存在绕过入口，MAX_SIZE 就从硬约束
+     * 退化成可协商的建议值，分页保证会在下一个「内部调用」里被悄悄打破。
      */
-    private static final int TREND_FETCH_LIMIT = MAX_TREND_HOURS;
-
-    /** 头程分摊扫描上限：触顶即告警，不再静默丢弃更旧的分摊记录。 */
-    private static final int HEADHAUL_SCAN_LIMIT = 200;
-
-    /** 头程分摊回看天数：超出窗口的分摊视为已摊销完毕，不参与当前小时利润。 */
-    private static final long HEADHAUL_LOOKBACK_DAYS = 90L;
+    private static final int TREND_FETCH_LIMIT = MAX_TREND_DAYS;
 
     /** 复合游标分隔符：载荷形如 {@code 2026-09-27 10:00:00|123}。 */
     private static final String CURSOR_SEP = "|";
@@ -71,6 +78,8 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     private CostAllocationMapper costAllocationMapper;
     @Autowired
     private ReportTenantGuard tenantGuard;
+    @Autowired
+    private HeadhaulCostCalculator headhaulCostCalculator;
     @Autowired
     private ObjectMapper objectMapper;
 
@@ -87,16 +96,20 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
                     .eq(ProfitSnapshot::getStatTime, now);
         ProfitSnapshot exist = profitSnapshotMapper.selectOne(existWrapper);
 
-        // 从 ProfitDetail 聚合本小时数据
-        String hourStart = now.format(DT_FMT);
-        String hourEnd = now.plusHours(1).format(DT_FMT);
-        List<ProfitDetail> details = getProfitDetailsInRange(shopId, sku, hourStart, hourEnd);
+        // §S33.81：明细表只有 report_date（DATE），没有小时列 —— 声称的「本小时」窗口
+        // 在数据层根本不存在。此前 hourStart/hourEnd 只取到日期，实际聚合的是
+        // **该 SKU 当天全部明细行**：同一天重复点「重算快照」，每次都把整天重报一遍，
+        // 而快照表按小时存、趋势与汇总再把多条小时快照求和 → 同一天被重复计数。
+        // 明细无小时粒度的前提下没有正确的小时分母，所以不再假装是小时快照：
+        // 统计口径改为「当天累计」，stat_time 记当天 00:00，与数据能支撑的粒度对齐。
+        LocalDate statDay = now.toLocalDate();
+        List<ProfitDetail> details = getProfitDetailsInRange(shopId, sku, statDay, statDay);
 
         ProfitSnapshot snapshot = new ProfitSnapshot();
         snapshot.setShopId(shopId);
         snapshot.setSku(sku);
         snapshot.setAsin(asin != null ? asin : (details.isEmpty() ? null : details.get(0).getAsin()));
-        snapshot.setStatTime(now);
+        snapshot.setStatTime(statDay.atStartOfDay());
 
         // 从利润明细聚合
         BigDecimal salesAmount = BigDecimal.ZERO;
@@ -120,6 +133,12 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         }
 
         snapshot.setSalesAmount(salesAmount);
+        // §S33.81：明细表没有件数列（units 只在 amz_sales_daily 上，是另一张表），
+        // 这里能拿到的只有明细行数，而明细一行对应一个 amazon_order_id —— 所以它
+        // 实际是「订单数」而不是「销售件数」。列名叫 sales_quantity 但装的是订单数，
+        // 前端表头写「销量」，运营会把 3 件一单的订单读成卖了 1 件。
+        // 加注释钉住真实语义；改成件数需要明细表补列或改从 sales_daily 聚合，
+        // 那是独立的数据模型变更，不在本次修复范围内。
         snapshot.setSalesQuantity(details.size());
         snapshot.setProductCost(productCost);
         snapshot.setFbaFees(fbaFees);
@@ -127,7 +146,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         snapshot.setAdvertisingCost(advertisingCost);
         snapshot.setStorageFee(storageFee);
         snapshot.setVatCost(BigDecimal.ZERO); // VAT 按实际国家税率计算，占位
-        snapshot.setHeadhaulCost(getHeadhaulForSku(shopId, sku));
+        snapshot.setHeadhaulCost(headhaulCostCalculator.costFor(shopId, sku));
         snapshot.setRefundCost(refundCost);
         snapshot.setOtherCost(BigDecimal.ZERO);
 
@@ -167,7 +186,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         if (sku != null && !sku.isBlank()) wrapper.eq(ProfitSnapshot::getSku, sku);
         if (startTime != null) wrapper.ge(ProfitSnapshot::getStatTime, LocalDateTime.parse(startTime, DT_FMT));
         if (endTime != null) wrapper.le(ProfitSnapshot::getStatTime, LocalDateTime.parse(endTime, DT_FMT));
-        // 同一小时可能有多个 SKU/ASIN 的快照，stat_time 并列，单列 id 游标无法保证稳定顺序，
+        // 同一天会有多个 SKU/ASIN 的快照，stat_time 并列，单列 id 游标无法保证稳定顺序，
         // 必须用 (stat_time, id) 复合游标。
         if (req.hasCursor()) {
             Object[] key = decodeSnapshotCursor(req.payload());
@@ -216,18 +235,26 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     }
 
     @Override
-    public Map<String, Object> profitTrend(Long shopId, String sku, String asin, Integer hours) {
-        if (hours == null || hours <= 0) hours = 24;
-        // B2：回看窗口封顶，避免超大 hours 拉全表；结果中的 hours 回显封顶后的实际窗口
-        if (hours > MAX_TREND_HOURS) hours = MAX_TREND_HOURS;
-        String since = LocalDateTime.now().minusHours(hours).format(DT_FMT);
-        String until = LocalDateTime.now().format(DT_FMT);
+    public Map<String, Object> profitTrend(Long shopId, String sku, String asin, Integer days) {
+        if (days == null || days <= 0) days = 7;
+        // 封顶：避免超大 days 拉全表；结果里回显封顶后的实际窗口
+        if (days > MAX_TREND_DAYS) days = MAX_TREND_DAYS;
+        // §S33.81：快照按天存（stat_time 记当天 00:00），趋势窗口必须按天算。
+        // 旧实现用 minusHours(days)：快照改成天粒度后 hours=24 只会命中「今天」这
+        // 一条（昨天 00:00 落在 24 小时窗口之外），hours=168 只返回 7 条而不是 7 天意图，
+        // 而前端输入框写的是「趋势小时」——用户填 24 以为看一天，实际也只能看一天，
+        // 填 168 以为看一周，实际看到的是过去 7 个自然日中「今天」之后的那几天。
+        // 小时窗口与天粒度数据混用，窗口边界随调用时刻漂移，同一天不同时间点结果不同。
+        LocalDate today = LocalDate.now();
+        LocalDate from = today.minusDays(days - 1L);
+        String since = from.atStartOfDay().format(DT_FMT);
+        String until = today.plusDays(1).atStartOfDay().format(DT_FMT);
         PageResult<ProfitSnapshot> snapshotPage = listSnapshots(shopId, sku, since, until,
                 PageRequest.first(TREND_FETCH_LIMIT));
         List<ProfitSnapshot> snapshots = snapshotPage.items();
         if (snapshotPage.truncated()) {
-            log.warn("利润趋势聚合被截断：shopId={} sku={} hours={}，仅聚合前 {} 条快照",
-                    shopId, sku, hours, TREND_FETCH_LIMIT);
+            log.warn("利润趋势聚合被截断：shopId={} sku={} days={}，仅聚合前 {} 条快照",
+                    shopId, sku, days, TREND_FETCH_LIMIT);
         }
 
         List<Map<String, Object>> trendData = snapshots.stream().map(s -> {
@@ -250,7 +277,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
         result.put("sku", sku);
-        result.put("hours", hours);
+        result.put("days", days);
         result.put("snapshotCount", snapshots.size());
         // 截断必须机器可读：调用方不能把「窗口内还有快照没聚合进来」当成完整趋势
         result.put("trendTruncated", snapshotPage.truncated());
@@ -307,7 +334,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         tenantGuard.requireShopAccess(allocation.getShopId(), "费用分摊");
         if (allocation.getAllocDate() == null) allocation.setAllocDate(LocalDate.now());
         costAllocationMapper.insert(allocation);
-        evictHeadhaulCache(allocation.getShopId());
+        headhaulCostCalculator.evictShop(allocation.getShopId());
         log.info("费用分摊记录创建：costType={} amount={} method={}", allocation.getCostType(),
                 allocation.getTotalAmount(), allocation.getAllocMethod());
         return allocation;
@@ -466,7 +493,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
             alloc.setAllocDetails(objectMapper.writeValueAsString(allocation));
             alloc.setAllocDate(LocalDate.now());
             costAllocationMapper.insert(alloc);
-            evictHeadhaulCache(shopId);
+            headhaulCostCalculator.evictShop(shopId);
         } catch (JsonProcessingException e) {
             // 明细序列化不了就不要留一条「有总额、没分摊」的半成品记录
             throw new IllegalStateException("分摊明细序列化失败 costType=" + costType + "：" + e.getMessage(), e);
@@ -501,100 +528,21 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         return MapArgUtils.toBigDecimal(value, BigDecimal.ZERO);
     }
 
-    private List<ProfitDetail> getProfitDetailsInRange(Long shopId, String sku, String startTime, String endTime) {
+    /**
+     * 按「天」取某 SKU 的利润明细。
+     * <p>
+     * §S33.81：签名刻意收成 {@link LocalDate} 而不是时间串。{@code amz_profit_detail}
+     * 只有 {@code report_date DATE}，没有小时列 —— 传 {@code "2026-10-17 10:00:00"}
+     * 进来再 {@code substring(0, 10)} 会给人「这里支持小时过滤」的错觉，
+     * 上一个版本正是这么写的，于是「本小时快照」实际聚合了整天明细。
+     * 参数类型必须与数据能表达的粒度一致，否则错误的前提会被签名掩盖。
+     */
+    private List<ProfitDetail> getProfitDetailsInRange(Long shopId, String sku, LocalDate from, LocalDate to) {
         LambdaQueryWrapper<ProfitDetail> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ProfitDetail::getShopId, shopId)
                .eq(ProfitDetail::getSku, sku)
-               .ge(ProfitDetail::getReportDate, LocalDate.parse(startTime.substring(0, 10)))
-               .le(ProfitDetail::getReportDate, LocalDate.parse(endTime.substring(0, 10)));
+               .ge(ProfitDetail::getReportDate, from)
+               .le(ProfitDetail::getReportDate, to);
         return profitDetailMapper.selectList(wrapper);
-    }
-
-    /** 头程费用缓存 TTL：分摊记录变更低频，短 TTL 即可过滤批量快照的重复解析。 */
-    private static final long HEADHAUL_CACHE_TTL_MS = 5 * 60 * 1000L;
-
-    /** 头程费用缓存上限（条目数，LRU 淘汰）。 */
-    private static final int HEADHAUL_CACHE_MAX_SIZE = 1024;
-
-    /**
-     * 头程费用缓存：key 为 shopId + sku，value 为 [缓存值, 过期时间戳]。
-     * <p>
-     * 不引入 Caffeine 依赖的原因：此处仅需单机小容量 TTL 缓存，
-     * 同步 LinkedHashMap（access-order LRU）已够用，避免为 report 模块新增依赖。
-     */
-    private final Map<String, Object[]> headhaulCache =
-            Collections.synchronizedMap(new LinkedHashMap<String, Object[]>(128, 0.75f, true) {
-                @Override
-                protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest) {
-                    return size() > HEADHAUL_CACHE_MAX_SIZE;
-                }
-            });
-
-    /**
-     * 估算 SKU 的头程费用（从 CostAllocation 聚合，带 5 分钟 TTL 缓存）。
-     */
-    private BigDecimal getHeadhaulForSku(Long shopId, String sku) {
-        // key 带分隔符：无分隔拼接下店铺 1 的前缀失效会误删店铺 12 的条目
-        String key = shopId + "|" + sku;
-        long now = System.currentTimeMillis();
-        Object[] cached = headhaulCache.get(key);
-        if (cached != null && (Long) cached[1] > now) {
-            return (BigDecimal) cached[0];
-        }
-        BigDecimal total = loadHeadhaulForSku(shopId, sku);
-        headhaulCache.put(key, new Object[]{total, now + HEADHAUL_CACHE_TTL_MS});
-        return total;
-    }
-
-    /**
-     * 分摊记录变更后失效对应店铺的头程缓存（saveAllocation / allocateCost 成功后调用）。
-     */
-    private void evictHeadhaulCache(Long shopId) {
-        if (shopId == null) {
-            return;
-        }
-        String prefix = shopId + "|";
-        // synchronizedMap 的迭代（含 removeIf）必须外部加锁，否则并发 get/put+evict 可抛 CME
-        synchronized (headhaulCache) {
-            headhaulCache.keySet().removeIf(k -> k.startsWith(prefix));
-        }
-    }
-
-    private BigDecimal loadHeadhaulForSku(Long shopId, String sku) {
-        // 从分摊记录中查找该 SKU 最近头程费用
-        LambdaQueryWrapper<CostAllocation> wrapper = new LambdaQueryWrapper<>();
-        // 此前是「按 allocDate 倒序取 10 条」，既没有时间窗口也没有触顶告警：
-        // 分摊记录一旦超过 10 条，更旧的头程成本会被静默丢弃，利润被高估而不留痕迹。
-        // 现在改为「90 天回看窗口 + 200 条上限 + 触顶 WARN」，把隐式截断变成显式信号。
-        wrapper.eq(CostAllocation::getShopId, shopId)
-                .eq(CostAllocation::getCostType, "HEADHAUL")
-                .ge(CostAllocation::getAllocDate, LocalDate.now().minusDays(HEADHAUL_LOOKBACK_DAYS))
-                .orderByDesc(CostAllocation::getAllocDate)
-                .last("LIMIT " + HEADHAUL_SCAN_LIMIT);
-        List<CostAllocation> allocations = costAllocationMapper.selectList(wrapper);
-        if (allocations.size() >= HEADHAUL_SCAN_LIMIT) {
-            log.warn("头程分摊扫描触顶：shopId={} 近 {} 天内超过 {} 条 HEADHAUL 记录，"
-                            + "更早的分摊未计入头程成本，请拆分分摊批次或缩短回看窗口",
-                    shopId, HEADHAUL_LOOKBACK_DAYS, HEADHAUL_SCAN_LIMIT);
-        }
-        BigDecimal total = BigDecimal.ZERO;
-        for (CostAllocation a : allocations) {
-            if (a.getAllocDetails() != null && a.getAllocDetails().contains("\"" + sku + "\"")) {
-                try {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> details = objectMapper.readValue(a.getAllocDetails(), Map.class);
-                    Object val = details.get(sku);
-                    if (val instanceof Number) {
-                        total = total.add(new BigDecimal(val.toString()));
-                    }
-                } catch (Exception e) {
-                    // 用 debug 等于瞒报：这一行的头程成本被静默丢掉，SKU 利润被系统性高估，
-                    // 而生产默认日志级别下没人看得见。同方法上方对"明细被截断"已经是 WARN，此处对齐。
-                    log.warn("解析成本分摊详情失败，该条分摊金额未计入：shopId={} sku={} error={}",
-                            shopId, sku, e.toString());
-                }
-            }
-        }
-        return total;
     }
 }

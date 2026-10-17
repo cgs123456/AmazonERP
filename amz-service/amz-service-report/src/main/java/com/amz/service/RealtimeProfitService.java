@@ -18,7 +18,14 @@ public interface RealtimeProfitService {
     ProfitSnapshot snapshotProfit(Long shopId, String sku, String asin);
     PageResult<ProfitSnapshot> listSnapshots(Long shopId, String sku, String startTime, String endTime,
                                              PageRequest page);
-    Map<String, Object> profitTrend(Long shopId, String sku, String asin, Integer hours);
+    /**
+     * SKU 利润趋势。
+     *
+     * @param days 回看天数（自然日）。§S33.81 从 hours 改为 days：快照按天存，
+     *             小时窗口在按天存的快照上会漏掉整天（hours=24 只命中今天一条），
+     *             且窗口边界随调用时刻漂移，同一天不同时间点结果不同。
+     */
+    Map<String, Object> profitTrend(Long shopId, String sku, String asin, Integer days);
     Map<String, Object> profitSummary(Long shopId, String startTime, String endTime);
 
     // ==================== 费用分摊 ====================
