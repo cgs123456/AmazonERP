@@ -6618,3 +6618,45 @@ procurement 模块 151 个测试全绿。
 全类零 catch，所有失败直接抛。配合 §S33.38 确认过的
 「mock 造数端点生产环境恒拒绝」（返回错误而非假的 0 条），
 这个模块的失败姿态是全场最干净的。
+
+## §S33.75 scheduler 层审查：锁与租期的两种正确形态
+
+审了四个主调度器的锁/重试语义。未发现缺陷，但记下两种**不同且都正确**的锁粒度选择。
+
+### 75. 锁粒度：全局 vs 按店铺
+
+| 调度器 | 锁键 | 租期 / 周期 | 超时后果 |
+|---|---|---|---|
+| `OrderSyncScheduler` | `amz:sched:order-sync`（**全局**） | 14 min / 15 min | 下一轮**整体跳过**（fail-closed），不会双跑 |
+| `SettlementSyncScheduler` | `finance:settlement-sync:{shopId}`（**按店**） | 900 s / 每日一次 | 只跳过该店，其余店照常，次日重试 |
+
+选择都对：订单同步是全局互斥语义（多实例同时拉会双倍消耗 SP-API 配额），
+租期略小于周期，实例崩溃后下一轮自动接手；结算同步按店拆分，
+单店慢不拖累其他店，且 `runWithLock` 抢不到锁时「直接跳过，不排队堆积」。
+
+### 76. `DistributedJobLock` 本身的三处正确实现
+
+- **释放带 token 校验**：UNLOCK 脚本先 `get` 比对再 `del`，
+  不会误删别的实例持有的锁（租期到期后被别人拿到时，旧持有者finally 删不掉它）；
+- **Redis 不可用默认 fail-closed**：`runWithLock` 拿不到锁就跳过本轮并 `log.error`；
+  要降级执行必须显式调 `runIdempotentWithLock`——把「允许重复执行」变成调用方的
+  显式声明，而不是锁组件的隐默认；
+- **租期必须 > 0** 在入口校验，`leaseSeconds <= 0` 直接抛。
+
+### 77. `OrderSyncScheduler` 的发布去重顺序（既有修复，已验证有测试）
+
+注释把坑写得很清楚：7 天窗口 × 15 分钟轮询会让同一订单存活期内被重复发布约 600 次；
+而旧实现**先 SETNX 标记再发送**，MQ 短暂故障时订单会被永久判成「已发布」，
+14 天 TTL 内不再重发——静默丢单，且界面上与「没有新订单」无法区分。
+
+现在「两条消息都发出成功才标记」，任一条失败会抛异常、本轮该店中止并告警、
+未标记则下一轮自动重发。`OrderSyncSchedulerContractTest` 有两条专门钉这个顺序：
+`publishFailureDoesNotMarkPublished` 与 `marksPublishedOnlyAfterSend`。
+
+### 78. 一个未覆盖但非缺陷的点
+
+`OrderSyncScheduler` 是全局锁且**没有运行时上限**（不限制店铺数、不限制订单数，
+每单还有一次 `fetchOrderItems` HTTP 调用）。理论上订单量大时可能超过 14 分钟租期，
+后果是下一轮跳过而非数据重复——fail-closed 方向是安全的，
+且 `fixedDelay` 语义保证不会叠跑。**未加限制**：加上限会改变「拉全量」的语义，
+而这是个容量规划问题不是正确性问题，应由运行数据决定，不由我拍。
