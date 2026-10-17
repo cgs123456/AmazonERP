@@ -129,9 +129,13 @@ public class AdServiceImpl implements AdService {
             }
             rows = adDailyReportMapper.selectList(qw);
         } catch (Exception e) {
-            // 日报表可能尚未初始化（如未执行建表语句），降级为空趋势，调用方保留 mock 展示
-            log.warn("查询广告日报失败，返回空趋势 shopId={}", shopId, e);
-            return Collections.emptyList();
+            // §S33.27：此前这里吞掉异常返回空数组，前端因此显示「暂无趋势数据」——
+            // 与「确实没有日报」在响应上完全一样。运营看到的是「没有数据」，
+            // 实际是「查询失败」，于是不会去重跑同步，只会以为广告没投放。
+            // 趋势接口没有别的失败通道，只能把异常抛出去让控制器转成 Result.failure；
+            // 前端已有的 catch 分支会如实提示「趋势调用失败」。
+            log.warn("查询广告日报失败，不再降级为空趋势 shopId={}", shopId, e);
+            throw new IllegalStateException("查询广告日报失败，shopId=" + shopId, e);
         }
 
         // 按日期汇总 cost/sales（下标 0=花费，1=销售额）

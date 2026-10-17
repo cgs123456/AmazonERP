@@ -11,6 +11,7 @@ import com.amz.scheduler.AdReportSyncScheduler;
 import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.AdService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +30,7 @@ import java.util.Map;
 /**
  * 广告管理 REST 端点。
  */
+@Slf4j
 @RestController
 @RequestMapping("/ad")
 public class AdController {
@@ -149,7 +151,11 @@ public class AdController {
      * 查询店铺近 N 天每日 ACoS 趋势（供前端折线图）。
      * GET /ad/trend?shopId=1&days=14
      * <p>
-     * 数据源为 amz_ad_daily_report；表空或未初始化时返回 []，前端生产模式展示空态。
+     * 数据源为 amz_ad_daily_report。
+     * <p>
+     * <b>空数组只表示「确实没有日报」</b>。查询本身失败时不再返回 []，而是走
+     * {@link Result#failure} —— §S33.27 之前两者在响应上不可区分，前端一律显示
+     * 「暂无趋势数据」，运营看到的是「没有数据」而不是「查询失败」。
      */
     @ShopScoped
     @GetMapping("/trend")
@@ -157,7 +163,12 @@ public class AdController {
             @RequestParam(required = false) Long shopId,
             @RequestParam(required = false, defaultValue = "14") Integer days,
             @RequestParam(required = false) String adType) {
-        return Result.success(adService.getAdTrend(shopId, days, adType));
+        try {
+            return Result.success(adService.getAdTrend(shopId, days, adType));
+        } catch (IllegalStateException e) {
+            log.warn("广告趋势查询失败 shopId={} days={} adType={}", shopId, days, adType, e);
+            return Result.failure("广告趋势查询失败：" + e.getMessage());
+        }
     }
 
     /**
