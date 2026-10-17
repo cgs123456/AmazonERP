@@ -465,7 +465,8 @@ const loadReceiptBoard = async (shopId: string) => {
  */
 const onImportDone = async () => {
   await reload()
-  if (tab.value === 'shipments') await shipmentPanel.value?.load()
+  // 强制重拉：刚导进去的货件必须出现，load() 的「已加载就跳过」会把它挡掉
+  if (tab.value === 'shipments') await shipmentPanel.value?.reload()
 }
 
 const reload = async () => {
@@ -498,13 +499,15 @@ const refreshCurrent = async () => {
     if (tab.value === 'overview') {
       await reload()
     } else if (tab.value === 'shipments') {
-      // 列表与分页都在子组件里，刷新整块交给它（错误经 report-error 回流页级错误区）
-      await shipmentPanel.value?.load()
+      // 刷新按钮要**强制**重拉：面板的 load() 是「首次才拉」，用它等于按钮没反应。
+      await shipmentPanel.value?.reload()
     } else if (tab.value === 'quotes') {
       await safeLoad('quotes', () => loadQuoteBoard(shopId))
+      // 有效报价明细与看板是不同端点：只刷看板会让用户在看的列表停在旧数据
+      await quoteListPanel.value?.reload()
     } else if (tab.value === 'transfers') {
       // 列表与看板都在子组件里，刷新整块交给它（错误经 report-error 回流页级错误区）
-      await transferPanel.value?.load()
+      await transferPanel.value?.reload()
     } else if (tab.value === 'freight') {
       await safeLoad('freight', () => loadFreightBoard(shopId))
     } else if (tab.value === 'receipts') {
@@ -525,17 +528,15 @@ const switchTab = async (key: TabKey) => {
   if (!shopId) return
   // 按标签懒加载：子域看板只在第一次打开时拉取，避免进来就把六七个接口全打一遍
   if (key === 'shipments') {
-    // 「已加载」判据归面板，页壳再存一份就是两套真相（与调拨同一处理）
+    // 「已加载」判据归面板（按店铺记），页壳再存一份就是两套真相
     await shipmentPanel.value?.load()
   } else if (key === 'quotes') {
     if (!quoteBoard.value) await safeLoad('quotes', () => loadQuoteBoard(shopId))
     // 逐条报价与看板同源但不同端点：也按「首次打开才拉」。
-    // 交给面板自己的 load()——「已加载」这个判据归面板，页壳再存一份就是两套真相。
-    // 切店铺时由 onAuthChanged 走 reload 分支重拉。
+    // 交给面板自己的 load()——判据归面板，页壳再存一份就是两套真相。
     await quoteListPanel.value?.load()
   } else if (key === 'transfers') {
-    // 首次进入才拉。把关留在这里而不下沉到子组件：两处把关就是两套
-    // 「已加载」集合，改一处漏一处的症状是重复请求或永不请求。
+    // 看板与列表都由面板自己判「本店铺是否已加载」
     await transferPanel.value?.load()
   } else if (key === 'freight') {
     if (!freightBoard.value) await safeLoad('freight', () => loadFreightBoard(shopId))
@@ -555,7 +556,7 @@ const doSync = async (shipmentId: number) => {
     const res = await syncShipment(shipmentId)
     if (res?.code === 200) {
       showToast('同步完成', 'success')
-      await Promise.all([shipmentPanel.value?.load(), loadOverview(refreshShop())])
+      await Promise.all([shipmentPanel.value?.reload(), loadOverview(refreshShop())])
     } else {
       showToast(res?.message || '同步失败', 'error')
     }
@@ -574,7 +575,8 @@ const doClose = async (shipmentId: number) => {
     const res = await closeShipment(shipmentId, refreshShop())
     if (res?.code === 200) {
       showToast('货件已关闭', 'success')
-      await Promise.all([shipmentPanel.value?.load(), reload()])
+      // 强制重拉：刚关掉的那条必须从列表里消失
+      await Promise.all([shipmentPanel.value?.reload(), reload()])
     } else {
       showToast(res?.message || '关闭失败', 'error')
     }
@@ -703,14 +705,16 @@ const onAuthChanged = () => {
   hasToken.value = !!localStorage.getItem('token')
   if (hasToken.value) {
     reload()
-    if (tab.value === 'shipments') void shipmentPanel.value?.load()
-    // 子域看板同样要跟着换店铺重拉，否则会残留上一个店铺的数字
+    // 换店铺后必须**强制**重拉：面板的 load() 按店铺 id 判「已加载」，
+    // 店铺没变就跳过——而这里恰恰是店铺变了的那条路径。用 load() 会
+    // 让上一个店铺的列表留在屏上（多租户隔离缺口）。
     const shopId = refreshShop()
+    if (tab.value === 'shipments') void shipmentPanel.value?.reload()
     if (tab.value === 'quotes') {
       safeLoad('quotes', () => loadQuoteBoard(shopId))
       void quoteListPanel.value?.reload()
     }
-    if (tab.value === 'transfers') void transferPanel.value?.load()
+    if (tab.value === 'transfers') void transferPanel.value?.reload()
     if (tab.value === 'freight') safeLoad('freight', () => loadFreightBoard(shopId))
     if (tab.value === 'receipts') safeLoad('receipts', () => loadReceiptBoard(shopId))
   } else {

@@ -96,7 +96,33 @@ const loadMoreQuotes = () => {
  * - `load`：首次进入本 tab 时才拉数据（把关在页壳，与调拨/货件同一先例）；
  * - `reload`：切店铺后重拉（`onAuthChanged` 走这条）。
  */
-defineExpose({ load: loadQuotes, reload: loadQuotes })
+/**
+ * 「已加载」判据归本组件，且按**店铺**记（理由同 LogisticsShipmentPanel：
+ * 只看「列表非空」会把新店铺当成没加载过，而旧店铺数据又可能仍然非空）。
+ *
+ * `load` 只负责首次进入；`reload` 是强制重拉（刷新按钮 / 切店铺 / 登录态变化）。
+ */
+const loadedShopId = ref<string | null>(null)
+
+const load = async () => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    loadedShopId.value = null
+    await loadQuotes()
+    return
+  }
+  if (loadedShopId.value === shopId) return
+  await loadQuotes()
+  loadedShopId.value = shopId
+}
+
+const reload = async () => {
+  const shopId = refreshShop()
+  await loadQuotes()
+  loadedShopId.value = shopId || null
+}
+
+defineExpose({ load, reload })
 </script>
 
 <template>

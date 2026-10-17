@@ -158,10 +158,23 @@ const loadMoreTransfers = () => {
   void loadTransfers(true)
 }
 
+/**
+ * 「已加载」判据归本组件，且按**店铺**记。
+ *
+ * 此前判据是 `!transferBoard` / `!transfers.length`——切到新店铺时两者都
+ * 还是旧店的值，于是永远不再拉；而同一店铺内点回标签时若列表恰好为空
+ * （该店确实没有调拨单），又会反复重拉。记店铺 id 同时解决这两头。
+ */
+const loadedShopId = ref<string | null>(null)
+
 /** 首次进入才拉看板与列表（由页壳的 switchTab 调用）。 */
 const load = async () => {
   const shopId = refreshShop()
-  if (!shopId) return
+  if (!shopId) {
+    loadedShopId.value = null
+    return
+  }
+  if (loadedShopId.value === shopId) return
   if (!transferBoard.value) {
     try {
       await loadTransferBoard(shopId)
@@ -169,7 +182,19 @@ const load = async () => {
       emit('report-error', '调拨看板', e)
     }
   }
-  if (!transfers.value.length) await loadTransfers()
+  await loadTransfers()
+  loadedShopId.value = shopId
+}
+
+/** 强制重拉：刷新按钮 / 切店铺 / 登录态变化走这条（`load` 只负责首次）。 */
+const reload = async () => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    loadedShopId.value = null
+    return
+  }
+  await refreshTransferViews()
+  loadedShopId.value = shopId
 }
 
 /** 只在草稿与待审批状态下给出通过/驳回；已进入后续状态的按钮没有意义。 */
@@ -255,7 +280,7 @@ const doReceiveTransfer = async (t: InventoryTransfer) => {
  * 而子组件的数据是它自己的——让页壳读子组件的 ref 比让页壳再持有一份
  * board 数据好，后者会出现两个真相来源。
  */
-defineExpose({ load, riskCount: () => transferBoard.value?.risks.length ?? 0 })
+defineExpose({ load, reload, riskCount: () => transferBoard.value?.risks.length ?? 0 })
 
 /* ---------- 展示用格式化与文案（从页壳原样搬来，未改一字） ---------- */
 

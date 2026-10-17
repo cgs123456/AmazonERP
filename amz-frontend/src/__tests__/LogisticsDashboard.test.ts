@@ -1455,6 +1455,65 @@ describe('LogisticsDashboard 视图', () => {
     expect(wrapper.text()).toContain('暂无货件')
   })
 
+  const clickTab = async (wrapper: ReturnType<typeof mountView>, label: string) => {
+    const t = wrapper.findAll('.tab').find((x) => x.text().includes(label))
+    expect(t, `未找到「${label}」标签`).toBeTruthy()
+    await t!.trigger('click')
+    await flushPromises()
+  }
+
+  /**
+   * 刷新按钮必须**强制**重拉，不能复用面板的 `load()`。
+   *
+   * §S33.17 把「已加载」判据下沉进面板后，`load()` 的语义变成「首次才拉」。
+   * 页壳的刷新按钮若仍调 `load()`，用户点刷新**什么都不会发生**——
+   * 而这一点在 UI 上完全没有反馈：按钮按下去、busy 闪一下、数据还是旧的。
+   * 变异测试实测：把 `reload()` 改回 `load()`，全套 80 条测试全绿。
+   */
+  it('刷新按钮对已加载的面板仍会真的重拉（load 与 reload 语义不能混用）', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await clickTab(wrapper, '在途货件')
+    expect(mockedShipments).toHaveBeenCalledTimes(1)
+
+    const refreshBtn = wrapper.findAll('button').find((b) => b.text().includes('刷新'))
+    expect(refreshBtn).toBeTruthy()
+    await refreshBtn!.trigger('click')
+    await flushPromises()
+
+    // 第二次请求必须真的发出（load() 会因「本店铺已加载」直接返回）
+    expect(mockedShipments).toHaveBeenCalledTimes(2)
+    expect(mockedShipments).toHaveBeenLastCalledWith('1', undefined, 50, undefined)
+  })
+
+  /**
+   * 切店铺后，**当前标签**的面板必须强制重拉。
+   *
+   * 这条对调拨尤其关键：`load()` 里的 `if (!transferBoard.value)` 是
+   * 「有没有看板数据」而不是「是不是本店铺的数据」。切到新店铺时旧店的
+   * 看板仍在，`load()` 会跳过看板重拉，新店铺的调拨风险与统计停在旧值——
+   * 而列表却会被重拉，于是同一屏上列表是新店的、看板是旧店的。
+   *
+   * 货件面板没有这个问题（它的 `load()` 按店铺 id 判），所以本测试
+   * 刻意用调拨：它是这组里唯一一个「load 与 reload 不等价」的面板。
+   */
+  it('切店铺后调拨看板与列表都必须按新店铺重拉', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    await clickTab(wrapper, '调拨')
+    expect(mockedTransferBoard).toHaveBeenCalledTimes(1)
+
+    // 换店铺（不重挂载组件），再触发登录态变化——这是页壳唯一的重拉入口
+    localStorage.setItem('current_shop_id', '2')
+    window.dispatchEvent(new Event('amz:auth-changed'))
+    await flushPromises()
+
+    // 看板必须按新店铺再拉一次；只靠 load() 会因「已有看板」跳过
+    expect(mockedTransferBoard).toHaveBeenCalledTimes(2)
+    expect(mockedTransferBoard).toHaveBeenLastCalledWith('2')
+    expect(mockedTransfers).toHaveBeenLastCalledWith('2', undefined, 50, undefined)
+  })
+
   /**
    * 缺分页元数据时不得冒充全量。「不是全量」配一个点不动的按钮，
    * 等于告诉用户「你能看完」——货件漏看一张就可能漏一次延误处理。
@@ -2020,7 +2079,6 @@ describe('LogisticsDashboard 运营子域看板', () => {
     await flushPromises()
     await wrapper.findAll('button').find((b) => b.text().includes('计算比价'))!.trigger('click')
     await flushPromises()
-    console.log('DBG1 cmp-result exists:', wrapper.find('.cmp-result').exists())
     expect(wrapper.text()).toContain('推荐承运商')
 
     // 登出：整块卸载（所以这一步看不出问题），再登录让面板回到 DOM
@@ -2034,8 +2092,6 @@ describe('LogisticsDashboard 运营子域看板', () => {
     // 面板回到页面上了，但结果必须已经不在。
     // 断言限定在 .cmp-result 上：整个页面文本里 COSCO 也会出现在「航线报价覆盖」
     // 表的承运商列里，那是看板自己的数据，与比价结果无关——用整页文本断言会误判。
-    console.log('DBG2 mounts:', (window as any).__cmpMounts)
-    console.log('DBG2 cmp-result exists:', wrapper.find('.cmp-result').exists(), 'form:', wrapper.find('.cmp-form').exists(), 'has400:', wrapper.text().includes('推荐承运商'))
     expect(wrapper.find('.cmp-form').exists()).toBe(true)
     expect(wrapper.find('.cmp-result').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('推荐承运商')
@@ -2587,6 +2643,56 @@ describe('LogisticsDashboard 有效报价明细（此前 listQuotes 零调用）
     await flushPromises()
     return wrapper
   }
+
+  /**
+   * 回归：§S33.14–16 把 shipments / transfers / quotes 的「已加载」判据
+   * 下沉进各自面板后，`switchTab` 从 `if (!x.length) load()` 变成了
+   * `await panel.load()`——**每次点回标签都会整表重拉**。
+   *
+   * 影响是双重的：多一次请求（分页 keyset 从头开始，用户翻到的位置也丢了），
+   * 以及切店铺时的 `onAuthChanged → reload()` 才是「该重拉」的唯一路径。
+   *
+   * 这条测试钉的是语义本身，不依赖具体面板实现：**同一标签点两次，
+   * 只发一次请求**。三个标签各钉一次，因为它们分三次拆出去、
+   * 也分三次引入（见 HANDOFF §S33.14 / §S33.15 / §S33.11）。
+   */
+  it('同一标签重复点击不重复拉取（已加载判据随面板下沉后仍生效）', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const clickTab = async (label: string) => {
+      const t = wrapper.findAll('.tab').find((x) => x.text().includes(label))
+      expect(t, `未找到「${label}」标签`).toBeTruthy()
+      await t!.trigger('click')
+      await flushPromises()
+    }
+
+    // 在途货件：首屏不拉，第一次点拉一次，第二次点不再拉
+    expect(mockedShipments).not.toHaveBeenCalled()
+    await clickTab('在途货件')
+    expect(mockedShipments).toHaveBeenCalledTimes(1)
+    await clickTab('概览')
+    await clickTab('在途货件')
+    expect(mockedShipments).toHaveBeenCalledTimes(1)
+
+    // 有效报价明细：同上
+    expect(mockedQuotes).not.toHaveBeenCalled()
+    await clickTab('比价')
+    expect(mockedQuotes).toHaveBeenCalledTimes(1)
+    await clickTab('概览')
+    await clickTab('比价')
+    expect(mockedQuotes).toHaveBeenCalledTimes(1)
+
+    // 调拨：看板与列表各一次
+    expect(mockedTransferBoard).not.toHaveBeenCalled()
+    await clickTab('调拨')
+    expect(mockedTransferBoard).toHaveBeenCalledTimes(1)
+    expect(mockedTransfers).toHaveBeenCalledTimes(1)
+    await clickTab('概览')
+    await clickTab('调拨')
+    expect(mockedTransferBoard).toHaveBeenCalledTimes(1)
+    expect(mockedTransfers).toHaveBeenCalledTimes(1)
+  })
 
   it('比价页展示逐条有效报价：承运商/航线/单价/失效日', async () => {
     const wrapper = await mountQuotes()

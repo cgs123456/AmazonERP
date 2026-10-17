@@ -111,7 +111,39 @@ const loadMoreShipments = () => {
  * `append` 参数保留：同步 / 关单成功后页壳会再调一次，那两次走的是
  * 「按当前筛选重新加载」而不是追加，语义不同。
  */
-defineExpose({ load: loadShipments })
+/**
+ * 「已加载」判据归本组件：页壳只负责「进入这个 tab 时叫一声 load()」。
+ *
+ * 为什么判据必须在这里、且按**店铺**记：§S33.14–16 把列表状态搬进面板后，
+ * 页壳的 `if (!shipments.value.length) load()` 变成了无条件的 `await panel.load()`，
+ * 于是每次点回标签都整表重拉（分页游标也从第一页重新开始）。
+ * 而只用 `if (!shipments.length)` 又不够——新店铺本来就是空列表，
+ * 会一直被当成「没加载过」，而旧店铺的列表在 `refreshShop()` 之后
+ * 也可能仍然非空。记店铺 id 才是「这份数据属于哪个店」的准确判据。
+ */
+const loadedShopId = ref<string | null>(null)
+
+const load = async () => {
+  const shopId = refreshShop()
+  if (!shopId) {
+    // 无店铺时交给 loadShipments 走「清空并披露原因」那条路
+    loadedShopId.value = null
+    await loadShipments()
+    return
+  }
+  if (loadedShopId.value === shopId) return
+  await loadShipments()
+  loadedShopId.value = shopId
+}
+
+/** 强制重拉：刷新按钮、写操作后、登录态变化走这条（`load` 只负责首次）。 */
+const reload = async () => {
+  const shopId = refreshShop()
+  await loadShipments()
+  loadedShopId.value = shopId || null
+}
+
+defineExpose({ load, reload })
 </script>
 
 <template>
