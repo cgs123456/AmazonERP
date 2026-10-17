@@ -215,6 +215,94 @@
 .muted { color: var(--color-muted); font-size: var(--font-size-1); }
 
 /* ------------------------------------------------------------
+ * 状态标签配色（语义色由 tone-* 修饰类决定）
+ * 基类 .status-tag 在全局 style.css，这里只补本域的色调。
+ * ------------------------------------------------------------ */
+.status-tag.tone-danger { background: var(--color-light-red); color: var(--color-error); }
+.status-tag.tone-warn { background: var(--color-warning-light); color: var(--color-warning-dark); }
+.status-tag.tone-success { background: var(--color-success-light); color: var(--color-success); }
+.status-tag.tone-info { background: var(--color-primary-light); color: var(--color-primary); }
+.status-tag.tone-muted { background: var(--color-muted-light); color: var(--color-muted); }
+
+/* ------------------------------------------------------------
+ * 比价 / 分摊表单（quotes 与 freight 两个面板共用）
+ * ------------------------------------------------------------ */
+.cmp-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.cmp-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+}
+.cmp-form input {
+  width: 9rem;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  font-size: var(--font-size-2);
+}
+.cmp-result { margin-top: 0.5rem; }
+.cmp-best {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-success-light);
+  color: var(--color-success);
+  font-size: var(--font-size-2);
+}
+/* 多结果/不唯一结论时改成警告色：绿=有明确推荐，黄=要人自己判断 */
+.cmp-best.multi {
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
+}
+
+/* ------------------------------------------------------------
+ * 主按钮（import / quotes / freight 三个面板共用）
+ * ------------------------------------------------------------ */
+.primary-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: var(--font-size-2);
+  cursor: pointer;
+}
+.primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ------------------------------------------------------------
+ * 卡片脚注（carrier / freight 两个面板共用）
+ * ------------------------------------------------------------ */
+.foot-note {
+  margin-top: 0.75rem;
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+  line-height: var(--line-height-relaxed);
+}
+
+/* ------------------------------------------------------------
+ * 导入报告块与错误列表（import / quotes 共用）
+ * ------------------------------------------------------------ */
+.report-block { margin-top: 1rem; }
+.err-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: var(--font-size-2);
+  color: var(--color-error);
+  line-height: var(--line-height-relaxed);
+}
+.err-list.note { color: var(--color-warning-dark); }
+
+/* ------------------------------------------------------------
  * 响应式：窄屏下四列改两列、再改一列
  * ------------------------------------------------------------ */
 @media (max-width: 1024px) {

@@ -1544,6 +1544,30 @@ describe('LogisticsDashboard 头程分摊计算（此前 calculateFreight 零调
     expect((inputs[0].element as HTMLInputElement).value).toBe('8000')
   })
 
+  it('运费总额留空时本地拦下，不得把 0 元提交上去', async () => {
+    // **这条钉住本班实测到的覆盖空洞**：把「空输入转 NaN 再拦」这段删掉后，
+    // 38 条测试全绿。而空输入的后果不是报错，是 Number('') === 0，
+    // 于是该票全部明细行的分摊金额被**静默写成 0**——钱没了看不出来。
+    const wrapper = await mountFreight()
+
+    // 打开表单（主单预填 8000），再把运费总额清空
+    const row = calcRow(wrapper, 'SHP-102')
+    await row.findAll('button').find((b: any) => b.text() === '分摊')!.trigger('click')
+    await flushPromises()
+    // 打开表单（主单预填 8000），再把运费总额清空
+    const form = wrapper.find('[data-panel="freight-calc"]')
+    const freightInput = form.findAll('input')[0]
+    await freightInput.setValue('')
+    await form.findAll('button').find((b: any) => b.text() === '提交分摊')!.trigger('click')
+    await flushPromises()
+
+    // 不得发出请求：后端一收到就会按 0 元重写全部明细行
+    expect(mockedCalculate).not.toHaveBeenCalled()
+    // 也不得留下假结果：用户会以为分摊成功
+    expect(wrapper.find('[data-panel="freight-calc-result"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('请填写运费总额')
+  })
+
   it('提交走 calculateFreight，成功后展示总额与平衡校验并重拉看板', async () => {
     const wrapper = await mountFreight()
     await calcRow(wrapper, 'SHP-102').findAll('button').find((b: any) => b.text() === '分摊')!.trigger('click')

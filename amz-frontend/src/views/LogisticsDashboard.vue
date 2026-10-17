@@ -957,190 +957,13 @@
           </section>
 
           <!-- ================= 头程成本 ================= -->
+          <!-- ================= 头程成本 ================= -->
           <section v-else-if="tab === 'freight'">
-            <div v-if="freightBoard?.warnings?.length" class="warn-banner">
-              <Icon icon="mdi:information-outline" width="16" class="wb-icon" />
-              <div class="wb-body">
-                <div v-for="(w, i) in freightBoard.warnings" :key="i">{{ w }}</div>
-              </div>
-            </div>
-
-            <div class="kpi-grid">
-              <div class="kpi-card">
-                <div class="kpi-icon"><Icon icon="mdi:cash-multiple" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ fmtAmount(freightBoard?.totalCost) }}</div>
-                  <div class="kpi-label">头程成本合计</div>
-                  <div class="kpi-sub">{{ freightBoard?.totalAllocationRows ?? 0 }} 条分摊明细</div>
-                </div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-icon"><Icon icon="mdi:calculator-variant-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">
-                    {{ freightBoard?.avgUnitCost == null ? '暂无样本' : fmtAmount(freightBoard.avgUnitCost) }}
-                  </div>
-                  <div class="kpi-label">加权单件头程成本</div>
-                  <div class="kpi-sub">总成本 / {{ freightBoard?.totalQuantity ?? 0 }} 件</div>
-                </div>
-              </div>
-              <div class="kpi-card">
-                <div class="kpi-icon"><Icon icon="mdi:check-decagram-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ freightBoard?.coveredShipments ?? 0 }}</div>
-                  <div class="kpi-label">已核算货件</div>
-                  <div class="kpi-sub">覆盖率 {{ fmtRate(freightBoard?.coverageRate) }}</div>
-                </div>
-              </div>
-              <div class="kpi-card" :class="{ 'kpi-alert': (freightBoard?.uncoveredShipments ?? 0) > 0 }">
-                <div class="kpi-icon tone-danger"><Icon icon="mdi:alert-circle-outline" width="24" /></div>
-                <div class="kpi-info">
-                  <div class="kpi-value">{{ freightBoard?.uncoveredShipments ?? 0 }}</div>
-                  <div class="kpi-label">未核算货件</div>
-                  <div class="kpi-sub">成本尚未进入利润计算</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mini-grid">
-              <div class="mini-card">
-                <div class="mini-value">{{ fmtAmount(freightBoard?.totalFreight) }}</div>
-                <div class="mini-label">运费分摊</div>
-                <div class="mini-hint">占比 {{ costShare('freight') }}</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ fmtAmount(freightBoard?.totalDuty) }}</div>
-                <div class="mini-label">关税分摊</div>
-                <div class="mini-hint">占比 {{ costShare('duty') }}</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ fmtAmount(freightBoard?.totalInsurance) }}</div>
-                <div class="mini-label">保险分摊</div>
-                <div class="mini-hint">占比 {{ costShare('insurance') }}</div>
-              </div>
-              <div class="mini-card">
-                <div class="mini-value">{{ fmtAmount(freightBoard?.totalOther) }}</div>
-                <div class="mini-label">其他费用</div>
-                <div class="mini-hint">占比 {{ costShare('other') }}</div>
-              </div>
-            </div>
-
-            <div class="chart-card">
-              <h3>未核算头程成本的货件</h3>
-              <p class="card-desc">
-                没有分摊明细的货件，运费不会摊到商品上，表现为<strong>利润被高估</strong>。
-                其中「主单已登记运费却没做分摊」的一类最要紧：钱已经花了，只是没进成本。
-                未核算的货件需要先在货件下登记 ASIN / SKU / 重量或体积，再执行费用分摊。
-              </p>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>货件号</th>
-                    <th>承运商</th>
-                    <th>状态</th>
-                    <th>ETA</th>
-                    <th>主单已登记运费</th>
-                    <th>提示</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!freightBoard?.uncoveredList?.length">
-                    <td colspan="7" class="empty-row">所有货件都已做头程分摊</td>
-                  </tr>
-                  <tr v-for="u in freightBoard?.uncoveredList || []" :key="u.shipmentId">
-                    <td class="mono">{{ u.shipmentNo || u.shipmentId }}</td>
-                    <td>{{ u.carrier || '—' }}</td>
-                    <td>{{ statusLabel(u.status) }}</td>
-                    <td class="mono">{{ u.eta || '—' }}</td>
-                    <td class="mono" :class="{ 'cell-alert': u.hasDeclaredFreight }">
-                      {{ u.freightCost == null ? '未登记' : fmtAmount(u.freightCost) }}
-                    </td>
-                    <td>
-                      <span v-if="u.hasDeclaredFreight" class="status-tag tone-danger">
-                        有费用未摊，直接抬高利润
-                      </span>
-                      <span v-else class="status-tag tone-muted">无费用信息</span>
-                    </td>
-                    <td>
-                      <button v-if="canAllocateFreight" class="link-btn" :disabled="busy || calcBusy" @click="openCalcForm(u)">分摊</button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <!-- 头程分摊表单：把主单已登记的运费按方法摊到明细行（写操作，提交即改明细金额） -->
-              <div v-if="calcTarget" class="cmp-form" data-panel="freight-calc">
-                <strong>分摊 {{ calcTarget.shipmentNo || calcTarget.shipmentId }}</strong>
-                <span class="muted">提交后按所选方法重写该票全部明细行的分摊金额；总额请按实际支出确认，预填的只是主单登记值。</span>
-                <label>
-                  方法
-                  <select v-model="calcForm.method">
-                    <option v-for="m in CALC_METHODS" :key="m" :value="m">{{ m }}</option>
-                  </select>
-                </label>
-                <label>
-                  运费总额 *
-                  <input type="number" min="0" step="0.01" v-model="calcForm.totalFreight" />
-                </label>
-                <label>
-                  关税
-                  <input type="number" min="0" step="0.01" v-model="calcForm.totalDuty" placeholder="可留空" />
-                </label>
-                <label>
-                  保险
-                  <input type="number" min="0" step="0.01" v-model="calcForm.totalInsurance" placeholder="可留空" />
-                </label>
-                <button class="primary-btn" :disabled="calcBusy" @click="doCalculateFreight">提交分摊</button>
-                <button class="link-btn" @click="calcTarget = null; calcResult = null">关闭</button>
-              </div>
-              <div v-if="calcResult" class="cmp-result" data-panel="freight-calc-result">
-                <div class="cmp-best">
-                  分摊结果（{{ calcResult.method }}）：总额 {{ fmtAmount(calcNum(calcResult.grandTotal)) }}，
-                  共 {{ (calcResult.allocations || []).length }} 行明细
-                </div>
-                <div v-if="calcResult.balanced" class="muted">分摊平衡：各行之和等于总额。</div>
-                <div v-else class="cmp-best multi">分摊不平：各行之和不等于总额，请核对后再用这批数字。</div>
-              </div>
-            </div>
-
-            <div class="chart-card mt">
-              <h3>单件头程成本 Top</h3>
-              <p class="card-desc">
-                按单件成本降序。若同一条航线上某个 SKU 的单件成本明显高于其他，
-                通常意味着装箱方案不经济（体积重占比高）或分摊口径与其他货件不同。
-              </p>
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>货件号</th>
-                    <th>ASIN</th>
-                    <th>SKU</th>
-                    <th>数量</th>
-                    <th>分摊总成本</th>
-                    <th>单件成本</th>
-                    <th>分摊方法</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-if="!freightBoard?.topUnitCostItems?.length">
-                    <td colspan="7" class="empty-row">暂无分摊明细</td>
-                  </tr>
-                  <tr v-for="(c, i) in freightBoard?.topUnitCostItems || []" :key="i">
-                    <td class="mono">{{ c.shipmentNo || c.shipmentId || '—' }}</td>
-                    <td>{{ c.asin || '—' }}</td>
-                    <td class="mono">{{ c.sku || '—' }}</td>
-                    <td>{{ c.quantity ?? '—' }}</td>
-                    <td class="mono">{{ fmtAmount(c.totalCost) }}</td>
-                    <td class="mono"><b>{{ fmtAmount(c.unitCost) }}</b></td>
-                    <td>{{ allocationMethodLabel(c.allocationMethod) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p class="foot-note">
-                分摊方法说明：按重量 / 按体积 / 按数量。同一批货件混用不同方法时，
-                单件成本不可直接横向比较——看板会在上方提示。
-              </p>
-            </div>
+            <LogisticsFreightPanel
+              :board="freightBoard"
+              :busy="busy"
+              @reload-board="safeLoad('freight', () => loadFreightBoard(refreshShop()))"
+            />
           </section>
 
           <!-- ================= 签收差异 ================= -->
@@ -1185,11 +1008,11 @@ import AppSidebar from '../components/AppSidebar.vue'
 import LogisticsCursorBar from '../components/LogisticsCursorBar.vue'
 import LogisticsTrackingModal from '../components/LogisticsTrackingModal.vue'
 import LogisticsReceiptPanel from '../components/LogisticsReceiptPanel.vue'
+import LogisticsFreightPanel from '../components/LogisticsFreightPanel.vue'
 // 物流子域面板共用的 KPI / 小指标 / 警告横幅 / 图表卡样式（scoped 不跨组件，故走全局样式表）
 import '../styles/logistics-panels.css'
 import { useToast } from '../composables/useToast'
 import { useShopGuard } from '../composables/useShopGuard'
-import { canUseRole } from '../utils/identity'
 import {
   getLogisticsOverview,
   getLogisticsTrend,
@@ -1207,7 +1030,6 @@ import {
   getReceiptBoard,
   compareQuotes,
   expireOutdatedQuotes,
-  calculateFreight,
   listQuotes,
   listTransfers,
   approveTransfer,
@@ -1229,10 +1051,8 @@ import {
   type CarrierQuote,
   type TransferBoard,
   type FreightCostBoard,
-  type FreightCalculateResult,
   type ReceiptBoard,
   type InventoryTransfer,
-  type UncoveredShipment
 } from '../api/logistics'
 
 const { toastVisible, toastMessage, toastType, showToast } = useToast()
@@ -1400,11 +1220,6 @@ const BASIS_LABELS: Record<string, string> = {
   NO_PRICING_DATA: '无可用单价'
 }
 
-const ALLOCATION_METHOD_LABELS: Record<string, string> = {
-  WEIGHT: '按重量',
-  VOLUME: '按体积',
-  QUANTITY: '按数量'
-}
 
 
 const statusLabel = (s?: string) => (s ? STATUS_LABELS[s] || s : '—')
@@ -1413,7 +1228,6 @@ const alertTypeLabel = (t: string) => ALERT_TYPE_LABELS[t] || t
 const transferStatusLabel = (s?: string) => (s ? TRANSFER_STATUS_LABELS[s] || s : '—')
 const transferRiskLabel = (t?: string) => (t ? TRANSFER_RISK_LABELS[t] || t : '—')
 const basisLabel = (b?: string) => (b ? BASIS_LABELS[b] || b : '—')
-const allocationMethodLabel = (m?: string) => (m ? ALLOCATION_METHOD_LABELS[m] || m : '—')
 
 const transferStatusTone = (s?: string) => {
   switch (s) {
@@ -1468,12 +1282,6 @@ const fmtTime = (v?: string | null) => {
 /** 金额/数量：null 与 undefined 都显示占位，避免出现 NaN 或误读成 0 */
 const fmtAmount = (v?: number | null) => (v === null || v === undefined ? '—' : v.toFixed(2))
 
-/** 分摊结果金额：后端 BigDecimal 可能序列化成字符串，先转数字再格式化 */
-const calcNum = (v: unknown): number | null => {
-  if (v === null || v === undefined || v === '') return null
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
-}
 
 /** 比率（0~1）→ 百分比；null / undefined 表示无样本，显示占位而非 0% */
 const fmtRate = (v?: number | null) =>
@@ -1580,19 +1388,6 @@ const singleSourceRoutes = computed(
 
 const currencyCount = computed(() => Object.keys(quoteBoard.value?.byCurrency || {}).length)
 
-/** 成本构成占比。总额为 0 时返回占位而不是 0%，否则会被读成「这项没花钱」 */
-const costShare = (part: 'freight' | 'duty' | 'insurance' | 'other') => {
-  const board = freightBoard.value
-  if (!board || !board.totalCost) return '—'
-  const value = {
-    freight: board.totalFreight,
-    duty: board.totalDuty,
-    insurance: board.totalInsurance,
-    other: board.totalOther
-  }[part]
-  if (value === null || value === undefined) return '—'
-  return ((value / board.totalCost) * 100).toFixed(1) + '%'
-}
 
 /**
  * 手写 SVG 折线图。
@@ -2088,86 +1883,6 @@ const doExpireQuotes = async () => {
   }
 }
 
-// ---- 头程分摊计算 ----
-
-/**
- * 分摊入口门控：OPERATOR/ADMIN 才能点（后端同口径 @RequireRole）。
- * canUseRole 对「角色未知」放行（权限权威判定在后端），与采购页取消付款同一先例。
- */
-const canAllocateFreight = canUseRole(['OPERATOR', 'ADMIN'])
-
-const CALC_METHODS = ['WEIGHT', 'VOLUME', 'QUANTITY'] as const
-
-/** 正在分摊的货件 + 表单 + 结果。一次只摊一票：总额是按票给的，混票必错 */
-const calcTarget = ref<UncoveredShipment | null>(null)
-// number 输入框清空后 v-model 给 null：字段类型必须容纳它，否则 tsc 收窄后
-// 「空」会被当成 0 提交（Number(null) === 0），0 元分摊会把明细金额全写成 0
-const calcForm = ref<{ method: string; totalFreight?: number | string | null; totalDuty?: number | string | null; totalInsurance?: number | string | null }>({
-  method: 'WEIGHT'
-})
-const calcResult = ref<FreightCalculateResult | null>(null)
-const calcBusy = ref(false)
-
-/**
- * 打开分摊表单。运费预填主单已登记值——「有费用未摊」的那类行，预填的就是这笔钱；
- * 没登记的行留空，由人工填写（后端 totalFreight 必填，不填会被拒）。
- */
-const openCalcForm = (u: UncoveredShipment) => {
-  calcTarget.value = u
-  calcResult.value = null
-  calcForm.value = {
-    method: 'WEIGHT',
-    totalFreight: u.freightCost ?? undefined,
-    totalDuty: undefined,
-    totalInsurance: undefined
-  }
-}
-
-/**
- * 提交分摊计算（calculateFreight，POST /logistics/v2/freight/{shipmentId}/calculate）。
- * 这是写操作：后端按比例重写该票全部明细行的分摊金额（事务内），
- * 所以总额必须由人工确认——预填值只是建议，不校验即提交等于默认花钱。
- */
-const doCalculateFreight = async () => {
-  const target = calcTarget.value
-  if (!target) return
-  // 空输入经 v-model 可能是 null/''：Number(null) === 0 会把「没填」伪装成「0 元」，
-  // 0 元分摊会把明细行的金额全部写成 0——必须先排除再转数字
-  const rawFreight = calcForm.value.totalFreight
-  const totalFreight = rawFreight === null || rawFreight === undefined || rawFreight === ''
-    ? NaN : Number(rawFreight)
-  if (!Number.isFinite(totalFreight) || totalFreight < 0) {
-    showToast('请填写运费总额（≥0 的数字）', 'error')
-    return
-  }
-  const numOrUndefined = (v: unknown) => {
-    if (v === null || v === undefined || v === '') return undefined
-    const n = Number(v)
-    return Number.isFinite(n) ? n : undefined
-  }
-  calcBusy.value = true
-  try {
-    const res = await calculateFreight(target.shipmentId, {
-      method: calcForm.value.method,
-      totalFreight,
-      totalDuty: numOrUndefined(calcForm.value.totalDuty),
-      totalInsurance: numOrUndefined(calcForm.value.totalInsurance)
-    })
-    if (res?.code === 200 && res.data) {
-      calcResult.value = res.data
-      // 分摊改写了明细行，看板数字已过期，必须重拉
-      const shopId = refreshShop()
-      if (shopId) await safeLoad('freight', () => loadFreightBoard(shopId))
-    } else {
-      // 后端会点名具体缺什么（无明细行/基准为 0/方法非法），直接透出
-      showToast(res?.message || '分摊计算失败', 'error')
-    }
-  } catch (e) {
-    showToast('分摊计算失败，请稍后重试', 'error')
-  } finally {
-    calcBusy.value = false
-  }
-}
 
 // ---- 调拨 ----
 
@@ -2536,44 +2251,6 @@ onUnmounted(() => {
   margin-top: 0.125rem;
 }
 
-/* 比价表单 */
-.cmp-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-.cmp-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-}
-.cmp-form input {
-  width: 9rem;
-  padding: 0.375rem 0.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-on-surface);
-  font-size: var(--font-size-2);
-}
-.cmp-result { margin-top: 0.5rem; }
-.cmp-best {
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.75rem;
-  border-radius: var(--radius-sm);
-  background: var(--color-success-light);
-  color: var(--color-success);
-  font-size: var(--font-size-2);
-}
-.cmp-best.multi {
-  background: var(--color-warning-light);
-  color: var(--color-warning-dark);
-}
-.err-list.note { color: var(--color-warning-dark); }
 
 /* 卡片标题行内的小筛选器 */
 .filter-inline {
@@ -2652,12 +2329,6 @@ onUnmounted(() => {
   font-size: var(--font-size-1);
 }
 
-/* 状态标签语义配色 */
-.status-tag.tone-danger { background: var(--color-light-red); color: var(--color-error); }
-.status-tag.tone-warn { background: var(--color-warning-light); color: var(--color-warning-dark); }
-.status-tag.tone-success { background: var(--color-success-light); color: var(--color-success); }
-.status-tag.tone-info { background: var(--color-primary-light); color: var(--color-primary); }
-.status-tag.tone-muted { background: var(--color-muted-light); color: var(--color-muted); }
 
 /* 表格补充 */
 .hint-cell { max-width: 22rem; }
@@ -2666,12 +2337,6 @@ onUnmounted(() => {
   font-size: var(--font-size-1);
   color: var(--color-muted);
   margin-top: 0.125rem;
-}
-.foot-note {
-  margin-top: 0.75rem;
-  font-size: var(--font-size-1);
-  color: var(--color-muted);
-  line-height: var(--line-height-relaxed);
 }
 
 /* 过滤条 */
@@ -2720,16 +2385,6 @@ onUnmounted(() => {
   gap: 0.75rem;
   margin-top: 0.75rem;
 }
-.primary-btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-  font-size: var(--font-size-2);
-  cursor: pointer;
-}
-.primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* 导入报告 */
 .report-card { margin-top: 0.5rem; }
@@ -2749,7 +2404,6 @@ onUnmounted(() => {
 }
 .report-item b { font-size: var(--font-size-5); color: var(--color-on-surface); }
 .report-item span { font-size: var(--font-size-1); color: var(--color-muted); }
-.report-block { margin-top: 1rem; }
 .report-title {
   font-size: var(--font-size-2);
   color: var(--color-on-surface);
@@ -2763,13 +2417,6 @@ onUnmounted(() => {
   color: var(--color-warning-dark);
   font-family: var(--font-mono);
   font-size: var(--font-size-1);
-}
-.err-list {
-  margin: 0;
-  padding-left: 1.25rem;
-  font-size: var(--font-size-2);
-  color: var(--color-error);
-  line-height: var(--line-height-relaxed);
 }
 .report-ok {
   margin: 0.75rem 0 0 0;
@@ -2804,3 +2451,5 @@ onUnmounted(() => {
 @media (max-width: 768px) {
 }
 </style>
+
+
