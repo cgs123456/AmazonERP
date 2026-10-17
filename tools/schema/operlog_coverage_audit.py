@@ -320,7 +320,26 @@ def url_after(lines, mapping_line):
     return ""
 
 
+def _force_utf8_stdio() -> None:
+    """把 stdout/stderr 固定为 UTF-8。
+
+    Windows 控制台默认 GBK，而本脚本的中文输出里有 GBK 编不了的字符
+    （破折号、部分标点）。不固定的话，写 stderr 时直接 UnicodeEncodeError，
+    或被父进程按 UTF-8 解码后得到乱码——两种情况下**错误信息都读不出来**，
+    而 CI 与测试正是靠这段文字判断「是扫描器失效还是真的没缺口」。
+    在 main 入口调用一次即可，不影响被 import 时的行为。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main():
+    _force_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--gaps", action="store_true", help="只列缺口（缺 @OperLog 的人操作端点）")
     parser.add_argument("--module", help="只看该模块（子串匹配，如 ad / spapi）")
