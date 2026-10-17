@@ -4701,3 +4701,147 @@ tracking（文案写「轨迹」、外层带 v-if）**不是同构用例**，强
 1. `LogisticsDashboard.vue`（3243）按 tab 拆子组件——1497 行测试保护，最大块。
 2. `Procurement.vue`（2045）——701 行测试。
 3. `Warehouse.vue` 入库单域——先抽 `useWarehouseErrors` 再拆（见上）。
+
+---
+
+## §S33. 交接：2026-10-17 LogisticsDashboard.vue 拆分第一刀 + 重构期引入的两类静默缺陷
+
+### 1. 起点
+
+棘轮基线 **56 文件 / 47623 行**（§S32 结束时）。最大负债 `LogisticsDashboard.vue`
+3244 行，其结构（本班重新实测，非沿用旧数）：
+
+| 区段 | 行范围 | 行数 |
+|---|---|---|
+| template | 1–1375 | 1375 |
+| script | 1377–2610 | 1234 |
+| style scoped | 2612–3244 | 633 |
+
+template 内九个 tab 面板 + 一个轨迹浮层：overview 138 / alerts 50 / shipments 65 /
+carrier 41 / import 88 / quotes 281 / transfers 221 / freight 187 / receipts 173 /
+**轨迹浮层 45**。
+
+### 2. 拆分顺序的取舍：先拆最小的浮层，不是最大的 quotes tab
+
+最大块是 quotes（281 行），但**先拆了轨迹浮层（45 行）**。理由：
+
+- 浮层与 tab 面板的生命周期不同（遮罩 vs 常驻区域），边界最清晰、耦合最少；
+- 它是**唯一需要判断「哪些 scoped class 属于它」**的区块，正好用来验证拆分方法论；
+- 用小块试错，成本低。方法论确认后再上 quotes（281 行）才不会一次踩一堆坑。
+
+这个决定被证明是对的：两个缺陷都在这一刀暴露，且都在 45 行的对象上。
+
+### 3. 缺陷一：重构凭印象重写文案（5 处，测试全绿）
+
+把 `STATUS_LABELS` 搬进子组件时改了 5 个值：
+
+| 键 | 原值 | 我写成 |
+|---|---|---|
+| IN_TRANSIT | 运输中 | 在途 |
+| DELIVERED | 已送达 | 已妥投 |
+| RECEIVED | FBA已入库 | FBA已签收 |
+| DEPARTED | 已起运 | 已离港 |
+| CUSTOMS_CLEARANCE | 清关中 | 清关完成 |
+
+另删掉一条注释。**`vue-tsc` 0 错、`vitest` 663/663、`vite build` 成功**——
+整个验证链对此完全无感，因为没有任何测试断言这些中文串。
+
+**根因不是粗心，是缺一类测试**：重构改动的验证靠的是类型与行为断言，
+而文案既不在类型里、也没有行为断言覆盖。凡是「搬一张字典表」的重构，
+都有同一个盲区。
+
+**修法**（两条，缺一不可）：
+
+1. 表按原值**逐字还原**（含注释）；
+2. 新增回归测试，`toEqual` 逐字比对整张表：
+   ```ts
+   const rendered = wrapper.findAll('.tl-status').map((el) => el.text())
+   expect(rendered).toEqual(statuses.map(([, label]) => label))
+   ```
+   用 `toEqual` 而非 `toContain`——`toContain` 只能证明某个串出现过，
+   **证明不了它没被改成别的**。
+
+**变异验证**（必须做，否则等于没测）：把 `IN_TRANSIT` 改回「在途」，
+该测试立刻红；还原后恢复绿。没有这一步，新测试可能是个永远通过的装饰。
+
+### 4. 缺陷二：漏搬 scoped class（2 个，同样是视觉回归、测试全绿）
+
+`.link-btn` 与 `.truncated-tip` **不在** `src/style.css` 里，一直定义在
+`LogisticsDashboard.vue` 的 `<style scoped>` 中。scoped 样式不跨组件边界，
+漏搬的后果：
+
+- 「关闭」按钮掉成浏览器默认样式；
+- 截断提示丢掉配色（`--color-warning-light` 背景 / `--color-warning-dark` 字）。
+
+**这类回归没有任何测试会红**（vitest 只断言 DOM 结构与文本，不计算样式）。
+
+**修法**：两份都按页壳原值搬过来（含 `padding: 0.125rem 0.375rem` 这条
+最容易被看漏的），并**写脚本系统核对**，不再靠眼看：
+
+```python
+# 模板里用到的每个 class，必须在本组件 style 或 src/style.css 中有定义
+used  = 模板 class="..." 与 :class 里的类名
+own   = 本组件 <style scoped> 里的 .类名
+glob  = src/style.css 里的 .类名
+missing = used - own - glob      # 必须为空
+# 另外：本组件用到的 18 个 var(--*) 必须都存在于 style.css
+```
+
+已核对的结论（本班实测，可复用）：
+
+| class | 是否全局 | 处理 |
+|---|---|---|
+| pagination / page-info / page-actions / page-btn / empty-row / mono / status-tag | 是 | 不重复定义 |
+| link-btn / truncated-tip | **否** | 必须搬 |
+
+**下一刀照这张表核对**，别再重新发现一遍。
+
+### 5. 产物验证方式（比「build 成功」更强）
+
+`vite build` 成功**不能证明样式搬对了**。有效的核验是看产物里的作用域：
+
+```
+dist/assets/LogisticsDashboard-*.css
+  scope e42d954e（子组件）: 24 条 —— modal-mask / modal / modal-head /
+                            timeline / tl-* / link-btn / truncated-tip
+  scope bdd28b02（页壳）  : 123 条 —— error-zone / sync-bar / kpi-* / ...
+```
+
+页壳作用域里**不再有** `modal-mask` / `tl-*` / `timeline-*`，
+说明旧副本已删、新副本随组件走。只看 `build 成功` 会漏掉「删了旧的没加新的」。
+
+### 6. 本轮结果
+
+| 项 | 前 | 后 |
+|---|---|---|
+| 棘轮基线 | 56 文件 / 47623 行 | **56 文件 / 47579 行** |
+| LogisticsDashboard.vue | 3244 | **3127** |
+| 新增组件 | — | LogisticsTrackingModal.vue（257 行） |
+| 前端测试 | 662 | **663**（+1 回归测试） |
+
+净减 44 行（−117 页壳、+257 新组件、+73 测试）。测试文件 +73 行被棘轮拦住，
+显式 `--update-baseline` 后放行——**那一行是一个抓到真 bug 的回归测试，
+不是顺手加的功能**，这个判断要写进提交信息，否则基线增长会变成无声的。
+
+### 7. 下一刀（已探明，可直接开工）
+
+剩余 tab 面板按耦合度从低到高：
+
+| 目标 | 行数 | 状态 |
+|---|---|---|
+| receipts | 173 | 依赖最少：只碰 receiptBoard + investigate/resolve 两个动作 |
+| freight | 187 | 含分摊表单与结果两个 `data-panel`，测试已按 panel 定位 |
+| transfers | 221 | 已用 LogisticsCursorBar，4 个动作 |
+| quotes | 281 | 最大，含比价表单 + 有效报价明细（`data-panel="quotes"`） |
+
+**共同约束（§S32.7 的结论仍然成立，本刀再次验证）**：
+
+- 子组件只管渲染 + 发事件，**loader 留在页壳**——因为 loader 失败要进
+  页壳的 `blockErrors`。`LogisticsDashboard.test.ts` 有一条测试专门断言
+  「子域列表加载失败时页顶 `.error-zone` 出现后端原文」，这条测试就是边界的守门人。
+- 已确认 overview / alerts / shipments / carrier / import 五个区
+  **不引用任何子域状态**，所以子域状态可以整体搬走而不影响它们。
+- 角标（`tabs` computed）依赖四个子域 board 的汇总值，**必须留在页壳**——
+  这意味着子域组件要把 board 数据回传，或页壳保留一份汇总。建议后者
+  （页壳已有 `loadQuoteBoard` 等 loader，汇总值从 loader 里顺手取），
+  **不要为此新增一条子→父的数据回传通道**。
