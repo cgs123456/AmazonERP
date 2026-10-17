@@ -6945,3 +6945,47 @@ adType keyset 分页、hasText）——与日报同步是不同生命周期：�
 唯一可补的是 `clampBid` 边界的单元测试（目前只覆盖 baseBid 落库），
 但那是**增强覆盖**而非**修缺陷**——没有待测的行为变更就不写测试，
 否则写出来的断言只是在复述实现。留作后续覆盖项，不混入本轮。
+
+## §S33.85 Advertising API 客户端审查：未发现活缺陷，一处「分类正确但未接线」
+
+### 审查范围
+
+`AdvertisingApiRealClient`（738 行，ad 模块最大文件）是唯一真实调用 Amazon Ads API
+的地方，也是唯一会真花钱的写路径（`updateKeywordBid`）。本机因 loopback 限制无法
+跑 `AdvertisingApiRealClientContractTest`，故本次为**静态审查 + 契约测试交叉核对**，
+未在真实链路上验证——这一点必须写清，不能当「实测通过」。
+
+### 结论：防护完备
+
+| 关注点 | 现状 |
+|---|---|
+| 写操作重试 | `executeRaw` 仅对 401 重试一次（刷新 token 后），**不对写操作无限重试**；429/5xx 直接抛异常不上层重试 |
+| 幂等风险 | PUT `/sp/keywords` 是幂等覆盖语义（传绝对 bid 而非增量），重试不会叠加 |
+| 入参校验 | `updateKeywordBid` 拒绝 null/非正 bid；`getReports` 拒绝空日期 |
+| token 缓存 | 双重检查锁 + 按店铺分锁（`tokenLocks`）+ 30 秒提前刷新；401 时 `invalidateToken` 后重试 |
+| 凭证缺失 | `context(shopId)` 里凭证缺失或不完整 → `AD_CREDENTIALS_NOT_CONFIGURED`，fail-closed，不静默返回空列表 |
+| 凭证泄露 | 缓存 key 指纹是 `clientId+secret+refreshToken+endpoint` 的 **SHA-256**，不落明文；日志中不打印凭证/token |
+| 超时 | 全部请求带 30s timeout；轮询间隔与次数可配（默认 5s × 120） |
+| 响应解析 | 空体/非 JSON/缺字段一律 `AD_INVALID_RESPONSE`，不返回半解析结果 |
+
+### 唯一发现：`retryable` 分类正确但无人消费
+
+`AdvertisingApiException` 有 `retryable` 字段，构造时按错误类型正确分类
+（429 与 5xx 为 true，401/403/参数错误为 false）。但全仓**没有任何生产代码消费它**
+——只有 3 处测试断言它。
+
+对照 spapi 模块：`NotificationProcessingException.retryable` 被
+`NotificationInboxWorker` 真实消费，用于决定事件是否重投。ad 侧缺这一步。
+
+下游确实需要这个信息，但目前绕开了它：`BidScheduleExecutor` 用**字符串比较**
+判断 `AD_RATE_LIMITED`/`AD_AUTH_FAILED` 来决定是否提前终止。类型化的
+`isRetryable()` 本该承担这个判断。
+
+**未改动**：让它接线是「把字符串比较换成类型化判断」的**重构**，不是缺陷修复——
+当前行为正确（字符串比较与分类结果一致）。按 CLAUDE.md「不做推测性抽象」与
+「删除优于兼容」，两个方向都不在本轮做：
+- 删字段：会丢掉正确的分类信息，且下游正需要它；
+- 接线：属新功能，需要一个明确的行为变更理由（例如将来要区分「可重试」与
+  「需人工介入」两种失败处理）。
+
+留作已知技术债记录在案，不混入本轮改动。
