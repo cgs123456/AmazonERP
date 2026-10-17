@@ -108,9 +108,18 @@ public class ErpProductTools {
                 return fail("FBA 费用估算失败: " + (result != null ? result.getMessage() : "无响应"));
             }
             Map<String, Object> data = result.getData();
-            return ok(String.format("SKU %s FBA 费用预估（%s, %.2f kg）：履约费 %s + 仓储费 %s = %s",
+            // §S33.25：降级值必须在**给 LLM 的那句话**里说出来，不能只藏在 data.source。
+            // 模型只会把 message 讲给运营听；data 里的 estimated 标记它看不见，
+            // 于是「费率表没配、按 3.22/5.45 估算」会被复述成「FBA 履约费 3.22」。
+            String source = data.get("source") == null ? "" : String.valueOf(data.get("source"));
+            String caveat = "real".equals(source)
+                    ? ""
+                    : "【注意：该值来自内置估算（费率表未命中或订单服务不可达，source=" + source
+                            + "），不是平台实际扣费】";
+            return ok(String.format("SKU %s FBA 费用预估（%s, %.2f kg）：履约费 %s + 仓储费 %s = %s%s",
                             sku, sizeTier, weight,
-                            data.get("fulfillmentFee"), data.get("storageFee"), data.get("totalFbaFee")), data);
+                            data.get("fulfillmentFee"), data.get("storageFee"), data.get("totalFbaFee"),
+                            caveat), data);
         } catch (Exception e) {
             log.error("estimate_fba_fees Feign 调用失败 shopId={}", shopId, e);
             return fail("商品服务暂时不可用: " + e.getMessage());
