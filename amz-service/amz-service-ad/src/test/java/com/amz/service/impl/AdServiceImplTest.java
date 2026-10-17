@@ -174,7 +174,7 @@ class AdServiceImplTest {
         UserContext.setUserId(7);
         UserContext.setRole("OPERATOR");
         UserContext.setShops(List.of(1L));
-        BidSchedule schedule = new BidSchedule();
+        BidSchedule schedule = validSchedule();
         schedule.setShopId(2L);
 
         assertThrows(CodeErrorException.class, () -> service.createBidSchedule(schedule));
@@ -203,11 +203,27 @@ class AdServiceImplTest {
     @Test
     @DisplayName("创建分时调价规则在无认证上下文时必须 fail-closed")
     void createBidScheduleWithoutAuthenticatedContextFailsClosed() {
-        BidSchedule schedule = new BidSchedule();
+        BidSchedule schedule = validSchedule();
         schedule.setShopId(1L);
 
         assertThrows(CodeErrorException.class, () -> service.createBidSchedule(schedule));
         verifyNoInteractions(bidScheduleMapper);
+    }
+
+    /**
+     * 窗口/倍率齐全的合法规则。**越权用例必须填满这些字段**，否则
+     * {@code requireValidWindow} 会先抛 {@code InvalidParamException}，
+     * 断言「抛 CodeErrorException」会因为类型不符而变红——看起来像守住了
+     * 授权，实际拦住它的是参数校验。§S33.36 用变异删掉真正的授权分支时，
+     * 这两条就是因为没填字段才只拿到一个「意外的异常类型」，
+     * 而不是「授权分支失效」的明确信号。
+     */
+    private static BidSchedule validSchedule() {
+        BidSchedule schedule = new BidSchedule();
+        schedule.setStartHour(20);
+        schedule.setEndHour(23);
+        schedule.setMultiplier(new BigDecimal("1.50"));
+        return schedule;
     }
     private static AdDailyReport row(String campaignId, LocalDate date, Long impressions, Long clicks,
                                      String cost, String sales, Integer orders) {

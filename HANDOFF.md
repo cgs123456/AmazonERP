@@ -5918,3 +5918,79 @@ String dataEnd = now.format(ISO_INSTANT);   // UnsupportedTemporalTypeException
 
 **剩余失败全部是 §S30 已定案的 loopback**（本机 Windows AF_UNIX connect），
 不是回归，用户已定案以 CI 为准。
+
+## §S33.36–37 多租户隔离全覆盖审计
+
+对全仓 Controller 做了一次 `@ShopScoped` 覆盖审计：凡方法签名里有 `shopId`
+却没有 `@ShopScoped` 的端点，逐个确认它是否另有真实防线。审计本身**没有发现越权洞**，
+但发现了两件比越权更值得记的事。
+
+### 36. 一枚完全无效、却看起来有效的注解
+
+`AdServiceImpl.createBidSchedule`（Service 层）上有 `@com.amz.annotation.ShopScoped`
+（`fc07f6b` 引入）。它不可能生效，有三层原因，每层单独都足以让它变成装饰：
+
+1. `ShopIdGuardAspect` 的切点是 `@annotation(...ShopScoped)`，但它用
+   `ShopIdParameterResolver` 按 **`@RequestParam`/`@PathVariable` 参数名**解析 shopId。
+   Service 方法的参数没有这些注解 → `resolve()` 恒返回 null →
+   切面走「未找到 shopId 参数，跳过」分支，直接 `proceed()`。
+2. 即便解析到了，Service 的返回类型是 `BidSchedule` 而非 `Result`，
+   切面返回的 `Result.failure(...)` 在类型上回不到调用方。
+3. 该方法内还有一行手写的 `isShopAllowedStrict` —— 那才是真正生效的防线。
+
+所以**功能上从未漏过**。危险的是读代码的人：`AdController.createBidSchedule`
+自己的 javadoc 写着「shopId 位于请求体中，`@ShopScoped` 无法从方法参数解析；
+必须在调用服务前显式校验」——Controller 侧是清醒的。而 Service 侧多出的这一枚
+会让下一位读者以为「Service 已经有切面保护」，进而把 Controller 的显式校验
+当成冗余删掉。删掉那天，这里才真的开始漏。
+
+**删除优于保留**：注解删掉（`删除优于兼容`——它不是契约，是误解的源头）。
+另加 `tools/release/test_shoppointer_scope.py`：`@ShopScoped` 出现在任何
+非 Controller 类上即红。已接入 ci.yml 与 release.yml 的门禁清单。
+三个方向都做了变异：还原该注解 → 红；破坏「扫到 Controller」自检 → 红；
+让分类器忽略所有行（恒真门禁）→ 红。
+
+### 37. 变异测试抓到的第二个「假绿」：越权用例被参数校验抢先
+
+删掉授权分支做变异时，两条越权测试确实红了，但红的理由是
+`expected CodeErrorException but was InvalidParamException` ——
+拦住变异的是 `requireValidWindow`，不是授权分支。原因是那两个用例
+只设了 `shopId`，没填 `startHour/endHour/multiplier`。
+
+也就是说：**在授权分支被整行删掉的情况下，这两条测试依然会红**，
+但它们红的原因与授权无关。这类「红得对但理由错」的测试最危险——
+下一位读到的是「越权有测试守护」，实际守护的是参数完整性。
+
+修法：抽 `validSchedule()` 填满窗口字段，越权用例基于它再改 `shopId`。
+重跑同一变异，报错变成 `Expected CodeErrorException to be thrown, but nothing
+was thrown` —— 授权分支这次真的在测试之下。
+
+**教训**：变异的**报错文案**要和预期缺陷对应。「抛了别的异常」不算守住；
+只有「什么都没抛」或「抛的正是授权失败」才算。
+
+### 38. 审计结论（逐条核实，无改动）
+
+| 端点 | 防线 | 判定 |
+|---|---|---|
+| `ShopController` 5 个 | `@RequireRole ADMIN`，店铺是租户之上概念 | 正确（javadoc 已说明为何不用 `@ShopScoped`） |
+| `ShopCredentialController` 3 个 | `canManageCredentials` = ADMIN + `isShopAllowedStrict` | 正确 |
+| `FeedsController` 3 个 | `isShopAllowedByUserOrTrustedService`（双信任端点） | 正确，注释指明这是唯一店铺校验 |
+| `KnowledgeController` 3 个 | `isShopAllowed(shopId)` | 正确 |
+| `PreflightController.one` | `isShopAllowedStrict` + 越权日志 | 正确 |
+| `OpsController` 4 个告警处置 | 服务层逐行严格校验（`OpsAlertTenantGuardTest` 7 条钉住） | 正确，越权与不存在同文案 |
+| `ProcurementController` create/cancel/sync/submitTo1688/QC | `mustGetAuthorized` / `isShopAllowed` | 正确 |
+| 物流 Inbound/Outbound/Warehouse 全部无 `@ShopScoped` 端点 | `LogisticsShopGuard.requireShopAllowed` 或 `mustExist` 逐行校验 | 正确，统一实现留 warn |
+| `VatController.monthlyClosing` | `@ShopScoped`（早前脚本误报为缺失，人工核实已有） | 正确 |
+| `AdController.createBidSchedule` | Controller 显式 `isShopAllowedStrict` + Service 同款 | 正确，注释说明为何切面无效 |
+| `AdController.syncAllReports` | `@RequireRole ADMIN`，全店运维入口 | 正确（无 shopId 参数，`@ShopScoped` 无从校验） |
+| `MultiplatformController.receiveWebhook` | HMAC-SHA256 验签 + 常量时间比较，先于一切副作用 | 正确（外部回调，无用户上下文） |
+| `MultiplatformController.generateToken` | appSecret 校验 + token 绑定归属店铺 | 正确 |
+| `LoginController.verify/refresh` | 登录态端点，不应有角色门禁 | 正确 |
+| `UserController.updateImage/editInfo` | 服务层按 `UserContext.getUserId()` 定向，不认 body 里的 id | 正确 |
+| `OrderController.saveOrder` | userId/messageId 服务端定，不认 body | 正确（§S29 已修） |
+| `HistoryController.deleteHistory` | 按 `UserContext.getUserId()` 删，只删自己的 | 正确 |
+| `AgentMemoryController` 3 个 | `currentUserId()` 取自认证上下文 | 正确 |
+| `AiController` 3 个 | 同上，会话键即记忆归属 | 正确 |
+| `OpsController` scan×3 | `RoleGatingBatchContractTest` 豁免清单 + 生产环境恒拒绝 | 正确，豁免理由已记录 |
+
+**结论：本轮未发现越权缺陷**。产出是 1 个新门禁、1 处注解删除、1 组测试加固。

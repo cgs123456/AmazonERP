@@ -183,7 +183,6 @@ public class AdServiceImpl implements AdService {
     }
 
     @Override
-    @com.amz.annotation.ShopScoped
     public BidSchedule createBidSchedule(BidSchedule schedule) {
         if (schedule == null || schedule.getShopId() == null) {
             throw new AttrIsNullException("店铺ID不能为空");
