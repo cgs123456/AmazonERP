@@ -1,6 +1,10 @@
 package com.amz.controller;
 
 import com.amz.annotation.RequireRole;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.web.bind.annotation.RestController;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -44,22 +48,37 @@ class ProcurementControllerGuardTest {
      * 数量断言保留，但它现在是**下限**而不是精确值——精确值会让每次新增端点
      * 都要改测试，而改测试恰恰是最容易被顺手放宽的一步。
      */
-    private static final List<Class<?>> PROCUREMENT_CONTROLLERS = List.of(
-            ProcurementController.class,
-            FbaShipmentController.class,
-            BomController.class,
-            FbaInboundPlanController.class,
-            PaymentController.class,
-            PurchaseInvoiceController.class);
+    /**
+     * 采购域全部 Controller，**从类路径扫描**而不是手工列。
+     *
+     * <p>手工列表的失败模式本轮实测过：§S32 拆出 {@code FbaShipmentController} 后，
+     * 本测试仍只扫 {@code ProcurementController}，9 个写接口无人检查，
+     * 且断言写死 24 导致测试从拆分当天一直红着。
+     * 扫描则让「新增 Controller」自动进入检查范围，不需要有人记得改测试。
+     * 与 {@code LogisticsControllerGuardTest#scanControllers} 同一做法。
+     */
+    private static List<Class<?>> scanControllers() throws ClassNotFoundException {
+        ClassPathScanningCandidateComponentProvider scanner =
+                new ClassPathScanningCandidateComponentProvider(false);
+        scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
+        List<Class<?>> controllers = new ArrayList<>();
+        for (BeanDefinition bean : scanner.findCandidateComponents("com.amz.controller")) {
+            controllers.add(Class.forName(bean.getBeanClassName()));
+        }
+        controllers.sort((a, b) -> a.getName().compareTo(b.getName()));
+        return controllers;
+    }
 
     /** 每个 Controller 的写接口数量下限。新增端点只会让它变大。 */
     private static final int MIN_WRITE_ENDPOINTS = 24;
 
     @Test
     @DisplayName("采购域所有写接口必须显式声明 OPERATOR/ADMIN，新增 Controller 不得绕过")
-    void everyWriteEndpointRequiresOperatorOrAdmin() {
+    void everyWriteEndpointRequiresOperatorOrAdmin() throws Exception {
         List<Method> writeEndpoints = new ArrayList<>();
-        for (Class<?> controller : PROCUREMENT_CONTROLLERS) {
+        List<Class<?>> controllers = scanControllers();
+        assertFalse(controllers.isEmpty(), "必须扫描到采购 Controller，扫到 0 个会使测试假通过");
+        for (Class<?> controller : controllers) {
             for (Method method : controller.getDeclaredMethods()) {
                 for (Annotation annotation : method.getAnnotations()) {
                     if (WRITE_MAPPINGS.contains(annotation.annotationType())) {
@@ -88,39 +107,6 @@ class ProcurementControllerGuardTest {
             assertTrue(roles.equals(List.of("OPERATOR", "ADMIN")) || roles.equals(List.of("ADMIN")),
                     "写接口 " + method.getName() + " 的角色必须是 [OPERATOR, ADMIN] 或 [ADMIN]，实际：" + roles);
         }
-    }
-
-    /**
-     * 防「新增 Controller 但没登记进 {@link #PROCUREMENT_CONTROLLERS}」。
-     *
-     * <p>没有这条，上面那条测试仍然全绿——新 Controller 的写接口会完全绕过
-     * 角色检查，而这正是本测试存在的意义。判据直接扫源码目录：Surefire 的
-     * 工作目录是模块根，{@code src/main/java/com/amz/controller} 稳定可达。
-     */
-    @Test
-    @DisplayName("采购域全部 Controller 都已登记进角色检查范围")
-    void everyProcurementControllerIsGuarded() throws Exception {
-        Path controllerDir = Path.of("src", "main", "java", "com", "amz", "controller");
-        assertTrue(Files.isDirectory(controllerDir),
-                "找不到 Controller 源码目录，判据失效：" + controllerDir.toAbsolutePath());
-
-        List<String> discovered;
-        try (Stream<Path> files = Files.list(controllerDir)) {
-            discovered = files
-                    .map(f -> f.getFileName().toString())
-                    .filter(name -> name.endsWith("Controller.java"))
-                    .map(name -> name.substring(0, name.length() - ".java".length()))
-                    .sorted()
-                    .collect(Collectors.toList());
-        }
-        assertFalse(discovered.isEmpty(), "一个 Controller 都没扫到，判据失效");
-
-        List<String> registered = PROCUREMENT_CONTROLLERS.stream()
-                .map(Class::getSimpleName).sorted().collect(Collectors.toList());
-
-        assertEquals(registered, discovered,
-                "采购域的 Controller 与角色检查范围不一致。新增 Controller 必须加进 "
-                        + "PROCUREMENT_CONTROLLERS，否则它的写接口不受 @RequireRole 检查");
     }
 
     @Test
