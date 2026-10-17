@@ -4,13 +4,13 @@
   "limitLines": 500,
   "summary": {
     "files": 56,
-    "totalLines": 46906,
+    "totalLines": 46962,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
     "amz-frontend/e2e/full-interaction.spec.ts": 2884,
     "amz-frontend/e2e/support/api-stub.ts": 1719,
-    "amz-frontend/src/__tests__/AdManager.test.ts": 854,
+    "amz-frontend/src/__tests__/AdManager.test.ts": 881,
     "amz-frontend/src/__tests__/ConnectorCenter.test.ts": 512,
     "amz-frontend/src/__tests__/FinanceOps.test.ts": 546,
     "amz-frontend/src/__tests__/ListingMonitor.test.ts": 506,
@@ -23,7 +23,7 @@
     "amz-frontend/src/components/AppSidebar.vue": 504,
     "amz-frontend/src/components/FinanceClaimFlow.vue": 525,
     "amz-frontend/src/components/LoginModal.vue": 574,
-    "amz-frontend/src/views/AdManager.vue": 1254,
+    "amz-frontend/src/views/AdManager.vue": 1283,
     "amz-frontend/src/views/AdSearchTerms.vue": 1004,
     "amz-frontend/src/views/ConnectorCenter.vue": 1089,
     "amz-frontend/src/views/CustomerService.vue": 885,

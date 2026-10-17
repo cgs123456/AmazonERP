@@ -40,6 +40,12 @@
         请先在右上角选择店铺后再查看广告数据。
       </div>
 
+      <!-- 加载类失败常驻展示：日报同步错误区在折叠面板里，默认收起，
+           概览/趋势/活动加载失败时用户根本看不到。§S33.30 -->
+      <div v-if="loadErrors.length" class="ops-error load-error-zone" role="alert">
+        {{ loadErrors.join('；') }}
+      </div>
+
       <!-- 演示数据必须显式标识；生产模式无数据时展示未同步空态 -->
       <div v-if="adDemoMode" v-show="activeAdTab !== 'DSP'" class="demo-banner">
         演示模式：当前展示示例数据，不代表真实广告 API 返回结果。
@@ -487,6 +493,13 @@ const opsOpen = ref(false)
 const syncing = ref(false)
 const syncDays = ref<number | string>(7)
 const syncErrors = ref<string[]>([])
+/**
+ * 加载类错误（概览 / 趋势 / 活动 / 素材 / 定向）。
+ *
+ * 与 syncErrors 分开：那是「日报同步」这个动作的结果，渲染在折叠面板里；
+ * 本数组渲染在页面顶部常驻区。两者混用会让「页面加载失败」被藏进折叠面板。
+ */
+const loadErrors = ref<string[]>([])
 const lastSync = ref<AdSyncSummary | null>(null)
 const lastSyncScope = ref('')
 
@@ -551,13 +564,17 @@ const loadTrend = async (shopId: number | string, adType: AdType) => {
     } else {
       trendIsLive.value = false
       acosTrend.value = adDemoMode ? [...mockTrend] : []
-      if (!tres || tres.code !== 200) console.warn('[AdManager] 趋势返回异常', tres)
+      if (!tres || tres.code !== 200) {
+        console.warn('[AdManager] 趋势返回异常', tres)
+        loadErrors.value.push(`广告趋势：${tres?.message || '后端返回非 200'}`)
+      }
     }
   } catch (e) {
     if (seq !== trendSeq) return
     trendIsLive.value = false
     acosTrend.value = adDemoMode ? [...mockTrend] : []
     console.warn('[AdManager] 趋势调用失败', e)
+    loadErrors.value.push(`广告趋势：${e instanceof Error ? e.message : '调用失败'}`)
   }
 }
 
@@ -644,6 +661,9 @@ const acosTrendDots = computed(() => {
 })
 
 const loadOverview = async () => {
+  // 清掉上一轮的概览类错误：否则重试成功后旧错误还挂着
+  loadErrors.value = loadErrors.value.filter(
+    (x) => !x.startsWith('广告概览：') && !x.startsWith('广告趋势：') && !x.startsWith('加载活动：'))
   // 未选择店铺时不发请求
   const shopId = refreshShop()
   if (!shopId) {
@@ -682,13 +702,18 @@ const loadOverview = async () => {
       overviewIsLive.value = false
       acosData.value = adDemoMode ? { ...mockOverview } : { ...emptyOverview }
       if (!res || res.code !== 200) {
+        // §S33.30：空态文案是「暂无已同步的广告报表，请先配置 API 并执行日报同步」，
+        // 但请求失败也会走到这里——用户看到「请先配置」，实际是网络/服务问题，
+        // 于是去重配 API 而不是重试。失败必须单独说出来。
         console.warn('[AdManager] 返回数据异常', res)
+        loadErrors.value.push(`广告概览：${res?.message || '后端返回非 200'}`)
       }
     }
   } catch (e) {
     overviewIsLive.value = false
     acosData.value = adDemoMode ? { ...mockOverview } : { ...emptyOverview }
     console.warn('[AdManager] API 调用失败', e)
+    loadErrors.value.push(`广告概览：${e instanceof Error ? e.message : '调用失败'}`)
   }
   try {
     // 活动列表改用 /ad/campaigns/list（含名称/状态/预算，AdReport 行无这些字段）
@@ -728,6 +753,7 @@ const loadOverview = async () => {
       checkedCampaignIds.value = []
       if (!cres || cres.code !== 200) {
         console.warn('[AdManager] 活动列表返回异常', cres)
+        campaignError.value = `加载活动：${cres?.message || '后端返回非 200'}`
       }
     }
   } catch (e) {
@@ -735,6 +761,7 @@ const loadOverview = async () => {
     campaignRows.value = []
     checkedCampaignIds.value = []
     console.warn('[AdManager] 活动列表调用失败', e)
+    campaignError.value = `加载活动：${e instanceof Error ? e.message : '调用失败'}`
   }
   await loadTrend(shopId, activeAdTab.value)
   loading.value = false
@@ -767,10 +794,12 @@ const loadCreatives = async () => {
       creatives.value = res.data || []
     } else {
       creativeError.value = `加载素材：${res?.message || '后端返回非 200'}`
+      loadErrors.value.push(creativeError.value)
       creatives.value = []
     }
   } catch (e) {
     creativeError.value = `加载素材：${e instanceof Error ? e.message : '调用失败'}`
+    loadErrors.value.push(creativeError.value)
     creatives.value = []
   }
 }

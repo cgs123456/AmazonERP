@@ -755,6 +755,33 @@ describe('AdManager ad 域 CRUD 收口', () => {
     expect(body.headline).toBe('新标题')
   })
 
+  // ===== 概览失败与「确实没同步过」必须可区分（§S33.30） =====
+  /**
+   * 空态文案写的是「暂无已同步的广告报表，请先配置 API 并执行日报同步」。
+   * 但请求失败也走同一个分支——用户看到「请先配置」，实际是服务/网络问题，
+   * 于是去重配 API 而不是重试。这条钉住：失败必须有独立提示。
+   */
+  it('概览请求失败时必须提示，不能只显示「暂无已同步的广告报表」', async () => {
+    mockedGetAdReports.mockRejectedValue(new Error('网关超时'))
+    const wrapper = await mountAds()
+
+    const zone = wrapper.find('.load-error-zone')
+    expect(zone.exists()).toBe(true)
+    expect(zone.text()).toContain('广告概览')
+    expect(zone.text()).toContain('网关超时')
+    // 空态仍会显示（数据确实没有），但旁边必须有失败原因
+    expect(wrapper.text()).toContain('暂无已同步的广告报表')
+  })
+
+  it('概览非 200 时同样提示后端原因', async () => {
+    mockedGetAdReports.mockResolvedValue({ code: 500, message: '广告服务不可用' } as any)
+    const wrapper = await mountAds()
+
+    const zone = wrapper.find('.load-error-zone')
+    expect(zone.text()).toContain('广告概览')
+    expect(zone.text()).toContain('广告服务不可用')
+  })
+
   // ===== 加载/写操作失败必须可见（§S33.28） =====
   /**
    * 这五处 catch 原本只 console.warn，而模板上的错误区只服务于表单保存。
