@@ -547,6 +547,28 @@ describe('Warehouse 编辑仓库（此前 updateWarehouse 零调用）', () => {
     expect(mockedListWarehouses).toHaveBeenCalledTimes(2)
   })
 
+  /**
+   * §S33.29：保存失败必须给反馈。
+   *
+   * <p>原实现 `catch { console.warn(...) }`——弹窗不关、也没有任何提示，
+   * 用户看到的是「点了保存没反应」，于是反复点，每次都是真的写请求。
+   */
+  it('保存失败必须提示原因，且弹窗保持打开', async () => {
+    mockedUpdateWarehouse.mockRejectedValue(new Error('网关超时'))
+    const wrapper = await mountPage()
+    await editBtn(wrapper)!.trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.find('.modal-mask')
+    await dialog.findAll('button').find((b: any) => b.text() === '保存')!.trigger('click')
+    await flushPromises()
+
+    expect(useToast().toastMessage.value).toContain('保存仓库失败')
+    expect(useToast().toastMessage.value).toContain('网关超时')
+    // 弹窗不能关：关掉等于告诉用户「保存成功了」，而表单内容也会丢
+    expect(wrapper.find('.modal-mask').exists()).toBe(true)
+  })
+
   it('新建仍走 createWarehouse（编辑分支不误伤新建）', async () => {
     mockedCreateWarehouse.mockResolvedValue({ code: 200, message: 'ok', data: wh(9, '新仓', 'NEW-01') })
     const wrapper = await mountPage()

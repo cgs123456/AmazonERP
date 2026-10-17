@@ -973,7 +973,12 @@ const submitWarehouse = async () => {
     }
     warehouseDialog.visible = false
     await loadWarehouses()
-  } catch (e) { console.warn('[Warehouse] 保存仓库失败', e) }
+  } catch (e) {
+    // §S33.29：原实现只 console.warn。弹窗不关、也没有任何提示，
+    // 用户看到的是「点了保存没反应」，会反复点——而每次都真的发了一次写请求。
+    console.warn('[Warehouse] 保存仓库失败', e)
+    showToast(`保存仓库失败：${e instanceof Error ? e.message : '请稍后重试'}`, 'error')
+  }
 }
 
 // ===== 入库单表单 =====

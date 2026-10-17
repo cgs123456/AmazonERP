@@ -4,7 +4,7 @@
   "limitLines": 500,
   "summary": {
     "files": 56,
-    "totalLines": 46879,
+    "totalLines": 46906,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -16,7 +16,7 @@
     "amz-frontend/src/__tests__/ListingMonitor.test.ts": 506,
     "amz-frontend/src/__tests__/LogisticsDashboard.test.ts": 2935,
     "amz-frontend/src/__tests__/Procurement.test.ts": 701,
-    "amz-frontend/src/__tests__/Warehouse.test.ts": 925,
+    "amz-frontend/src/__tests__/Warehouse.test.ts": 947,
     "amz-frontend/src/api/logistics.ts": 669,
     "amz-frontend/src/api/procurement.ts": 540,
     "amz-frontend/src/components/AppHeader.vue": 526,
@@ -38,7 +38,7 @@
     "amz-frontend/src/views/Procurement.vue": 2045,
     "amz-frontend/src/views/ProductSelection.vue": 872,
     "amz-frontend/src/views/ReportCenter.vue": 984,
-    "amz-frontend/src/views/Warehouse.vue": 1364,
+    "amz-frontend/src/views/Warehouse.vue": 1369,
     "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java": 738,
     "amz-service/amz-service-ad/src/main/java/com/amz/scheduler/AdReportSyncScheduler.java": 508,
     "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 713,
