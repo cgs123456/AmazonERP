@@ -6796,3 +6796,65 @@ degradedSources 进响应）、`ReportUpgradeServiceImpl` 的 keyset 分页与
 `ReportTenantGuard` 严格档、`allocateCost` 的尾差归尾行与来源幂等、游标解码拒绝
 跨端点混用——都有测试钉住且口径自洽。`conversionRate` 恒 null 显示「未统计」
 而非 0 的处理（§S33.19 发现的）也在 `mapKpiItems` 里。
+
+## §S33.82 广告费分摊：分子 7 天、分母 30 天，每条订单的广告费只有真实值两成
+
+### 缺陷本体
+
+利润分摊 = 广告花费 ÷ 订单数。两条链路各自硬编码窗口且互不知情：
+
+- 分子：`ProfitCalculator.fetchAdCost` → `AdServiceClient.getShopSummary` →
+  `/ad/summary`，服务端 `SHOP_REPORT_LOOKBACK_DAYS` 固定 **7 天**且不在接口上暴露；
+- 分母：`countRecentOrders` 查近 **30 天**订单数。
+
+于是「7 天的钱」被摊到「30 天的单」上：每条订单的广告费只有真实值的
+7/30 ≈ **23%**，净利系统性高估一整块成本（广告通常占营收 10–30%）。
+与 §S33.52 修的「分母不可得就按全额计」是同一个字段的两种失真：
+那次是分母塌了按全额，这次是分子窗口窄了按两成——方向相反，后果同量级。
+
+### 顺带修出的 off-by-one（不是推理，是测试实测出来的）
+
+即便两边都写 30，覆盖天数仍不等：
+
+- 订单侧 `minusDays(30)` → 区间含今天共 **31** 个自然日；
+- 广告侧 `end.minusDays(window - 1)` → 含今天共 **30** 个自然日。
+
+窗口一致性测试第一次跑出 `expected: <31> but was: <30>` 才暴露这一条。
+**写成同一个数字不等于口径一致**，下界与「含今天」的定义必须也对齐。
+
+### 修法
+
+| 位置 | 改法 |
+|---|---|
+| `/ad/summary/{shopId}` | 增加可选 `days`，缺省 7（广告首页口径不变），上限 90 |
+| `AdService#getShopSummary` | 增加 `days` 入参，窗口由调用方声明 |
+| order 侧 Feign | 显式传 `AD_ALLOCATION_WINDOW_DAYS`，与分母**共用同一常量** |
+| `countRecentOrders` | 下界改 `minusDays(N - 1)`，与广告侧同口径 |
+| report 侧 Feign | **不动**：只把 adSummary 用于占位统计，走服务端默认 7 天 |
+
+常量共享是关键：分开写死 30 会在下一次改动中再次漂移，
+共用常量后窗口要改只改一处，结构上不可能再不一致。
+
+### 测试形态：钉住「共享常量」而不是「数值相等」
+
+`ProfitAdAllocationWindowTest` 断言「发给广告服务的 days」与「订单查询窗口」
+数值相等——不是两处分别断言 `== 30`。分别写死会让 off-by-one 再次溜过来：
+30 == 30 仍可能一个含今天、一个不含。
+
+从 `ProfitCalculatorTest` 拆出单独成类：前者因新增这段超 500 行被 ratchet 拦下，
+按关注点拆（窗口一致性 vs 利润公式）而不是抬基线。
+
+### 变异账目（3 项全杀）
+
+| 变异 | 结果 |
+|---|---|
+| 分子窗口回退 `getShopSummary(shopId, 7)` | 杀 |
+| 分母下界回退 `minusDays(30)` | 杀 |
+| 服务端忽略 `days` 固定用 `SHOP_REPORT_LOOKBACK_DAYS` | 杀 |
+
+### 环境噪声（与本次改动无关）
+
+`AdvertisingApiRealClientContractTest` 7 项在本机全红
+（`Unable to establish loopback connection`）。已用 `git stash` 对比确认：
+**stash 掉本次改动后同样全红**，属本机 loopback 环境限制，按 §S30 定案以 CI 为准。
+回归口径为 ad 145（排除该 7 项）、order 101、report 77，全绿。
