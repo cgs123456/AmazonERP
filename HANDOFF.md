@@ -5806,3 +5806,49 @@ procurement 域连促销表都没有，真实方案需要历史销量与转化�
   两个脚本在 `main` 入口固定 `sys.stdout/stderr` 为 UTF-8。
 - `target/surefire-reports` 里残留着已删除测试的 `WrapperDebugTest` 报告，
   让 `mvn test` 的输出看起来有失败。`mvn clean test` 后消失。
+
+## §S33.24–29 同一类缺陷的六个实例：静默失败
+
+盘点之后继续按「降级/失败是否被如实汇报」这条判据扫全仓，又找到五个实例。
+它们的共同点是：**代码没报错，用户看到的是「没有数据」或「没反应」**。
+
+| # | 位置 | 症状 | 修法 |
+|---|---|---|---|
+| 24 | `AdPilotController` | 写死字符串冒充编排（见 §S33.21） | 接真实工具链 |
+| 25 | `estimate_fba_fees` 工具 | 估算值被讲成实际扣费 | message 里自曝 source |
+| 26 | `TranslationService` | LLM 失败静默返回原文，跨站复制照发 | `translateWithOutcome` + fail-closed |
+| 27 | `AdServiceImpl.getAdTrend` | 查询失败返回空数组，前端显示「暂无数据」 | 异常冒泡 → `Result.failure` |
+| 28 | `AdManager` 五处 catch | 加载/审核/删除失败只写 console | 写入既有错误区 |
+| 29 | `Warehouse.submitWarehouse` | 保存失败无提示，用户反复点 | toast + 弹窗保持打开 |
+
+### 29.1 判据
+
+**一个失败如果对用户不可见，它就等于没被处理。** 检查清单：
+
+1. `catch` 里是否只有 `console.*`？→ 用户看不见。
+2. 降级返回值（空数组 / 原文 / 默认金额）能否与「真的是这个值」区分？
+   → 不能就必须额外带标记，或直接失败。
+3. 写操作失败后，界面状态是否与成功时不同？→ 相同就是静默失败。
+4. 后端把异常转成 `null` / `0` / `[]` 时，前端能否分辨「没有」与「查不到」？
+
+### 29.2 为什么这类缺陷能活很久
+
+它们**不会让任何测试变红**：接口返回 200，字段齐全，只是值是兜底的。
+前端也「正常」渲染空态。整条链路每一环都合法，只有用户被误导。
+
+§S33.25 与 §S33.26 尤其典型：数据里其实**带了** `source` / 能力标记，
+只是 Agent 工具只把 `message` 拼给 LLM，标记丢在了 `data` 里。
+**模型看不见的字段，等于不存在。**
+
+### 29.3 顺带修的
+
+- `TranslationService` 的 `HttpClient` 改为惰性创建：字段初始化时建
+  HttpClient 会让 Bean 构造依赖运行环境网络栈，本机 loopback 不可用即抛
+  IOException（§S30）。改后该服务的单测不再需要真实网络。
+- `AdController` 补 `@Slf4j`（原本没有，加日志时才发现）。
+
+### 29.4 状态
+
+vitest 712 全绿；product 模块 95/96、ad 模块 144/151（其余为 §S30 loopback）；
+vue-tsc 0 错；vite build 通过；棘轮基线 46906 行。
+每个修复都做了变异验证，全部 CAUGHT。
