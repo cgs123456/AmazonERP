@@ -6145,3 +6145,37 @@ finance 模块 192 个测试全绿，无一条断言依赖被摘掉的注解。
 | finance | 192 绿 |
 | product | 96 跑完，仅 §S30 loopback IT 1 条 |
 | ad | 151 跑完，仅 §S30 loopback 7 条 |
+
+## §S33.47 删除 `/ai/chat`：与 `agentChat` 重叠的零调用端点
+
+上一轮留下两个「该删但属产品决策」的冗余簇。逐个核实后，`/ai/chat` 满足删除条件：
+
+- **零调用方**：全仓 grep `ai/chat` 只命中历次审计证据文件（`docs/superpowers/evidence/*`），
+  没有前端、没有内部服务、没有测试。
+- **功能是 `agentChat` 的严格子集**：`AiServiceImpl.chat` 只发一条 user 消息、
+  不带 systemPrompt，而 `agentChat` 支持 systemPrompt + 多轮 messages。
+  两方法各有约 45 行**完全相同**的 HTTP 管道（build request / newCall / 解析 /
+  错误降级），`chat` 删掉后少一份需要同步维护的错误处理。
+- **无测试依赖**：`AiServiceImplTest.chatFailsClosedWithoutApiKey` 与
+  `agentChatFailsClosedWithoutApiKey` 断言同一件事（缺 key → 点名失败），
+  删前者不损失覆盖。
+
+按 CLAUDE.md「删除优于兼容」删除四处：`AiController#chat`、
+`AiController.ChatRequest` 内部类、`AiService#chat`、`AiServiceImpl#chat`，
+并删掉那条冗余测试。`AiService` 注入保留（`agentChat` 还在用）。
+
+`/ai/agent/chat` **不动**：它是 `MemoryAwareAgentService` 之外的直接多轮入口，
+且 `agentChat` 的实现正是它。前端活路径是 `/ai/erp/agent` + SSE `/ai/chat-stream`，
+这条留着不影响——它们是不同能力（无记忆直连 vs 带记忆编排），不是同一功能的重复。
+
+端点盘点：65 → 64 个无前端命名，43 → 42 个 user-facing-candidate。
+
+### 48. 保留不动的：`/ai/agent/memory/chat`
+
+`AgentMemoryController.chat` → `MemoryAwareAgentService.chat` 是**唯一**带记忆的
+Agent 链路（偏好提取 + ChatMemory 历史 + Function Calling 多轮）。
+前端 `AgentMemory.vue` 只用它读偏好/历史，不用它发消息——但这不代表该删：
+它是那套记忆能力的写入端，删了偏好和历史就永远不再更新。
+
+已确认 ai 模块 146 个测试跑完，仅 `DeepSeekAgentConfigurationContext` 1 条
+loopback 失败（stash 后在干净树上复现同样失败，§S30 已定案）。

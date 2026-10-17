@@ -37,18 +37,6 @@ class AiServiceImplTest {
     }
 
     @Test
-    @DisplayName("chat：缺 DEEPSEEK_API_KEY → 点名失败，不发请求")
-    void chatFailsClosedWithoutApiKey() {
-        AiServiceImpl service = new AiServiceImpl();
-        ReflectionTestUtils.setField(service, "apiKey", "");
-
-        com.amz.result.Result<String> result = service.chat("hi");
-
-        assertEquals(400, result.getCode());
-        assertTrue(result.getMessage().contains("DEEPSEEK_API_KEY"), result.getMessage());
-    }
-
-    @Test
     @DisplayName("agentChat：缺 DEEPSEEK_API_KEY → 点名失败（先于 messages 校验）")
     void agentChatFailsClosedWithoutApiKey() {
         AiServiceImpl service = new AiServiceImpl();

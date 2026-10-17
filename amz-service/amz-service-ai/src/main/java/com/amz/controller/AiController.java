@@ -55,15 +55,6 @@ public class AiController {
     @Value("${agent.llm-eval-enabled:false}")
     private boolean llmEvalEnabled;
 
-    @PostMapping("/chat")
-    public Result<String> chat(@RequestBody ChatRequest request) {
-        String prompt = request.getPrompt();
-        if (prompt == null || prompt.length() > 2000) {
-            return Result.failure("prompt长度不能超过2000字符");
-        }
-        return aiService.chat(prompt);
-    }
-
     @PostMapping("/agent/chat")
     public Result<String> agentChat(@RequestBody com.amz.model.dto.AgentChatDto request) {
         if (request.getMessages() == null || request.getMessages().isEmpty()) {
@@ -154,18 +145,6 @@ public class AiController {
             agentEvalLogMapper.insert(logEntry);
         } catch (Exception e) {
             log.warn("评估运行落库失败", e);
-        }
-    }
-
-    public static class ChatRequest {
-        private String prompt;
-
-        public String getPrompt() {
-            return prompt;
-        }
-
-        public void setPrompt(String prompt) {
-            this.prompt = prompt;
         }
     }
 

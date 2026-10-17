@@ -42,59 +42,6 @@ public class AiServiceImpl implements AiService {
     private final Gson gson = new Gson();
 
     @Override
-    public Result<String> chat(String prompt) {
-        if (apiKey == null || apiKey.isBlank()) {
-            return Result.failure("DeepSeek 未配置：请设置 DEEPSEEK_API_KEY");
-        }
-        JsonObject requestBody = new JsonObject();
-        requestBody.addProperty("model", modelName);
-
-        JsonArray messages = new JsonArray();
-        JsonObject userMessage = new JsonObject();
-        userMessage.addProperty("role", "user");
-        userMessage.addProperty("content", prompt);
-        messages.add(userMessage);
-        requestBody.add("messages", messages);
-        requestBody.addProperty("temperature", temperature);
-
-        RequestBody body = RequestBody.create(
-                requestBody.toString(),
-                MediaType.parse("application/json; charset=utf-8")
-        );
-
-        Request request = new Request.Builder()
-                .url(apiUrl + "/chat/completions")
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .post(body)
-                .build();
-
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                log.warn("DeepSeek API 调用失败: status={}", response.code());
-                return Result.failure("DeepSeek API 调用失败: " + response.code());
-            }
-
-            String responseBody = response.body() != null ? response.body().string() : "";
-            JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
-            String content = extractContent(jsonResponse);
-            if (content == null) {
-                log.warn("DeepSeek API 返回异常结构 body={}", truncate(responseBody));
-                return Result.failure("DeepSeek API 返回异常，请稍后重试");
-            }
-
-            return Result.success(content);
-        } catch (IOException e) {
-            log.error("DeepSeek API 调用异常", e);
-            return Result.failure("DeepSeek API 调用异常: " + e.getMessage());
-        } catch (RuntimeException e) {
-            // gson 解析等运行时异常同样降级（JsonSyntaxException 非 IOException，会逃过上一个 catch）
-            log.warn("DeepSeek API 响应解析失败", e);
-            return Result.failure("DeepSeek API 返回异常，请稍后重试");
-        }
-    }
-
-    @Override
     public Result<String> agentChat(com.amz.model.dto.AgentChatDto agentChatDto) {
         if (apiKey == null || apiKey.isBlank()) {
             return Result.failure("DeepSeek 未配置：请设置 DEEPSEEK_API_KEY");
