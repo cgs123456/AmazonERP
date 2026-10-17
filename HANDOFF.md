@@ -5724,3 +5724,85 @@ ReflectionTestUtils.setField(executor, "logisticsTools", new ErpLogisticsTools()
 ### 20.5 状态
 
 `mvn test`：138 跑 137 过，唯一失败是 §S30 已定案的 DeepSeek loopback。
+
+## §S33.21–23 从「盘点」挖出的三件事
+
+§S33.19 的业务功能盘点本来只是「列清单」，结果清单本身牵出了三个缺陷。
+这一节按发现顺序记，重点是**它们为什么长期没被发现**。
+
+### 21. AI 广告托管：写死字符串伪装成编排
+
+`AdPilotController.run` 只 import 了 `Result` / 注解 / `LinkedHashMap`，
+**没有注入任何服务**。返回的 `analysis` / `execution` 是两段说明文字：
+
+```java
+plan.put("analysis", "由 Agent 工具链产出（analyze_ad_performance / ...）");
+plan.put("execution", execute ? "执行通道=ad 服务真实改价；..." : "干跑：未下发任何变更");
+```
+
+无论传什么 shopId / campaignId，响应完全相同。而它自己的 javadoc 写着
+「执行通道经 ad 服务 `POST /ad/keyword/optimize`」——代码里没有这个调用。
+
+**这不是诚实边界，是未完成的实现伪装成骨架。** 区别在于：诚实边界会让
+调用方知道「这里没做」；写死字符串让它以为「做了，只是没东西可做」。
+前者可接受，后者会误导决策。
+
+修法：注入 `ErpToolExecutor`，分析走 `analyze_ad_performance`（真实广告报表），
+建议走 `optimize_ad_campaign`（同一份报表 + 阈值规则）。分析失败返回 **400**
+而不是 200——否则调用方会把空方案当成「没有可优化项」。EXECUTE 仍不下发
+（凭证未联调），但在 `execution` 里写明「未下发」。
+
+新增 6 条测试，断言盯**行为差异**：换一份报表，分析里的 ACoS 必须变；
+报表为空时必须说「暂无」且不含 `ACOS=`。原实现（写死文案）在这两条上必红。
+
+### 22. 促销方案：前端守住了，Agent 没守住
+
+`ProcurementController.getPromotionPlan` 返回写死的
+`Lightning Deal / 0.20 / "150%" / "$500 广告预算"`，与 shopId、asin、goal 无关。
+
+前端**故意没接**它，`api/procurement.ts` 顶部写着理由：
+「接进 UI 等于把模板文案显示成经营建议」。但 Agent 工具
+`generate_promotion_plan` **一直在调它**——LLM 会把模板当经营建议讲给运营。
+
+**同一个端点，一条路守住了，另一条路没有。** 原因是两边的把关人不同：
+前端由人写注释时判断，Agent 由工具封装时顺手接上，没有人回头看下游给的是什么。
+
+procurement 域连促销表都没有，真实方案需要历史销量与转化、竞品价格、
+库存与在途、平台活动日历、毛利下限，一条都没有。改为显式失败，
+与索评 / 差评订单匹配同一口径。
+
+**文案里刻意不复述被移除的那几个数字**：这段文字会原样交给 LLM，
+带上「Lightning Deal / 20% / $500」反而可能被模型复述成方案。
+第一版写了，测试直接抓到（断言 `message` 不含 `$500`）。
+
+### 23. 采购角色门禁：红了一整天，而且只覆盖 2/6
+
+`ProcurementControllerGuardTest` 从 §S32 拆分当天就红了：
+
+- 断言写死「24 个写接口」，而 9 个已搬到 `FbaShipmentController` → 实际 15；
+- 只扫 `ProcurementController`，拆出去的 9 个写接口**完全绕过角色检查**。
+
+**这条测试红了整整一天没人管**，而它的职责正是「防止写接口漏掉 @RequireRole」。
+一个长期红的门禁比没有门禁更糟：它训练人忽略红色。
+
+修的过程中又发现两个判据问题：
+
+1. 角色断言要求**恰好** `[OPERATOR, ADMIN]`，把更严格的 ADMIN-only
+   （取消付款）判成违规。**这会把「更安全」报成错误**，逼着人放宽权限去迎合测试。
+   改为「不得放行 VIEWER，且必须是这两种之一」。
+2. 两个批次相关断言仍在扫旧文件，跟着方法搬到 `FbaShipmentController`。
+
+最后把手工列表换成**类路径扫描**（与 `LogisticsControllerGuardTest` 同一做法）。
+我先写的是「手工列表 + 一条防遗忘的目录扫描测试」，然后发现物流模块早有扫描实现——
+**手工列表加防遗忘测试是重复造轮子**，删掉改回扫描。
+
+变异验证：新增一个未声明 `@RequireRole` 的 Controller → CAUGHT。
+`mvn clean test`：151 全绿（此前 1 failure + 2 errors）。
+
+### 24. 顺带修的两处环境问题
+
+- `test_operlog_coverage_audit` 与 `test_file_size_ratchet` 在本机红：
+  被测脚本按 GBK 写 stderr，测试按 UTF-8 解码，中文判据读不出来。
+  两个脚本在 `main` 入口固定 `sys.stdout/stderr` 为 UTF-8。
+- `target/surefire-reports` 里残留着已删除测试的 `WrapperDebugTest` 报告，
+  让 `mvn test` 的输出看起来有失败。`mvn clean test` 后消失。
