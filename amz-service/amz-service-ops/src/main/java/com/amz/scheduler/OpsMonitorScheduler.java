@@ -73,7 +73,14 @@ public class OpsMonitorScheduler {
             return;
         }
         log.info("运营监控定时任务启动：差评 + 跟卖扫描");
-        List<Shop> shops = listActiveShops();
+        final List<Shop> shops;
+        try {
+            shops = listActiveShops();
+        } catch (IllegalStateException e) {
+            // 与「确实没有已授权店铺」区分开：本轮**没有执行**，不是执行了但没数据
+            log.error("运营监控本轮未执行：店铺列表查询失败", e);
+            return;
+        }
         int totalReviewAlerts = 0;
         int totalHijackAlerts = 0;
         for (Shop shop : shops) {
@@ -112,7 +119,13 @@ public class OpsMonitorScheduler {
             return;
         }
         log.info("关键词排名抓取任务启动");
-        List<Shop> shops = listActiveShops();
+        final List<Shop> shops;
+        try {
+            shops = listActiveShops();
+        } catch (IllegalStateException e) {
+            log.error("关键词排名抓取本轮未执行：店铺列表查询失败", e);
+            return;
+        }
         int totalCaptured = 0;
         for (Shop shop : shops) {
             Long shopId = shop.getId();
@@ -129,7 +142,14 @@ public class OpsMonitorScheduler {
 
     /**
      * 查询所有已授权（status=1）的店铺列表。
-     * 查询异常时返回空列表，避免阻断定时任务。
+     *
+     * <p><b>§S33.32：查询异常不再返回空列表</b>。原实现吞掉异常返回
+     * {@code Collections.emptyList()}，调用方随后打印「共扫描 0 个店铺」——
+     * 与「确实没有已授权店铺」在日志里完全一样。运维看到「扫描完成」会以为
+     * 这一轮跑过了，实际一个店铺都没处理。
+     *
+     * <p>改为抛出：三个调用方各自 catch 后记 ERROR 并结束本轮，
+     * 与「正常跑完但没店铺」区分开。
      */
     private List<Shop> listActiveShops() {
         try {
@@ -141,8 +161,7 @@ public class OpsMonitorScheduler {
             }
             return shops;
         } catch (Exception e) {
-            log.error("查询已授权店铺列表异常", e);
-            return Collections.emptyList();
+            throw new IllegalStateException("查询已授权店铺列表失败", e);
         }
     }
 }

@@ -15,8 +15,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.env.Environment;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,6 +70,24 @@ class OpsScanNonMockRefusalTest {
     @InjectMocks
     private OpsMonitorScheduler scheduler;
 
+    /** 本轮日志；每条用例前后由 {@link #attachLogCapture()} / {@link #capturedLogs()} 维护。 */
+    private ListAppender<ILoggingEvent> appender;
+
+    private void attachLogCapture() {
+        Logger logger = (Logger) LoggerFactory.getLogger(OpsMonitorScheduler.class);
+        appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+    }
+
+    private String capturedLogs() {
+        StringBuilder sb = new StringBuilder();
+        for (ILoggingEvent e : appender.list) {
+            sb.append(e.getFormattedMessage()).append(System.lineSeparator());
+        }
+        return sb.toString();
+    }
+
     private void nonMock() {
         when(environment.acceptsProfiles(any(org.springframework.core.env.Profiles.class))).thenReturn(false);
         when(environment.getActiveProfiles()).thenReturn(new String[]{"prod"});
@@ -104,6 +127,35 @@ class OpsScanNonMockRefusalTest {
         scheduler.rankCapture();
 
         verifyNoInteractions(shopMapper, reviewAlertMapper, hijackAlertMapper, rankMapper);
+    }
+
+    /**
+     * §S33.32：店铺列表查询失败时，本轮必须**没有执行**，而不是「执行了但 0 个店铺」。
+     *
+     * <p>原实现 catch 后返回空列表，调用方随即打印「共扫描 0 个店铺」——
+     * 运维看到「扫描完成」会以为这一轮跑过了。
+     */
+    @Test
+    @DisplayName("店铺列表查询失败：任务体不得继续，也不得打印「扫描完成」")
+    void shopQueryFailureAbortsRoundInsteadOfScanningZeroShops() {
+        when(environment.acceptsProfiles(any(org.springframework.core.env.Profiles.class))).thenReturn(true);
+        when(environment.getActiveProfiles()).thenReturn(new String[]{"mock"});
+        lockRunsTheJob();
+        when(shopMapper.selectList(any())).thenThrow(new RuntimeException("数据库不可用"));
+        attachLogCapture();
+
+        scheduler.dailyScan();
+        scheduler.rankCapture();
+
+        // 一次店铺级扫描都不该发生（否则就是拿空列表当「没有店铺」继续跑）
+        verifyNoInteractions(reviewAlertMapper, hijackAlertMapper, rankMapper);
+        // 更强的判据：不能再打出「完成：共扫描 0 个店铺」——那句话是「跑过了」的宣示。
+        // 只断言 mock 交互不够：空列表循环本来就不会碰 mapper，两种实现等价（变异实测 MISSED）。
+        String logs = capturedLogs();
+        assertFalse(logs.contains("共扫描 0 个店铺"),
+                "店铺查询失败时不得声称「扫描完成」：" + logs);
+        assertFalse(logs.contains("关键词排名抓取完成"),
+                "店铺查询失败时不得声称抓取完成：" + logs);
     }
 
     @Test
