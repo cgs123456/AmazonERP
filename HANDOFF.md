@@ -5994,3 +5994,47 @@ was thrown` —— 授权分支这次真的在测试之下。
 | `OpsController` scan×3 | `RoleGatingBatchContractTest` 豁免清单 + 生产环境恒拒绝 | 正确，豁免理由已记录 |
 
 **结论：本轮未发现越权缺陷**。产出是 1 个新门禁、1 处注解删除、1 组测试加固。
+
+## §S33.38 端点覆盖盘点：我的第一把尺子是错的
+
+接上一班的「8 个后端端点无调用方」，用**方法名**在全仓 grep 找调用点，
+得到 17 个候选。逐个核实后，**17 个全部有真实调用方**——我的尺子错了：
+前端 api 层的包装函数名与后端 Controller 方法名几乎从不一致
+（后端 `markRead` → 前端 `markNotificationRead`），方法名 grep 系统性漏判。
+
+改用**URL 路径**比，并复用仓里既有的 `tools/schema/endpoint_coverage_audit.py`
+（它先剥注释再比，所以「只在注释里出现过的路径」仍判未接入——这正是它的价值）。
+真实数字：`controllers=76 endpoints_without_a_frontend_name=65 user_facing_candidates=43`。
+65 = 43 个 `user-facing-candidate` + 22 个带 `internal-access` / `has-feign-caller` 标签。
+
+**教训与 §S33.6 同源**：盘点工具的输出是「待人工核实的线索」，不是结论。
+我拿一个口径明显更宽的自制脚本去质疑一个已经反复校准过的门禁，
+差点把「工具不一致」写成「代码有缺口」。
+
+### 39. 43 个 user-facing-candidate 逐类核实（无一处缺陷）
+
+| 类别 | 端点 | 结论 |
+|---|---|---|
+| 已修复的前任遗留 | `POST /ai/ad-pilot/run`、`GET /spapi/performance/*` | §S33.21/33/34 已接，工具只扫 `src/api/*.ts`，这两个的入口在组件里 |
+| 内部服务端点 | `/logistics/fulfillment/check`、`/outbound` | `@InternalServiceAccess("amz-service-order")`，仅供 order 编排 |
+| 摄取端点（刻意不接） | `/report/v2` 5 个 POST、`/report/profit/allocation` | `ReportTenantGuard` 严格档 + report.ts:1-18 记录「放进 UI 等于让人手工录会计数据」 |
+| 造数据端点（刻意不接） | `/ops/review/scan`、`/hijack/scan`、`/rank/capture` | 生产环境恒拒绝，`RoleGatingBatchContractTest` 豁免清单 + `opsAlerts.ts:12-15` |
+| 凭证/同步（运维入口） | `/spapi/credential`、`/sync/orders`、`/reports/request`、`/uploads`、`/feeds/submit`、`/finance/*`、`/inventory/sync` | 需已存凭证的运维操作，前端 `connectors.ts` 明确不提供通用执行器（见 ConnectorCenter.vue:80-85） |
+| Keepa 原始透传 | `/product/keepa/{price,rank,competitor}/{asin}` | **同一数据的落库链路完整**：`KeepaCompetitorScheduler` → `CompetitorMonitor` 表 → `ListingMonitorServiceImpl` → `ListingMonitorController`。这 3 个是绕过业务语义的裸透传，属冗余但非缺陷 |
+| 旧 Agent 入口 | `/ai/chat`、`/ai/agent/chat`、`/ai/agent/memory/chat` | 前端活路径是 `/ai/erp/agent` + SSE `/ai/chat-stream`（ai.ts）；这三个是并行历史入口 |
+| 其它 | `/multiplatform/*sync*`、`/message/{id}/reply`、`/oauth/token`、`/order/list/export`、`/ad/keyword/optimize`、`/user/updateImage`、`/procurement/batch/fifo-return` | 逐个 grep 有调用方或明确运维/内部语义 |
+
+### 40. 盘点结论
+
+**未发现功能缺口**。43 个候选全部有据可查，其中约 20 个是「刻意不做」的决策
+（已在代码注释或 HANDOFF 里留了理由），其余有真实调用方。
+
+真正值得动的只有两类，且都不该由我单独决定：
+1. **KeepaController 整个类**（3 个端点 + 38 行）：数据已有完整业务链路，
+   裸透传是冗余。删除前要确认没有外部系统在调 `/product/keepa/**`。
+2. **AiController 的 3 个旧 Agent 入口**：与 `/ai/erp/agent` 功能重叠，
+   但 `MemoryAwareAgentService` 那条链路有独立的记忆/偏好逻辑，
+   删哪个要先确认 `AgentMemory.vue` 是否还要它。
+
+两者都是**产品决策**（对外契约 + 删除用户可见能力），按 CLAUDE.md
+「对外契约按协议契约单独评估」留给用户，不自主删。
