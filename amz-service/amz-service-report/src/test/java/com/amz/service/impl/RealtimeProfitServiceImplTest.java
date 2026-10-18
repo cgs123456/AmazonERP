@@ -255,6 +255,64 @@ class RealtimeProfitServiceImplTest {
                 "分摊列表此前完全没有上限，必须补上显式 LIMIT");
     }
 
+    /**
+     * 分摊侧的游标此前**零覆盖**：快照侧（{@code listSnapshotsWithCursorUsesKeyset} /
+     * {@code listSnapshotsRejectsBadCursor}）有测试守着，分摊侧没有。
+     * 两个 decode 方法逐行相同、只差日期类型，要合并成一份之前必须先让两侧都有测试，
+     * 否则「合并没改坏行为」这句话无从证明——先补测试再动实现。
+     */
+    @Test
+    @DisplayName("listAllocations：携带 cursor 时按 (alloc_date,id) 复合下界过滤")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void listAllocationsWithCursorUsesKeyset() {
+        when(costAllocationMapper.selectList(any()))
+                .thenReturn(List.of(allocation(5L, "2026-09-01")));
+        PageRequest req = PageRequest.of(10, PageRequest.encodeCursor("2026-09-05|100"));
+
+        profitService.listAllocations(1L, "HEADHAUL", null, null, req);
+
+        ArgumentCaptor<LambdaQueryWrapper<CostAllocation>> captor =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(costAllocationMapper).selectList(captor.capture());
+        LambdaQueryWrapper<CostAllocation> wrapper = captor.getValue();
+        // 同快照侧：必须先 getCustomSqlSegment() 触发参数表惰性填充
+        String segment = wrapper.getCustomSqlSegment();
+        assertTrue(segment.contains("alloc_date"), "复合游标必须把 alloc_date 作为下界条件：" + segment);
+        assertTrue(wrapper.getParamNameValuePairs().containsValue(100L),
+                "游标里的 id 必须参与下界比较，实际参数表=" + wrapper.getParamNameValuePairs());
+    }
+
+    @Test
+    @DisplayName("listAllocations：游标载荷格式非法必须报错，不能静默回退首页")
+    void listAllocationsRejectsBadCursor() {
+        PageRequest bad = PageRequest.of(10, PageRequest.encodeCursor("garbage"));
+        assertThrows(InvalidParamException.class,
+                () -> profitService.listAllocations(1L, "HEADHAUL", null, null, bad));
+    }
+
+    /**
+     * 守住 {@code id <= 0} 这条校验。
+     *
+     * <p>发现经过：合并两个 decode 之后做变异验证，把 {@code if (id <= 0)} 整段删掉，
+     * 12 项测试<b>全绿</b>——也就是说这条校验此前从没被任何测试碰到过
+     * （合并前分摊侧零覆盖，快照侧只测了 {@code "garbage"} 这种连分隔符都没有的载荷）。
+     * 删掉它的后果：{@code id=0} 或负 id 会被当成合法下界，
+     * 复合游标 {@code (key < k OR (key = k AND id < 0))} 直接退化成恒假，
+     * 翻页静默返回空而不是报错。
+     */
+    @Test
+    @DisplayName("游标 id <= 0 必须拒绝：否则复合下界恒假，翻页静默返回空")
+    void cursorWithNonPositiveIdIsRejected() {
+        assertThrows(InvalidParamException.class, () -> profitService.listSnapshots(
+                        1L, "SKU-1", null, null,
+                        PageRequest.of(10, PageRequest.encodeCursor("2026-09-27 08:00:00|0"))),
+                "id=0 的游标必须报错");
+        assertThrows(InvalidParamException.class, () -> profitService.listAllocations(
+                        1L, "HEADHAUL", null, null,
+                        PageRequest.of(10, PageRequest.encodeCursor("2026-09-05|0"))),
+                "id=0 的游标必须报错（分摊侧同规则，合并后不应只守一侧）");
+    }
+
     // ---------------- helpers ----------------
 
     /**

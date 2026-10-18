@@ -189,7 +189,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         // 同一天会有多个 SKU/ASIN 的快照，stat_time 并列，单列 id 游标无法保证稳定顺序，
         // 必须用 (stat_time, id) 复合游标。
         if (req.hasCursor()) {
-            Object[] key = decodeSnapshotCursor(req.payload());
+            Object[] key = decodeCursor(req.payload(), v -> LocalDateTime.parse(v, DT_FMT));
             wrapper.apply("(stat_time < {0} OR (stat_time = {0} AND id < {1}))", key[0], key[1]);
         }
         wrapper.orderByDesc(ProfitSnapshot::getStatTime)
@@ -211,19 +211,25 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     }
 
     /**
-     * 解析快照游标载荷 {@code statTime|id}。
+     * 解析复合游标载荷 {@code <键>|<id>}。
      *
+     * <p>快照用 {@code statTime|id}、分摊用 {@code allocDate|id}：两份解析此前是
+     * 逐行相同的两份拷贝，只差日期类型（{@code LocalDateTime} / {@code LocalDate}）。
+     * 合并后由调用方传入解析器，校验规则（分隔符、id > 0、失败即
+     * {@code InvalidParamException}）只剩一份，不会各自漂移。
+     *
+     * @param parser 把游标前缀解析成时间键的函数；抛运行时异常即视为格式非法
      * @throws InvalidParamException 载荷格式不合法（篡改过的游标，或跨端点混用了别的游标）
      */
-    private Object[] decodeSnapshotCursor(String payload) {
+    private Object[] decodeCursor(String payload, java.util.function.Function<String, Object> parser) {
         int sep = payload.lastIndexOf(CURSOR_SEP);
         if (sep <= 0 || sep == payload.length() - 1) {
             throw new InvalidParamException("分页游标格式非法：" + payload);
         }
-        LocalDateTime statTime;
+        Object key;
         long id;
         try {
-            statTime = LocalDateTime.parse(payload.substring(0, sep), DT_FMT);
+            key = parser.apply(payload.substring(0, sep));
             id = Long.parseLong(payload.substring(sep + 1));
         } catch (RuntimeException e) {
             throw new InvalidParamException("分页游标格式非法：" + payload);
@@ -231,7 +237,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         if (id <= 0) {
             throw new InvalidParamException("分页游标格式非法：" + payload);
         }
-        return new Object[]{statTime, id};
+        return new Object[]{key, id};
     }
 
     @Override
@@ -351,7 +357,7 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
         if (endDate != null) wrapper.le(CostAllocation::getAllocDate, LocalDate.parse(endDate));
         // 同一天可能有多条分摊记录，故同样用 (alloc_date, id) 复合游标
         if (req.hasCursor()) {
-            Object[] key = decodeAllocCursor(req.payload());
+            Object[] key = decodeCursor(req.payload(), LocalDate::parse);
             wrapper.apply("(alloc_date < {0} OR (alloc_date = {0} AND id < {1}))", key[0], key[1]);
         }
         wrapper.orderByDesc(CostAllocation::getAllocDate)
@@ -369,25 +375,6 @@ public class RealtimeProfitServiceImpl implements RealtimeProfitService {
     /** 由本页最后一行生成下一页游标：(alloc_date, id) 复合键。 */
     private String allocCursor(CostAllocation allocation) {
         return PageRequest.encodeCursor(allocation.getAllocDate() + CURSOR_SEP + allocation.getId());
-    }
-
-    private Object[] decodeAllocCursor(String payload) {
-        int sep = payload.lastIndexOf(CURSOR_SEP);
-        if (sep <= 0 || sep == payload.length() - 1) {
-            throw new InvalidParamException("分页游标格式非法：" + payload);
-        }
-        LocalDate allocDate;
-        long id;
-        try {
-            allocDate = LocalDate.parse(payload.substring(0, sep));
-            id = Long.parseLong(payload.substring(sep + 1));
-        } catch (RuntimeException e) {
-            throw new InvalidParamException("分页游标格式非法：" + payload);
-        }
-        if (id <= 0) {
-            throw new InvalidParamException("分页游标格式非法：" + payload);
-        }
-        return new Object[]{allocDate, id};
     }
 
     @Override

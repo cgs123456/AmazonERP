@@ -8205,3 +8205,33 @@ multiplatform 155 绿（原 152）。门户 136 绿。
 **本地证明不了的部分**：V5 会在 CI 被 `AllModulesFlywayMySqlIT` 在真实 MySQL 8 上跑
 （`FLYWAY_ALL_IT_URL` 在 ci.yml/release.yml 里配了），本地没有 MySQL 实例，
 所以「V5 真能跑通」只能由 CI 证明。1062/1091 两条是**推**出来的，不是实测。
+
+---
+
+## §S33.112 合并两个复合游标解析（report）
+
+**背景**：`RealtimeProfitServiceImpl` 里有 `decodeSnapshotCursor` 与
+`decodeAllocCursor` 两份**逐行相同**的实现，只差日期类型
+（`LocalDateTime.parse(v, DT_FMT)` / `LocalDate.parse(v)`）。
+
+**是否属于"过早抽象"**：不属于。CLAUDE.md 原则 7 说的是不要因**外形相似**
+提前抽象——这里是**同一个类里的两份拷贝**，两个用例都已存在，
+合并是消除重复；校验规则只剩一份，不会各自漂移。
+（对照：§S33.101 的 `AdPageCursor` 是**跨模块**的形似，当时刻意没合并。）
+
+**合并成** `decodeCursor(String payload, Function<String,Object> parser)`，
+保留 `Object[]` 返回（`wrapper.apply` 需要）。
+
+**先补测试再动实现**：分摊侧 `decodeAllocCursor` 原本**零覆盖**
+（快照侧有 `listSnapshotsWithCursorUsesKeyset` / `listSnapshotsRejectsBadCursor`）。
+不补就合并，等于盲改。补了对称的两项。
+
+**顺带发现的真缺口**：合并后做变异验证，把 `if (id <= 0)` 整段删掉，
+**12 项测试全绿**——这条校验此前从没被任何测试碰到过。
+（合并前分摊侧零覆盖，快照侧只测了 `"garbage"` 这种连分隔符都没有的载荷。）
+删掉它的后果：`id=0` 会被当成合法下界，复合游标
+`(key < k OR (key = k AND id < 0))` 退化成恒假，**翻页静默返回空而不是报错**。
+已补 `cursorWithNonPositiveIdIsRejected` 两侧各验一次，变异现已被杀。
+
+**验证**：3 个变异体（去 id 校验 / 分摊侧换成 LocalDateTime 解析 / 分摊侧格式不匹配）
+全部被杀。report 80 绿（原 77）。门户 136 绿。总行数 46131 → 46118。
