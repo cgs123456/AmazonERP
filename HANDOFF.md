@@ -7751,3 +7751,51 @@ ratchet 与 hygiene 通过。overLimitTotalLines 46162 → 46117（净降 45）�
 `AdAutoRuleServiceImpl` 一次，后者靠 `git checkout` 恢复重做）。
 
 规则：**删方法必须逐行定位并断言首尾行内容**，不能靠「找下一个 `}`」猜边界。
+
+## §S33.102 更正 §S33.100 转述的审查结论：report 副本存在，但我对它做了一个错误判断
+
+§S33.100 我按审查者的转述，把 `RealtimeProfitServiceImpl` 两处记作
+「decodeXxxCursor 同构、待办」。本轮逐字核对，两件事要分清。
+
+### 事实核对（存在，且确实同构）
+
+真实方法名是 `decodeSnapshotCursor`（:218）与 `decodeAllocCursor`（:374），
+不是转述里的 `decodeXxxCursor`。骨架**逐行相同**：
+`lastIndexOf(CURSOR_SEP)` 取分隔、位置校验、try 里 parse 键 + id、
+`catch (RuntimeException)` 抛同一句话、`id <= 0` 守卫、`return Object[]`。
+差异只有键类型（`LocalDateTime` + `DT_FMT` vs `LocalDate`）。
+审查者的实质指认成立，§S33.100 的方向没错——**但方法名与行号是我转述的，没核。**
+
+### 我当场做错又推翻的判断
+
+我一度判定「返回 `Object[]` 而非类型化 record」是这个副本的**设计缺陷**，
+比前两处更该处理。读了调用方后不成立：
+
+```java
+wrapper.apply("(stat_time < {0} OR (stat_time = {0} AND id < {1}))", key[0], key[1]);
+```
+
+`Object[]` 正是 `Wrapper.apply(String, Object...)` 需要的入参形态。
+改成类型化 record 只是让调用方再拆回数组，多一层转换、零收益。
+**「看着不像好设计」和「真的是缺陷」之间差一次读调用方。**
+
+### 结论：记待办，不修
+
+剩下的只有重复本身（同文件两处、约 18 行骨架）。
+
+**仍符合我在 §S33.98 立的收敛判据**（第二个用例已出现），
+但收益仅是消重、无正确性收益；且该文件 548 行，
+承载 §S33.81 刚修过的 `profitTrend` / `snapshotProfit` 时间口径
+（「N 天」语义、由小时度改为日精度），触碰它有回归风险。
+
+按 §S33.97/§S33.98 立的规矩——非正确性收益的拆分让位于有正确性收益的工作
+——记为待办。若将来动那两处口径，顺手一起收敛。
+
+### 第三次同类错误
+
+这是第三次把审查者/工具的转述当事实记进文档（前两次：§S33.92 的
+「增量编译漏改动」、§S33.98 的「ad 第二处在 SearchTermServiceImpl」
+——后者方法名对但位置描述错）。共同点：**转述里「可验证的部分」我没有复验。**
+
+规则：写进 HANDOFF 的每个事实（方法名、行号、行为）都要能指回一次实际查看，
+不能只写「审查者说」。
