@@ -169,8 +169,12 @@ export const WRITE_LOCKED_HINT = '需 OPERATOR/ADMIN'
  * **两个刻意豁免的机器端点不在此列，也不该加**（已写进后端的
  * MultiplatformWriteEndpointGuardContractTest.MACHINE_ENDPOINTS）：
  * `POST /multiplatform/webhook/**`（Temu/TikTok/Shein 回调，白名单放行、HMAC 验签）、
- * `POST /multiplatform/oauth/token`（外部系统凭 appKey+appSecret 换 token）。
+ * `POST /multiplatform/oauth/token`（凭 appKey+appSecret 换 token）。
  * 给这两个加前端门控没有意义（没有前端入口），加后端门禁会打死真实调用方。
+ * <p>
+ * 注意对后者的描述仅说明它的<b>输入契约</b>，不代表它已可用：
+ * 该端点签发的 token 不被系统任何代码校验，换到手也访问不了受保护资源
+ * （§S33.94，后端 MultiplatformServiceImpl.generateToken 有完整说明）。
  * <p>
  * 与其它常量分开的理由同 FINANCE_WRITE_ROLES：对第三方平台做写操作不是
  * 「自己店里的账」，是「以店铺身份对外动作」——错发一条消息、错绑一个账号都是对外可见的。

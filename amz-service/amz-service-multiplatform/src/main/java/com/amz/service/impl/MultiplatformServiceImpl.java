@@ -61,8 +61,13 @@ import java.util.stream.Collectors;
  *   <li>商品同步与 Amazon ASIN/SKU 映射</li>
  *   <li>多平台消息统一管理（站内信聚合）</li>
  *   <li>全平台库存聚合视图</li>
- *   <li>OAuth 开放 API 体系</li>
+ *   <li>OAuth 应用管理（注册/轮换/列表）——<b>只有这三件可用</b></li>
  * </ol>
+ *
+ * <p>关于第 5 项要说清楚，避免误读（§S33.94）：这里<b>没有</b>「OAuth 开放 API 体系」，
+ * 只有应用自身的管理接口。{@link #generateToken} 会签发 token，但签出来的串
+ * 不被任何代码校验——系统目前没有受 token 保护的资源。要把它变成真正的开放 API，
+ * 需要补受保护资源 + 校验过滤器 + 过期/吊销/刷新，属排期项。
  */
 @Slf4j
 @Service
@@ -453,7 +458,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         return result;
     }
     // ========================================================
-    // OAuth 开放 API（P2 新增）
+    // OAuth 应用管理（§S33.94：`generateToken` 是未完成半成品，见其方法注释）
     // ========================================================
 
     @Override
@@ -531,6 +536,22 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         }
     }
 
+    /**
+     * 签发 OAuth token。<b>半成品——签发即终点。</b>
+     *
+     * <p>下列校验都是真的：appKey/appSecret/shopId 必填、App 存在且 ACTIVE、
+     * 密钥 SHA-256 比对、token 绑定应用归属店铺（防止持单应用凭证越权签发他店 token）、
+     * scope 取交集且交集为空拒绝。
+     *
+     * <p>缺的是后半程：返回的 access/refresh token 写入 `amz_oauth_token` 之后，
+     * 全仓没有任何代码读这张表。没有校验端点、没有鉴权过滤器、没有过期判定、
+     * 没有吊销、没有刷新。所以它<b>不授予任何访问权</b>。
+     *
+     * <p>记录在此而不是加 TODO（§S33.94）：外部已确认无使用方，
+     * 补全需要「受保护资源 + 校验过滤器 + 过期/吊销/刷新」一整套，属排期项。
+     * 在那之前，任何读到本方法的人都应知道：这里的校验防的是「签发流程本身出错」，
+     * 不是「未授权访问系统」。
+     */
     @Override
     @Transactional
     public OauthToken generateToken(String appKey, String appSecret, String[] scopes, Long shopId) {

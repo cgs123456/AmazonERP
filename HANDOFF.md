@@ -7378,6 +7378,8 @@ ad 模块 24 个测试类全绿。`AdvertisingApiRealClientContractTest` 7 个 e
 
 ## §S33.94 OAuth 开放 API：能签发 token，但 token 不构成任何访问凭证（未完成功能）
 
+> 决策已定，见 §S33.95：外部无使用方，保留现状并全面标注。
+
 审 `generateToken` 链路时的发现，**本轮不修，只记录**。
 
 `generateToken` 校验 appKey/appSecret、按归属店铺绑 shopId、做 scope 交集，
@@ -7391,3 +7393,44 @@ ad 模块 24 个测试类全绿。`AdvertisingApiRealClientContractTest` 7 个 e
 
 要补的是「受保护资源 + token 校验过滤器 + 过期/吊销/刷新」一整套，属接入方案
 与架构决策，不是缺陷修补，不在本轮范围。**但不应把它记作「已支持开放 API」**。
+
+## §S33.95 OAuth 未完成状态的标注收口（承接 §S33.94 的决策）
+
+§S33.94 记录了两件事：①OAuth token 签发后无人读取，不构成访问凭证；
+②「保留现状还是排期补全」待用户决定。
+
+**用户已确认：外部无任何系统使用该端点。决策 = 保留现状 + 明确标注。**
+
+保留而非删除的理由：删端点是破坏性变更，而它当前无害——调用方最多得到一个
+用不上的字符串，不会造成越权或数据错误。真正的危险不是端点存在，
+而是**注释把它写成了已具备的能力**。所以本轮只改描述，不动逻辑：
+
+| 位置 | 原描述的问题 |
+|---|---|
+| `MultiplatformController` 分区标题 | 「OAuth 开放 API」——听起来是一套体系 |
+| `MultiplatformController.generateToken` | 无任何说明，读者无从知道背面是空的 |
+| `MultiplatformServiceImpl` 类注释 | 第 5 项写「OAuth 开放 API 体系」 |
+| `MultiplatformService` 分区标题 | 同上 |
+| `MultiplatformServiceImpl.generateToken` | 无说明 |
+| `amz-frontend/src/utils/identity.ts` | 「外部系统凭 appKey+appSecret 换 token」——把输入契约写成了可用能力 |
+| `OauthToken` 模型类 | 无注释，`expiresAt`/`refreshToken` 看起来像在生效 |
+
+全部改为「签发即终点」，并各自说明哪些校验是真的（必填/App 状态/密钥比对/
+归属店铺/scope 交集）、哪些是空的（无人读表/无校验端点/无过滤器/无过期/无吊销/无刷新）。
+
+`OauthToken` 模型那句值得单记：`expiresAt` 与 `refreshToken` 是**写着好看的字段**——
+token 到期不会导致任何东西被拒绝，因为它压根不被采纳。看到字段名就以为系统
+「支持 token 过期与刷新」是最易产生的误读。
+
+### 验证
+
+- `amz-service-multiplatform` clean test 144 项绿（改动仅注释与 javadoc，无逻辑变更）。
+- 前端 `npm run test:run` 721 项绿、`npm run build` 成功。
+- file-size-ratchet 与 repository-hygiene 通过，未抬 baseline。
+
+### 排期项（本轮不做）
+
+补全需要：受保护资源 + token 校验过滤器 + 过期/吊销/刷新机制。
+属从无到有搭一套鉴权体系，不是缺陷修补。若将来启动，注意
+`generateToken` 现有的归属校验必须与受保护资源**一起**做——
+单独存在时它防的不是越权，是空转。

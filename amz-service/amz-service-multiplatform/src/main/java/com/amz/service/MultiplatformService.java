@@ -65,7 +65,7 @@ public interface MultiplatformService {
 
     Map<String, Object> aggregatedInventory(Long shopId);
 
-    // ===== OAuth 开放 API =====
+    // ===== OAuth 应用管理（§S33.94：generateToken 是未完成半成品，token 不被任何代码校验） =====
 
     /**
      * 注册 OAuth 应用。明文密钥仅本次随结果返回（字段 {@code appSecret}），

@@ -247,7 +247,19 @@ public class MultiplatformController {
                 shopId, status, PageRequest.of(size, cursor)));
     }
 
-    // ==================== OAuth 开放 API ====================
+    // ==================== OAuth 应用管理（§S33.94：仅应用 CRUD 可用，token 不构成访问凭证） ====================
+    //
+    // 这一区只有前三件事是真的可用的：注册应用、轮换密钥、查应用列表。
+    // 它们操作 amz_oauth_app，与「能不能凭 token 访问系统」无关。
+    //
+    // 下面的 /oauth/token 是<b>未完成的半成品</b>：它会校验 appKey/appSecret、
+    // 按归属店铺绑 shopId、做 scope 交集，然后签一串 oat_/ort_ 存进 amz_oauth_token。
+    // 但全仓没有任何代码读那张表——没有 token 校验、没有过滤器、没有过期/吊销/刷新。
+    // 也就是说这串 token 打不开任何受保护资源。
+    //
+    // 决策（已确认外部无使用方）：保留端点不动，因为删接口是破坏性变更、且它本身无害
+    // （拿到一个用不上的字符串）；但所有注释与文档必须写明「签发即终点」，
+    // 不再让它冒充已具备的能力。补全需要一整套鉴权体系，属排期项而非缺陷修补。
 
     @RequireRole({"OPERATOR", "ADMIN"})
     @OperLog(module = "多平台", action = "注册应用", description = "注册第三方平台 OAuth 应用")
@@ -273,6 +285,23 @@ public class MultiplatformController {
         return Result.paged(multiplatformService.listApps(shopId, PageRequest.of(size, cursor)));
     }
 
+    /**
+     * 用 appKey + appSecret 换 token。<b>半成品：签发即终点。</b>
+     *
+     * <p>能正常工作的部分：必填校验、App 存在且 ACTIVE、密钥比对、绑定店铺、
+     * scope 取交集（交集为空拒绝）。这些都没问题。
+     *
+     * <p>不工作的部分：返回的 {@code accessToken} / {@code refreshToken}
+     * 只是两个随机串，写入 `amz_oauth_token` 后<b>没有任何代码再读它</b>。
+     * 没有校验端点、没有鉴权过滤器、没有过期判定、没有吊销、没有刷新。
+     * 调用方拿到它会发现：拿它去请求任何受保护资源，得到的响应与不带 token 完全一样。
+     *
+     * <p><b>为什么这里没有 shopId 归属校验却仍然安全</b>：因为 token 不授予任何访问权，
+     * 「伪造归属」换来的也是一个用不上的字符串。真要补全鉴权时，
+     * 这里的归属校验必须和受保护资源一起做——单独存在时它防的不是越权，是空转。
+     *
+     * <p>保留而非删除：删端点属破坏性变更，而它当前无害（见分区注释的决策记录）。
+     */
     @PostMapping("/oauth/token")
     public Result<OauthToken> generateToken(@RequestBody OauthTokenRequest request) {
         return Result.success(multiplatformService.generateToken(
