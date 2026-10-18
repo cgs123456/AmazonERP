@@ -4,7 +4,7 @@
   "limitLines": 500,
   "summary": {
     "files": 55,
-    "totalLines": 46355,
+    "totalLines": 46360,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -51,7 +51,7 @@
     "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsUpgradeServiceImpl.java": 899,
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsOpsDashboardServiceImplTest.java": 583,
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsUpgradeServiceImplTest.java": 652,
-    "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java": 1011,
+    "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java": 1016,
     "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java": 887,
     "amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java": 668,
     "amz-service/amz-service-product/src/test/java/com/amz/service/ListingCopyServiceTest.java": 628,

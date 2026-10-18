@@ -322,6 +322,11 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     @Transactional
     public boolean replyMessage(Long messageId, String replyContent) {
+        // 与 markShipped 的运单号同款必填校验：空内容「发送成功」会让客服页显示已回复、
+        // 买家收到一条空白消息；mock 档下更是直接记出一条无意义的 REPLIED 行。
+        if (replyContent == null || replyContent.isBlank()) {
+            throw new AttrIsNullException("回复内容不能为空");
+        }
         PlatformMessage msg = platformMessageMapper.selectById(messageId);
         if (msg == null) throw new AttrIsNullException("消息不存在 id=" + messageId);
         requireShopOnRow(msg.getShopId(), "平台消息");

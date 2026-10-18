@@ -193,6 +193,19 @@ class MultiplatformInternalSemanticsTest {
     }
 
     @Test
+    @DisplayName("空白回复内容直接拒绝：不发送、不写 REPLIED")
+    void replyRejectsBlankContent() {
+        // 与 markShipped 的运单号必填同款：空内容「发送成功」会让客服页显示已回复、
+        // 买家收到一条空白消息；mock 档下直接记出一条无意义的 REPLIED 行。
+        // 校验必须在查消息之前——他店的空白回复也不该先探到消息存在性。
+        assertThrows(com.amz.exception.AttrIsNullException.class,
+                () -> service.replyMessage(21L, "   "));
+        verify(platformMessageMapper, never()).selectById(any());
+        verify(temuClient, never()).sendMessage(any(PlatformMessage.class));
+        verify(platformMessageMapper, never()).insert(any(PlatformMessage.class));
+    }
+
+    @Test
     @DisplayName("平台侧没接入就显式拒绝：不写 REPLIED，也不留任何一行回复")
     void replyRefusesWithoutWritingWhenPlatformSendIsMissing() {
         when(platformMessageMapper.selectById(21L)).thenReturn(message(21L, 1L, "TM-888"));
