@@ -473,21 +473,15 @@ public class MultiplatformServiceImpl implements MultiplatformService {
 
         // shopId 未传时从平台账号表反查；仍为空则拒绝落库，避免产生无归属脏数据
         if (shopId == null) {
-            PlatformAccount acc = platformAccountMapper.selectOne(
-                new LambdaQueryWrapper<PlatformAccount>()
-                    .eq(PlatformAccount::getPlatform, platform)
-                    .orderByDesc(PlatformAccount::getCreateTime)
-                    .last("LIMIT 1"));
-            shopId = acc != null ? acc.getShopId() : null;
-            log.warn("Webhook 未传 shopId，已按 platform={} 反查 → shopId={}", platform, shopId);
+            shopId = resolveShopIdByPlatform(platform);
         }
         if (shopId == null) {
             // 2026-10-07 demo 档回环验收发现：这是可预期的业务状态（平台账号尚未录入，
             // 生产首次接入即如此），此前抛 IllegalStateException 被全局处理器兜底成
             // 「服务器内部错误」，回调方看不到真实原因。与验签拒绝同款走业务异常。
             throw new CodeErrorException(
-                    "Webhook 无法确定归属店铺：平台 " + platform + " 尚未录入任何店铺账号"
-                    + "（amz_platform_account），拒绝落库");
+                    "Webhook 无法确定归属店铺：平台 " + platform + " 尚未录入可用店铺账号"
+                    + "（amz_platform_account 无 ACTIVE 记录），拒绝落库");
         }
 
         WebhookEvent event = new WebhookEvent();
@@ -515,6 +509,54 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         event.setProcessTime(LocalDateTime.now());
         webhookEventMapper.updateById(event);
         return event;
+    }
+
+    /**
+     * 平台侧回调未带 shopId 时，按平台反查唯一归属店铺。<b>无法唯一确定时抛业务异常，绝不猜。</b>
+     * <p>
+     * §S33.88：旧实现是 {@code orderByDesc(createTime).last("LIMIT 1")} 取「该平台最新
+     * 创建的账号」，等于把回调硬塞给任意一个店铺。这在本仓是<b>必然</b>发生的错，不是
+     * 边角情况：
+     * <ul>
+     *   <li>{@code uk_shop_platform (shop_id, platform)} 允许同一平台挂多个店铺，
+     *       合成数据里 SHOPIFY 就同时属于 4 个店铺；</li>
+     *   <li>验签密钥是<b>平台级</b>（{@code webhook.secret.temu} 一个值），不是店铺级，
+     *       所以签名里不含任何可以区分店铺的信息；</li>
+     *   <li>控制器传进来的 shopId 恒为 {@code null}（webhook 是免认证白名单入口，
+     *       没有用户上下文）——反查是唯一路径，不是兜底。</li>
+     * </ul>
+     * 后果是跨租户数据污染：A 店的订单事件记到 B 店名下，A 店运营看不到自己的回调，
+     * 而两边都收不到任何错误——看起来完全成功。
+     * <p>
+     * {@code LIMIT 2} 不是随意取值：取 2 行足以区分「0 个 / 1 个 / 多于 1 个」三种情况，
+     * 同时保持有界读（不为枚举而全表扫描）。多于 1 个时拒绝落库，而不是按创建时间
+     * 挑一个——挑中概率 1/N，且猜错了没有任何信号。
+     * <p>
+     * 不在这里加「回调带 shopId」的能力：验签只对 {@code payload} 做 HMAC，
+     * shopId 若走查询参数就是<b>未签名字段</b>，任何人都能把回调伪造成别的店铺。
+     * 真要支持同平台多店铺，得让平台侧把 shopId 纳入签名串——那是接入方案变更，
+     * 不是这里能顺手补的。当前唯一正确的行为是 fail-closed。
+     */
+    private Long resolveShopIdByPlatform(String platform) {
+        List<PlatformAccount> accounts = platformAccountMapper.selectList(
+                new LambdaQueryWrapper<PlatformAccount>()
+                        .eq(PlatformAccount::getPlatform, platform)
+                        .eq(PlatformAccount::getStatus, "ACTIVE")
+                        .orderByDesc(PlatformAccount::getCreateTime)
+                        .last("LIMIT 2"));
+        if (accounts == null || accounts.isEmpty()) {
+            return null;
+        }
+        if (accounts.size() > 1) {
+            throw new CodeErrorException("Webhook 无法确定归属店铺：平台 " + platform
+                    + " 有多个 ACTIVE 店铺账号，而回调不带可区分的店铺线索"
+                    + "（验签只对 payload 做 HMAC，密钥是平台级）。"
+                    + "多店铺共用同一平台是正常形态，拒绝落库以免把事件写进错误的店铺；"
+                    + "要让这类回调可用，需平台侧提供带店铺标识、且被签名覆盖的回调字段");
+        }
+        Long resolved = accounts.get(0).getShopId();
+        log.info("Webhook 未传 shopId，按 platform={} 唯一反查命中 → shopId={}", platform, resolved);
+        return resolved;
     }
 
     private void handleWebhookEvent(WebhookEvent event) {

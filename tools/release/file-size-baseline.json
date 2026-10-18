@@ -4,7 +4,7 @@
   "limitLines": 500,
   "summary": {
     "files": 55,
-    "totalLines": 46403,
+    "totalLines": 46355,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -40,7 +40,7 @@
     "amz-frontend/src/views/ReportCenter.vue": 984,
     "amz-frontend/src/views/Warehouse.vue": 1369,
     "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java": 738,
-    "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 713,
+    "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 623,
     "amz-service/amz-service-ai/src/test/java/com/amz/agent/ErpToolExecutorTest.java": 1049,
     "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java": 549,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/FinanceServiceImpl.java": 580,
@@ -51,7 +51,7 @@
     "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsUpgradeServiceImpl.java": 899,
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsOpsDashboardServiceImplTest.java": 583,
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsUpgradeServiceImplTest.java": 652,
-    "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java": 969,
+    "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java": 1011,
     "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java": 887,
     "amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java": 668,
     "amz-service/amz-service-product/src/test/java/com/amz/service/ListingCopyServiceTest.java": 628,

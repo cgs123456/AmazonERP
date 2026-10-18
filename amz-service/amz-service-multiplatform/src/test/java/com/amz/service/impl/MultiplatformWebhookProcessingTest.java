@@ -4,8 +4,13 @@ import com.amz.context.UserContext;
 import com.amz.exception.CodeErrorException;
 import com.amz.mapper.PlatformAccountMapper;
 import com.amz.mapper.WebhookEventMapper;
+import com.amz.model.PlatformAccount;
 import com.amz.model.WebhookEvent;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -53,6 +58,17 @@ class MultiplatformWebhookProcessingTest {
 
     @InjectMocks
     private MultiplatformServiceImpl service;
+
+    /**
+     * 纯 Mockito 测试没有 MyBatis 启动流程，LambdaQueryWrapper 取列名时会抛
+     * “can not find lambda cache for this entity”。注册元信息后断言才能读到
+     * 真实拼出来的查询条件（§S33.81 同款处理）。
+     */
+    @BeforeAll
+    static void initMybatisTableInfo() {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, PlatformAccount.class);
+    }
 
     @BeforeEach
     void authenticate() {
@@ -145,12 +161,96 @@ class MultiplatformWebhookProcessingTest {
     @DisplayName("平台账号未录入且未传 shopId → 业务拒绝而非运行时异常（2026-10-07 回环验收发现）")
     void noPlatformAccountRejectedAsBusinessError() {
         when(webhookEventMapper.selectCount(any())).thenReturn(0L);
-        when(platformAccountMapper.selectOne(any())).thenReturn(null);
+        when(platformAccountMapper.selectList(any())).thenReturn(List.of());
 
         CodeErrorException ex = assertThrows(CodeErrorException.class,
                 () -> service.receiveWebhook("TEMU", "ORDER_CREATED", "EV-6", "{}", null, sign("{}")));
         // 明确指向可修复原因（录入 amz_platform_account），而不是被兜底成「服务器内部错误」
-        assertTrue(ex.getMessage().contains("尚未录入任何店铺账号"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("尚未录入可用店铺账号"), ex.getMessage());
         verify(webhookEventMapper, never()).insert(any(WebhookEvent.class));
+    }
+
+    /**
+     * §S33.88：同平台多店铺时，不带 shopId 的回调必须被拒而不是被猜。
+     * <p>
+     * 旧实现 {@code orderByDesc(createTime).last("LIMIT 1")} 取「最新创建的账号」，
+     * 把回调硬塞给任意一个店铺。本仓里这是<b>必然</b>发生而非边角情况：
+     * 控制器传进来的 shopId 恒为 null（webhook 是免认证白名单入口，无用户上下文），
+     * 反查是唯一路径；而 {@code uk_shop_platform} 允许同平台挂多店
+     * （合成数据里 SHOPIFY 同时属于 4 个店铺），验签密钥又是平台级、签名里
+     * 不含任何可区分店铺的信息。
+     * <p>
+     * 后果是跨租户数据污染：A 店的订单事件记到 B 店名下，A 店运营看不到自己的回调，
+     * 两边都收不到错误——看起来完全成功。所以这里宁可 400 让平台侧补 shopId。
+     */
+    @Test
+    @DisplayName("同平台多店铺且回调未带 shopId → 拒绝落库，不按创建时间猜一个店")
+    void ambiguousShopIsRejectedNotGuessed() {
+        when(webhookEventMapper.selectCount(any())).thenReturn(0L);
+        when(platformAccountMapper.selectList(any())).thenReturn(List.of(
+                account(1001L, "TEMU", "ACTIVE"),
+                account(1002L, "TEMU", "ACTIVE")));
+
+        CodeErrorException ex = assertThrows(CodeErrorException.class,
+                () -> service.receiveWebhook("TEMU", "ORDER_CREATED", "EV-7", "{}", null, sign("{}")));
+        assertTrue(ex.getMessage().contains("有多个 ACTIVE 店铺账号"), ex.getMessage());
+        // 错误信息必须给出真实结论。此前两处文案有问题：
+        //  - 「请回调带 shopId」——端点根本没这个参数（控制器恒传 null），照做也无效；
+        //  - 「只保留一个 ACTIVE 账号」——多店铺共用同一平台是 ERP 的正常形态，
+        //    合成数据里 SHOPIFY 就属于 4 个店铺，把它当错误处理是误导运维。
+        assertTrue(ex.getMessage().contains("多店铺共用同一平台是正常形态"), ex.getMessage());
+        // 一条都不能落库：猜中概率 1/N，且猜错了没有任何信号
+        verify(webhookEventMapper, never()).insert(any(WebhookEvent.class));
+    }
+
+    @Test
+    @DisplayName("同平台唯一 ACTIVE 店铺时，反查正常命中并落库")
+    void uniqueActiveAccountResolves() {
+        when(webhookEventMapper.selectCount(any())).thenReturn(0L);
+        when(platformAccountMapper.selectList(any())).thenReturn(List.of(
+                account(2002L, "TEMU", "ACTIVE")));
+
+        WebhookEvent saved = service.receiveWebhook(
+                "TEMU", "ORDER_CREATED", "EV-8", "{}", null, sign("{}"));
+
+        assertNotNull(saved);
+        assertEquals(2002L, saved.getShopId(), "唯一 ACTIVE 账号时反查应命中该店铺");
+        verify(webhookEventMapper).insert(any(WebhookEvent.class));
+    }
+
+    /**
+     * 反查必须只认 ACTIVE 账号。
+     * <p>
+     * 不能只看「返回一行就命中」——mock 无论代码查不查 status 都会返回同一行，
+     * 那样这条测试是假的守门人。所以直接检查拼出来的查询条件里
+     * 有没有 status 约束，并断言参数表里带 ACTIVE。
+     */
+    @Test
+    @DisplayName("反查只认 ACTIVE 账号：查询条件必须带 status 约束")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void reverseLookupFiltersToActiveAccounts() {
+        when(webhookEventMapper.selectCount(any())).thenReturn(0L);
+        when(platformAccountMapper.selectList(any())).thenReturn(List.of(
+                account(3003L, "TEMU", "ACTIVE")));
+
+        service.receiveWebhook("TEMU", "ORDER_CREATED", "EV-9", "{}", null, sign("{}"));
+
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper> captor =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(platformAccountMapper).selectList(captor.capture());
+        // 先触发 getCustomSqlSegment()：MyBatis-Plus 参数表惰性填充
+        String segment = captor.getValue().getCustomSqlSegment();
+        assertTrue(segment.toLowerCase().contains("status"),
+                "反查必须按 status 过滤，否则 INACTIVE/ERROR 的店也会接走回调：" + segment);
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue("ACTIVE"),
+                "status 条件必须是 ACTIVE，实际参数表=" + captor.getValue().getParamNameValuePairs());
+    }
+
+    private static PlatformAccount account(Long shopId, String platform, String status) {
+        PlatformAccount acc = new PlatformAccount();
+        acc.setShopId(shopId);
+        acc.setPlatform(platform);
+        acc.setStatus(status);
+        return acc;
     }
 }

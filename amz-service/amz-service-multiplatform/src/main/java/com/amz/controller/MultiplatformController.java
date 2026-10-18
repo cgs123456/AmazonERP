@@ -205,6 +205,17 @@ public class MultiplatformController {
 
     // ==================== Webhook ====================
 
+    /**
+     * 平台回调统一入口（免 JWT 白名单，鉴权靠端点自身的 HMAC 验签）。
+     * <p>
+     * 末尾那个 {@code null} 是<b>刻意</b>传给 service 的 shopId，不是漏填。
+     * §S33.88：不要顺手加一个 {@code @RequestParam Long shopId} 把它接上——
+     * 验签只对 {@code payload} 做 HMAC，shopId 若走查询参数就是<b>未签名字段</b>，
+     * 任何能构造合法签名的人都能把回调伪造成别的店铺，跨租户写入。
+     * 归属由 service 的 {@code resolveShopIdByPlatform} 反查：唯一 ACTIVE 店铺时命中，
+     * 无法唯一确定时拒绝落库。要真正支持同平台多店铺的回调，需要平台侧提供
+     * 「带店铺标识且被签名覆盖」的字段——属接入方案变更，不是这里能补的。
+     */
     @PostMapping("/webhook/{platform}/{eventType}")
     public Result<WebhookEvent> receiveWebhook(@PathVariable String platform,
                                                 @PathVariable String eventType,
