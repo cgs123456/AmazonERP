@@ -18,6 +18,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -124,6 +125,43 @@ class WarehouseServiceImplTest {
         assertEquals("LOC-B", result.getLocationCode(), "库位应更新为新值");
         verify(inventoryMapper).increaseQuantityAtomic(1L, 30);
         verify(inventoryMapper).updateById(afterIncrease);
+        verify(inventoryMapper, never()).insert(any(WarehouseInventory.class));
+    }
+
+    /**
+     * §S33.105：同仓同店同 SKU 同批次却查到多行时，必须失败而不是取第一行。
+     *
+     * <p>旧实现 {@code existing.get(0)} 只增加那一行，其余行的库存永远不涨
+     * ——账实不符且无任何信号（变异验证：把 get(0) 换成 get(size-1)，
+     * 原有 11 项测试全绿，即「取哪一行」根本没人守）。
+     *
+     * <p>表上没有任何唯一键，而 MySQL 唯一键又不约束 NULL，所以
+     * {@code batch_no 为 NULL} 时多行是合法的——这是数据问题，只能显式暴露。
+     */
+    @Test
+    @DisplayName("入库 - 同批次查到多行库存 → 显式失败，不静默只加第一行")
+    void testIncreaseInventoryRejectsDuplicateRows() {
+        WarehouseInventory first = new WarehouseInventory();
+        first.setId(1L);
+        first.setWarehouseId(1L);
+        first.setSku("SKU-001");
+        first.setQuantity(50);
+        first.setBatchNo(null);           // batch_no 为 NULL：唯一键约束不到这一种
+        WarehouseInventory second = new WarehouseInventory();
+        second.setId(2L);
+        second.setWarehouseId(1L);
+        second.setSku("SKU-001");
+        second.setQuantity(7);
+        second.setBatchNo(null);
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(first, second));
+
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> warehouseService.increaseInventory(1L, 10L, "SKU-001", 30, null, "LOC-A"));
+
+        assertTrue(e.getMessage().contains("不唯一"),
+                "理由要能看出是重复记录问题，实际=" + e.getMessage());
+        // 一行都不该写：任何一行被增加都会让另一行继续落后
+        verify(inventoryMapper, never()).increaseQuantityAtomic(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyInt());
         verify(inventoryMapper, never()).insert(any(WarehouseInventory.class));
     }
 

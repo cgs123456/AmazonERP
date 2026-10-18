@@ -142,6 +142,16 @@ public class WarehouseServiceImpl implements WarehouseService {
                 .eq(WarehouseInventory::getSku, sku)
                 .eq(batchNo != null, WarehouseInventory::getBatchNo, batchNo);
         List<WarehouseInventory> existing = inventoryMapper.selectList(wrapper);
+        if (existing.size() > 1) {
+            // §S33.105：查了 (warehouse_id, shop_id, sku, batch_no) 却回来多行，只可能是
+            // 历史脏数据或并发双插。旧实现取 get(0) 后只增加那一行，其余行的库存永远不涨
+            // ——账实不符且无任何信号。这里显式失败让人去修数据，不猜哪一行是对的。
+            // 不靠唯一键兜底：MySQL 唯一键不约束 NULL，batch_no 为 NULL 时
+            // (warehouse_id, shop_id, sku, NULL) 可以合法存在多行，加唯一键拦不住这一种。
+            throw new IllegalStateException("库存记录不唯一：warehouseId=" + warehouseId
+                    + " shopId=" + shopId + " sku=" + sku + " batchNo=" + batchNo
+                    + " 命中 " + existing.size() + " 行，请先清理重复库存记录");
+        }
         if (existing.isEmpty()) {
             WarehouseInventory inv = new WarehouseInventory();
             inv.setWarehouseId(warehouseId);

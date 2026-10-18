@@ -7894,3 +7894,85 @@ report 这三条合成一句。**这不是缺陷**（都明确拒绝了），
 **要拿真基线必须逐模块跑**（已用 `-Dmaven.test.failure.ignore=true` 逐个跑完）。
 
 全仓测试编译通过、0 个 java 编译错误。ratchet 与 repository_hygiene 通过。
+
+## §S33.105 审物流与采购：7 个候选里 1 个真缺陷，其余 6 个是误报
+
+### 审法（先说方法，因为结论的可信度全押在它上面）
+
+不靠「grep 窗口猜」。两步：
+1. 结构化解析每个端点的注解块与签名，确认租户边界；
+2. 对 service 层每个 `selectById` 取其后 12 行判有无归属校验，产出候选后**逐个读上下文**。
+
+### 事实
+
+- logistics 71 端点、procurement 53 端点，**每一个带 shopId 的端点都挂了 `@ShopScoped`**
+  （结构化解析结果 0 个漏挂）——与 multiplatform 不同，那两个模块的租户边界在
+  controller 层就是完整的。
+- 两模块共 30 处 `selectById`，产出 7 个「12 行内无归属校验」候选。
+
+### 唯一的真缺陷：库存累加漏更后续行
+
+`WarehouseServiceImpl.increaseInventory`（`amz-service-logistics`）：
+
+```java
+List<WarehouseInventory> existing = inventoryMapper.selectList(wrapper);  // (warehouse, shop, sku, batchNo)
+...
+WarehouseInventory inv = existing.get(0);
+inventoryMapper.increaseQuantityAtomic(inv.getId(), quantity);
+```
+
+`amz_warehouse_inventory` **没有任何唯一键**（只有 `idx_warehouse_sku`、`idx_shop_sku`
+两个普通索引），而 MySQL 唯一键**不约束 NULL**——所以
+`(warehouse_id, shop_id, sku, batch_no=NULL)` 可以合法存在多行。
+多行并存时 `get(0)` 只增加第一行，**其余行的库存永远不涨**，账实不符且无任何信号。
+唯一 insert 点就是这里，没有别处能兜底。
+
+**为什么不能靠加唯一键修**：正是上面那条——`batch_no` 为 NULL 时唯一键形同虚设。
+
+修法：查出行数 > 1 时显式 `IllegalStateException`，点名四键与命中行数，
+让人去清数据，不猜哪一行是对的。**不写任何一行**（写任何一行都会让另一行继续落后）。
+
+### 变异账目
+
+| 变异 | 结果 |
+|---|---|
+| `get(0)` → `get(size-1)` | **存活**：11 项测试全绿 → 证明「取哪一行」根本没人守，缺陷可被掩过 |
+| 移除新增的 `size() > 1` fail-fast | **杀**（`testIncreaseInventoryRejectsDuplicateRows`） |
+
+第二行是补了测试之后才杀得掉。第一行是本缺陷能长期存在的直接原因。
+
+### 6 个误报（逐个读过，其中 2 个我差点判成缺陷）
+
+| 位置 | 实际 |
+|---|---|
+| `LogisticsServiceImpl:93/146` | 方法开头 `requireAccessible(shipmentId)` 已校验，`selectById` 是返回最新状态 |
+| `WarehouseServiceImpl:163` | 就是本次修的那处 |
+| `ProcurementServiceImpl:237` | `mustGet` 无校验，但 4 个业务方法全走包了 `isShopAllowed` 的 `mustGetAuthorized` |
+| `FbaShipmentServiceImpl:532` | `getShipment` 校验归属 + 显式校验「明细必须挂靠当前货件」 |
+| `SupplierPaymentService:149` | payment 取后有 `isShopAllowed` |
+| `SupplierServiceImpl:196` | supplier 是主数据非租户行，products 已由 `findSuppliersBySku(shopId, sku)` 限定 |
+
+**两个我差点误判的**：
+
+1. `SupplierPaymentService.cancel` 里 `PAID → RECEIVED`，我一度以为是「取消付款却
+   标成已收货」的语义错误。核实后是自洽的：`RECEIVED/COMPLETED/QC_PASSED`
+   是「允许付款」的状态集（同文件 :51），付款时把 PO 推到 PAID，
+   取消即回到「已收货、未付款」。方法注释也写明了。
+2. `FbaShipmentServiceImpl` 只校验 `item.fbaShipmentId == shipmentId` 而未校验
+   item 自身 shopId——够用，因为 item 若属他店则挂在他店货件上，ID 必然不相等。
+
+### 附带发现，未修：decreaseInventory 的批次语义
+
+`decreaseInventory`（两个重载）查询条件是 `warehouseId + sku (+ shopId)`，
+**不含 batchNo**，即「跨批次任取一行扣」，且 `get(0)` 无 ORDER BY。
+
+与本次修的 increase 性质不同：increase 按 batchNo 精确匹配（多行只可能是脏数据），
+decrease 是设计选择（FIFO/任一批次）。但多批共存时只扣一批，
+`库存不足` 判断会失真（总量够但单批不够）。**未修**——改它要动批次扣减策略，
+属业务决策，不塞进这次缺陷修复。
+
+### 方法层面记一条
+
+两次用 python 切片删代码都因「假设有空行」而索引错位（`TimeCursorPageSupportTest`、
+`AdAutoRuleServiceImpl`、`WarehouseServiceImpl` 三次）。这次先 assert 首尾行内容，
+错了就中止——文件未被改坏，12 项测试仍绿。**删代码必须断言边界，不能假设结构。**
