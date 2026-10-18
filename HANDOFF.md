@@ -6989,3 +6989,60 @@ adType keyset 分页、hasText）——与日报同步是不同生命周期：�
   「需人工介入」两种失败处理）。
 
 留作已知技术债记录在案，不混入本轮改动。
+
+## §S33.86 搜索词分析：窗口多算一天 + 零销售词从所有分类消失
+
+### 一、窗口口径与模块其余部分不一致
+
+`SearchTermServiceImpl` 三处分析入口（analyze / extractConverting / cluster）
+都用 `now.minusDays(N)` = 含今天共 **N+1** 天；而同模块 `AdServiceImpl`、
+`AdReportSyncScheduler` 全用 `minusDays(N-1)` = 含今天共 **N** 天。
+
+前端下拉明写「近 7 天」，用户看到的是 8 天数据，ACoS 的分母（销售额）多算一天。
+三处统一为 `minusDays(N-1)`。
+
+这是 §S33.82 同一类错误的第三次出现（那次是分子分母窗口不同，这次是同模块内
+不同文件对「N 天」定义不同）。**「N 天」必须在全模块只有一个定义**，
+否则每新增一处窗口计算就多一次漂移机会。
+
+### 二、花了钱、零销售额的词不计入任何分类
+
+库里 `acos` 列只在 `sales > 0` 时赋值（`calculateMetrics`）。旧判定
+`acos != null && acos >= 40` 把「零销售」整个漏掉；这类词又因 `clicks > 0`
+进不了 `wasteTerms`（那里要求 0 点击）。
+
+结果：**最该处理的词既不在 highAcosTerms 也不在 wasteTerms**，只在 topWaste
+明细列表露脸。运营看 `highAcosTerms: 0` 会以为没有高 ACoS 词。
+
+改为：零销售且有花费 = ACoS 无穷大，计入 `highAcosTerms`。
+两个分类仍各管一件事——waste 是「钱花了没人点」，highAcos 是「投产比差」，
+不合并（合并会让两个数字互相污染，运营看不出该改出价还是改素材）。
+
+### 三、测试形态：断言参数表里的日期
+
+窗口测试断言的是 `LambdaQueryWrapper` 参数表里**实际的下界日期**
+（7 天 → `today-6`，且断言 `today-7` 不在参数表里），不是「mapper 被调用过」。
+后者在窗口差一天时照样通过——这是 §S33.81 已经踩过一次的坑。
+
+### 四、已核对但非缺陷的事实
+
+前端 `adSearchTerms.ts` 头注释已完整记录三条限制，本次逐一核实无误：
+
+1. **搜索词报表没有自动来源**：`AdvertisingApiClient` 只有 campaigns/keywords/
+   日报表，无搜索词报表；全仓唯一写入口是手工录入的 `saveSearchTerm`。
+   所以分析结果为空 ≠ 搜索词表现良好。
+2. 规则执行只产建议（`appliedToAdAccount: false`），不调广告 API。
+3. 没有调度器跑规则，「自动」= 人工点。
+
+这三条是**已知且已文档化**的产品限制，不是待修缺陷。记在这里是为了让
+后来人不要把它们当新发现的 bug 再查一遍。
+
+### 五、ratchet 逼出的拆分
+
+`AnalyzeAccumulator` 独立成包内类：纯统计聚合，不碰数据库与租户上下文，
+只吃 `AdSearchTerm` 吐计数与列表。服务类 713 → 623 行。
+顺带删除因拆分失去引用的四个常量（HIGH_ACOS / LOW_CR /
+WASTE_IMPRESSION_THRESHOLD / TOP_LIMIT）——常量搬到新类后，服务类里的副本
+就是死代码，留着会让两处阈值各自漂移。
+
+变异 3 项全杀（窗口回退 ×2、零销售漏判 ×1），拆分后复验仍杀。
