@@ -4,6 +4,7 @@ import com.amz.aspect.RequireRoleAspect;
 import com.amz.interceptor.BaseAuthInterceptor;
 import com.amz.model.UnifiedOrder;
 import com.amz.service.impl.MultiplatformServiceImpl;
+import com.amz.service.impl.WebhookEventService;
 import com.amz.util.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +55,7 @@ class MultiplatformAuthorizationWebMvcIntegrationTest {
 
     private JwtUtil jwtUtil;
     private MultiplatformServiceImpl service;
+    private WebhookEventService webhookEventService;
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -66,8 +68,11 @@ class MultiplatformAuthorizationWebMvcIntegrationTest {
         jwtUtil.init();
 
         service = Mockito.mock(MultiplatformServiceImpl.class);
+        // §S33.90：webhook 域拆去 WebhookEventService，控制器改成注入它（不留转发方法）
+        webhookEventService = Mockito.mock(WebhookEventService.class);
         MultiplatformController controller = new MultiplatformController();
         ReflectionTestUtils.setField(controller, "multiplatformService", service);
+        ReflectionTestUtils.setField(controller, "webhookEventService", webhookEventService);
 
         AspectJProxyFactory proxyFactory = new AspectJProxyFactory(controller);
         proxyFactory.addAspect(new RequireRoleAspect());
@@ -149,7 +154,7 @@ class MultiplatformAuthorizationWebMvcIntegrationTest {
     @Test
     @DisplayName("webhook 豁免仍成立：带合法 token 也不被角色门禁拦（能到达 Service）")
     void webhookStaysExemptFromRoleGuard() throws Exception {
-        when(service.receiveWebhook(anyString(), anyString(), anyString(), anyString(), anyLong(), anyString()))
+        when(webhookEventService.receiveWebhook(anyString(), anyString(), anyString(), anyString(), anyLong(), anyString()))
                 .thenReturn(null);
 
         mockMvc.perform(post("/multiplatform/webhook/TEMU/orderCreated")
@@ -161,7 +166,7 @@ class MultiplatformAuthorizationWebMvcIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
-        verify(service).receiveWebhook("TEMU", "orderCreated", "evt-1", "{}", null, "sig");
+        verify(webhookEventService).receiveWebhook("TEMU", "orderCreated", "evt-1", "{}", null, "sig");
     }
 
     @Test

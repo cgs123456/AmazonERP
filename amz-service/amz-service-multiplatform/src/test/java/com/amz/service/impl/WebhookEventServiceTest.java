@@ -2,6 +2,10 @@ package com.amz.service.impl;
 
 import com.amz.context.UserContext;
 import com.amz.exception.CodeErrorException;
+import com.amz.result.PageRequest;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import java.time.LocalDateTime;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.amz.mapper.PlatformAccountMapper;
 import com.amz.mapper.WebhookEventMapper;
 import com.amz.model.PlatformAccount;
@@ -36,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
 /**
@@ -45,10 +50,14 @@ import static org.mockito.Mockito.when;
  * 成功路径把 {@code RECEIVED} 原样写回——于是 {@code PROCESSED} 永远不会出现，
  * 按状态筛选或做统计的页面会以为所有事件都还堵着。这条差异不体现在任何报错上，
  * 只能靠断言钉住。
+ *
+ * <p>§S33.90 随 {@link WebhookEventService} 从 {@link MultiplatformServiceImpl} 拆出而改名，
+ * 断言一字未改——抽类只该搬代码，不该顺手改行为。webhook 是唯一不带用户 JWT 的入口，
+ * 这些断言守护的正是那条无用户上下文的写路径。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Webhook 事件状态迁移")
-class MultiplatformWebhookProcessingTest {
+class WebhookEventServiceTest {
 
     @Mock
     private WebhookEventMapper webhookEventMapper;
@@ -57,7 +66,7 @@ class MultiplatformWebhookProcessingTest {
     private PlatformAccountMapper platformAccountMapper;
 
     @InjectMocks
-    private MultiplatformServiceImpl service;
+    private WebhookEventService service;
 
     /**
      * 纯 Mockito 测试没有 MyBatis 启动流程，LambdaQueryWrapper 取列名时会抛
@@ -68,6 +77,7 @@ class MultiplatformWebhookProcessingTest {
     static void initMybatisTableInfo() {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, PlatformAccount.class);
+        TableInfoHelper.initTableInfo(assistant, WebhookEvent.class);
     }
 
     @BeforeEach
@@ -114,6 +124,27 @@ class MultiplatformWebhookProcessingTest {
         assertNotNull(finalState.getProcessTime());
         // 幂等：同 eventId 第二次直接返回 null，不重复落库
         verify(webhookEventMapper).insert(any(WebhookEvent.class));
+    }
+
+    /**
+     * §S33.90：入库后落终态失败时，异常必须外抛。
+     * <p>
+     * 这条断言的来由是**变异存活**：把 {@code @Transactional} 从 receiveWebhook 上删掉，
+     * 原有 10 项测试全绿——事务注解不在方法签名里，搬迁时最容易丢，而没有任何测试
+     * 拦得住。真正验证「insert 与 updateById 同事务回滚」需要 Spring 事务测试支持，
+     * 本模块测试全是纯 Mockito；这里钉住异常穿透这一可观测部分：
+     * 它不外抛，事件就永远停在 RECEIVED，而调用方以为成功了。
+     */
+    @Test
+    @DisplayName("落终态失败时异常外抛，不吞成假成功")
+    void finalStateFailurePropagates() {
+        when(webhookEventMapper.selectCount(any())).thenReturn(0L);
+        doThrow(new IllegalStateException("db down"))
+                .when(webhookEventMapper).updateById(any(WebhookEvent.class));
+
+        assertThrows(IllegalStateException.class,
+                () -> service.receiveWebhook("TEMU", "ORDER_CREATED", "EV-TX", "{}", 1L, sign("{}")),
+                "updateById 抛异常时必须外抛：吞掉它，事件停在 RECEIVED，调用方以为成功");
     }
 
     @Test
@@ -244,6 +275,48 @@ class MultiplatformWebhookProcessingTest {
                 "反查必须按 status 过滤，否则 INACTIVE/ERROR 的店也会接走回调：" + segment);
         assertTrue(captor.getValue().getParamNameValuePairs().containsValue("ACTIVE"),
                 "status 条件必须是 ACTIVE，实际参数表=" + captor.getValue().getParamNameValuePairs());
+    }
+
+    /**
+     * 从 {@code MultiplatformPagingContractTest} 随拆类迁入（§S33.90），断言一字未改。
+     * 分页契约本就属于被分页的那个域：webhook 列表搬过来，验证逻辑才跟实现同处一地，
+     * 不会出现「实现在 A、契约在 B」的漂移。
+     */
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    @DisplayName("Webhook 列表用 (create_time,id) 复合游标，状态过滤保留")
+    void webhookUsesCompositeCursor() {
+        when(webhookEventMapper.selectList(any())).thenReturn(List.of(webhook(3L)));
+
+        service.listWebhookEvents(1L, "FAILED", PageRequest.of(10, null));
+
+        LambdaQueryWrapper<?> wrapper = captured(webhookEventMapper);
+        String sql = sqlOf(wrapper);
+        assertTrue(sql.contains("create_time"), sql);
+        assertTrue(wrapper.getParamNameValuePairs().containsValue("FAILED"), sql);
+    }
+
+    // ==================== webhook 分页夹具（随测试迁入） ====================
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private LambdaQueryWrapper<?> captured(Object mapper) {
+        ArgumentCaptor<LambdaQueryWrapper> captor = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify((com.baomidou.mybatisplus.core.mapper.BaseMapper<?>) mapper).selectList(captor.capture());
+        return captor.getValue();
+    }
+
+    private static String sqlOf(LambdaQueryWrapper<?> wrapper) {
+        return wrapper.getCustomSqlSegment();
+    }
+
+    private static WebhookEvent webhook(Long id) {
+        WebhookEvent e = new WebhookEvent();
+        e.setId(id);
+        e.setShopId(1L);
+        e.setPlatform("TEMU");
+        e.setStatus("FAILED");
+        e.setCreateTime(LocalDateTime.of(2026, 10, 1, 9, 0));
+        return e;
     }
 
     private static PlatformAccount account(Long shopId, String platform, String status) {

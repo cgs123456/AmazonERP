@@ -6,7 +6,6 @@ import com.amz.model.PlatformAccount;
 import com.amz.model.PlatformInventory;
 import com.amz.model.PlatformMessage;
 import com.amz.model.PlatformProduct;
-import com.amz.model.WebhookEvent;
 
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
@@ -23,7 +22,6 @@ import java.util.Map;
  *   <li>全平台商品同步与映射</li>
  *   <li>多平台消息统一管理</li>
  *   <li>多平台库存聚合视图</li>
- *   <li>Webhook 事件接收与处理</li>
  *   <li>OAuth 应用注册与 Token 发放</li>
  * </ul>
  */
@@ -66,13 +64,6 @@ public interface MultiplatformService {
     PageResult<PlatformInventory> listPlatformInventory(Long shopId, String platform, PageRequest page);
 
     Map<String, Object> aggregatedInventory(Long shopId);
-
-    // ===== Webhook =====
-
-    WebhookEvent receiveWebhook(String platform, String eventType, String eventId, String payload, Long shopId,
-                                String signature);
-
-    PageResult<WebhookEvent> listWebhookEvents(Long shopId, String status, PageRequest page);
 
     // ===== OAuth 开放 API =====
 

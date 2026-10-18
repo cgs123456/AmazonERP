@@ -17,6 +17,7 @@ import com.amz.model.WebhookEvent;
 import com.amz.result.PageRequest;
 import com.amz.result.Result;
 import com.amz.service.impl.MultiplatformServiceImpl;
+import com.amz.service.impl.WebhookEventService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -43,6 +44,17 @@ public class MultiplatformController {
 
     @Autowired
     private MultiplatformServiceImpl multiplatformService;
+
+    /**
+     * 平台回调域（§S33.90 从 {@link MultiplatformServiceImpl} 拆出）。
+     * <p>
+     * 直接注入而不经 multiplatformService 转发：webhook 是唯一不带用户 JWT 的入口，
+     * 验签与归属判定都收在 {@link WebhookEventService} 里，让它单独可见比藏在
+     * 二十多个方法的大服务后面更好查。接口上不留转发方法——那是兼容层，
+     * 内部重构按 CLAUDE.md「删除优于兼容」直接改调用方。
+     */
+    @Autowired
+    private WebhookEventService webhookEventService;
 
     @Autowired
     private PlatformOrderStatsService platformOrderStatsService;
@@ -222,7 +234,7 @@ public class MultiplatformController {
                                                 @RequestParam(required = false) String eventId,
                                                 @RequestBody(required = false) String payload,
                                                 @RequestHeader(value = "X-Signature", required = false) String signature) {
-        return Result.success(multiplatformService.receiveWebhook(platform, eventType, eventId, payload, null, signature));
+        return Result.success(webhookEventService.receiveWebhook(platform, eventType, eventId, payload, null, signature));
     }
 
     @ShopScoped
@@ -231,7 +243,7 @@ public class MultiplatformController {
                                                          @RequestParam(required = false) String status,
                                                          @RequestParam(required = false) Integer size,
                                                          @RequestParam(required = false) String cursor) {
-        return Result.paged(multiplatformService.listWebhookEvents(
+        return Result.paged(webhookEventService.listWebhookEvents(
                 shopId, status, PageRequest.of(size, cursor)));
     }
 

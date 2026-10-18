@@ -6,13 +6,11 @@ import com.amz.mapper.PlatformAccountMapper;
 import com.amz.mapper.PlatformInventoryMapper;
 import com.amz.mapper.PlatformMessageMapper;
 import com.amz.mapper.PlatformProductMapper;
-import com.amz.mapper.WebhookEventMapper;
 import com.amz.model.OauthApp;
 import com.amz.model.PlatformAccount;
 import com.amz.model.PlatformInventory;
 import com.amz.model.PlatformMessage;
 import com.amz.model.PlatformProduct;
-import com.amz.model.WebhookEvent;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -65,8 +63,6 @@ class MultiplatformPagingContractTest {
     @Mock
     private PlatformInventoryMapper platformInventoryMapper;
     @Mock
-    private WebhookEventMapper webhookEventMapper;
-    @Mock
     private OauthAppMapper oauthAppMapper;
 
     @InjectMocks
@@ -75,7 +71,7 @@ class MultiplatformPagingContractTest {
     @BeforeAll
     static void initMybatisTableInfo() {
         for (Class<?> entity : List.of(PlatformAccount.class, PlatformProduct.class,
-                PlatformMessage.class, PlatformInventory.class, WebhookEvent.class, OauthApp.class)) {
+                PlatformMessage.class, PlatformInventory.class, OauthApp.class)) {
             TableInfoHelper.initTableInfo(
                     new MapperBuilderAssistant(new MybatisConfiguration(), ""), entity);
         }
@@ -207,20 +203,6 @@ class MultiplatformPagingContractTest {
 
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
-    @DisplayName("Webhook 列表用 (create_time,id) 复合游标，状态过滤保留")
-    void webhookUsesCompositeCursor() {
-        when(webhookEventMapper.selectList(any())).thenReturn(List.of(webhook(3L)));
-
-        service.listWebhookEvents(1L, "FAILED", PageRequest.of(10, null));
-
-        LambdaQueryWrapper<?> wrapper = captured(webhookEventMapper);
-        String sql = sqlOf(wrapper);
-        assertTrue(sql.contains("create_time"), sql);
-        assertTrue(wrapper.getParamNameValuePairs().containsValue("FAILED"), sql);
-    }
-
-    @Test
-    @SuppressWarnings({"unchecked", "rawtypes"})
     @DisplayName("ISV 应用列表按 id 倒序分页")
     void appsPaged() {
         when(oauthAppMapper.selectList(any())).thenReturn(List.of(oauthApp(2L), oauthApp(1L)));
@@ -298,16 +280,6 @@ class MultiplatformPagingContractTest {
         i.setAvailableQty(5);
         i.setSnapshotTime(LocalDateTime.of(2026, 10, 1, 8, 0));
         return i;
-    }
-
-    private static WebhookEvent webhook(Long id) {
-        WebhookEvent e = new WebhookEvent();
-        e.setId(id);
-        e.setShopId(1L);
-        e.setPlatform("TEMU");
-        e.setStatus("FAILED");
-        e.setCreateTime(LocalDateTime.of(2026, 10, 1, 9, 0));
-        return e;
     }
 
     private static OauthApp oauthApp(Long id) {
