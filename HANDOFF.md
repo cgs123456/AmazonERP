@@ -7310,8 +7310,11 @@ credentialService）。观察面是 `credentialService.resolve` 收到的实参�
 | 三个 Real 的 markShipped 内 `cred(shopId)` → `cred(null)` | **杀**：4 条全红 |
 
 模块全套 144 项绿。ratchet 与 repository_hygiene 通过，未抬 baseline；
-后者需更新该文件的白名单 sha256（`String secret = decrypt(...)` 被
-`secret-like-assignment` 规则误判，值不是字面量，无真实泄露）。
+后者需同步该文件的白名单 sha256：`PlatformCredentialService` 里为两个密文字段
+取本地变量的那两行被 `secret-like-assignment` 规则命中（变量名形如
+secret/token、值是解密方法调用而非字面量，无真实泄露），属误判，
+条目按 sha256 绑定故须随文件更新——**本节不复述那段代码文本**，
+否则文档自己也会触发同一条扫描。
 
 ### 本节踩的方法错误（比缺陷本身更值得记）
 
@@ -7331,3 +7334,60 @@ credentialService）。观察面是 `credentialService.resolve` 收到的实参�
 规则：**判定成败只看命令退出码，不看 grep 输出；变异施加后必须回读源码确认，
 不能靠 patch 脚本的 assert 自证。** 变异测试一律 `clean test`，
 不用增量编译——本机 maven 增量编译多次漏掉改动。
+
+## §S33.93 分时调价：AD_UPSTREAM_ERROR 不终止，一次 5xx 把剩余关键词逐个再撞一遍
+
+### 技术债的真实形状与记录不同
+
+列为「`AdvertisingApiException.retryable` 未接线」是不准确描述。核实后发现：
+字段在 `AdvertisingApiRealClient` 被赋值（`statusCode >= 500`），全仓无人读取；
+真正做决策的是 `BidScheduleExecutor`，而它比的是 `code` 字符串。
+所以这不是「忘了读字段」，是**两套分类体系并存**：`retryable`（按 HTTP 语义）
+与 `code`（按业务码）。
+
+### 缺陷
+
+`BidScheduleExecutor` 的提前终止只列了 `AD_RATE_LIMITED` 与 `AD_AUTH_FAILED`，
+漏了 `AD_UPSTREAM_ERROR`。而它正是 retryable=true 的 5xx，同样是
+「短时间内每个请求都会失败」的状态。不终止的后果：
+
+- 剩余每个关键词带 pacing 延时逐个再撞一次同一个 5xx，属无界重试
+  （CLAUDE.md 原则 5），并把这一小时执行拖出调价窗口；
+-  `AD_API_ERROR`（4xx 业务拒绝）**不**终止是对的——那通常是单个词自身的问题，
+  不应连带放弃整批。
+
+### 顺带发现的覆盖缺口
+
+既有的 `continuesAfterSingleKeywordMutationFailure` 抛的是
+`new RuntimeException("rate limited")`，落进 `catch (Exception)` 分支——
+它对「按异常类型分流」这条逻辑**没有任何约束力**。这正是那段 break 能
+长期零验证的原因。新测试全部用真的 `AdvertisingApiException`。
+
+### 测试与变异账目
+
+`BidScheduleExecutorTest` 新增 2 项：
+
+| 变异 | 结果 |
+|---|---|
+| 终止条件去掉 `AD_UPSTREAM_ERROR` | **杀**：`abortsBatchOnUpstreamError` 红 |
+| 终止条件改为恒真（一律终止） | **杀**：`continuesAfterBusinessRejection` 红 |
+
+ad 模块 24 个测试类全绿。`AdvertisingApiRealClientContractTest` 7 个 error 为
+本机 loopback 限制（`Unable to establish loopback connection`），既有环境问题，
+与本改动无关，按既定结论以 CI 为准。
+
+## §S33.94 OAuth 开放 API：能签发 token，但 token 不构成任何访问凭证（未完成功能）
+
+审 `generateToken` 链路时的发现，**本轮不修，只记录**。
+
+`generateToken` 校验 appKey/appSecret、按归属店铺绑 shopId、做 scope 交集，
+然后签发 `oat_`/`ort_` 两个随机串并 insert 进 `amz_oauth_token`。但全仓
+**没有任何地方读这张表**：`OauthTokenMapper` 的唯一引用就是那一次 insert。
+也没有 token 校验端点、没有鉴权过滤器、没有刷新逻辑。
+
+结论：这一整套是**单向写路径**——模拟了 OAuth 的签发流程，签出来的 token
+打不开任何受保护资源。controller 有 4 个 oauth 端点、README 与前端的
+`identity.ts` 都提到 `POST /multiplatform/oauth/token`，对外呈现为已具备该能力。
+
+要补的是「受保护资源 + token 校验过滤器 + 过期/吊销/刷新」一整套，属接入方案
+与架构决策，不是缺陷修补，不在本轮范围。**但不应把它记作「已支持开放 API」**。

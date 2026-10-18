@@ -134,7 +134,16 @@ public class BidScheduleExecutor {
                     failed++;
                     log.warn("关键词调价失败 shopId={} campaignId={} keywordId={} code={}",
                             rule.getShopId(), campaignId, kw.getId(), e.getCode(), e);
-                    if ("AD_RATE_LIMITED".equals(e.getCode()) || "AD_AUTH_FAILED".equals(e.getCode())) {
+                    // 平台侧持续性故障必须提前终止（§S33.93）。
+                    // 只列 RATE_LIMITED / AUTH_FAILED 会漏掉 UPSTREAM_ERROR：那正是 retryable=true
+                    // 的 5xx，而它同样是「短时间内每一个请求都会失败」的状态。不终止的话，
+                    // 剩余每个关键词都会带 pauseBetweenUpdates 的延时逐个撞一次 5xx——
+                    // 既是无界重试，也把这一小时的执行拖到远超调价窗口。
+                    // AD_API_ERROR（4xx 业务拒绝）不终止：那通常是单个关键词自身的问题，
+                    // 其他关键词照旧能调。
+                    if ("AD_RATE_LIMITED".equals(e.getCode())
+                            || "AD_AUTH_FAILED".equals(e.getCode())
+                            || "AD_UPSTREAM_ERROR".equals(e.getCode())) {
                         int remaining = updateRows.size() - i - 1;
                         skipped += remaining;
                         log.warn("分时调价提前终止：shopId={} campaignId={} code={} remaining={}",

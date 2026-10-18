@@ -1,6 +1,7 @@
 package com.amz.scheduler;
 
 import com.amz.client.AdvertisingApiClient;
+import com.amz.client.AdvertisingApiException;
 import com.amz.mapper.AdKeywordMapper;
 import com.amz.mapper.BidScheduleMapper;
 import com.amz.model.AdKeyword;
@@ -113,10 +114,75 @@ class BidScheduleExecutorTest {
         verify(advertisingApiClient).updateKeywordBid(101L, 1002L, new BigDecimal("1.50"));
     }
 
+    /**
+     * 平台侧持续性故障必须提前终止（§S33.93）。
+     *
+     * <p>这条锁的是 {@code AD_UPSTREAM_ERROR}（HTTP 5xx，{@code retryable=true}）。
+     * 它过去不在终止条件里，于是剩余每个关键词都会带着 pacing 延时逐个再撞一次
+     * 同一个 5xx：既是对故障平台的无效扩充请求，也把这一小时的执行拖出调价窗口。
+     *
+     * <p>注意这里必须抛<b>真的</b> {@link AdvertisingApiException}：
+     * 上面 {@code continuesAfterSingleKeywordMutationFailure} 用的是
+     * {@code new RuntimeException("rate limited")}，落进的是 catch (Exception) 分支——
+     * 它对「按异常类型分流」这条逻辑没有任何约束力。
+     */
+    @Test
+    @DisplayName("AD_UPSTREAM_ERROR（5xx）立即终止本批，不再逐词重试")
+    void abortsBatchOnUpstreamError() {
+        BidSchedule rule = rule("C1", "1.50");
+        when(bidScheduleMapper.selectEnabledByHour(anyInt())).thenReturn(List.of(rule));
+        when(advertisingApiClient.listKeywords(101L, "C1")).thenReturn(List.of(
+                keyword(1001L, "C1", "alpha", "EXACT", "1.00"),
+                keyword(1002L, "C1", "beta", "EXACT", "1.00"),
+                keyword(1003L, "C1", "gamma", "EXACT", "1.00")));
+        when(adKeywordMapper.selectList(any())).thenReturn(List.of(
+                localKeyword(11L, "C1", "alpha", "EXACT", "1.00"),
+                localKeyword(12L, "C1", "beta", "EXACT", "1.00"),
+                localKeyword(13L, "C1", "gamma", "EXACT", "1.00")));
+        when(advertisingApiClient.updateKeywordBid(eq(101L), any(), any()))
+                .thenThrow(new AdvertisingApiException("AD_UPSTREAM_ERROR",
+                        "upstream HTTP 503", 503, true));
+
+        runCurrentHour();
+
+        // 第一个词失败后就收手，剩余两个词一次都不该再发
+        verify(advertisingApiClient).updateKeywordBid(101L, 1001L, new BigDecimal("1.50"));
+        verify(advertisingApiClient, never()).updateKeywordBid(101L, 1002L, new BigDecimal("1.50"));
+        verify(advertisingApiClient, never()).updateKeywordBid(101L, 1003L, new BigDecimal("1.50"));
+    }
+
+    /**
+     * 单个关键词的业务拒绝不能收掉整批。
+     * <p>
+     * 与上一条互为边界：终止条件不能宽到把 4xx 业务错误也吞进去，
+     * 否则一个词的问题会连带放弃整批本可成功的调价。
+     */
+    @Test
+    @DisplayName("AD_API_ERROR（4xx 业务拒绝）只算这一个失败，继续本批")
+    void continuesAfterBusinessRejection() {
+        BidSchedule rule = rule("C1", "1.50");
+        when(bidScheduleMapper.selectEnabledByHour(anyInt())).thenReturn(List.of(rule));
+        when(advertisingApiClient.listKeywords(101L, "C1")).thenReturn(List.of(
+                keyword(1001L, "C1", "alpha", "EXACT", "1.00"),
+                keyword(1002L, "C1", "beta", "EXACT", "1.00")));
+        when(adKeywordMapper.selectList(any())).thenReturn(List.of(
+                localKeyword(11L, "C1", "alpha", "EXACT", "1.00"),
+                localKeyword(12L, "C1", "beta", "EXACT", "1.00")));
+        when(advertisingApiClient.updateKeywordBid(101L, 1001L, new BigDecimal("1.50")))
+                .thenThrow(new AdvertisingApiException("AD_API_ERROR",
+                        "failed with HTTP 400", 400, false));
+        when(advertisingApiClient.updateKeywordBid(101L, 1002L, new BigDecimal("1.50")))
+                .thenReturn(true);
+
+        runCurrentHour();
+
+        verify(advertisingApiClient).updateKeywordBid(101L, 1001L, new BigDecimal("1.50"));
+        verify(advertisingApiClient).updateKeywordBid(101L, 1002L, new BigDecimal("1.50"));
+    }
+
     private void runCurrentHour() {
         ReflectionTestUtils.invokeMethod(executor, "doExecuteHourly");
     }
-
     private static BidSchedule rule(String campaignId, String multiplier) {
         BidSchedule rule = new BidSchedule();
         rule.setId(1L);
