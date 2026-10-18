@@ -14,7 +14,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 import static com.amz.service.impl.LogisticsShopGuard.requireShopAllowed;
 
 /**
@@ -191,17 +193,14 @@ public class WarehouseServiceImpl implements WarehouseService {
         if (list.isEmpty()) {
             throw new IllegalStateException("库存不足：warehouseId=" + warehouseId + " sku=" + sku);
         }
-        WarehouseInventory inv = list.stream()
+        List<WarehouseInventory> usable = list.stream()
                 .filter(item -> UserContext.isShopAllowed(item.getShopId()))
-                .findFirst()
-                .orElseThrow(() -> new CodeErrorException("库存记录不存在或无权访问"));
-        // 原子扣减：SQL 行级锁保证不超卖，受影响行数=0 表示可用库存不足
-        int affected = inventoryMapper.decreaseQuantityAtomic(inv.getId(), quantity);
-        if (affected == 0) {
-            throw new IllegalStateException("库存不足：warehouseId=" + warehouseId + " sku=" + sku + " need=" + quantity);
+                .collect(Collectors.toList());
+        if (usable.isEmpty()) {
+            throw new CodeErrorException("库存记录不存在或无权访问");
         }
-        // 返回扣减后的最新库存
-        return inventoryMapper.selectById(inv.getId());
+        return consumeAcrossBatches(usable, quantity,
+                () -> "库存不足：warehouseId=" + warehouseId + " sku=" + sku + " need=" + quantity);
     }
 
     @Override
@@ -219,13 +218,63 @@ public class WarehouseServiceImpl implements WarehouseService {
             throw new CodeErrorException("库存不足：warehouseId=" + warehouseId
                     + " shopId=" + shopId + " sku=" + sku);
         }
-        WarehouseInventory inv = list.get(0);
-        int affected = inventoryMapper.decreaseQuantityAtomic(inv.getId(), quantity);
-        if (affected == 0) {
-            throw new CodeErrorException("库存不足：warehouseId=" + warehouseId
-                    + " shopId=" + shopId + " sku=" + sku + " need=" + quantity);
+        return consumeAcrossBatches(list, quantity,
+                () -> "库存不足：warehouseId=" + warehouseId + " shopId=" + shopId
+                        + " sku=" + sku + " need=" + quantity);
+    }
+
+    /**
+     * 按 FIFO 逐批扣减，不足时才失败（§S33.107）。
+     *
+     * <p>旧实现 {@code list.get(0)} 只试一行：单批可用量不够就直接报「库存不足」，
+     * 哪怕多批合计远超需求量——出库和调拨都会被这个假失败挡住。
+     *
+     * <p><b>排序依据</b>：{@code id ASC}。实体未映射 {@code create_time}（表里存在），
+     * 自增主键与入库先后单调一致，用它作为 FIFO 的代理排序；不改实体与 DDL。
+     *
+     * <p><b>刻意不做效期优先（FEFO）</b>：表里有 {@code expire_date}，
+     * 食品/电池等品类通常要求先出近效期，但那是另一种业务规则，
+     * 与本次批准的 FIFO 不同，不能在同一次改动里擅自升级——记在注释里待定。
+     *
+     * <p>原子性：单次扣减走 {@code decreaseQuantityAtomic} 的行级条件更新（可用量够才扣）；
+     * 分批累加的完整性由外层 {@code @Transactional(rollbackFor = Exception.class)} 保证，
+     * 任一批失败抛异常即整体回滚，不会留下「扣了一半」的残局。
+     */
+    private WarehouseInventory consumeAcrossBatches(List<WarehouseInventory> candidates,
+                                                    Integer quantity,
+                                                    java.util.function.Supplier<String> shortageMessage) {
+        List<WarehouseInventory> ordered = candidates.stream()
+                .filter(item -> item != null && item.getId() != null)
+                .sorted(Comparator.comparing(WarehouseInventory::getId))
+                .collect(Collectors.toList());
+
+        int remaining = quantity;
+        WarehouseInventory last = null;
+        for (WarehouseInventory batch : ordered) {
+            if (remaining <= 0) {
+                break;
+            }
+            int affected = inventoryMapper.decreaseQuantityAtomic(batch.getId(), remaining);
+            if (affected > 0) {
+                remaining = 0;
+                last = batch;
+                break;
+            }
+            // 这一批可用量不够整笔，看它能出多少：能出多少先出多少，继续下一批
+            Integer available = batch.getAvailableQuantity();
+            int usable = available == null ? 0 : Math.max(0, Math.min(available, remaining));
+            if (usable > 0) {
+                if (inventoryMapper.decreaseQuantityAtomic(batch.getId(), usable) > 0) {
+                    remaining -= usable;
+                    last = batch;
+                }
+            }
         }
-        return inventoryMapper.selectById(inv.getId());
+        if (remaining > 0 || last == null) {
+            // 全部批次合计仍不足（或没有可用批次）：抛异常回滚上面已扣的部分
+            throw new IllegalStateException(shortageMessage.get());
+        }
+        return inventoryMapper.selectById(last.getId());
     }
 
     @Override

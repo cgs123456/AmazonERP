@@ -220,6 +220,75 @@ class WarehouseServiceImplTest {
         verify(inventoryMapper, never()).updateById(any(WarehouseInventory.class));
     }
 
+    /**
+     * §S33.107：FIFO 跨批扣减。
+     *
+     * <p>旧实现只试 {@code get(0)} 那一行：本例 id=1 只够出 5、id=2 够出 7，
+     * 合计 12 ≥ 需求 10，但旧实现会在第一行就报「库存不足」——
+     * 一个凭空出现的假失败，把能发的货挡下来。
+     */
+    @Test
+    @DisplayName("出库 - 单批不足但多批合计够 → 跨批扣减，不报库存不足")
+    void testDecreaseInventoryAcrossBatches() {
+        WarehouseInventory first = new WarehouseInventory();
+        first.setId(1L);
+        first.setQuantity(5);
+        first.setReservedQuantity(0);
+        first.setAvailableQuantity(5);
+        WarehouseInventory second = new WarehouseInventory();
+        second.setId(2L);
+        second.setQuantity(7);
+        second.setReservedQuantity(0);
+        second.setAvailableQuantity(7);
+        WarehouseInventory afterSecond = new WarehouseInventory();
+        afterSecond.setId(2L);
+        afterSecond.setQuantity(2);          // 7 - 5 = 2
+
+        // 打乱顺序：实现必须自己按 id 升序排，不能依赖查询返回顺序
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(second, first));
+        // 第一批（id=1）整笔 10 不够；按可用量 5 扣成功
+        when(inventoryMapper.decreaseQuantityAtomic(1L, 10)).thenReturn(0);
+        when(inventoryMapper.decreaseQuantityAtomic(1L, 5)).thenReturn(1);
+        // 第二批（id=2）扣剩余的 5
+        when(inventoryMapper.decreaseQuantityAtomic(2L, 5)).thenReturn(1);
+        when(inventoryMapper.selectById(2L)).thenReturn(afterSecond);
+
+        WarehouseInventory result = warehouseService.decreaseInventory(1L, 10L, "SKU-001", 10);
+
+        assertEquals(2, result.getQuantity(), "id=1 出 5、id=2 出 5，第二行剩 2");
+        verify(inventoryMapper).decreaseQuantityAtomic(1L, 5);
+        verify(inventoryMapper).decreaseQuantityAtomic(2L, 5);
+    }
+
+    /**
+     * 与上一例互为边界：所有批合计仍不够时必须失败，
+     * 且不能留下「扣了一部分」的残局（由 @Transactional 回滚，这里只验行为）。
+     */
+    @Test
+    @DisplayName("出库 - 多批合计仍不足 → 失败，不部分扣减")
+    void testDecreaseInventoryFailsWhenTotalInsufficient() {
+        WarehouseInventory first = new WarehouseInventory();
+        first.setId(1L);
+        first.setQuantity(3);
+        first.setReservedQuantity(0);
+        first.setAvailableQuantity(3);
+        WarehouseInventory second = new WarehouseInventory();
+        second.setId(2L);
+        second.setQuantity(2);
+        second.setReservedQuantity(0);
+        second.setAvailableQuantity(2);
+        when(inventoryMapper.selectList(any())).thenReturn(List.of(first, second));
+        // 合计 5 < 需求 10：每一批最多能出自己的可用量，全部扣完仍不够
+        when(inventoryMapper.decreaseQuantityAtomic(1L, 10)).thenReturn(0);
+        when(inventoryMapper.decreaseQuantityAtomic(1L, 3)).thenReturn(1);
+        when(inventoryMapper.decreaseQuantityAtomic(2L, 7)).thenReturn(0);
+        when(inventoryMapper.decreaseQuantityAtomic(2L, 2)).thenReturn(1);
+
+        assertThrows(IllegalStateException.class,
+                () -> warehouseService.decreaseInventory(1L, 10L, "SKU-001", 10),
+                "合计 5 < 10 应失败");
+    }
+
     @Test
     @DisplayName("更新库位码 - 库存不存在 → 抛出异常")
     void testUpdateLocationCodeNotFound() {
