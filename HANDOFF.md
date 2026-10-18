@@ -7976,3 +7976,58 @@ decrease 是设计选择（FIFO/任一批次）。但多批共存时只扣一批
 两次用 python 切片删代码都因「假设有空行」而索引错位（`TimeCursorPageSupportTest`、
 `AdAutoRuleServiceImpl`、`WarehouseServiceImpl` 三次）。这次先 assert 首尾行内容，
 错了就中止——文件未被改坏，12 项测试仍绿。**删代码必须断言边界，不能假设结构。**
+
+## §S33.106 审 SP-API 与剩余五模块：0 个新缺陷，但确认了两处「刻意不修」的理由
+
+### 审法
+
+同一套结构化方法（§S33.105 立）：解析每个端点的注解块与签名判租户边界，
+再对 `selectById` / `selectList` 取上下文窗口产候选，**逐个读代码判定**。
+
+### SP-API（49 端点）
+
+- controller 层：3 个「带 shopId 无 @ShopScoped」候选，**全是误报**，且理由都写在代码里：
+  - `PreflightController:63` 用 `isShopAllowedStrict` 显式校验（比切面更严）+ 越权日志 + ErrorSummary
+  - `ConnectorController:229` 与 `SpapiController:121` 的 shopId 在 `@RequestBody` 内，
+    切面只覆盖 `@RequestParam`/`@PathVariable`，故显式校验——后者注释直接写明这一点
+- service 层 4 个 `selectById` 候选：`ShopCredentialStore` 的主键就是 shopId，
+  按主键取天然隔离；其余是后台 worker 与 outbox 血缘查询
+- 7 个「无 shopId 条件」的列表查询：`SeasonalIndex`/`PromotionCalendar` 是**全局参考数据**
+  （季节性指数、促销日历，本就不属任何店铺）；其余是后台调度器的跨店扫描，均有 `LIMIT`
+
+### 限流器（重点看，因为 §S33.93 刚修过 5xx 无界重试）
+
+`SpiRateLimiter` 设计良好，两处我怀疑的问题都不成立：
+
+1. **桶是否按店隔离**：`bucketKey = shopId + ":" + operationKey` —— 含 shopId，每店独立桶。
+   且 `requireNonNull(shopId)` 强制非空，等待在锁外（不阻塞他店），
+   中断即抛 `RateLimitException` 并恢复中断标志。
+2. **`while(true)` 是否可能空转**：速率来自官方静态表与 429 观测值的 `min`，
+   两者恒 > 0，故 `nanosUntilNextToken` 必返回有限值。
+
+**理论隐患（记账不修）**：`nanosUntilNextToken` 里 `deficit / plan.ratePerSecond()`，
+若速率恒为 0 则除零得 Infinity → `(long)` 得 `Long.MAX_VALUE` → `waitMillis` 溢出为负 →
+`Math.max(1L, 负)` = 1ms → 每秒千次空转。当前不可达（速率恒 > 0），
+要修需给 `UsagePlan` 加构造校验，属加固而非修缺陷。
+
+### 剩余五模块
+
+| 模块 | 端点 | 候选 | 结论 |
+|---|---|---|---|
+| customer | 23 | 2 | 误报：注释明写「shopId 只在工单行上，切面无法解析，归属由 service 层按行校验」 |
+| ops | 16 | 0 | 干净 |
+| ai | 16 | 2 | 误报：`@RequestParam shopId` + 显式 `isShopAllowed` |
+| search | 4 | 0 | 干净 |
+| message | 1 | 0 | 干净 |
+
+**ai 那两处的一处「刻意不修」**：用的是 `isShopAllowed`（lenient）而非 strict。
+差异在 `UserContext`：lenient 在 **userId 为 null 且店铺列表为空时返回 true**（放行）。
+该分支是刻意为定时任务留的（`UserContext` 注释：「行为不能改，改了就是让定时任务大面积 403」），
+且会计数告警。这两个是 HTTP 端点、必过网关鉴权（userId 非 null），故实际不可达。
+属「不必要的宽」而非缺陷，记账不修。
+
+### 测试基线（本轮实跑）
+
+customer 38 / ops 61 / ai 146（1 failure = loopback，既有）/ search 7 / message 8，全绿除既有 loopback。
+
+至此全仓 15 个模块的租户边界已全部过一遍结构化审查。
