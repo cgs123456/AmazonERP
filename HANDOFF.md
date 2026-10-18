@@ -7688,3 +7688,66 @@ ad 与 report 模块还有同形游标副本。我核实后确认**不能**直�
 
 同时验证了 §S33.98 复合游标的前提：`id < ?` + `ORDER BY id DESC`
 序列无重无漏（每场景结果精确等于期望 id 列表）。
+
+## §S33.101 ad 模块游标副本收敛：同一判据下我上一轮记录过轻
+
+§S33.100 我把 ad/report 的同形游标副本记成「同形不同构、待办」。核对后发现
+**这条记录过轻**：ad 模块内有两份是**逐字节同构**的，正是我 §S33.98 用来收敛的
+同一判据（第二用例出现在另一个类里）。
+
+### 实际形态（三处，两个类）
+
+- `AdAutoRuleServiceImpl:299` `parseCompositeCursor`，键 `int`（priority）
+- `SearchTermServiceImpl:464` `parseIntCursor`，键 `int` —— 与前者**主体逻辑逐字节相同**
+  （同样的 `id > 0` 守卫、同样的两条异常消息），只有 record 类型名不同
+  （`CompositeCursor` vs `IntCursor`）
+- `SearchTermServiceImpl:444` `parseDateCursor`，键 `LocalDate`（reportDate），同文件
+
+`IntCursor` 有两个调用方（totalOrders / organicRank），`DateCursor` 一个。
+第三条 `ScanCursor` 同形但本轮不动——它不是游标解析，不属本次范围。
+
+### 收敛方式
+
+新增 `com.amz.service.AdPageCursor`（`parseInt` + `parseDate` 两个入口，
+两个 record）。**不做泛型**：差异只是键的解析，两个具体方法就够，
+泛型化要为「类型不同」付一层间接成本（CLAUDE.md：不预先铺抽象）。
+
+异常消息**逐字节保持原样**，包括 `parseDate` 里写死的 `reportDate` 字面量——
+它原本就不参数化（只有一个调用方），不改。改写过程中我一度把它改成
+`field + " 或 id 格式错误"`，自查时发现并改回：**重构不该叠加行为变更。**
+
+与 multiplatform 的 `TimeCursorPageSupport` 不合并：键类型与键集条件的拼法都不同
+（那边 priority/reportDate/id 的顺序由各调用方按自己的排序列决定）。
+
+### 补上被合并放大的测试缺口
+
+三处私有副本**原本各自零测试**。实测：删掉 `id > 0` 守卫后，模块内 42 个相关测试
+全绿——没有一条钉住它。合并让一份没人守的逻辑变成三处共用，
+所以必须把欠的测试补上，否则合并只是把缺口放大三倍。
+
+新增 `AdPageCursorTest`（7 项）。变异账目 3 杀：
+
+| 变异 | 结果 |
+|---|---|
+| `parseInt` 删 `id > 0` 守卫 | **杀**（`rejectsNonPositiveId`） |
+| `parseInt` 坏格式返回 null（静默当第一页） | **杀** |
+| `parseDate` 删 `id > 0` 守卫 | **杀**（`rejectsNonPositiveIdInDateCursor`） |
+
+### 写测试时虚构了一条不存在的守卫
+
+第一版把 `0|5` 也列入「id 非正」的拒绝用例，测试报错。核对后确认原实现
+**只校验 id 段，不校验键段范围**（`priority=0` 合法）。是我的断言比实现严，
+不是实现有洞。已改为只列 `7|0` / `7|-1`，并注释写明
+「测试要比实现宽，不能比实现严」。
+
+ad 模块 165 项：0 failures、7 errors 全为 `AdvertisingApiRealClientContractTest`
+的 loopback 环境限制（与改动前同一批，非 loopback 失败数 0）。
+ratchet 与 hygiene 通过。overLimitTotalLines 46162 → 46117（净降 45）。
+
+### 复发两次的同一类操作错误
+
+这次删代码两次踩同一个坑：用字符串截断删方法，`}` 边界算错，
+把类结尾一起删掉/留下悬空代码（`TimeCursorPageSupportTest` 一次、
+`AdAutoRuleServiceImpl` 一次，后者靠 `git checkout` 恢复重做）。
+
+规则：**删方法必须逐行定位并断言首尾行内容**，不能靠「找下一个 `}`」猜边界。

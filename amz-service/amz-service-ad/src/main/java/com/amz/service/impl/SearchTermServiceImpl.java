@@ -4,6 +4,7 @@ import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
 import com.amz.exception.InvalidParamException;
+import com.amz.service.AdPageCursor;
 import com.amz.mapper.AdAsinKeywordMapper;
 import com.amz.mapper.AdSearchTermMapper;
 import com.amz.mapper.ConvertingTermMapper;
@@ -98,10 +99,10 @@ public class SearchTermServiceImpl implements SearchTermService {
         if (searchTerm != null && !searchTerm.isBlank()) {
             wrapper.like(AdSearchTerm::getSearchTerm, searchTerm);
         }
-        DateCursor cursor = parseDateCursor(req);
+        AdPageCursor.DateCursor cursor = AdPageCursor.parseDate(req);
         if (cursor != null) {
-            wrapper.and(w -> w.lt(AdSearchTerm::getReportDate, cursor.date())
-                    .or(inner -> inner.eq(AdSearchTerm::getReportDate, cursor.date())
+            wrapper.and(w -> w.lt(AdSearchTerm::getReportDate, cursor.key())
+                    .or(inner -> inner.eq(AdSearchTerm::getReportDate, cursor.key())
                             .lt(AdSearchTerm::getId, cursor.id())));
         }
         wrapper.orderByDesc(AdSearchTerm::getReportDate)
@@ -176,7 +177,7 @@ public class SearchTermServiceImpl implements SearchTermService {
         if (asin != null && !asin.isBlank()) {
             wrapper.eq(ConvertingTerm::getAsin, asin);
         }
-        IntCursor cursor = parseIntCursor(req, "totalOrders");
+        AdPageCursor.IntCursor cursor = AdPageCursor.parseInt(req, "totalOrders");
         if (cursor != null) {
             wrapper.and(w -> w.lt(ConvertingTerm::getTotalOrders, cursor.key())
                     .or(inner -> inner.eq(ConvertingTerm::getTotalOrders, cursor.key())
@@ -233,7 +234,7 @@ public class SearchTermServiceImpl implements SearchTermService {
         LambdaQueryWrapper<AdAsinKeyword> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AdAsinKeyword::getShopId, shopId)
                .eq(AdAsinKeyword::getAsin, asin);
-        IntCursor cursor = parseIntCursor(req, "organicRank");
+        AdPageCursor.IntCursor cursor = AdPageCursor.parseInt(req, "organicRank");
         if (cursor != null) {
             wrapper.and(w -> w.gt(AdAsinKeyword::getOrganicRank, cursor.key())
                     .or(inner -> inner.eq(AdAsinKeyword::getOrganicRank, cursor.key())
@@ -441,51 +442,6 @@ public class SearchTermServiceImpl implements SearchTermService {
         return shopId + "\0" + normalizeCampaignId(campaignId) + "\0" + normalizeSearchTerm(searchTerm);
     }
 
-    private static DateCursor parseDateCursor(PageRequest page) {
-        if (page == null || !page.hasCursor()) {
-            return null;
-        }
-        String[] parts = page.payload().split("\\|", -1);
-        if (parts.length != 2) {
-            throw new InvalidParamException("分页游标非法：reportDate 游标格式应为 yyyy-MM-dd|id");
-        }
-        try {
-            LocalDate date = LocalDate.parse(parts[0]);
-            long id = Long.parseLong(parts[1]);
-            if (id <= 0) {
-                throw new InvalidParamException("分页游标非法：id 必须 > 0，实际 " + id);
-            }
-            return new DateCursor(date, id);
-        } catch (DateTimeParseException | NumberFormatException e) {
-            throw new InvalidParamException("分页游标非法：reportDate 或 id 格式错误");
-        }
-    }
-
-    private static IntCursor parseIntCursor(PageRequest page, String field) {
-        if (page == null || !page.hasCursor()) {
-            return null;
-        }
-        String[] parts = page.payload().split("\\|", -1);
-        if (parts.length != 2) {
-            throw new InvalidParamException("分页游标非法：" + field + " 游标格式应为 值|id");
-        }
-        try {
-            int key = Integer.parseInt(parts[0]);
-            long id = Long.parseLong(parts[1]);
-            if (id <= 0) {
-                throw new InvalidParamException("分页游标非法：id 必须 > 0，实际 " + id);
-            }
-            return new IntCursor(key, id);
-        } catch (NumberFormatException e) {
-            throw new InvalidParamException("分页游标非法：" + field + " 或 id 不是整数");
-        }
-    }
-
-    private record DateCursor(LocalDate date, long id) {
-    }
-
-    private record IntCursor(int key, long id) {
-    }
 
     private record ScanCursor(LocalDate date, long id) {
     }

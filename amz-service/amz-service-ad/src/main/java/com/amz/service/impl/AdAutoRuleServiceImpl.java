@@ -4,6 +4,7 @@ import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
 import com.amz.exception.InvalidParamException;
+import com.amz.service.AdPageCursor;
 import com.amz.mapper.AdAutoRuleMapper;
 import com.amz.mapper.AdSearchTermMapper;
 import com.amz.model.AdAutoRule;
@@ -110,7 +111,7 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
         if (ruleType != null && !ruleType.isBlank()) {
             wrapper.eq(AdAutoRule::getRuleType, ruleType);
         }
-        CompositeCursor cursor = parseCompositeCursor(req, "priority");
+        AdPageCursor.IntCursor cursor = AdPageCursor.parseInt(req, "priority");
         if (cursor != null) {
             wrapper.and(w -> w.lt(AdAutoRule::getPriority, cursor.key())
                     .or(inner -> inner.eq(AdAutoRule::getPriority, cursor.key())
@@ -294,29 +295,6 @@ public class AdAutoRuleServiceImpl implements AdAutoRuleService {
             log.warn("广告规则店铺越权访问拦截：userId={}, shopId={}", UserContext.getUserId(), shopId);
             throw new CodeErrorException("店铺不存在或无权访问");
         }
-    }
-
-    private static CompositeCursor parseCompositeCursor(PageRequest page, String field) {
-        if (page == null || !page.hasCursor()) {
-            return null;
-        }
-        String[] parts = page.payload().split("\\|", -1);
-        if (parts.length != 2) {
-            throw new InvalidParamException("分页游标非法：" + field + " 游标格式应为 值|id");
-        }
-        try {
-            int key = Integer.parseInt(parts[0]);
-            long id = Long.parseLong(parts[1]);
-            if (id <= 0) {
-                throw new InvalidParamException("分页游标非法：id 必须 > 0，实际 " + id);
-            }
-            return new CompositeCursor(key, id);
-        } catch (NumberFormatException e) {
-            throw new InvalidParamException("分页游标非法：" + field + " 或 id 不是整数");
-        }
-    }
-
-    private record CompositeCursor(int key, long id) {
     }
 
     private AdAutoRule requireRuleAccess(Long ruleId) {
