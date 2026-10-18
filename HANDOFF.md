@@ -8120,10 +8120,51 @@ customer 38 / ops 61 / ai 146（1 failure = loopback，既有）/ search 7 / mes
 **自测**：`tools/release/test_tenant_boundary_audit.py`（6 项，unittest）。
 按本目录约定用普通字符串 + `chr(10)` 拼源码，不用 `\n` 字面量
 （此前两次被 heredoc/转义弄成未闭合字符串）。
-变异验证：GUARD 全匹配（把什么都判成已守护）→ 被杀；
-类级注解算端点、DATA_ACCESS 收窄 → **存活**（等价变异，
-前者在本仓无类级端点带 data-access，后者落在其它的访问行上）。
-存活的两个已确认是等价变异而非测试弱，但**没写成断言**，记在此处。
+变异验证（三个变异体，**最终全部被杀**）：
+
+| 变异 | 结果 | 说明 |
+|---|---|---|
+| GUARD 改成 `.*`（把什么都判成已守护） | 被杀 | 反向断言 `test_unguarded_access_is_reported` 抓住 |
+| `DATA_ACCESS` 收窄（漏掉 selectById） | 被杀（第二轮） | 见下 |
+| 类级注解也算端点 | 被杀（第二轮） | 见下 |
+
+**第一轮有两个变异"存活"，我一度按等价变异结案——这个结论是错的**，
+第二轮把夹具改对之后两个都被杀掉。教训记在这里，别再犯：
+
+1. `DATA_ACCESS` 收窄**不是**等价变异。它只是没被抓到：夹具里同时写了
+   `selectById` 和 `updateById` 两条访问，收窄掉 `selectById` 后
+   `updateById` 仍被报出，测试照样通过。**漏检被另一条访问掩盖了**。
+   而 `selectById` 恰好是三个真实缺陷（§S33.91/§S33.92/§S33.108）的共同形状。
+   修法：夹具只留一条 `selectById`。
+2. 类级注解**不是**等价变异。我最初的夹具里类级注解上方没有 javadoc，
+   `mentions_shop` 先把它否掉了，压根走不到 `_is_method_mapping`。
+   本仓误报的真实形状是**类级注解上方 javadoc 里写了 shopId**
+   （InventoryController 等三条）。夹具补上那段 javadoc 后变异立刻被杀。
+
+**方法论**：判定"存活"之前，先证明这个变异在夹具上**真的产生了不同的行为**。
+我第一轮两个"等价"结论都是没做这一步就结的案。
 
 **候选数参考**（当前）：spapi 16 / logistics 20 / order 9 / finance 6 / multiplatform 1。
 逐条读才是重点，工具只负责不漏。
+
+---
+
+## §S33.110 迁移计数与 schema 快照的同步（补 §S33.104 的漏项）
+
+**问题**：§S33.104 新增了 `multiplatform V4__shop_scoped_platform_keys.sql`，
+但**没有同步 schema 快照**，也没有同步迁移计数。CI 的
+`test_release_manifest` / `test_migration_snapshot_parity` 会红。
+
+这个坑测试注释里早就写明过：「上一班只改了迁移没改这里，真 CI 的 hygiene job
+抓到『改一半』」——我这一班又踩了同一个坑，只是这次是本地门禁先抓到。
+
+**同步的四处**（新增/删除迁移时必须逐处同步，缺一处就会红）：
+1. `python tools/synthetic-data/snapshot_schema.py` 重生成三个文件；
+2. `tools/release/test_release_manifest.py`：方法名 + 两处断言（75 → 76）；
+3. `.github/workflows/ci.yml` 三处口径注释（75 → 76）；
+4. `.github/workflows/ci.yml` / `release.yml` 的 Release tool tests 清单
+   （新增测试模块必须登记，否则 `test_release_workflow` 会红）。
+
+**验证**：136 项全绿（按 ci.yml 原样命令复跑）。
+注意 `-I` 会剥掉 `sys.path` 导致 `No module named 'tools'`，
+本地复现 CI 时**不要**加 `-I`（`python -m unittest tools.release.xxx`）。
