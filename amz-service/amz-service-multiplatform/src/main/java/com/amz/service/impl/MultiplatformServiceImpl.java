@@ -16,6 +16,7 @@ import com.amz.mapper.PlatformInventoryMapper;
 import com.amz.mapper.PlatformMessageMapper;
 import com.amz.mapper.PlatformProductMapper;
 import com.amz.mapper.UnifiedOrderMapper;
+import com.amz.multiplatform.TimeCursorPageSupport;
 import com.amz.model.OauthApp;
 import com.amz.model.OauthToken;
 import com.amz.model.PlatformAccount;
@@ -306,20 +307,20 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     public PageResult<PlatformMessage> listMessages(Long shopId, String platform, String status, PageRequest page) {
         PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
-        TimeCursor cursor = timeCursor(req, "receive_time");
+        TimeCursorPageSupport.TimeCursor cursor = TimeCursorPageSupport.parse(req, "receive_time");
         LambdaQueryWrapper<PlatformMessage> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformMessage::getShopId, shopId);
         if (platform != null && !platform.isBlank()) wrapper.eq(PlatformMessage::getPlatform, platform);
         if (status != null && !status.isBlank()) wrapper.eq(PlatformMessage::getStatus, status);
         if (cursor != null) {
-            before(wrapper, PlatformMessage::getReceiveTime, PlatformMessage::getId, cursor);
+            TimeCursorPageSupport.before(wrapper, PlatformMessage::getReceiveTime, PlatformMessage::getId, cursor);
         }
         wrapper.orderByDesc(PlatformMessage::getReceiveTime)
                .orderByDesc(PlatformMessage::getId)
                .last("LIMIT " + req.probeSize());
         List<PlatformMessage> rows = platformMessageMapper.selectList(wrapper);
         return PageResult.of(rows, req.size(),
-                m -> PageRequest.encodeCursor(cursorPayload(m.getReceiveTime(), m.getId())));
+                m -> PageRequest.encodeCursor(TimeCursorPageSupport.payload(m.getReceiveTime(), m.getId())));
     }
 
     @Override
@@ -415,19 +416,19 @@ public class MultiplatformServiceImpl implements MultiplatformService {
     @Override
     public PageResult<PlatformInventory> listPlatformInventory(Long shopId, String platform, PageRequest page) {
         PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
-        TimeCursor cursor = timeCursor(req, "snapshot_time");
+        TimeCursorPageSupport.TimeCursor cursor = TimeCursorPageSupport.parse(req, "snapshot_time");
         LambdaQueryWrapper<PlatformInventory> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(PlatformInventory::getShopId, shopId);
         if (platform != null && !platform.isBlank()) wrapper.eq(PlatformInventory::getPlatform, platform);
         if (cursor != null) {
-            before(wrapper, PlatformInventory::getSnapshotTime, PlatformInventory::getId, cursor);
+            TimeCursorPageSupport.before(wrapper, PlatformInventory::getSnapshotTime, PlatformInventory::getId, cursor);
         }
         wrapper.orderByDesc(PlatformInventory::getSnapshotTime)
                .orderByDesc(PlatformInventory::getId)
                .last("LIMIT " + req.probeSize());
         List<PlatformInventory> rows = platformInventoryMapper.selectList(wrapper);
         return PageResult.of(rows, req.size(),
-                i -> PageRequest.encodeCursor(cursorPayload(i.getSnapshotTime(), i.getId())));
+                i -> PageRequest.encodeCursor(TimeCursorPageSupport.payload(i.getSnapshotTime(), i.getId())));
     }
 
     @Override
@@ -814,41 +815,4 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         throw new CodeErrorException(what + "不存在或无权访问");
     }
 
-    /** 时间列不唯一，所以游标必须带 id；载荷是 {@code LocalDateTime|id}。 */
-    private record TimeCursor(LocalDateTime time, long id) {
-    }
-
-    private static TimeCursor timeCursor(PageRequest page, String field) {
-        if (page == null || !page.hasCursor()) {
-            return null;
-        }
-        String[] parts = page.payload().split("\\|", -1);
-        if (parts.length != 2) {
-            throw new InvalidParamException("分页游标非法：" + field + " 游标格式应为 时间|id");
-        }
-        try {
-            return new TimeCursor(LocalDateTime.parse(parts[0]), Long.parseLong(parts[1]));
-        } catch (java.time.format.DateTimeParseException | NumberFormatException e) {
-            throw new InvalidParamException("分页游标非法：" + field + " 时间或 id 无法解析");
-        }
-    }
-
-    private static String cursorPayload(LocalDateTime time, Long id) {
-        if (time == null || id == null) {
-            throw new InvalidParamException("分页游标生成失败：排序键缺失（time=" + time + ", id=" + id + "）");
-        }
-        return time.toString() + "|" + id;
-    }
-
-    /**
-     * {@code (time, id) < (cursorTime, cursorId)}：先比较时间，同一时间戳内再按 id 往前推。
-     * 只按时间翻页会在同一秒内多行时漏行或重复——消息、库存快照、Webhook 都是这种密度。
-     */
-    private static <T> void before(LambdaQueryWrapper<T> wrapper,
-                                   com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, LocalDateTime> timeGet,
-                                   com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, Long> idGet,
-                                   TimeCursor cursor) {
-        wrapper.and(q -> q.lt(timeGet, cursor.time())
-                .or(inner -> inner.eq(timeGet, cursor.time()).lt(idGet, cursor.id())));
-    }
 }

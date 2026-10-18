@@ -4,6 +4,7 @@ import com.amz.exception.CodeErrorException;
 import com.amz.exception.InvalidParamException;
 import com.amz.mapper.PlatformAccountMapper;
 import com.amz.mapper.WebhookEventMapper;
+import com.amz.multiplatform.TimeCursorPageSupport;
 import com.amz.model.PlatformAccount;
 import com.amz.model.WebhookEvent;
 import com.amz.result.PageRequest;
@@ -33,11 +34,10 @@ import java.util.List;
  * 是为了让这条「无用户上下文的写路径」的边界一目了然——
  * 归属判定、验签拒绝、幂等去重、状态迁移四件事都收在这里，不再和账号/商品/消息逻辑混排。
  *
- * <p><b>分页三件套与 MultiplatformServiceImpl 的同名实现刻意重复</b>：
- * {@code timeCursor}/{@code cursorPayload}/{@code before} 在消息、库存快照、Webhook
- * 三个列表里各出现一次。那三个调用方位于不同生命周期、无共享状态，
- * 按 CLAUDE.md「抽象延迟到第二个真实用例」——这里是第一处抽到独立类，
- * 尚不构成必须共享的证据；哪天出现第四处且口径确有分化，再抽公共组件。
+ * <p><b>分页改用 {@link TimeCursorPageSupport}</b>（§S33.98）：本类曾持有一份
+ * 与 {@code MultiplatformServiceImpl} 逐行相同的私有副本，那是「抽象延迟到第二个
+ * 真实用例」原则下的临时状态 —— 第二个用例（本类）出现后即应收敛，故已合并。
+ * 留在模块内而非提升到 {@code amz-common}，见该类的说明。
  *
  * <p>安全边界按 fail-closed：验签失败、无法确定归属、签名缺字段都显式拒绝，
  * 绝不「尽量记下来」。
@@ -209,19 +209,19 @@ public class WebhookEventService {
      */
     public PageResult<WebhookEvent> listWebhookEvents(Long shopId, String status, PageRequest page) {
         PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
-        TimeCursor cursor = timeCursor(req, "create_time");
+        TimeCursorPageSupport.TimeCursor cursor = TimeCursorPageSupport.parse(req, "create_time");
         LambdaQueryWrapper<WebhookEvent> wrapper = new LambdaQueryWrapper<>();
         if (shopId != null) wrapper.eq(WebhookEvent::getShopId, shopId);
         if (status != null && !status.isBlank()) wrapper.eq(WebhookEvent::getStatus, status);
         if (cursor != null) {
-            before(wrapper, WebhookEvent::getCreateTime, WebhookEvent::getId, cursor);
+            TimeCursorPageSupport.before(wrapper, WebhookEvent::getCreateTime, WebhookEvent::getId, cursor);
         }
         wrapper.orderByDesc(WebhookEvent::getCreateTime)
                .orderByDesc(WebhookEvent::getId)
                .last("LIMIT " + req.probeSize());
         List<WebhookEvent> rows = webhookEventMapper.selectList(wrapper);
         return PageResult.of(rows, req.size(),
-                e -> PageRequest.encodeCursor(cursorPayload(e.getCreateTime(), e.getId())));
+                e -> PageRequest.encodeCursor(TimeCursorPageSupport.payload(e.getCreateTime(), e.getId())));
     }
 
     /** 平台回调验签：密钥未配置 / 缺签名头 / 签名不匹配三类都拒绝，话术不泄露是哪一种。 */
@@ -263,43 +263,6 @@ public class WebhookEventService {
         }
     }
 
-    // ==================== 分页（本类私有副本，见类注释「刻意重复」） ====================
+    // ==================== 分页（共用 TimeCursorPageSupport，§S33.98 收敛） ====================
 
-    /** 时间列不唯一，所以游标必须带 id；载荷是 {@code LocalDateTime|id}。 */
-    private record TimeCursor(LocalDateTime time, long id) {
-    }
-
-    private static TimeCursor timeCursor(PageRequest page, String field) {
-        if (page == null || !page.hasCursor()) {
-            return null;
-        }
-        String[] parts = page.payload().split("\\|", -1);
-        if (parts.length != 2) {
-            throw new InvalidParamException("分页游标非法：" + field + " 游标格式应为 时间|id");
-        }
-        try {
-            return new TimeCursor(LocalDateTime.parse(parts[0]), Long.parseLong(parts[1]));
-        } catch (java.time.format.DateTimeParseException | NumberFormatException e) {
-            throw new InvalidParamException("分页游标非法：" + field + " 时间或 id 无法解析");
-        }
-    }
-
-    private static String cursorPayload(LocalDateTime time, Long id) {
-        if (time == null || id == null) {
-            throw new InvalidParamException("分页游标生成失败：排序键缺失（time=" + time + ", id=" + id + "）");
-        }
-        return time.toString() + "|" + id;
-    }
-
-    /**
-     * {@code (time, id) < (cursorTime, cursorId)}：先比较时间，同一时间戳内再按 id 往前推。
-     * 只按时间翻页会在同一秒内多行时漏行或重复。
-     */
-    private static <T> void before(LambdaQueryWrapper<T> wrapper,
-                                   SFunction<T, LocalDateTime> timeGet,
-                                   SFunction<T, Long> idGet,
-                                   TimeCursor cursor) {
-        wrapper.and(q -> q.lt(timeGet, cursor.time())
-                .or(inner -> inner.eq(timeGet, cursor.time()).lt(idGet, cursor.id())));
-    }
 }

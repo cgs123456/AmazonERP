@@ -7513,3 +7513,72 @@ OAuth 460-643 / 订单 645-854），按 §S33.90 的同款做法可逐个剥。
 `snapshot_schema.py` 仍按 V1 的旧唯一键记录这两张表。它比真实库更严（少 `shop_id`），
 属既有摩擦。修它要动合成数据管线的 schema 快照，收益仅是「快照与实际一致」，
 而当前它是严格子集，不会漏报。未改。
+
+## §S33.98 时间复合游标收敛为组件：修正 §S33.97 把拆分当长度问题的判断
+
+### 上一轮的判断错在哪
+
+§S33.97 我把 `MultiplatformServiceImpl`(854 行)记成「不拆，工程指标非缺陷」，
+并说域边界干净、按 §S33.90 同款做法即可。这句话一半对一半错。
+
+对的一半：拆它确实不产生正确性收益。
+错的一半：我说它「边界干净」时没看依赖。真要拆库存域，
+它依赖 `dataClient`、三个 mapper **和分页三件套**——而三件套在
+`MultiplatformServiceImpl`(818-855) 与 `WebhookEventService`(269-304)
+各有一份**逐行相同的私有副本**（逐字节比对：仅注释文案与是否用全限定名不同，逻辑一致）。
+
+§S33.90 写下的保留理由是「等第四处出现再抽」。但第二处已经出现且**在另一个类里**,
+那不是「同文件内的三处调用」，而是跨文件重复——抽象的前提条件已经满足。
+所以真正的动作顺序应该是先收敛重复，再谈拆域；我上一轮跳过了这一步。
+
+### 为什么放模块内，不放 amz-common
+
+`TimeCursorPageSupport` 落在 `com.amz.multiplatform`，**不是** `amz-common`。
+
+`amz-common` 对 mybatis 是 **optional** 依赖，其 pom 注释明写「运行时由引用方的
+mybatis-plus-spring-boot-starter 传递提供」，且全包无一处使用 `LambdaQueryWrapper`。
+`before(...)` 的签名必须依赖它——提升上去等于让 common 接受它一直刻意回避的依赖，
+或引入 optional 传递问题。两个消费方同在本模块，留模块内即可。
+
+### 改了什么
+
+- 新增 `com.amz.multiplatform.TimeCursorPageSupport`：`TimeCursor` record +
+  `parse` / `payload` / `before` 三个静态方法。
+- `MultiplatformServiceImpl` 删私有副本（854 → 818 行），三处调用改静态引用。
+- `WebhookEventService` 删私有副本，并**改掉类注释里那段已过时的
+  「刻意重复」说明**——它还停在「等第四处再抽」的状态，留着会误导下一个人。
+
+### 测试与变异账目
+
+新增 `TimeCursorPageSupportTest`（5 项）：游标格式报错要点名列表、排序键缺失
+不许生成假游标、键集条件三项缺一不可。
+
+| 变异 | 结果 |
+|---|---|
+| `before` 只按时间比（去掉同秒 id 约束） | **杀** 2 条：新测试 + 既有 `messagesUseCompositeCursor` |
+| 坏格式游标静默返回 null（当第一页） | **杀** 2 条：新测试 + 既有 `messagesRejectHalfCursor` |
+| `payload` 缺排序键时兜底生成游标 | **杀** 1 条：仅新测试 |
+
+第三行值得记：**只有新测试抓到**。那两条不变量（坏游标报错、排序键缺失）
+在服务侧测试里没有直接保护——这正是补组件级测试的理由，
+也说明「既有 149 项」不等于「新组件的每条不变量都有人守」。
+
+模块 149 项全绿。ratchet 与 hygiene 通过，未抬 baseline
+（overLimitTotalLines 46198 → 46162，净降 36）。
+
+### 测试里踩的两个坑
+
+1. 直接用裸 `payload` 当 cursor 传给 `PageRequest.of` 被拒
+   (`InvalidParamException: 分页游标无法解析`)。`PageRequest` 的既有协议是
+   `encodeCursor(payload)`(base64 + 版本前缀)，`payload()` 取回解码后的载荷。
+   测试必须走真实协议，否则验证的是一个不存在的入口。
+2. 写断言时我现场拼了个 `countClauses` 去数 SQL 子句，不可靠。
+   改为先打一次真实 SQL（实测 `WHERE ((receive_time < #{..} OR
+   (receive_time = #{..} AND id < #{..})))`）再逐项断言。
+
+### 仍未做：拆库存域
+
+重复已消除，库存域现在只依赖共享组件 + mapper + `dataClient`，
+拆它已是纯搬运（约 75 行）。它仍不生正确性收益，
+且 §S33.97 的判断依然成立：非缺陷拆分应让位于有正确性收益的工作。
+记在这里，等有真实驱动（再进一个域、或文件继续涨）时再动。
