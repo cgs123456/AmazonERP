@@ -7046,3 +7046,56 @@ WASTE_IMPRESSION_THRESHOLD / TOP_LIMIT）——常量搬到新类后，服务类
 就是死代码，留着会让两处阈值各自漂移。
 
 变异 3 项全杀（窗口回退 ×2、零销售漏判 ×1），拆分后复验仍杀。
+
+## §S33.87 多平台统计：平台发现被统计行数上限截断，会整平台漏掉
+
+`PlatformOrderStatsService#discoverPlatforms` 旧实现 `SELECT platform ... LIMIT 5001`
+再内存去重。`bucketOf` 对单平台统计设 5000 行上限（触顶标 truncated）是对的，
+但同一个上限被套到了「枚举有哪些平台」上——订单超过 5001 行的店铺，
+只出现在上限之后的平台会被整个漏掉，且不标 truncated。
+
+**统计结果看起来完整，实际少了一整个平台的订单**——这是比数值算错更危险的一类缺陷：
+截断至少会标 truncated，而平台枚举的截断不留任何痕迹。
+
+合成数据佐证这是常态不是边角：`uk_shop_platform (shop_id, platform)` 允许同平台多店，
+fixture 里 SHOPIFY 同时属于 4 个店铺。
+
+修法：`UnifiedOrderMapper` 加 `selectDistinctPlatforms`（`SELECT DISTINCT` 走 `idx_shop`），
+平台集合与订单行数彻底解耦；服务侧仍 trim + TreeSet 去重防脏空格。
+行数上限只约束「统计多少行」，不约束「有哪些平台」——这是本次的原则。
+
+回归 multiplatform 129 全绿；变异（改回按行数取）杀 3 项，Fable 5 上复验仍杀。
+
+## §S33.88 Webhook 归属：不带 shopId 的回调按创建时间猜店铺
+
+免认证白名单入口（`BaseAuthInterceptor.WHITE_LIST` 放行 `/multiplatform/webhook`），
+控制器**恒传 shopId=null**——反查是唯一路径，不是兜底。
+
+旧实现 `orderByDesc(createTime).LIMIT 1` 取「该平台最新创建的账号」，
+把回调硬塞给任意一个店铺。三重必然性：
+- 同平台多店是常态（见 §S33.87，fixture 里 SHOPIFY=4 店）；
+- 验签密钥是平台级（`webhook.secret.temu` 一个值），签名里区分不出店铺；
+- shopId 恒 null。
+
+后果是跨租户污染：A 店事件记到 B 店名下，A 店运营看不到自己的回调，
+两边都收不到错误、看起来完全成功。猜中概率 1/N 且错了无信号。
+
+修法：`resolveShopIdByPlatform` 查 ACTIVE 账号 `LIMIT 2`——
+2 行足以区分「0/1/多」，同时有界读。唯一 ACTIVE 时命中；多于 1 时**拒绝落库**，
+不猜。INACTIVE/ERROR 不参与（否则废弃店会把回调接走）。
+
+**刻意不加「回调带 shopId」参数**：验签只对 payload 做 HMAC，shopId 若走查询参数
+就是未签名字段，任何能构造合法签名的人都能伪造店铺归属。真要支持同平台多店回调，
+需平台侧提供「带店铺标识且被签名覆盖」的字段——那是接入方案变更。已在控制器注释
+钉住这个 null，防后人「顺手接上」。
+
+错误文案两度修正（第一版建议「只保留一个 ACTIVE 账号」是把正常多店形态当误配，
+会误导运维，改掉了）。测试 9 项，变异 2 项全杀（去歧义守卫 / 去 status 过滤），
+Fable 5 上复验仍杀。
+
+ratchet：`MultiplatformServiceImpl` 969→1011，超基线 +42。未抬基线掩盖——
+本次是必要的 fail-closed 守卫（60 行含大量防误操作注释），
+但该文件本就是 god-class（远超 500 上限的历史遗留）。**技术债记录**：webhook 域
+（verify+resolve+handle+hmac+list ~140 行）应抽 `WebhookEventService`，
+本 loop 内不动它（会重连 3 个 @Value 密钥字段 + 迁移刚验过变异的测试，回归风险大于收益）。
+基线已更新并在评审说明。
