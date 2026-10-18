@@ -74,6 +74,8 @@ class FeeDiscrepancyServiceImplTest {
         ReflectionTestUtils.setField(service, "toleranceAmount", new BigDecimal("1.00"));
         ReflectionTestUtils.setField(service, "sizeJumpRatio", new BigDecimal("1.5"));
         ReflectionTestUtils.setField(service, "maxCandidates", 200);
+        // 其余用例不关心行数上限，给一个足够大的值避免误触截断
+        ReflectionTestUtils.setField(service, "maxScanRows", 50000);
     }
 
     private static SettlementDetail detail(String sku, String txType, String amountType, String amount) {
@@ -278,6 +280,96 @@ class FeeDiscrepancyServiceImplTest {
         assertEquals(501, report.getScannedSettlementRows(),
                 "第一页 500 行 + 第二页 1 行；探测行不能丢失第二页数据");
         assertEquals(501, report.getUnattributedRows());
+        verify(settlementDetailMapper, times(2)).selectList(any());
+    }
+
+    /**
+     * §S33.96 之一：达到行数上限必须停止加载，并且<b>披露</b>。
+     *
+     * <p>不披露的话，报告里的 {@code scannedSettlementRows} 会被当成全量行数，
+     * 「后面的账期没扫」就被读成「没有差异」——而这里是索赔候选的生成入口。
+     */
+    @Test
+    @DisplayName("达到单次扫描行数上限：只加载上限内行，且警告里说明只比较了新的一部分")
+    void scanStopsAtRowLimitAndDisclosesIt() {
+        ReflectionTestUtils.setField(service, "maxScanRows", 500);
+        List<SettlementDetail> firstPage = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {           // 500 + 探针行
+            SettlementDetail row = detail(null, "Adjustment", "Platform Adjustment", "1.00");
+            row.setId(1000L - i);
+            firstPage.add(row);
+        }
+        when(settlementDetailMapper.selectList(any())).thenReturn(firstPage);
+
+        FeeDiscrepancyScanReport report = service.scan(SHOP_ID, null);
+
+        assertEquals(500, report.getScannedSettlementRows(),
+                "收满上限即停，探针行不能进结果");
+        assertTrue(report.getWarnings().stream().anyMatch(w -> w.contains("已达单次扫描上限")),
+                "触顶必须披露，否则「没扫到的账期」会被读成「没有差异」。实际警告：" + report.getWarnings());
+        // 只发一次查询：拿到探针行就已断定后面还有，不必再一次
+        verify(settlementDetailMapper, times(1)).selectList(any());
+    }
+
+    /**
+     * §S33.96 之二：行数恰好等于上限时<b>不能</b>报截断。
+     *
+     * <p>这是把「收满」当「截断」的误报场景：明明扫完了全部历史，
+     * 报告却说只比了一部分。误报同样扭曲结论——它会让运营以为有大片账期没查过。
+     * <b>「恰好没有后续」要靠探针行判定，不能靠本批是否收满。</b>
+     */
+    @Test
+    @DisplayName("行数恰好等于上限（且确无后续）时不得误报截断")
+    void scanDoesNotReportTruncationWhenExactlyAtLimit() {
+        ReflectionTestUtils.setField(service, "maxScanRows", 500);
+        List<SettlementDetail> exactly = new ArrayList<>();
+        for (int i = 0; i < 500; i++) {           // 正好 500，没有探针行
+            SettlementDetail row = detail(null, "Adjustment", "Platform Adjustment", "1.00");
+            row.setId(1000L - i);
+            exactly.add(row);
+        }
+        when(settlementDetailMapper.selectList(any())).thenReturn(exactly);
+
+        FeeDiscrepancyScanReport report = service.scan(SHOP_ID, null);
+
+        assertEquals(500, report.getScannedSettlementRows());
+        assertFalse(report.getWarnings().stream().anyMatch(w -> w.contains("已达单次扫描上限")),
+                "扫完了全部 500 行却报截断，会让运营以为还有账期没查。实际警告：" + report.getWarnings());
+    }
+
+    /**
+     * §S33.96 之三：上限必须真的拦住后续批次。
+     *
+     * <p>上两条只覆盖「第一批就触顶」。这条覆盖分批场景：第一批收满后仍有缺口时
+     * 才会继续翻页，翻到探针行出现即停。若上限失效（例如 {@code while} 条件写错），
+     * 第二、三批会被继续拉内存，终行数超过上限。
+     */
+    @Test
+    @DisplayName("分批翻页时受上限约束：第二批出现探针行即停")
+    void scanRespectsLimitAcrossMultiplePages() {
+        ReflectionTestUtils.setField(service, "maxScanRows", 600);
+        List<SettlementDetail> firstPage = new ArrayList<>();
+        // 第一批必须给 501 行：LIMIT 501 只回 500 行，真实库里就证明没有下一页了。
+        // 要给满 501（500 + 探针）才表示「后面还有」，翻页才会继续。
+        for (int i = 0; i < 501; i++) {
+            SettlementDetail row = detail(null, "Adjustment", "Platform Adjustment", "1.00");
+            row.setId(2000L - i);
+            firstPage.add(row);
+        }
+        List<SettlementDetail> secondPage = new ArrayList<>();
+        for (int i = 0; i < 101; i++) {           // 第二批 100 + 探针行
+            SettlementDetail row = detail(null, "Adjustment", "Platform Adjustment", "1.00");
+            row.setId(1500L - i);
+            secondPage.add(row);
+        }
+        when(settlementDetailMapper.selectList(any())).thenReturn(firstPage, secondPage);
+
+        FeeDiscrepancyScanReport report = service.scan(SHOP_ID, null);
+
+        assertEquals(600, report.getScannedSettlementRows(),
+                "500 + 100 收满 600 上限，第二批的探针行不得计入");
+        assertTrue(report.getWarnings().stream().anyMatch(w -> w.contains("已达单次扫描上限")),
+                "跨页触顶同样要披露。实际警告：" + report.getWarnings());
         verify(settlementDetailMapper, times(2)).selectList(any());
     }
 

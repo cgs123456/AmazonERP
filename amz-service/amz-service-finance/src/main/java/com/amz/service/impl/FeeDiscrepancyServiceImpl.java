@@ -62,6 +62,21 @@ public class FeeDiscrepancyServiceImpl implements FeeDiscrepancyService {
     @Value("${amz.finance.discrepancy.max-candidates:200}")
     private int maxCandidates = 200;
 
+    /**
+     * 单次扫描最多载入的结算明细行数（§S33.96）。
+     *
+     * <p>结算原表是每日增量持续累积的（见 {@code SettlementSyncScheduler}：7 天窗口、
+     * 指纹去重），没有保留期限，所以单店行数随时间无界增长。本类要把判定所需的
+     * 明细整行载入 JVM 再按 SKU 分组，行数不设上限时，店铺跑满一年后一次扫描
+     * 就可能把堆打满——而它是用户可主动触发的同步端点（{@code POST /finance/discrepancy/scan}）。
+     *
+     * <p><b>为什么不是分批聚合到 SQL</b>：那需要把「平均成交价代理」「同 SKU 单件配送费
+     * 跳档判定」整套口径搬进 SQL，改动直接触碰索赔金额的计算。行数上限是先兜住内存，
+     * 不改变任何已判定口径——两件事不应混在一次改动里。
+     */
+    @Value("${amz.finance.discrepancy.max-scan-rows:50000}")
+    private int maxScanRows = 50000;
+
     @Autowired
     private SpApiFinanceClient spApiFinanceClient;
 
@@ -80,12 +95,25 @@ public class FeeDiscrepancyServiceImpl implements FeeDiscrepancyService {
         report.setShopId(shopId);
         report.setToleranceAmount(toleranceAmount);
 
-        List<SettlementDetail> rows = loadAllSettlementDetails(shopId);
+        SettlementScanPage scan = loadSettlementDetails(shopId, maxScanRows);
+        List<SettlementDetail> rows = scan.rows();
         if (rows == null || rows.isEmpty()) {
             report.addWarning("该店铺暂无结算明细，无法比对费用差异（请先同步结算原表）");
             return report;
         }
         report.setScannedSettlementRows(rows.size());
+        if (scan.truncated()) {
+            // 触顶必须披露，否则 scannedSettlementRows 会被当成全量行数，
+            // 「没扫到差异」被读成「没有差异」。同时说明保留的是较新账期——
+            // 那是分页顺序的结果，不是业务筛选。
+            report.addWarning("结算明细已达单次扫描上限 " + maxScanRows
+                    + " 行，本次只比较了较新的 " + rows.size() + " 行"
+                    + "（按明细 id 降序保留）；更早账期未参与，未发现差异不等于没有差异。"
+                    + "需要覆盖全部历史时调大 amz.finance.discrepancy.max-scan-rows，"
+                    + "或按账期分批扫描");
+            log.warn("fee discrepancy scan truncated shopId={} maxScanRows={} loaded={}",
+                    shopId, maxScanRows, rows.size());
+        }
 
         Map<String, List<SettlementDetail>> bySku = new LinkedHashMap<>();
         for (SettlementDetail row : rows) {
@@ -332,34 +360,60 @@ public class FeeDiscrepancyServiceImpl implements FeeDiscrepancyService {
     }
 
     /**
-     * 扫描需要遍历全部结算明细；单次查询按固定批次分页，避免历史数据增长后
-     * 一条无界 selectList 把数据库连接和 JVM 堆同时打满。
+     * 扫描所用的结算明细，及其是否触顶。
+     *
+     * @param rows      实际载入的明细（按 id 降序，即最新的在前）
+     * @param truncated 是否因为达到 {@link #maxScanRows} 而提前停止；
+     *                  为 true 时 rows <b>不是</b>该店全部明细，调用方必须披露
      */
-    private List<SettlementDetail> loadAllSettlementDetails(Long shopId) {
+    private record SettlementScanPage(List<SettlementDetail> rows, boolean truncated) {
+    }
+
+    /**
+     * 按固定批次分页读取店铺结算明细，最多 {@link #maxScanRows} 行（§S33.96）。
+     *
+     * <p>分页本身是为了避免一条无界 selectList 同时打满数据库连接与 JVM 堆；
+     * 行数上限是因为分页解决不了「行数本身无界」——它只能让内存涨得慢一点。
+     *
+     * <p>降序翻页意味着触顶时保留下的是<b>较新</b>的账期。对费用差异来说这通常
+     * 是更该先看的数据，但它是顺序选择而非业务筛选，必须由调用方明示，
+     * 不能让报告里的「扫了多少行」被读成「扫了全部行」。
+     */
+    private SettlementScanPage loadSettlementDetails(Long shopId, int limit) {
         List<SettlementDetail> all = new ArrayList<>();
+        int safeLimit = Math.max(1, limit);
         PageRequest page = PageRequest.first(PageRequest.MAX_SIZE);
-        while (true) {
+        while (all.size() < safeLimit) {
             LambdaQueryWrapper<SettlementDetail> qw = new LambdaQueryWrapper<SettlementDetail>()
                     .eq(SettlementDetail::getShopId, shopId);
             Long cursorId = page.cursorId();
             if (cursorId != null) {
                 qw.lt(SettlementDetail::getId, cursorId);
             }
+            int remaining = safeLimit - all.size();
+            // 每批按 page.size() 收，超出的一行是探针：它只用来判断「后面还有」，
+            // 绝不能进结果，否则同一行会在下一页以游标起点被重复计入。
+            int want = Math.min(remaining, page.size());
             qw.orderByDesc(SettlementDetail::getId)
-                    .last("LIMIT " + page.probeSize());
+                    .last("LIMIT " + (want + 1));
             List<SettlementDetail> rows = settlementDetailMapper.selectList(qw);
             if (rows == null || rows.isEmpty()) {
                 break;
             }
-            int visible = Math.min(rows.size(), page.size());
-            all.addAll(rows.subList(0, visible));
-            if (rows.size() <= page.size()) {
-                break;
+            all.addAll(rows.subList(0, Math.min(rows.size(), want)));
+            if (rows.size() <= want) {
+                break; // 没有探针行，后面没有了
             }
-            page = PageRequest.of(page.size(),
-                    PageRequest.encodeCursor(rows.get(visible - 1).getId()));
+            if (all.size() >= safeLimit) {
+                // 已收满全局上限，且探针行证明后面还有 —— 这才是真的截断。
+                // 若没有探针行（本批恰好收满且无后续），上面已经 break，
+                // 不会把一次恰好等于上限的完整扫描误报成截断。
+                return new SettlementScanPage(all, true);
+            }
+            SettlementDetail last = rows.get(Math.min(rows.size(), want) - 1);
+            page = PageRequest.of(page.size(), PageRequest.encodeCursor(last.getId()));
         }
-        return all;
+        return new SettlementScanPage(all, false);
     }
 
     @Override
