@@ -7099,3 +7099,70 @@ ratchet：`MultiplatformServiceImpl` 969→1011，超基线 +42。未抬基线�
 （verify+resolve+handle+hmac+list ~140 行）应抽 `WebhookEventService`，
 本 loop 内不动它（会重连 3 个 @Value 密钥字段 + 迁移刚验过变异的测试，回归风险大于收益）。
 基线已更新并在评审说明。
+
+## §S33.90 抽取 WebhookEventService：清偿连抬两次基线的债
+
+### 动因
+
+§S33.88 的记录里写了一句「WebhookEventService 抽取定为下一轮第一件事，不再往后推」。
+上一轮结束时 `MultiplatformServiceImpl` 的 ratchet 基线被连抬两次（969→1011→1016），
+每次理由都是「必要的 fail-closed 守卫」——理由成立，但连抬两次本身就是失控信号：
+**每次都在同一个 god-class 上做正确的小步，却没人还它本身超 500 行上限的债。**
+
+### 抽了什么
+
+`receiveWebhook` / `resolveShopIdByPlatform` / `handleWebhookEvent` /
+`listWebhookEvents` / `requireValidWebhookSignature` / `hmacSha256Hex`，
+连同三个 `@Value` 验签密钥与 `WebhookEventMapper`。
+
+选择这个域的第二个理由：webhook 是**唯一不带用户 JWT** 的入口
+（网关 `MyGlobalFilter.WHITE_LIST` 与服务层 `BaseAuthInterceptor.WHITE_LIST` 双双放行
+`/multiplatform/webhook`，两者一致性由 `AuthWhitelistParityContractTest` 守着），
+鉴权与归属判定全在域内。把它独立出来，这条「无用户上下文的写路径」的边界才一目了然。
+
+### 几个执行决定
+
+**不留接口转发方法。** `MultiplatformService` 上的两个 webhook 方法直接删，
+控制器改注入 `WebhookEventService`。转发方法是兼容层，按 CLAUDE.md「删除优于兼容」，
+内部重构就该改调用方。
+
+**分页测试随域迁，不留在原文件。** `MultiplatformPagingContractTest.webhookUsesCompositeCursor`
+搬到 `WebhookEventServiceTest`。分页契约属于被分页的那个域，留在原地会造成
+「实现在 A、契约在 B」——下次改 webhook 列表的人不会想到去翻那份通用分页测试。
+原文件同时清掉因此失效的 `WebhookEventMapper` 死桩与 import（那个 mock 在
+`@InjectMocks` 已无对应字段时是静默失效的，正是本会话记过的「服务类死桩」形态）。
+
+**`sha256Hex` 不搬。** 它有 3 个 OAuth 调用方，搬走会让 OAuth 域反向依赖 webhook 类。
+
+### 结果
+
+`MultiplatformServiceImpl` 1016 → 817 行；ratchet 总行数 46360 → 46161，**通过，未抬基线**。
+模块测试 134 全绿（原 133 + 新增 1）。测试类经 `git mv` 改名，10 项断言一字未改——
+抽类只搬代码，不改行为。
+
+### 变异账目：2 杀 1 存活，存活项不掩盖
+
+| 变异 | 结果 |
+|---|---|
+| 去 `accounts.size() > 1` 歧义守卫 | 杀（`ambiguousShopIsRejectedNotGuessed` 红） |
+| 去 `status = "ACTIVE"` 过滤 | 杀（`reverseLookupFiltersToActiveAccounts` 红） |
+| 去 `receiveWebhook` 的 `@Transactional` | **存活** |
+
+第三项值得单独记：删掉 `@Transactional` 后**原有 10 项测试全绿**。事务注解不在方法
+签名里，是搬迁时最容易丢的东西，而现有测试一道都拦不住。
+
+补了 `finalStateFailurePropagates`（落终态失败时异常必须外抛，防后人给它包 try-catch
+吞成假成功），但**它守不住 `@Transactional`**——那行代码外头本来就没有 catch，
+有无注解表现完全相同。真正验证「insert 与 updateById 同事务」需要 Spring 事务测试
+（`@Transactional` + 真实回滚断言），而本模块测试全是纯 Mockito，属基础设施缺口。
+
+处置：在测试注释与本节记录「将来动 `receiveWebhook` 必须人工核对注解仍在」，
+**不**把这条算作已验证。为测试方便夸大覆盖比不写测试更糟——它会让下一个人
+以为这里有人守着。
+
+### 仍未还完的债
+
+817 行仍远超 500 上限。本次只清偿 webhook 那一份；主体拆分留作后续项，
+特征是「大而全的管理服务」——账号/商品映射/消息/库存聚合/OAuth 五个域有独立边界，
+按本次 webhook 的同款做法可逐个剥。但基线条目仍在（超限文件 55 个之一），
+没有再抬。
