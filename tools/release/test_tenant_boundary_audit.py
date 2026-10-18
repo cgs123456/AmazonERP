@@ -68,10 +68,17 @@ GUARDED_ABOVE_TRY = chr(10).join([
     "}",
 ])
 
-# 类级 @RequestMapping：不是端点。
+# 类级 @RequestMapping 且注解块里提到 shopId。
+#
+# 这是本仓误报的真实形状（InventoryController / ShopCredentialController /
+# SpApiOperationController 三条）：类级注解上方是 javadoc，javadoc 里写了
+# "shopId"，于是"提到 shopId"成立、而注解块里没有 @ShopScoped，
+# 就被报成"shop 相关但无守护的端点"。不带 javadoc 的类级注解根本走不到
+# 这一步（mentions_shop 先否掉了），所以夹具必须带上这段文字。
 CLASS_LEVEL_MAPPING = chr(10).join([
     "package com.amz.controller;",
     "@RestController",
+    "/** 本类所有端点都以 shopId 为维度查询，网关路由 /spapi/** 。 */",
     "@RequestMapping('/inventory')",
     "public class FakeController {",
     "    @GetMapping('/list')",
@@ -82,12 +89,30 @@ CLASS_LEVEL_MAPPING = chr(10).join([
 ])
 
 # 真没守护：按 id 取一行就写回，方法体内没有任何 shop 校验。
+# 只留 selectById 一条访问：三个真实缺陷（§S33.91/§S33.92/§S33.108）
+# 全是这个形状，写两条访问时"漏掉 selectById 的检测"会被另一条掩盖而存活。
 UNGUARDED = chr(10).join([
     "package com.amz.service;",
     "public class FakeService {",
     "    public void touch(Long id) {",
     "        Row row = rowMapper.selectById(id);",
-    "        rowMapper.updateById(row);",
+    "        row.setMemo('x');",
+    "    }",
+    "}",
+])
+
+# 类级 @RequestMapping 且方法体内有真没守护的访问：
+# 用来钉住"类级注解算端点"这个变异——本仓没有带 data-access 的类级端点，
+# 所以只有 endpoint 断言的话该变异是等价的，必须让两种判定落在同一份源码上。
+CLASS_LEVEL_WITH_UNGUARDED_ACCESS = chr(10).join([
+    "package com.amz.controller;",
+    "@RestController",
+    "/** 本类所有端点都以 shopId 为维度查询。 */",
+    "@RequestMapping('/inventory')",
+    "public class FakeController {",
+    "    @GetMapping('/list')",
+    "    public Result<Row> list(@RequestParam Long shopId) {",
+    "        return Result.success(rowMapper.selectById(shopId));",
     "    }",
     "}",
 ])
@@ -124,10 +149,18 @@ class TenantBoundaryAuditTest(unittest.TestCase):
                          "零缩进 try 被当成了方法声明，守护行落在它上面就看不见了：" + out)
 
     def test_class_level_mapping_is_not_an_endpoint(self):
-        """类级 @RequestMapping 不是端点，不该进候选清单。"""
-        code, out = run_audit(CLASS_LEVEL_MAPPING, "FakeController.java")
+        """类级 @RequestMapping 不是端点，不该进候选清单。
+
+        用"类级注解 + 方法内真无守护访问"这一份源码：只断言 endpoint 不出现时，
+        "类级注解算端点"这个变异在本仓是等价的（没有带 data-access 的类级端点），
+        变异会存活。让两份判定落在同一份源码上，它才真的被钉住。
+        """
+        code, out = run_audit(CLASS_LEVEL_WITH_UNGUARDED_ACCESS, "FakeController.java")
         self.assertNotIn("endpoint", out,
                          "类级 @RequestMapping 被当成端点，候选会被整类刷屏：" + out)
+        self.assertIn("data-access", out,
+                      "同一份源码里真无守护的访问仍应被报出（不能为了排除类级注解把访问也放过）："
+                      + out)
 
     def test_unguarded_access_is_reported(self):
         """反向断言：真没守护的必须报出来，否则"全判已守护"也能全绿。"""

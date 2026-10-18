@@ -529,6 +529,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 2812,
+      "lines": 42,
+      "sha256": "515171e96c19836d3dac5fd8adab2319dd4225b2772d882589d1563f7c7536f0",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_multiplatform",
+      "alter_table_statements": 2,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-multiplatform/src/main/resources/db/migration/V4__shop_scoped_platform_keys.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 4448,
       "lines": 98,
       "sha256": "9c435f5be72980adc5bb72390e4ffa3f46c0e950e2647f0cb9b0521b002e1bdc",
@@ -1150,7 +1165,7 @@
         "tables": 0
       },
       "flyway-migration": {
-        "files": 75,
+        "files": 76,
         "tables": 124
       }
     },
@@ -1180,7 +1195,7 @@
     ],
     "tables_with_conditional_columns": [],
     "conditional_columns_total": 0,
-    "alter_table_statements": 47,
+    "alter_table_statements": 49,
     "add_column_statements": 30,
     "applied_alter_operations": 61,
     "unapplied_alter_operations": 0,
@@ -40036,6 +40051,26 @@
       "database": "amz_multiplatform",
       "sql": "ALTER TABLE amz_platform_message CHANGE COLUMN order_id platform_order_no VARCHAR(100) NULL COMMENT '平台侧订单号（外部平台字符串，非本地订单主键）'",
       "path": "amz-service/amz-service-multiplatform/src/main/resources/db/migration/V3__platform_message_order_no.sql"
+    },
+    {
+      "table": "amz_platform_product",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [],
+      "line": 34,
+      "database": "amz_multiplatform",
+      "sql": "ALTER TABLE amz_platform_product DROP INDEX uk_platform_product, ADD UNIQUE KEY uk_shop_platform_product (shop_id, platform, platform_product_id)",
+      "path": "amz-service/amz-service-multiplatform/src/main/resources/db/migration/V4__shop_scoped_platform_keys.sql"
+    },
+    {
+      "table": "amz_platform_message",
+      "add_columns": [],
+      "mysql8_incompatible_add_column": false,
+      "operations": [],
+      "line": 39,
+      "database": "amz_multiplatform",
+      "sql": "ALTER TABLE amz_platform_message DROP INDEX uk_platform_msg_id, ADD UNIQUE KEY uk_shop_platform_msg (shop_id, platform, platform_message_id)",
+      "path": "amz-service/amz-service-multiplatform/src/main/resources/db/migration/V4__shop_scoped_platform_keys.sql"
     },
     {
       "table": "amz_order",
