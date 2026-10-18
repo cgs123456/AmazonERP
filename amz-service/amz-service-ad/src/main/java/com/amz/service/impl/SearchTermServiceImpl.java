@@ -49,19 +49,12 @@ import java.util.stream.Collectors;
 @Service
 public class SearchTermServiceImpl implements SearchTermService {
 
-    private static final BigDecimal HIGH_ACOS = new BigDecimal("40");
-    private static final BigDecimal LOW_CR = new BigDecimal("3");
-    private static final long WASTE_IMPRESSION_THRESHOLD = 1000;
-
     /** 词根提取的固定模式：提到常量，避免每次分析都重新编译（一词一行地在循环里调用本方法）。 */
     private static final java.util.regex.Pattern WORD_ROOT_PATTERN =
             java.util.regex.Pattern.compile("[a-zA-Z]{3,}");
 
     /** 单次数据库扫描/写入块大小，与列表分页硬上限保持一致。 */
     private static final int BATCH_SIZE = PageRequest.MAX_SIZE;
-
-    /** 分析结果中 Top 出单词/浪费词数量。 */
-    private static final int TOP_LIMIT = 10;
 
     /** 聚类结果中 Top 词根数量。 */
     private static final int CLUSTER_LIMIT = 20;
@@ -122,7 +115,7 @@ public class SearchTermServiceImpl implements SearchTermService {
     @Override
     public Map<String, Object> analyzeSearchTerms(Long shopId, String campaignId, Integer days) {
         int period = resolveDays(days);
-        LocalDate startDate = LocalDate.now().minusDays(period);
+        LocalDate startDate = LocalDate.now().minusDays(period - 1L);
         AnalyzeAccumulator accumulator = new AnalyzeAccumulator();
 
         scanSearchTerms(shopId, campaignId, startDate, null, page -> page.forEach(accumulator::accept));
@@ -130,18 +123,18 @@ public class SearchTermServiceImpl implements SearchTermService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("shopId", shopId);
         result.put("analysisPeriod", period);
-        result.put("scannedRows", accumulator.totalTerms);
+        result.put("scannedRows", accumulator.totalTerms());
         result.put("scanBatchSize", BATCH_SIZE);
         result.put("truncated", false);
-        result.put("totalSearchTerms", accumulator.totalTerms);
-        result.put("convertingTerms", accumulator.convertingTerms);
-        result.put("wasteTerms", accumulator.wasteTerms);
-        result.put("highAcosTerms", accumulator.highAcosTerms);
-        result.put("lowCrTerms", accumulator.lowCrTerms);
-        result.put("totalCost", accumulator.totalCost);
-        result.put("totalSales", accumulator.totalSales);
-        result.put("wasteCost", accumulator.wasteCost);
-        result.put("overallAcos", calculateAcos(accumulator.totalCost, accumulator.totalSales));
+        result.put("totalSearchTerms", accumulator.totalTerms());
+        result.put("convertingTerms", accumulator.convertingTerms());
+        result.put("wasteTerms", accumulator.wasteTerms());
+        result.put("highAcosTerms", accumulator.highAcosTerms());
+        result.put("lowCrTerms", accumulator.lowCrTerms());
+        result.put("totalCost", accumulator.totalCost());
+        result.put("totalSales", accumulator.totalSales());
+        result.put("wasteCost", accumulator.wasteCost());
+        result.put("overallAcos", calculateAcos(accumulator.totalCost(), accumulator.totalSales()));
         result.put("topConvertingTerms", accumulator.topConvertingTerms());
         result.put("topWasteTerms", accumulator.topWasteTerms());
         return result;
@@ -151,7 +144,7 @@ public class SearchTermServiceImpl implements SearchTermService {
     @Transactional(rollbackFor = Exception.class)
     public List<ConvertingTerm> extractConvertingTerms(Long shopId, Integer days) {
         int period = resolveDays(days);
-        LocalDate startDate = LocalDate.now().minusDays(period);
+        LocalDate startDate = LocalDate.now().minusDays(period - 1L);
         Map<ConvertingBusinessKey, ConvertingAggregate> aggregates = new LinkedHashMap<>();
 
         scanSearchTerms(shopId, null, startDate, 0, page -> {
@@ -200,7 +193,7 @@ public class SearchTermServiceImpl implements SearchTermService {
     @Override
     public Map<String, Object> clusterSearchTerms(Long shopId, String campaignId, Integer days) {
         int period = resolveDays(days);
-        LocalDate startDate = LocalDate.now().minusDays(period);
+        LocalDate startDate = LocalDate.now().minusDays(period - 1L);
         Map<String, ClusterAccumulator> clusters = new HashMap<>();
         long[] scannedRows = {0};
 
@@ -536,89 +529,6 @@ public class SearchTermServiceImpl implements SearchTermService {
 
     private static BigDecimal safeMoney(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
-    }
-
-    private static final class AnalyzeAccumulator {
-        private long totalTerms;
-        private long convertingTerms;
-        private long wasteTerms;
-        private long highAcosTerms;
-        private long lowCrTerms;
-        private BigDecimal totalCost = BigDecimal.ZERO;
-        private BigDecimal totalSales = BigDecimal.ZERO;
-        private BigDecimal wasteCost = BigDecimal.ZERO;
-        private final PriorityQueue<AdSearchTerm> topConverting = new PriorityQueue<>(
-                Comparator.comparingInt(SearchTermServiceImpl::safeOrders)
-                        .thenComparing(t -> safeMoney(t.getSales())));
-        private final PriorityQueue<AdSearchTerm> topWaste = new PriorityQueue<>(
-                Comparator.comparing((AdSearchTerm t) -> safeMoney(t.getCost())));
-
-        void accept(AdSearchTerm term) {
-            if (term == null) {
-                return;
-            }
-            totalTerms++;
-            totalCost = totalCost.add(safeMoney(term.getCost()));
-            totalSales = totalSales.add(safeMoney(term.getSales()));
-
-            if (safeOrders(term) > 0) {
-                convertingTerms++;
-                if (term.getCr() != null && term.getCr().compareTo(LOW_CR) < 0) {
-                    lowCrTerms++;
-                }
-                offer(topConverting, term, TOP_LIMIT);
-            }
-            if ((term.getClicks() == null || term.getClicks() == 0)
-                    && term.getImpressions() != null && term.getImpressions() > WASTE_IMPRESSION_THRESHOLD) {
-                wasteTerms++;
-                wasteCost = wasteCost.add(safeMoney(term.getCost()));
-            }
-            if (term.getAcos() != null && term.getAcos().compareTo(HIGH_ACOS) >= 0) {
-                highAcosTerms++;
-            }
-            if (safeOrders(term) == 0 && term.getCost() != null
-                    && term.getCost().compareTo(BigDecimal.ZERO) > 0) {
-                offer(topWaste, term, TOP_LIMIT);
-            }
-        }
-
-        List<Map<String, Object>> topConvertingTerms() {
-            return topConverting.stream()
-                    .sorted(Comparator.comparingInt(SearchTermServiceImpl::safeOrders)
-                            .thenComparing(t -> safeMoney(t.getSales()))
-                            .reversed())
-                    .map(term -> {
-                        Map<String, Object> map = new LinkedHashMap<>();
-                        map.put("searchTerm", term.getSearchTerm());
-                        map.put("orders", term.getOrders());
-                        map.put("sales", term.getSales());
-                        map.put("cost", term.getCost());
-                        map.put("acos", term.getAcos());
-                        return map;
-                    })
-                    .collect(Collectors.toList());
-        }
-
-        List<Map<String, Object>> topWasteTerms() {
-            return topWaste.stream()
-                    .sorted(Comparator.comparing((AdSearchTerm t) -> safeMoney(t.getCost())).reversed())
-                    .map(term -> {
-                        Map<String, Object> map = new LinkedHashMap<>();
-                        map.put("searchTerm", term.getSearchTerm());
-                        map.put("cost", term.getCost());
-                        map.put("impressions", term.getImpressions());
-                        map.put("clicks", term.getClicks());
-                        return map;
-                    })
-                    .collect(Collectors.toList());
-        }
-
-        private static <T> void offer(PriorityQueue<T> queue, T value, int limit) {
-            queue.offer(value);
-            if (queue.size() > limit) {
-                queue.poll();
-            }
-        }
     }
 
     private static final class ClusterAccumulator {

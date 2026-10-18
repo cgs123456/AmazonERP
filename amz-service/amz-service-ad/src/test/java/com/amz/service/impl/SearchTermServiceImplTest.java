@@ -9,6 +9,7 @@ import com.amz.model.AdAsinKeyword;
 import com.amz.model.AdSearchTerm;
 import com.amz.model.ConvertingTerm;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,19 @@ class SearchTermServiceImplTest {
     private AdSearchTermMapper searchTermMapper;
     private ConvertingTermMapper convertingTermMapper;
     private AdAsinKeywordMapper asinKeywordMapper;
+
+    /**
+     * 纯 Mockito 测试没有 MyBatis 启动流程，LambdaQueryWrapper 取列名时会抛
+     * "can not find lambda cache for this entity"。注册表元信息后才能读到
+     * 真实拼出来的查询参数（§S33.81/§S33.82 同款处理）。
+     */
+    @BeforeAll
+    static void initMybatisTableInfo() {
+        org.apache.ibatis.builder.MapperBuilderAssistant assistant =
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), "");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(assistant, AdSearchTerm.class);
+    }
 
     @BeforeEach
     void setUp() {
@@ -223,6 +237,86 @@ class SearchTermServiceImplTest {
 
         assertThrows(CodeErrorException.class, () -> service.saveSearchTerm(term));
         verifyNoInteractions(searchTermMapper);
+    }
+
+    /**
+     * §S33.86：窗口「近 N 天」必须是含今天共 N 个自然日。
+     * <p>
+     * 本类三处分析入口原用 {@code now.minusDays(N)}（含今天共 N+1 天），
+     * 而同模块 {@code AdServiceImpl} 与 {@code AdReportSyncScheduler} 全用
+     * {@code minusDays(N-1)}（含今天共 N 天）。前端下拉明写「近 7 天」，
+     * 用户看到的却是 8 天的数据——ACoS 的分母（销售额）被多算一天。
+     * <p>
+     * 断言扫描下界的<b>实际日期</b>，不是「有没有调用 mapper」：
+     * 只断言调用发生，窗口差一天照样通过。
+     */
+    @Test
+    @DisplayName("分析窗口含今天共 N 天：7 天的下界必须是 today-6，不是 today-7")
+    void analysisWindowIncludesTodayExactly() {
+        when(searchTermMapper.selectList(any())).thenReturn(List.of());
+
+        service.analyzeSearchTerms(1L, null, 7);
+
+        @SuppressWarnings("rawtypes")
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper> captor =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(searchTermMapper).selectList(captor.capture());
+        // MyBatis-Plus 参数表惰性填充，必须先触发 SQL 片段生成
+        captor.getValue().getCustomSqlSegment();
+        LocalDate expected = LocalDate.now().minusDays(6);
+        assertTrue(captor.getValue().getParamNameValuePairs().containsValue(expected),
+                "7 天窗口的下界必须是 today-6（含今天共 7 天），实际参数表="
+                        + captor.getValue().getParamNameValuePairs());
+        assertFalse(captor.getValue().getParamNameValuePairs().containsValue(LocalDate.now().minusDays(7)),
+                "today-7 是 8 天窗口，会把 ACoS 分母多算一天；实际参数表="
+                        + captor.getValue().getParamNameValuePairs());
+    }
+
+    /**
+     * §S33.86：花钱零销售的词必须计入 highAcosTerms。
+     * <p>
+     * 库里的 {@code acos} 列只在 {@code sales > 0} 时赋值（见 calculateMetrics）。
+     * 旧判定 {@code acos != null && acos >= 40} 把「零销售」整个漏掉；
+     * 这类词又因 {@code clicks > 0} 进不了 wasteTerms（那里要求 0 点击）——
+     * 于是最该处理的词不出现在任何汇总计数里，运营看 {@code highAcosTerms=0}
+     * 会以为没有高 ACoS 词。
+     */
+    @Test
+    @DisplayName("花钱零销售的词计入高 ACoS，而不是从所有分类里消失")
+    void zeroSalesWithSpendCountsAsHighAcos() {
+        AdSearchTerm burning = term(1L, "burning", 0, "50.00", 10, 2000);
+        burning.setSales(BigDecimal.ZERO);
+        burning.setAcos(null);          // sales=0 → 库里不赋值，这正是漏计的来源
+        burning.setCr(BigDecimal.ZERO);
+        when(searchTermMapper.selectList(any())).thenReturn(List.of(burning));
+
+        Map<String, Object> result = service.analyzeSearchTerms(1L, null, 7);
+
+        assertEquals(1, ((Number) result.get("highAcosTerms")).intValue(),
+                "花了 50 元零销售 = ACoS 无穷大，必须计入高 ACoS，不能因为 acos 列为 null 就漏掉");
+        assertEquals(0, ((Number) result.get("wasteTerms")).intValue(),
+                "它不是「零点击」类浪费，两个分类各管一件事，不要混为一谈");
+    }
+
+    @Test
+    @DisplayName("出单词提取与聚类共用同一窗口口径")
+    void allAnalysisEntriesShareWindow() {
+        when(searchTermMapper.selectList(any())).thenReturn(List.of());
+
+        service.extractConvertingTerms(1L, 30);
+        service.clusterSearchTerms(1L, null, 30);
+
+        @SuppressWarnings("rawtypes")
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper> captor =
+                ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(searchTermMapper, times(2)).selectList(captor.capture());
+        LocalDate expected = LocalDate.now().minusDays(29);
+        for (var wrapper : captor.getAllValues()) {
+            wrapper.getCustomSqlSegment();
+            assertTrue(wrapper.getParamNameValuePairs().containsValue(expected),
+                    "30 天窗口的下界必须是 today-29（含今天共 30 天），实际="
+                            + wrapper.getParamNameValuePairs());
+        }
     }
 
     private static AdSearchTerm term(Long id, String searchTerm, int orders, String cost, int clicks, long impressions) {
