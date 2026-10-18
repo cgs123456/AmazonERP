@@ -50,7 +50,16 @@ class OrderV4IndexMigrationContractTest {
             // ad V8 DROP idx_shop（uk_campaign 左前缀覆盖的冗余索引）：已按本测试要求的流程审过——
             // 该索引自 V1 存在、DROP 无任何条件守卫、且排在全部 MODIFY 之后，
             // 半应用状态只会停在 MODIFY（放宽宽度，可幂等重跑），不存在 1091 重试死锁面。
-            "amz-service-ad/V8__campaign_id_width_convergence.sql");
+            "amz-service-ad/V8__campaign_id_width_convergence.sql",
+            // multiplatform V4：按本测试要求的流程审过（§S33.104），两条表各一个 ALTER，
+            // 每条都是「DROP 旧唯一键 + ADD 含 shop_id 的新唯一键」同语句内完成。
+            // 半应用状态：MySQL 8 的原子 DDL 会把 DROP 一起回滚，旧键仍在，
+            // 修掉冲突后重跑 rc=0，与 order V4 同一形态。
+            // 新增数据冲突（1062）不成立：旧键 (platform, platform_product_id) 是比新键
+            // (shop_id, platform, platform_product_id) 更严的约束（少了 shop_id 这一维，
+            // 即全局唯一），旧键还在时能插入的数据必然满足新键——
+            // 正是 runbook 记录的那条保护，与 order V4 同一推论。
+            "amz-service-multiplatform/V4__shop_scoped_platform_keys.sql");
 
     @Test
     void onlyOrderV4DropsIndexes() throws IOException {

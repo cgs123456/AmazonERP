@@ -7843,3 +7843,54 @@ report 这三条合成一句。**这不是缺陷**（都明确拒绝了），
 规则补一条：**推断某段代码的行为前，先把它的起止行列出来**；
 写进文档的每个行为判断都要能指回具体行号。§S33.102 立的「不能只写审查者说」
 继续有效，这条是它的加强版。
+
+## §S33.104 完整 review：抓到一个我上一轮漏掉的门禁破坏，并给出全仓测试基线
+
+### 发现的问题（我造成的）
+
+§S33.91 新增 `amz-service-multiplatform/V4` 时用了 `DROP INDEX, ADD UNIQUE KEY`，
+**漏了跑 `OrderV4IndexMigrationContractTest.onlyOrderV4DropsIndexes` 这道门禁**。
+该测试冻结「含 DROP INDEX 的迁移」集合，每个新条目都必须先读
+`docs/superpowers/runbooks/order-v4-drop-index-repair.md`、确认失败后如何处置、
+再把条目加进集合并留审查结论。ad V8 就是按这个流程进去的。
+
+上一轮我只跑了 multiplatform 模块自己的 144 项，**没有跑 spapi**（门禁的宿主模块），
+所以红了一个提交都没发现。这是「只跑自己模块」的方法漏洞。
+
+### 按 runbook 审 V4 的结论
+
+| 失败模式 | 我这一例是否成立 |
+|---|---|
+| 1091 重跑（旧键已不在） | 只在有人手工跑过 V4 的库上出现 |
+| 1061 半迁移（新键名已存在） | 原子 DDL 把 DROP 一起回滚，旧键仍在；修掉冲突后重跑 rc=0，与 order V4 同形态 |
+| **1062 新唯一键撞已有重复数据** | **不成立**：旧键 `(platform, platform_product_id)` 是比新键 `(shop_id, platform, platform_product_id)` **更严**的约束（少了 shop_id 这一维 = 全局唯一），旧键还在时能插入的数据必然满足新键——正是 runbook 记录的那条保护 |
+
+已按 ad V8 的注释格式把结论写进冻结集合。第一次写时注释里出现「与 order V8 的差异」
+（order 无 V8，笔误）和一句「更严于容量 vs 更严于维度」的伪对比（两例推论相同，
+差别只是列数）——两处都在复跑前删掉/改正。
+
+### 全仓测试基线（逐个模块实跑，退出码判定
+
+| 模块 | 项数 | 结果 |
+|---|---|---|
+| ad | 165 | 0 failures；7 errors 全为 loopback |
+| ai | 146 | 0 failures |
+| customer | 38 | 全绿 |
+| finance | 195 | 全绿（6 skipped 既有） |
+| logistics | 193 | 全绿 |
+| message | 8 | 全绿 |
+| multiplatform | 149 | 全绿 |
+| ops | 61 | 全绿 |
+| order | 101 | 全绿 |
+| product | 96 | 1 error = loopback（OrderServiceFeignDecodeIT 起 stub server） |
+| procurement | 151 | 全绿 |
+| report | 77 | 全绿（3 skipped） |
+| search | 21 | 全绿 |
+| spapi | 727 | 全绿（12 skipped） |
+| user | 22 | 全绿 |
+| **合计** | **2350** | **0 failures、0 非环境 errors** |
+
+`mvn -o test` 全仓一次跑会在 product 处 fail-fast，后面 12 个模块全 SKIPPED——
+**要拿真基线必须逐模块跑**（已用 `-Dmaven.test.failure.ignore=true` 逐个跑完）。
+
+全仓测试编译通过、0 个 java 编译错误。ratchet 与 repository_hygiene 通过。
