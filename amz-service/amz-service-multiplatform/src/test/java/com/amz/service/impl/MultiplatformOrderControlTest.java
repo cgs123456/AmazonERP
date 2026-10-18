@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -188,7 +189,7 @@ class MultiplatformOrderControlTest {
         UserContext.setRole("ADMIN");
         UserContext.setShops(List.of());
         when(unifiedOrderMapper.selectById(9L)).thenReturn(order(9L, 1L, "TEMU", "T-9"));
-        when(temuClient.markShipped("T-9", "TRK-1")).thenReturn(true);
+        when(temuClient.markShipped(1L, "T-9", "TRK-1")).thenReturn(true);
 
         assertTrue(service.markShipped(9L, "TRK-1"));
     }
@@ -197,7 +198,7 @@ class MultiplatformOrderControlTest {
     @DisplayName("平台没接受回传时，本地状态不能先变成已发货")
     void shipDoesNotMarkLocalWhenPlatformRejects() {
         when(unifiedOrderMapper.selectById(9L)).thenReturn(order(9L, 1L, "TEMU", "T-9"));
-        when(temuClient.markShipped("T-9", "TRK-1")).thenReturn(false);
+        when(temuClient.markShipped(1L, "T-9", "TRK-1")).thenReturn(false);
 
         assertFalse(service.markShipped(9L, "TRK-1"));
         verify(unifiedOrderMapper, never()).updateById(any(UnifiedOrder.class));
@@ -209,10 +210,10 @@ class MultiplatformOrderControlTest {
         UnifiedOrder order = order(9L, 1L, "SHEIN", "S-77");
         order.setStatus("PAID");
         when(unifiedOrderMapper.selectById(9L)).thenReturn(order);
-        when(sheinClient.markShipped("S-77", "TRK-77")).thenReturn(true);
+        when(sheinClient.markShipped(1L, "S-77", "TRK-77")).thenReturn(true);
 
         assertTrue(service.markShipped(9L, " TRK-77 "));
-        verify(temuClient, never()).markShipped(anyString(), anyString());
+        verify(temuClient, never()).markShipped(anyLong(), anyString(), anyString());
         verify(unifiedOrderMapper).updateById(order);
         assertEquals("SHIPPED", order.getStatus());
         assertEquals("TRK-77", order.getTrackingNo());

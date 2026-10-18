@@ -30,6 +30,10 @@ public interface SheinClient extends PlatformDataClient {
 
     /**
      * 向 Shein 回传发货信息。
+     *
+     * @param shopId 发货订单所属店铺。必须由调用方传入，不能省略：它决定用哪家店的
+     *               平台凭证发这个请求。省略会让客户端回退到「该平台首个账号」，
+     *               等于用一个租户的身份替另一个租户发货（§S33.92）。
      */
-    boolean markShipped(String platformOrderNo, String trackingNo);
+    boolean markShipped(Long shopId, String platformOrderNo, String trackingNo);
 }

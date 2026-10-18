@@ -53,7 +53,7 @@ public class SheinMockClient extends AbstractPlatformClient implements SheinClie
     }
 
     @Override
-    public boolean markShipped(String platformOrderNo, String trackingNo) {
+    public boolean markShipped(Long shopId, String platformOrderNo, String trackingNo) {
         log.info("Shein 发货回传模拟：orderNo={} trackingNo={}", platformOrderNo, trackingNo);
         return true;
     }

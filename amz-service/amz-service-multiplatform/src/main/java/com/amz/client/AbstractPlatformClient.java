@@ -73,8 +73,9 @@ public abstract class AbstractPlatformClient {
      * 取代原先各子类持有的 {@code @Value("${platform.*}")} 全局字段。
      * credentialService 为 null 时返回空凭证，由调用方决定诚实失败或模拟降级。
      *
-     * @param shopId 店铺 ID；部分无 shopId 上下文的调用（如 markShipped）传 null，
-     *               此时服务回退到该平台的全局默认账号
+     * @param shopId 店铺 ID。传 {@code null} 表示调用方确实没有店铺上下文，
+     *               此时 {@link PlatformCredentialService} 才回退到该平台的首个账号；
+     *               <b>能拿到 shopId 就必须传</b>，否则会用别家店的凭证发请求（§S33.92）。
      */
     protected PlatformCredential cred(Long shopId) {
         if (credentialService == null) {

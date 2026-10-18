@@ -64,11 +64,15 @@ public class TemuRealClient extends AbstractPlatformClient implements TemuClient
     }
 
     @Override
-    public boolean markShipped(String platformOrderNo, String trackingNo) {
-        // markShipped 仅持有平台订单号，无 shopId 上下文，回退到该平台全局默认账号
-        PlatformCredential c = cred(null);
+    public boolean markShipped(Long shopId, String platformOrderNo, String trackingNo) {
+        // shopId 必须由调用方给（§S33.92）：它决定用哪家店的平台凭证。
+        // cred(null) 会回退到「该平台首个账号」，等于用一个租户的身份替另一个租户发货。
+        // service 侧 markShipped 已经 selectById 拿到订单并按行校验过归属，shopId 是已知的。
+        PlatformCredential c = cred(shopId);
         if (isBlank(c.getAppKey()) || isBlank(c.getAppSecret()) || isBlank(c.getAccessToken()) || isBlank(platformOrderNo)) {
-            throw new IllegalStateException("Temu 凭证或订单号缺失，无法回传发货 orderNo=" + platformOrderNo);
+            throw new IllegalStateException("Temu 凭证或订单号缺失，无法回传发货"
+                    + " shopId=" + shopId + " orderNo=" + platformOrderNo
+                    + "（请在该店铺的多平台账号里补全 appKey/appSecret/accessToken）");
         }
         TreeMap<String, String> params = new TreeMap<>();
         params.put("app_key", c.getAppKey());

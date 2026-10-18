@@ -73,7 +73,7 @@ public class TemuMockClient extends AbstractPlatformClient implements TemuClient
     }
 
     @Override
-    public boolean markShipped(String platformOrderNo, String trackingNo) {
+    public boolean markShipped(Long shopId, String platformOrderNo, String trackingNo) {
         log.info("Temu 发货回传模拟：orderNo={} trackingNo={}", platformOrderNo, trackingNo);
         return true;
     }

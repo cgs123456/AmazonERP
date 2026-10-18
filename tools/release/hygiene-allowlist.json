@@ -124,7 +124,7 @@
     {
       "path": "amz-service/amz-service-multiplatform/src/main/java/com/amz/credential/PlatformCredentialService.java",
       "rule": "secret-like-assignment",
-      "sha256": "af2b2a250a633aa5021771c29d80afbbd318aec7ee279026f08aee3ebc3090c7"
+      "sha256": "90809401bbb5a7284a1ad52033f2c8cdb374be556bef31dba176bdd634eb107e"
     },
     {
       "path": "amz-service/amz-service-multiplatform/src/test/java/com/amz/controller/MultiplatformWriteEndpointGuardContractTest.java",

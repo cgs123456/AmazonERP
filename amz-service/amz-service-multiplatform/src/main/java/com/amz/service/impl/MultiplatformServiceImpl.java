@@ -751,10 +751,13 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         // 这一句会真的把发货回传给平台，所以归属必须按行严格判定（helper 里写了为什么不能用 lenient）
         requireShopOnRow(order.getShopId(), "统一订单");
         boolean ok;
+        // shopId 必须传下去（§S33.92）：上面已经 selectById + requireShopOnRow 校验过归属，
+        // 此时 order.getShopId() 是已知的。不传则客户端会回退到「该平台首个账号」，
+        // 等于用任意一家店的凭证替这一家店发货。
         switch (order.getPlatform() == null ? "" : order.getPlatform()) {
-            case "TEMU": ok = temuClient.markShipped(order.getPlatformOrderNo(), tracking); break;
-            case "TIKTOK": ok = tiktokClient.markShipped(order.getPlatformOrderNo(), tracking); break;
-            case "SHEIN": ok = sheinClient.markShipped(order.getPlatformOrderNo(), tracking); break;
+            case "TEMU": ok = temuClient.markShipped(order.getShopId(), order.getPlatformOrderNo(), tracking); break;
+            case "TIKTOK": ok = tiktokClient.markShipped(order.getShopId(), order.getPlatformOrderNo(), tracking); break;
+            case "SHEIN": ok = sheinClient.markShipped(order.getShopId(), order.getPlatformOrderNo(), tracking); break;
             default: throw new AttrIsNullException("不支持的平台：" + order.getPlatform());
         }
         if (ok) {

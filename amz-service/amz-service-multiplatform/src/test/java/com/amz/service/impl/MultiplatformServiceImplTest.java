@@ -178,7 +178,7 @@ class MultiplatformServiceImplTest {
         UnifiedOrder order = buildOrder("TEMU", "TEMU-001", BigDecimal.ZERO, "CNY");
         order.setId(1L);
         when(unifiedOrderMapper.selectById(1L)).thenReturn(order);
-        when(temuClient.markShipped("TEMU-001", "TRK-001")).thenReturn(true);
+        when(temuClient.markShipped(1L, "TEMU-001", "TRK-001")).thenReturn(true);
 
         boolean result = multiplatformService.markShipped(1L, "TRK-001");
 
@@ -194,7 +194,7 @@ class MultiplatformServiceImplTest {
         UnifiedOrder order = buildOrder("SHEIN", "SHEIN-001", BigDecimal.ZERO, "CNY");
         order.setId(1L);
         when(unifiedOrderMapper.selectById(1L)).thenReturn(order);
-        when(sheinClient.markShipped("SHEIN-001", "TRK-002")).thenReturn(false);
+        when(sheinClient.markShipped(1L, "SHEIN-001", "TRK-002")).thenReturn(false);
 
         boolean result = multiplatformService.markShipped(1L, "TRK-002");
 

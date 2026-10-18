@@ -53,7 +53,7 @@ public class TikTokMockClient extends AbstractPlatformClient implements TikTokCl
     }
 
     @Override
-    public boolean markShipped(String platformOrderNo, String trackingNo) {
+    public boolean markShipped(Long shopId, String platformOrderNo, String trackingNo) {
         log.info("TikTok Shop 发货回传模拟：orderNo={} trackingNo={}", platformOrderNo, trackingNo);
         return true;
     }

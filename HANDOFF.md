@@ -7246,3 +7246,88 @@ exist 查询查不到本店行会走 insert 并撞新键报错；代码先上，
 - 合成数据 `snapshot_schema.py` 仍按 V1 的旧唯一键记录这两张表，
   它比真实库更严（少 `shop_id`），是既有摩擦而非本次引入；真要有跨店同 ID 的
   合成数据时会先在 `verify.py check_structure` 报错。未改。
+
+## §S33.92 平台凭证：resolve 跨店回退 + markShipped 丢 shopId，一个租户的身份替另一个租户发请求
+
+### 动因
+
+审 `AbstractPlatformClient` 与其三个 RealClient 时，在 `AbstractPlatformClient.cred`
+的注释里看到一句承诺：「部分无 shopId 上下文的调用（如 markShipped）传 null，
+此时服务回退到该平台的全局默认账号」。这句话在 CLAUDE.md 原则 4 下必须核实——
+「全局默认账号」在多租户里等于「随便某个租户」。核实后确认它不是描述偏离，是真的这么实现。
+
+### 三个缺陷
+
+**1. `PlatformCredentialService.resolve`：shopId 非空但查不到时，静默回退到别家店的凭证。**
+注释只承认「shopId 为 null 时全局回退」，代码却是在 `(shopId, platform)` 未命中后
+继续往下走 `LIMIT 1`。于是店铺 A 没配 TEMU 账号时，`syncProducts(A, "TEMU")`
+会**用店铺 B 的凭证**调平台：A 消耗 B 的 API 配额，拉回来的商品与订单全挂到 A 名下。
+这与 §S33.91 修的跨店写库同源，只是错在凭证选择这一步，位于那类污染的上游。
+
+**2. `markShipped` 把已知的 shopId 丢掉。**
+`MultiplatformServiceImpl.markShipped` 已经 `selectById` 拿到订单、
+`requireShopOnRow` 校验过归属——shopId 那一刻是已知的。但 controller 只传
+`(orderId, trackingNo)`，client 侧 `markShipped(platformOrderNo, trackingNo)`
+内部 `cred(null)`。而它是 `@RequireRole` 保护的写端点：A 店的发货单用
+**随便某一家店**的凭证发出去。这是全链路里最严重的一处。
+
+**3. `decrypt` 失败时把密文当密钥返回，并把日志降到 DEBUG。**
+原话是「原样回退，保证不阻断主链路」。实际是「保证故障被伪装成别的故障」：
+拿 base64 密文去算签名，平台侧只回 401/签名错误，日志里显示「认证失败」，
+真正的原因（换过 crypto.key / 导入了别处加密的数据）反而看不见。
+`CryptoUtil` 在 `@PostConstruct` 里未配 `crypto.key` 会**拒绝启动**，
+所以「cryptoUtil 为 null ⇒ 明文回退」这条路在生产不可能发生，只对纯单测成立——
+原注释拿它当生产路径来论证，前提就是错的。
+
+### 改了什么
+
+- `resolve`：shopId 非空只查 `(shopId, platform)`，查不到返回空凭证；shopId 为 null
+  才回退，且由裸 `LIMIT 1` 改为 `orderByAsc(id)`（不带 ORDER BY 时选中哪一行由
+  存储引擎决定，与 §S33.88 同类的「猜」）。
+- `markShipped` 接口加 `Long shopId`（3 接口 + 3 Real + 3 Mock），service 传
+  `order.getShopId()`。三个 Real 的报错补上 `shopId=` 与「请在该店铺的多平台账号里
+  补全凭证」——凭证是按 (shopId, platform) 配的，只说「凭证缺失」运维不知道该配哪个店。
+- `decrypt` 失败返回 null，日志提为 WARN。返回 null 后由 Real 客户端既有的
+  `isBlank` 检查抛出点名的 `IllegalStateException`，故障定位准确，且影响面仅限
+  该店铺该平台。
+
+### 测试与变异账目
+
+新增 `PlatformMarkShippedShopScopeTest`（4 项，与 client 同包，直接 new + 反射注入
+credentialService）。观察面是 `credentialService.resolve` 收到的实参——只断言
+「抛没抛异常」不够，凭证为空时 Real 客户端也抛 `IllegalStateException`，
+传 null 与传 7L 都抛，那条路径分辨不出区别。
+
+`PlatformCredentialServiceTest` 有 3 条原本把旧行为当规范钉住的测试
+（密文回退 ×2、shopId 未命中回退 ×1），按新契约重写；并补「只查一次」断言。
+
+| 变异 | 结果 |
+|---|---|
+| `resolve` 恢复 shopId 未命中后的跨店回退 | **杀**：2 条红（查询次数 + appKey 非空） |
+| `decrypt` 失败恢复返回密文原文 | **杀** |
+| `cryptoUtil == null` 时返回密文原文 | **杀** |
+| service 侧 `markShipped` 传 `null` 而非 `order.getShopId()` | **杀**：5 条红 |
+| 三个 Real 的 markShipped 内 `cred(shopId)` → `cred(null)` | **杀**：4 条全红 |
+
+模块全套 144 项绿。ratchet 与 repository_hygiene 通过，未抬 baseline；
+后者需更新该文件的白名单 sha256（`String secret = decrypt(...)` 被
+`secret-like-assignment` 规则误判，值不是字面量，无真实泄露）。
+
+### 本节踩的方法错误（比缺陷本身更值得记）
+
+三次「grep 掩盖命令真实退出状态」，导致把**编译失败**当成测试通过、把**没生效的
+变异**当成存活结论：
+
+1. `(mvn ... || true) | grep -E "Tests run"` —— grep 的退出码与 mvn 无关，
+   主代码编译失败时读到的是上一次成功构建留下的旧 surefire 报告。
+   由此得出「M1 存活」和「140/140 全绿」两个**假结论**；真相是
+   `unreachable statement` 编译失败。
+2. 变异 patch 的 anchor 选错方法：`s.replace(old, new, 1)` 命中的是
+   `fetchRecentOrders` 的 `cred(shopId)`，不是 `markShipped` 的那处，
+   于是「变异已施加」是假的，据此判定测试不敏感也是假的。
+3. 写「还原」脚本时 anchor 没匹配上（`fetchRecentOrders` 上一行是 `@Override`，
+   不是紧邻 `{`），脚本 assert 却在另一处通过，于是「已还原」也是假的。
+
+规则：**判定成败只看命令退出码，不看 grep 输出；变异施加后必须回读源码确认，
+不能靠 patch 脚本的 assert 自证。** 变异测试一律 `clean test`，
+不用增量编译——本机 maven 增量编译多次漏掉改动。
