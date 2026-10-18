@@ -176,12 +176,13 @@ class ReleaseManifestTest(unittest.TestCase):
     # A5 清理促销悬空列新增 order V7 到 73；A3 采购发票新增 procurement V9 到 74。
     # §S22 店铺级角色接通新增 user V6（店铺角色默认值 OPERATOR→VIEWER）到 75。
     # §S33.104 跨店唯一键新增 multiplatform V4（平台商品/消息键加 shop_id）到 76。
-    # 注：当前迁移数 76、Flyway 活表 126（新增采购发票域）。
+    # §S33.108 收尾新增 multiplatform V5（统一订单键加 shop_id）到 77。
+    # 注：当前迁移数 77、Flyway 活表 126（新增采购发票域）。
     # 上一班只改了迁移没改这里，真 CI 的 hygiene job 抓到「改一半」）。新增/删除
     # db/migration/V*__*.sql 时必须逐处同步：本方法名与两处断言、ci.yml 的
     # mysql-import/runtime-smoke 注释口径。凡改这个数，交班前逐字复跑
     # ci.yml 卫生 job 的 release-tools unittest（勿凭 HANDOFF 清单的记忆）。
-    def test_current_flyway_inventory_contains_all_76_files(self) -> None:
+    def test_current_flyway_inventory_contains_all_77_files(self) -> None:
         manifest = build_manifest(ROOT, COMMIT, VERSION, IMAGE_REF, IMAGE_DIGEST)
         expected_paths = sorted(
             path.relative_to(ROOT).as_posix()
@@ -189,8 +190,8 @@ class ReleaseManifestTest(unittest.TestCase):
             if not any(part == "target" for part in path.parts)
         )
 
-        self.assertEqual(76, len(expected_paths))
-        self.assertEqual(76, manifest["migrations"]["count"])
+        self.assertEqual(77, len(expected_paths))
+        self.assertEqual(77, manifest["migrations"]["count"])
         self.assertEqual(expected_paths, [item["path"] for item in manifest["migrations"]["items"]])
 
     def test_cli_builds_verifies_and_rejects_changed_input(self) -> None:

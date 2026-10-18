@@ -1,0 +1,40 @@
+-- Flyway Migration V5: 统一订单表唯一键补上 shop_id（收尾 §S33.108）
+-- Service: amz-service-multiplatform
+--
+-- Why
+--   V1 把 amz_unified_order 的唯一键建成 uk_platform_order (platform, platform_order_no)，
+--   不含 shop_id。服务层 loadExistingOrderKeys 原先也只按 platform_order_no 判重，
+--   于是同一平台下不同店铺拿到同一 platform_order_no 时（同 V4 的业务前提：
+--   同一供货商的货分销给多家店），A 店已有的订单号会让 B 店订单被判「已存在」
+--   而静默跳过 —— B 店订单永远不落库，无日志无异常。
+--
+--   §S33.108 已把判重查询补上 shop_id。但**只改代码不改 DDL 等于只做了一半**：
+--   B 店订单不再被跳过，改去 insert，然后撞这个仍是全局的唯一键报 1062，
+--   整个平台的同步被 syncAllPlatforms 标为失败。订单依然不落库，
+--   只是从「静默丢单」变成「响亮失败」。所以这条迁移是 §S33.108 的收尾，不是独立优化。
+--
+-- 1062 不成立（按 runbook 的同型推论）
+--   旧键 (platform, platform_order_no) 是比新键 (shop_id, platform, platform_order_no)
+--   更严的约束：少一维，即全局唯一。旧键还在时能插入的数据必然满足新键，
+--   所以 ADD 新键不可能撞已有重复数据。与 order V4 / multiplatform V4 同一推论。
+--
+-- 半应用状态
+--   MySQL 8 的原子 DDL 会把 DROP 与 ADD 一起回滚：失败时旧键仍在，
+--   不存在「DROP 掉了但 ADD 没成」的残局。修掉冲突后重跑 rc=0。
+--   重跑会撞 ERROR 1091（MySQL 8 没有 DROP INDEX IF EXISTS）—— 与 order V4 同形态，
+--   处置手册见 docs/superpowers/runbooks/order-v4-drop-index-repair.md。
+--
+-- 存量数据说明（与 V4 同一处境，不做猜测）
+--   旧键全局唯一，所以同一 (platform, platform_order_no) 只有一行，其 shop_id 是
+--   「最后同步的那家店」。数据早就在互相覆盖，真实归属无法从现有数据推断
+--   （无同步日志、无平台侧原始归属）。本迁移只把约束改对，不猜测、不搬迁内容。
+--
+-- 回滚：逆操作是删新键加回旧键，但旧键正是缺陷本身，不建议执行。
+--
+-- 与代码变更的关系：与 V4 同型 —— 两个上线顺序都是 fail-fast（DDL 先上时同键 insert
+--   撞新键报错；代码先上时撞旧键报错），不会出现「上线半套然后静默错」，
+--   但都会让同步接口报错，应作为同一批发布以缩短故障窗口。
+
+ALTER TABLE amz_unified_order
+    DROP INDEX uk_platform_order,
+    ADD UNIQUE KEY uk_shop_platform_order (shop_id, platform, platform_order_no);

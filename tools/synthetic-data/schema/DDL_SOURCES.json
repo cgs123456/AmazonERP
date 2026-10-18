@@ -543,6 +543,21 @@
     },
     {
       "group": "flyway-migration",
+      "bytes": 2732,
+      "lines": 41,
+      "sha256": "e31434a4a18ac286bbf2f68776374ebaf348fbe74db4b72e8e81f0d1705cb775",
+      "tables": 0,
+      "insert_statements": 0,
+      "db_hint": "amz_multiplatform",
+      "alter_table_statements": 1,
+      "add_column_statements": 0,
+      "mysql8_incompatible_add_column": 0,
+      "db_source": "application.yml",
+      "path": "amz-service/amz-service-multiplatform/src/main/resources/db/migration/V5__unified_order_shop_scoped_key.sql",
+      "dynamic_ddl": 0
+    },
+    {
+      "group": "flyway-migration",
       "bytes": 4448,
       "lines": 98,
       "sha256": "9c435f5be72980adc5bb72390e4ffa3f46c0e950e2647f0cb9b0521b002e1bdc",

@@ -59,7 +59,14 @@ class OrderV4IndexMigrationContractTest {
             // (shop_id, platform, platform_product_id) 更严的约束（少了 shop_id 这一维，
             // 即全局唯一），旧键还在时能插入的数据必然满足新键——
             // 正是 runbook 记录的那条保护，与 order V4 同一推论。
-            "amz-service-multiplatform/V4__shop_scoped_platform_keys.sql");
+            "amz-service-multiplatform/V4__shop_scoped_platform_keys.sql",
+            // multiplatform V5：按本测试要求的流程审过（§S33.108 收尾）。一条 ALTER，
+            // DROP uk_platform_order + ADD uk_shop_platform_order 同语句内完成。
+            // 半应用状态：原子 DDL 一起回滚，旧键仍在，与 order V4 同形态。
+            // 1062 不成立：旧键 (platform, platform_order_no) 少 shop_id 这一维、
+            // 全局唯一，是比新键 (shop_id, platform, platform_order_no) 更严的约束，
+            // 旧键还在时能插入的数据必然满足新键——与 order V4 同一条推论。
+            "amz-service-multiplatform/V5__unified_order_shop_scoped_key.sql");
 
     @Test
     void onlyOrderV4DropsIndexes() throws IOException {

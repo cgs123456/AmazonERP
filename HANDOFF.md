@@ -8168,3 +8168,40 @@ customer 38 / ops 61 / ai 146（1 failure = loopback，既有）/ search 7 / mes
 **验证**：136 项全绿（按 ci.yml 原样命令复跑）。
 注意 `-I` 会剥掉 `sys.path` 导致 `No module named 'tools'`，
 本地复现 CI 时**不要**加 `-I`（`python -m unittest tools.release.xxx`）。
+
+---
+
+## §S33.111 统一订单唯一键补 shop_id（§S33.108 的收尾）
+
+**问题**：§S33.108 只改了代码（判重查询补 shop_id），没改 DDL。
+**只改代码等于只做了一半**：B 店订单不再被跳过，改去 insert，
+然后撞仍是全局的 `uk_platform_order` 报 1062，整个平台同步被
+`syncAllPlatforms` 标为失败。订单依然不落库——
+差别只是从「静默丢单」变成「响亮失败」。
+
+**修法**：新增 `multiplatform V5__unified_order_shop_scoped_key.sql`，
+`DROP uk_platform_order` + `ADD uk_shop_platform_order (shop_id, platform, platform_order_no)`。
+
+**审过的三条**（按 order-v4-drop-index-repair.md 的要求）：
+- **1062 不成立**：旧键 `(platform, platform_order_no)` 少 shop_id 一维、全局唯一，
+  是比新键更严的约束，旧键还在时能插入的数据必然满足新键。与 order V4 同一条推论。
+- **半应用状态**：原子 DDL 把 DROP 与 ADD 一起回滚，无残局。
+- **1091**：重跑会撞（MySQL 8 无 `DROP INDEX IF EXISTS`），与 order V4 同形态。
+
+**登记**：已同步进 `OrderV4IndexMigrationContractTest` 的冻结集（含审查结论），
+并新建 `ShopScopedUniqueKeyContractTest`（3 项）守住唯一键形状——
+**V4 当时没有这个测试，DDL 侧是空着的**，不应重复那个缺口。
+该测试盯的是 `ADD UNIQUE KEY` 的列清单而非键名，
+否则「键名留住、把 shop_id 删掉」会让断言全绿而缺陷原样回来。
+
+**写测试时我自己踩的坑**：第一版断言「全文不含 uk_platform_order 字面量」，
+直接红了——旧键字面量在 V1 的建表语句里，而「旧键已废弃」是 V5 的 DROP
+在**运行时**造成的效果，不是字面量的有无。改成断言 V5 确实 DROP 了旧键。
+（先红的是我的断言错，不是代码错。）
+
+**验证**：新测试 2 个变异全被杀（新键去 shop_id / 只 ADD 不 DROP）。
+multiplatform 155 绿（原 152）。门户 136 绿。
+
+**本地证明不了的部分**：V5 会在 CI 被 `AllModulesFlywayMySqlIT` 在真实 MySQL 8 上跑
+（`FLYWAY_ALL_IT_URL` 在 ci.yml/release.yml 里配了），本地没有 MySQL 实例，
+所以「V5 真能跑通」只能由 CI 证明。1062/1091 两条是**推**出来的，不是实测。
