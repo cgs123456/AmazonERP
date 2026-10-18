@@ -199,8 +199,15 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         for (PlatformProduct pp : fetched) {
             pp.setShopId(shopId);
             pp.setPlatform(platform);
+            // shop_id 必须进 exist 查询：同一平台下不同店铺会拿到同一个
+            // platform_product_id（同一供货商的货分销给多家店）。旧查询只按
+            // (platform, platform_product_id) 匹配，命中别的店的行后
+            // setId(exist.getId()) + updateById，把那行整条改写成自己店铺的
+            // ——原店铺的商品从自己列表里消失，它人工建的 ASIN/SKU 映射也一并易主。
+            // 这不是越权（入口有 @ShopScoped + @RequireRole），是租户边界漏在了查询条件上。
             LambdaQueryWrapper<PlatformProduct> existQuery = new LambdaQueryWrapper<>();
-            existQuery.eq(PlatformProduct::getPlatform, pp.getPlatform())
+            existQuery.eq(PlatformProduct::getShopId, shopId)
+                      .eq(PlatformProduct::getPlatform, pp.getPlatform())
                       .eq(PlatformProduct::getPlatformProductId, pp.getPlatformProductId());
             PlatformProduct exist = platformProductMapper.selectOne(existQuery);
             if (exist != null) {
@@ -270,8 +277,14 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         for (PlatformMessage msg : fetched) {
             msg.setShopId(shopId);
             msg.setPlatform(platform);
+            // shop_id 必须进 exist 查询，理由同 syncProducts：不同店铺会在同一平台
+            // 收到相同的 platform_message_id（平台用供货商侧的消息主键）。
+            // 旧查询命中别的店的行后什么都不做——本店这条消息永远不落库，
+            // 且不 insert 不 update、无日志无异常，客服看到的是「消息不存在」
+            // 而不是「同步失败」。两者都不会报错，只是失败方式不同。
             LambdaQueryWrapper<PlatformMessage> existQuery = new LambdaQueryWrapper<>();
-            existQuery.eq(PlatformMessage::getPlatform, msg.getPlatform())
+            existQuery.eq(PlatformMessage::getShopId, shopId)
+                      .eq(PlatformMessage::getPlatform, msg.getPlatform())
                       .eq(PlatformMessage::getPlatformMessageId, msg.getPlatformMessageId());
             if (platformMessageMapper.selectOne(existQuery) == null) {
                 msg.setCreateTime(LocalDateTime.now());

@@ -7166,3 +7166,83 @@ ratchet：`MultiplatformServiceImpl` 969→1011，超基线 +42。未抬基线�
 特征是「大而全的管理服务」——账号/商品映射/消息/库存聚合/OAuth 五个域有独立边界，
 按本次 webhook 的同款做法可逐个剥。但基线条目仍在（超限文件 55 个之一），
 没有再抬。
+
+## §S33.91 平台商品/消息同步：exist 查询漏 shop_id，跨店覆盖与静默丢数据
+
+### 动因
+
+用户提出的业务事实：「不同店铺可能会拿到同一商品」。据此核查
+`MultiplatformServiceImpl.syncProducts` / `syncMessages`，确认前提成立且代码里
+已经因此在错。
+
+V1 建表时把唯一键建成不含 `shop_id` 的 `(platform, platform_product_id)` 和
+`(platform, platform_message_id)`；服务层两个 exist 查询同样只按这两个列匹配。
+同一平台下不同店铺拿到同一平台侧 ID 时：
+
+- **商品**：`setId(exist.getId()) + updateById`，把**别人的行整条改写成自己店铺**的。
+  原店铺的商品从自己列表里消失，它人工建的 `amazon_asin`/`amazon_sku` 映射也一并易主。
+- **消息**：命中后**什么都不做**，不 insert 不 update、无日志无异常。本店这条消息
+  永远不落库。客服看到的是「没有新消息」，而不是「同步失败」。
+
+两处都发生在 `@ShopScoped + @RequireRole` 之内，**不是越权**，是租户边界
+漏在查询条件上。两者都不报错，只是失效方式不同。
+
+### 一处必须先纠正的直觉
+
+我最初的判断是「`exist != null` 走 updateById，所以旧唯一键从未被触发过，
+不存在重复组，因此换键不需要先去重」。前半段对，结论错了方向。
+
+- 正确的一半：唯一键当下**确实**没有被触发为重复冲突（并发下两个线程同时
+  exist==null 时会触发，报平台级 `Duplicate entry`，这是它现今唯一的作用）。
+- 错的一半：正因为 exist 查询不含 `shop_id`，同一 `(platform, platform_product_id)`
+  全局只有一行、其 `shop_id` 属于最后同步的那家店——**数据早就在互相覆盖**。
+  用合成数据查「跨店重复组数 = 0」不能证明缺陷不存在；那个 0 本身就是缺陷的症状。
+
+所以迁移**不做** ad V2 那种「合并快照再删旧行」的去重。但那些被改写过的行，
+真实归属已无法从现有数据推断（无同步日志、无平台侧原始归属），本迁移也不猜、不修内容，
+只把约束改对，并在迁移注释里写清楚这段。
+
+### 改了什么
+
+1. `syncProducts` exist 查询补 `.eq(PlatformProduct::getShopId, shopId)`。
+2. `syncMessages` exist 查询补 `.eq(PlatformMessage::getShopId, shopId)`。
+3. 新增 `V4__shop_scoped_platform_keys.sql`：删两个旧唯一键，换成含 `shop_id` 的
+   `uk_shop_platform_product (shop_id, platform, platform_product_id)` 与
+   `uk_shop_platform_msg (shop_id, platform, platform_message_id)`。
+
+`amz_platform_inventory` 未动：它是纯快照语义（先 delete 本店本轮再 insert），
+没有唯一键也没有 exist 查询，不存在同一缺陷。
+
+**上线顺序的两个方向都是 fail-fast**（迁移注释里写明了）：DDL 先上，中间窗口内
+exist 查询查不到本店行会走 insert 并撞新键报错；代码先上，exist 带 shop_id 后
+查不到跨店行也走 insert，被旧键拦下报错。两种都不可能出现「上半套然后静默错」，
+但都会让同步接口报错，所以仍应同批发布以缩短故障窗口。
+
+### 测试与变异账目
+
+新增 `MultiplatformShopScopedSyncTest`（5 项）。**观察面选 SQL 片段而非写库计数**：
+把 `shop_id` 从查询里删掉、同时让 mock 的 `selectOne` 返回 null，所有
+`verify(insert)` / `verify(never updateById)` 依旧全绿——只数写库调用
+证明不了查询条件里有没有 `shop_id`。手法同 ad 模块 `AdTenantIsolationContractTest`。
+
+| 变异 | 结果 |
+|---|---|
+| 删 `syncProducts` exist 查询的 `shop_id` | **杀**：`productExistQueryMustBeShopScoped` 红，失败信息直接打出缺列后的 SQL |
+| 删 `syncMessages` exist 查询的 `shop_id` | **杀**：`messageExistQueryMustBeShopScoped` 红 |
+| `updateById` 改成 `insert`（exist 命中时） | **杀**：`productUpdatesOwnRowOnSecondSync` 红 |
+| `shopId` 改成 `pp.getShopId()` | **存活，等价变异** |
+
+最后一项说明：`pp.setShopId(shopId)` 在前几行已执行，此路径内两者恒等，
+行为完全一致。属等价变异，**不**为它加断言——加一条永不失败的断言只会
+制造「这里有人守着」的假象。记录在此，下一个人不必重复劳动。
+
+模块全套 139 项绿（含新增 5 项）。`file_size_ratchet` / `repository_hygiene` 均通过，
+未抬基线。
+
+### 仍未还完的债
+
+- 被覆盖过的历史行无法自动修复，需业务侧判断（本期不猜）。
+- `MultiplatformServiceImpl` 仍 800+ 行（本期只改两处条件）。
+- 合成数据 `snapshot_schema.py` 仍按 V1 的旧唯一键记录这两张表，
+  它比真实库更严（少 `shop_id`），是既有摩擦而非本次引入；真要有跨店同 ID 的
+  合成数据时会先在 `verify.py check_structure` 报错。未改。
