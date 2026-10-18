@@ -1,7 +1,6 @@
 package com.amz.service.impl;
 
 import com.amz.exception.CodeErrorException;
-import com.amz.exception.InvalidParamException;
 import com.amz.mapper.PlatformAccountMapper;
 import com.amz.mapper.WebhookEventMapper;
 import com.amz.multiplatform.TimeCursorPageSupport;
@@ -10,7 +9,6 @@ import com.amz.model.WebhookEvent;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.support.SFunction;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

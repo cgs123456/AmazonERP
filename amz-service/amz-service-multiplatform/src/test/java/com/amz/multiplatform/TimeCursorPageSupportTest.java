@@ -109,11 +109,29 @@ class TimeCursorPageSupportTest {
 
         // 真实形态（实测）：WHERE ((receive_time < #{..}
         //   OR (receive_time = #{..} AND id < #{..})))
+        //
+        // 断言写法（§S33.100 修，有实测背书）：把 id 支换成 shop_id 列后 SQL 为
+        // `... AND shop_id < #{..}`，它含子串 "id <"（旧断言蒙混过关），
+        // 但不含 " AND id < "（shop_id 前是 "_" 不是空格）。故 id 支必须带空格写。
         String sql = wrapper.getCustomSqlSegment();
         assertTrue(sql.contains("receive_time <"), "必须约束早于游标时间的行，实际=" + sql);
         assertTrue(sql.contains("receive_time ="), "必须保留与游标同秒的行，实际=" + sql);
-        assertTrue(sql.contains("id <"), "同秒内必须再按 id 往前推，否则同秒行整秒消失，实际=" + sql);
-        // 同秒行靠 OR 分支兜住；去掉它等同于只按时间翻页
-        assertTrue(sql.contains("OR"), "同秒行靠 OR 分支兜住，实际=" + sql);
+        assertTrue(sql.contains(" AND id < "),
+                "同秒内必须再按 id 往前推；只写 id < 会被 shop_id < 这类同后缀列蒙混，实际=" + sql);
+        assertTrue(sql.contains(" OR "), "同秒行靠 OR 分支兜住，实际=" + sql);
+        // 三支齐备才构成完整的键集条件：少 OR、少任一支都等于只按时间翻页
+        assertEquals(3, countClauses(sql), "应有 3 个子句，实际=" + sql);
+    }
+
+    /** 数 SQL 里的比较子句数量：< 或 = 出现一次算一支。 */
+    private static int countClauses(String sql) {
+        int n = 0;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (c == '<' || c == '=') {
+                n++;
+            }
+        }
+        return n;
     }
 }

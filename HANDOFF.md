@@ -7618,3 +7618,73 @@ mybatis-plus-spring-boot-starter 传递提供」，且全包无一处使用 `Lam
 
 变异测试仍用 `-pl <module> clean test`，理由改为「clean 排除上一批 class 混入判断」，
 **不是**「增量编译不可靠」。判定成败仍以 `echo $?` 为准。
+
+## §S33.100 独立审查 §S33.98：断言被同后缀列蒙混，另有三处无用 import
+
+§S33.98 拆完只做了变异测试,没做独立 review。补做后抓到两个我没发现的问题。
+
+### 问题一（真实，测试强度不足）
+
+`TimeCursorPageSupportTest.beforeConstrainsBothTimeAndId` 的
+`assertTrue(sql.contains("id <"))` **挡不住同后缀列**。审查者构造变异实测：
+把 id 支换成 `shop_id` 列后 SQL 为
+`... AND shop_id < #{..}`，它**含**子串 `"id <"`，四条断言全过。
+
+我亲自复现并取了证：
+```
+SHOPSWAP_SQL=WHERE ((receive_time < .. OR (receive_time = .. AND shop_id < ..)))
+OLD_contains_id_lt=true      ← 蒙混过关
+NEW_contains_AND_id_lt=false ← 抓住
+```
+
+修法：改成 `sql.contains(" AND id < ")`（`shop_id` 前是 `_` 不是空格，匹配不上），
+并补一条 `assertEquals(3, countClauses(sql))` 钉住「三支齐备」。
+**这不是换个写法**——已用变异验证加固后能杀该变异，不是自认的。
+
+顺带记：我最初担心过「列名巧合」并实测了真实 SQL，就自以为排除了，
+没有实际构造那个变异。**看过正确输出不等于验证过断言强度。**
+
+### 问题二（真实，收尾遗漏）
+
+副本删除后留下三个无用 import（门禁不查，CI 的 `checkstyle-critical.xml`
+无 `UnusedImports` 规则，全量 checkstyle 只报 warning）：
+
+- `MultiplatformServiceImpl.java:10` `InvalidParamException`
+- `WebhookEventService.java:4` `InvalidParamException`
+- `WebhookEventService.java:13` `SFunction`
+
+已删。这类「删除副本后残留」的固定模式：副本删掉时，
+只有它自己用的 import 会变成孤儿，要靠 grep 引用数确认，不门禁。
+
+### 问题三（记录，不修）
+
+审查者指出我的收敛判据「第二个用例在另一个类里」**没有被一致应用**——
+ad 与 report 模块还有同形游标副本。我核实后确认**不能**直接套用：
+
+- `AdAutoRuleServiceImpl.java:299-317` 与 `SearchTermServiceImpl.java:463-478`：
+  同形，但键是 `CompositeCursor(int key, long id)` 且带 `id > 0` 守卫，
+  与 `TimeCursor(LocalDateTime, long)` 类型不同，`TimeCursorPageSupport` 覆盖不了。
+- `RealtimeProfitServiceImpl` 同文件两处 `decodeXxxCursor` 同理
+  （时间类型是 `LocalDate`）。
+
+所以它们是**同形不同构**，不是「漏改一处」。但判据本身是对的：
+这两个模块各自内部都满足「第二个用例出现在另一个类」，
+应各自收敛成自己模块内的组件。记为待办，不夸大成同一份重复。
+
+### 独立复核 §S33.96（附带做了）
+
+审查只能引用已有测试报告，不能替代「在真 SQL 引擎上跑分页」。
+用 SQLite 独立复现了 §S33.96 的 `LIMIT want+1` 探针分页（不 import 项目代码），
+六个场景全 PASS，含两个关键边界：
+
+| 场景 | 加载 | truncated |
+|---|---|---|
+| total=500, max=500 | 500 | **false**（不误报） |
+| total=501, max=500 | 500 | **true**（正确披露） |
+| total=700, page=500, max=600 | 600 | true |
+| total=137 | 137 | false |
+| total=1000, page=500, max=1000 | 1000 | **false**（整除不误报） |
+| total=733, page=500, max=600 | 600 | true |
+
+同时验证了 §S33.98 复合游标的前提：`id < ?` + `ORDER BY id DESC`
+序列无重无漏（每场景结果精确等于期望 id 列表）。

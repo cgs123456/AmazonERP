@@ -7,7 +7,6 @@ import com.amz.client.TikTokClient;
 import com.amz.context.UserContext;
 import com.amz.exception.AttrIsNullException;
 import com.amz.exception.CodeErrorException;
-import com.amz.exception.InvalidParamException;
 import com.amz.finance.PlatformCurrencyConverter;
 import com.amz.mapper.OauthAppMapper;
 import com.amz.mapper.OauthTokenMapper;
