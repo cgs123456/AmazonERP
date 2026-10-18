@@ -8031,3 +8031,99 @@ decrease 是设计选择（FIFO/任一批次）。但多批共存时只扣一批
 customer 38 / ops 61 / ai 146（1 failure = loopback，既有）/ search 7 / message 8，全绿除既有 loopback。
 
 至此全仓 15 个模块的租户边界已全部过一遍结构化审查。
+
+---
+
+## §S33.107 出库扣减改 FIFO 并支持跨批（logistics）
+
+**缺陷**：`WarehouseServiceImpl.decreaseInventory` 的两个重载都只拿候选行的
+`get(0)` 去试扣。单批可用量不足、但多批合计够时，会在第一行就抛「库存不足」——
+一个凭空出现的假失败，把能发的货挡下来。
+
+**修法**：新增 `consumeAcrossBatches(...)`，按 `id` 升序（FIFO）依次试扣：
+先按整笔需求量原子扣；失败则按该批可用量扣，累计直到满足或耗尽。
+`remaining > 0 || last == null` 才抛异常。两个重载均已改接。
+
+**刻意不做 FEFO**：`expire_date` 字段存在，但按效期出库是业务策略
+（要不要先出临期、临期阈值多少），不是缺陷修复能替业务决定的。
+已记入待办，需业务确认后再动。
+
+**验证**：新增 2 项测试（`testDecreaseInventoryAcrossBatches`、
+`testDecreaseInventoryFailsWhenTotalInsufficient`）。变异验证 2 个变异体全被杀
+（去掉排序 / 把 `remaining = 0` 改成不更新）。logistics 196 绿。
+
+---
+
+## §S33.108 统一订单同步的判重查询缺 shop_id（multiplatform）
+
+**发现途径**：不是人肉审查看出来的，是新工具 `tools/release/tenant_boundary_audit.py`
+报出来的第 718 行。工具报了 18 条候选，逐条读之后只有这一条是真缺陷——
+这正说明工具的定位：**候选不等于缺陷**，它的价值是让清单完整且可复现，
+省掉「grep 几行看看」的猜测。
+
+**缺陷**：`loadExistingOrderKeys(fetched)` 只按
+`in(platform_order_no, ...)` 查已存在的行，不带 `shop_id`。
+业务前提同 §S33.91：不同店铺可能在同一平台拿到同一 `platform_order_no`。
+后果是 A 店已有的订单号会让 B 店同一订单号被判「已存在」而**静默跳过**
+——B 店订单永远不落库，无日志无异常，表现为「拉到了但列表里没有」。
+
+**顺带掩盖的第二条路**：表上的 `uk_platform_order (platform, platform_order_no)`
+同样不含 `shop_id`。跳过逻辑掩盖了 insert 撞 1062 的可能——
+真有两店共享同一订单号时，整个平台的同步会被 `syncAllPlatforms` 标为失败。
+
+**修法**：给 `loadExistingOrderKeys` 加 `shopId` 参数，查询加
+`.eq(UnifiedOrder::getShopId, shopId)`。
+
+**未完成的部分（必须交代）**：**唯一键没动**。
+`uk_platform_order` 仍是全局的，两店真共享同一订单号时仍会撞 1062。
+改它要新增迁移（V1 不可改），且要处理存量重复数据，属独立变更，本轮未做。
+当前修法消除的是「静默丢单」，撞键那一路依旧存在。
+
+**验证**：新增 `MultiplatformOrderDedupShopScopedTest`（3 项）。
+先红后绿：修复前 `WHERE (platform_order_no IN (...))` 无 shop_id、`expected <1> but was <0>`。
+变异验证：去掉 `.eq(getShopId, shopId)` → 2 项失败。multiplatform 152 绿（原 149）。
+
+**测试自己的一个坑**：行为断言最初写 `selectList(any())` 无条件返回别的店那行，
+结果修好了 SQL、行为测试还是红——因为**假库无视了查询条件**。
+改成 `thenAnswer` 让假库读 `getCustomSqlSegment().contains("shop_id")` 再决定返回什么。
+否则这条测试永远只为别的原因变红。
+
+---
+
+## §S33.109 租户边界审计工具（tools/release/tenant_boundary_audit.py）
+
+**为什么要有**：本轮 §S33.91 / §S33.92 / §S33.108 三个缺陷都是同一个形状——
+按 id 或不含 `shop_id` 的键取到一行，然后读写它、不看它属于哪个店铺。
+每次审查都是「grep `selectById` 然后人肉看几行」，既会误报也会漏。
+这个脚本把人肉那一步换成结构化判定。
+
+**两趟扫描**：
+1. 端点：解析每个 `*Controller*.java` 里的 `@XxxMapping`，**向上**走注解块
+   （不是固定行窗口）找 `@ShopScoped` / `@RequireRole`，看签名提不提 `shopId`。
+2. 数据访问：对 `selectById/selectList/selectCount/selectPage/selectOne/updateById/deleteById`，
+   按**整个方法体**判定有没有租户守护。
+
+**退出码**：0 无候选 / 1 有候选（去读）/ 2 用法或 IO 错误。
+只用标准库，与本目录其它工具一致。
+
+**工具自身的三个实测缺陷（都已修，且写进测试）**：
+1. 向上走花括号找方法起点会停在最近的 `try {`——try 的闭合括号在访问行**下方**、
+   永远不会被计数，于是写在 try **之上**的 `!rule.getShopId().equals(shopId)`
+   一次都没被看到（ListingPriceRuleController.execute 误报）。
+   改成**正向**扫出所有方法区间再取最内层包含访问行的那个。
+2. 类级 `@RequestMapping` 被当成端点（InventoryController 等 3 条误报）。
+   加 `_is_method_mapping` 区分。
+3. 曾经加过一个按关键字排除 `try/if/for` 的过滤器——**扫全仓发现它不可达**：
+   `METHOD_DECL` 要求缩进 ≤ 4 格，控制流开块都在更深处，6 处 `synchronized`
+   全是方法修饰符。已删除而非「留着以防万一」。
+
+**自测**：`tools/release/test_tenant_boundary_audit.py`（6 项，unittest）。
+按本目录约定用普通字符串 + `chr(10)` 拼源码，不用 `\n` 字面量
+（此前两次被 heredoc/转义弄成未闭合字符串）。
+变异验证：GUARD 全匹配（把什么都判成已守护）→ 被杀；
+类级注解算端点、DATA_ACCESS 收窄 → **存活**（等价变异，
+前者在本仓无类级端点带 data-access，后者落在其它的访问行上）。
+存活的两个已确认是等价变异而非测试弱，但**没写成断言**，记在此处。
+
+**候选数参考**（当前）：spapi 16 / logistics 20 / order 9 / finance 6 / multiplatform 1。
+逐条读才是重点，工具只负责不漏。

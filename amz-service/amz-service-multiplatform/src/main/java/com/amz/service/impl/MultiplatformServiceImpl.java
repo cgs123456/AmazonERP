@@ -687,7 +687,7 @@ public class MultiplatformServiceImpl implements MultiplatformService {
             case "SHEIN": fetched = sheinClient.fetchRecentOrders(shopId); break;
             default: throw new AttrIsNullException("不支持的平台：" + platform);
         }
-        Set<String> existingKeys = loadExistingOrderKeys(fetched);
+        Set<String> existingKeys = loadExistingOrderKeys(shopId, fetched);
         int inserted = 0;
         for (com.amz.model.UnifiedOrder o : fetched) {
             String key = dedupKey(o.getPlatform(), o.getPlatformOrderNo());
@@ -703,7 +703,20 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         return inserted;
     }
 
-    private Set<String> loadExistingOrderKeys(List<com.amz.model.UnifiedOrder> fetched) {
+    /**
+     * 已存在订单号的集合，按 (platform, platform_order_no) 判重。
+     *
+     * <p>§S33.108：查询必须带 shop_id。不同店铺可能在同一平台拿到同一
+     * platform_order_no（同 §S33.91 的业务前提），不带 shop_id 时
+     * 别的店已有的订单号会把本店订单判成「已存在」而静默跳过——
+     * 本店订单永远不落库，且无日志无异常。
+     *
+     * <p>注意表上的 uk_platform_order (platform, platform_order_no) 同样不含
+     * shop_id，因此「跳过」顺带掩盖了 insert 撞 1062 的那条路：
+     * 真有两店共享同一订单号时整个平台的同步会被标为失败。
+     * 去重的店铺维度在这里补上，唯一键的维度另需迁移（见 HANDOFF §S33.108）。
+     */
+    private Set<String> loadExistingOrderKeys(Long shopId, List<com.amz.model.UnifiedOrder> fetched) {
         Set<String> existingKeys = new HashSet<>();
         if (fetched == null || fetched.isEmpty()) return existingKeys;
         List<String> orderNoList = new ArrayList<>();
@@ -714,7 +727,8 @@ public class MultiplatformServiceImpl implements MultiplatformService {
         }
         if (orderNoList.isEmpty()) return existingKeys;
         LambdaQueryWrapper<com.amz.model.UnifiedOrder> dedupQuery = new LambdaQueryWrapper<>();
-        dedupQuery.in(com.amz.model.UnifiedOrder::getPlatformOrderNo, orderNoList);
+        dedupQuery.eq(com.amz.model.UnifiedOrder::getShopId, shopId)
+                .in(com.amz.model.UnifiedOrder::getPlatformOrderNo, orderNoList);
         for (com.amz.model.UnifiedOrder exist : unifiedOrderMapper.selectList(dedupQuery)) {
             existingKeys.add(dedupKey(exist.getPlatform(), exist.getPlatformOrderNo()));
         }
