@@ -73,9 +73,9 @@ class PlatformOrderStatsServiceTest {
     @Test
     @DisplayName("按平台分组统计：两个平台各一份，且没有跨平台合计字段被填上")
     void bucketsPerPlatformWithoutGrandTotal() {
-        // 第一次调用是 discoverPlatforms（只查 platform 列），之后按平台各查一次
+        // discoverPlatforms 走 DISTINCT，之后按平台各查一次
+        when(unifiedOrderMapper.selectDistinctPlatforms(1L)).thenReturn(List.of("SHEIN", "TEMU"));
         when(unifiedOrderMapper.selectList(any())).thenReturn(
-                List.of(order("TEMU", "USD", "10.00", "PAID"), order("SHEIN", "USD", "20.00", "PAID")),
                 List.of(order("SHEIN", "USD", "20.00", "PAID")),
                 List.of(order("TEMU", "USD", "10.00", "PAID")));
 
@@ -145,5 +145,48 @@ class PlatformOrderStatsServiceTest {
     @DisplayName("shopId 为空直接拒绝")
     void nullShopIdRejected() {
         assertThrows(IllegalArgumentException.class, () -> service.stats(null, null));
+    }
+
+    /**
+     * §S33.87：平台发现不能受「统计行数上限」约束。
+     * <p>
+     * 旧实现取 {@code LIMIT 5001} 行再内存去重。店铺订单超过上限时，
+     * <b>只出现在 5001 行之后的平台会被整个漏掉</b>，而且不会标 truncated——
+     * 统计结果看起来完整，实际少了一整个平台的订单。
+     * 这是「有界读」被误用到「枚举维度」上的典型错误：行数上限该约束
+     * 「统计多少行」，不该约束「有哪些平台」。
+     */
+    @Test
+    @DisplayName("平台只出现在统计上限之后时仍必须被发现（DISTINCT 不受行数上限约束）")
+    void discoversPlatformsBeyondRowLimit() {
+        // 假设店铺 TEMU 有 6000 单、SHEIN 有 10 单，且 SHEIN 排在 5001 行之后。
+        // DISTINCT 查询与行数无关，两个平台都必须出现。
+        when(unifiedOrderMapper.selectDistinctPlatforms(1L)).thenReturn(List.of("SHEIN", "TEMU"));
+        when(unifiedOrderMapper.selectList(any())).thenReturn(
+                List.of(order("SHEIN", "USD", "20.00", "PAID")),
+                List.of(order("TEMU", "USD", "10.00", "PAID")));
+
+        PlatformOrderStats stats = service.stats(1L, null);
+
+        List<String> found = stats.getPlatforms().stream()
+                .map(PlatformOrderStats.PlatformBucket::getPlatform)
+                .sorted()
+                .toList();
+        assertEquals(List.of("SHEIN", "TEMU"), found,
+                "平台发现必须与订单行数无关；漏掉一个平台等于整块业务数据消失且不报警");
+    }
+
+    @Test
+    @DisplayName("平台名首尾空格不会把同一平台拆成两个桶")
+    void trimsPlatformNamesFromDirtyData() {
+        when(unifiedOrderMapper.selectDistinctPlatforms(1L))
+                .thenReturn(List.of(" TEMU ", "TEMU"));
+        when(unifiedOrderMapper.selectList(any())).thenReturn(List.of());
+
+        PlatformOrderStats stats = service.stats(1L, null);
+
+        assertEquals(1, stats.getPlatforms().size(),
+                "历史脏数据里的首尾空格不能让同一平台出现两次；实际=" + stats.getPlatforms().size());
+        assertEquals("TEMU", stats.getPlatforms().get(0).getPlatform());
     }
 }

@@ -63,18 +63,26 @@ public class PlatformOrderStatsService {
         return result;
     }
 
-    /** 该店铺实际存在哪些平台（不靠外部枚举，避免列出没数据的平台）。 */
+    /**
+     * 该店铺实际存在哪些平台（不靠外部枚举，避免列出没数据的平台）。
+     * <p>
+     * §S33.87：走 {@code SELECT DISTINCT}，<b>不</b>受单平台行数上限约束。
+     * 旧实现取 {@code LIMIT MAX+1} 行后在内存里去重——订单量大的店铺里，
+     * 只出现在上限之后的平台会被整个漏掉且不标 truncated：统计看起来完整，
+     * 实际少了整平台的数据。行数上限只应约束「统计多少行」，不该约束
+     * 「有哪些平台」。
+     */
     private List<String> discoverPlatforms(Long shopId) {
-        List<UnifiedOrder> probe = unifiedOrderMapper.selectList(
-                new LambdaQueryWrapper<UnifiedOrder>()
-                        .eq(UnifiedOrder::getShopId, shopId)
-                        .select(UnifiedOrder::getPlatform)
-                        .last("LIMIT " + (MAX_ROWS_PER_PLATFORM + 1)));
-        // 用 TreeSet 语义排序，让输出稳定（Map 遍历顺序不稳定会让报告每次看起来不一样）
+        List<String> rows = unifiedOrderMapper.selectDistinctPlatforms(shopId);
+        if (rows == null || rows.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // SQL 已 ORDER BY platform；这里再 trim + 去重一次，防止历史数据里
+        // 存在首尾空格的脏值导致同一个平台被拆成两个桶
         java.util.Set<String> set = new java.util.TreeSet<>();
-        for (UnifiedOrder o : probe) {
-            if (o.getPlatform() != null && !o.getPlatform().isBlank()) {
-                set.add(o.getPlatform().trim());
+        for (String platform : rows) {
+            if (platform != null && !platform.isBlank()) {
+                set.add(platform.trim());
             }
         }
         return new ArrayList<>(set);
