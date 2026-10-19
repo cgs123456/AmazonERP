@@ -145,6 +145,12 @@ public class UserContext {
      * {@code ShopPerformanceSyncScheduler} / {@code ListingCopyService}），
      * 走的都是第 1 支；没有一个是靠"没有身份"放行的。
      * <p>
+     * 连 §S33.114 §3.2 里「唯一真依赖宽松档」的那条也不成立：
+     * {@code LogisticsTrackingSyncScheduler.markDelayed()} 调的
+     * {@code markDelayedShipments} 里零处 {@code isShopAllowed}
+     * （跨全店扫描、刻意不校验租户），压根不经本方法。
+     * 即 43 处 lenient 调用点中，没有一处的正确性依赖被改掉的那一支。
+     * <p>
      * 收益不是修一个可达漏洞——公网端点必经 {@code BaseAuthInterceptor}，userId 不会为 null。
      * 收益是让"鉴权链路有洞"从静默放行变成 fail-closed：将来任何新增的无上下文调用方
      * 会立刻失败，而不是悄悄获得全店访问权。新代码请直接用

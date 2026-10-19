@@ -8846,3 +8846,105 @@ ShipmentMapper / InventoryMovementService / WarehouseService → 三个域共用
 要逐个过上面三条判据。按「非缺陷拆分让位于有正确性收益的工作」，
 这里仍然只登记。与 §3.3 的区别是：§3.3 有明确的功能理由（覆盖不再被截断），
 §3.4 没有——**不要为了 500 行这个数字去冒 12 个测试的回归风险**。
+
+---
+
+# §S33.121 §3.2 落地：`isShopAllowed` 收紧为三分支（用户拍板「做」）
+
+> 落地方式与 §S33.118 设想的不同：**不改 43 处调用点，改 guard 本身**。
+> 一处覆盖全部，且每处调用点的语义自动变正确。
+
+## 1. 口径变更
+
+| 条件 | 旧 | 新 |
+|---|---|---|
+| 有 `userId` | 委托 strict | 委托 strict（不变） |
+| 无 `userId`，`shops` 为空 | **放行** | 有内部服务身份 → 放行；**谁都不是 → 拒绝** |
+
+第 2 支必须保留：`@InternalServiceAccess` 端点只设 `internalService`、
+不设 `userId`（`BaseAuthInterceptor:166`），那一支是 service 间调用的唯一通路，
+一并掐断会让 `FulfillmentController` / `FinancialDataController` 等全部失效。
+
+## 2. 依据（全部实测，非推断）
+
+1. 全仓定时任务逐个查过：`AmazonReturnSyncScheduler` / `SettlementSyncScheduler` /
+   `ShopPerformanceSyncScheduler` / `ListingCopyService` 全部显式
+   `setUserId(SYSTEM_USER_ID)` + `setShops(List.of(shopId))`，走的都是第 1 支。
+2. 追过 5 个定时任务入口方法（`syncShop` / `ingest` / `markDelayedShipments` /
+   `rebuild` / `scanAndRemind`）的内部链路，无一经过 lenient guard。
+3. **更正 §S33.114 §3.2 与 §S33.118 的一处判断**：那两处说
+   `LogisticsTrackingSyncScheduler.markDelayed()` 是「唯一真依赖 lenient 的路径」。
+   实测 `TrackingIngestServiceImpl` 里**零处** `isShopAllowed`——
+   它走 `shipmentMapper.selectList` + `updateById`，压根不经 guard。
+   所以「43 处里没有一处真依赖被改掉的那一支」，比原判断更彻底。
+
+## 3. 收益定性（不要说成修了漏洞）
+
+**不是修一个可达漏洞。** 公网端点必经 `BaseAuthInterceptor`，`userId` 不会为 null；
+收紧前那些路径本来就走 strict。真正的收益是：
+
+> 让「鉴权链路有洞」从**静默放行**变成 **fail-closed**。
+> 将来任何新增的无上下文调用方会立刻失败，而不是悄悄获得全店访问权。
+
+这是把「不必要的宽」关掉（§S33.114 §3.2 的原话），不是补洞。
+
+## 4. 测试适配：79 个用例，5 个模块
+
+失败清一色是「缺合法用户上下文」，无一是别的问题。补的是上下文本身
+（`setUserId` + `setShops`，shopId **逐个读调用点确认**，不是统一填 1）。
+
+### 4.1 顺带逼出三处隐藏事实（比适配本身更值得记）
+
+1. **`ProcurementServiceImplTest` 的 11 个 `PurchaseOrder` 从来没设过 `shopId`。**
+   原代码靠「谁都不是 → 放行」兜住，所以缺字段从未暴露。收紧后必须显式
+   `order.setShopId(1L)`，否则 `isShopAllowedStrict(null)` 恒 false 永远走不到业务逻辑。
+   **收紧只是把一直隐含的假设显式化了，没有改变业务语义。**
+2. `WarehouseServiceImplTest` 的 3 个库存夹具同样没有 `shopId`（走 3 参重载或
+   `updateLocationCode`，guard 读的是记录自身的 shopId）。
+3. `BomServiceTest` / `SupplierPaymentServiceTest` 原来把上下文放在 `@AfterEach`
+   「留给下一例用」——那让**首个执行的用例和单独运行时没有上下文**。
+   改为 `@BeforeEach`，顺带修掉这个执行顺序依赖。
+
+### 4.2 一个「绿得对但理由错」的实例（§S33.37 的同款，这次发生在绿上）
+
+收紧瞬间，customer 模块有 5 个「非授权店铺应拒绝」的用例**仍然全绿**——
+但绿的理由是无身份被拒，不是店铺不匹配。断言虽然过，验的已不是它声称验的东西。
+最典型的是 `reviewMissingThrowsNotFound`：它断言「不存在报
+`AttrIsNullException` 而非越权」，而无身份时 guard 在 `selectById` 返回 null
+**之前**就拦了——那条断言形同虚设。
+
+补上 `userId` 后它们才真正走 `isShopAllowedStrict` 的 shops 不匹配分支。
+**判据：收紧/放宽 guard 之后，要逐个问「那些拒绝类用例，现在是因为什么被拒的」。**
+只跑一遍看全绿是不够的——绿可能来自一条与断言无关的路径。
+
+### 4.3 变异验证（两个方向都做了）
+
+| 变异 | 结果 |
+|---|---|
+| `isShopAllowed` 退回旧口径（谁都不是也放行） | **杀 3**：`noIdentityIsRejected` / `noIdentityAtAllIsRejected` / `internalServiceGrantIsLoggedOnceAndCounted`（最后一条证明留痕断言不是装饰） |
+| `CustomerEmailServiceImpl` 的 review guard 改恒真 | **杀 1**：`createDeniedForOtherShop` 红，证明收紧后的 customer 测试真的在验证店铺归属，不是 4.2 那种假绿 |
+
+两处变异均已还原（`git status` 对 main 源码为空）。
+
+## 5. 门禁
+
+- amz-common **260/260**；user 60 / order 101 / customer 38 / finance 195 /
+  logistics 196 / procurement **152**（+1 新增的内部服务用例）全绿
+- ai 146 个里 1 个红 = `DeepSeekAgentConfigurationContractTest`，
+  `git stash` 在干净树上复跑同样红（`Unable to establish loopback connection`），
+  属 §S33.114 §6 已定案的本机环境限制，以 CI 为准
+- checkstyle-critical 0 violation、hygiene 0 findings、release tools 137/137
+- ratchet：`LogisticsUpgradeServiceImplTest` 的注释增长**压回一行**（零增长，
+  那文件本来就 652 行贴着限）；`FinanceServiceImplTest` +29 属必要脚手架，
+  `--update-baseline` 并在提交信息说明
+
+## 6. 下一班注意
+
+1. **新代码直接写 `isShopAllowedStrict` 或 `isShopAllowedByUserOrTrustedService`**，
+   语义明确；`isShopAllowed` 保留只为兼容存量 43 处调用点。
+2. `no-identity` 这个计数键现在应当**停止增长**。若线上发现它仍在涨，
+   说明存在绕过改造的调用方——那是比收紧前更值得追的信号。
+3. 已知既有脆弱性（本次未碰，勿与本节混淆）：
+   `AgentChatStreamServiceTest.testPropagatesAndClearsUserContext` 偶发红，
+   是 `verify(timeout(5000))` 与 `thenAnswer` 写 `AtomicReference` 之间的竞态，
+   与本次改动无关。要修就把断言改成等 `userId.get() != null` 再校验。
