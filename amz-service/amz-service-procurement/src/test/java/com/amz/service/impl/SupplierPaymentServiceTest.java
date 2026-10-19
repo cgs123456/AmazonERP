@@ -8,6 +8,7 @@ import com.amz.mapper.SupplierPaymentMapper;
 import com.amz.model.PurchaseOrder;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -53,10 +54,21 @@ class SupplierPaymentServiceTest {
                 SupplierPayment.class);
     }
 
+    /**
+     * 每例建立合法用户上下文（shopId 9001 与 {@link #po} 里造数据的店铺一致）。
+     * <p>§S33.121 收紧 isShopAllowed 第三分支后，pay/cancel 的店铺 guard 只给 shops
+     * 不给 userId 一律被拒；补上 userId 让 guard 通过，各例继续验证三单匹配逻辑。</p>
+     */
+    @BeforeEach
+    void setUpContext() {
+        com.amz.context.UserContext.clear();
+        com.amz.context.UserContext.setUserId(1);
+        com.amz.context.UserContext.setShops(List.of(9001L));
+    }
+
     @AfterEach
     void cleanup() {
         com.amz.context.UserContext.clear();
-        com.amz.context.UserContext.setShops(List.of(9001L));
     }
 
     @Test

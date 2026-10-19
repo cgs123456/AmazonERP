@@ -42,6 +42,8 @@ class QueryKnowledgeToolTest {
     @Test
     @DisplayName("命中时返回 ok 与结构化 chunks")
     void testHit() throws Exception {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
         KnowledgeSearchService searchService = mock(KnowledgeSearchService.class);
         KnowledgeChunk chunk = KnowledgeChunk.builder()
                 .docId("d").filename("退货政策.pdf").chunkIndex(0)
@@ -67,6 +69,8 @@ class QueryKnowledgeToolTest {
     @Test
     @DisplayName("空 query 直接失败")
     void testBlankQueryFails() {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
         ErpToolExecutor executor = new ErpToolExecutor();
         // §S32：query_knowledge_base 在 ErpAnalysisTools 里，未注入会 NPE
         ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());
@@ -79,6 +83,8 @@ class QueryKnowledgeToolTest {
     @Test
     @DisplayName("服务未注入时降级失败")
     void testServiceNullFails() {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
         ErpToolExecutor executor = new ErpToolExecutor();
         // §S32：query_knowledge_base 在 ErpAnalysisTools 里，未注入会 NPE
         ReflectionTestUtils.setField(executor, "analysisTools", new ErpAnalysisTools());

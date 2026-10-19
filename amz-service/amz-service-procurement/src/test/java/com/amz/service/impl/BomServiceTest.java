@@ -6,6 +6,7 @@ import com.amz.mapper.BomMapper;
 import com.amz.model.Bom;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -40,10 +41,25 @@ class BomServiceTest {
                 Bom.class);
     }
 
+    /**
+     * 每例建立合法用户上下文。
+     * <p>§S33.121 收紧 isShopAllowed 第三分支后，BomService 的四个入口（save/delete/
+     * listByComposite/expand）都走 isShopAllowed → 有 userId 即委托严格校验，
+     * 只给 shops 不给 userId 一律被拒。这里统一补 userId，让 guard 通过，
+     * 各例继续验证展开/环检测等业务逻辑。</p>
+     * <p>原先上下文是放在 {@code @AfterEach} 里"留给下一例"的，那让首例和
+     * 单独运行时没有上下文——测试不该依赖执行顺序。</p>
+     */
+    @BeforeEach
+    void setUpContext() {
+        UserContext.clear();
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(9001L));
+    }
+
     @AfterEach
     void cleanup() {
         UserContext.clear();
-        UserContext.setShops(List.of(9001L));
     }
 
     @Test

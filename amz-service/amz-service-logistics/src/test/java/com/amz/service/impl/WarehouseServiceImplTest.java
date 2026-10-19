@@ -1,10 +1,12 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
 import com.amz.exception.CodeErrorException;
 import com.amz.mapper.WarehouseInventoryMapper;
 import com.amz.mapper.WarehouseMapper;
 import com.amz.model.Warehouse;
 import com.amz.model.WarehouseInventory;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +32,12 @@ import static org.mockito.Mockito.when;
  * 验证仓库创建默认值、库存增减逻辑、库存不足异常处理等核心链路。
  * 库存增减已改为原子更新（decreaseQuantityAtomic / increaseQuantityAtomic），
  * 测试 mock 这些方法返回受影响行数以验证并发安全修复。
+ * <p>
+ * <b>店铺上下文</b>：这些用例验的是库存/仓库业务逻辑，不是租户边界（越权拦截另有
+ * {@link LogisticsShopGuardTest} 与各 Tenant 测试守），所以每个用例都先用
+ * {@link #authenticateShop(long)} 建一个合法用户上下文让 guard 放行。上下文里的
+ * shopId 必须与该用例请求的店铺一致——用例并不统一：有的用 1，有的用 10。
+ * 上下文在 {@link #clearUser()} 里清掉，避免泄漏到同一线程的后续用例。
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("海外仓服务单元测试")
@@ -44,9 +52,26 @@ class WarehouseServiceImplTest {
     @InjectMocks
     private WarehouseServiceImpl warehouseService;
 
+    @AfterEach
+    void clearUser() {
+        UserContext.clear();
+    }
+
+    /**
+     * 建一个授权 {@code shopId} 的合法上下文：让租户 guard 放行，从而继续验证业务逻辑本身。
+     * <p>
+     * {@code shopId} 必须传该用例实际请求的那个店铺，否则 guard 会以越权为由拒绝，
+     * 把业务断言（库存不足、数量非法、库位更新）全部掩盖掉。
+     */
+    private void authenticateShop(long shopId) {
+        UserContext.setUserId(9);
+        UserContext.setShops(List.of(shopId));
+    }
+
     @Test
     @DisplayName("创建仓库 - 未指定状态/类型/已用容积 → 设置默认值")
     void testCreateWarehouseWithDefaults() {
+        authenticateShop(1L);
         Warehouse wh = new Warehouse();
         wh.setShopId(1L);
 
@@ -61,6 +86,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("创建仓库 - 已指定状态/类型 → 保留原值")
     void testCreateWarehousePreservesExistingValues() {
+        authenticateShop(1L);
         Warehouse wh = new Warehouse();
         wh.setShopId(1L);
         wh.setStatus("INACTIVE");
@@ -77,6 +103,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("入库 - 数量 <= 0 → 抛出异常")
     void testIncreaseInventoryNonPositiveQuantity() {
+        authenticateShop(1L);
         assertThrows(IllegalArgumentException.class,
                 () -> warehouseService.increaseInventory(1L, 1L, "SKU-001", 0, "B1", "A1"));
         assertThrows(IllegalArgumentException.class,
@@ -87,6 +114,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("入库 - 新库存（无同批次记录）→ insert 新记录")
     void testIncreaseInventoryNewRecord() {
+        authenticateShop(10L);
         when(inventoryMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         WarehouseInventory result = warehouseService.increaseInventory(
@@ -104,6 +132,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("入库 - 已有同批次库存 → 原子累加数量")
     void testIncreaseInventoryExistingRecord() {
+        authenticateShop(10L);
         WarehouseInventory existing = new WarehouseInventory();
         existing.setId(1L);
         existing.setWarehouseId(1L);
@@ -141,6 +170,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("入库 - 同批次查到多行库存 → 显式失败，不静默只加第一行")
     void testIncreaseInventoryRejectsDuplicateRows() {
+        authenticateShop(10L);
         WarehouseInventory first = new WarehouseInventory();
         first.setId(1L);
         first.setWarehouseId(1L);
@@ -168,6 +198,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("出库 - 数量 <= 0 → 抛出异常")
     void testDecreaseInventoryNonPositiveQuantity() {
+        authenticateShop(1L);
         assertThrows(IllegalArgumentException.class,
                 () -> warehouseService.decreaseInventory(1L, "SKU-001", 0));
         assertThrows(IllegalArgumentException.class,
@@ -177,6 +208,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("出库 - 库存不存在 → 抛出异常")
     void testDecreaseInventoryNotFound() {
+        authenticateShop(1L);
         when(inventoryMapper.selectList(any())).thenReturn(Collections.emptyList());
 
         assertThrows(IllegalStateException.class,
@@ -186,8 +218,10 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("出库 - 可用库存不足 → 抛出异常")
     void testDecreaseInventoryInsufficientStock() {
+        authenticateShop(1L);
         WarehouseInventory inv = new WarehouseInventory();
         inv.setId(1L);
+        inv.setShopId(1L);
         inv.setQuantity(10);
         inv.setReservedQuantity(5);
         when(inventoryMapper.selectList(any())).thenReturn(List.of(inv));
@@ -201,8 +235,10 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("出库 - 正常扣减 → 原子扣减并返回最新库存")
     void testDecreaseInventoryNormal() {
+        authenticateShop(1L);
         WarehouseInventory inv = new WarehouseInventory();
         inv.setId(1L);
+        inv.setShopId(1L);
         inv.setQuantity(100);
         inv.setReservedQuantity(20);
         WarehouseInventory afterDecrease = new WarehouseInventory();
@@ -230,6 +266,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("出库 - 单批不足但多批合计够 → 跨批扣减，不报库存不足")
     void testDecreaseInventoryAcrossBatches() {
+        authenticateShop(10L);
         WarehouseInventory first = new WarehouseInventory();
         first.setId(1L);
         first.setQuantity(5);
@@ -267,6 +304,7 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("出库 - 多批合计仍不足 → 失败，不部分扣减")
     void testDecreaseInventoryFailsWhenTotalInsufficient() {
+        authenticateShop(10L);
         WarehouseInventory first = new WarehouseInventory();
         first.setId(1L);
         first.setQuantity(3);
@@ -302,8 +340,10 @@ class WarehouseServiceImplTest {
     @Test
     @DisplayName("更新库位码 - 正常更新 → 设置新库位并 updateById")
     void testUpdateLocationCodeNormal() {
+        authenticateShop(1L);
         WarehouseInventory inv = new WarehouseInventory();
         inv.setId(1L);
+        inv.setShopId(1L);
         inv.setLocationCode("OLD-LOC");
         when(inventoryMapper.selectById(1L)).thenReturn(inv);
 

@@ -9,6 +9,7 @@ import com.amz.mapper.QualityCheckMapper;
 import com.amz.model.PurchaseOrder;
 import com.amz.model.QualityCheck;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +51,19 @@ class ProcurementServiceImplTest {
     @InjectMocks
     private ProcurementServiceImpl procurementService;
 
+    /**
+     * 每例建立合法用户上下文（授权店铺 1）。
+     * <p>§S33.121 收紧 isShopAllowed 第三分支后，createPurchaseOrder 与
+     * mustGetAuthorized 都要求「有 userId + shops 命中目标 shopId」。
+     * 只给 shops 不给 userId 一律被拒，故这里统一补 userId。</p>
+     */
+    @BeforeEach
+    void setUpContext() {
+        UserContext.clear();
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
+    }
+
     @AfterEach
     void cleanup() {
         UserContext.clear();
@@ -87,6 +101,7 @@ class ProcurementServiceImplTest {
     @DisplayName("创建采购单 - 正常 → 计算总金额并设置 DRAFT 状态")
     void testCreatePurchaseOrderNormal() {
         PurchaseOrder order = new PurchaseOrder();
+        order.setShopId(1L);
         order.setQuantity(100);
         order.setUnitPrice(new BigDecimal("12.50"));
 
@@ -137,6 +152,7 @@ class ProcurementServiceImplTest {
     void testSubmitTo1688Normal() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setStatus("DRAFT");
         order.setSupplierOfferId("OFFER-001");
         order.setQuantity(100);
@@ -158,6 +174,7 @@ class ProcurementServiceImplTest {
     void testSubmitTo1688RemoteFailsRollsBack() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(2L);
+        order.setShopId(1L);
         order.setStatus("DRAFT");
         order.setSupplierOfferId("OFFER-002");
         order.setQuantity(10);
@@ -176,6 +193,7 @@ class ProcurementServiceImplTest {
     void testSyncOrderStatusShipped() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setAlibabaOrderNo("ALI-001");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
         when(alibaba1688Client.queryOrderStatus("ALI-001")).thenReturn("WAIT_RECEIVE");
@@ -192,6 +210,7 @@ class ProcurementServiceImplTest {
     void testSyncOrderStatusQcPending() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setAlibabaOrderNo("ALI-001");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
         when(alibaba1688Client.queryOrderStatus("ALI-001")).thenReturn("FINISHED");
@@ -206,6 +225,7 @@ class ProcurementServiceImplTest {
     void testSubmitQualityCheckPass() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setStatus("QC_PENDING");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
 
@@ -222,6 +242,7 @@ class ProcurementServiceImplTest {
     void testSubmitQualityCheckFail() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setStatus("QC_PENDING");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
 
@@ -236,6 +257,7 @@ class ProcurementServiceImplTest {
     void testSubmitQualityCheckConditional() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setStatus("QC_PENDING");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
 
@@ -262,6 +284,7 @@ class ProcurementServiceImplTest {
     void testCancelPurchaseOrderWithAlibaba() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setAlibabaOrderNo("ALI-001");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
         // 新契约：远程关闭成功才允许本地状态迁移
@@ -279,6 +302,7 @@ class ProcurementServiceImplTest {
     void testCancelPurchaseOrderRemoteCloseFails() {
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
+        order.setShopId(1L);
         order.setStatus("SUBMITTED");
         order.setAlibabaOrderNo("ALI-002");
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
@@ -294,14 +318,12 @@ class ProcurementServiceImplTest {
     @Test
     @DisplayName("取消采购单 - 未提交 1688 → 仅更新状态")
     void testCancelPurchaseOrderWithoutAlibaba() {
-        // 显式设置授权上下文：该测试此前隐式依赖「UserContext 未设置 → isShopAllowed(null) 放行」，
-        // 一旦被同 JVM 内其它测试残留的 userId 污染，就退化为 isShopAllowedStrict(null)=false，
-        // 报「无权操作该店铺」。测试不该依赖执行顺序，这里显式给店铺授权。
-        com.amz.context.UserContext.clear();
-        com.amz.context.UserContext.setShops(java.util.List.of(9001L));
+        // 店铺归属用 @BeforeEach 的 1L 授权上下文（order.setShopId(1L) 与之匹配）。
+        // §S33.121 前该例靠「shopId 不在任何列表」也能过，收紧后第三分支改为拒绝，
+        // 因此这里显式给出店铺 id，让 mustGetAuthorized 的 guard 通过。
         PurchaseOrder order = new PurchaseOrder();
         order.setId(1L);
-        order.setShopId(9001L);
+        order.setShopId(1L);
         order.setAlibabaOrderNo(null);
         when(purchaseOrderMapper.selectById(1L)).thenReturn(order);
 

@@ -93,6 +93,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("getShipment：非授权店铺应返回业务失败")
     void getShipmentDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(99L));
 
@@ -102,6 +103,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("getShipment：授权店铺放行")
     void getShipmentAllowedForOwnShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
 
@@ -109,8 +111,21 @@ class FbaShipmentServiceImplTest {
     }
 
     @Test
-    @DisplayName("getShipment：无授权上下文（内部调用）放行，与切面 fail-open 语义一致")
-    void getShipmentAllowedWithoutContext() {
+    @DisplayName("getShipment：完全无身份（既无 userId 也无内部服务身份）必须拒绝（§S33.121 fail-closed）")
+    void getShipmentRejectedWithoutAnyIdentity() {
+        // §S33.121 前这里「无上下文即放行」，等于把「鉴权链路没建起来」静默解释为
+        // 「可访问所有店铺」。收紧后第三支口径改为拒绝，本测试钉住该口径。
+        when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(99L));
+
+        assertThrows(CodeErrorException.class, () -> shipmentService.getShipment(7L));
+    }
+
+    @Test
+    @DisplayName("getShipment：带内部服务身份时放行（@InternalServiceAccess 白名单调用的正确形态）")
+    void getShipmentAllowedForInternalService() {
+        // 内部服务只设 internalService、不设 userId——这是三分支口径里的第 2 支，
+        // 也是 service 间调用唯一被允许的通路。
+        UserContext.setInternalService("amz-service-procurement");
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(99L));
 
         assertEquals(99L, shipmentService.getShipment(7L).getShopId());
@@ -119,6 +134,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("createShipment：非授权店铺拒绝且不写库")
     void createShipmentDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
 
         assertThrows(CodeErrorException.class, () -> shipmentService.createShipment(shipment(99L)));
@@ -128,6 +144,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("listShipments：非授权店铺拒绝且不查询")
     void listShipmentsDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
 
         assertThrows(CodeErrorException.class, () -> shipmentService.listShipments(99L, null, PageRequest.first(50)));
@@ -137,6 +154,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("updateShipment：请求体 shopId 不得搬移货件归属")
     void updateShipmentLocksShopId() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
 
@@ -149,6 +167,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("processReceipt：空明细/缺字段/负数直接参数异常，而非 NPE 穿透 500")
     void processReceiptValidatesItems() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
         when(fbaShipmentItemMapper.selectList(any())).thenReturn(List.of());
@@ -170,6 +189,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("processReceipt：仅提交部分明细时不得把整单关闭")
     void processReceiptDoesNotCloseShipmentWhenItemsRemain() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         FbaShipment shipment = shipment(1L);
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment);
@@ -198,6 +218,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("processReceipt：同一请求重复 itemId 必须拒绝，禁止重复入库")
     void processReceiptRejectsDuplicateItemIds() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
         FbaShipmentItem shipmentItem = item(1L);
@@ -220,6 +241,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("processReceipt：相同签收重试必须复用已有批次，不得重复建批次")
     void processReceiptRetryReusesExistingBatch() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         FbaShipment shipment = shipment(1L);
         shipment.setShipmentNo("FBA-1");
@@ -252,6 +274,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("receiveBatch：新批次必须绑定货件明细唯一键")
     void receiveBatchBindsShipmentItemId() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
         FbaShipmentItem shipmentItem = item(1L);
@@ -271,6 +294,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("receiveBatch：并发唯一键冲突时回查并绑定已有批次")
     void receiveBatchRecoversFromConcurrentInsertConflict() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
         FbaShipmentItem shipmentItem = item(1L);
@@ -297,6 +321,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("货件明细：公开接口使用游标分页，探测行不返回")
     void listShipmentItemsUsesCursorPagination() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
         when(fbaShipmentItemMapper.selectList(any())).thenReturn(List.of(
@@ -313,6 +338,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("费用分摊：内部调用必须跨页取全量，不得只处理第一页")
     void allocateCostsLoadsAllPages() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         FbaShipment shipment = shipment(1L);
         shipment.setFreightCost(new BigDecimal("501.00"));
@@ -335,6 +361,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("费用分摊：明细超过硬上限时整单失败，禁止部分写入")
     void allocateCostsFailsClosedAboveHardLimit() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(fbaShipmentMapper.selectById(7L)).thenReturn(shipment(1L));
 
@@ -351,6 +378,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("listBatchesBySku：非授权店铺拒绝且不查询")
     void listBatchesDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
 
         assertThrows(CodeErrorException.class,
@@ -361,6 +389,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("fifoOutbound：数量为空或非正数拒绝，不触碰库存")
     void fifoOutboundRejectsInvalidQuantity() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
 
         assertThrows(AttrIsNullException.class,
@@ -375,6 +404,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("fifoOutbound：库存不足整体失败，禁止部分扣减")
     void fifoOutboundRejectsInsufficientStockAtomically() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(inventoryBatchMapper.selectList(any())).thenReturn(List.of(batch(1L, 3)));
 
@@ -386,6 +416,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("fifoOutbound：正常出库使用原子扣减，不整行覆盖")
     void fifoOutboundUsesAtomicDeduction() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(inventoryBatchMapper.selectList(any())).thenReturn(List.of(batch(1L, 5)));
         when(inventoryBatchMapper.decreaseAvailableQuantityAtomic(1L, 1L, "SKU-1", 3)).thenReturn(1);
@@ -401,6 +432,7 @@ class FbaShipmentServiceImplTest {
     @Test
     @DisplayName("fifoOutbound：原子扣减受影响行数为 0 时整体失败，不回退整行覆盖")
     void fifoOutboundRejectsAtomicDeductionFailure() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(inventoryBatchMapper.selectList(any())).thenReturn(List.of(batch(1L, 5)));
         when(inventoryBatchMapper.decreaseAvailableQuantityAtomic(1L, 1L, "SKU-1", 5)).thenReturn(0);

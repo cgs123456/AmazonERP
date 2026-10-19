@@ -4,7 +4,7 @@
   "limitLines": 500,
   "summary": {
     "files": 55,
-    "totalLines": 46173,
+    "totalLines": 46202,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -45,7 +45,7 @@
     "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java": 549,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/FinanceServiceImpl.java": 580,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/ReimbursementClaimServiceImpl.java": 555,
-    "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/FinanceServiceImplTest.java": 577,
+    "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/FinanceServiceImplTest.java": 606,
     "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsDashboardServiceImpl.java": 551,
     "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsOpsDashboardServiceImpl.java": 884,
     "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsUpgradeServiceImpl.java": 899,

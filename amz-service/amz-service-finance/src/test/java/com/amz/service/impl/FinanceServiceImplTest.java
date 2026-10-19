@@ -14,7 +14,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import com.amz.service.VatService;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +56,22 @@ import static org.mockito.Mockito.when;
  */
 @ExtendWith(MockitoExtension.class)
 class FinanceServiceImplTest {
+
+    /**
+     * 统一补合法用户上下文（§S33.121 必需）：本类用例构造的凭证多为 shopId=null，
+     * 收紧前「谁都不是」会被放行才走得到业务逻辑；收紧后无身份一律 FORBIDDEN，
+     * 那是上下文缺失而非行为变化。越权用例自行覆盖 shops，不受此处影响。
+     */
+    @BeforeEach
+    void setUpUserContext() {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
+    }
+
+    @AfterEach
+    void clearUserContext() {
+        UserContext.clear();
+    }
 
     @Mock
     private AccountingVoucherMapper voucherMapper;
@@ -190,6 +208,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：真实客户端返回 KD 号 → 状态 SYNCED，返回 true")
     void syncToKingdeeRealClientReturnsSynced() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(1L);
         v.setVoucherNo("Vabc");
         v.setKingdeeSyncStatus("PENDING");
@@ -210,6 +229,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：客户端返回 KINGDEE_MOCK_ 伪单号 → 状态 FAILED，返回 false")
     void syncToKingdeeRejectsPlaceholderNumber() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(2L);
         v.setVoucherNo("Vdef");
         v.setKingdeeSyncStatus("PENDING");
@@ -230,6 +250,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：客户端返回空凭证号 → 状态 FAILED，返回 false")
     void syncToKingdeeRejectsBlankNumber() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(5L);
         v.setVoucherNo("Vblank");
         v.setKingdeeSyncStatus("PENDING");
@@ -249,6 +270,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：客户端抛异常 → 状态 FAILED，返回 false")
     void syncToKingdeeClientThrowsMarksFailed() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(3L);
         v.setVoucherNo("Vghi");
         v.setKingdeeSyncStatus("PENDING");
@@ -268,6 +290,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：mock 客户端成功时标记 MOCK，不冒充真实 SYNCED")
     void syncToKingdeeMockClientUsesExplicitMockStatus() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(6L);
         v.setVoucherNo("Vmock");
         v.setKingdeeSyncStatus("PENDING");
@@ -288,6 +311,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：切到真实客户端后可重新认领 MOCK 并补真实入账")
     void syncToKingdeeRealClientReclaimsMockStatus() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(13L);
         v.setVoucherNo("Vmock-reclaim");
         v.setKingdeeSyncStatus("MOCK");
@@ -313,6 +337,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：超时 SYNCING 可被重新认领，避免进程崩溃后永久卡死")
     void syncToKingdeeReclaimsStaleSyncing() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(7L);
         v.setVoucherNo("Vstale");
         v.setKingdeeSyncStatus("SYNCING");
@@ -340,6 +365,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：未超时的 SYNCING 不可重复认领，不重复调用金蝶")
     void syncToKingdeeFreshSyncingIsNotReclaimed() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(8L);
         v.setVoucherNo("Vfresh");
         v.setKingdeeSyncStatus("SYNCING");
@@ -359,6 +385,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：认领失败（他人正在同步/已同步）→ 跳过且不调用金蝶客户端")
     void syncToKingdeeClaimFailsSkipsRemoteCall() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(4L);
         v.setVoucherNo("Vjkl");
         v.setKingdeeSyncStatus("SYNCING");
@@ -390,6 +417,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：SYNCING 且 update_time 为空时也视为租约失效，必须允许重新认领")
     void syncToKingdeeReclaimsSyncingWithNullUpdateTime() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(10L);
         v.setVoucherNo("Vnull-time");
         v.setKingdeeSyncStatus("SYNCING");
@@ -436,6 +464,7 @@ class FinanceServiceImplTest {
     @DisplayName("syncToKingdee：连接器未配置 → NOT_CONFIGURED，状态仍保留 FAILED 供重试")
     void syncToKingdeeNotConfigured() {
         AccountingVoucher v = new AccountingVoucher();
+        v.setShopId(1L); // §S33.121：归属校验需要 shopId，与 setUpUserContext 的授权店铺一致
         v.setId(12L);
         v.setVoucherNo("V-not-configured");
         v.setKingdeeSyncStatus("PENDING");

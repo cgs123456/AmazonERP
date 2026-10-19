@@ -131,31 +131,48 @@ public class UserContext {
     /**
      * 兼容旧调用方的店铺校验。
      * <p>
-     * 有用户身份时委托严格校验；无用户身份且 shops 为空时放行，以兼容定时任务和
-     * 白名单内部调用。公网 Controller 不应依赖本方法，应使用
+     * 三分支口径（§S33.121 收紧后）：
+     * <ol>
+     *   <li><b>有用户身份</b> → 委托 {@link #isShopAllowedStrict(Long)}。</li>
+     *   <li><b>无用户身份但带内部服务身份</b> → 放行。白名单内部调用
+     *       （{@code @InternalServiceAccess}）只设 {@code internalService}、不设 userId，
+     *       这一支是它们唯一的通路，收紧它会一并掐断 service 间调用。</li>
+     *   <li><b>谁都不是</b> → <b>拒绝</b>。</li>
+     * </ol>
+     * 第 3 支从"放行"改为"拒绝"的依据（§S33.121 实测，非推断）：全仓定时任务逐个查过，
+     * 全部显式 {@code setUserId(SYSTEM_USER_ID)} + {@code setShops(List.of(shopId))}
+     * （见 {@code AmazonReturnSyncScheduler} / {@code SettlementSyncScheduler} /
+     * {@code ShopPerformanceSyncScheduler} / {@code ListingCopyService}），
+     * 走的都是第 1 支；没有一个是靠"没有身份"放行的。
+     * <p>
+     * 收益不是修一个可达漏洞——公网端点必经 {@code BaseAuthInterceptor}，userId 不会为 null。
+     * 收益是让"鉴权链路有洞"从静默放行变成 fail-closed：将来任何新增的无上下文调用方
+     * 会立刻失败，而不是悄悄获得全店访问权。新代码请直接用
      * {@link #isShopAllowedStrict(Long)} 或
-     * {@link #isShopAllowedByUserOrTrustedService(Long)}。
+     * {@link #isShopAllowedByUserOrTrustedService(Long)}，语义更明确。
      */
     public static boolean isShopAllowed(Long shopId) {
         if (getUserId() != null) {
             return isShopAllowedStrict(shopId);
         }
-        List<Long> shops = getShops();
-        if (shops == null || shops.isEmpty()) {
+        if (getInternalService() != null) {
+            // 内部服务身份：与 isShopAllowedByUserOrTrustedService 同口径，
+            // 仍然留痕（该分支的可观测性由 recordNoListGrant 负责）。
             recordNoListGrant();
             return true;
         }
-        return shopId != null && shops.contains(shopId);
+        return false;
     }
 
     /**
-     * 「因为没有店铺限制，所以放行」这一分支的计数与首次告警。
+     * 「无店铺列表即放行」这一分支的计数与首次告警。
      * <p>
-     * 存在动因：该分支同时被定时任务、白名单内部调用和"上下文没建起来"三种情况命中，
-     * 而三者的安全含义完全不同。行为不能改（改了就是让定时任务大面积 403），
-     * 但静默放行必须先变得可见，否则越权面扩大时没有任何信号。
-     * 键区分"带内部服务身份"与"完全无身份"，各告警一次，计数可用
-     * {@link #noListGrantHits(String)} 查询。
+     * 存在动因：该分支此前同时被定时任务、白名单内部调用和"上下文没建起来"三种情况命中，
+     * 而三者的安全含义完全不同。§S33.121 把"上下文没建起来"改成拒绝后，现在只剩
+     * 「带内部服务身份」一种来源——告警文案与键仍保留原样，因为
+     * {@code no-identity} 这个键的历史计数是判断「收紧后还有没有无身份调用方」
+     * 的唯一依据：收紧后它应当<b>停止增长</b>。
+     * 计数可用 {@link #noListGrantHits(String)} 查询。
      */
     private static void recordNoListGrant() {
         String service = getInternalService();
@@ -163,7 +180,8 @@ public class UserContext {
         long hits = NO_LIST_GRANT_HITS.merge(key, 1L, Long::sum);
         if (hits == 1L) {
             log.warn("店铺授权校验走「无店铺列表即放行」分支：来源={} 命中次数=1"
-                    + "（定时任务属预期；若为公网请求上下文缺失，说明鉴权链路有洞）", key);
+                    + "（内部服务身份属预期；无身份来源在 §S33.121 后已不再放行，"
+                    + "若该键仍在增长说明存在绕过改造的调用方）", key);
         }
     }
 

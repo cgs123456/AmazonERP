@@ -64,6 +64,7 @@ class KnowledgeControllerTest {
     @Test
     @DisplayName("非授权店铺上传被拒绝")
     void testUploadShopDenied() {
+        UserContext.setUserId(1);
         UserContext.setShops(new ArrayList<>(List.of(2L)));
         KnowledgeController controller = controller(
                 mock(KnowledgeDocumentService.class),
@@ -77,6 +78,8 @@ class KnowledgeControllerTest {
     @Test
     @DisplayName("非法扩展名被拒绝")
     void testUploadExtensionDenied() {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
         KnowledgeController controller = controller(
                 mock(KnowledgeDocumentService.class),
                 mock(KnowledgeIndexService.class),
@@ -89,6 +92,8 @@ class KnowledgeControllerTest {
     @Test
     @DisplayName("合法上传透传服务结果")
     void testUploadSuccess() throws Exception {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
         KnowledgeDocumentService documentService = mock(KnowledgeDocumentService.class);
         when(documentService.uploadDocument(any(), anyString(), anyLong()))
                 .thenReturn(Map.of("docId", "d", "indexed", 1));
@@ -102,6 +107,8 @@ class KnowledgeControllerTest {
     @Test
     @DisplayName("删除成功返回删除块数")
     void testDeleteSuccess() throws Exception {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
         KnowledgeDocumentService documentService = mock(KnowledgeDocumentService.class);
         KnowledgeIndexService indexService = mock(KnowledgeIndexService.class);
         when(indexService.indexName()).thenReturn("idx");
@@ -116,6 +123,8 @@ class KnowledgeControllerTest {
     @Test
     @DisplayName("检索成功返回重排结果")
     void testSearchSuccess() throws Exception {
+        UserContext.setUserId(1);
+        UserContext.setShops(List.of(1L));
         KnowledgeSearchService searchService = mock(KnowledgeSearchService.class);
         KnowledgeChunk chunk = KnowledgeChunk.builder().content("c").build();
         when(searchService.search(anyLong(), anyString(), anyInt())).thenReturn(List.of(chunk));

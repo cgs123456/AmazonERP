@@ -86,7 +86,7 @@ class LogisticsUpgradeServiceImplTest {
 
     @BeforeEach
     void setUpUser() {
-        // 注入授权店铺列表，让归属校验生效（无 shops 时会按内部调用放行）
+        // 注入授权店铺列表：有 userId 走严格校验，目标店铺必须命中（§S33.121）
         UserContext.setUserId(9);
         UserContext.setShops(List.of(SHOP_ID));
     }

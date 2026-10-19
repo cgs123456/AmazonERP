@@ -9,7 +9,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisplayName("UserContext 店铺授权：已认证请求 fail-closed，内部调用保持兼容")
+@DisplayName("UserContext 店铺授权：已认证 fail-closed，内部服务身份放行，无身份拒绝")
 class UserContextShopAuthorizationContractTest {
 
     @AfterEach
@@ -18,8 +18,23 @@ class UserContextShopAuthorizationContractTest {
     }
 
     @Test
-    @DisplayName("无 userId 的内部调用在 shops 缺失时继续兼容放行")
-    void internalCallWithoutUserContextRemainsCompatible() {
+    @DisplayName("无任何身份（无 userId、无内部服务身份）：不再放行（§S33.121 收紧）")
+    void noIdentityAtAllIsRejected() {
+        // 这条断言在 §S33.121 之前是 assertTrue —— 原口径把「谁都不是」解释为
+        // 「可访问所有店铺」。实测确认全仓定时任务都显式 setUserId + setShops，
+        // 没有一方依赖这个形状，故收紧为拒绝。
+        // 若将来有人真的需要无身份放行，必须显式 setInternalService，
+        // 让「这次调用代表哪个服务」可追溯，而不是隐式地放开。
+        assertFalse(UserContext.isShopAllowed(1001L));
+    }
+
+    @Test
+    @DisplayName("带内部服务身份、无 userId：仍放行（service 间调用的唯一通路）")
+    void internalServiceIdentityWithoutUserIdStillGranted() {
+        // @InternalServiceAccess 端点只设 internalService、不设 userId
+        // （BaseAuthInterceptor:166），这一支是它们唯一的通路。
+        UserContext.setInternalService("amz-service-finance");
+
         assertTrue(UserContext.isShopAllowed(1001L));
     }
 

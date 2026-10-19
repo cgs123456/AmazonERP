@@ -164,6 +164,7 @@ class CustomerEmailServiceImplTest {
     @Test
     @DisplayName("toggleTemplate：非授权店铺应拒绝")
     void toggleTemplateDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         EmailTemplate template = new EmailTemplate();
         template.setId(5L);
@@ -176,6 +177,7 @@ class CustomerEmailServiceImplTest {
     @Test
     @DisplayName("toggleTemplate：授权店铺放行")
     void toggleTemplateAllowedForOwnShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         EmailTemplate template = new EmailTemplate();
         template.setId(5L);
@@ -188,6 +190,7 @@ class CustomerEmailServiceImplTest {
     @Test
     @DisplayName("getRma/updateRmaStatus：非授权店铺应拒绝")
     void rmaDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         Rma rma = new Rma();
         rma.setId(9L);
@@ -201,6 +204,7 @@ class CustomerEmailServiceImplTest {
     @Test
     @DisplayName("updateTemplate：请求体 shopId 不得搬移模板归属")
     void updateTemplateLocksShopId() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         EmailTemplate existed = new EmailTemplate();
         existed.setId(5L);
@@ -219,6 +223,7 @@ class CustomerEmailServiceImplTest {
     @Test
     @DisplayName("match/followup：非授权店铺的差评应拒绝")
     void reviewDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         NegativeReview review = new NegativeReview();
         review.setId(11L);
@@ -232,6 +237,7 @@ class CustomerEmailServiceImplTest {
     @Test
     @DisplayName("match：不存在的差评应报不存在而非越权")
     void reviewMissingThrowsNotFound() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
         when(negativeReviewMapper.selectById(12L)).thenReturn(null);
 
@@ -241,6 +247,7 @@ class CustomerEmailServiceImplTest {
     @Test
     @DisplayName("create系入口：非授权店铺应拒绝写入")
     void createDeniedForOtherShop() {
+        UserContext.setUserId(1);
         UserContext.setShops(List.of(1L));
 
         EmailTemplate template = new EmailTemplate();

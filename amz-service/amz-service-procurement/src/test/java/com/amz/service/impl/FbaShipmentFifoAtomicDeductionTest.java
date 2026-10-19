@@ -67,11 +67,17 @@ class FbaShipmentFifoAtomicDeductionTest {
                 ReflectionTestUtils.setField(service, "inventoryBatchMapper", mapper);
 
                 Callable<Boolean> outbound = () -> {
+                    // §S33.121 后 fifoOutbound 经 validateBatchScope 走 isShopAllowed：
+                    // 无 userId 即失败。ThreadLocal 不跨线程，两个 worker 各自 set 后才能竞争扣减。
+                    UserContext.setUserId(1);
+                    UserContext.setShops(List.of(1L));
                     try {
                         service.fifoOutbound(1L, "SKU-1", 3);
                         return true;
                     } catch (CodeErrorException expected) {
                         return false;
+                    } finally {
+                        UserContext.clear();
                     }
                 };
 
