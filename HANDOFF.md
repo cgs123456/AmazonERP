@@ -8595,3 +8595,74 @@ Java 测试仍逐模块跑（`mvn -o test` 在 product 会 fail-fast 并 SKIP �
 （§S33.21 记的前端 E2E flake 是「每次红的都不一样」）。
 判据：**连续多次红且失败集合完全不变 → 是确定性缺陷，去读 `--log-failed`，
 不要用「本地绿」安慰自己**。本机绿与 CI 绿的差距，就是这一轮的全部代价。
+
+---
+
+# §S33.117 把 §S33.108/111 从「推论」变成实测，并顺手更正我上一轮读错的结论
+
+## 1. 先更正自己：§S33.114 §3.1 我读错过一次
+
+上一轮我在回复里说「`AllModulesFlywayMySqlIT` 绿了，§3.1 可以关账」——
+**这个结论是错的**，我看到那一行 `Tests run: 1, Failures: 0` 就下了判断，
+没去看它证明的到底是什么。事实是两件不同的事：
+
+| 论断 | 状态 | 谁证明 |
+|---|---|---|
+| V5 是合法 SQL，MySQL 8 在**空库**上能依次执行 | ✅ 早已证明 | `AllModulesFlywayMySqlIT`（覆盖全部迁移，V5 在内） |
+| V5 在**已有旧版本迁移 + 真实旧数据**的库上 DROP+ADD 不炸、不吞数据 | ❌ 当时未证明 | `AllModulesUpgradeFlywayMySqlIT` 的 multiplatform 用例只走到 **V3** |
+
+`AllModulesUpgradeFlywayMySqlIT` 的类注释自己写明了这个分工：前者「只证明空库能依次
+执行全部迁移」，后者才覆盖「已经执行过旧版本迁移、且库里有真实旧数据」。V4/V5
+从来没在有数据的库上跑过——而 §S33.111 的 1062/1091 两条全是按 runbook 推论的。
+
+**教训与 §S33.38 同源但更隐蔽**：那次是「拿口径更宽的自制脚本去质疑已校准的门禁」，
+这次是「拿一个通过结果去覆盖一个它并没覆盖的论断」。**读到 `Tests run: N, Failures: 0`
+不算读完，还要回答「这 N 项各自证明了什么」。**
+
+## 2. 做了什么（commit `0416607`）
+
+把 multiplatform 用例从 V3 延伸到 V5，形态照 order V4（同一文件里已有先例）。
+四条断言，每条都对着一种「改了但看不出来」：
+
+1. **V5 之前先证明旧键真的在拦**：`(TEMU, EXT-1)` 换 `shop_id=2` 插入必须撞 1062。
+   没有这一条，后面「同一插入成功了」证明不了任何事——若旧键本来就不拦，
+   V5 等于什么都没改。**这是整条用例的前提，不是装饰。**
+2. **V4 补运行时三列确认**：`ShopScopedUniqueKeyContractTest` 只读文件文本，
+   文本里有三列 ≠ MySQL 真按三列建了键。
+3. **V5 之后**：既有行完好（`shop_id` 与 `items_json` 都没被后续迁移抹掉）、
+   新键三列且 `non_unique=0`、**旧键已消失**、B 店同号现在能落库。
+4. **新键仍是真的唯一**：同店同平台同订单号必须继续被拦。
+   不测这条，「把 `shop_id` 从键里删掉」能让前三条全绿。
+
+## 3. 变异验证（真跑过，不是「应该能跑」）
+
+本机没有 MySQL（§3.1 的既有约束），`FLYWAY_ALL_IT_URL` 未设时整类跳过。
+所以变异是**推到 CI 让真 MySQL 判**，判完立即 revert：
+
+| 变异 | 结果 |
+|---|---|
+| V5 去掉 `DROP INDEX uk_platform_order`（只 ADD 不 DROP，正是 §S33.111 警告的「半套」） | **杀**：`AllModulesUpgradeFlywayMySqlIT.java:351`，`expected: <false> but was: <true>`（`assertFalse(hasIndex(..., "uk_platform_order"))`） |
+
+revert 后 `git diff 0416607 HEAD` 为空，CI 复跑 11/11 绿、该 IT 8/8 不跳过。
+**变异必须真的红一次，否则「测试写好了」只是愿望**——这一条 §S33.3 就写过，
+本轮是在「本地跑不了」的条件下把它执行了一遍：推一次、看红、revert、看绿。
+
+## 4. 两个门禁各拦了一次（都是按设计工作）
+
+**file_size_ratchet**：该测试文件本就 569 行（500 上限的存量），我 +55。
+选择**不**为此重构：把 8 个库的测试拆出共享基类，代价远超一条测试的收益。
+`--update-baseline` 时它顺带修正了三个从未重新登记的陈旧条目——
+`MultiplatformServiceImpl` 1016→831、`SearchTermServiceImpl` 623→579、
+`RealtimeProfitServiceImpl` 548→535。总行数 46360 → 46173，**净降**。
+（若只看自己那条会误判成「债务 +55」。）
+
+**repository_hygiene**：allowlist 按 **sha256** 记条目，文件内容一变条目就失效。
+这是它该干的事——防止有人往已豁免的文件里塞新秘密。核对第 48 行仍是那个
+测试夹具（读 `FLYWAY_ALL_IT_PASSWORD` 环境变量，不是密钥）后才更新哈希。
+**下次改这三个 Flyway IT 文件，记得哈希会变**，别以为是新漏洞。
+
+## 5. 状态
+
+§S33.114 §3.1 的「本地不可证明性」→ **已由 CI 实测关闭**（8/8，0 skipped）。
+剩下真正等外部条件的只有 §3.2（`isShopAllowed` 收紧，需产品/安全口径）
+与 §3.3（`feeDiscrepancy.scan`，需数据量级）。
