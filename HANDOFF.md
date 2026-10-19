@@ -8666,3 +8666,68 @@ revert 后 `git diff 0416607 HEAD` 为空，CI 复跑 11/11 绿、该 IT 8/8 不
 §S33.114 §3.1 的「本地不可证明性」→ **已由 CI 实测关闭**（8/8，0 skipped）。
 剩下真正等外部条件的只有 §3.2（`isShopAllowed` 收紧，需产品/安全口径）
 与 §3.3（`feeDiscrepancy.scan`，需数据量级）。
+
+---
+
+# §S33.118 §3.2 的真实规模：43 处，不是我一度说出的 4 处
+
+> 这一节只做一件事：把 §3.2 需要决策的**影响面**从「4 处」更正为「43 处」。
+> 不影响安全结论（公网仍不可达），但影响「要不要收紧」的成本估算。
+
+## 1. 我错在哪（同一类错误的第三次）
+
+§S33.114 §3.2 原文写「若决定收紧：只改 Inbound / Outbound / ReturnOrder 三处」。
+我上一轮读完后对外说「已确认完整集合就是这 3 处 + `LogisticsShopGuard`，共 4 处」——
+**这句话没有依据**。我当时只看了自己正在读的几个 logistics 文件，
+把「§3.2 里提到的那几处」当成了「全仓所有的宽松档调用点」。
+这与 §S33.38（拿自制脚本的口径去质疑已校准的门禁）、§S33.117（拿通过结果
+覆盖它没覆盖的论断）是同一类错误：**把局部观察说成全局结论**。
+
+全仓 grep（`isShopAllowed(`，排除 `isShopAllowedStrict` /
+`isShopAllowedByUserOrTrustedService`，再排除注释行）实测 **43 处**：
+
+| 模块 | 调用点 | 主要文件 |
+|---|---|---|
+| procurement | **17** | `FbaShipmentServiceImpl` 5、`BomService` 4、`ProcurementServiceImpl` 2、`SupplierServiceImpl` 2、`SupplierPaymentService` 3、`PurchasePlanServiceImpl` 1 |
+| logistics | **11** | `WarehouseServiceImpl` 3、`LogisticsUpgradeServiceImpl` 3、`LogisticsServiceImpl` 1、`InboundServiceImpl` 1、`OutboundServiceImpl` 1、`MultiWarehouseServiceImpl` 1、`LogisticsShopGuard` 1 |
+| customer | 7 | `CustomerEmailServiceImpl`（模板/RMA/差评/任务四类行级校验） |
+| ai | 6 | `KnowledgeController` 4（3 处经本地封装）、`ErpToolExecutor` 1 |
+| finance | 1 | `FinanceServiceImpl.syncToKingdee` |
+| order | 1 | `OrderController` |
+| report / spapi | 0 | 各自用 `ReportTenantGuard` / strict；两处 `isShopAllowed` 只出现在注释里 |
+
+（`KnowledgeController` 那 3 处走同一个私有封装，实际判定只有 1 份；
+`ErpToolExecutor` 那处带 `TOOLS_IGNORING_SHOP_ID` 白名单。）
+
+## 2. 为什么这不改变「不是漏洞」的结论
+
+宽松档的放行条件是 `userId == null && shops` 为空，而 `isShopAllowed` 第一行就是
+`if (getUserId() != null) return isShopAllowedStrict(shopId)`。所以要害只有一个：
+**调用方能不能构造出 null userId**。逐模块看「有无这种路径」：
+
+| 模块 | @Scheduled | @InternalServiceAccess | 有 null userId 路径吗 |
+|---|---|---|---|
+| procurement | 0 | 0 | **无** |
+| customer | 0 | 0 | **无** |
+| order | 0 | 0 | **无** |
+| logistics | 2 | 2 | **有 1 条**：`LogisticsTrackingSyncScheduler.markDelayed()`，而它调的 `markDelayedShipments` 跨全店扫描、刻意不校验租户（设计如此） |
+| finance | 2 | 0 | 无——两个 scheduler 都显式 `setUserId(SYSTEM_USER_ID)` |
+| ai | 1 | 1 | 无——`AgentChatStreamService` 显式 `setUserId` |
+| report / spapi | 0/9 | 1/6 | 这两模块本就不用宽松档 |
+
+**结论不变：43 处里只有 1 处真的依赖宽松语义，且那一处是刻意设计。**
+其余 42 处今天都是「名义宽松、实际走 strict」。
+
+## 3. 那为什么还要记这一节
+
+因为「要不要收紧」的成本估算完全不同：
+
+- 按「4 处」估，像是顺手改完的小改动；
+- 按「43 处」估，是一次要逐处确认「收紧后会不会误伤某个无上下文的内部调用方」
+  的审计——每一处都是一次可能改变行为的判断，需要测试兜住。
+
+而收益仍然只是「缩小未来误用面」（§3.2 原结论）。**成本从 4 处变 43 处、
+收益不变，这个交换比是决策的关键输入**，之前那份账是错的，会让人低估代价。
+
+另记一条操作教训：**下次改这三个 Flyway IT 或任何被 allowlist 按 sha256
+登记的文件，哈希会失效**（§S33.117 §4），别误判成新漏洞。
