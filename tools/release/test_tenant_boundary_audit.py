@@ -101,6 +101,25 @@ UNGUARDED = chr(10).join([
     "}",
 ])
 
+# 守护走的是 requireXxxAccess 家族的 helper（不是 requireShopAccess 这一种）。
+# 本仓真实形态：AdAutoRuleServiceImpl.toggleRule 走 requireRuleAccess，
+# 第一版 GUARD_NAME 把 helper 名字一个个枚举，漏了 requireRuleAccess，
+# 于是这条被报成无守护（§S33.109 的 89 条候选里有 1 条是这么来的）。
+GUARDED_BY_NAMED_HELPER = chr(10).join([
+    "package com.amz.service;",
+    "public class FakeService {",
+    "    public boolean toggle(Long ruleId) {",
+    "        Rule rule = requireRuleAccess(ruleId);",
+    "        rule.setEnabled(1);",
+    "        ruleMapper.updateById(rule);",
+    "        return true;",
+    "    }",
+    "    private Rule requireRuleAccess(Long ruleId) {",
+    "        return ruleMapper.selectById(ruleId);",
+    "    }",
+    "}",
+])
+
 # 类级 @RequestMapping 且方法体内有真没守护的访问：
 # 用来钉住"类级注解算端点"这个变异——本仓没有带 data-access 的类级端点，
 # 所以只有 endpoint 断言的话该变异是等价的，必须让两种判定落在同一份源码上。
@@ -147,6 +166,17 @@ class TenantBoundaryAuditTest(unittest.TestCase):
         code, out = run_audit(GUARDED_ABOVE_TRY, "FakeController.java")
         self.assertNotIn("data-access", out,
                          "零缩进 try 被当成了方法声明，守护行落在它上面就看不见了：" + out)
+
+    def test_guard_helper_named_require_xxx_access_is_recognised(self):
+        """requireXxxAccess 家族的 helper 必须算守护，不能只认 requireShopAccess。
+
+        本仓真实形态：AdAutoRuleServiceImpl.toggleRule 走 requireRuleAccess，
+        第一版把 helper 名逐个枚举（requireShop|requireOwner|...），
+        漏了 requireRuleAccess，于是那条被报成无守护。
+        """
+        code, out = run_audit(GUARDED_BY_NAMED_HELPER, "FakeService.java")
+        self.assertNotIn("data-access", out,
+                         "requireRuleAccess 这类命名未被识别为守护，候选清单会被假阳性刷屏：" + out)
 
     def test_class_level_mapping_is_not_an_endpoint(self):
         """类级 @RequestMapping 不是端点，不该进候选清单。

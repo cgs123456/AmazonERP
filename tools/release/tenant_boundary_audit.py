@@ -56,8 +56,13 @@ GUARD = re.compile(
 GUARD_LOOKAHEAD = 12
 
 # Methods that are themselves the guard, or helpers whose callers guard.
+# Guard helper names.  ``require\w*Access`` covers the family the repo actually
+# uses — requireShopAccess / requireRuleAccess / requireSupplierAccess /
+# requireScheduleAccess — instead of enumerating each one (the enumeration was
+# how requireRuleAccess came to be reported as unguarded).
 GUARD_NAME = re.compile(
-    r"requireAccessible|mustGetAuthorized|getShipment|requireShop|requireOwner"
+    r"require\w*Access|requireAccessible|mustGetAuthorized|getShipment|"
+    r"requireShop|requireOwner"
 )
 
 
