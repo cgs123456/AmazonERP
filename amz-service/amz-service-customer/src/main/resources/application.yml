@@ -26,6 +26,31 @@ spring:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/amz_customer?serverTimezone=Asia/Shanghai&useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:}
+  # ====== SMTP 邮件发送通道 ======
+  # 用于 amz_email_task 的待发队列（processPendingEmails）。
+  # host 为空 = 通道未配置：任务会被标 FAILED 并写明原因，绝不伪造 SENT。
+  # password 走 SPRING_MAIL_PASSWORD（K8s 里取 secret），不在仓库留可用的默认值。
+  # 注意：Amazon 政策禁止用邮件邀评/索评；索评能力（sendReviewSolicitations）仍保持
+  # 「未接入」，不要因为有了 SMTP 就把它改成走邮件。
+  mail:
+    host: ${SPRING_MAIL_HOST:}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        # 这两个键不是 Spring Boot 的自动装配属性，是本项目 SmtpEmailSender 读取的发件人。
+        # 放在 spring.mail.properties 下是为了与 SMTP 其他参数聚在一起，便于运维一次配完。
+        from: ${SPRING_MAIL_FROM:}
+        from-name: ${SPRING_MAIL_FROM_NAME:}
+        smtp:
+          auth: ${SPRING_MAIL_SMTP_AUTH:true}
+          # 587 端口通常要求 STARTTLS；465 端口则应改为 false 并启用 ssl.enable
+          starttls:
+            enable: ${SPRING_MAIL_SMTP_STARTTLS:true}
+          connectiontimeout: ${SPRING_MAIL_CONNECTION_TIMEOUT_MS:10000}
+          timeout: ${SPRING_MAIL_TIMEOUT_MS:30000}
+          writetimeout: ${SPRING_MAIL_WRITE_TIMEOUT_MS:30000}
   data:
     redis:
       host: ${REDIS_HOST:localhost}

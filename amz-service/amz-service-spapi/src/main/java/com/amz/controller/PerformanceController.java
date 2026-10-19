@@ -41,13 +41,13 @@ public class PerformanceController {
     private com.amz.mapper.ShopPerformanceMapper performanceMapper;
 
     /** 轮询参数（默认与结算同步同量级）。 */
-    @Value("${amz.spapi.performance.max-poll-attempts:15}")
+    @Value("${spapi.performance.max-poll-attempts:15}")
     private int maxPollAttempts = 15;
 
-    @Value("${amz.spapi.performance.poll-interval-ms:2000}")
+    @Value("${spapi.performance.poll-interval-ms:2000}")
     private long pollIntervalMs = 2000;
 
-    @Value("${amz.spapi.performance.poll-deadline-ms:90000}")
+    @Value("${spapi.performance.poll-deadline-ms:90000}")
     private long pollDeadlineMs = 90000;
 
     /**

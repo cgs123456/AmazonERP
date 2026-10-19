@@ -57,29 +57,29 @@ public class ShopPerformanceSyncScheduler {
     private DistributedJobLock distributedJobLock;
 
     /** 是否启用（默认关闭：未配置凭证的环境不应反复报错）。 */
-    @Value("${amz.spapi.performance.sync-enabled:false}")
+    @Value("${spapi.performance.sync-enabled:false}")
     private boolean syncEnabled = false;
 
     /** 回看窗口（天）。绩效报表按窗口出数，重叠是安全的（每次都是一条新留痕）。 */
-    @Value("${amz.spapi.performance.window-days:30}")
+    @Value("${spapi.performance.window-days:30}")
     private int windowDays = 30;
 
-    @Value("${amz.spapi.performance.max-poll-attempts:15}")
+    @Value("${spapi.performance.max-poll-attempts:15}")
     private int maxPollAttempts = 15;
 
-    @Value("${amz.spapi.performance.poll-interval-ms:2000}")
+    @Value("${spapi.performance.poll-interval-ms:2000}")
     private long pollIntervalMs = 2000;
 
-    @Value("${amz.spapi.performance.poll-deadline-ms:90000}")
+    @Value("${spapi.performance.poll-deadline-ms:90000}")
     private long pollDeadlineMs = 90000;
 
     /**
      * 每日留痕（默认 05:10，错开结算同步 03:30 与订单同步高峰）。
      */
-    @Scheduled(cron = "${amz.spapi.performance.sync-cron:0 10 5 * * ?}")
+    @Scheduled(cron = "${spapi.performance.sync-cron:0 10 5 * * ?}")
     public void syncDaily() {
         if (!syncEnabled) {
-            log.info("shop performance sync disabled (amz.spapi.performance.sync-enabled=false), skip");
+            log.info("shop performance sync disabled (spapi.performance.sync-enabled=false), skip");
             return;
         }
         Set<Long> shopIds = credentialStore.getActiveShopIds();

@@ -51,9 +51,6 @@ class CustomerPagingContractTest {
     private NegativeReviewMapper negativeReviewMapper;
 
     @Mock
-    private RmaMapper rmaMapper;
-
-    @Mock
     private CustomerTicketMapper ticketMapper;
 
     @Mock
@@ -67,6 +64,18 @@ class CustomerPagingContractTest {
 
     @InjectMocks
     private CustomerEmailServiceImpl emailService;
+
+    /** 归属校验已抽到 CustomerEmailSupport（原实现类超 500 行），显式注入。 */
+    @org.junit.jupiter.api.BeforeEach
+    void injectSupportForSplit() {
+        org.springframework.test.util.ReflectionTestUtils.setField(emailService, "support",
+                new CustomerEmailSupport(emailTemplateMapper, negativeReviewMapper, rmaMapperStub()));
+    }
+
+    /** 拆分后本类不再持有 RmaMapper，但 support 的构造器需要它（仅差评/模板路径才用到）。 */
+    private static RmaMapper rmaMapperStub() {
+        return org.mockito.Mockito.mock(RmaMapper.class);
+    }
 
     @InjectMocks
     private CustomerServiceImpl customerService;
@@ -129,25 +138,6 @@ class CustomerPagingContractTest {
     }
 
     @Test
-    @DisplayName("RMA 列表：必须带显式 LIMIT 并暴露截断事实")
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    void listRmasIsBounded() {
-        when(rmaMapper.selectList(any())).thenReturn(List.of(
-                rma(12L), rma(11L), rma(10L)));
-
-        PageResult<Rma> page = emailService.listRmas(1L, "PENDING", PageRequest.first(2));
-
-        assertEquals(List.of(12L, 11L), page.items().stream().map(Rma::getId).toList());
-        assertTrue(page.truncated());
-        assertEquals(PageRequest.encodeCursor(11L), page.nextCursor());
-
-        ArgumentCaptor<LambdaQueryWrapper<Rma>> captor =
-                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-        verify(rmaMapper).selectList(captor.capture());
-        assertTrue(captor.getValue().getCustomSqlSegment().contains("LIMIT 3"));
-    }
-
-    @Test
     @DisplayName("工单列表：游标翻页、探测行不泄漏且返回 nextCursor")
     @SuppressWarnings({"unchecked", "rawtypes"})
     void listTicketsUsesKeysetPage() {
@@ -197,13 +187,6 @@ class CustomerPagingContractTest {
 
     private static NegativeReview negativeReview(Long id) {
         NegativeReview value = new NegativeReview();
-        value.setId(id);
-        value.setShopId(1L);
-        return value;
-    }
-
-    private static Rma rma(Long id) {
-        Rma value = new Rma();
         value.setId(id);
         value.setShopId(1L);
         return value;

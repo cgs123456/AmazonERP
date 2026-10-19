@@ -55,6 +55,16 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
+        <!-- SMTP 邮件发送通道（processPendingEmails 的真实发送路径）。
+             版本由 spring-boot-dependencies BOM 管理（父 pom 已 import），不写死。
+             选 SMTP 而不是 Amazon Messaging：Messaging API 只支持订单维度的事务性消息
+             （确认定制/发货/发票等 9 个固定动作），没有「自由正文邮件」这一动作；
+             而本模块的 amz_email_task 是通用模板邮件（含运营手动创建的任务）。
+             注意：Amazon 政策禁止用邮件邀评，索评应走站内合规入口，不走这里。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

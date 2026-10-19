@@ -38,6 +38,10 @@ public class CustomerEmailController {
     @Autowired
     private CustomerEmailService customerEmailService;
 
+    /** RMA 退货独立域（原与邮件服务同一个实现类，因超行数上限拆分）。 */
+    @Autowired
+    private com.amz.service.RmaService rmaService;
+
     // ==================== 邮件模板 ====================
 
     /** 创建邮件模板 */
@@ -187,7 +191,7 @@ public class CustomerEmailController {
     @ShopScoped
     @PostMapping("/rma")
     public Result<Rma> createRma(@RequestBody Rma rma) {
-        return Result.success(customerEmailService.createRma(rma));
+        return Result.success(rmaService.createRma(rma));
     }
 
     /** 查询 RMA 列表 */
@@ -197,7 +201,7 @@ public class CustomerEmailController {
                                       @RequestParam(required = false) String status,
                                       @RequestParam(required = false) Integer size,
                                       @RequestParam(required = false) String cursor) {
-        return Result.paged(customerEmailService.listRmas(
+        return Result.paged(rmaService.listRmas(
                 shopId, status, PageRequest.of(size, cursor)));
     }
 
@@ -206,13 +210,13 @@ public class CustomerEmailController {
     @OperLog(module = "RMA 退货", action = "改状态", description = "更新 RMA 状态")
     @PostMapping("/rma/{rmaId}/status")
     public Result<Rma> updateRmaStatus(@PathVariable Long rmaId, @RequestParam String status) {
-        return Result.success(customerEmailService.updateRmaStatus(rmaId, status));
+        return Result.success(rmaService.updateRmaStatus(rmaId, status));
     }
 
     /** 获取 RMA 详情 */
     @ShopScoped
     @GetMapping("/rma/{rmaId}")
     public Result<Rma> getRma(@PathVariable Long rmaId) {
-        return Result.success(customerEmailService.getRma(rmaId));
+        return Result.success(rmaService.getRma(rmaId));
     }
 }

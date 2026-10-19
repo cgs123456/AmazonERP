@@ -3,8 +3,8 @@
   "rulesVersion": 1,
   "limitLines": 500,
   "summary": {
-    "files": 55,
-    "totalLines": 46209,
+    "files": 54,
+    "totalLines": 45660,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -42,7 +42,6 @@
     "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java": 738,
     "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 579,
     "amz-service/amz-service-ai/src/test/java/com/amz/agent/ErpToolExecutorTest.java": 1049,
-    "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java": 549,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/FinanceServiceImpl.java": 580,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/ReimbursementClaimServiceImpl.java": 555,
     "amz-service/amz-service-finance/src/test/java/com/amz/service/impl/FinanceServiceImplTest.java": 606,

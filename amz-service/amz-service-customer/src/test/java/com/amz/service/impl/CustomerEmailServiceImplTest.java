@@ -9,7 +9,6 @@ import com.amz.mapper.RmaMapper;
 import com.amz.model.EmailTask;
 import com.amz.model.EmailTemplate;
 import com.amz.model.NegativeReview;
-import com.amz.model.Rma;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -18,6 +17,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +26,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -58,14 +60,23 @@ class CustomerEmailServiceImplTest {
     @Mock
     private NegativeReviewMapper negativeReviewMapper;
 
-    @Mock
-    private RmaMapper rmaMapper;
 
     @Mock
     private Environment environment;
 
     @InjectMocks
     private CustomerEmailServiceImpl emailService;
+
+    /**
+     * 归属校验/模板渲染已抽到 {@link CustomerEmailSupport}（原类超 500 行）。
+     * {@code @InjectMocks} 不会自动构造它，必须显式注入——否则 toggleTemplate/
+     * updateTemplate 这类走归属校验的用例会 NPE。
+     */
+    @BeforeEach
+    void injectSupport() {
+        ReflectionTestUtils.setField(emailService, "support",
+                new CustomerEmailSupport(emailTemplateMapper, negativeReviewMapper, mock(RmaMapper.class)));
+    }
 
     @AfterEach
     void cleanup() {
@@ -188,20 +199,6 @@ class CustomerEmailServiceImplTest {
     }
 
     @Test
-    @DisplayName("getRma/updateRmaStatus：非授权店铺应拒绝")
-    void rmaDeniedForOtherShop() {
-        UserContext.setUserId(1);
-        UserContext.setShops(List.of(1L));
-        Rma rma = new Rma();
-        rma.setId(9L);
-        rma.setShopId(99L);
-        when(rmaMapper.selectById(9L)).thenReturn(rma);
-
-        assertThrows(IllegalStateException.class, () -> emailService.getRma(9L));
-        assertThrows(IllegalStateException.class, () -> emailService.updateRmaStatus(9L, "RESOLVED"));
-    }
-
-    @Test
     @DisplayName("updateTemplate：请求体 shopId 不得搬移模板归属")
     void updateTemplateLocksShopId() {
         UserContext.setUserId(1);
@@ -266,10 +263,5 @@ class CustomerEmailServiceImplTest {
         review.setAsin("B1");
         review.setReviewRating(1);
         assertThrows(IllegalStateException.class, () -> emailService.saveNegativeReview(review));
-
-        Rma rma = new Rma();
-        rma.setShopId(99L);
-        rma.setAmazonOrderId("O1");
-        assertThrows(IllegalStateException.class, () -> emailService.createRma(rma));
     }
 }

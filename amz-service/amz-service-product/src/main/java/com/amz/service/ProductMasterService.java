@@ -1,5 +1,6 @@
 package com.amz.service;
 
+import com.amz.dto.ProductMasterBatchPage;
 import com.amz.model.AmzProduct;
 
 import java.util.List;
@@ -38,4 +39,18 @@ public interface ProductMasterService {
      * 店铺集合必须由调用方按当前用户可访问范围传入，不能靠参数越权查别人。
      */
     List<AmzProduct> listByAsinAcrossShops(List<Long> shopIds, String asin);
+
+    /**
+     * 全量重建搜索索引时的 keyset 分页读（跨店铺，不按用户过滤）。
+     * <p>
+     * <b>只供内部服务调用</b>：本方法没有店铺维度，返回的是全库商品。
+     * 调用方是 {@code amz-service-search} 的索引重建，端点已由
+     * {@code @InternalServiceAccess} 限制为服务身份。任何面向用户的端点
+     * <b>不得</b>直接复用本方法——那会变成跨租户读取。
+     *
+     * @param afterId 上一页最后一条的 id；null 表示从头开始
+     * @param limit   单页条数，服务端会钳到安全上限
+     * @return 本页记录 + 下一页游标（null 表示末页）
+     */
+    ProductMasterBatchPage readBatchForIndex(Long afterId, Integer limit);
 }

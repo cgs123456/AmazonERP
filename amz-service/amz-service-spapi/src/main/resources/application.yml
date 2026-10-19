@@ -134,6 +134,23 @@ spapi:
     cache-ttl-seconds: ${SPAPI_CREDENTIAL_CACHE_TTL_SECONDS:600}
     # 活跃店铺集合只查询 shop_id，并用短 TTL 快照减少调度器重复扫描。
     active-shop-ids-ttl-seconds: ${SPAPI_ACTIVE_SHOP_IDS_TTL_SECONDS:60}
+  # ====== 店铺绩效定时留痕 ======
+  # 这些键此前只存在于 @Value 的默认值里，yml 中没有对应段——改 yml 不生效、
+  # 只有改环境变量才生效，且没有任何提示。补上这一段让配置可见、可审计。
+  # <p>
+  # 这里写字面量而非 ${...} 占位符（与 notifications 段的两处节奏参数同理）：
+  # Spring 的环境变量宽松绑定会把 SPAPI_PERFORMANCE_SYNC_ENABLED 解析成
+  # spapi.performance.sync-enabled，且 systemEnvironment 优先级高于本文件，
+  # 因此环境变量照样能覆盖；而少写 6 个占位符就少 6 处部署清单双向对齐的义务。
+  # 唯一需要注意：改这里的值时，@Value 的缺省值要同步改，否则「yml 有值、
+  # @Value 缺省值不同」在两处各自成立，排查时会看到两个不同的数。
+  performance:
+    sync-enabled: false
+    sync-cron: "0 10 5 * * ?"
+    window-days: 30
+    max-poll-attempts: 15
+    poll-interval-ms: 2000
+    poll-deadline-ms: 90000
   # ====== 销量历史同步（amz_sales_history 的唯一写入方）======
   # 默认关闭：未配置凭证的环境不应反复报错。补货建议读这张表算基线日均需求，
   # 关闭期间表为空，补货建议会基于空历史出数——这是「看起来在跑、实则空转」的形状，

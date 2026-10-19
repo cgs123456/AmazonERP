@@ -1,5 +1,6 @@
 package com.amz.service.impl;
 
+import com.amz.dto.ProductMasterBatchPage;
 import com.amz.mapper.AmzProductMapper;
 import com.amz.model.AmzProduct;
 import com.amz.service.ProductMasterService;
@@ -9,7 +10,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品主数据维护实现。
@@ -30,6 +34,15 @@ public class ProductMasterServiceImpl implements ProductMasterService {
 
     @Autowired
     private AmzProductMapper amzProductMapper;
+
+    /**
+     * 搜索索引变更通知。
+     * <p>
+     * {@code required = false}：部分测试切片不装配 Feign 客户端；生产环境它一定存在。
+     * 为空时跳过通知——不因为「没接搜索」就让商品主数据写不进去。
+     */
+    @Autowired(required = false)
+    private com.amz.client.SearchIndexClient searchIndexClient;
 
     @Override
     public List<AmzProduct> list(Long shopId, String asin, String keyword) {
@@ -85,6 +98,7 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         amzProductMapper.insert(product);
         log.info("新增商品主数据：shopId={} sku={} asin={} id={}",
                 product.getShopId(), product.getSku(), product.getAsin(), product.getId());
+        notifySearchIndex(product);
         return product;
     }
 
@@ -122,6 +136,7 @@ public class ProductMasterServiceImpl implements ProductMasterService {
         if (patch.getWeightG() != null) current.setWeightG(patch.getWeightG());
         if (isText(patch.getStatus())) current.setStatus(patch.getStatus());
         amzProductMapper.updateById(current);
+        notifySearchIndex(current);
         return current;
     }
 
@@ -139,6 +154,54 @@ public class ProductMasterServiceImpl implements ProductMasterService {
                .orderByAsc(AmzProduct::getShopId)
                .last("LIMIT " + READ_CAP);
         return amzProductMapper.selectList(wrapper);
+    }
+
+    /**
+     * 单页上限。与 {@link #READ_CAP} 同量级：重建是按页处理的，单页过大只会让
+     * 一次 ES bulk 写放大，不能提高吞吐。
+     */
+    private static final int INDEX_PAGE_MAX = READ_CAP;
+
+    @Override
+    public ProductMasterBatchPage readBatchForIndex(Long afterId, Integer limit) {
+        int size = limit == null || limit <= 0 ? INDEX_PAGE_MAX : Math.min(limit, INDEX_PAGE_MAX);
+        LambdaQueryWrapper<AmzProduct> wrapper = new LambdaQueryWrapper<>();
+        if (afterId != null) {
+            wrapper.gt(AmzProduct::getId, afterId);
+        }
+        // 按 id 升序 keyset 分页：不受 offset 漂移影响（重建期间有新增也不会漏或重）
+        wrapper.orderByAsc(AmzProduct::getId).last("LIMIT " + size);
+        List<AmzProduct> rows = amzProductMapper.selectList(wrapper);
+
+        List<Map<String, Object>> out = new ArrayList<>(rows.size());
+        for (AmzProduct row : rows) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            // 键名必须与 ProductMasterBatchPage.FIELD_NAMES 一致：
+            // 用 Map 传输时字段名就是契约，写错不会编译报错，只会静默丢字段。
+            item.put("id", row.getId());
+            item.put("shopId", row.getShopId());
+            item.put("sku", row.getSku());
+            item.put("asin", row.getAsin());
+            item.put("marketplaceId", row.getMarketplaceId());
+            item.put("title", row.getTitle());
+            item.put("description", row.getDescription());
+            item.put("brand", row.getBrand());
+            item.put("price", row.getPrice());
+            item.put("currency", row.getCurrency());
+            item.put("category", row.getCategory());
+            item.put("productType", row.getProductType());
+            item.put("sizeTier", row.getSizeTier());
+            item.put("weightG", row.getWeightG());
+            item.put("status", row.getStatus());
+            out.add(item);
+        }
+
+        ProductMasterBatchPage page = new ProductMasterBatchPage();
+        page.setRows(out);
+        // 只有取满一页才可能有下一页：不满说明已经到尾部，避免多一次空查询
+        boolean hasMore = rows.size() == size;
+        page.setNextCursor(hasMore ? rows.get(rows.size() - 1).getId() : null);
+        return page;
     }
 
     private AmzProduct requireOwned(Long shopId, Long id) {
@@ -166,6 +229,44 @@ public class ProductMasterServiceImpl implements ProductMasterService {
             wrapper.ne(AmzProduct::getId, excludeId);
         }
         return amzProductMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 把商品主数据变更通知给搜索索引。
+     * <p>
+     * <b>为什么在事务外/同步调用而不发 MQ</b>：调用方（controller）在 service 返回后
+     * 才提交事务？——不是，本服务没有 {@code @Transactional}，{@code insert}/{@code updateById}
+     * 各自自动提交。因此此处的通知发生在数据已落库之后，search 侧读不到未提交数据的问题不存在。
+     * 若将来给 create/update 加事务，通知必须移到事务提交之后（否则 search 可能收到
+     * 一条随后被回滚的记录，索引与事实源不一致）。
+     * <p>
+     * <b>失败只记 WARN，不回滚</b>：索引是派生数据。商品保存失败再让运营重试一次，
+     * 与「保存成功但索引没更新、之后一次重建能补上」，后者代价更低。但 WARN 必须留痕：
+     * 索引漏更新的唯一症状是「搜不到」，没有日志就只能靠猜。
+     */
+    private void notifySearchIndex(AmzProduct product) {
+        if (searchIndexClient == null || product == null || product.getId() == null) {
+            return;
+        }
+        try {
+            java.util.Map<String, Object> doc = new java.util.LinkedHashMap<>();
+            // 键名以 search 侧 /search/index/notify/upsert 的 ProductDoc 契约为准
+            doc.put("id", product.getId());
+            doc.put("title", product.getTitle());
+            // description 在 ProductDoc 里叫 content
+            doc.put("content", product.getDescription());
+            doc.put("sku", product.getSku());
+            doc.put("shopId", product.getShopId());
+            doc.put("price", product.getPrice() == null ? null : product.getPrice().doubleValue());
+            com.amz.result.Result<Boolean> result = searchIndexClient.upsert(doc);
+            if (result == null || result.getCode() != 200 || !Boolean.TRUE.equals(result.getData())) {
+                log.warn("商品索引通知未成功 id={}：{}（主数据已保存，索引需重建或重试）",
+                        product.getId(), result == null ? "无响应" : result.getMessage());
+            }
+        } catch (Exception e) {
+            // 通知是旁路：不能让搜索服务的抖动把商品保存变成失败
+            log.warn("商品索引通知异常 id={}（主数据已保存）", product.getId(), e);
+        }
     }
 
     private static boolean isText(String s) {

@@ -3,7 +3,6 @@ package com.amz.service;
 import com.amz.model.EmailTemplate;
 import com.amz.model.EmailTask;
 import com.amz.model.NegativeReview;
-import com.amz.model.Rma;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 
@@ -71,14 +70,4 @@ public interface CustomerEmailService {
     // ===== RMA 退货 =====
 
     /** 创建 RMA 退货申请 */
-    Rma createRma(Rma rma);
-
-    /** 查询 RMA 列表 */
-    PageResult<Rma> listRmas(Long shopId, String status, PageRequest page);
-
-    /** 更新 RMA 状态 */
-    Rma updateRmaStatus(Long rmaId, String status);
-
-    /** 获取 RMA 详情 */
-    Rma getRma(Long rmaId);
 }

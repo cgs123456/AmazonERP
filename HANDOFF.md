@@ -9181,3 +9181,179 @@ Map.of("trackingDetails", Map.of("spdTrackingDetail", Map.of("spdTrackingItems",
    （新的 `amz_fba_shipment_box` 表），而不是在服务里凑参数。
 3. **`amz.spapi.performance.*` 的配置段不存在**（见 §1.4 末尾）。行为目前正确
    （默认值即期望值），但这是同一类「配置写了读不到」的隐患，建议下一班顺手统一。
+
+---
+
+# §S33.124 C 档三项：搜索索引写入、配置前缀、SMTP 通道
+
+> 用户指定：「1 和 2 你直接做，3 走 SMTP」。三项都已完成。
+> 其中第 1 项在实现过程中核实出一个**已存在的越权路径**（不是我新引入的，
+> 而是我第一版设计踩进去的），修法与证据见 §2。
+
+## 1. 配置前缀失效（§S33.123 §1.4 记的待办）
+
+`ShopPerformanceSyncScheduler` 与 `PerformanceController` 读 `${amz.spapi.performance.*}`，
+而 spapi 的 yml 里**没有这个段**——改 yml 不生效、只有改环境变量才生效，且无任何提示。
+统一为 `spapi.performance.*` 并补上 yml 段（字面量，不用占位符：
+
+- Spring 的环境变量宽松绑定会把 `SPAPI_PERFORMANCE_SYNC_ENABLED` 落到
+  `spapi.performance.sync-enabled`，且 `systemEnvironment` 优先级高于 yml，
+  所以环境变量照样能覆盖；
+- 少写 6 个占位符就少 6 处部署清单双向对齐的义务。
+
+**风险提示**：yml 里的值与 `@Value` 的缺省值现在是两份。改一处必须改另一处，
+否则排查时会看到两个不同的数。已在 yml 注释里写明。
+
+## 2. 商品搜索索引：从「零写入方」到可重建
+
+### 2.1 原有缺陷
+
+`SearchServiceImpl` 只读 `amz_product` 索引，**全仓没有任何 `save/index/bulk` 调用**
+（`ProductDoc` 的 17 处引用全在 search 模块内且全是读）。索引永远为空，
+而前端空态文案写的是「Elasticsearch 返回的 0 条，不是没查」——技术上成立、
+业务上误导：真实原因是从来没有写入过。
+
+### 2.2 实现
+
+| 新增 | 职责 |
+|---|---|
+| `ProductIndexService` / `ProductIndexServiceImpl`（search） | 索引的唯一写入方：幂等 upsert、批量、删除、计数 |
+| `ProductIndexRebuildService`（search） | 从商品主数据全量重建，keyset 分页 |
+| `ProductIndexInternalController`（search，`/internal/search-index`） | product → search 的变更通知 |
+| `ProductIndexController`（search，`/search/index`） | 运维：`POST /rebuild`（ADMIN）、`GET /count` |
+| `ProductMasterInternalController`（product，`/internal/product-master`） | 重建时的跨店铺分页读 |
+| `SearchIndexClient`（product） | 通知 search 索引变更 |
+
+`ProductMasterServiceImpl.create/update` 在落库后通知搜索索引。失败只记 WARN，
+**不回滚 MySQL 事务**——索引是派生数据，商品保存本身不能因为 ES 抖动而失败。
+
+### 2.3 映射：为什么不能用 `@Field(analyzer="ik_max_word")`
+
+`ProductDoc` 上标的是 IK 分词器，而本仓 Compose 与 k8s 都用**官方
+`elasticsearch:8.15.3` 镜像**，全仓 grep 无任何 `analysis-ik` 安装记录。
+按注解建映射会在 ES 侧报 `analyzer [ik_max_word] not found`，索引根本建不出来。
+
+改用内置 `cjk` 分词器（连续 CJK 切成二元组，"无线耳机" → 无线/线耳/耳机），
+对中文标题召回已可用。若将来引入 IK，只需改 `ProductIndexServiceImpl.buildMapping()`。
+
+### 2.4 核实出的越权路径（重要）
+
+第一版把通知端点放在 `/search/index/notify/**`、重建读端点放在
+`/product/master/rebuild/batch`，两者都只挂 `@InternalServiceAccess`。核实后发现：
+
+```java
+// BaseAuthInterceptor.preHandle
+if (!hasUserToken && hasServiceToken && hasInternalServiceAccess(handler)) {
+    return authenticateInternalService(...);
+}
+return authenticateUser(...);   // 有用户 token 就走这里，注解不参与判断
+```
+
+**`@InternalServiceAccess` 只允许服务令牌进来，不排斥用户 JWT。** 任何登录用户带自己的
+token 打一个「有 `@InternalServiceAccess`、无 `@RequireRole`」的普通路径端点，会走用户鉴权
+分支，注解形同不存在。后果：
+
+- 通知端点 → 任意登录用户可向共享搜索索引注入任意商品；
+- 重建读端点 → 任何登录用户（含 VIEWER）可分页拉走整个 `amz_product` 表。
+
+唯一同时满足「服务令牌可进」「用户 JWT 不可进」「公网不可达」的是 `/internal/**`：
+
+| 层 | 行为 |
+|---|---|
+| `MyGlobalFilter` | 网关对 `/internal/**` 直接 404 |
+| `FeignAuthRelayConfig` | 命中 `isInternalPath` → 剥离用户 JWT、强制换服务令牌 |
+| `BaseAuthInterceptor` | 命中 `isInternalPath` → 只走 `authenticateInternalService` + 白名单 |
+
+改法：两个端点都迁到 `/internal/**`；运维端点拆到独立控制器留在业务路径
+（`/internal/**` 网关 404，ADMIN 用户反而进不来）。新增
+`ProductIndexEndpointBoundaryTest` 把这条约束钉死，三次变异全部捕获：
+
+| 变异 | 结果 |
+|---|---|
+| 内部控制器路径改回 `/search/index` | 红 |
+| 运维控制器路径改到 `/internal/...` | 红 |
+| `rebuild` 去掉 `@RequireRole` | 红 |
+
+### 2.5 顺带发现的同类问题（未修，记待办）
+
+`FeignAuthRelayConfig` 的用户凭据优先级是「请求上下文 JWT > 服务令牌」。CSV 导入由用户
+触发，product → search 的通知带的是**用户 JWT**。它现在能通，纯粹因为端点挂在
+`/internal/**`（该路径会强制剥离用户 JWT）。若将来有人把通知端点挪回业务路径，
+链路会静默变成「用户身份调用」，而不会有任何编译或测试错误。
+`ProductIndexEndpointBoundaryTest` 挡住的是路径，不是这个语义——**下一班若改动通知链路，
+先看那条测试的注释**。
+
+## 3. SMTP 邮件通道
+
+### 3.1 为什么是 SMTP 而不是 Amazon Messaging
+
+Messaging API 只有 9 个固定的**订单事务性**动作（确认定制/发货/发票/保修等），
+**没有「自由正文邮件」**。而 `amz_email_task` 是通用模板邮件表（含运营手动创建的任务、
+任意主题与正文），两者语义对不上。SMTP 是唯一能覆盖该表全部用途的通道。
+
+### 3.2 合规边界（必须保留）
+
+Amazon 政策禁止用邮件邀评/索评。`SmtpEmailSender` 的类注释写明了这一点，
+`CustomerServiceImpl.sendReviewSolicitations` **仍保持「未接入」**——
+不要因为有了 SMTP 就把它改成走邮件。
+
+### 3.3 实现
+
+- 新增 `SmtpEmailSender`：`host` 为空即 `isAvailable()=false`；日志对邮箱脱敏；
+  发送失败抛异常并带原因。
+- `CustomerEmailServiceImpl.processPendingEmails` 改为：mock 档模拟；
+  非 mock 走 SMTP；通道不可用时**逐条**标 FAILED 并写明缺哪项配置
+  （不是只在开头发一条全局日志——那样运营在任务列表里看到的仍是一排无原因的 FAILED）。
+- 依赖：`spring-boot-starter-mail`，版本由父 BOM 管理（Boot 4.0.8 确有该 starter）。
+
+### 3.4 拆分与测试
+
+`CustomerEmailServiceImpl` 接入后到 575 行，超 CLAUDE.md 的 500 行上限。按模块边界拆：
+
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `CustomerEmailServiceImpl` | 453 | 邮件模板 / 任务 / 发送 |
+| `CustomerEmailSupport` | 113 | 归属校验 + 模板渲染（无状态，`@Component`） |
+| `RmaServiceImpl` | 94 | RMA 退货（独立接口 `RmaService`） |
+
+REST 路径不变（`/customer/email/rma/*` 是契约），拆的只是 Java 侧类型边界，
+控制器注入两个服务。
+
+`SmtpEmailSendContractTest` 10 条。变异验证两轮，第二轮才有意义：
+
+| 变异 | 结果 | 说明 |
+|---|---|---|
+| `send()` 前不调用 `smtpEmailSender.send` 就标 SENT | **红** | 守住「绝不伪造 SENT」 |
+| `markFailed` 里写 `SENT` | **红** | 守住失败分支的诚实性 |
+| 删掉前置的 `isAvailable()` 检查（`if (false)`） | **绿** | **等价变异**：`SmtpEmailSender.send` 内部还有一层同样的检查，任务照样 FAILED、照样不调用 mailSender。前置检查只改善错误文案，不改变正确性 |
+
+> 记录一次自己的误判：第一版 `senderWithoutHost()` 自己 `new` 了一个 mock，
+> 而断言验的是字段里的另一个 mock，于是 `verify(never())` 永远通过。
+> 是变异测试把这个「断言验错对象」的洞挖出来的——**绿不代表测到了**。
+
+## 4. 验证
+
+| 项 | 结果 |
+|---|---|
+| `amz-service-customer` | 50 / 50 |
+| `amz-service-search` | 10 / 10 |
+| `amz-service-spapi` | 757 / 757，12 skipped |
+| `amz-service-product` | 95 / 95，7 skipped（排除已知 loopback 的 `OrderServiceFeignDecodeIT`） |
+| critical checkstyle（CI 同款） | 通过 |
+| 行数棘轮 | passed（54 个超限文件，45660 行，较上轮减少 549 行） |
+| 仓库卫生 | 0 findings |
+| Python 门禁自测 | 122 / 122 |
+
+部署清单新增占位符 17 个（SMTP 8 + 销售历史 6 + 多平台 3），
+Compose / K8s / 两套 .env 模板四处对齐，由 `PlaceholderCoverageContractTest`
+与 `DeploymentManifestContractTest` 逐条校验。
+
+## 5. 下一班需要知道的
+
+1. **SMTP 默认未配置**（`SPRING_MAIL_HOST` 为空）。此时待发邮件全部标 FAILED 并写明原因。
+   填入 host/username/password/from 后自动启用，无需改代码。
+2. **搜索索引需要跑一次全量重建**：`POST /search/index/rebuild`（ADMIN）。
+   增量通知只覆盖「接入之后发生的变更」，存量商品必须靠重建补。
+3. **IK 分词器未安装**，索引用内置 `cjk`。若商品标题以英文为主，可考虑改回 `standard`；
+   改动点在 `ProductIndexServiceImpl.buildMapping()`，改完需**删索引重建**
+   （ES 不支持原地改 analyzer）。

@@ -5,11 +5,9 @@ import com.amz.exception.AttrIsNullException;
 import com.amz.mapper.EmailTemplateMapper;
 import com.amz.mapper.EmailTaskMapper;
 import com.amz.mapper.NegativeReviewMapper;
-import com.amz.mapper.RmaMapper;
 import com.amz.model.EmailTask;
 import com.amz.model.EmailTemplate;
 import com.amz.model.NegativeReview;
-import com.amz.model.Rma;
 import com.amz.result.PageRequest;
 import com.amz.result.PageResult;
 import com.amz.service.CustomerEmailService;
@@ -51,10 +49,21 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     private NegativeReviewMapper negativeReviewMapper;
 
     @Autowired
-    private RmaMapper rmaMapper;
-
-    @Autowired
     private Environment environment;
+
+    /** 共享辅助（归属校验 + 模板渲染），见 {@link CustomerEmailSupport}。 */
+    @Autowired
+    private CustomerEmailSupport support;
+
+    /**
+     * SMTP 发送器。
+     * <p>
+     * {@code required = false}：部分测试切片不装配邮件 Bean。为空时
+     * {@code processPendingEmails} 走「通道不可用」分支并明确标记失败——
+     * 与 host 未配置同一条路径，不会伪造 SENT。
+     */
+    @Autowired(required = false)
+    private SmtpEmailSender smtpEmailSender;
 
     /** 是否运行在 mock profile。 */
     private boolean isMockProfile() {
@@ -95,7 +104,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         }
         // 越权防护：不信任请求体自带的 shopId，按既有记录校验归属并覆盖写回，
         // 防止把模板搬到其他店铺（updateById 全字段更新会连带写入请求体 shopId）
-        EmailTemplate existed = mustGetAuthorizedTemplate(template.getId());
+        EmailTemplate existed = support.mustGetAuthorizedTemplate(template.getId());
         template.setShopId(existed.getShopId());
         emailTemplateMapper.updateById(template);
         return template;
@@ -125,7 +134,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Override
     public boolean toggleTemplate(Long templateId, boolean enabled) {
-        EmailTemplate template = mustGetAuthorizedTemplate(templateId);
+        EmailTemplate template = support.mustGetAuthorizedTemplate(templateId);
         template.setEnabled(enabled ? 1 : 0);
         emailTemplateMapper.updateById(template);
         return true;
@@ -154,8 +163,8 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         EmailTemplate template = templates.get(0);
 
         // 渲染模板变量
-        String subject = renderTemplate(template.getSubject(), orderId, asin, buyerName, trackingNo);
-        String body = renderTemplate(template.getBody(), orderId, asin, buyerName, trackingNo);
+        String subject = support.renderTemplate(template.getSubject(), orderId, asin, buyerName, trackingNo);
+        String body = support.renderTemplate(template.getBody(), orderId, asin, buyerName, trackingNo);
 
         EmailTask task = new EmailTask();
         task.setShopId(shopId);
@@ -202,38 +211,36 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
         for (EmailTask task : pendingTasks) {
             try {
-                if (!isMockProfile()) {
-                    // 非 mock：无真实发送通道时诚实标记失败，绝不伪造 SENT
-                    task.setStatus("FAILED");
-                    task.setFailureReason("邮件发送通道未接入（Amazon Messaging/SMTP），非 mock 环境");
+                if (isMockProfile()) {
+                    // mock 档：不真的发信，日志明确标注，避免演示环境误以为已发出
+                    log.warn("[MOCK] 模拟邮件发送成功：taskId={}, orderId={}（非真实发送）",
+                            task.getId(), task.getAmazonOrderId());
+                    task.setStatus("SENT");
+                    task.setSentTime(LocalDateTime.now());
                     emailTaskMapper.updateById(task);
-                    failed++;
-                    Map<String, Object> failure = new LinkedHashMap<>();
-                    failure.put("taskId", task.getId());
-                    failure.put("orderId", task.getAmazonOrderId());
-                    failure.put("error", task.getFailureReason());
-                    failures.add(failure);
-                    log.warn("邮件发送通道未接入，任务标记 FAILED：taskId={}", task.getId());
+                    sent++;
                     continue;
                 }
-                // mock 环境：模拟发送成功（日志明确标注 MOCK）
-                log.warn("[MOCK] 模拟邮件发送成功：taskId={}, orderId={}（非真实发送）",
-                        task.getId(), task.getAmazonOrderId());
+                // 非 mock：走 SMTP。通道未配置时明确失败，绝不伪造 SENT。
+                // 这条判定放在 here 而不是更早，是为了让每个任务都留下 failureReason——
+                // 只在开头发一条全局日志的话，运营在任务列表里看到的仍是一排无原因的 FAILED。
+                if (smtpEmailSender == null || !smtpEmailSender.isAvailable()) {
+                    String reason = smtpEmailSender == null
+                            ? "SMTP 发送器未装配"
+                            : smtpEmailSender.unavailableReason();
+                    markFailed(task, reason, failures);
+                    failed++;
+                    continue;
+                }
+                smtpEmailSender.send(task.getBuyerEmail(), task.getSubject(), task.getBody());
                 task.setStatus("SENT");
                 task.setSentTime(LocalDateTime.now());
+                task.setFailureReason(null);
                 emailTaskMapper.updateById(task);
                 sent++;
             } catch (Exception e) {
-                task.setStatus("FAILED");
-                task.setFailureReason(e.getMessage());
-                emailTaskMapper.updateById(task);
+                markFailed(task, e.getMessage(), failures);
                 failed++;
-
-                Map<String, Object> failure = new LinkedHashMap<>();
-                failure.put("taskId", task.getId());
-                failure.put("orderId", task.getAmazonOrderId());
-                failure.put("error", e.getMessage());
-                failures.add(failure);
                 log.error("邮件发送失败：taskId={}", task.getId(), e);
             }
         }
@@ -250,6 +257,24 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         result.put("failed", failed);
         result.put("failures", failures);
         return result;
+    }
+
+    /**
+     * 把任务标为 FAILED 并记入失败清单。
+     * <p>
+     * 两个失败分支（通道不可用 / 发送异常）必须写同一组字段：运营看到的是
+     * {@code failure_reason}，任何一条分支漏写都会让任务列表出现「FAILED 但没原因」。
+     */
+    private void markFailed(EmailTask task, String reason, List<Map<String, Object>> failures) {
+        task.setStatus("FAILED");
+        task.setFailureReason(reason);
+        emailTaskMapper.updateById(task);
+
+        Map<String, Object> failure = new LinkedHashMap<>();
+        failure.put("taskId", task.getId());
+        failure.put("orderId", task.getAmazonOrderId());
+        failure.put("error", reason);
+        failures.add(failure);
     }
 
     @Override
@@ -337,7 +362,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Override
     public Map<String, Object> matchNegativeReviewToOrder(Long reviewId) {
-        NegativeReview review = mustGetAuthorizedReview(reviewId);
+        NegativeReview review = support.mustGetAuthorizedReview(reviewId);
 
         // 真实匹配需通过 SP-API 查询该 ASIN 在留评日期前 7-30 天的订单。
         // 非 mock 环境诚实失败：伪造订单号落库为 MATCHED 会误导后续索评/跟进流程
@@ -364,7 +389,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public EmailTask followUpNegativeReview(Long reviewId) {
-        NegativeReview review = mustGetAuthorizedReview(reviewId);
+        NegativeReview review = support.mustGetAuthorizedReview(reviewId);
         if (!"MATCHED".equals(review.getStatus()) && !"DETECTED".equals(review.getStatus())) {
             throw new IllegalStateException("仅 DETECTED/MATCHED 状态的差评可跟进，当前状态：" + review.getStatus());
         }
@@ -385,8 +410,8 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         }
 
         String orderId = review.getMatchedOrderId() != null ? review.getMatchedOrderId() : review.getAmazonOrderId();
-        String subject = renderTemplate(template.getSubject(), orderId, review.getAsin(), review.getReviewerName(), null);
-        String body = renderTemplate(template.getBody(), orderId, review.getAsin(), review.getReviewerName(), null);
+        String subject = support.renderTemplate(template.getSubject(), orderId, review.getAsin(), review.getReviewerName(), null);
+        String body = support.renderTemplate(template.getBody(), orderId, review.getAsin(), review.getReviewerName(), null);
 
         EmailTask task = new EmailTask();
         task.setShopId(review.getShopId());
@@ -411,7 +436,7 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
 
     @Override
     public NegativeReview resolveNegativeReview(Long reviewId) {
-        NegativeReview review = mustGetAuthorizedReview(reviewId);
+        NegativeReview review = support.mustGetAuthorizedReview(reviewId);
         String status = review.getStatus();
         if ("RESOLVED".equals(status)) {
             // 结案幂等：重复点返回当前行
@@ -424,126 +449,5 @@ public class CustomerEmailServiceImpl implements CustomerEmailService {
         negativeReviewMapper.updateById(review);
         log.info("差评结案 reviewId={} 原状态={}", reviewId, status);
         return review;
-    }
-
-    // ==================== RMA 退货 ====================
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public Rma createRma(Rma rma) {
-        if (rma.getShopId() == null || rma.getAmazonOrderId() == null) {
-            throw new AttrIsNullException("店铺ID和订单号不能为空");
-        }
-        if (!UserContext.isShopAllowed(rma.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺的 RMA");
-        }
-        rma.setRmaNo("RMA" + System.currentTimeMillis());
-        if (rma.getStatus() == null) rma.setStatus("PENDING");
-        if (rma.getReturnType() == null) rma.setReturnType("RETURN");
-        if (rma.getLabelCost() == null) rma.setLabelCost(java.math.BigDecimal.ZERO);
-        if (rma.getRefundAmount() == null) rma.setRefundAmount(java.math.BigDecimal.ZERO);
-        rmaMapper.insert(rma);
-        log.info("RMA 退货申请已创建：rmaNo={}, orderId={}", rma.getRmaNo(), rma.getAmazonOrderId());
-        return rma;
-    }
-
-    @Override
-    public PageResult<Rma> listRmas(Long shopId, String status, PageRequest page) {
-        PageRequest req = page == null ? PageRequest.first(PageRequest.DEFAULT_SIZE) : page;
-        LambdaQueryWrapper<Rma> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(Rma::getShopId, shopId);
-        if (status != null && !status.isBlank()) {
-            wrapper.eq(Rma::getStatus, status);
-        }
-        if (req.hasCursor()) {
-            wrapper.lt(Rma::getId, req.cursorId());
-        }
-        wrapper.orderByDesc(Rma::getId)
-               .last("LIMIT " + req.probeSize());
-        List<Rma> rows = rmaMapper.selectList(wrapper);
-        PageResult<Rma> result = PageResult.of(rows, req.size(),
-                t -> PageRequest.encodeCursor(t.getId()));
-        if (result.truncated()) {
-            log.warn("RMA 列表被分页截断：shopId={} status={} size={}", shopId, status, req.size());
-        }
-        return result;
-    }
-
-    @Override
-    public Rma updateRmaStatus(Long rmaId, String status) {
-        Rma rma = mustGetAuthorizedRma(rmaId);
-        rma.setStatus(status);
-        rmaMapper.updateById(rma);
-        return rma;
-    }
-
-    @Override
-    public Rma getRma(Long rmaId) {
-        return mustGetAuthorizedRma(rmaId);
-    }
-
-    /**
-     * 加载邮件模板并做多租户越权校验（与 ProcurementServiceImpl#mustGetAuthorized 同模式）。
-     * <p>
-     * 模板/启停/RMA 端点仅携带记录 ID、无 shopId 参数，ShopScoped 切面无法按参数名拦截，
-     * 故在服务层显式校验记录所属店铺是否在当前用户授权范围内。
-     */
-    private EmailTemplate mustGetAuthorizedTemplate(Long templateId) {
-        EmailTemplate template = emailTemplateMapper.selectById(templateId);
-        if (template == null) {
-            throw new AttrIsNullException("模板不存在：id=" + templateId);
-        }
-        if (!UserContext.isShopAllowed(template.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺的邮件模板：id=" + templateId);
-        }
-        return template;
-    }
-
-    /**
-     * 加载 RMA 并做多租户越权校验（同上）。
-     */
-    private Rma mustGetAuthorizedRma(Long rmaId) {
-        Rma rma = rmaMapper.selectById(rmaId);
-        if (rma == null) {
-            throw new AttrIsNullException("RMA不存在：id=" + rmaId);
-        }
-        if (!UserContext.isShopAllowed(rma.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺的 RMA：id=" + rmaId);
-        }
-        return rma;
-    }
-
-    /**
-     * 加载差评并做多租户越权校验（同上）。
-     * <p>
-     * match/followup 端点仅携带 reviewId、无 shopId 参数，切面无法拦截，
-     * 故在此显式校验（防跨租户读写他店差评、冒建他店邮件任务）。
-     */
-    private NegativeReview mustGetAuthorizedReview(Long reviewId) {
-        NegativeReview review = negativeReviewMapper.selectById(reviewId);
-        if (review == null) {
-            throw new AttrIsNullException("差评记录不存在：id=" + reviewId);
-        }
-        if (!UserContext.isShopAllowed(review.getShopId())) {
-            throw new IllegalStateException("无权操作该店铺的差评：id=" + reviewId);
-        }
-        return review;
-    }
-
-    // ==================== 工具方法 ====================
-
-    /**
-     * 渲染邮件模板变量。
-     * 支持：{buyer_name} {order_id} {asin} {tracking_no} {review_link}
-     */
-    private String renderTemplate(String template, String orderId, String asin, String buyerName, String trackingNo) {
-        if (template == null) return "";
-        String result = template;
-        result = result.replace("{buyer_name}", buyerName != null ? buyerName : "Customer");
-        result = result.replace("{order_id}", orderId != null ? orderId : "");
-        result = result.replace("{asin}", asin != null ? asin : "");
-        result = result.replace("{tracking_no}", trackingNo != null ? trackingNo : "");
-        result = result.replace("{review_link}", "https://www.amazon.com/review/create-review");
-        return result;
     }
 }
