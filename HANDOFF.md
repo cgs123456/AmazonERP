@@ -8789,3 +8789,60 @@ revert 后 `git diff 0416607 HEAD` 为空，CI 复跑 11/11 绿、该 IT 8/8 不
 2. 我说过「§3.3 需业务给数据量级」两次。真实情况是规模可由代码推导，
    缺的不是数据，是「按 SKU 聚合」这套口径在真实数据上的验证——
    而那需要真凭证，与 §S10 的 🔴 类同一条阻塞链。
+
+---
+
+# §S33.120 §3.4 的「先确认 @InjectMocks」已探明：两处都可拆，失效模式是静默的
+
+> §3.4 原文：「拆这两处前先确认测试的 `@InjectMocks` 在拆出 Spring bean 后
+> 不会静默失效——那是真实风险。」本节把这一步做掉，仍不动代码。
+
+## 1. 现状（实测，非推断）
+
+| 文件 | 行数 | 依赖字段 | 用 `@InjectMocks` 的测试类 |
+|---|---|---|---|
+| `LogisticsUpgradeServiceImpl` | 899 | 8 个（4 个域 mapper + `ShipmentMapper` + `InventoryMovementService` + `WarehouseService` + …） | **2** |
+| `MultiplatformServiceImpl` | 831 | **11** | **10** |
+
+**两处的注入方式都是字段注入**（`@InjectMocks private XxxServiceImpl service;`
++ 目标类里 `@Autowired private XxxMapper ...`），没有一个用构造器注入。
+
+## 2. 失效模式：不是编译错，是静默通过
+
+这正是 §S33.20 的形状，但更隐蔽。§S33.20 是「新类忘了加 `@Component`」
+→ 启动即 `NoSuchBeanDefinitionException`，响亮失败。而这里是：
+
+把一组方法搬到新的 `@Component`、原类改成持有它之后，**Mockito 的
+`@InjectMocks` 仍按字段名/类型把 mock 塞进去**——测试编译通过、运行通过，
+但塞进去的是 `null` 或一个行为不同的桩。症状是「拆完所有测试都绿，
+而其中一半根本没在执行真实路径」。
+
+**判据（下次拆之前逐条问）**：
+1. 新类的 bean 身份是什么？`@Component` 还是构造注入？（§S33.20）
+2. 测试里那个字段在拆分后还存不存在？不存在 → 那条测试验的是旧路径，必须迁走。
+3. 拆出的新协作者要不要 mock？**先看它验的是「组件内部」还是「组件之间」**
+   （§S33.83 的教训：后者 mock 掉就等于把唯一能抓集成 bug 的测试换成永远通过的桩）。
+
+## 3. 有利条件：`LogisticsUpgradeServiceImpl` 的域边界比想象的干净
+
+§3.4 说它「含四个独立聚合根（报价/调拨/分摊/收货差异）」——核实后比这更利：
+
+```
+carrierQuoteMapper      → 报价域
+inventoryTransferMapper → 调拨域
+freightAllocationMapper → 分摊域
+fbaReceiptDiscrepancyMapper → 收货差异域
+ShipmentMapper / InventoryMovementService / WarehouseService → 三个域共用
+```
+
+**四个域各自的 mapper 不交叉**，共用依赖只有 3 个。所以按域拆出 4 个类时，
+每个新类只依赖「自己那个 mapper + 3 个共用」，不需要为拆分开设传递层。
+这与 `MultiplatformServiceImpl`（11 个依赖、域间共用更多）是两种难度，
+**要拆先拆 logistics 这个**。
+
+## 4. 结论：记待办，不排期
+
+拆分收益仍是文件长度（899 → 4×~200），不产生正确性收益；而 12 个测试类
+要逐个过上面三条判据。按「非缺陷拆分让位于有正确性收益的工作」，
+这里仍然只登记。与 §3.3 的区别是：§3.3 有明确的功能理由（覆盖不再被截断），
+§3.4 没有——**不要为了 500 行这个数字去冒 12 个测试的回归风险**。
