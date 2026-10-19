@@ -1,5 +1,6 @@
 package com.amz.service.impl;
 
+import com.amz.context.UserContext;
 import com.amz.exception.InvalidParamException;
 import com.amz.mapper.ConversationMemoryMapper;
 import com.amz.mapper.UserPreferenceMapper;
@@ -63,15 +64,42 @@ public class MemoryServiceImpl implements MemoryService {
         if (pref == null) {
             pref = new UserPreference();
             pref.setUserId(userId);
-            pref.setPreferredShopId(1L);
+            // 不硬编码 1L：店铺 1 可能不属于当前用户，写下去会让 Agent 的兜底 shopId
+            // 指向一家无权访问的店（下游 injectDefaultShopIdIfNeeded 直接把它
+            // 注入工具调用）。有授权店铺时取第一家；一家都没有时留空，
+            // 让上游显式要求选择，而不是默默猜一个。
+            pref.setPreferredShopId(defaultShopId());
             pref.setLanguage(LanguageEnum.ZH.name());
             pref.setLastActiveTime(LocalDateTime.now());
             pref.setCreateTime(LocalDateTime.now());
             pref.setUpdateTime(LocalDateTime.now());
             userPreferenceMapper.insert(pref);
-            log.info("初始化用户偏好：userId={}", userId);
+            log.info("初始化用户偏好：userId={} preferredShopId={}", userId, pref.getPreferredShopId());
         }
         return pref;
+    }
+
+    /**
+     * 当前用户的兜底店铺：授权列表的第一家；一家都没有时返回 {@code null}。
+     * <p>
+     * 取「第一家」而不是报错：偏好表只是兜底来源，用户随时可以在消息里指定别的店
+     * （那条路径有 {@link #isPreferredShopAllowed} 校验）。留 {@code null} 时
+     * 下游显式要求选择，比猜一个更安全。
+     */
+    private Long defaultShopId() {
+        List<Long> shops = UserContext.getShops();
+        return shops == null || shops.isEmpty() ? null : shops.get(0);
+    }
+
+    /**
+     * 待写入的店铺 ID 是否属于当前用户。
+     * <p>
+     * 复用 {@code UserContext.isShopAllowed}：有用户身份时它是严格校验，
+     * 无身份时拒绝（§S33.121）。也就是说定时任务/内部调用这条路径不会写偏好，
+     * 而公网请求必须过授权——这正是我们要的。
+     */
+    private boolean isPreferredShopAllowed(Long shopId) {
+        return shopId != null && UserContext.isShopAllowed(shopId);
     }
 
     @Override
@@ -100,7 +128,16 @@ public class MemoryServiceImpl implements MemoryService {
             String shopIdStr = shopMatcher.group(1) != null ? shopMatcher.group(1) : shopMatcher.group(2);
             try {
                 Long shopId = Long.parseLong(shopIdStr);
-                if (!shopId.equals(pref.getPreferredShopId())) {
+                // 归属校验：preferredShopId 会被下游当兜底 shopId 注入 Agent 工具调用
+                // （MemoryAwareAgentService）与定时推送（DailyReportScheduler /
+                // ProactiveReminderService）。不校验的话，用户说一句「店铺ID是999」
+                // 就能把后续所有调用指向别家店铺——ErpToolExecutor 的 guard 会拦下
+                // 越权读取，但用户看到的是「无权访问该店铺数据」且不知道为什么，
+                // 坏值还会长期留在偏好表里反复触发。
+                if (!isPreferredShopAllowed(shopId)) {
+                    log.warn("偏好店铺 ID 越权拦截：userId={} 请求店铺={} 已授权店铺={}",
+                            userId, shopId, UserContext.getShops());
+                } else if (!shopId.equals(pref.getPreferredShopId())) {
                     pref.setPreferredShopId(shopId);
                     changed = true;
                     log.info("用户偏好更新：userId={} preferredShopId={}", userId, shopId);
