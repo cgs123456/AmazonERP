@@ -1,6 +1,10 @@
 # HANDOFF — P0 收尾（请求体 shopId 跨租户写洞 + 两页写端点加锁）+ 决策①定案（amz_user_shop.role 不回填）+ CI 修（V6 schema 快照）+ Finance 拆分 + 店铺级角色接通 + 四页写入口分三类处理 + WMS 门控与业务拒绝修复 + ad 域 CRUD + 通知红点 + 店铺/用户管理（2026-10-16 最新更新）
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
+> **真正的当前入口已下沉到 §S33.114 / §S33.115 / §S33.116（2026-10-19）**：
+> 本文件的 H1 与下面这段自 2026-10-16 起未再更新，只是历史层的一部分。
+> §S33.114 是本轮交班，§S33.115 是租户审计 89 条候选全部读完（0 缺陷），
+> §S33.116 是 CI 连红 7 个提交的真因（本机验证链缺 checkstyle）与修复。
 > 最新（§S23/§S24，2026-10-16）：**P0 已收口**——`§S20.6` 第 1 条不再是悬而未决的产品决策。
 > 侦察时发现比「角色没锁」更严重的**跨租户写洞**（网关只看请求头、切面只看方法参数、
 > 请求体里的 shopId 两边都够不着 → 两层防线同时让开；本仓 32 个 @ShopScoped 写端点的
@@ -88,21 +92,29 @@
 
 ## 项目现状一句话
 
-**本机门禁全绿，CI 待跑（HEAD 见 git log；本班 §S20/§S20.7 为纯前端班，无 Java/SQL 改动）**：
-前端 vitest **643/643**（50 文件）+ vue-tsc 0 错 + `vite build` 通过 +
-本班新增 E2E **7/7**（含 §S20.7 补的「VIEWER 只读入口仍可点」）；stub-shape RED 0、param-name 0、
-hygiene 0、entity_column_drift **110 实体/0 漂移**、release tools **91/91**。
-三个方向的变异全部由断言打红（非崩溃）。全量 E2E 有既有 flake，每次红的都不一样且与本节
-无关，单独跑全绿——见 §S20.7.4，**不要在这个班里修**。
-上一班 CI 全绿（run `38727636484` 代码 / `38727838899` 文档，HEAD `151f05e`），11/11 job。
+**HEAD `701a6ee`，已推送；最新状态见 §S33.114（交班）+ §S33.115（租户审计读完）+
+§S33.116（CI 连红 7 次的真因与修法）。**
+
+本机已验证：checkstyle-critical 与 google_checks 均 0 violation、
+hygiene findings 0、file_size_ratchet findings 0（55 个超限文件，属存量登记非故障）、
+release tools 137/137、全仓 main 源码无行尾空格。
+Java 测试按 §S33.114 §1 的基线（门户 137 / multiplatform 155 / report 80 /
+logistics 196 / spapi 727，三个 loopback 类本机必红、以 CI 为准）。
+
+**§S33.116 修正了本文件长期存在的一个失实陈述**：此前这里写「本机门禁全绿」，
+而 `checkstyle:check` 从未在本机跑过——CI 从 `a7e1bfe` 起连红 7 个提交，
+每次都是同一个 job（checkstyle）、同一处 5 行行尾空格。已修（`701a6ee`），
+并把 checkstyle 加进本机必跑清单。**「本机绿」不等于「CI 绿」**，
+差距就是这一轮的全部代价。
+
 后续主线不变：**真实凭据到位 → runbook §3 端到端验收（A5/E4–E5）**；
-业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（见 §S9.12 / §S17.4）。
-**§S19.6 的四页门控待办已按后端实际角色集分三类处理完**（见 §S20），且 §S20.7 复查出
-「读被写门控一起拦掉」并已修正；剩余待办见 §S20.6：
-① ListingMonitor / CustomerService 的写端点**后端没锁角色**，VIEWER 与 OPERATOR 等权——
-是否补后端门禁要产品拍板，前端不替它决定；② `amz_warehouse_stock` 无写入方致库龄分析恒空；
-③ `Finance.vue` 1489 行超 CLAUDE.md 的 500 行上限（§S20.7 又加了约 60 行，更超了），
-需单独一班拆分。
+业务侧剩余待做见 §S10；**孤儿 api 清理的 ② 类队列已清空**（§S9.12 / §S17.4）。
+租户边界审计 89 条候选**已全部读完，0 个真缺陷**（§S33.115）——这是 §S33.114 §4.1
+的第 1 优先级，现已清空。剩余待办按 §S33.114 §3 的阻塞程度：
+① §S33.108/111 只能由 CI 证明（等 `AllModulesFlywayMySqlIT`）；
+② `isShopAllowed` lenient 收紧需产品/安全口径决策（§S33.115 §2 补足了事实链）；
+③ 55 个超 500 行文件（规模问题非故障，一次一个、各自变异验证）；
+④ `feeDiscrepancy.scan` SQL 层聚合需业务给数据量级。
 
 ## S16. 交接：2026-10-15 ad 域 6 个孤儿 CRUD 落地（活动新建/编辑/批量 + 素材/定向编辑，已完成）
 
@@ -8507,3 +8519,79 @@ ratchet 已登记 55 个超 500 行文件（`overLimitFiles: 55`，findings=0，
   `DeepSeekAgentConfigurationContractTest`。
 - `mvn -o test` 在 product 会 fail-fast 并 SKIP 其余 12 个模块，
   **必须逐模块跑**。
+- **`checkstyle:check` 不在本机逐模块链路里，必须单独跑一次**
+  （§S33.116 的红课）：`mvn -B -o checkstyle:check
+  -Dcheckstyle.config.location=checkstyle-critical.xml`。它跑在根 pom 聚合层，
+  逐模块跑不到它。
+
+---
+
+# §S33.116 CI 连红 7 个提交的真因：本机验证链从来没有 checkstyle 这一环
+
+> 与 §S33.115 同一班。§S33.114 的「测试基线」声称各模块全绿，
+> 而实际上 CI 从 `a7e1bfe` 起连红了 7 个提交。原因与修复如下。
+
+## 1. 症状与定位
+
+从 `a7e1bfe`（10-17 00:16，§S32 的 ErpToolExecutor 拆分）到 `d58a210`（10-19）
+**连续 7 个提交 CI 全红**，而 §S33.114 写着「门户 137 / multiplatform 155 /
+report 80 / logistics 196 / spapi 727 全绿，ratchet 与 hygiene findings 0」。
+
+差异只在 job 粒度：那 7 次里 **10 个 job 全绿，只有 `checkstyle` 一个红**。
+`gh run view <id> --log-failed` 给出的全部内容：
+
+```
+src/main/java/com/amz/agent/ErpToolExecutor.java:[62,64,66,68,70]
+  (regexp) RegexpSingleline: Line has trailing whitespace.
+amz-service-ai ...... FAILURE [0.805 s]   You have 5 Checkstyle violations.
+```
+
+## 2. 为什么本机一次都没发现
+
+本机验证链是「逐模块 `mvn test` + 15 个 Python 门禁 + 前端 vitest」，
+**没有任何一条跑过 `checkstyle:check`**。而 `checkstyle` job 的命令是：
+
+```bash
+mvn -B checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml
+```
+
+它跑在**全仓聚合层**（根 pom 的 `default-cli`），与「逐模块」无关——
+逐模块跑得再全也碰不到它。同理 `repository_hygiene` / `file_size_ratchet`
+是文件内容尺子，而行尾空格在 `git diff` 里不可见、`git status` 也不报。
+
+**这是本机验证链的一个真实盲区**，不是偶发。§S31 建棘轮时用「逐条手跑门禁」
+替代 grep 不到的 `precheck`，当时就漏了这一条。
+
+## 3. 修法（纯删空白，零语义变更）
+
+删掉 `ErpToolExecutor` 类体开头那 5 行 `"    "`（241 → 231 行）。本地验证：
+
+| 检查 | 结果 |
+|---|---|
+| `checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml` | 全模块 0 violation，BUILD SUCCESS |
+| `checkstyle:check -Dcheckstyle.config.location=google_checks.xml` | amz-service-ai SUCCESS |
+| `mvn -o compile`（amz-service-ai 目录内） | BUILD SUCCESS |
+| `grep -rln " $"` 全部 main 源码 | **0 命中** |
+| file_size_ratchet / repository_hygiene | findings 0 |
+| release tools | 137/137 |
+
+## 4. 操作约定（新增，取代 §S31.5 的「逐条手跑」）
+
+声称「本机门禁全绿」之前，至少这五条都要跑过：
+
+```bash
+mvn -B -o checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml   # 新增，本轮缺的就是它
+python tools/release/repository_hygiene.py --root .
+python tools/release/file_size_ratchet.py --root .
+python -m unittest discover tools/release -p "test_*.py"
+cd amz-frontend && npx vitest run && npx vue-tsc --noEmit && npm run build
+```
+
+Java 测试仍逐模块跑（`mvn -o test` 在 product 会 fail-fast 并 SKIP 其余模块）。
+
+## 5. 更普适的一条：红得越久，越要怀疑「差一个 job」而不是「测试不稳」
+
+这 7 次红全部集中在同一个 job、同一处 5 行空白，**没有任何 flake 特征**
+（§S33.21 记的前端 E2E flake 是「每次红的都不一样」）。
+判据：**连续多次红且失败集合完全不变 → 是确定性缺陷，去读 `--log-failed`，
+不要用「本地绿」安慰自己**。本机绿与 CI 绿的差距，就是这一轮的全部代价。
