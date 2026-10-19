@@ -28,7 +28,7 @@
 | MySQL | 8.0.33 | 读写分离（主从） |
 | Redis | 7.0 | 缓存 + 分布式锁 |
 | RabbitMQ | 3.12 | 消息队列（含 DLX） |
-| Elasticsearch | 8.15.3 | BM25 + dense_vector RRF 混合检索 |
+| Elasticsearch | 9.2.8 | BM25 + dense_vector RRF 混合检索（须 >= 9.2.8，Boot 4 的 9.x 客户端只发 compatible-with=9） |
 | MongoDB | 7.0 | 文档存储 |
 | LangChain4j | 0.36.2 | AI Agent 编排 |
 | ONNX Runtime | 1.18.2 | LightGBM 模型推理 |
@@ -211,7 +211,7 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 | **Skywalking** 10.1.0 | 分布式链路追踪 | Java Agent 9.3.0 自动注入 Dockerfile，traceId 注入日志 |
 | **Prometheus** 2.54.0 | 指标采集 | 16 服务暴露 /actuator/prometheus，15s 间隔拉取 |
 | **Grafana** 11.2.0 | 可视化面板 | 预置 JVM 面板（CPU/Heap/HTTP Rate/P95） |
-| **ELK** 8.15.3 | 集中日志 | Logstash grok 解析 → ES 索引 amz-erp-YYYY.MM.dd → Kibana |
+| **ELK** 9.2.8 | 集中日志 | Logstash grok 解析 → ES 索引 amz-erp-YYYY.MM.dd → Kibana |
 | **AlertManager** | 告警 | 6 条规则：服务宕机/高错误率/高响应/高堆内存/MQ 积压/磁盘 |
 
 ## 🔐 安全与稳定性

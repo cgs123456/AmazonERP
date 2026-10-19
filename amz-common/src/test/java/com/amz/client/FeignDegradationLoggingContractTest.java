@@ -61,9 +61,13 @@ class FeignDegradationLoggingContractTest {
         // BOM 展开新增 ProcurementBomClientFallbackFactory（order→procurement）到 26；
         // 随后 message 的 UserNotificationClientFallbackFactory 因启动回归被移除
         // （改 DiscoveryClient+ResilientHttpClient，不用 Feign）回到 25。
+        // 2026-10-19：C 档接通搜索索引时新增 SearchIndexClientFallbackFactory
+        // （product→search 索引通知）与 ProductMasterClientFallbackFactory
+        // （search→product 索引重建读）到 27。两者都写成 log.warn("...", cause)，
+        // 且文案点名目标服务——数量断言的作用正是逼新增者回来补齐这三条契约。
         // 数量仍需钉死：新增 factory 不纳入本契约要红，无谓删除也要红。
-        assertEquals(25, factories.size(),
-                "FallbackFactory 数量变了（当前应为 25）：新增的要同步纳入本契约，删除的要更新断言");
+        assertEquals(27, factories.size(),
+                "FallbackFactory 数量变了（当前应为 27）：新增的要同步纳入本契约，删除的要更新断言");
         for (Path factory : factories) {
             String text = read(factory);
             assertTrue(LOG_WITH_THROWABLE.matcher(text).find(),

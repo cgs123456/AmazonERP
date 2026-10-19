@@ -22,7 +22,7 @@ import java.util.Map;
  * <p>
  * <b>为什么要自己建映射，而不是 {@code createWithMapping()}</b>：
  * {@link ProductDoc} 上的 {@code @Field(analyzer = "ik_max_word")} 依赖 IK 分词插件，
- * 而本仓 Compose 与 k8s 用的都是 <b>官方 {@code elasticsearch:8.15.3} 镜像</b>，
+ * 而本仓 Compose 与 k8s 用的都是<b>官方 {@code elasticsearch:9.2.8} 镜像</b>，
  * 没有任何一处安装过 analysis-ik（全仓 grep 无结果）。直接按注解建映射会在
  * ES 侧报 {@code analyzer [ik_max_word] not found}，索引建不出来、documents 一条也写不进。
  * 因此这里用<b>内置 analyzer</b>（{@code standard} + {@code cjk} 组合）显式构造映射。
@@ -44,6 +44,26 @@ public class ProductIndexServiceImpl implements ProductIndexService {
 
     /** 中文/多语言文本字段的分析器（官方 ES 内置，无需插件）。 */
     private static final String TEXT_ANALYZER = "cjk";
+
+    /**
+     * 索引映射中必须存在的字段及其类型。
+     * <p>
+     * <b>为什么要复核</b>：ES 的映射一旦建立就不能修改字段类型。若索引是更早版本
+     * （例如按 {@code ProductDoc} 注解自动建的、或某个字段类型不同的旧版本）留下的，
+     * {@code exists()} 会返回 true，映射却与当前代码不匹配；此时写入要么被 ES 拒绝，
+     * 要么字段被静默丢弃（例如 embedding 维度不对），表现为「保存成功但搜不到」。
+     * 这里只在<b>缺失或类型不符</b>时报错——不擅自删索引，那是不可逆操作。
+     */
+    static final Map<String, String> REQUIRED_MAPPING = Map.of(
+            // image 不在其中：它是 index=false 的展示字段，不进检索，类型不符也不影响搜索
+            "title", "text",
+            "content", "text",
+            "summary", "text",
+            "price", "double",
+            "sku", "keyword",
+            "shopId", "long",
+            "userId", "integer",
+            "embedding", "dense_vector");
 
     @Autowired
     private ElasticsearchOperations elasticsearchOperations;
@@ -155,12 +175,62 @@ public class ProductIndexServiceImpl implements ProductIndexService {
                 indexOps.putMapping(buildMapping());
             }
         } else {
-            // 索引已存在：不动映射。但若旧映射用了不可用的 analyzer（例如遗留的 ik_max_word），
-            // 写入会在 ES 侧失败并在 upsertBatch 里以 ERROR 暴露——那时需要人工重建索引，
-            // 由 ProductIndexRebuildService 负责，这里不擅自删索引。
+            // 索引已存在：不动映射，但必须核对。类型不符时 ES 会拒绝写入或静默丢字段，
+            // 与其让运营看到「保存成功却搜不到」，不如在第一次写入就 ERROR 点名差异。
+            verifyExistingMapping(indexOps);
             created = true;
         }
         mappingReady = created;
+    }
+
+    /**
+     * 核对已存在索引的字段类型。
+     * <p>
+     * 不抛异常、不删索引：由 {@link #upsertBatch} 的 catch 统一记为写入失败，
+     * 日志里给出「哪个字段该是什么类型、实际是什么」，运维据此决定是否重建索引。
+     */
+    private void verifyExistingMapping(IndexOperations indexOps) {
+        Map<String, Object> mapping;
+        try {
+            mapping = indexOps.getMapping();
+        } catch (Exception e) {
+            log.warn("读取商品索引映射失败（index={}）：{}", INDEX_NAME, e.getMessage());
+            return;
+        }
+        Map<String, Object> properties = propertiesOf(mapping);
+        List<String> mismatches = new ArrayList<>();
+        for (Map.Entry<String, String> required : REQUIRED_MAPPING.entrySet()) {
+            Object fieldDef = properties.get(required.getKey());
+            String actualType = fieldDef instanceof Map<?, ?> def && def.get("type") != null
+                    ? String.valueOf(def.get("type")) : null;
+            if (!required.getValue().equals(actualType)) {
+                mismatches.add(required.getKey() + " 期望 " + required.getValue()
+                        + " 实际 " + (actualType == null ? "缺失" : actualType));
+            }
+        }
+        if (!mismatches.isEmpty()) {
+            log.error("商品索引映射与当前代码不符（index={}）：{}。"
+                    + "写入可能被 ES 拒绝或字段被静默丢弃；需删除并重建索引"
+                    + "（见 HANDOFF 的索引重建步骤），本服务不会自动删索引。",
+                    INDEX_NAME, String.join("；", mismatches));
+        }
+    }
+
+    /** getMapping 返回的结构是 { properties: {...} }（也可能被包一层索引名），两种都兼容。 */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> propertiesOf(Map<String, Object> mapping) {
+        Object properties = mapping == null ? null : mapping.get("properties");
+        if (properties instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        Object nested = mapping == null ? null : mapping.get(INDEX_NAME);
+        if (nested instanceof Map<?, ?> indexDef) {
+            Object inner = indexDef.get("properties");
+            if (inner instanceof Map<?, ?> innerMap) {
+                return (Map<String, Object>) innerMap;
+            }
+        }
+        return Map.of();
     }
 
     /** 索引设置：中文用内置 cjk 分词（无需 IK 插件）。 */

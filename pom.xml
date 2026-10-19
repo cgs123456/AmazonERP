@@ -48,7 +48,15 @@
         <gson.version>2.11.0</gson.version>
         <jwt.version>4.4.0</jwt.version>
         <oss.version>3.17.4</oss.version>
-        <elasticsearch.version>8.15.3</elasticsearch.version>
+        <!-- 注意：这个属性当前**没有任何消费者**。Boot 4.0.8 用
+             ${elasticsearch-client.version}=9.2.9 管理 co.elastic.clients:*，
+             Spring Data ES 6.0.7 的 BOM 也自带该版本；此属性既未被 dependencyManagement
+             引用，也不是任何 import 的 BOM 的属性名。保留仅因历史上曾用于对齐服务端镜像，
+             值改为与服务端一致的 9.2.8，避免下一个人把它当成有效开关。
+             真正决定客户端版本的是 Boot BOM，真正决定服务端版本的是 docker-compose.yml
+             与 k8s/infra/elasticsearch-statefulset.yaml（两处必须 >= 9.2.8，
+             否则 9.x 客户端的 compatible-with=9 头会被 8.x 服务端 400 拒绝）。 -->
+        <elasticsearch.version>9.2.8</elasticsearch.version>
         <langchain4j.version>1.20.2</langchain4j.version>
         <onnxruntime.version>1.18.2</onnxruntime.version>
         <sentinel.version>1.8.9</sentinel.version>

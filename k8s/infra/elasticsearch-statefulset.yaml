@@ -46,7 +46,9 @@ spec:
     spec:
       containers:
         - name: elasticsearch
-          image: elasticsearch:8.15.3
+          # 必须 >= 9.2.8：Boot 4.0.8 托管的 ES Java Client 9.2.9 固定发送
+          # compatible-with=9，8.x 服务端一律回 400。原因与实测记录见 docker-compose.yml。
+          image: elasticsearch:9.2.8
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

@@ -138,8 +138,18 @@ services:
     restart: unless-stopped
 
   # Elasticsearch
+  #
+  # 版本必须 >= 9.2.8：Spring Boot 4.0.8 托管的 ES Java Client 是 9.2.9，
+  # 它固定发送 `compatible-with=9` 兼容头；8.x 服务端只接受 7/8，实测 8.15.3 直接回
+  #   Accept version must be either version 8 or 7, but found 9  (HTTP 400)
+  # 即搜索域的每一条请求都会失败（不是降级，是全部 400）。9.2.8 与 9.2.9 客户端同属 9.2
+  # 系列、兼容头一致，实测 create/mapping/bulk/refresh/count/kNN 全部通过。
+  # 9.2.8 的 minimum_index_compatibility_version=8.0.0，8.x 时代建的索引数据卷可原地升级；
+  # 但 8.x 建出的 dense_vector 映射不会自动改，若要 9.x 的量化新默认需删索引重建
+  # （实测 8.x 为 int8_hnsw，9.x 为 bbq_hnsw + rescore oversample 3.0）。
+  # 重建步骤见 HANDOFF §S33.124 §3。
   elasticsearch:
-    image: elasticsearch:8.15.3
+    image: elasticsearch:9.2.8
     container_name: amz-elasticsearch
     environment:
       - discovery.type=single-node
@@ -153,8 +163,10 @@ services:
     restart: unless-stopped
 
   # Logstash（日志收集与转发）
+  # 与 elasticsearch 保持同一 ELK 版本线（9.2.x）。跨大版本混搭没有收益，
+  # 只会引入一类"输出插件与服务端握手"的兼容问题；同版本线是零成本的确定性选择。
   logstash:
-    image: logstash:8.15.3
+    image: logstash:9.2.8
     container_name: amz-logstash
     ports:
       - "5044:5044"
@@ -169,7 +181,7 @@ services:
 
   # Filebeat：把各容器 stdout 收进 logstash（5044/beats）。没有它 Kibana 永远为空。
   filebeat:
-    image: docker.elastic.co/beats/filebeat:8.15.3
+    image: docker.elastic.co/beats/filebeat:9.2.8
     container_name: amz-filebeat
     user: root
     volumes:
@@ -190,7 +202,7 @@ services:
 
   # Kibana（Elasticsearch 可视化）
   kibana:
-    image: kibana:8.15.3
+    image: kibana:9.2.8
     container_name: amz-kibana
     ports:
       - "5601:5601"

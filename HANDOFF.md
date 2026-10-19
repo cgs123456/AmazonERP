@@ -9357,3 +9357,191 @@ Compose / K8s / 两套 .env 模板四处对齐，由 `PlaceholderCoverageContrac
 3. **IK 分词器未安装**，索引用内置 `cjk`。若商品标题以英文为主，可考虑改回 `standard`；
    改动点在 `ProductIndexServiceImpl.buildMapping()`，改完需**删索引重建**
    （ES 不支持原地改 analyzer）。
+
+---
+
+# §S33.125 ES 版本不兼容：9.x 客户端对 8.15.3 服务端**每一条请求都 400**
+
+> 这是 §S33.124 §1 接入搜索索引之后，按用户要求「只起 ES 验证映射」时挖出来的。
+> 结论不是「映射可能有问题」，而是**搜索域上线后完全不可用**。
+
+## 1. 发现路径（以及为什么必须真机验证）
+
+§S33.124 的索引写入只做了单元测试：假 `ElasticsearchOperations` 记录调用序列，
+不经过 HTTP。单测全绿，但它们**不可能**发现客户端与服务端的协议版本问题。
+
+用户在「起全栈 / 只起 ES / 先不做」三选一里选了**只起 ES**，这是覆盖面最大、
+成本最低的一步。启动 `elasticsearch:8.15.3` 后，索引映射本身**完全正常**：
+
+- `PUT /amz_product`（settings）→ 200
+- `PUT /amz_product/_mapping` → 200，`cjk` analyzer / `dense_vector dims=1024 cosine` 全部被接受
+- `_analyze` 对「无线蓝牙耳机」切出 无线/线蓝/蓝牙/牙耳/耳机（cjk 双字组，符合预期）
+- 写入 1024 维向量后 kNN 命中，BM25 也能命中
+
+也就是说，**映射设计是对的**。问题在更下面一层。
+
+## 2. 真正的问题：`compatible-with=9` 头
+
+Boot 4.0.8 托管的 `co.elastic.clients:elasticsearch-java` 是 **9.2.9**。
+该类在静态初始化时把请求头固定为：
+
+```
+Content-Type: application/vnd.elasticsearch+json; compatible-with=9
+Accept:       application/vnd.elasticsearch+json; compatible-with=9
+```
+
+（`ElasticsearchTransportBase.JSON_CONTENT_TYPE`，由 `Version.major()` 拼接；
+rest5 传输层在 `Rest5ClientOptions.addBuiltinHeaders` 里补 Accept，
+`createRestRequest` 里补 Content-Type。）
+
+对 8.15.3 实测：
+
+```
+$ curl -H 'Accept: application/vnd.elasticsearch+json; compatible-with=9' ...
+{"error":{"type":"media_type_header_exception",
+ "reason":"Accept version must be either version 8 or 7, but found 9"}, "status":400}
+```
+
+因此**每一条** create / putMapping / index / bulk / search / count 都会 400。
+`ProductIndexServiceImpl.upsertBatch` 的 catch 会把它们记成 ERROR 并返回 0——
+「保存成功但搜不到」会以最坏的形式出现：索引永远为空，日志里全是中文 ERROR。
+
+## 3. 处置：服务端升到 9.2.8，ELK 整线对齐
+
+| 文件 | 改动 |
+|---|---|
+| `docker-compose.yml` | `elasticsearch` / `logstash` / `kibana` / `filebeat` 8.15.3 → **9.2.8** |
+| `k8s/infra/elasticsearch-statefulset.yaml` | `elasticsearch:8.15.3` → **9.2.8** |
+| `pom.xml` | `elasticsearch.version` 属性 8.15.3 → 9.2.8（**并注明该属性无消费者**，见 §4） |
+| `README.md` | 两处版本表 |
+| `ProductIndexServiceImpl` 类注释 | 「官方 elasticsearch:8.15.3 镜像」→ 9.2.8 |
+
+**为什么是 9.2.8 而不是 9.2.9**：Docker Hub 上 `elasticsearch:9.2.9` 不存在
+（9.2.8 之后的下一个公开标签是 9.3.0）。9.2.8 与客户端 9.2.9 同属 9.2 系列、
+兼容头一致，是能满足「服务端主版本 = 客户端主版本」的最高可用补丁版。
+
+**为什么连 Logstash/Kibana/Filebeat 一起升**：跨大版本混搭没有收益，
+只会引入「输出插件与服务端握手」这一类额外变量。同版本线是零成本选择。
+四个镜像均实测可拉取。
+
+## 4. 附带修正：`pom.xml` 的 `<elasticsearch.version>` 是个死属性
+
+根 pom 里这个属性**没有任何消费者**：
+
+- Boot 4.0.8 用 `${elasticsearch-client.version}`（9.2.9）管理 `co.elastic.clients:*`；
+- `spring-data-elasticsearch:6.0.7` 的 BOM 自带 `elasticsearch-java` 9.2.9；
+- 全仓 grep `${elasticsearch.version}` 与 `elasticsearch-bom` 均无结果。
+
+它看起来像一个能切换客户端版本的开关，实际改了没有任何效果——比不写更危险。
+本次把它改成 9.2.8 并在注释里写明「无消费者」，避免下一个人据此误判。
+
+## 5. 真机验证证据（ES 9.2.8）
+
+| 检查 | 结果 |
+|---|---|
+| `GET /` | 9.2.8，`minimum_index_compatibility_version=8.0.0` |
+| `minimum_wire_compatibility_version` | **8.19.0**（8.15 的客户端/Logstash 连不上，这也印证了 ELK 必须整线升） |
+| 9.x 兼容头 `GET /` | 200（8.15.3 是 400） |
+| `PUT /amz_product`（项目真实 `buildSettings()` 产物） | acknowledged |
+| `PUT /_mapping`（项目真实 `buildMapping()` 产物） | acknowledged；`cjk` / `dense_vector 1024 cosine index=true` 正确落盘 |
+| `_analyze` | cjk 双字组切分正确 |
+| index 1024 维文档 | created |
+| `_bulk`（9.x 头，ndjson 的 Content-Type 也需带 `compatible-with=9`） | errors=false，9/9 成功 |
+| `_refresh` / `_count` | 正常 |
+| kNN 查询 | 命中，score≈1.0 |
+| 旧索引字段类型冲突（`price: keyword` vs `double`） | `putMapping` 400：`mapper [price] cannot be changed from type [keyword] to [double]` |
+| 旧索引 `dims:768` 写入 1024 维 | 400：`has more dimensions than defined in the mapping [768]` |
+| 新建索引的 `dense_vector` 默认 | `index_options.type=bbq_hnsw`，`m=16`，`ef_construction=100`，`rescore_vector.oversample=3.0`（8.15.3 同位置为 `int8_hnsw`，无 rescore） |
+
+## 6. 新增代码：`verifyExistingMapping`
+
+§S33.124 的 `ensureIndex()` 在索引已存在时**完全不看映射**，注释里写的是
+「写入会在 ES 侧失败并在 upsertBatch 里以 ERROR 暴露」。上表最后两行证明这个假设
+只对了一半：ES 确实会拒绝，但**错误信息只在 ES 响应里**，而
+`upsertBatch` 的日志只打一句「商品索引写入失败（ES 不可用或映射冲突）」，
+运维看不出是哪个字段、期望什么类型。
+
+因此补了 `verifyExistingMapping()`：
+
+- 已存在索引时 `getMapping()`，逐字段核对 `REQUIRED_MAPPING`
+  （title/content/summary=text，price=double，sku=keyword，shopId=long，
+  userId=integer，embedding=dense_vector）；
+- 不符时打 **ERROR 并点名差异**（「price 期望 double 实际 keyword」）；
+- **不抛异常、不删索引、不重建**——删索引是不可逆操作，必须由人决定；
+- 缓存命中（`mappingReady`）后不再每次写入都读映射，成本只在首次写入。
+
+`getMapping()` 返回 `{properties: {...}}`，但也兼容被索引名包一层的结构。
+
+## 7. 测试
+
+| 测试 | 结果 |
+|---|---|
+| `amz-service-search`（含 amz-common） | 270 / 270 |
+| `amz-common` 全量 | 260 / 260 |
+| `PlaceholderCoverageContractTest` | 2 / 2 |
+| `DeploymentManifestContractTest` | 10 / 10 |
+| `FeignDegradationLoggingContractTest` | 3 / 3（基线 25 → **27**：本次 C 档新增的两个 fallback） |
+
+离线验证（无法在沙箱内建 HTTP 连接，见下）用 `InMemoryOps` 假实现跑了三条序列：
+
+1. 首次写入：`create(settings)` → `putMapping(443B)` → `bulkIndex(1)` → `refresh`
+2. 第二次写入：`bulkIndex(1)` → `refresh`（不再 ensure）
+3. 已存在索引：`getMapping` → `bulkIndex(1)` → `refresh`（不 create、不删）
+
+### 7.1 `ProductIndexMappingGuardTest` 的变异验证
+
+新测试 4 条。第一版验证脚本（`MismatchCheck`）只断言了「没有删索引」，
+把类型比较改成恒假后**仍然全绿**——说明那条断言压根没覆盖日志。
+补成仓库内测试后重做变异：
+
+| 变异 | 结果 |
+|---|---|
+| `if (!required.getValue().equals(actualType))` → `if (false)` | **红 2 条**（`mismatchedMappingIsReportedByFieldName`、`missingFieldIsReported`） |
+| 映射不符时 `delete()` + 重建索引 | **红 4 条**（假实现故意不提供 `delete`，抛 `UnsupportedOperationException`） |
+| 读映射失败时静默 `return`（去掉 WARN） | **红 1 条**（`getMappingFailureDoesNotBlockWrites`） |
+| 映射不符时 `throw`（阻断写入） | **红 2 条**（拿不到点名日志，只剩一条笼统的「写入失败」） |
+
+第二条的注释要留意：假 `IndexOperations` **故意不实现 `delete`**，
+所以任何「自动删索引」的改动都会以 `UnsupportedOperationException` 炸红，
+而不是静默通过。这是刻意的——删索引是不可逆操作，测试必须让它无法被悄悄加进来。
+
+## 8. 本机环境限制（重要，避免下一班重复踩）
+
+**本机的 JVM 无法创建任何带 selector 的网络客户端**：
+
+```
+java.net.SocketException: Invalid argument: connect
+  at sun.nio.ch.UnixDomainSockets.connect0
+  at sun.nio.ch.PipeImpl$Initializer$LoopbackConnector.run
+```
+
+JDK 21 的 `PipeImpl` 在 Windows 上优先用 AF_UNIX 建 loopback pipe，该调用在本机被拒，
+于是 `Selector.open()` 失败。影响面：
+
+- JDK `HttpClient`（`EmbeddingServiceImpl` 用的）**不可用**；
+- Apache HttpClient 5 异步客户端（rest5 transport 用的）**不可用**；
+- Apache HttpClient 4 异步客户端（legacy rest client 用的）**不可用**。
+
+这不是沙箱问题——`dangerouslyDisableSandbox` 之后同样失败。因此：
+
+- **不能在 Java 里连 ES**，HTTP 验证一律用 `curl`（curl 有自己的网络栈，正常）；
+- 与已知的三个 loopback 红灯（`AdvertisingApiRealClientContractTest`、
+  `OrderServiceFeignDecodeIT`、`DeepSeekAgentConfigurationContractTest`）同源，
+  继续按「本机红、以 CI 为准」处理；
+- 生产/容器内的 JDK 是否也受影响**未验证**；容器 Linux 下 `UnixDomainSockets`
+  走的是正常路径，风险低，但这条**不能当作已验证**。
+
+## 9. 下一班需要知道的
+
+1. **升级 ES 后建议重建索引**：9.x 的 `dense_vector` 新默认是
+   `index_options.type=bbq_hnsw` + `rescore_vector.oversample=3.0`（量化），
+   8.x 是 `int8_hnsw`（两者均实测确认）。**已有索引的映射不会自动变**——
+   8.x 时代建的索引升级后会继续用旧映射，功能正常，只是没有新默认的收益。
+   若要拿到 9.x 的量化默认，按 §S33.124 §3 删索引 + `POST /search/index/rebuild`。
+   注意这是**可选优化**，不是升级的必要步骤，不要写成「必须」。
+2. **`minimum_wire_compatibility_version=8.19.0`**：任何还连着这个 ES 的 8.15 时代客户端
+   （旧的 Logstash/Filebeat 容器、运维本地的 kibana 客户端）都会连不上，
+   必须整线升到 9.2.x。Compose 已一并更新。
+3. **AI 知识库不受影响**：`KnowledgeEsClient` 走的是裸 HTTP + Gson，不发兼容头，
+   9.2.8 对无头请求返回 200（已验证）。
+4. **本机不能跑任何 Java HTTP 集成测试**，见 §8。
