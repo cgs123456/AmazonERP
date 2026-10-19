@@ -8235,3 +8235,156 @@ multiplatform 155 绿（原 152）。门户 136 绿。
 
 **验证**：3 个变异体（去 id 校验 / 分摊侧换成 LocalDateTime 解析 / 分摊侧格式不匹配）
 全部被杀。report 80 绿（原 77）。门户 136 绿。总行数 46131 → 46118。
+
+---
+
+# §S33.114 交班：本轮审计与修复的完整状态（2026-10-19）
+
+> 这一节是**交接入口**，不是又一条流水账。上面 §S33.91~§S33.113 是过程，
+> 这里回答下一班最关心的五个问题：现在到哪了、什么是真做完的、什么卡着、
+> 下一步该干什么、别重踩哪些坑。
+
+## 1. 当前状态
+
+- HEAD：`f6d628f`，已推送（`origin/master` 同步）。
+- 本轮新增提交 7 个：`4361c79` §S33.107 FIFO、`dc21e3f` §S33.108 判重补 shop_id、
+  `b02bcdf` + `43f2f44` 迁移同步与结论更正、`a0f6e17` §S33.111 唯一键收尾、
+  `fd693bb` §S33.112 游标合并、`f6d628f` §S33.113 审计工具模式化。
+- 测试基线（本轮实跑）：门户 137 项全绿；multiplatform 155 / report 80 /
+  logistics 196 / spapi 727；全仓 15 模块除三个已知 loopback 类外无失败。
+- ratchet / hygiene 均 `findings: 0`。
+- 迁移数 **77**（本轮新增 multiplatform V4、V5）。
+
+## 2. 本轮真做完的事（按"是否坐实"排序）
+
+| 项 | 性质 | 坐实方式 |
+|---|---|---|
+| §S33.107 出库 FIFO 跨批 | 缺陷修复 | 先写测试复现假失败，2 变异全杀 |
+| §S33.108 判重查询补 shop_id | 缺陷修复 | 先红后绿（SQL 无 shop_id、`expected <1> but was <0>`），变异被杀 |
+| §S33.111 唯一键收尾 | 缺陷收尾 | §S33.108 只改代码不改 DDL 等于只做一半，见 §3.1 |
+| §S33.112 两份游标解析合并 | 消除重复 | 先补零覆盖侧，3 变异全杀 |
+| §S33.113 审计 helper 模式化 | 工具改进 | 变异（退回枚举）被杀 |
+| §S33.110 迁移同步清单 | 踩坑记录 | 本地门禁抓到「改一半」 |
+
+**注意 §S33.108 与 §S33.111 是一个缺陷的两半**，只交一半等于没修：
+B 店订单不被判重跳过后，会去 insert 然后撞仍是全局的唯一键报 1062，
+整个平台同步被标失败。**两笔必须同时上线。**
+
+## 3. 卡住的问题（按阻塞程度）
+
+### 3.1 §S33.108/111 的本地不可证明性（已记账，不阻塞）
+
+`V5__unified_order_shop_scoped_key.sql` 只在 CI 被 `AllModulesFlywayMySqlIT`
+在真实 MySQL 8 上跑（`FLYWAY_ALL_IT_URL` 在 ci.yml / release.yml 里配了）。
+本地没有 MySQL 实例，**「V5 真能跑通」只能由 CI 证明**。
+1062 / 1091 两条是**按 runbook 推论**的，不是实测。
+下一班若拿到库：先按 `docs/superpowers/runbooks/order-v4-drop-index-repair.md` §3 判断状态。
+
+### 3.2 `isShopAllowed`（lenient）要不要收紧（**需要决策，我已查清事实**）
+
+事实链（都已核实，不是推断）：
+- lenient 在 `getUserId()==null && getShops()` 为空时放行，`UserContext` 注释
+  自己写着「公网 Controller 不应依赖本方法」。
+- 拦截器白名单只有 6 项（`/user/send`、`/user/verify`、`/user/refresh`、
+  `/actuator`、`/multiplatform/webhook`），**不含 logistics 任何路径**。
+  所以 logistics 公网端点必过鉴权 → userId 非 null → lenient 委托 strict。
+- `AmazonReturnSyncScheduler` 显式设 `SYSTEM_USER_ID` + `List.of(shopId)`，
+  **不依赖 lenient**。
+- `LogisticsTrackingSyncScheduler.markDelayed()` 没有设上下文，
+  是唯一真依赖 lenient 的路径——而它调的 `markDelayedShipments`
+  **完全不校验租户**（跨全店扫描，设计如此）。
+
+结论：**公网路径不可达，不是漏洞**，属「不必要的宽」。
+收紧 `Inbound`/`Outbound` 的 `mustExist` 为 strict 是安全的（定时任务不碰），
+但收益只是缩小未来误用面。**这需要产品/安全口径决策，我没有替业务决定。**
+若决定收紧：只改 Inbound / Outbound / ReturnOrder 三处，ReturnOrderService
+已用 `LogisticsShopGuard`（同样 lenient），四份要一起改。
+
+### 3.3 `feeDiscrepancy.scan` SQL 层聚合（**需要数据量依据，我不做无依据优化**）
+
+§S33.96 已把「读全表」改成「最多 50000 行 + 触顶披露」，最危险的部分已消除。
+剩下的「在 DB 里按 SKU 聚合」是性能优化，而**本地库是空表，没有任何行数来源**，
+我无法量化收益。没有数据量依据就不该做性能优化——这是我不动它的原因。
+
+### 3.4 500 行拆分（规模问题，非阻塞）
+
+ratchet 已登记 55 个超 500 行文件（`overLimitFiles: 55`，findings=0，
+门禁通过）——**它们不是故障**。一次拆 55 个会产生无法 review 的 diff，
+且每个都需变异验证（见 §5 的教训）。
+
+已看清边界但**未动**的：`LogisticsUpgradeServiceImpl`（899 行）含四个独立
+聚合根（报价/调拨/分摊/收货差异）；`MultiplatformServiceImpl`（817 行）。
+拆这两处前先确认测试的 `@InjectMocks` 在拆出 Spring bean 后不会静默失效——
+那是真实风险。
+
+### 3.5 OAuth 补全（用户已决策：暂缓）
+
+§S33.94，用户选 A「还没人使用」，保留端点只改描述。`generateToken` javadoc
+已标明「半成品——签发即终点」。**不要再排期。**
+
+## 4. 下一步计划（按优先级）
+
+1. **读完租户边界审计剩余候选**（当前 89 条，已读 42、未读 47）。
+
+   **已读且判定为误报/安全的 42 条**（逐条读过实现，不是看注释）：
+   - customer 4：`replyTicket`/`closeTicket`/`receiveMessage` 都走
+     `requireShopOnRow` → `isShopAllowedStrict`，真校验。
+   - order 9：`OrderController` 118/182 带 `eq(shopId)`；277/280 与
+     `ProfitCalculator` 245/261 是**费率表**（全局参考数据，无租户概念）；
+     `OrderServiceImpl` 477/487 只读不写。
+   - product 4：`ListingMonitor` 164/167 带 shopId；`ListingCopy` 115 带 shop_id；
+     `TranslationService` 163 是**翻译缓存**（按文本 hash，全局共享，设计如此）。
+   - ad 1：`AdAutoRule` 132 走 `requireRuleAccess`（strict）——工具已修（§S33.113）。
+   - spapi 11：`ShopCredentialStore` 471/495 是 `selectById(shopId)` /
+     `deleteById(shopId)`，**shopId 自身就是主键**，天然隔离；
+     `NotificationInboxWorker` 78/103、`SpApiCallOutbox` 188/212/236/288/348、
+     `ShopPerformanceSyncHandler` 123 都是**内部 worker/handler**，无外部 shop 输入；
+     `NotificationInboxService` 157/177 同上。
+   - logistics 11：`Inbound` 85、`Outbound` 85/97、`ReturnOrder` 240 走
+     `mustExist`/`loadForDisposition`（lenient，见 §3.2）；
+     `TrackingIngest` 150/207/460 属 `markDelayedShipments`，
+     **跨全店扫描、刻意不校验租户**，设计如此；
+     `Warehouse` 175/178 与 `LogisticsUpgrade` 651 待复核。
+   - procurement 2：`Supplier` 196/286 走 `requireSupplierAccess`（strict）。
+
+   **未读 47 条**：spapi 5、logistics 9、finance 6、ai 4、ops 4、report 5、
+   user 5、procurement 5、product 2、ad 1（SearchTerm 111/382）。
+
+   筛法：`grep -E "selectById|selectOne|deleteById|updateById"` 优先，
+   `selectList` 带条件的一般较安全；**但 selectList 漏租户条件正是 §S33.108 的形状**，
+   不能只看 selectById。
+2. **决定 §3.2**（lenient 收紧与否）——这是本轮唯一残留的安全口径问题。
+3. §3.1 依赖 CI 结果，等 `AllModulesFlywayMySqlIT` 绿即可关账。
+4. §3.4 若要动，一次一个、每个变异验证、单独提交。
+5. §3.3 需业务给出行数量级。
+
+## 5. 踩过的坑（按「会不会再踩」排序）
+
+1. **grep 掩蔽退出码**（踩过 3 次）。`(mvn ... || true) | grep "Tests run"`
+   会让人读到编译失败后的**旧 surefire 报告**，得出「全绿」和「变异存活」两个假结论。
+   **只认 `echo $?`**；变异一律先 `clean test`；日志落盘再 grep。
+2. **把「没抓到」当成「等价变异」**（本轮第 2 次）。两个变异一度被判等价变异，
+   改对夹具后**都被杀**。判存活前必须先证明变异在夹具上**真的产生了不同行为**。
+   典型掩盖形态：夹具里两条访问，收窄掉一条，另一条仍报出 → 测试照样通过。
+3. **注释不是证据**。`CustomerController` 注释写「service 层按行校验」——
+   这次是真的（`requireShopOnRow` → strict）。但**每一次都去读了实现**才敢下结论。
+4. **Python 切片删除破坏文件**（3 次）。改为先断言首末行内容，不符即中止。
+5. **heredoc 转义把 Java 字符串字面量弄坏**。本目录 Python 测试改用
+   普通字符串 + `chr(10)` 拼接，不用 `\n` 字面量。
+6. **本地复现 CI 时不要加 `python -I`**：`-I` 剥掉 `sys.path`，
+   会报 `No module named 'tools'`，而 CI 原命令不带 `-I`。
+7. **新增迁移要同步四处**（§S33.110）：快照重生成、manifest 测试计数（方法名+
+   两处断言）、ci.yml 三处口径注释、Release tool tests 清单。
+   上一班漏过，本轮我又漏一次，是本地门禁抓到的。
+8. **断言「全文不含某字面量」会错**：旧键字面量在 V1 建表里，而「旧键已废弃」
+   是 V5 的 DROP 在**运行时**的效果。该断言的是「V5 里有 DROP」。
+
+## 6. 环境备忘
+
+- GitHub 推送需 `git -c http.proxy= -c https.proxy= push`，代理 7897 常 DOWN，
+  直连即可，1-2 次重试；**不要改用户的 `http.proxy` 配置**。
+- 三个 loopback 测试本地必红，用户已定案不深究：
+  `AdvertisingApiRealClientContractTest`、`OrderServiceFeignDecodeIT`、
+  `DeepSeekAgentConfigurationContractTest`。
+- `mvn -o test` 在 product 会 fail-fast 并 SKIP 其余 12 个模块，
+  **必须逐模块跑**。
