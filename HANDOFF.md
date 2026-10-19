@@ -8948,3 +8948,61 @@ ShipmentMapper / InventoryMovementService / WarehouseService → 三个域共用
    `AgentChatStreamServiceTest.testPropagatesAndClearsUserContext` 偶发红，
    是 `verify(timeout(5000))` 与 `thenAnswer` 写 `AtomicReference` 之间的竞态，
    与本次改动无关。要修就把断言改成等 `userId.get() != null` 再校验。
+
+---
+
+# §S33.122 AgentChatStreamServiceTest 的等待对象选错了（改法对，但本机复现不出）
+
+> §S33.121 §6.3 记了一条既有脆弱性。本节修它，但**证据等级必须说清**：
+> 改法是对的，本机无法复现 flake，所以「修好了」未经证明。
+
+## 1. 缺陷形状
+
+```java
+when(agentService.chat(7L, "hi")).thenAnswer(inv -> {
+    userId.set(UserContext.getUserId());   // ← 四个 set 在调用内部执行
+    ...
+});
+service.streamChat("hi", emitter);
+verify(agentService, timeout(5000)).chat(7L, "hi");   // ← 方法「被调用」即返回
+assertEquals(7, userId.get());                        // ← 可能早于最后一次 set
+```
+
+`verify(timeout)` 的语义是「这个方法被调用过」，而四个 `AtomicReference.set`
+是在 `thenAnswer` **内部**执行的。verify 返回时最后一次 set 可能还没落地，
+于是 `userId.get()` 为 null。**等待对象选错了：等的是方法进入，不是方法退出。**
+
+## 2. 改法
+
+`thenAnswer` 末尾 `CountDownLatch.countDown()`，测试先 `assertTrue(latch.await(5, SECONDS))`
+再 `verify(agentService).chat(7L, "hi")`。等待对象从「方法进入」变成「快照就绪」，
+顺带把「异步链路压根没跑起来」从 `assertEquals` 的 NPE 变成一句明确的断言消息。
+
+## 3. 为什么不能说「已验证」
+
+| 形式 | 连跑 | 结果 |
+|---|---|---|
+| 修复版（latch） | 20 次 | 20 绿 |
+| 旧版（verify timeout） | 40 次 | **40 绿** |
+
+旧版在这台机器上 40 次全过，**flake 复现不出来**。所以：
+
+- 不能声称「修好了一个 bug」——没有观察到 bug 发生，也没有观察到它消失；
+- 但改法本身是确定性更强的：把一个依赖时序巧合的等待换成就绪信号，
+  这与 §S33.14 里「时序碰巧对，不是设计如此」是同一条判据。
+
+**给下一班的提示**：若 CI 上这条再红，直接看是不是 latch 等不到（那说明异步链路真没跑），
+不要再往「加长 timeout」方向修——那只会让窗口变大、偶发性降低，问题还在。
+
+## 4. 顺带一条元教训
+
+本轮三次想证明「我修好了某件事」，两次成功一次失败：
+
+| 对象 | 能否证明 | 办法 |
+|---|---|---|
+| §3.2 收紧（§S33.121） | ✅ | 变异 guard 为旧口径 → 3 条断言红 |
+| customer 非假绿（§S33.121） | ✅ | 变异 guard 恒真 → `createDeniedForOtherShop` 红 |
+| 本节 flake | ❌ | 本机 40 次复现不出 |
+
+**「复现不出」和「不存在」是两件事**，不要把后者写成前者。
+这条改动的提交信息里写的是「改法对、未经复现证明」，不是「修复 flake」。

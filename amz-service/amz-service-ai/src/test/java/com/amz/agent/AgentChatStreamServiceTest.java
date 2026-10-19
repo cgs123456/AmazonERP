@@ -15,6 +15,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeast;
@@ -112,18 +114,27 @@ class AgentChatStreamServiceTest {
         AtomicReference<String> role = new AtomicReference<>();
         AtomicReference<List<Long>> shops = new AtomicReference<>();
         AtomicReference<Long> shopId = new AtomicReference<>();
+        // 快照就绪信号：四个 set 全部完成后才倒数。
+        // 原来靠 verify(agentService, timeout(5000)) 等待，但它在 chat「被调用」时
+        // 就返回，而 thenAnswer 里的四个 set 是在调用内部执行的——
+        // verify 可能早于最后一次 set 返回，于是 userId.get() 还是 null。
+        // 这不是被测代码的竞态，是测试的等待对象选错了：等的是方法进入，不是方法退出。
+        CountDownLatch snapshotTaken = new CountDownLatch(1);
 
         when(agentService.chat(7L, "hi")).thenAnswer(invocation -> {
             userId.set(UserContext.getUserId());
             role.set(UserContext.getRole());
             shops.set(UserContext.getShops());
             shopId.set(UserContext.getShopId());
+            snapshotTaken.countDown();
             return Result.success("hello");
         });
 
         service.streamChat("hi", emitter);
 
-        verify(agentService, timeout(5000)).chat(7L, "hi");
+        assertTrue(snapshotTaken.await(5, TimeUnit.SECONDS),
+                "worker 应在 5 秒内完成上下文快照，否则说明异步链路没跑起来");
+        verify(agentService).chat(7L, "hi");
         assertEquals(7, userId.get(), "worker 应看到 JWT 中的 userId");
         assertEquals("VIEWER", role.get(), "worker 应看到 JWT 中的 role");
         assertEquals(List.of(11L, 12L), shops.get(), "worker 应看到 JWT 中的授权店铺");
