@@ -32,25 +32,50 @@ public class KeepaRealClient implements KeepaClient {
     private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final String DEFAULT_API = "https://api.keepa.com/product";
 
-    private final HttpClient httpClient;
+    /**
+     * HTTP 客户端，<b>惰性创建</b>。
+     * <p>
+     * <b>本字段原先的「惰性」是假的</b>（2026-10-19 修）：上一版把
+     * {@code HttpClient.newBuilder()} 挪进了 {@link #defaultHttpClient()} 私有方法并写了
+     * 「延迟创建」的注释，但<b>默认无参构造器直接调用它</b>。本类是
+     * {@code @Component @Profile("!mock")}，生产档必然实例化 → 依旧在构造期打开
+     * selector/loopback，任何 JVM 建不出网络栈的环境都会让 product 服务起不来。
+     * <b>形状像惰性、行为不是惰性</b>，比直接写在字段上更危险，因为它看起来已经修过了。
+     * <p>
+     * 现在生产构造器传 null，表示「首次真正请求时再建」（见 {@link #httpClient()}）。
+     * 注入 HttpClient 的包可见构造器行为不变：拿到什么用什么，<b>不经过访问器</b>，
+     * 否则测试注入的 mock 会被真实网络栈悄悄替换。
+     */
+    private volatile HttpClient httpClient;
+
     private final String apiBaseUrl;
     private final Gson gson = new Gson();
 
     @Value("${keepa.api-key:}")
     private String apiKey;
 
+    /** 生产档构造器：不在构造期创建 HttpClient（理由见字段注释）。 */
     public KeepaRealClient() {
-        this(defaultHttpClient(), DEFAULT_API);
+        this(null, DEFAULT_API);
     }
 
     /**
-     * 默认 HttpClient 延迟到默认构造器调用时创建：类初始化阶段不再打开 selector/loopback，
-     * 注入 HttpClient 的测试环境也不会被真实网络栈初始化拖垮。
+     * 首次真正发请求时才创建客户端（双重检查，线程安全）。
      */
-    private static HttpClient defaultHttpClient() {
-        return HttpClient.newBuilder()
-                .connectTimeout(DEFAULT_CONNECT_TIMEOUT)
-                .build();
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = httpClient;
+                if (client == null) {
+                    client = HttpClient.newBuilder()
+                            .connectTimeout(DEFAULT_CONNECT_TIMEOUT)
+                            .build();
+                    httpClient = client;
+                }
+            }
+        }
+        return client;
     }
 
     KeepaRealClient(HttpClient httpClient, String apiBaseUrl) {
@@ -102,7 +127,7 @@ public class KeepaRealClient implements KeepaClient {
                 .build();
 
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient().send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw ConnectorException.callFailed("Keepa",
                         "Keepa API 返回 HTTP " + response.statusCode() + "，type=" + type);

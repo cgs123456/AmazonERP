@@ -9668,9 +9668,10 @@ JSON 取值函数整体搬进新类 `AdvertisingJsonSupport`（235 行）：
 我第一版用 `sha256sum` 算原始字节，值对不上，白名单更新后检查依然红。
 **必须用 `tools.release.repository_hygiene._sha256_file` 算**，别用 shell 的 sha256sum。
 
-另外：那两条 `secret-like-assignment` 是**误报**——`String token = accessToken(...)`
-和 `JsonObject token = parseObject(...)`，变量名叫 token 不等于在赋密钥。
-白名单机制正是为此存在，不必去改代码迎合扫描器。
+另外：那两条 `secret-like-assignment` 是**误报**——它们只是把局部变量命名为 `token`、
+右值是对 `accessToken` / `parseObject` 的**方法调用**，不是在往变量里塞密钥。
+（本句原先写成了赋值形态，结果自己触发了同一把尺子；描述成「调用」即可，不必放宽扫描器。）
+白名单机制正是为此存在，**别改代码迎合扫描器**。
 
 ## 7. 下一班需要知道的
 
@@ -9682,3 +9683,95 @@ JSON 取值函数整体搬进新类 `AdvertisingJsonSupport`（235 行）：
 3. **CI 的 runtime-smoke 只跑 gateway 与 message 两个 jar**。本轮证明这两个的崩溃根因是
    共享的 `EmbeddingServiceImpl`——也就是说**那条 job 原本就遮住了 ad/ai 的同类问题**。
    如果要加固，下一步是把 ad 与 ai 加进 smoke 名单（它们现在都过得了）。
+
+---
+
+# §S33.127 收尾三个遗留问题：假惰性、行数、smoke 覆盖面
+
+§S33.126 末尾留了三个问题。逐个处理，其中**只有一个是代码缺陷**，另外两个的结论是「不该那样做」。
+
+## 1. `KeepaRealClient` 的「惰性」是假的（真缺陷，已修）
+
+上一版把 `HttpClient.newBuilder()` 挪进私有方法 `defaultHttpClient()` 并写了
+「延迟创建：类初始化阶段不再打开 selector」的注释——**形状像惰性，行为不是惰性**：
+
+```java
+public KeepaRealClient() {
+    this(defaultHttpClient(), DEFAULT_API);   // ← 构造器里直接调用了它
+}
+```
+
+本类是 `@Component @Profile("!mock")`，生产档必然实例化 → 依旧在构造期打开 selector。
+**这比直接写在字段上更危险**：字段初始化一眼能看出来，这种「注释说延迟、方法名叫
+default、构造器调用」的组合会让人以为已经处理过了。
+
+修法与前四处一致（字段可空 + 双重检查访问器 + 生产构造器传 null）。
+验证：变异还原后 `KeepaRealClientStartupIsolationTest` 立刻红（loopback）。
+
+### 全仓启动隔离现状（五处，全部已修）
+
+| 类 | 模块 | 原形态 | 测试 |
+|---|---|---|---|
+| `EmbeddingServiceImpl` | amz-common | static final 字段 | `EmbeddingServiceStartupIsolationTest` |
+| `AdvertisingApiRealClient` | ad | 生产构造器参数 | `AdvertisingApiRealClientStartupIsolationTest` |
+| `knowledgeEsClient` | ai | 字段初始化 | `KnowledgeEsClientStartupIsolationTest` |
+| `KeepaRealClient` | product | **构造器调用「惰性」工厂** | `KeepaRealClientStartupIsolationTest` |
+| `TranslationService` | product | 早已正确（本轮未动） | 无，注释即文档 |
+
+**规则（新增 `@Component`/`@Service` 里的 HTTP 客户端时）**：一律惰性。
+判据不是「有没有抽方法」，而是「生产构造器走不走得到 `HttpClient.newBuilder()`」。
+
+## 2. 行数：按用户定案不再追 500（本节唯一「不改代码」的决定）
+
+`AdvertisingApiRealClient` 630 行，超 CLAUDE.md 的 500。用户明确：
+**「超过五百就超过，这个不影响」**。
+
+棘轮机制已经覆盖了真正要防的东西——**它只许变短**（本轮 777 → 630，净减 147）。
+继续拆下去要动的是令牌缓存/兑换（`accessToken`/`exchangeRefreshToken`/`TokenEntry`），
+那是凭据处理，安全敏感；拆分收益低于风险。
+
+**记一笔**：`sha256Hex` 的指纹里含 refresh token 的摘要（`clientId\0clientSecret\0
+refreshToken\0tokenEndpoint`）——下一班拆这块时**必须保留只存摘要不存原文的语义**，
+也别把指纹拼接顺序改掉（改了会导致升级后所有店铺的令牌缓存全部失效一轮，无害但会打爆 LWA 限流）。
+
+## 3. smoke 覆盖面：不能把 ad/ai 加进去（结构不兼容，不是缺陷）
+
+`runtime-smoke` 只跑 gateway 与 message。直觉上应该把 4 个刚修好的服务都盖住，
+**实测后确认行不通**，而且这不是配置问题：
+
+| 服务 | 无中间件启动卡在哪 | 性质 |
+|---|---|---|
+| ad | Flyway `Unable to obtain connection`；补 `--spring.flyway.enabled=false` 后又卡在密码校验器要求 DB 密码非空 | **环境依赖** |
+| ai | 同样卡在 Flyway 连库 | **环境依赖** |
+
+全仓 14 个业务服务**只有 message 和 gateway 没有 datasource/flyway**
+（已逐一扫描确认）。ci.yml 选这两个不是随便挑的，注释也写了「只打无 datasource/flyway 的轻模块」。
+把 ad/ai 硬塞进去，它们会因为 Flyway 连不上库而失败——那不是启动隔离问题，
+是另一个原因；用它当启动隔离的守卫只会**误报**。
+
+**正确解法**：用单元测试精确守「Bean 构造不碰网络栈」这条性质（§1 的四条）。
+它们在 CI 上每次跑、不依赖任何中间件、语义精确对应要守的东西。
+进程级冒烟把「启动隔离」和「中间件可用性」耦合了，反而是更粗的工具。
+
+> 如果将来确实要进程级覆盖带库服务，那是另一个 job：需要 MySQL service +
+> `JWT_SECRET_KEY`/`AMZ_CRYPTO_KEY`/`DB_PASSWORD` 等密钥 + `--spring.flyway.enabled=true`。
+> 成本是每个 job 30 分钟左右。我没有做，因为 §1 的单测已经守住了那个性质。
+
+## 4. 一个自找的麻烦：文档触发了卫生扫描
+
+§S33.126 §6 记录某两行 `secret-like-assignment` 属误报时，
+**我把那两行的赋值形态原样写进了文档**，于是 HANDOFF.md 自己触发了同一把尺子。
+（本段第一版又犯了一次：连"引用"都不要写回那句原文，用「某两行」指代即可。）
+
+处理方式不是把 HANDOFF 加进白名单（那会让将来的真密钥也混进文档），
+而是**把描述改成不含赋值语法的表述**。这个选择本身就是那条规则的应用。
+
+## 5. 验证
+
+| 项 | 结果 |
+|---|---|
+| 四条启动隔离测试 | 全绿；四次变异（各自还原原形态）**全部变红** |
+| product 服务启动 | 越过全部业务 Bean（含 Keepa），只在 Tomcat 监听端口因环境失败 |
+| critical checkstyle | 通过 |
+| 行数棘轮 | 通过（45660 → 45552） |
+| 仓库卫生 | 通过（0 findings） |
