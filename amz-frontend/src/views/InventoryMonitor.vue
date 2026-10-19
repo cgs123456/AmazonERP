@@ -123,6 +123,12 @@
             </tr>
           </tbody>
         </table>
+        <!-- 日均销量为 0 的两种成因必须分开说，否则「未同步」会被读成「卖不动」，运营据此砍掉畅销品 -->
+        <p class="sales-history-hint">
+          日均销量取自销售历史（近 30 天，7 天权重 0.7 + 30 天权重 0.3）。显示 0 可能是
+          <b>该窗口内确实没有销量</b>，也可能是<b>销售历史尚未同步</b>——后者需先同步销量报表，
+          否则补货建议基于空历史出数。
+        </p>
         <div v-if="totalInventory > pageSize" class="table-pager">
           <span class="page-info">第 {{ currentPage }} 页 / 共 {{ totalPagesCount }} 页（{{ totalInventory }} 条）</span>
           <div class="page-actions">
@@ -478,6 +484,7 @@ onMounted(reloadData)
 .recalc-btn:disabled { opacity: 0.5; cursor: not-allowed; border-color: var(--color-border); color: var(--color-muted); }
 .recalc-msg { font-size: 0.8125rem; color: var(--color-success); }
 .recalc-hint { font-size: 0.75rem; color: var(--color-muted); }
+.sales-history-hint { font-size: 0.75rem; color: var(--color-muted); margin: 0.5rem 0 0; }
 .error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 
 .inventory-page { background: var(--color-background); }

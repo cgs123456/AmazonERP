@@ -4,7 +4,7 @@
   "limitLines": 500,
   "summary": {
     "files": 55,
-    "totalLines": 46202,
+    "totalLines": 46209,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -29,7 +29,7 @@
     "amz-frontend/src/views/CustomerService.vue": 885,
     "amz-frontend/src/views/Dashboard.vue": 509,
     "amz-frontend/src/views/Finance.vue": 762,
-    "amz-frontend/src/views/InventoryMonitor.vue": 545,
+    "amz-frontend/src/views/InventoryMonitor.vue": 552,
     "amz-frontend/src/views/KnowledgeBase.vue": 510,
     "amz-frontend/src/views/ListingMonitor.vue": 874,
     "amz-frontend/src/views/LogisticsDashboard.vue": 887,
