@@ -59,16 +59,6 @@ import static com.amz.agent.ErpToolSupport.truncate;
 @Component
 public class ErpToolExecutor {
 
-    
-
-    
-
-    
-
-    
-
-    
-
     @Autowired
     private ErpLogisticsTools logisticsTools;
     @Autowired
