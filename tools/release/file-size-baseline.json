@@ -4,7 +4,7 @@
   "limitLines": 500,
   "summary": {
     "files": 55,
-    "totalLines": 46360,
+    "totalLines": 46173,
     "largest": "amz-frontend/src/__tests__/LogisticsDashboard.test.ts"
   },
   "files": {
@@ -40,7 +40,7 @@
     "amz-frontend/src/views/ReportCenter.vue": 984,
     "amz-frontend/src/views/Warehouse.vue": 1369,
     "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java": 738,
-    "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 623,
+    "amz-service/amz-service-ad/src/main/java/com/amz/service/impl/SearchTermServiceImpl.java": 579,
     "amz-service/amz-service-ai/src/test/java/com/amz/agent/ErpToolExecutorTest.java": 1049,
     "amz-service/amz-service-customer/src/main/java/com/amz/service/impl/CustomerEmailServiceImpl.java": 549,
     "amz-service/amz-service-finance/src/main/java/com/amz/service/impl/FinanceServiceImpl.java": 580,
@@ -51,17 +51,17 @@
     "amz-service/amz-service-logistics/src/main/java/com/amz/service/impl/LogisticsUpgradeServiceImpl.java": 899,
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsOpsDashboardServiceImplTest.java": 583,
     "amz-service/amz-service-logistics/src/test/java/com/amz/service/impl/LogisticsUpgradeServiceImplTest.java": 652,
-    "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java": 1016,
+    "amz-service/amz-service-multiplatform/src/main/java/com/amz/service/impl/MultiplatformServiceImpl.java": 831,
     "amz-service/amz-service-procurement/src/main/java/com/amz/service/impl/FbaShipmentServiceImpl.java": 887,
     "amz-service/amz-service-product/src/main/java/com/amz/service/ListingCopyService.java": 668,
     "amz-service/amz-service-product/src/test/java/com/amz/service/ListingCopyServiceTest.java": 628,
-    "amz-service/amz-service-report/src/main/java/com/amz/service/impl/RealtimeProfitServiceImpl.java": 548,
+    "amz-service/amz-service-report/src/main/java/com/amz/service/impl/RealtimeProfitServiceImpl.java": 535,
     "amz-service/amz-service-report/src/main/java/com/amz/service/impl/ReportUpgradeServiceImpl.java": 542,
     "amz-service/amz-service-spapi/src/main/java/com/amz/client/FeedsClient.java": 501,
     "amz-service/amz-service-spapi/src/main/java/com/amz/client/SpApiGateway.java": 756,
     "amz-service/amz-service-spapi/src/main/java/com/amz/credential/ShopCredentialStore.java": 595,
     "amz-service/amz-service-spapi/src/main/java/com/amz/outbox/SpApiCallOutboxService.java": 702,
     "amz-service/amz-service-spapi/src/main/java/com/amz/ratelimit/SpiRateLimiter.java": 646,
-    "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesUpgradeFlywayMySqlIT.java": 569
+    "amz-service/amz-service-spapi/src/test/java/com/amz/deploy/AllModulesUpgradeFlywayMySqlIT.java": 624
   }
 }

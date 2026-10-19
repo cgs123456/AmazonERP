@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * 真实 MySQL 8 上的 Flyway「升级库」路径验收。
@@ -294,8 +295,8 @@ class AllModulesUpgradeFlywayMySqlIT {
     }
 
     @Test
-    @DisplayName("multiplatform V1 -> V3：明细 JSON 与平台订单号列改名")
-    void multiplatformUpgradeAddsItemsAndRenamesOrderNo() throws Exception {
+    @DisplayName("multiplatform V1 -> V5：明细 JSON、订单号列改名与统一订单唯一键补 shop_id")
+    void multiplatformUpgradeScopesUnifiedOrderKeyToShop() throws Exception {
         String schema = resetSchema("amz_multiplatform");
         assertMigration(migrate(schema, "amz-service-multiplatform", "1"), 1);
 
@@ -312,13 +313,67 @@ class AllModulesUpgradeFlywayMySqlIT {
 
         try (Connection connection = open(schema)) {
             assertTrue(columnExists(connection, "amz_unified_order", "items_json"));
-            assertEquals(1L, scalarLong(connection,
-                    "SELECT COUNT(*) FROM amz_unified_order WHERE unified_order_no = 'U-1' "
-                            + "AND items_json IS NULL"));
             assertTrue(columnExists(connection, "amz_platform_message", "platform_order_no"));
             assertFalse(columnExists(connection, "amz_platform_message", "order_id"));
             assertEquals("EXT-ORDER-1", scalarString(connection,
                     "SELECT platform_order_no FROM amz_platform_message WHERE platform_message_id = 'MSG-1'"));
+        }
+
+        // V4：商品/消息表唯一键补 shop_id。ShopScopedUniqueKeyContractTest 只读文件文本，
+        // 这里补**运行时**的三列确认——文本里有这三列不等于 MySQL 真按三列建了键。
+        assertMigration(migrate(schema, "amz-service-multiplatform", "4"), 1);
+        try (Connection connection = open(schema)) {
+            assertEquals(3, uniqueIndexColumnCount(connection,
+                    "amz_platform_product", "uk_shop_platform_product"));
+            assertEquals(3, uniqueIndexColumnCount(connection,
+                    "amz_platform_message", "uk_shop_platform_msg"));
+        }
+
+        // V5 之前先固定旧键的全局唯一语义：同一 (platform, platform_order_no) 换一家店
+        // 必须被 uk_platform_order 拦住。这是下面「V5 之后同一插入必须成功」的前提——
+        // 若旧键本来就不拦，V5 的改动就什么都没证明。
+        try (Connection connection = open(schema)) {
+            execute(connection, "INSERT INTO amz_unified_order "
+                    + "(unified_order_no, platform, platform_order_no, shop_id) VALUES "
+                    + "('U-2', 'TEMU', 'EXT-1', 2)");
+            fail("旧键 uk_platform_order 是全局唯一，B 店同一 platform_order_no 本应被拦住；"
+                    + "不拦住说明这个用例测不到 V5 的效果");
+        } catch (SQLException expected) {
+            // 1062 Duplicate entry —— 旧键确实在拦，继续。
+        }
+
+        assertMigration(migrate(schema, "amz-service-multiplatform", "5"), 1);
+
+        try (Connection connection = open(schema)) {
+            // 新键三列且唯一；旧键已消失（只 ADD 不 DROP 时旧键仍在拦，缺陷原样回来）。
+            assertEquals(3, indexColumnCount(connection, "amz_unified_order", "uk_shop_platform_order"));
+            assertEquals(3, uniqueIndexColumnCount(connection, "amz_unified_order", "uk_shop_platform_order"));
+            assertFalse(hasIndex(connection, "amz_unified_order", "uk_platform_order"));
+
+            // 既有行在 DROP+ADD 后完好，且 V2/V3 的结论没被后续迁移抹掉。
+            assertEquals(1L, scalarLong(connection,
+                    "SELECT COUNT(*) FROM amz_unified_order WHERE unified_order_no = 'U-1' "
+                            + "AND shop_id = 1 AND items_json IS NULL"));
+
+            // V5 的真正意义：B 店同一 platform_order_no 现在能落库。
+            // §S33.108 只把判重查询补上 shop_id，代码会走到 insert；若 DDL 不改，
+            // 这里撞旧键报 1062，整个平台同步被标失败。
+            execute(connection, "INSERT INTO amz_unified_order "
+                    + "(unified_order_no, platform, platform_order_no, shop_id) VALUES "
+                    + "('U-2', 'TEMU', 'EXT-1', 2)");
+            assertEquals(2L, scalarLong(connection,
+                    "SELECT COUNT(*) FROM amz_unified_order WHERE platform = 'TEMU' "
+                            + "AND platform_order_no = 'EXT-1'"));
+
+            // 新键仍是真的唯一：同店同平台同订单号必须被拦住。
+            try {
+                execute(connection, "INSERT INTO amz_unified_order "
+                        + "(unified_order_no, platform, platform_order_no, shop_id) VALUES "
+                        + "('U-3', 'TEMU', 'EXT-1', 1)");
+                fail("新键 uk_shop_platform_order 必须拦住同店重复的 (shop_id, platform, platform_order_no)");
+            } catch (SQLException expected) {
+                // 1062 Duplicate entry。
+            }
         }
     }
 
