@@ -8324,7 +8324,10 @@ ratchet 已登记 55 个超 500 行文件（`overLimitFiles: 55`，findings=0，
 
 ## 4. 下一步计划（按优先级）
 
-1. **读完租户边界审计剩余候选**（工具当前报 89 条）。
+1. ~~**读完租户边界审计剩余候选**（工具当前报 89 条）~~
+   → **已完成，见 §S33.115**：22 个未读文件全读完，0 个真缺陷；
+   89 条候选至此全部有据可查。（原先这里是 §4.1 的第 1 优先级，
+   现在腾出来的位置由下面第 2 条顶上。）
 
    > 记账方式说明：我曾用「已读 N 条 / 未读 M 条」记账，**算了三次都对不上**——
    > 同一个文件里只读了其中几条时，条数会重复计算或漏算。**改为按文件记账，不写条数。**
@@ -8354,6 +8357,9 @@ ratchet 已登记 55 个超 500 行文件（`overLimitFiles: 55`，findings=0，
    - `SupplierServiceImpl.java`（196/286）：走 `requireSupplierAccess`（strict）。
 
    **未读文件清单**（这些文件里的候选一条都还没读过）：
+   > **§S33.115 更新：下面这 22 个文件已全部读完，0 个真缺陷，结论见 §S33.115。**
+   > 清单保留原样，作为「当时还剩什么」的记录——按 CLAUDE.md 第 8 条，
+   > 不要让读者以为这里从来没被读过。
    - `ai/agent/ProactiveReminderService.java`
    - `ai/service/impl/MemoryServiceImpl.java`
    - `customer/service/impl/CustomerEmailServiceImpl.java`
@@ -8411,8 +8417,88 @@ ratchet 已登记 55 个超 500 行文件（`overLimitFiles: 55`，findings=0，
    上一班漏过，本轮我又漏一次，是本地门禁抓到的。
 8. **断言「全文不含某字面量」会错**：旧键字面量在 V1 建表里，而「旧键已废弃」
    是 V5 的 DROP 在**运行时**的效果。该断言的是「V5 里有 DROP」。
+9. **用子代理并行审候选时，必须回读它引用的源码**。本轮两个代理都报了
+   `FinanceServiceImpl:477` 与 `StocktakeService` 是「lenient 缺陷」——
+   回读后是误报：两者的端点都不在白名单、也不带 `@InternalServiceAccess`，
+   必过 `authenticateUser` → `userId` 非 null → lenient 委托 strict
+   （`UserContext.isShopAllowed` 第一行就是 `if (getUserId() != null) return isShopAllowedStrict(...)`）。
+   代理把「guard 名字是 lenient」当成了「防线是 lenient」，没去看调用方能否构造出 null userId。
+   另有一个代理称 `ReimbursementClaimController.reimburse` 缺 `@ShopScoped`——
+   `sed` 窗口把注解切掉了，实际有（第 84 行）。
 
 ## 6. 环境备忘
+
+- GitHub 推送需 `git -c http.proxy= -c https.proxy= push`，代理 7897 常 DOWN，
+  直连即可，1-2 次重试；**不要改用户的 `http.proxy` 配置**。
+- 三个 loopback 测试本地必红，用户已定案不深究：
+  `AdvertisingApiRealClientContractTest`、`OrderServiceFeignDecodeIT`、
+  `DeepSeekAgentConfigurationContractTest`。
+- `mvn -o test` 在 product 会 fail-fast 并 SKIP 其余 12 个模块，
+  **必须逐模块跑**。
+
+---
+
+# §S33.115 续 §4.1：读完 22 个未读文件（89 条候选全清）
+
+> 上一班把 89 条候选按文件记账。本节是执行结果：**22 个未读文件全部读完，
+> 0 个真缺陷**。方法上有一条值得留下的教训，见 §5。
+
+## 1. 结论
+
+89 条候选逐条读过实现，**没有一个是跨租户洞**。分布：
+
+| 形态 | 条数 | 代表 |
+|---|---|---|
+| WHERE 带 `shop_id` | 最多 | `ReportUpgradeServiceImpl` 105/329/427、`RealtimeProfitServiceImpl` 199/367、`MultiWarehouseServiceImpl` 122 |
+| 按 id 取后逐行判归属 | 12+ | `ReimbursementClaimServiceImpl`（`requireClaim` → `shopId.equals(c.getShopId())`）、`FeeDiscrepancyServiceImpl`、`ProcurementServiceImpl`（`mustGetAuthorized`）、`PurchasePlanServiceImpl`（`getPlan` → `requireShopAccess`）、`StocktakeService`（`load` → `LogisticsShopGuard`）、`OpsServiceImpl`（`isShopAllowedStrict`，越权与不存在同文案） |
+| 表本身无租户概念 | 4 | `amz_user`、`amz_seasonal_index`、`amz_promotion_calendar`（只有 region）、翻译缓存 |
+| 主键即 shopId | 2 | `ShopServiceImpl.updateShop/updateShopStatus`（`requireAdminOn` 先行） |
+| 内部 worker/scheduler | 6 | `OpsMonitorScheduler`、`NotificationIngestionScheduler`、`SpApiCallOutboxService`、`NotificationInboxService/Worker`、`ShopPerformanceSyncHandler` |
+| 用户维而非店铺维 | 3 | `MemoryServiceImpl`（`amz_user_preference` 无 shop_id 列，`AgentMemoryController` 强制 `setId(null)` + `setUserId(currentUserId())`） |
+
+## 2. 两处 lenient 不是洞（本节最重要的核实）
+
+`InboundServiceImpl.mustExist` / `StocktakeService.load` / `ReturnOrderService`
+用的是 lenient `UserContext.isShopAllowed`。判定它安全的事实链（逐条读过，非推断）：
+
+1. `isShopAllowed` 第一行就是 `if (getUserId() != null) return isShopAllowedStrict(shopId)`——
+   **有用户身份时 lenient 就是 strict**。
+2. 能让 `userId == null` 的只有两条路：白名单（6 项，**不含 logistics 任何路径**）
+   与 `@InternalServiceAccess`（`Inbound`/`Outbound` **零个**；`ReturnOrder` 那一个是
+   `GET /returned-units/{shopId}`，`shopId` 在路径里、由切面校验，不碰 lenient）。
+3. 物流两个 scheduler：`AmazonReturnSyncScheduler` 显式 `setUserId(SYSTEM_USER_ID)` +
+   `setShops(List.of(shopId))`，**不依赖 lenient**；`LogisticsTrackingSyncScheduler.markDelayed()`
+   确实不设上下文，是唯一真走 lenient 的路径——而它调的 `markDelayedShipments`
+   **跨全店扫描、刻意不校验租户**（设计如此，见 §S33.109 已读清单）。
+
+所以 §3.2 的结论不变：**公网路径不可达**。收紧 Inbound/Outbound/ReturnOrder 的
+`mustExist` 为 strict 依然只是「缩小未来误用面」，仍待产品/安全口径决策，本节不代做。
+
+## 3. `MultiplatformController.receiveWebhook`：`null` 是正确值
+
+控制器恒传 `shopId=null`，代理一度报成缺陷。核实后是**设计正确**：
+`resolveShopIdByPlatform` 查 ACTIVE 账号 `LIMIT 2`——0 个返回 null 让上层抛，
+**多于 1 个直接拒绝落库**，只有唯一 ACTIVE 时才用它的 shopId。
+若改成信调用方传的 shopId，那是一个**未签名字段**（HMAC 只覆盖 payload），
+任何能构造合法签名的人都能把回调写进别家店铺。
+残留风险只有「平台级 HMAC 密钥泄露」，那是密钥失守不是租户洞。
+
+## 4. 一个结构性观察：三种键形决定了 id 访问的安全性
+
+| 键形 | 例 | id 访问要什么 |
+|---|---|---|
+| 租户键**全局唯一** | `amz_shipment.shipment_no` | 查询无法带 shop_id → 必须在行上拒绝异店（`LogisticsImportServiceImpl:137` 正是如此） |
+| 租户键是**复合的一部分** | `amz_stocktake_item (stocktake_id, sku)`、`amz_user_preference (user_id)` | 键本身不证明归属 → 必须先载父行判归属（`StocktakeService.load` 的 guard 是承重墙） |
+| 租户键**在唯一键里** | `amz_warehouse_stock (shop_id, warehouse_id, sku)` | `eq(shopId)` 即足够 |
+
+下一班审新表时先问「这张表的租户键是哪种形」，再决定要 WHERE 还是要逐行判。
+
+## 5. 方法教训：子代理的结论不能直接采信（本轮新增，排进 §5 第 9 条）
+
+两个并行代理都返回了「lenient 缺陷」结论，**回读源码后全是误报**——
+它们看了 guard 函数名，没看调用方能否构造出触发条件。另有一处
+「`reimburse` 缺 `@ShopScoped`」是 `sed` 窗口把注解切掉造成的假象。
+**并行子代理适合「找候选」，不适合「定性」**；定性必须自己读那一行。
 
 - GitHub 推送需 `git -c http.proxy= -c https.proxy= push`，代理 7897 常 DOWN，
   直连即可，1-2 次重试；**不要改用户的 `http.proxy` 配置**。
