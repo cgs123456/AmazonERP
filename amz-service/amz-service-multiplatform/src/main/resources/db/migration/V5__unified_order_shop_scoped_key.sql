@@ -36,4 +36,5 @@
 --   但都会让同步接口报错，应作为同一批发布以缩短故障窗口。
 
 ALTER TABLE amz_unified_order
+    DROP INDEX uk_platform_order,
     ADD UNIQUE KEY uk_shop_platform_order (shop_id, platform, platform_order_no);
