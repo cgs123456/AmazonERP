@@ -8324,31 +8324,64 @@ ratchet 已登记 55 个超 500 行文件（`overLimitFiles: 55`，findings=0，
 
 ## 4. 下一步计划（按优先级）
 
-1. **读完租户边界审计剩余候选**（当前 89 条，已读 42、未读 47）。
+1. **读完租户边界审计剩余候选**（工具当前报 89 条）。
 
-   **已读且判定为误报/安全的 42 条**（逐条读过实现，不是看注释）：
-   - customer 4：`replyTicket`/`closeTicket`/`receiveMessage` 都走
+   > 记账方式说明：我曾用「已读 N 条 / 未读 M 条」记账，**算了三次都对不上**——
+   > 同一个文件里只读了其中几条时，条数会重复计算或漏算。**改为按文件记账，不写条数。**
+   > 下一班照着文件读即可，不依赖我的算术。完整清单随时重跑：
+   > `python -I tools/release/tenant_boundary_audit.py --root .`
+
+   **已读且判定为误报/安全的文件**（逐条读过实现，不是看注释）：
+   - `CustomerController.java`（60/89）：实现在 `replyTicket`/`closeTicket` 里走
      `requireShopOnRow` → `isShopAllowedStrict`，真校验。
-   - order 9：`OrderController` 118/182 带 `eq(shopId)`；277/280 与
-     `ProfitCalculator` 245/261 是**费率表**（全局参考数据，无租户概念）；
-     `OrderServiceImpl` 477/487 只读不写。
-   - product 4：`ListingMonitor` 164/167 带 shopId；`ListingCopy` 115 带 shop_id；
-     `TranslationService` 163 是**翻译缓存**（按文本 hash，全局共享，设计如此）。
-   - ad 1：`AdAutoRule` 132 走 `requireRuleAccess`（strict）——工具已修（§S33.113）。
-   - spapi 11：`ShopCredentialStore` 471/495 是 `selectById(shopId)` /
-     `deleteById(shopId)`，**shopId 自身就是主键**，天然隔离；
-     `NotificationInboxWorker` 78/103、`SpApiCallOutbox` 188/212/236/288/348、
-     `ShopPerformanceSyncHandler` 123 都是**内部 worker/handler**，无外部 shop 输入；
-     `NotificationInboxService` 157/177 同上。
-   - logistics 11：`Inbound` 85、`Outbound` 85/97、`ReturnOrder` 240 走
-     `mustExist`/`loadForDisposition`（lenient，见 §3.2）；
-     `TrackingIngest` 150/207/460 属 `markDelayedShipments`，
-     **跨全店扫描、刻意不校验租户**，设计如此；
-     `Warehouse` 175/178 与 `LogisticsUpgrade` 651 待复核。
-   - procurement 2：`Supplier` 196/286 走 `requireSupplierAccess`（strict）。
+   - `OrderController.java`（118/182 带 `eq(shopId)`；277/280）、`ProfitController.java`、
+     `ProfitCalculator.java`（245/261）、`OrderServiceImpl.java`（477/487）：
+     前两个是**费率表**（全局参考数据，无租户概念），后两个只读不写。
+   - `ListingMonitorServiceImpl.java`（164/167 带 shopId）、
+     `ListingCopyService.java`（115 带 shop_id）、
+     `TranslationService.java`（163）：翻译缓存按文本 hash，全局共享，设计如此。
+   - `AdAutoRuleServiceImpl.java`（132）：走 `requireRuleAccess`（strict）——
+     工具本身漏认了这类命名，已修（§S33.113）。
+   - `ShopCredentialStore.java`（471/495）：`selectById(shopId)` /
+     `deleteById(shopId)`，**shopId 自身就是主键**，天然隔离。
+   - `NotificationInboxService.java`、`NotificationInboxWorker.java`、
+     `SpApiCallOutboxService.java`、`ShopPerformanceSyncHandler.java`：
+     都是**内部 worker/handler**，无外部 shop 输入。
+   - `InboundServiceImpl.java`、`OutboundServiceImpl.java`、`ReturnOrderService.java`：
+     走 `mustExist`/`loadForDisposition`（lenient，见 §3.2）。
+   - `TrackingIngestServiceImpl.java`（150/207/460）：属 `markDelayedShipments`，
+     **跨全店扫描、刻意不校验租户**，设计如此。
+   - `SupplierServiceImpl.java`（196/286）：走 `requireSupplierAccess`（strict）。
 
-   **未读 47 条**：spapi 5、logistics 9、finance 6、ai 4、ops 4、report 5、
-   user 5、procurement 5、product 2、ad 1（SearchTerm 111/382）。
+   **未读文件清单**（这些文件里的候选一条都还没读过）：
+   - `ai/agent/ProactiveReminderService.java`
+   - `ai/service/impl/MemoryServiceImpl.java`
+   - `customer/service/impl/CustomerEmailServiceImpl.java`
+   - `finance/service/impl/FeeDiscrepancyServiceImpl.java`
+   - `finance/service/impl/FinanceServiceImpl.java`
+   - `finance/service/impl/ReimbursementClaimServiceImpl.java`
+   - `logistics/scheduler/LogisticsTrackingSyncScheduler.java`
+   - `logistics/service/impl/LogisticsImportServiceImpl.java`
+   - `logistics/service/impl/MultiWarehouseServiceImpl.java`
+   - `logistics/service/impl/StocktakeService.java`
+   - `ops/scheduler/OpsMonitorScheduler.java`
+   - `ops/service/impl/OpsServiceImpl.java`
+   - `procurement/service/impl/FbaShipmentServiceImpl.java`
+   - `procurement/service/impl/ProcurementServiceImpl.java`
+   - `procurement/service/impl/PurchasePlanServiceImpl.java`
+   - `report/service/impl/RealtimeProfitServiceImpl.java`
+   - `report/service/impl/ReportUpgradeServiceImpl.java`
+   - `spapi/controller/SpapiController.java`
+   - `spapi/engine/ReplenishmentEngine.java`
+   - `spapi/scheduler/NotificationIngestionScheduler.java`
+   - `user/service/impl/ShopServiceImpl.java`
+   - `user/service/impl/UserServiceImpl.java`
+   - `ad/service/impl/SearchTermServiceImpl.java`
+
+   **半读文件**（只读了其中几行，别当成整份读过）：
+   `LogisticsUpgradeServiceImpl`（651 已读，223/606 未读）、
+   `ListingCopyService`（115 已读，136/312 未读）、
+   `NotificationInboxWorker`（78 已读，103 未读）。
 
    筛法：`grep -E "selectById|selectOne|deleteById|updateById"` 优先，
    `selectList` 带条件的一般较安全；**但 selectList 漏租户条件正是 §S33.108 的形状**，
