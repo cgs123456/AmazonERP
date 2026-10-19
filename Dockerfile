@@ -92,8 +92,26 @@ LABEL org.opencontainers.image.title="AmazonERP" \
       org.opencontainers.image.source="https://github.com/cgs123456/AmazonERP"
 
 # 安装 curl 供 HEALTHCHECK 使用（--no-install-recommends 避免冗余包，随后清理 apt 缓存减小镜像体积）
+#
+# upgrade 不是"顺手更新"：基础镜像 eclipse-temurin:17-jre 自带的 openssl/libssl3t64
+# 3.5.5-1ubuntu3.5 命中 CVE-2026-84782（High，修复版 3.5.5-1ubuntu3.6，仓库现提供 3.7），
+# 而 CVE 门禁（cve_gate.py --cutoff high）会把它算成未豁免 violation 并阻断发布。
+# 这里在同一层里把它升掉——比加一条豁免正确，因为这三条**上游有修复版**；
+# 豁免只该留给"上游无解"的（如 SkyWalking 内置的 netty 4.1.124，见 cve-waivers.json）。
+# 只升 openssl 系而不 apt-get upgrade 全量：全量升级会把基础镜像钉住的 JDK/系统库一起动，
+# 构建结果不再可复现，且升级面不可控。
+#
+# 删除 /usr/bin/pebble：基础镜像自带的一个 ACME（Let's Encrypt）客户端，Go 静态二进制，
+# 不属于任何 dpkg 包、本服务与 SkyWalking agent 均未引用（已核验：app.jar 与 agent 目录
+# grep 无命中）。它内嵌的 Go stdlib go1.26.7 命中 9 条 HIGH/CRITICAL（GO-2026-66xx），
+# 且 CVE 门禁会算成未豁免 violation 阻断发布。与"上游无解"的 SkyWalking netty 不同，
+# 这条**有修复版（go 1.26.9）但不受我们控制**（要等 temurin 更新基础镜像），
+# 因此选删除而不是豁免——消除攻击面比登记例外更彻底，将来基础镜像自带修复版本后
+# 可移除本行。若哪天真的需要 ACME 客户端，应显式装一个受控版本而非依赖基础镜像的残留。
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends openssl libssl3t64 openssl-provider-legacy \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/pebble
 
 WORKDIR /app
 

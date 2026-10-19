@@ -9775,3 +9775,111 @@ refreshToken\0tokenEndpoint`）——下一班拆这块时**必须保留只存�
 | critical checkstyle | 通过 |
 | 行数棘轮 | 通过（45660 → 45552） |
 | 仓库卫生 | 通过（0 findings） |
+
+---
+
+# §S33.128 Docker 可用后补测：镜像构建 / V7 门禁 / CVE 门禁
+
+上一轮因 Docker 守护进程未运行，CI 的 docker / mysql-import / ad-v7-preflight / CVE
+四项未验证。Docker 29.8.0 恢复后逐项补测，**其中 CVE 门禁查出真问题并已修**。
+
+## 1. 镜像构建：通过
+
+`docker buildx bake --print` 与 `docker build -t amazon-erp:latest .` 均成功，产物 1.01GB。
+
+## 2. ad V7 预检门禁：通过（真 MySQL 8.0）
+
+起 `mysql:8.0` 容器（8.0.46，CI 同款）后跑 `run_ad_v7_preflight_gate.sh`：
+**rc=0 放行 / rc=2 STOP / rc=1 脚本错误** 三类退出码契约全部兑现，
+配套 17 条单测全绿。
+
+> 上一轮用本机沙箱 MySQL **8.4.9** 时门禁直接以 `server-version` STOP（rc=2）。
+> 那次失败其实说明**门禁的 fail-closed 是对的**，但当时无法证明契约本身成立。
+> 记录这个差别：验证该门禁必须用 8.0，不能用 8.4。
+
+## 3. mysql-import：在 CI 同款 MySQL 8.0 上通过
+
+14 库 77 迁移 failed=0；合成数据导入 **25215/25215 行**（101 表）核对通过；
+cleanup 后 0 表残留。上一轮用的是 8.4.9 沙箱，这一轮与 CI 完全一致。
+
+## 4. CVE 门禁：查出 12 条未豁免 violation，已修（本轮唯一的真问题）
+
+`grype` 扫 `amazon-erp:latest` 后过 `cve_gate.py --cutoff high`：
+
+```
+findings: 219 total, 27 at/above cutoff, 15 waived, 12 violations
+```
+
+逐条定位来源，**没有一条来自我们自己的 Java 代码**：
+
+| 来源 | 条数 | 位置 | 处置 |
+|---|---|---|---|
+| `netty-*` 4.1.124 | 15 | `/skywalking-agent/skywalking-agent.jar` | 已被既有豁免覆盖（上游 9.7.0 无修复版） |
+| `openssl` / `libssl3t64` 3.5.5-1ubuntu3.5 | 3 | 基础镜像系统包 | **已修**：升到 3.7 |
+| Go `stdlib` go1.26.7 | 9 | `/usr/bin/pebble` | **已修**：删除该二进制 |
+
+### 关键判断：这 12 条**上游都有修复版**（openssl→3.6、go→1.26.9）
+
+所以正确做法是**真的修掉，不是加豁免**。项目规则是「豁免只留给上游无解的」
+（SkyWalking 内置 netty 就是那类）——把有解的问题登记成豁免，等于把可修的债
+伪装成外部约束。
+
+**`pebble` 是基础镜像 `eclipse-temurin:17-jre` 直接放进 `/usr/bin` 的 Go 二进制**，
+不属于任何 dpkg 包（`dpkg -S` 无结果）。它是 ACME（Let's Encrypt）客户端，
+本服务与 SkyWalking agent 均未引用（app.jar 与 agent 目录 grep 零命中）。
+**它有修复版但不受我们控制**（要等 temurin 更新基础镜像），所以选删除而不是豁免——
+与项目既有的「删未启用的 optional-reporter-plugins 缩小攻击面」同一类操作。
+
+### 结果
+
+| 阶段 | findings | at/above cutoff | waived | violations |
+|---|---|---|---|---|
+| 修复前 | 219 | 27 | 15 | **12** |
+| 升 openssl 后 | 180 | 24 | 15 | **9** |
+| 再删 pebble 后 | 171 | 15 | 15 | **0** |
+
+`docker-bake.hcl` 里 16 个 Java 镜像共用同一个 `Dockerfile`
+（只有 frontend 用 `amz-frontend/Dockerfile`），因此**这两处修复对所有 Java 镜像生效**。
+
+## 5. 容器内完整启动验证（上一轮本机做不到的）
+
+本机 JVM 建不出 selector，Tomcat/Netty 都起不来；容器是 Linux，不受影响。
+
+| 步骤 | 结果 |
+|---|---|
+| 镜像内 jar 启动 | `Started AmzServiceSpapiApplication` |
+| 容器状态 | `running`，health=**healthy** |
+| HTTP 探测 `curl localhost:8096/` | **401**（未带 token，鉴权生效） |
+
+启动过程中遇到的三次失败**都不是代码问题**，记下来免得下一班重复排查：
+
+1. `UnknownHostException: skywalking-oap` —— 部署时才存在，需 `--add-host` 或真实 OAP
+2. `ErrCode:-401, Client not connected: STARTING` —— Nacos 未就绪，
+   需 `SPRING_CLOUD_NACOS_DISCOVERY_ENABLED=false`（无中间件验证的正确开关）
+3. `cryptoUtil: Invocation of init method failed` —— **缺 `AMZ_CRYPTO_KEY`**，
+   这是刻意的 fail-closed（密钥未配置拒绝启动），不是缺陷
+4. （另）prod 档会停在 `connectorStartupCheck`：要求 `amz_shop_credential` 有凭证。
+   `spapi.startup.require-credentials` 在 prod 为 true、bootstrap 为 false，**也是刻意设计**
+
+## 6. 本机环境的一个坑：grype 在 Windows 上的两条死路
+
+- `-v /var/run/docker.sock:...` → `mkdir C:\Program Files\Git\var: Access is denied`
+  （Git Bash 把路径当成宿主机相对路径，需 `MSYS_NO_PATHCONV=1`）
+- 即使绕过，`grype` 容器内也连不上 Windows 的 docker daemon
+
+**可行路径**：`docker save` 导出 tar → `grype docker-archive:/host/xxx.tar`。
+另外宿主机 C 盘只剩 68G 时 grype 漏洞库会 `no space left on device`，
+需把 `GRYPE_DB_CACHE_DIR` 挂到大盘（本轮用 D 盘）。
+
+## 7. 本轮验证清单
+
+| 项 | 结果 |
+|---|---|
+| bake dry-run | 通过 |
+| 镜像构建 | 通过（1.01GB） |
+| ad V7 预检门禁 | 通过（MySQL 8.0.46） |
+| mysql-import | 通过（25215/25215，MySQL 8.0.46） |
+| CVE 门禁 | 通过（0 violations） |
+| 容器内启动 + 健康检查 + HTTP | 通过（healthy / 401） |
+| critical checkstyle / 行数棘轮 / 仓库卫生 | 通过 |
+| 发布工具自测（含 cve_gate 15 条） | 22 条 OK |
