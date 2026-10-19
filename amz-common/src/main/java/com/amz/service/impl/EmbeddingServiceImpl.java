@@ -37,9 +37,38 @@ public class EmbeddingServiceImpl implements EmbeddingService {
 
     private final Gson gson = new Gson();
 
-    private static final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    /**
+     * HTTP 客户端，<b>惰性创建</b>。
+     * <p>
+     * <b>为什么不能是 static final</b>：本类在 {@code amz-common} 里是 {@code @Service}，
+     * 而 {@code amz-common} 被所有服务（包括 gateway、message 这些<b>根本不用 embedding</b>
+     * 的模块）依赖并扫描 {@code com.amz} 包。字段初始化在类初始化阶段执行；
+     * 若此时 {@code HttpClient.newBuilder().build()} 抛异常（本机 Windows 的
+     * AF_UNIX loopback 被拒即会如此，见 HANDOFF §S33.125 §8），会变成
+     * {@code ExceptionInInitializerError} → Bean 创建失败 → <b>整个上下文起不来</b>。
+     * <p>
+     * 实测：修前 gateway 冒烟直接崩在 {@code embeddingServiceImpl}；而 embedding 默认关闭
+     * （{@code embedding.enabled=false}），它对本进程毫无用处——一个可选能力拖垮了启动。
+     * <p>
+     * 与 {@code TranslationService.httpClient()} 同一处理方式，理由也相同。
+     */
+    private volatile HttpClient httpClient;
+
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = httpClient;
+                if (client == null) {
+                    client = HttpClient.newBuilder()
+                            .connectTimeout(Duration.ofSeconds(10))
+                            .build();
+                    httpClient = client;
+                }
+            }
+        }
+        return client;
+    }
 
     // ==================== 查询向量本地缓存 ====================
 
@@ -105,7 +134,7 @@ public class EmbeddingServiceImpl implements EmbeddingService {
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient().send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
                 JsonObject resp = gson.fromJson(response.body(), JsonObject.class);

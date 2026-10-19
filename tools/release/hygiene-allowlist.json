@@ -99,7 +99,7 @@
     {
       "path": "amz-service/amz-service-ad/src/main/java/com/amz/client/AdvertisingApiRealClient.java",
       "rule": "secret-like-assignment",
-      "sha256": "1d5d5a75e3a4e0cd7e19a7384cf7009771e3cec5d3b1ec5622552360333a4cc0"
+      "sha256": "6b906660a58b24d33a7db6fbabe4fbd599664a090bdc3b0aac3fd01732ad1c93"
     },
     {
       "path": "amz-service/amz-service-ad/src/test/java/com/amz/migration/AdMigrationMySqlIT.java",

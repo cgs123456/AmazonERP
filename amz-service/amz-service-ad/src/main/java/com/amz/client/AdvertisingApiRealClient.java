@@ -32,6 +32,23 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.GZIPInputStream;
+import static com.amz.client.AdvertisingJsonSupport.array;
+import static com.amz.client.AdvertisingJsonSupport.arrayOrEmpty;
+import static com.amz.client.AdvertisingJsonSupport.decodeGzipIfNeeded;
+import static com.amz.client.AdvertisingJsonSupport.decimalValue;
+import static com.amz.client.AdvertisingJsonSupport.encode;
+import static com.amz.client.AdvertisingJsonSupport.errorDetail;
+import static com.amz.client.AdvertisingJsonSupport.hasText;
+import static com.amz.client.AdvertisingJsonSupport.intValue;
+import static com.amz.client.AdvertisingJsonSupport.invalidResponse;
+import static com.amz.client.AdvertisingJsonSupport.longValue;
+import static com.amz.client.AdvertisingJsonSupport.requiredLong;
+import static com.amz.client.AdvertisingJsonSupport.requiredString;
+import static com.amz.client.AdvertisingJsonSupport.sha256Hex;
+import static com.amz.client.AdvertisingJsonSupport.sleep;
+import static com.amz.client.AdvertisingJsonSupport.stringValue;
+import static com.amz.client.AdvertisingJsonSupport.stripTrailingSlash;
+import static com.amz.client.AdvertisingJsonSupport.truncate;
 
 /**
  * Amazon Advertising API v3 真实客户端。
@@ -54,16 +71,33 @@ public class AdvertisingApiRealClient implements AdvertisingApiClient {
     private static final int DEFAULT_REPORT_MAX_POLLS = 120;
 
     private final AdvertisingCredentialProvider credentialProvider;
-    private final HttpClient httpClient;
+    /**
+     * HTTP 客户端，<b>惰性创建</b>（默认构造器路径）。
+     * <p>
+     * 本类是 {@code @Component @Profile("!mock")}，即<b>生产档启动时必然实例化</b>。
+     * 若在构造器里 {@code HttpClient.newBuilder().build()}，那么任何
+     * 「JVM 建不出 selector」的环境都会让整个 ad 服务起不来——而广告调用是可失败降级的
+     * 业务能力，不该决定进程能否启动（实测：本机 Windows AF_UNIX loopback 被拒，
+     * 修前 ad 冒烟崩在 {@code AdvertisingApiRealClient} 构造器）。
+     * <p>
+     * 注入 HttpClient 的测试构造器行为不变：它拿到的实例直接使用，不经过本方法。
+     */
+    private volatile HttpClient httpClient;
     private final Gson gson;
     private final Duration reportPollInterval;
     private final int reportMaxPolls;
     private final ConcurrentHashMap<String, TokenEntry> tokenCache = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Object> tokenLocks = new ConcurrentHashMap<>();
 
+    /**
+     * 生产档构造器：<b>不在构造期创建 HttpClient</b>。
+     * <p>
+     * 传 {@code null} 表示「首次真正发请求时再建」（见 {@link #httpClient()}）。
+     * 这样 Bean 能否被实例化不再取决于运行环境的网络栈。
+     */
     @Autowired
     public AdvertisingApiRealClient(AdvertisingCredentialProvider credentialProvider) {
-        this(credentialProvider, defaultHttpClient(), new Gson(),
+        this(credentialProvider, null, new Gson(),
                 DEFAULT_REPORT_POLL_INTERVAL, DEFAULT_REPORT_MAX_POLLS);
     }
 
@@ -71,9 +105,16 @@ public class AdvertisingApiRealClient implements AdvertisingApiClient {
         this(credentialProvider, httpClient, gson, DEFAULT_REPORT_POLL_INTERVAL, DEFAULT_REPORT_MAX_POLLS);
     }
 
+    /**
+     * 完整构造器。
+     * <p>
+     * {@code httpClient} 允许为 {@code null}，<b>但只有生产构造器会这么传</b>
+     * （表示「首次发请求时再建」，见 {@link #httpClient()}）。公开构造器仍要求非 null：
+     * 测试与调用方显式注入时不该悄悄退回真实网络，那是测试最容易失去隔离的地方。
+     */
     public AdvertisingApiRealClient(AdvertisingCredentialProvider credentialProvider, HttpClient httpClient, Gson gson,
                                     Duration reportPollInterval, int reportMaxPolls) {
-        if (credentialProvider == null || httpClient == null || gson == null) {
+        if (credentialProvider == null || gson == null) {
             throw new IllegalArgumentException("AdvertisingApiRealClient dependencies must not be null");
         }
         if (reportPollInterval == null || reportPollInterval.isNegative() || reportPollInterval.isZero()) {
@@ -354,7 +395,7 @@ public class AdvertisingApiRealClient implements AdvertisingApiClient {
             builder.method(method, HttpRequest.BodyPublishers.ofString(gson.toJson(body), StandardCharsets.UTF_8));
         }
         try {
-            return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            return httpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new AdvertisingApiException("AD_TRANSPORT_ERROR", "Advertising API request interrupted",
@@ -367,7 +408,7 @@ public class AdvertisingApiRealClient implements AdvertisingApiClient {
 
     private HttpResponse<byte[]> sendBytes(HttpRequest request) {
         try {
-            return httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            return httpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new AdvertisingApiException("AD_TRANSPORT_ERROR", "Report download interrupted", null, true, e);
@@ -434,7 +475,7 @@ public class AdvertisingApiRealClient implements AdvertisingApiClient {
                 .build();
         HttpResponse<String> response;
         try {
-            response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            response = httpClient().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new AdvertisingApiException("AD_TRANSPORT_ERROR", "LWA token request interrupted",
@@ -546,175 +587,26 @@ public class AdvertisingApiRealClient implements AdvertisingApiClient {
         }
     }
 
-    private String errorDetail(String body) {
-        if (!hasText(body)) {
-            return "";
-        }
-        try {
-            JsonObject root = JsonParser.parseString(body).getAsJsonObject();
-            JsonElement errors = root.get("errors");
-            if (errors != null && errors.isJsonArray() && !errors.getAsJsonArray().isEmpty()) {
-                JsonElement first = errors.getAsJsonArray().get(0);
-                if (first.isJsonObject()) {
-                    String message = stringValue(first.getAsJsonObject(), "message");
-                    if (hasText(message)) {
-                        return ": " + truncate(message, 300);
-                    }
+    /**
+     * 首次真正发请求时才创建客户端（双重检查，线程安全）。
+     * <p>
+     * 见字段注释：构造期建 selector 会让「环境是否支持网络」决定 ad 服务能否启动。
+     */
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = httpClient;
+                if (client == null) {
+                    client = HttpClient.newBuilder()
+                            .connectTimeout(Duration.ofSeconds(10))
+                            .followRedirects(HttpClient.Redirect.NORMAL)
+                            .build();
+                    httpClient = client;
                 }
             }
-            String message = stringValue(root, "message");
-            if (hasText(message)) {
-                return ": " + truncate(message, 300);
-            }
-        } catch (RuntimeException ignored) {
-            // fall through to a bounded raw body
         }
-        return ": " + truncate(body, 300);
-    }
-
-    private static JsonArray array(JsonObject object, String field) {
-        JsonElement element = object.get(field);
-        if (element == null || !element.isJsonArray()) {
-            throw invalidResponse("response missing array field " + field);
-        }
-        return element.getAsJsonArray();
-    }
-
-    private static JsonArray arrayOrEmpty(JsonObject object, String field) {
-        JsonElement element = object.get(field);
-        if (element == null || element.isJsonNull()) {
-            return new JsonArray();
-        }
-        if (!element.isJsonArray()) {
-            throw invalidResponse("response field " + field + " is not an array");
-        }
-        return element.getAsJsonArray();
-    }
-
-    private static String requiredString(JsonObject object, String field) {
-        String value = stringValue(object, field);
-        if (!hasText(value)) {
-            throw invalidResponse("response missing required field " + field);
-        }
-        return value;
-    }
-
-    private static String stringValue(JsonObject object, String field) {
-        JsonElement element = object.get(field);
-        if (element == null || element.isJsonNull() || !element.isJsonPrimitive()) {
-            return null;
-        }
-        return element.getAsString();
-    }
-
-    private static Long requiredLong(JsonObject object, String field) {
-        JsonElement element = object.get(field);
-        Long value = longValue(element);
-        if (value == null) {
-            throw invalidResponse("response missing required numeric field " + field);
-        }
-        return value;
-    }
-
-    private static Long longValue(JsonElement element) {
-        if (element == null || element.isJsonNull() || !element.isJsonPrimitive()) {
-            return null;
-        }
-        try {
-            return element.getAsLong();
-        } catch (RuntimeException e) {
-            throw invalidResponse("response contains invalid numeric value: " + element);
-        }
-    }
-
-    private static Integer intValue(JsonElement element) {
-        Long value = longValue(element);
-        if (value == null) {
-            return null;
-        }
-        if (value < Integer.MIN_VALUE || value > Integer.MAX_VALUE) {
-            throw invalidResponse("response integer value out of range: " + value);
-        }
-        return value.intValue();
-    }
-
-    private static BigDecimal decimalValue(JsonElement element) {
-        if (element == null || element.isJsonNull() || !element.isJsonPrimitive()) {
-            return null;
-        }
-        try {
-            return element.getAsBigDecimal();
-        } catch (RuntimeException e) {
-            throw invalidResponse("response contains invalid decimal value: " + element);
-        }
-    }
-
-    private static byte[] decodeGzipIfNeeded(byte[] bytes) throws IOException {
-        if (bytes == null || bytes.length < 2 || (bytes[0] & 0xFF) != 0x1F || (bytes[1] & 0xFF) != 0x8B) {
-            return bytes == null ? new byte[0] : bytes;
-        }
-        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(bytes));
-             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            gzip.transferTo(out);
-            return out.toByteArray();
-        }
-    }
-
-    private static void sleep(Duration duration) {
-        try {
-            Thread.sleep(duration.toMillis());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new AdvertisingApiException("AD_TRANSPORT_ERROR", "Report polling interrupted", null, true, e);
-        }
-    }
-
-    private static String encode(String value) {
-        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
-    }
-
-    private static String stripTrailingSlash(String value) {
-        String result = value;
-        while (result.endsWith("/")) {
-            result = result.substring(0, result.length() - 1);
-        }
-        return result;
-    }
-
-    private static String truncate(String value, int max) {
-        if (value == null || value.length() <= max) {
-            return value;
-        }
-        return value.substring(0, max) + "...";
-    }
-
-    private static boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
-
-    private static AdvertisingApiException invalidResponse(String message) {
-        return new AdvertisingApiException("AD_INVALID_RESPONSE", message, null, false);
-    }
-
-    private static String sha256Hex(String input) {
-        try {
-            byte[] bytes = MessageDigest.getInstance("SHA-256").digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder(bytes.length * 2);
-            for (byte value : bytes) {
-                builder.append(Character.forDigit((value >> 4) & 0xF, 16));
-                builder.append(Character.forDigit(value & 0xF, 16));
-            }
-            return builder.toString();
-        } catch (Exception e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
-    }
-
-    private static HttpClient defaultHttpClient() {
-        return HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+        return client;
     }
 
     private record RequestContext(Long shopId, AdvertisingCredential credential) {

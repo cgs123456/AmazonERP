@@ -39,9 +39,31 @@ public class KnowledgeEsClient {
     @Value("${knowledge.es.index:amz_knowledge_base}")
     private String defaultIndex;
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
-            .build();
+    /**
+     * HTTP 客户端，<b>惰性创建</b>。
+     * <p>
+     * 本类是 {@code @Component}，启动即实例化。字段初始化里建 {@code HttpClient} 意味着
+     * 「JVM 能否打开 selector」决定 AI 服务能否启动——知识库检索是可选能力，不该有这个权力。
+     * 实测（2026-10-19）：本机 Windows AF_UNIX loopback 被拒时，AI 服务直接崩在
+     * {@code knowledgeEsClient} 的构造器上。
+     */
+    private volatile HttpClient httpClient;
+
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = httpClient;
+                if (client == null) {
+                    client = HttpClient.newBuilder()
+                            .connectTimeout(Duration.ofSeconds(10))
+                            .build();
+                    httpClient = client;
+                }
+            }
+        }
+        return client;
+    }
 
     public String defaultIndex() {
         return defaultIndex;
@@ -280,7 +302,7 @@ public class KnowledgeEsClient {
                 builder.GET();
                 break;
         }
-        return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+        return httpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     /**
