@@ -60,10 +60,21 @@ public class ReportsRealClient implements ReportsClient {
                                String dataStartTime, String dataEndTime) {
         SpApiGateway.ResolvedShop shop = gateway.resolveShop(shopId, marketplaceId);
 
+        // 用 resolveShop 解析出的站点，而不是入参：三个现有调用方（结算/绩效/销量）里
+        // 有两个传 null 表示「按凭证登记的站点」，而 JsonArray.add(null) 会写入 JSON null，
+        // 请求体变成 marketplaceIds=[null] —— Amazon 侧直接 400，且错误信息只指向
+        // 「marketplaceIds 非法」，看不出是自己传了 null。resolveShop 已经把
+        // 「显式入参 → 凭证 marketplaceId」的回退做过，且两者都空时 fail-closed 抛异常。
+        String resolvedMarketplaceId = shop.marketplaceId;
+        if (resolvedMarketplaceId == null || resolvedMarketplaceId.isBlank()) {
+            throw new IllegalStateException(
+                    "createReport requires a marketplaceId: neither the explicit argument nor the "
+                            + "credential carries one, shopId=" + shopId);
+        }
         JsonObject body = new JsonObject();
         body.addProperty("reportType", reportType);
         JsonArray mks = new JsonArray();
-        mks.add(marketplaceId);
+        mks.add(resolvedMarketplaceId);
         body.add("marketplaceIds", mks);
         if (dataStartTime != null) {
             body.addProperty("dataStartTime", dataStartTime);

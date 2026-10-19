@@ -90,6 +90,11 @@ spec:
             - { name: AMZ_LOGISTICS_SYNC_MAX_PER_ROUND, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_SYNC_MAX_PER_ROUND } } }
             - { name: AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_TRANSFER_APPROVAL_STALE_DAYS } } }
             - { name: AMZ_LOGISTICS_DASHBOARD_AGGREGATION_SCAN_LIMIT, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_DASHBOARD_AGGREGATION_SCAN_LIMIT } } }
+            - { name: AMZ_RETURN_SYNC_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_RETURN_SYNC_ENABLED } } }
+            - { name: AMZ_RETURN_SYNC_SHOP_IDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_RETURN_SYNC_SHOP_IDS } } }
+            - { name: AMZ_RETURN_SYNC_MARKETPLACE_ID, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_RETURN_SYNC_MARKETPLACE_ID } } }
+            - { name: AMZ_RETURN_SYNC_WINDOW_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_RETURN_SYNC_WINDOW_DAYS } } }
+            - { name: AMZ_RETURN_SYNC_CRON, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_RETURN_SYNC_CRON } } }
             - { name: AMZ_LOGISTICS_TRANSFER_STALE_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_TRANSFER_STALE_DAYS } } }
             - { name: AMZ_LOGISTICS_TRANSIT_WINDOW_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_LOGISTICS_TRANSIT_WINDOW_DAYS } } }
             - { name: AMZ_TRACKING_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_TRACKING_ENABLED } } }

@@ -54,6 +54,20 @@ mybatis-plus:
 # 注：JPY 由 0.045 校正为 0.046，与 finance 模块对齐 —— 合并前两模块兜底值不一致，
 # 同一笔日元金额在两处折算会得到不同 CNY 结果。
 amz:
+  # 多平台订单定时同步（TEMU / TIKTOK / SHEIN）。
+  # 默认关闭：未配置平台凭据的环境不应反复报错。三个 Real 客户端里商品/库存/消息
+  # 能力仍是 unimplemented，但订单拉取（fetchOrders）与发货回传已接通——
+  # 开启前请先确认目标平台的 appKey/secret 已配好，否则每轮都会记 ERROR。
+  multiplatform:
+    sync:
+      enabled: ${AMZ_MULTIPLATFORM_SYNC_ENABLED:false}
+      # 调度间隔（毫秒），默认 30 分钟；fixedDelay 语义，以上一轮结束为起点。
+      # 比 SP-API 的 15 分钟长：多平台订单量级小、各平台限流更紧，
+      # 更短的周期只会换来 429 而不是更及时的数据。
+      interval-ms: ${AMZ_MULTIPLATFORM_SYNC_INTERVAL_MS:1800000}
+      # 逗号分隔的店铺 ID，与「已有 ACTIVE 平台账号的店铺」取并集。
+      # 用途：账号因鉴权失败被置为 ERROR 后，运营仍希望它被重试。
+      shop-ids: ${AMZ_MULTIPLATFORM_SYNC_SHOP_IDS:}
   exchange-rates:
     USD: 7.25
     EUR: 7.85

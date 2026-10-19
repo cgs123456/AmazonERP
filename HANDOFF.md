@@ -9006,3 +9006,178 @@ assertEquals(7, userId.get());                        // ← 可能早于最后�
 
 **「复现不出」和「不存在」是两件事**，不要把后者写成前者。
 这条改动的提交信息里写的是「改法对、未经复现证明」，不是「修复 flake」。
+
+---
+
+# §S33.123 B 档收尾：销量历史真正接通，FBA 入库计划后续步骤补齐
+
+> 上一轮「做 amz_sales_history 的写入」交付了 `SalesTrafficParser` + `SalesHistoryMapper.upsertBatch`
+> + `SalesHistorySyncService`，三部分都有测试、都绿。**但没有任何调用方**——
+> 没有调度器、没有控制器、没有前端入口。库里依然是空的，补货建议继续基于空历史出数。
+> 这是「实现完整 ≠ 已接通」的第二次实例（第一次是 §S33.33 的店铺绩效留痕）。
+> 本节把这条线真正接上，并顺手修了两个只有接通后才会暴露的缺陷。
+
+## 1. 本轮修的三件事（都有变异验证或可复现的失败）
+
+### 1.1 `SalesHistorySyncService` 是死代码 → 补调度器 + 手动入口
+
+| 新增 | 作用 |
+|---|---|
+| `scheduler/SalesHistorySyncScheduler` | 每日 04:20（错开结算 03:30 / 退货 04:00 / 绩效 05:10 / 补货重算 06:00）逐店同步 |
+| `controller/SalesHistoryController` | `POST /spapi/sales-history/sync/{shopId}` 手动同步；`GET /list/{shopId}` 查最近 N 天 |
+
+两条关键设计取舍：
+
+- **用 `runIdempotentWithLock` 而非严格锁**：`upsertBatch` 按 `uk_shop_sku_date` 覆盖而非累加，
+  同一窗口重跑得到同一结果。Redis 不可用时降级为直接执行不会写坏数据，只多耗一次配额。
+  订单同步用严格锁是因为它写 `amz_unified_order` 且不幂等，两者取舍不同，不要统一。
+- **调度时间 04:20 不是随便挑的**：必须早于补货重算（06:00），否则当天算出的建议仍用旧窗口。
+  这个约束写进了 yml 注释和调度器 javadoc，避免以后被人「优化」掉。
+
+**marketplaceId 取自店铺凭证，不接受请求参数**。多站点店铺用全局配置的站点会拉错店；
+手动入口同样只从 `credentialStore.get(shopId).getMarketplaceId()` 取。缺站点的店铺
+**显式跳过并计数**，不静默——「没配置」和「没销量」必须可区分。
+
+测试 7 条（`SalesHistorySyncSchedulerTest`）：默认关、端点覆盖跳过、逐店且站点来自凭证、
+缺站点点名跳过、单店失败不中断、用幂等锁不用严格锁、无店铺不报错。
+
+### 1.2 `ReportsRealClient.createReport` 会把 `marketplaceIds` 写成 `[null]`
+
+```java
+// 旧（三个调用方里有两个传 null，表示「按凭证登记的站点」）
+mks.add(marketplaceId);          // JsonArray.add(null) → JSON null
+// 新
+String resolvedMarketplaceId = shop.marketplaceId;   // resolveShop 已做过回退
+if (resolvedMarketplaceId == null || resolvedMarketplaceId.isBlank()) {
+    throw new IllegalStateException("createReport requires a marketplaceId: ...");
+}
+```
+
+`gateway.resolveShop(shopId, marketplaceId)` 已经实现了「显式入参 → 凭证 marketplaceId」的回退，
+但旧代码没有用它解析出来的 `shop.marketplaceId`，而是继续用原始入参。传 null 的调用方
+（`ShopPerformanceSyncHandler`、`SalesHistorySyncService`）会发出 `marketplaceIds: [null]`，
+Amazon 侧 400，错误信息只指向「marketplaceIds 非法」——排查会误以为是字段名写错。
+
+这个缺陷**只有接通销量同步后才可能被真实触发**（此前绩效同步默认关闭，且无任何 mock 断言形状）。
+
+### 1.3 mock 报表客户端对所有 reportType 都返回结算 TSV
+
+```java
+// 旧：downloadDocument 恒返回 SAMPLE_SETTLEMENT_TSV
+// 新：按 createReport 时记下的 reportType 分发；未知类型 fail-closed 抛错
+```
+
+后果分两层：销量解析器因缺 `startdate`/`sku` 整批拒绝，表现成「同步坏了」；
+更危险的是反向——如果某天列名恰好重合，会产生**看起来成功、数值全错**的数据。
+新增 `ReportsMockClientReportTypeTest`（3 条）钉住「销量表列与解析器必需列一致」
+「结算表行为不变」「未知类型必须抛错」。
+
+### 1.4 配置前缀写错导致配置永不生效（同轮自查发现）
+
+上一轮的 `SalesHistorySyncService` 读 `${amz.spapi.sales-history.*}`，而 spapi 模块的
+其余配置一律在顶层 `spapi:` 下（`spapi.credential-store` / `spapi.outbox` / `spapi.notifications`）。
+yml 里新加的段也写在了 `spapi:` 下，于是**配置写了但读不到，只是默认值恰好相同才没暴露**。
+本轮统一为 `spapi.sales-history.*`，并同步补齐 Compose / K8s / `.env.example` / `.env.demo.example`。
+
+> 顺带发现：`ShopPerformanceSyncScheduler` 与 `PerformanceController` 读的是
+> `${amz.spapi.performance.*}`，而 yml 里**根本没有这个段**——同样的问题，
+> 只是它的默认值与期望值一致（30 天 / 2000ms / 90s），所以一直没人发现。
+> 本轮未改（不在 B 档范围），记为待办：要么补 yml 段，要么把读法改成 `spapi.performance.*`。
+
+## 2. FBA Inbound：从「45 条只接 1 条」到「读全通、写有边界」
+
+### 2.1 判断：哪些该接、哪些不该自动执行
+
+45 条 operation 按阶段分：计划 → 装箱 → 分仓 → 货件 → 运输。本轮新增
+`FbaInboundPlanQueryService`（procurement）与 `FbaInboundPlanQueryController`：
+
+| 已接（读） | operation |
+|---|---|
+| 计划详情 | `getInboundPlan` |
+| 装箱选项 | `listPackingOptions` |
+| 分仓选项 | `listPlacementOptions` |
+| 货件详情 | `getShipment` |
+| 货件明细 | `listShipmentItems` |
+| 异步状态 | `getInboundOperationStatus` |
+
+| 已接（写，不产生费用） | 说明 |
+|---|---|
+| `updateShipmentTrackingDetails` | 把本地已有的逐箱运单号同步给 Amazon。不回写的后果很具体：Amazon 侧看不到跟踪号，货件被判迟发，影响绩效指标 |
+
+**刻意不接的三类（这是设计决策，不是遗漏）**：
+
+1. **装箱**（`setPackingInformation` / `generatePackingOptions` / `confirmPackingOption`）：
+   需要逐箱的箱规、箱内 SKU 明细、重量体积。ERP 的 `amz_fba_shipment` 只有汇总级
+   `box_count`，`amz_fba_shipment_item` 是 SKU 级而非箱级。拿汇总值凑箱级请求等于编造，
+   Amazon 会按错误箱规计费。
+2. **分仓确认**（`confirmPlacementOption`）：决定货发到哪几个仓、产生多少 placement fee，
+   是要花钱的运营决策。自动确认一个选项就是替运营签字。
+3. **运输**（`generateTransportationOptions` / `confirmTransportationOptions`）：
+   绑定承运商、运费与上门时间，选错产生真实运费。
+
+需要执行这三类时走 `POST /spapi/operations/{operationId}`（有完整限流与审计），
+而不是在业务服务里加一个「一键完成入库」的按钮。
+
+### 2.2 跟踪号回写的形状约束
+
+官方 SPD 跟踪号是**箱级**的（`boxId → trackingId`），LTL 才是零担级。本地只有主运单号，
+因此接口强制要求 `Map<boxId, trackingId>`，空映射 / 空箱号 / 空跟踪号一律本地拒绝：
+
+```java
+Map.of("trackingDetails", Map.of("spdTrackingDetail", Map.of("spdTrackingItems", items)))
+```
+
+拿一个主运单号假装覆盖所有箱，Amazon 会按缺失跟踪号处理，比不做更糟。
+
+### 2.3 测试与变异验证
+
+9 条测试。三次真实变异，全部被捕获：
+
+| 变异 | 结果 |
+|---|---|
+| 读取失败 `return Map.of()` 而不是抛错 | `readFailureIsLoud` 红 |
+| `boxId` 写成固定占位符 | `trackingBodyIsBoxLevelSpd` 红 |
+| 请求体退化成 `{"trackingNumber": "MAIN"}` | `trackingBodyIsBoxLevelSpd` 红（Error） |
+
+第一条尤其关键：返回空 Map 会被上层读成「Amazon 还没生成装箱/分仓选项」，
+而不是「这次调用失败了」——运营会一直等一个不会出现的选项。
+
+## 3. 部署门禁连带修复
+
+新增配置项触发了三个既有契约测试，全部按「契约要求」修复而非放宽断言：
+
+| 测试 | 修法 |
+|---|---|
+| `PlaceholderCoverageContractTest` | 新增占位符必须在 Compose 与 K8s 中**精确**覆盖（多一个也红）。补齐 logistics 5 项、multiplatform 3 项、spapi 6 项 |
+| `DeploymentManifestContractTest` | `.env.example` 与 `.env.demo.example` 键集必须完全相同。两个模板同步补齐 14 项 |
+| `ControllerFailureContractTest` | 失败出口数量从 82 → 87（`SalesHistoryController` 5 个，全部带结构化 error）。注释写明每一项来源 |
+
+## 4. 验证结果
+
+| 项 | 结果 |
+|---|---|
+| `amz-service-spapi` 全量 | **757 / 757**，12 skipped |
+| `amz-service-procurement` 全量 | **161 / 161** |
+| `amz-service-logistics` 全量 | **196 / 196** |
+| `amz-service-multiplatform` 全量 | **163 / 163** |
+| `checkstyle:check -Dcheckstyle.config.location=checkstyle-critical.xml`（CI 同款） | 通过 |
+| `file_size_ratchet.py` | passed（55 个超限文件，总行数 46209，未增长） |
+| `repository_hygiene.py` | passed（0 findings） |
+| `tenant_boundary_audit.py` | 89 候选 / 0 真缺陷（target: clean） |
+| Python 门禁自测（CI 同款 13 个模块） | **122 / 122** |
+
+> **注意**：`mvn checkstyle:check`（不带 config location）会用默认严格配置扫全仓，
+> 报 1881 条违规。**那不是门禁**。CI 用的是 `checkstyle-critical.xml`，
+> 另有 `google_checks.xml` 以 `continue-on-error: true` 跑信息性报告。
+> 这一点值得写进肌肉记忆：本机复现 CI 必须带 `-Dcheckstyle.config.location=checkstyle-critical.xml`。
+
+## 5. 下一班需要知道的三件事
+
+1. **销量历史默认关闭**（`AMZ_SALES_HISTORY_SYNC_ENABLED=false`）。关闭期间补货建议
+   基于空历史出数——接入真实凭证后**必须置 true**，否则页面看起来在跑、实则空转。
+   前端 `InventoryMonitor.vue` 已有说明文案（§S33.122 之前补的）。
+2. **FBA 入库计划的装箱/分仓/运输仍走卖家后台或通用 operations 端点**。这不是缺陷，
+   是「没有箱级数据就不编造」的边界。若将来要把这段自动化，前置条件是先建模箱级数据
+   （新的 `amz_fba_shipment_box` 表），而不是在服务里凑参数。
+3. **`amz.spapi.performance.*` 的配置段不存在**（见 §1.4 末尾）。行为目前正确
+   （默认值即期望值），但这是同一类「配置写了读不到」的隐患，建议下一班顺手统一。

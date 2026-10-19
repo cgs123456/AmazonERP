@@ -134,6 +134,20 @@ spapi:
     cache-ttl-seconds: ${SPAPI_CREDENTIAL_CACHE_TTL_SECONDS:600}
     # 活跃店铺集合只查询 shop_id，并用短 TTL 快照减少调度器重复扫描。
     active-shop-ids-ttl-seconds: ${SPAPI_ACTIVE_SHOP_IDS_TTL_SECONDS:60}
+  # ====== 销量历史同步（amz_sales_history 的唯一写入方）======
+  # 默认关闭：未配置凭证的环境不应反复报错。补货建议读这张表算基线日均需求，
+  # 关闭期间表为空，补货建议会基于空历史出数——这是「看起来在跑、实则空转」的形状，
+  # 接入真实凭证后务必置为 true。
+  # 调度时间 04:20：必须在补货重算（06:00）之前落地，否则当天算出的建议仍用旧窗口。
+  sales-history:
+    sync-enabled: ${AMZ_SALES_HISTORY_SYNC_ENABLED:false}
+    sync-cron: ${AMZ_SALES_HISTORY_SYNC_CRON:0 20 4 * * ?}
+    # 回补天数：与 ReplenishmentEngine 的 30 天基线窗口同值
+    sync-days: ${AMZ_SALES_HISTORY_SYNC_DAYS:30}
+    # 三分段轮询（createReport → getReport → downloadDocument）参数
+    poll-interval-ms: ${AMZ_SALES_HISTORY_POLL_INTERVAL_MS:2000}
+    poll-deadline-ms: ${AMZ_SALES_HISTORY_POLL_DEADLINE_MS:90000}
+    batch-size: ${AMZ_SALES_HISTORY_BATCH_SIZE:500}
   # ====== SP-API Outbox 重放（P0-52c）======
   # 自动重放只处理到期 FAILED 记录；执行器再次拒绝非 GET/HEAD，DLQ 只能人工重放。
   # 多副本通过数据库原子领取竞争，不依赖单机锁；生产参数必须显式注入并纳入变更审计。

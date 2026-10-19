@@ -71,7 +71,12 @@ class ControllerFailureContractTest {
         // 的失败出口，全部携带结构化 error。
         // 80 → 82：PerformanceController.detail 补店铺归属校验（§S33.41），
         // 两个失败出口（id 为空 / 越权或不存在）都带结构化 error。
-        assertEquals(82, failureCount,
+        // 82 → 87：SalesHistoryController（销量历史手动同步 + 查询）5 个失败出口：
+        // 同步的 shopId 为空 / 缺 marketplaceId / 端点覆盖生效 / 上游失败，
+        // 查询的 shopId 为空。全部携带结构化 error。
+        // 注：同期新增的 FbaInboundPlanQueryController 在 procurement 模块，
+        // 不在本测试的扫描目录内，故不计入。
+        assertEquals(87, failureCount,
                 "Result.failure 数量变化必须重新审查；新增失败分支也必须携带结构化 error");
         assertTrue(violations.isEmpty(), "发现未结构化的失败出口：\n" + String.join("\n", violations));
     }

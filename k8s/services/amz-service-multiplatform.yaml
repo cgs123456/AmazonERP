@@ -65,6 +65,9 @@ spec:
             - { name: MULTIPLATFORM_WEBHOOK_SECRET_TEMU, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: MULTIPLATFORM_WEBHOOK_SECRET_TEMU } } }
             - { name: MULTIPLATFORM_WEBHOOK_SECRET_TIKTOK, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: MULTIPLATFORM_WEBHOOK_SECRET_TIKTOK } } }
             - { name: MULTIPLATFORM_WEBHOOK_SECRET_SHEIN, valueFrom: { secretKeyRef: { name: amz-erp-secret, key: MULTIPLATFORM_WEBHOOK_SECRET_SHEIN } } }
+            - { name: AMZ_MULTIPLATFORM_SYNC_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_MULTIPLATFORM_SYNC_ENABLED } } }
+            - { name: AMZ_MULTIPLATFORM_SYNC_INTERVAL_MS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_MULTIPLATFORM_SYNC_INTERVAL_MS } } }
+            - { name: AMZ_MULTIPLATFORM_SYNC_SHOP_IDS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_MULTIPLATFORM_SYNC_SHOP_IDS } } }
             - { name: SW_AGENT_COLLECTOR_BACKEND_SERVICES, value: skywalking-oap.amz-erp.svc.cluster.local:11800 }
             - { name: NACOS_ADDR, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: NACOS_ADDR } } }
             - { name: MYSQL_HOST, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: MYSQL_HOST } } }

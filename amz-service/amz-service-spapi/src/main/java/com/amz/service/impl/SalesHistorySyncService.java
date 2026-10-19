@@ -50,7 +50,7 @@ public class SalesHistorySyncService {
     private SalesHistoryMapper salesHistoryMapper;
 
     /** 报表轮询间隔（毫秒）。 */
-    @Value("${amz.spapi.sales-history.poll-interval-ms:2000}")
+    @Value("${spapi.sales-history.poll-interval-ms:2000}")
     private long pollIntervalMs = 2000L;
 
     /**
@@ -59,15 +59,15 @@ public class SalesHistorySyncService {
      * 与结算同步同一条理由：每次 getReport 可能耗到读超时，只有次数上限时
      * 实际等待 = 次数 × (睡眠 + 最慢网络)，网关早已丢弃响应而服务端还在轮询。
      */
-    @Value("${amz.spapi.sales-history.poll-deadline-ms:90000}")
+    @Value("${spapi.sales-history.poll-deadline-ms:90000}")
     private long pollDeadlineMs = 90_000L;
 
     /** 默认回补窗口（天）。30 天是 ReplenishmentEngine 的基线窗口，取同值。 */
-    @Value("${amz.spapi.sales-history.default-days:30}")
+    @Value("${spapi.sales-history.default-days:30}")
     private int defaultDays = 30;
 
     /** 单批写入条数。 */
-    @Value("${amz.spapi.sales-history.batch-size:500}")
+    @Value("${spapi.sales-history.batch-size:500}")
     private int batchSize = 500;
 
     /**

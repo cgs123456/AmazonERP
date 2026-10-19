@@ -163,6 +163,12 @@ spec:
             - { name: SPAPI_NOTIFICATIONS_PAYLOAD_MAX_BYTES, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_PAYLOAD_MAX_BYTES } } }
             - { name: SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_SUBSCRIPTION_SYNC_ENABLED } } }
             - { name: SPAPI_NOTIFICATIONS_MOCK_SCENARIO, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: SPAPI_NOTIFICATIONS_MOCK_SCENARIO } } }
+            - { name: AMZ_SALES_HISTORY_SYNC_ENABLED, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_SALES_HISTORY_SYNC_ENABLED } } }
+            - { name: AMZ_SALES_HISTORY_SYNC_CRON, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_SALES_HISTORY_SYNC_CRON } } }
+            - { name: AMZ_SALES_HISTORY_SYNC_DAYS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_SALES_HISTORY_SYNC_DAYS } } }
+            - { name: AMZ_SALES_HISTORY_POLL_INTERVAL_MS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_SALES_HISTORY_POLL_INTERVAL_MS } } }
+            - { name: AMZ_SALES_HISTORY_POLL_DEADLINE_MS, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_SALES_HISTORY_POLL_DEADLINE_MS } } }
+            - { name: AMZ_SALES_HISTORY_BATCH_SIZE, valueFrom: { configMapKeyRef: { name: amz-erp-config, key: AMZ_SALES_HISTORY_BATCH_SIZE } } }
           resources:
             requests: { cpu: "500m", memory: "1Gi" }
             limits: { cpu: "2000m", memory: "2Gi" }
