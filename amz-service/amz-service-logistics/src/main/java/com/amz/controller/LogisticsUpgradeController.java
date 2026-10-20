@@ -80,8 +80,9 @@ public class LogisticsUpgradeController {
     /**
      * 把已过失效日期但状态仍为 ACTIVE 的报价批量置为 EXPIRED。
      * <p>
-     * 报价过期本应由定时任务收口，在任务尚未覆盖到之前提供一次手动入口，
-     * 避免过期运价继续参与选商。
+     * 定时任务（{@code QuoteExpiryScheduler}）已覆盖跨店铺的常规收口，本端点保留为
+     * **按店铺的手动补口**：定时任务默认 6 小时一轮，刚导入/刚改过失效日期的店铺
+     * 若不想等下一轮，可以立即触发；也用于排查「这家店为什么还有过期 ACTIVE」。
      */
     @RequireRole({"OPERATOR", "ADMIN"})
     @ShopScoped

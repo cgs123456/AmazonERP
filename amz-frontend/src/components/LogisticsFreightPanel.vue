@@ -22,7 +22,7 @@
  *    后端会重写该票全部明细行，填错的后果不可逐行回滚。
  */
 import { ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import {
   calculateFreight,
   type FreightCostBoard,

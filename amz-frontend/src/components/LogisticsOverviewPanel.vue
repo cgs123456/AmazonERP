@@ -20,7 +20,7 @@
  * viewBox 固定宽度、随容器缩放，故不需要监听 resize 做重算。
  */
 import { computed } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import type { DashboardOverview, TrendPoint } from '../api/logistics'
 import { statusLabel, statusTone } from './logisticsStatus'
 

@@ -94,7 +94,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { EVAL_MODES, runAgentEval } from '../api/agentEval'

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import FinanceCursorBar from './FinanceCursorBar.vue'
 import { makeCursor, useCursorLoader } from '@/composables/useCursorList'
 import { useFinanceApi } from '@/composables/useFinanceApi'

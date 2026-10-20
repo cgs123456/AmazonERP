@@ -125,7 +125,7 @@
 
 <script setup lang="ts">
 import { ref, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import { sendVerifyCode, verifyLogin, extractLoginToken } from '../api/auth'
 import type { LoginTokenPair } from '../api/auth'
 import { useToast } from '../composables/useToast'

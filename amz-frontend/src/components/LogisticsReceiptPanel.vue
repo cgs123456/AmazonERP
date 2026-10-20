@@ -22,7 +22,7 @@
  * 且空值在本地拦下（不发请求）；核查没有输入。
  * 合成一个带可选参数的函数会让"空值拦截"这条分支消失在默认值里。
  */
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import type { ReceiptBoard } from '../api/logistics'
 
 const props = defineProps<{

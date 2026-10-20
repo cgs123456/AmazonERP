@@ -63,7 +63,7 @@
 
 <script setup lang="ts">
 import { ref, nextTick, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import { chatStreamUrl, erpAgentChat } from '../api/ai'
 import { getCurrentShopId } from '../utils/shop'
 import { readSseStream } from '../utils/sse'

@@ -142,7 +142,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getOrderList, confirmShipment, allocateOrderStock } from '@/api/order'

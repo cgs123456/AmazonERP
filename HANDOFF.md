@@ -1,10 +1,22 @@
-# HANDOFF — P0 收尾（请求体 shopId 跨租户写洞 + 两页写端点加锁）+ 决策①定案（amz_user_shop.role 不回填）+ CI 修（V6 schema 快照）+ Finance 拆分 + 店铺级角色接通 + 四页写入口分三类处理 + WMS 门控与业务拒绝修复 + ad 域 CRUD + 通知红点 + 店铺/用户管理（2026-10-16 最新更新）
+# HANDOFF — 2026-10-20：前端图标 Lucide 本地化 + shadcn 评估后移除 + 死代码清理 + 过期报价自动收口（§S33.129）
+
+> 更早的历史层（2026-10-16 及以前）：P0 收尾（请求体 shopId 跨租户写洞 + 两页写端点加锁）
+> + 决策①定案（amz_user_shop.role 不回填）+ CI 修（V6 schema 快照）+ Finance 拆分
+> + 店铺级角色接通 + 四页写入口分三类处理 + WMS 门控与业务拒绝修复 + ad 域 CRUD
+> + 通知红点 + 店铺/用户管理。见下方各 §S 段落。
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > **真正的当前入口已下沉到 §S33.114 / §S33.115 / §S33.116（2026-10-19）**：
 > 本文件的 H1 与下面这段自 2026-10-16 起未再更新，只是历史层的一部分。
 > §S33.114 是本轮交班，§S33.115 是租户审计 89 条候选全部读完（0 缺陷），
 > §S33.116 是 CI 连红 7 个提交的真因（本机验证链缺 checkstyle）与修复。
+> **最新一班（2026-10-20）见 §S33.129**：前端图标 Lucide 本地化（离线可用，
+> 这是唯一落地的改动）；shadcn-vue Nova 装好、做完对照样张后**按用户判断移除**，
+> 连同 Tailwind v4 与其 7 个传递依赖一起清掉（运行时依赖回到 4 个，产物 CSS
+> 52KB→6.9KB）。另记录了 CSS 命名空间抢占的一般性教训，以及
+> 「为什么没装 dnd-kit / resizable-panels / Pinia / Motion」的证据。
+> **§S33.129 §8** 还补上了「过期报价自动收口」定时任务（`QuoteExpiryScheduler`），
+> 含 3 处变异验证，以及一处「被行数棘轮挡回设计」的记录。
 > 最新（§S23/§S24，2026-10-16）：**P0 已收口**——`§S20.6` 第 1 条不再是悬而未决的产品决策。
 > 侦察时发现比「角色没锁」更严重的**跨租户写洞**（网关只看请求头、切面只看方法参数、
 > 请求体里的 shopId 两边都够不着 → 两层防线同时让开；本仓 32 个 @ShopScoped 写端点的
@@ -9883,3 +9895,349 @@ findings: 219 total, 27 at/above cutoff, 15 waived, 12 violations
 | 容器内启动 + 健康检查 + HTTP | 通过（healthy / 401） |
 | critical checkstyle / 行数棘轮 / 仓库卫生 | 通过 |
 | 发布工具自测（含 cve_gate 15 条） | 22 条 OK |
+
+---
+
+# §S33.129 前端：图标 Lucide 本地化；shadcn-vue 评估后移除
+
+本班处理用户提出的「前端开箱即用」优化，点名六项：shadcn/ui Nova、Lucide、
+Motion、react-resizable-panels、dnd-kit、Zustand。
+
+**最终只有 Lucide 落地。** shadcn-vue 装好、做了对照样张、量了计算样式后
+按用户判断移除；其余四项经核验在 Vue 仓无真实落点（证据见 §5）。
+本节记录的是**决策依据**，不是操作步骤——否则下一班会误以为「还没做」。
+
+## 1. 图标：Iconify → Lucide（唯一有实质收益的改动）
+
+**动机不是「换个好看的图标库」，是离线可用性。**
+
+`@iconify/vue` 的 `<Icon icon="mdi:xxx">` 在未预装图标集时**运行时**请求
+`api.iconify.design` 取图标数据。跨境 ERP 常部署在内网/离线环境，届时：
+
+- 图标全部渲染成空白方块（无任何报错，只是不显示）
+- 首屏多出一条外部请求，弱网下拖慢渲染
+
+Lucide 随包走，tree-shaking 后只打进显式引用的图标。
+
+**实现**（`src/components/Icon.vue`）：
+
+- 102 个 MDI 名 → Lucide 组件的语义映射。**不求形似求语义**：
+  `mdi:amazon` 是品牌图标而 Lucide 不做品牌，取 `ShoppingBag`；
+  `mdi:wechat` / `mdi:sina-weibo` 同理。同一个 Lucide 图标可被多个 MDI 名复用
+  （所有 `cart-*` 都是 `ShoppingCart`），这比硬造 102 个「一一对应」更诚实。
+- 未登记的图标名 → `CircleHelp` 兜底 + `console.warn`。静默回退成空图标会让
+  「新增图标却忘了登记」在生产才暴露。
+- **组件名刻意保留 `Icon`**：47 个文件按名字导入它，20 个单测/端到端用
+  `stubs: { Icon: true }` **按组件名**打桩——改名会让桩静默失效，
+  测试全绿但断言对象已经变了。这是本次最容易踩的坑。
+- 模板里的 `mdi:*` 字面量全部保留，映射收在一处；`ConnectorCenter` 这类
+  「按状态算图标名」的动态用法零改动。
+
+`@iconify/vue` 已卸载（零残留）。
+
+## 2. shadcn-vue Nova：评估后**已完整移除**
+
+用户原始需求点名了 shadcn/ui Nova、Lucide、Motion、react-resizable-panels、
+dnd-kit、Zustand 六项。Lucide 落地了（§1），其余五项的处理见 §5。
+
+shadcn-vue 曾经装好（8 个组件、59 个文件、`components.json` 配 `reka-nova`），
+随后**用真实对照样张验证后决定移除**。过程如下，因为「为什么不做」比「做了什么」
+更容易在后续被误读成「没顾上做」：
+
+### 2.1 先做了对照样张，不是拍脑袋
+
+用真实的 shadcn Button/Input 与项目现有类渲染同一批控件，量了计算样式：
+
+| 控件 | 现状 | shadcn (Nova) | 差异 |
+|---|---|---|---|
+| 普通按钮 | 38px 高 / 12px 圆角 / 13px 字 | 28px / 6px / 12.8px | **高度 -10px** |
+| 主按钮 | 37px / 12px / indigo `#4f46e5` | 32px / 8px / near-black | **主色改变** |
+| 图标按钮 | 36×36 正圆（`50%`） | 28×28 圆角方块 | 形状改变 |
+| 输入框 | 39px / 12px 圆角 | 32px / 8px | 高度 -7px |
+
+用户看完样张的判断是「区别不大」，决定不动。**这个判断有数据支撑**：
+按钮高度 -10px 会改变表格行高、分页栏、工具栏的对齐节奏；主色从 indigo 变
+near-black 是整个系统的视觉基调变更。收益（组件统一）低于代价（57 个文件
+重排 + 视觉基调变更）。
+
+### 2.2 技术上还有一条硬约束
+
+`<select>`（103 个）换成 shadcn 的非原生实现，会让 **194 处单测的 `setValue`**
+与 **17 处 E2E 的 `selectOption`** 全部失效——shadcn Select 是 div + 隐藏 input，
+没有原生 select 语义。这不是"改改测试"的量级，是把 select 相关的测试全部重写。
+
+### 2.3 一并移除的东西
+
+shadcn 是 Tailwind v4 的唯一使用方（业务代码**零工具类**，已核验），
+所以整条链一起清掉：
+
+- `src/components/ui/`（59 文件）、`src/lib/`、`components.json`
+- 依赖：`reka-ui`、`cn`、`class-variance-authority`、`clsx`、`@vueuse/core`、
+  `tw-animate-css`、`tailwindcss`、`@tailwindcss/vite`
+- `vite.config.ts` 的 tailwind 插件
+- `style.css` 的 `@import "tailwindcss"`、`@theme inline`、`@custom-variant dark`、
+  shadcn token 块、preflight 标题补丁（Tailwind 移除后 preflight 不再存在，
+  补丁也就没有了存在理由）
+
+**运行时依赖回到 4 个**：`@lucide/vue` / `axios` / `vue` / `vue-router`。
+产物 CSS 从 52KB 降到 6.9KB。
+
+### 2.4 副产品：先保留，随后还原
+
+`--amz-radius-*` 前缀是评估的产物（为避免 Tailwind 的 `rounded-*` 抢占
+`--radius-*` 命名空间）。移除 Tailwind 后我一度保留它，理由是「还原要动
+369 处引用、收益为零」。
+
+用户随后指出**「确认多余且不会影响项目就删掉，不必因为麻烦」**——
+这个判断是对的：既然 Tailwind 已不存在，命名空间抢占的威胁也消失了，
+前缀就成了纯粹的遗留物。已用 sed 全量还原为 `--radius-*`（364 处引用、
+55 个文件），并同步删除了 `test_css_scope_parity.py` 里为此加的
+`TOKEN_RENAMES` 归一化机制。真机复核圆角仍全部为 12px，零视觉变化。
+
+教训：**「改动成本高」不是保留冗余的理由**。批量改名这类机械操作，
+成本是分钟级，不是人天级；把它当成不删的理由，等于让一次临时决策永久固化。
+
+## 3. 一个值得记住的一般性教训：CSS 命名空间抢占
+
+这一段是评估过程中实测到的，**与是否用 shadcn 无关**，故保留。
+
+**Tailwind v4 的 `rounded-sm/md/lg/xl` 直接消费 `--radius-*` 命名空间。**
+项目原本定义 `--radius-lg: 16px`，于是任何 Tailwind 生成的 `rounded-lg`
+都会取到 16px 而非它的默认 10px。实测表现为 shadcn 的 Button（`h-8`）
+被撑成 32px 高的胶囊、Card 圆角从 14px 变成 24px。
+
+`--color-*` 之所以没有这个问题，是因为 Tailwind 把 `rounded-*`（读 `--radius-*`）
+与 `bg-*`（读 `--color-*`）分在不同命名空间；**圆角则直接与项目 token 同命名**。
+
+推广开来：引入任何「约定式 CSS 框架」前，先核对该框架消费哪些自定义属性的
+命名空间，再决定项目 token 要不要加前缀。事后改名的成本与引用数成正比
+（本例 369 处）。
+
+## 4. 仓库守卫的改动
+
+### 4.1 `test_css_scope_parity.py`：`TOKEN_RENAMES` 曾加过又删了
+
+该门禁拿「搬迁前的 git 基线」逐字比对共享样式表。radius 加 `--amz-` 前缀时，
+`.warn-banner` 的声明体从 `var(--radius-md)` 变成 `var(--amz-radius-md)`，
+被判为「改值」，于是加了 `TOKEN_RENAMES` 归一化映射（比对前把基线旧名换成新名）。
+
+**前缀后来还原为 `--radius-*`（见 §2.4），该机制也随之删除**——留着一个
+映射到不存在名字的表，只会让下一个人以为项目里还有 `--amz-` 前缀。
+
+保留这段记录是因为它示范了一个可复用的模式：**全局 token 改名不应该走
+`INTENTIONAL_ADDITIONS`（逐条登记例外），而应该做一次归一化然后仍然逐字比对**。
+前者会把「真改值」混在例外里放过去，后者不会。将来若再遇到同类全局改名，
+按这个形状重写即可。
+
+### 4.2 hygiene-allowlist 更新 4 个前端文件哈希
+
+改 import 行让 `AgentChat.vue` / `AppHeader.vue` / `LoginModal.vue` /
+`ConnectorCenter.vue` 的哈希失配（5 条 `secret-like-assignment` 均为误报：
+4 条是 `localStorage.getItem` 读 token，1 条是表单字段 `clientSecret` 转发）。
+
+**必须用扫描器自己的 `tools.release.repository_hygiene._sha256_file`**，
+不能用 `sha256sum`——后者算原始字节，前者做 CRLF→LF 归一化，
+用 `sha256sum` 会「算了仍然红」（这个坑 §S33.128 已踩过一次）。
+
+## 5. 未采纳项（证据，不是偏好）
+
+| 用户点名 | Vue 侧对应 | 结论 | 依据 |
+|---|---|---|---|
+| shadcn/ui Nova | `shadcn-vue` | **装后移除** | 见 §2：对照样张显示按钮 38→28px、圆角 12→6px、主色 indigo→near-black |
+| dnd-kit | `vue-draggable-plus` / `@dnd-kit/vue` | **不装** | 全仓 `grep draggable/sortable` **零命中**，无任何拖拽场景 |
+| react-resizable-panels | `splitpanes` | **不装** | 无多栏可调布局需求；现有响应式 CSS（`@media` 断点）已覆盖 |
+| Zustand | `pinia` | **装后删除** | 见下 |
+| Motion | `motion-v` | **装后删除** | 现有 52 处 CSS 过渡/动画已满足；`<motion>` 零使用 |
+
+### 为什么删掉 Pinia（含一次错误判断的纠正）
+
+装过，验证后删除。理由是逐项盘点了现有的全局状态：
+
+| 状态 | 现状 | Pinia 能改善什么 |
+|---|---|---|
+| Toast 消息 | `useToast.ts` 模块级 `ref` 单例，8 个测试覆盖 | **无**，已是响应式 |
+| 角色/登录态 | `localStorage` + `amz:role-changed` 事件 | 有，但要改 43 处 |
+| 店铺上下文 | `localStorage` + 整页刷新 | **无**（见下） |
+
+**我一度判断错的地方，记录以免下一班重蹈**：我曾说「店铺切换靠 26 处
+`amz:*` 事件手工通知刷新，漏监听就不刷新」，并据此建议用 Pinia 改造。
+**这是错的**。实际代码是：
+
+```ts
+const handleShopChange = (e: Event) => {
+  setCurrentShopId(value)
+  window.location.reload()   // 整页刷新
+}
+```
+
+切店铺是**整页 reload**，所以 99 处 `getCurrentShopId()` 读到的一定是新值，
+不存在「漏监听」。26 处事件经归类全是另外三件事，与店铺无关：
+
+- `amz:role-changed`（`identity.ts` 派发）：角色异步到达后重算按钮显隐
+- `amz:auth-changed`（`AppHeader` 派发）：登录/登出后重拉数据，Dashboard 与
+  LogisticsDashboard 监听
+- `amz:notifications-changed`（NotificationPage 派发）：已读后刷新未读红点
+
+**结论**：当前状态管理方案虽然「笨」，但正确且简单。改造 99 处写法的风险
+（店铺 ID 决定多租户隔离边界，`shopId` 是网关鉴权请求头）远大于收益。
+用户定案：**就此打住**。
+
+若将来真要改，唯一有实质收益的是 `amz:role-changed` 的时序问题
+（把 `getUserRole()` 从「同步读 localStorage」改成响应式 `ref`），
+但那仍是 43 处改动，且现有方案有测试覆盖、工作正常。
+
+## 6. 验证
+
+| 项 | 结果 |
+|---|---|
+| `vue-tsc --noEmit` | 0 错误 |
+| vitest | **721 / 721** |
+| Playwright E2E | **185 / 185** |
+| 生产构建 | 通过 |
+| `npm ci` 可复现 | 通过（lock 已同步） |
+| hygiene / css_scope / file_size | 0 / OK / 通过 |
+| 后端全量编译 | BUILD SUCCESS（914 个 main 源文件） |
+| 后端全量测试 | BUILD SUCCESS；失败集合**恰为已知的 3 个本机环境失败**（`PipeImpl` loopback），无新增 |
+| 真机 DOM 核验 | 33 个导航项全部渲染为真实 Lucide SVG（`viewBox 0 0 24 24`）；37 个图标 0 兜底 |
+| 移除 shadcn 后真机复核 | h1 30px/700、导航圆角 12px、body 背景 `#f5f6fa`、45 处圆角全部 12px、主色仍为 indigo `#4f46e5`、37 个 Lucide 图标 |
+| radius 前缀还原后复核 | `--radius-md` = 12px、`--amz-radius-md` 已不存在、圆角仍全部 12px |
+| 产物 CSS 体积 | 52KB → **6.9KB**（Tailwind preflight + 工具类层移除） |
+
+**最终依赖（4 个运行时）**：
+`@lucide/vue` `axios` `vue` `vue-router`
+
+（引入 shadcn 时曾到 10 个；移除后回到原状。）
+
+## 7. 死代码清理
+
+用户要求「检查完整项目，删掉多余且不影响项目的代码」。扫描与判断：
+
+### 7.1 删掉的（4 个文件，共 150 行，零引用零测试）
+
+| 文件 | 是什么 | 为什么该删 |
+|---|---|---|
+| `amz-common/.../enums/LogType.java` | `SCAN`/`LIKE` 枚举 | 业务无对应功能 |
+| `amz-common/.../enums/ResponseEnum.java` | 通用响应码枚举 | 项目实际用别的响应封装，此枚举从未被引用 |
+| `amz-common/.../util/HttpUtil.java` | `static final HttpClient` + 静态方法 | **零引用，但留着是定时炸弹**——它是 §S33.126 修过的那类启动隔离缺陷（类初始化即建 HTTP 客户端），谁哪天用了它就会重蹈覆辙 |
+| `amz-common/.../util/NumberUtil.java` | 时间戳+随机数生成单号 | 已被 `BizNoGenerator`（12 处引用，处理了同毫秒碰撞）取代 |
+
+### 7.2 保留的（2 个，看起来像孤儿但不是）
+
+| 文件 | 为什么不是孤儿 |
+|---|---|
+| `amz-frontend/src/utils/viteProxy.ts` | 被 `vite.config.ts` 的代理配置与两个测试引用。它负责把 `/api/connectors` 等网关别名映射到 `/spapi/connectors`——这张表与 `amz-gateway` 的 `RewritePath` 必须成对存在，漂移会让前端 404 而 hermetic E2E 全绿 |
+| `amz-frontend/src/vite-env.d.ts` | TypeScript 三斜线引用，提供 `import.meta.env` 的类型 |
+
+### 7.3 用户决定保留的（1 个）
+
+`amz-service-multiplatform/.../PlatformAdapter.java`（50 行，零引用）。
+注释明确写着「本轮只做接口声明，不接线……作为接入第四家平台时的验收清单」——
+它不是遗忘的死代码，是有意固化的设计决策。删掉会丢失「新平台需要实现哪些能力」
+这份最难重建的清单。
+
+### 7.4 扫描方法与其局限（下一班别再走弯路）
+
+静态引用检测对 Spring 项目**天然产生大量误报**：Controller/Configuration/
+Consumer/Scheduler/WebSocket 都由注解或框架回调实例化，代码里不会有
+`new XxxController()`。首次扫描报出 44 个「孤儿」，其中 41 个是这类误报。
+
+**正确判据**：先排除带框架注解的类（本项目 914 个 main 源文件里有 508 个），
+再排除 `*Application` 启动类，剩下的才是候选。按此收敛后只剩 5 个，
+其中 4 个确认删除、1 个由用户决定保留。
+
+## 8. 补上「过期报价自动收口」定时任务
+
+上一节末尾评估「生产级」时列了四个「跑起来才会疼」的点，其中三个经核实
+**不成立或不属于代码范畴**，只有一个是真缺口，本班补上：
+
+| 我当时的说法 | 核实结果 |
+|---|---|
+| Redis 单点 | 属实，但属基础设施变更（docker-compose / k8s / 连接配置），非代码优化，本机也无法验证 |
+| 前端降级 mock 有风险 | **我说错了**。已做完整诚实化：`role="status"` 横幅「示意数据（后端返回形状异常已降级）」+ 错误区 + 重试按钮 |
+| 报价过期不自动翻转 | 属实。`expireOutdatedQuotes(shopId)` 早已实现，但**只能手工触发** |
+| MySQL 主从手动配 | 属运维部署步骤，不归代码 |
+
+### 8.1 实现
+
+`QuoteExpiryScheduler`（amz-service-logistics）：
+
+- `@Scheduled(fixedDelay = amz.logistics.quote-expiry.interval-ms, 默认 6 小时)`
+- `carrierQuoteMapper.expireOutdatedAcrossShops(today)`：**一条跨店铺 UPDATE**
+- 开关 `amz.logistics.quote-expiry.enabled` 默认 `true`（纯 DB 操作，无外部副作用）
+
+### 8.2 三个设计判断及理由
+
+**店铺不配白名单。** 同模块的退货同步 / 结算同步都要 `shop-ids` 白名单，因为它们
+拿店铺身份去调 Amazon。本任务只做数据库状态位更新（`expiry_date < today`），
+不读业务数据、不发外部请求，不存在越权。加白名单反而制造
+「新增店铺忘了配 → 那家店报价永不过期」的静默故障。
+
+**用 `runIdempotentWithLock` 而非 `runWithLock`。** 重复执行时第二次 WHERE 不再命中、
+更新 0 行，天然幂等。严格锁会让 Redis 故障期间报价一直不过期——而这段时间恰恰是
+「过期运价仍被当成有效」的窗口。与 `SalesHistorySyncScheduler` 同一判断。
+
+**单条 UPDATE 而非「先查再逐条 updateById」。** 后者在报价量大时既慢，又会产生
+「查到 100 条、更新到第 50 条时进程重启」的半完成状态。
+
+### 8.3 一处被门禁挡住的设计返工（值得记）
+
+我最初把跨店铺收口放进 `LogisticsUpgradeServiceImpl`，行数棘轮立刻报红：
+
+```
+[oversized-file-grew] LogisticsUpgradeServiceImpl.java: 909 lines exceeds recorded 899 (+10)
+```
+
+该文件本就 899 行（超 500 上限），棘轮只允许超限文件**变小**。
+**这是门禁的设计意图，不是障碍**——它准确地指出「这条逻辑不属于这个已经过大的类」。
+最终改为调度器直接持有 `Mapper`：这件事就是一条 UPDATE，不经过 Service 不会丢任何
+业务规则，而那个类反而净减少 10 行（`909 → 899`）。
+
+### 8.4 变异验证（3 处，全部由断言打红）
+
+| 变异 | 症状 | 结果 |
+|---|---|---|
+| `LocalDate.now()` → `minusDays(1)` | 边界错一天，当天到期的会被提前判失效 | 红 |
+| `runIdempotentWithLock` → `runWithLock` | Redis 故障时报价不过期 | 红 |
+| 删除 `if (!enabled) return` | 开关失效 | 红 |
+
+### 8.5 验证
+
+| 项 | 结果 |
+|---|---|
+| `QuoteExpirySchedulerTest` | 4 / 0F / 0E |
+| `LogisticsUpgradeServiceImplTest` | 33 / 0F / 0E（未受影响） |
+| **后端全量**（本轮新鲜跑，2526 用例） | 失败集合恰为已知 3 个本机环境失败，无新增 |
+| 前端 vitest / E2E | 721 / 185 |
+| 全量编译 | BUILD SUCCESS |
+| hygiene / css_scope / file_size | 0 / OK / 通过（棘轮净减少） |
+
+**控制台那行 `ERROR ... 过期运价收口失败` 是测试预期输出**（「Mapper 抛异常不外抛」
+那条用例），不是失败信号。
+
+**本机 3 个环境失败**（`AdvertisingApiRealClientContractTest` /
+`DeepSeekAgentConfigurationContractTest` / `OrderServiceFeignDecodeIT`）的根因是
+Windows 上 `PipeImpl` 建 AF_UNIX 回环被拒（`Unable to establish loopback connection`），
+同批代码在 CI（Linux）全绿。详见 README「测试」小节的判据说明。
+
+### 8.6 仍未做的
+
+- **Redis 单点**：要上哨兵/集群需改 docker-compose、k8s 清单与连接配置，
+  属基础设施变更，且本机无法验证。留给有真实部署环境时做。
+- 其余「已知限制」多数依赖真实凭证联调（17track / SP-API / Ads），
+  不在无凭证条件下可推进的范围。
+
+## 9. 下一班需要知道的
+
+1. **图标映射在 `src/components/Icon.vue` 的 `ICONS` 表**。新增图标必须登记；
+   未登记的会走 `CircleHelp` 兜底并在控制台 warn。
+2. **圆角 token 是 `--radius-*`**（已从 `--amz-radius-*` 还原）。
+   若将来再引入 Tailwind，**先读 §3**——它的 `rounded-*` 会抢占这个命名空间。
+3. **不要再引入 Tailwind 或 shadcn 而不先读 §2 / §3**。本项目业务代码零工具类，
+   引入 Tailwind 等于给它加一个没人用的构建步骤。
+4. 本次改动在分支 `feat/frontend-shadcn-lucide`，提交序列：
+   `3a96947`（Lucide 本地化 + shadcn 接入）→ `ac9f90a`（文档）→
+   `8b8c7b1`（移除 shadcn/Tailwind）→ 后续提交（radius 还原 + 死代码清理）。
+   **合并时应看最终状态，不要按 `3a96947` 的描述理解现状。**
+5. 若将来确实需要组件库，先确认三件事：① `<select>` 的 194 处 `setValue`
+   与 17 处 `selectOption` 怎么处理；② 主色是否接受从 indigo 改变；
+   ③ 控件高度变化（38→28px）会不会破坏表格/分页对齐。

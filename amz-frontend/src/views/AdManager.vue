@@ -471,7 +471,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, watch } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getAdReports, getAdTrend, syncAdReports, syncAllAdReports, AD_SYNC_MAX_DAYS } from '@/api/ad'

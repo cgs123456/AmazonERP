@@ -97,7 +97,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'

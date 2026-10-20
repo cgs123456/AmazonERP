@@ -369,7 +369,7 @@
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()

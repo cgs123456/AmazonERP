@@ -67,6 +67,26 @@ class SettlementServiceImplTest {
         ReflectionTestUtils.setField(settlementService, "pollIntervalMs", 1L);
         ReflectionTestUtils.setField(settlementService, "batchSize", 200);
         ReflectionTestUtils.setField(settlementService, "maxRowErrors", 50);
+
+        // 强制批量路径失败，让所有用例走 writeOne（逐条兜底）。
+        //
+        // 为什么必须显式替换而不是依赖默认的 `Db::saveBatch`：MyBatis-Plus 的 `Db` 是
+        // **进程级静态**工具，只要有任何一个测试（如 SettlementBatchIngestMySqlIT，
+        // 它在 CI 上由 SETTLEMENT_BATCH_IT_URL 激活）先初始化过 `SqlSessionFactory`，
+        // 后续同 JVM 的用例里 `Db.saveBatch` 就会真的执行成功——于是批量分支吞掉全部行，
+        // `settlementDetailMapper.insert` 一次都不会被调用，本文件里对它的 stub 变成
+        // 「未使用」，Mockito 严格模式抛 UnnecessaryStubbingException。
+        //
+        // 这个失败只在 CI 出现（本地不设 SETTLEMENT_BATCH_IT_URL，IT 整类跳过），
+        // 表现为「本地全绿、CI 红」，极难从日志反推。把缝显式钉死，测试就不再依赖
+        // 其它测试是否跑过、以什么顺序跑。
+        //
+        // 批量路径本身由 SettlementBatchIngestMySqlIT 在真实 MySQL 上验证，不在此文件。
+        ReflectionTestUtils.setField(settlementService, "batchWriter",
+                (java.util.function.Consumer<java.util.Collection<com.amz.model.SettlementDetail>>)
+                        block -> {
+                            throw new IllegalStateException("测试强制走逐条兜底路径");
+                        });
     }
 
     private static String row(String currency, String txType, String amazonOrderId, String sku,

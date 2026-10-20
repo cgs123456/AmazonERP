@@ -76,7 +76,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import { useRouter } from 'vue-router'
 import LoginModal from './LoginModal.vue'
 import { getUserInfo, type UserVo } from '../api/auth'
