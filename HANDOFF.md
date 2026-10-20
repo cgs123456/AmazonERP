@@ -10,6 +10,8 @@
 > 连同 Tailwind v4 与其 7 个传递依赖一起清掉（运行时依赖回到 4 个，产物 CSS
 > 52KB→6.9KB）。另记录了 CSS 命名空间抢占的一般性教训，以及
 > 「为什么没装 dnd-kit / resizable-panels / Pinia / Motion」的证据。
+> **§S33.129 §8** 还补上了「过期报价自动收口」定时任务（`QuoteExpiryScheduler`），
+> 含 3 处变异验证，以及一处「被行数棘轮挡回设计」的记录。
 > 最新（§S23/§S24，2026-10-16）：**P0 已收口**——`§S20.6` 第 1 条不再是悬而未决的产品决策。
 > 侦察时发现比「角色没锁」更严重的**跨租户写洞**（网关只看请求头、切面只看方法参数、
 > 请求体里的 shopId 两边都够不着 → 两层防线同时让开；本仓 32 个 @ShopScoped 写端点的
@@ -10138,7 +10140,81 @@ Consumer/Scheduler/WebSocket 都由注解或框架回调实例化，代码里不
 再排除 `*Application` 启动类，剩下的才是候选。按此收敛后只剩 5 个，
 其中 4 个确认删除、1 个由用户决定保留。
 
-## 8. 下一班需要知道的
+## 8. 补上「过期报价自动收口」定时任务
+
+上一节末尾评估「生产级」时列了四个「跑起来才会疼」的点，其中三个经核实
+**不成立或不属于代码范畴**，只有一个是真缺口，本班补上：
+
+| 我当时的说法 | 核实结果 |
+|---|---|
+| Redis 单点 | 属实，但属基础设施变更（docker-compose / k8s / 连接配置），非代码优化，本机也无法验证 |
+| 前端降级 mock 有风险 | **我说错了**。已做完整诚实化：`role="status"` 横幅「示意数据（后端返回形状异常已降级）」+ 错误区 + 重试按钮 |
+| 报价过期不自动翻转 | 属实。`expireOutdatedQuotes(shopId)` 早已实现，但**只能手工触发** |
+| MySQL 主从手动配 | 属运维部署步骤，不归代码 |
+
+### 8.1 实现
+
+`QuoteExpiryScheduler`（amz-service-logistics）：
+
+- `@Scheduled(fixedDelay = amz.logistics.quote-expiry.interval-ms, 默认 6 小时)`
+- `carrierQuoteMapper.expireOutdatedAcrossShops(today)`：**一条跨店铺 UPDATE**
+- 开关 `amz.logistics.quote-expiry.enabled` 默认 `true`（纯 DB 操作，无外部副作用）
+
+### 8.2 三个设计判断及理由
+
+**店铺不配白名单。** 同模块的退货同步 / 结算同步都要 `shop-ids` 白名单，因为它们
+拿店铺身份去调 Amazon。本任务只做数据库状态位更新（`expiry_date < today`），
+不读业务数据、不发外部请求，不存在越权。加白名单反而制造
+「新增店铺忘了配 → 那家店报价永不过期」的静默故障。
+
+**用 `runIdempotentWithLock` 而非 `runWithLock`。** 重复执行时第二次 WHERE 不再命中、
+更新 0 行，天然幂等。严格锁会让 Redis 故障期间报价一直不过期——而这段时间恰恰是
+「过期运价仍被当成有效」的窗口。与 `SalesHistorySyncScheduler` 同一判断。
+
+**单条 UPDATE 而非「先查再逐条 updateById」。** 后者在报价量大时既慢，又会产生
+「查到 100 条、更新到第 50 条时进程重启」的半完成状态。
+
+### 8.3 一处被门禁挡住的设计返工（值得记）
+
+我最初把跨店铺收口放进 `LogisticsUpgradeServiceImpl`，行数棘轮立刻报红：
+
+```
+[oversized-file-grew] LogisticsUpgradeServiceImpl.java: 909 lines exceeds recorded 899 (+10)
+```
+
+该文件本就 899 行（超 500 上限），棘轮只允许超限文件**变小**。
+**这是门禁的设计意图，不是障碍**——它准确地指出「这条逻辑不属于这个已经过大的类」。
+最终改为调度器直接持有 `Mapper`：这件事就是一条 UPDATE，不经过 Service 不会丢任何
+业务规则，而那个类反而净减少 10 行（`909 → 899`）。
+
+### 8.4 变异验证（3 处，全部由断言打红）
+
+| 变异 | 症状 | 结果 |
+|---|---|---|
+| `LocalDate.now()` → `minusDays(1)` | 边界错一天，当天到期的会被提前判失效 | 红 |
+| `runIdempotentWithLock` → `runWithLock` | Redis 故障时报价不过期 | 红 |
+| 删除 `if (!enabled) return` | 开关失效 | 红 |
+
+### 8.5 验证
+
+| 项 | 结果 |
+|---|---|
+| `QuoteExpirySchedulerTest` | 4 / 0F / 0E |
+| `LogisticsUpgradeServiceImplTest` | 33 / 0F / 0E（未受影响） |
+| 全量编译 | BUILD SUCCESS |
+| hygiene / css_scope / file_size | 0 / OK / 通过（棘轮净减少） |
+
+**控制台那行 `ERROR ... 过期运价收口失败` 是测试预期输出**（「Mapper 抛异常不外抛」
+那条用例），不是失败信号。
+
+### 8.6 仍未做的
+
+- **Redis 单点**：要上哨兵/集群需改 docker-compose、k8s 清单与连接配置，
+  属基础设施变更，且本机无法验证。留给有真实部署环境时做。
+- 其余「已知限制」多数依赖真实凭证联调（17track / SP-API / Ads），
+  不在无凭证条件下可推进的范围。
+
+## 9. 下一班需要知道的
 
 1. **图标映射在 `src/components/Icon.vue` 的 `ICONS` 表**。新增图标必须登记；
    未登记的会走 `CircleHelp` 兜底并在控制台 warn。
