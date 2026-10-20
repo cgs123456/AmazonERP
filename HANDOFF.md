@@ -1,4 +1,9 @@
-# HANDOFF — P0 收尾（请求体 shopId 跨租户写洞 + 两页写端点加锁）+ 决策①定案（amz_user_shop.role 不回填）+ CI 修（V6 schema 快照）+ Finance 拆分 + 店铺级角色接通 + 四页写入口分三类处理 + WMS 门控与业务拒绝修复 + ad 域 CRUD + 通知红点 + 店铺/用户管理（2026-10-16 最新更新）
+# HANDOFF — 2026-10-20：前端图标 Lucide 本地化 + shadcn 评估后移除 + 死代码清理 + 过期报价自动收口（§S33.129）
+
+> 更早的历史层（2026-10-16 及以前）：P0 收尾（请求体 shopId 跨租户写洞 + 两页写端点加锁）
+> + 决策①定案（amz_user_shop.role 不回填）+ CI 修（V6 schema 快照）+ Finance 拆分
+> + 店铺级角色接通 + 四页写入口分三类处理 + WMS 门控与业务拒绝修复 + ad 域 CRUD
+> + 通知红点 + 店铺/用户管理。见下方各 §S 段落。
 
 > **本节是当前现状的单一入口**；以下所有历史段落一律按「当时口径」读。
 > **真正的当前入口已下沉到 §S33.114 / §S33.115 / §S33.116（2026-10-19）**：
@@ -10201,11 +10206,18 @@ Consumer/Scheduler/WebSocket 都由注解或框架回调实例化，代码里不
 |---|---|
 | `QuoteExpirySchedulerTest` | 4 / 0F / 0E |
 | `LogisticsUpgradeServiceImplTest` | 33 / 0F / 0E（未受影响） |
+| **后端全量**（本轮新鲜跑，2526 用例） | 失败集合恰为已知 3 个本机环境失败，无新增 |
+| 前端 vitest / E2E | 721 / 185 |
 | 全量编译 | BUILD SUCCESS |
 | hygiene / css_scope / file_size | 0 / OK / 通过（棘轮净减少） |
 
 **控制台那行 `ERROR ... 过期运价收口失败` 是测试预期输出**（「Mapper 抛异常不外抛」
 那条用例），不是失败信号。
+
+**本机 3 个环境失败**（`AdvertisingApiRealClientContractTest` /
+`DeepSeekAgentConfigurationContractTest` / `OrderServiceFeignDecodeIT`）的根因是
+Windows 上 `PipeImpl` 建 AF_UNIX 回环被拒（`Unable to establish loopback connection`），
+同批代码在 CI（Linux）全绿。详见 README「测试」小节的判据说明。
 
 ### 8.6 仍未做的
 

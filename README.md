@@ -2,7 +2,18 @@
 
 基于 Spring Cloud 微服务架构的亚马逊卖家全链路 ERP 系统，集成 SP-API 实现订单、库存、广告、采购、客服、物流、财务业务闭环，内置 AI 运营 Agent（29 工具）与可观测性三栈。
 
-> ⚠️ **当前状态（2026-10-10 更新）**：工程侧可发布基线已收口——发布链至 **v0.1.23**（release run `38029198461` 3/3 success，含 prod-profile 四腿 boot smoke），master CI **12/12 全绿**（run `38031922658`）。`prod,mock` 混用拒绝启动（`ProductionProfileGuard`）、占位密码拒绝启动（`DataSourceValidator`）、字段权限 fail-closed（`FieldPermissionServiceContractTest` 11 例先红后绿）均已落地并有契约测试守卫；无凭据场景的契约级验收走 `tools/connector-acceptance`（selftest 65/65 PASS）；2026-10-10 已另对真实 spapi 做无凭证 prod 启动验证——缺凭证拒绝启动、runner 前置探测按契约 exit 2，这不构成 A5/E4/E5。**SP-API / Ads / DeepSeek / Keepa 等真实凭据仍未配置**——「可直接生产部署」仍以完成沙箱/生产联调（E4/E5）为前提，模块与端点描述均指代码路径已具备，不代表外部平台已真实对接。
+> ⚠️ **当前状态（2026-10-20 更新）**：本轮做了三件事——① 图标从 Iconify 运行时改为
+> **Lucide 本地打包**（离线/内网部署不再出现空白图标）；② 评估 shadcn-vue 后移除
+> （对照样张显示视觉差异小于迁移风险，详见「前端设计系统」）；③ 补上
+> **过期报价自动收口**定时任务（`QuoteExpiryScheduler`，此前只能手工触发）。
+> 另删除 4 个零引用死代码文件（含一个 `static final HttpClient` 启动隔离隐患）。
+> 后端全量 **2526 用例**（本机 3 个已知环境失败见 §S33.129）、前端 **721 单测 + 185 E2E**，
+> hygiene / css_scope / file_size 三道门禁全绿。**真实凭据与 E4/E5 联调状态未变**。
+> 以下 2026-10-10 的基线记录保留作为历史层。
+>
+> ---
+>
+> **2026-10-10 基线**：工程侧可发布基线已收口——发布链至 **v0.1.23**（release run `38029198461` 3/3 success，含 prod-profile 四腿 boot smoke），master CI **12/12 全绿**（run `38031922658`）。`prod,mock` 混用拒绝启动（`ProductionProfileGuard`）、占位密码拒绝启动（`DataSourceValidator`）、字段权限 fail-closed（`FieldPermissionServiceContractTest` 11 例先红后绿）均已落地并有契约测试守卫；无凭据场景的契约级验收走 `tools/connector-acceptance`（selftest 65/65 PASS）；2026-10-10 已另对真实 spapi 做无凭证 prod 启动验证——缺凭证拒绝启动、runner 前置探测按契约 exit 2，这不构成 A5/E4/E5。**SP-API / Ads / DeepSeek / Keepa 等真实凭据仍未配置**——「可直接生产部署」仍以完成沙箱/生产联调（E4/E5）为前提，模块与端点描述均指代码路径已具备，不代表外部平台已真实对接。
 > **“有 API 凭据”不等于“即插即用”**：当前主链路的工程证据最高仍是 **E2/E3**（进程内桩 + 官方 OpenAPI 快照），不是 **E4 沙箱联调**或 **E5 生产联调**。真实接通还需要 LWA client id/secret + refresh token、SP-API 应用授权/订阅/角色权限、marketplaceId/region、官方端点版本与 usage plan 对账、字段契约验证，以及沙箱/生产联调。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
 > 上文「业务闭环」指**模块与代码路径已具备**，不代表外部平台已完成真实对接或沙箱联调；当前复核仍未发现主代码 `*RealClient` 返回硬编码 `MOCK_*` 假成功，但 1688 签名/token、金蝶多币种字段、SP-API 权限与字段契约、多平台签名等仍未取得 E4/E5 联调证据，`ConnectorRegistry` 当前为 90 条已实现 / 0 条未实现：26 条来自既有类型化客户端，64 条来自统一 `SpApiOperationCatalog` + `SpApiOperationClient`，官方快照 15 份、Usage Plan 106 条；已实现清单与调用点双向一致。事实源见 [`docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md`](docs/superpowers/specs/2026-09-24-amazon-erp-production-design.md)，API-Ready 实施计划见 [`docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md`](docs/superpowers/plans/2026-09-24-connector-api-ready-phase0.md)。
 
@@ -363,11 +374,18 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
-| 后端 JUnit 5（2026-10-10 fresh；`mvn test`） | 2149（0 失败 / 0 错误 / 6 跳过） | 19/19 reactor `BUILD SUCCESS`（16 模块含测试） |
+| 后端 JUnit 5（2026-10-20 fresh；`mvn test`） | 2526（本地 3 失败 / 0 错误 / 35 跳过，见下） | 19/19 reactor `BUILD SUCCESS`（16 模块含测试） |
 | 前端 Vitest（2026-10-20 fresh；`npm run test:run`） | 721（0 失败） | 54/54 文件通过 |
 | 前端 Playwright 全交互 E2E（2026-10-20 fresh；`npm run test:e2e`） | 185 | 全过（chromium，串行） |
 
-> 最新整仓数字以 HANDOFF.md 为准（2026-10-10 基线 2149 / 0F / 0E / 6S，16 上报模块 BUILD SUCCESS；早期 2041/17S 等为各阶段快照，历史段落按当时口径读）。
+> **「本地 3 失败」是已知环境问题，不是回归。** 三个用例都在 Windows 上因
+> `java.io.IOException: Unable to establish loopback connection`（`PipeImpl` 建
+> AF_UNIX 回环被系统层拒绝）而红：`AdvertisingApiRealClientContractTest`、
+> `DeepSeekAgentConfigurationContractTest`、`OrderServiceFeignDecodeIT`。
+> 同一批代码在 CI（Linux）上全绿。判定回归的方法：**看失败集合是否超出这三个**——
+> 集合内属环境，出现新名字才是真回归。详见 HANDOFF §S33.129。
+>
+> 最新整仓数字以 HANDOFF.md 为准（早期 2149 / 2041 等为各阶段快照，历史段落按当时口径读）。
 
 > 早期轮次（第 79~87 轮）的分模块计数（如 SP-API 428、Surefire 1134）为当时快照，已随功能增长过时；**全仓与前端最新数字一律以上表及 HANDOFF.md 为准**。
 
