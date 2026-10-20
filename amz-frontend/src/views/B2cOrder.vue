@@ -97,7 +97,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -226,29 +226,29 @@ onMounted(async () => {
 .hero-section { margin-bottom: 1rem; }
 .hero-title { font-size: 1.5rem; margin: 0; }
 .hero-subtitle { color: var(--color-text-secondary); font-size: 0.875rem; margin: 0.25rem 0 0; }
-.shop-tip { background: var(--color-warning-light); color: var(--color-warning-dark); padding: 0.625rem 0.875rem; border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.875rem; }
-.error-zone, .notice-zone { border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.shop-tip { background: var(--color-warning-light); color: var(--color-warning-dark); padding: 0.625rem 0.875rem; border-radius: var(--amz-radius-md); margin-bottom: 1rem; font-size: 0.875rem; }
+.error-zone, .notice-zone { border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 .error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); }
 .notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); line-height: 1.6; }
-.note-line { display: flex; align-items: center; gap: 0.5rem; background: var(--color-success-light); color: var(--color-success); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
-.table-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; }
+.note-line { display: flex; align-items: center; gap: 0.5rem; background: var(--color-success-light); color: var(--color-success); border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.table-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); padding: 1rem; margin-bottom: 1rem; }
 .card-title { font-size: 1rem; margin: 0 0 0.75rem; }
 .field-grid { display: flex; gap: 1rem; flex-wrap: wrap; }
 .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; }
-.field input, .field select { padding: 0.375rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.field input, .field select { padding: 0.375rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); }
 .attr-block { margin-top: 1rem; }
 .attr-head { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
 .attr-title { font-size: 0.875rem; color: var(--color-text-secondary); }
 .attr-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
-.attr-row input { padding: 0.375rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.attr-row input { padding: 0.375rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); }
 .form-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
 .data-table th, .data-table td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--color-border); }
 .mono { font-family: var(--font-mono, monospace); }
 .muted { color: var(--color-text-secondary); font-size: 0.8125rem; }
 .empty-row { text-align: center; color: var(--color-text-secondary); }
-.status-tag { padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); background: var(--color-light-grey); font-size: 0.8125rem; }
-.action-btn, .page-btn { padding: 0.375rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); cursor: pointer; font-size: 0.875rem; }
+.status-tag { padding: 0.125rem 0.5rem; border-radius: var(--amz-radius-sm); background: var(--color-light-grey); font-size: 0.8125rem; }
+.action-btn, .page-btn { padding: 0.375rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); cursor: pointer; font-size: 0.875rem; }
 .action-btn.primary { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 .action-btn:disabled, .page-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 </style>

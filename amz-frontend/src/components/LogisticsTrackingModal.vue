@@ -179,7 +179,7 @@ const fmtTime = (v?: string | null) => {
   max-height: 80vh;
   overflow-y: auto;
   background: var(--color-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   padding: 1.25rem;
   box-shadow: var(--shadow-md);
 }
@@ -218,7 +218,7 @@ const fmtTime = (v?: string | null) => {
 .tl-dot {
   width: 0.75rem;
   height: 0.75rem;
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
   flex-shrink: 0;
   margin-top: 0.25rem;
   z-index: 1;
@@ -253,7 +253,7 @@ const fmtTime = (v?: string | null) => {
 .tl-raw { font-family: var(--font-mono); }
 .tl-src {
   padding: 0 0.375rem;
-  border-radius: var(--radius-xs);
+  border-radius: var(--amz-radius-xs);
   background: var(--color-muted-light);
 }
 
@@ -271,5 +271,5 @@ const fmtTime = (v?: string | null) => {
 }
 .link-btn:hover { text-decoration: underline; }
 .link-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
+.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--amz-radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
 </style>

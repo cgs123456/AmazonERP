@@ -53,7 +53,7 @@ const emit = defineEmits<{
 }
 .modal {
   background: var(--color-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   padding: 1.5rem;
   width: 90%;
   max-width: 560px;
@@ -82,7 +82,7 @@ const emit = defineEmits<{
   background: var(--color-primary);
   color: var(--color-on-primary);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;

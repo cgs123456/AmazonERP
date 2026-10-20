@@ -15,7 +15,7 @@
  *   失败走页级错误区那条既有通道；
  * - 因此本组件没有 emit——它确实一个事件都不需要。
  */
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import type { TransferBoard } from '../api/logistics'
 
 import { transferStatusLabel } from './logisticsTransferStatus'

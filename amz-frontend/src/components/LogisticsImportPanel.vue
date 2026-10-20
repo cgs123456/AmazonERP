@@ -282,7 +282,7 @@ const runImport = async (
   min-height: 12rem;
   padding: 0.75rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   background: var(--color-background);
   color: var(--color-on-surface);
   font-family: var(--font-mono);
@@ -314,7 +314,7 @@ const runImport = async (
   flex-direction: column;
   gap: 0.125rem;
   padding: 0.75rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   background: var(--color-muted-light);
 }
 
@@ -332,7 +332,7 @@ const runImport = async (
 
 .chip {
   padding: 0.125rem 0.5rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   background: var(--color-warning-light);
   color: var(--color-warning-dark);
   font-family: var(--font-mono);

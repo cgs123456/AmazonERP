@@ -86,7 +86,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getUserInfo } from '@/api/auth'
@@ -202,7 +202,7 @@ onMounted(loadAll)
 .sk-line { height: 0.875rem; }
 .sk-line-sm { width: 40%; }
 .sk-line-lg { width: 80%; }
-.error-zone, .notice-zone { border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.error-zone, .notice-zone { border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 .error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); }
 .error-text { line-height: 1.5; }
 .notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); line-height: 1.6; }
@@ -211,14 +211,14 @@ onMounted(loadAll)
 .read-card, .form-card { padding: 0.875rem 1rem 1rem; margin-bottom: 1rem; }
 .card-title { font-size: 0.9375rem; color: var(--color-on-surface); margin: 0 0 0.75rem; }
 .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.625rem; }
-.kv { display: flex; flex-direction: column; gap: 0.125rem; background: var(--color-surface-variant); border-radius: var(--radius-md); padding: 0.5rem 0.625rem; }
+.kv { display: flex; flex-direction: column; gap: 0.125rem; background: var(--color-surface-variant); border-radius: var(--amz-radius-md); padding: 0.5rem 0.625rem; }
 .k { font-size: 0.75rem; color: var(--color-muted); }
 .v { font-size: 0.875rem; color: var(--color-on-surface); word-break: break-all; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.625rem; }
 .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: var(--color-muted); }
-.field input { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.field input { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
 .form-actions { display: flex; align-items: center; gap: 0.625rem; margin-top: 0.75rem; flex-wrap: wrap; }
-.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.8125rem; }
+.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--amz-radius-sm); cursor: pointer; font-size: 0.8125rem; }
 .action-btn.primary { background: var(--color-primary); color: var(--color-on-primary); }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .muted { color: var(--color-muted); font-size: 0.75rem; line-height: 1.5; }

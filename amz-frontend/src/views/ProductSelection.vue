@@ -263,7 +263,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import {
@@ -505,7 +505,7 @@ const seasonalityText = (s?: string) => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   padding: 0.625rem 0.875rem;
   margin-bottom: 1rem;
   font-size: 0.875rem;
@@ -517,7 +517,7 @@ const seasonalityText = (s?: string) => {
 /* 页头/主区/表格等公共样式已收敛至全局 style.css */
 
 /* 数据来源披露（与运营预警台/多平台运营台同形制） */
-.notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; line-height: 1.6; }
+.notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; line-height: 1.6; }
 .notice-title { font-weight: 600; margin-bottom: 0.25rem; }
 .notice-list { margin: 0; padding-left: 1.125rem; }
 
@@ -530,7 +530,7 @@ const seasonalityText = (s?: string) => {
 /* 搜索区 */
 .search-card {
   background: var(--color-surface);
-  border-radius: var(--radius-lg);
+  border-radius: var(--amz-radius-lg);
   padding: 1rem;
   display: flex;
   gap: 0.75rem;
@@ -542,7 +542,7 @@ const seasonalityText = (s?: string) => {
   flex: 1;
   padding: 0.75rem 1rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   font-size: var(--font-size-3);
   background: var(--color-surface);
   color: var(--color-on-surface);
@@ -562,7 +562,7 @@ const seasonalityText = (s?: string) => {
 .market-select {
   padding: 0.75rem 1rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   font-size: var(--font-size-2);
   background: var(--color-surface);
   color: var(--color-on-surface);
@@ -580,7 +580,7 @@ const seasonalityText = (s?: string) => {
   background: var(--color-primary);
   color: var(--color-on-primary);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   font-size: var(--font-size-3);
   font-weight: 600;
   cursor: pointer;
@@ -612,7 +612,7 @@ const seasonalityText = (s?: string) => {
 .tag {
   font-size: 0.75rem; /* 12px */
   padding: 0.125rem 0.625rem; /* 2px 10px */
-  border-radius: var(--radius-sm); /* 6px */
+  border-radius: var(--amz-radius-sm); /* 6px */
   font-weight: 500;
   white-space: nowrap;
 }
@@ -626,7 +626,7 @@ const seasonalityText = (s?: string) => {
 
 .dashboard-card {
   background: var(--color-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   padding: 1rem;
   box-shadow: var(--shadow-sm);
 }
@@ -683,7 +683,7 @@ const seasonalityText = (s?: string) => {
 
 .radar {
   position: relative;
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
   background: var(--color-surface);
   border: 2px solid var(--color-border);
 }
@@ -742,7 +742,7 @@ const seasonalityText = (s?: string) => {
 .legend-dot {
   width: 0.5rem; /* 8px */
   height: 0.5rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   flex-shrink: 0;
 }
 /* 图例色点：单 accent 同色系深浅阶梯 */
@@ -774,7 +774,7 @@ const seasonalityText = (s?: string) => {
 /* AI 建议 */
 .ai-card {
   background: var(--color-surface);
-  border-radius: var(--radius-md); /* 16px */
+  border-radius: var(--amz-radius-md); /* 16px */
   padding: 1rem; /* 20px 24px */
   border: 1px solid var(--color-border);
   margin-bottom: 1rem; /* 24px */
@@ -793,7 +793,7 @@ const seasonalityText = (s?: string) => {
   color: var(--color-primary); /* 92400e */;
   background: var(--color-primary-light); /* fde68a */;
   padding: 0.125rem 0.5rem; /* 2px 8px */;
-  border-radius: var(--radius-sm); /* 6px */;
+  border-radius: var(--amz-radius-sm); /* 6px */;
   margin-right: 0.5rem; /* 8px */;
 }
 
@@ -808,7 +808,7 @@ const seasonalityText = (s?: string) => {
 .ai-text { margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 0.875rem; /* 14px */; line-height: 1.7; color: var(--color-on-surface); }
 
 /* 表格 */
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; overflow-x: auto; box-shadow: var(--shadow-sm); }
+.table-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; overflow-x: auto; box-shadow: var(--shadow-sm); }
 
 .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; /* 16px */; }
 
@@ -822,7 +822,7 @@ const seasonalityText = (s?: string) => {
   color: var(--color-muted);
   /* 666 */;
   border: none;
-  border-radius: var(--radius-md); /* 8px */;
+  border-radius: var(--amz-radius-md); /* 8px */;
   font-size: 0.8125rem; /* 13px */;
   cursor: pointer;
   transition: all 0.2s;
@@ -849,7 +849,7 @@ const seasonalityText = (s?: string) => {
   background: var(--color-primary);
   color: var(--color-on-primary);
   border: none;
-  border-radius: var(--radius-md); /* 6px */;
+  border-radius: var(--amz-radius-md); /* 6px */;
   font-size: 0.75rem; /* 12px */;
   cursor: pointer;
   transition: all 0.2s;

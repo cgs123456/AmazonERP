@@ -20,7 +20,7 @@
  * viewBox 固定宽度、随容器缩放，故不需要监听 resize 做重算。
  */
 import { computed } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import type { DashboardOverview, TrendPoint } from '../api/logistics'
 import { statusLabel, statusTone } from './logisticsStatus'
 
@@ -301,7 +301,7 @@ const chart = computed(() => {
 .dot {
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
   display: inline-block;
 }
 
@@ -337,7 +337,7 @@ const chart = computed(() => {
 .dist-bar {
   flex: 1;
   height: 0.5rem;
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
   background: var(--color-muted-light);
   overflow: hidden;
 }
@@ -345,7 +345,7 @@ const chart = computed(() => {
 .dist-fill {
   height: 100%;
   background: var(--color-primary);
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
 }
 
 .dist-value {
@@ -359,7 +359,7 @@ const chart = computed(() => {
 
 .source-chip {
   padding: 0.25rem 0.625rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   background: var(--color-muted-light);
   color: var(--color-muted);
   font-size: var(--font-size-1);

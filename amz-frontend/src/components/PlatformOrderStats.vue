@@ -105,12 +105,12 @@ onMounted(load)
 </script>
 
 <style scoped>
-.stats-block { margin-bottom: 0.875rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.stats-block { margin-bottom: 0.875rem; padding: 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); }
 .stats-head { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
 .stats-title { font-weight: 600; font-size: 0.9375rem; }
 .stats-note { font-size: 0.75rem; }
 .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; }
-.stats-card { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.5rem 0.625rem; }
+.stats-card { border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); padding: 0.5rem 0.625rem; }
 .stats-card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.375rem; }
 .stats-bar-row { height: 6px; background: var(--color-surface-alt, #f0f0f0); border-radius: 3px; margin-bottom: 0.375rem; overflow: hidden; }
 .stats-bar { display: block; height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }
@@ -120,5 +120,5 @@ onMounted(load)
 .amt-chip { background: var(--color-surface-alt, #f5f5f5); border-radius: 999px; padding: 0 0.375rem; }
 .stats-truncated { margin-top: 0.25rem; font-size: 0.7rem; color: var(--color-error, #c62828); }
 .truncation-note { font-size: 0.75rem; color: var(--color-error, #c62828); margin-bottom: 0.5rem; }
-.error-zone { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.8125rem; margin-bottom: 0.5rem; }
+.error-zone { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); padding: 0.5rem 0.75rem; border-radius: var(--amz-radius-md); font-size: 0.8125rem; margin-bottom: 0.5rem; }
 </style>

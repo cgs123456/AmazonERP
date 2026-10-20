@@ -109,11 +109,11 @@ const upload = async () => {
 .ci-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .ci-file { font-size: 0.8125rem; }
 .ci-hint { font-size: 0.75rem; }
-.ci-report { margin-top: 0.5rem; padding: 0.625rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.ci-report { margin-top: 0.5rem; padding: 0.625rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); }
 .ci-stats { display: flex; gap: 0.875rem; font-size: 0.8125rem; flex-wrap: wrap; }
 .ci-stats .ok { color: var(--color-primary); }
 .ci-stats .fail { color: var(--color-error, #c62828); font-weight: 600; }
 .ci-errors { margin-top: 0.5rem; }
 .ci-locked { color: var(--color-muted); font-size: 0.75rem; }
-.error-zone { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.8125rem; margin-top: 0.5rem; }
+.error-zone { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); padding: 0.5rem 0.75rem; border-radius: var(--amz-radius-md); font-size: 0.8125rem; margin-top: 0.5rem; }
 </style>

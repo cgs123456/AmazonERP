@@ -189,7 +189,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import {
@@ -401,12 +401,12 @@ onMounted(() => {
 .sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
-.summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
+.summary-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
 .summary-label { font-size: var(--font-size-2); color: var(--color-muted); }
 .summary-value { font-size: var(--font-size-6); font-weight: 700; color: var(--color-on-surface); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
 
 .dim-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-.dim-tab { padding: 0.5rem 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: var(--font-size-2); color: var(--color-muted); transition: all 0.2s; }
+.dim-tab { padding: 0.5rem 1rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); background: var(--color-surface); cursor: pointer; font-size: var(--font-size-2); color: var(--color-muted); transition: all 0.2s; }
 .dim-tab:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .dim-tab.active { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 /* .mock-badge 已收敛至全局 style.css */
@@ -414,23 +414,23 @@ onMounted(() => {
 .profit-positive { color: var(--color-success); font-weight: 600; }
 .profit-negative { color: var(--color-error); font-weight: 600; }
 
-.error-zone, .notice-zone { border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.error-zone, .notice-zone { border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 .error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); }
 .notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); line-height: 1.6; }
 .window-row { display: flex; align-items: flex-end; gap: 0.75rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .filter-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem 0; flex-wrap: wrap; }
 .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: var(--color-muted); }
-.field input, .field select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.field input, .field select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
 .muted { color: var(--color-muted); font-size: 0.75rem; }
 .mono { font-family: var(--font-mono, monospace); }
 .cell-clip { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-title { font-size: 0.9375rem; color: var(--color-on-surface); margin: 0; }
 .drill-card { padding: 0.875rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.25rem; }
 .drill-empty { padding: 0.5rem 1rem 0.75rem; margin: 0; line-height: 1.5; }
-.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.8125rem; }
+.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--amz-radius-sm); cursor: pointer; font-size: 0.8125rem; }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .action-btn.primary { background: var(--color-primary); color: var(--color-on-primary); }
-.flag { font-size: 0.6875rem; padding: 0.2rem 0.4rem; border-radius: var(--radius-sm); background: var(--color-primary-light); color: var(--color-success); white-space: nowrap; }
+.flag { font-size: 0.6875rem; padding: 0.2rem 0.4rem; border-radius: var(--amz-radius-sm); background: var(--color-primary-light); color: var(--color-success); white-space: nowrap; }
 .flag.incomplete { background: var(--color-light-red); color: var(--color-error); }
 .flag.unknown { background: var(--color-muted-light); color: var(--color-muted); }
 

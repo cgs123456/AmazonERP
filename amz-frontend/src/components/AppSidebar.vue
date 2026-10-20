@@ -369,7 +369,7 @@
 </template>
 
 <script setup lang="ts">
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import { useRouter, useRoute } from 'vue-router'
 
 const router = useRouter()
@@ -422,7 +422,7 @@ const navigateTo = (path: string) => {
   cursor: pointer;
   font-size: 0.875rem; /* 14px */
   color: var(--color-on-surface);
-  border-radius: var(--radius-md); /* 12px */
+  border-radius: var(--amz-radius-md); /* 12px */
   transition: all 0.2s;
   position: relative;
   /* focus-visible: WCAG AA 可见焦点 */

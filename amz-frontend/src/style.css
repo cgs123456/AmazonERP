@@ -1,8 +1,62 @@
+
+
+
 /* 全局 design tokens — design-taste-frontend 准则
  * 单一 accent：primary indigo；语义色（success/warning/error）仅用于功能状态
  * 所有组件通过 var(--*) 引用，禁止硬编码色值/字号/圆角
  * 双主题：light 为默认，dark 经 prefers-color-scheme 覆盖同名 token（组件零改动）
+ *
+ * ## Tailwind v4 与 shadcn-vue（reka-nova）共存说明
+ *
+ * 本文件是**两套 token 的唯一交汇点**，改这里前先读完整段：
+ *
+ * 1. `@import "tailwindcss"` 必须在最前。CSS 规定 @import 只能出现在其它规则之前，
+ *    排到 `:root` 后面会被浏览器整条丢弃。
+ *
+ * 2. shadcn 的 token 走 `@theme inline`。实测（tailwindcss 4.3.3）该指令**不向
+ *    `:root` 发射变量**，只在生成工具类时把 `var(--primary)` 内联进去。所以
+ *    `--color-primary`(indigo #4f46e5) 与 shadcn 的 `--primary`(near-black)
+ *    各自独立，不会互相覆盖；只有 `bg-primary` 这类工具类取 shadcn 的值——
+ *    而本仓存量组件用的是 `var(--color-primary)`，不受影响。
+ *
+ * 3. **圆角 token 必须带 `--amz-` 前缀**（`--amz-radius-md` 而非 `--radius-md`）。
+ *    这是实测踩到的坑：Tailwind v4 的 `rounded-md/lg/xl` 直接消费 `--radius-*`
+ *    命名空间，项目把 lg 定成 16px，于是 shadcn 的 Button（h-8）被撑成 32px 高的
+ *    胶囊、Card 圆角变成 24px（Nova 期望 14px）。`--color-*` 之所以安全，是因为
+ *    Tailwind 把 `rounded-*` 与 `bg-*` 分在不同命名空间；圆角则没有这层隔离。
+ *    反之 shadcn 自己写的 `rounded-[min(var(--radius-md),10px)]` 读的是
+ *    **shadcn 的** `--radius-md`（由 `@theme` 的 `--radius-md: calc(var(--radius) - 2px)`
+ *    派生，不在本文件里），所以改名前一定要把 `src/components/ui/**` 排除在外。
+ *
+ * 4. preflight 的前提样式问题：Tailwind 的 preflight 会把 h1–h6 重置成继承字号
+ *    与字重。本仓有 144 处 h1–h3 直接靠浏览器默认样式（存量 CSS 从不设置它们），
+ *    故在本文件末尾补回标题层级。注意 `App.vue` 的 `* { margin:0; padding:0 }`
+ *    已经清零边距，这里只补字号/字重，不补 margin——补了反而会把原本紧贴的布局
+ *    撑开。列表（10 处 ul）同理补回圆点。
+ *
+ * 5. 暗色主题：存量组件用 `prefers-color-scheme`，shadcn 默认用 `.dark` 类。
+ *    本仓不引入主题切换器，所以把 `dark:` 变体直接改绑到媒体查询（见下方
+ *    @custom-variant）——与存量 token 的策略一致，不为「将来可能有的切换器」
+ *    预留类名机制（那属于第二个真实用例出现时再引入的抽象）。
+ *
+ * 6. 每次跑完 `npx shadcn-vue add ...` 后，**必须**复查本文件并删掉 CLI 重新注入的
+ *    两段（它按模板重写，不管上一轮是否删过）：
+ *      a) `@import url('https://fonts.googleapis.com/...')` —— 跨境 ERP 常部署在
+ *         内网/离线环境，这条外链会拖慢甚至阻塞首屏；本仓走系统字体栈。
+ *      b) 文件末尾的 `* { @apply border-border outline-ring/50 }` 与
+ *         `body { @apply bg-background text-foreground }` —— 前者把边框色强加到
+ *         所有元素（覆盖各组件自己的 border 颜色），后者与 `App.vue` 的 body
+ *         背景争夺优先级，结果取决于打包顺序。
+ *    删完跑一次 `npx vite build` 确认没有别的改动混进来。
  */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* 把 `dark:` 工具类绑到系统偏好，而不是 shadcn 默认的 `.dark` 类。
+ * 与下面 `@media (prefers-color-scheme: dark)` 的 token 覆盖是配套的两层：
+ * 前者让 `dark:bg-input/30` 这类工具类生效，后者提供它们引用的变量值。 */
+@custom-variant dark (@media (prefers-color-scheme: dark));
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   line-height: 1.5;
@@ -47,13 +101,17 @@
   /* 字体：数据/编号用等宽栈，禁用 Courier New */
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
 
-  /* 圆角：xs 4 / sm 8 / md 12 / lg 16 / xl 24 */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-  --radius-full: 9999px;
+  /* 圆角：xs 4 / sm 8 / md 12 / lg 16 / xl 24
+   * 前缀是 `--amz-` 而不是 `--radius-`：Tailwind v4 的 `rounded-sm/md/lg/xl`
+   * 直接读 `--radius-*` 这个命名空间，若沿用原名，项目值（lg=16px）会把
+   * shadcn 组件的 `rounded-lg`（Nova 期望 10px）一起改掉——实测 Button 变成
+   * 32px 高的胶囊、Card 圆角 24px。改名后两套圆角各归各的。 */
+  --amz-radius-xs: 4px;
+  --amz-radius-sm: 8px;
+  --amz-radius-md: 12px;
+  --amz-radius-lg: 16px;
+  --amz-radius-xl: 24px;
+  --amz-radius-full: 9999px;
 
   /* 字号：1:12 2:14 3:16 4:18 5:20 6:24 7:30 8:36 9:48 10:60 */
   --font-size-1: 0.75rem;
@@ -136,7 +194,7 @@ table {
   position: relative;
   overflow: hidden;
   background: var(--color-muted-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
 }
 
 .skeleton::after {
@@ -186,10 +244,10 @@ table {
 .hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
 /* 未选择店铺提示 */
-.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: var(--font-size-2); text-align: center; }
+.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--amz-radius-md); font-size: var(--font-size-2); text-align: center; }
 
 /* 数据表容器与表格 */
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
+.table-card { background: var(--color-surface); border-radius: var(--amz-radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
 .data-table { width: 100%; border-collapse: collapse; }
 .data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
 .data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
@@ -198,19 +256,154 @@ table {
 .empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
 
 /* 状态标签基类（语义配色由各视图的修饰类定义） */
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 
 /* 降级 mock 示例标识（B4 收敛：AdManager / ProfitReport 的 scoped 副本已删除，统一走全局）。
    规则：展示降级 mock 数据时必须挂徽，不得冒充真实数据。 */
-.mock-badge { display: inline-block; vertical-align: middle; font-size: 0.6875rem; font-weight: 500; color: var(--color-muted); background: var(--color-muted-light); padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); margin-left: 0.5rem; }
+.mock-badge { display: inline-block; vertical-align: middle; font-size: 0.6875rem; font-weight: 500; color: var(--color-muted); background: var(--color-muted-light); padding: 0.125rem 0.5rem; border-radius: var(--amz-radius-sm); margin-left: 0.5rem; }
 
 /* 分页 */
 .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
 .page-info { font-size: 0.8125rem; color: var(--color-muted); }
 .page-actions { display: flex; gap: 0.5rem; }
-.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
+.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
 .page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
 .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- shadcn-vue（reka-nova）token ----
+ * 刻意**不**放进 `:root` 顶部与存量 token 混排：这一块只服务 `@/components/ui/*`
+ * 里的新组件，存量组件继续用上面的 `--color-*`。变量名不带 `color-` 前缀，
+ * 是 shadcn 的约定（`bg-primary` 取 `--primary`）。两者互不覆盖的机理见文件头注释。
+ * 值取自 reka-nova 默认（neutral 基底），与 Nova 组件的 `rounded-lg` / `h-8` 等
+ * 尺寸假设配套；改这里等于改新组件的外观，不要为了迁就存量而改。
+ */
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/* 工具类映射：`inline` 是关键——变量按引用内联，不产生新的 `:root` 声明，
+ * 因此不会与上面的 `--color-*` 撞名覆盖。radius 刻意不在此列出（见文件头第 3 条）。 */
+@theme inline {
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+}
+
+/* 系统偏好为暗色时补挂 .dark：存量组件走上面的 prefers-color-scheme 块，
+ * shadcn 组件靠 `.dark *` 的 `@custom-variant` 生效。本仓暂无手动主题切换器，
+ * 所以用媒体查询桥接两者，而不是要求调用方加类。 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.488 0.243 264.376);
+    --chart-2: oklch(0.696 0.17 162.48);
+    --chart-3: oklch(0.769 0.188 70.08);
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+  }
+}
+
+/* preflight 补丁：Tailwind 会把 h1–h6 / ul 重置成「与正文同字号、无字重、无圆点」。
+ * 存量 144 处 h1–h3 完全依赖 UA 默认样式（全仓 CSS 从未声明过它们），不补会整体
+ * 掉成正文大小。数值用 UA 默认值而非设计 token——这是「恢复」不是「重设计」，
+ * 任何新页面想定制标题，用工具类或 scoped 样式覆盖即可（同特异性下后声明者胜）。
+ * 不能用 Tailwind 的 preflight 关闭开关代替：那会同时丢掉 box-sizing 等有用的重置，
+ * 并让 `App.vue` 的 `* { margin:0; padding:0 }` 与 preflight 的分工变得难以推理。 */
+@layer base {
+  h1 { font-size: 2em; font-weight: bold; }
+  h2 { font-size: 1.5em; font-weight: bold; }
+  h3 { font-size: 1.17em; font-weight: bold; }
+  h4 { font-size: 1em; font-weight: bold; }
+  h5 { font-size: 0.83em; font-weight: bold; }
+  h6 { font-size: 0.67em; font-weight: bold; }
+  ul { list-style: disc; padding-left: 1.5em; }
+  ol { list-style: decimal; padding-left: 1.5em; }
+}
 
 /* 尊重用户减少动态偏好 */
 @media (prefers-reduced-motion: reduce) {

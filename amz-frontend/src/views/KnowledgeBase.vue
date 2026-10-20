@@ -123,7 +123,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useToast } from '../composables/useToast'
@@ -288,7 +288,7 @@ const formatScore = (score: number) => score.toFixed(2)
   padding: var(--spacing-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   color: var(--color-muted);
   font-size: var(--font-size-2);
 }
@@ -302,7 +302,7 @@ const formatScore = (score: number) => score.toFixed(2)
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--amz-radius-lg);
   box-shadow: var(--shadow-sm);
   padding: var(--spacing-lg);
 }
@@ -337,7 +337,7 @@ const formatScore = (score: number) => score.toFixed(2)
   gap: var(--spacing-xs);
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   font-size: var(--font-size-2);
   color: var(--color-muted);
   cursor: pointer;
@@ -360,7 +360,7 @@ const formatScore = (score: number) => score.toFixed(2)
   min-width: 200px;
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   font-size: var(--font-size-2);
   color: var(--color-text);
   background: var(--color-surface);
@@ -369,7 +369,7 @@ const formatScore = (score: number) => score.toFixed(2)
 .select-input {
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   font-size: var(--font-size-2);
   color: var(--color-text);
   background: var(--color-surface);
@@ -378,7 +378,7 @@ const formatScore = (score: number) => score.toFixed(2)
 .primary-btn {
   padding: var(--spacing-sm) var(--spacing-lg);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   background: var(--color-primary);
   color: #fff;
   font-size: var(--font-size-2);
@@ -394,7 +394,7 @@ const formatScore = (score: number) => score.toFixed(2)
 .danger-btn {
   padding: var(--spacing-sm) var(--spacing-lg);
   border: 1px solid var(--color-error);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   background: transparent;
   color: var(--color-error);
   font-size: var(--font-size-2);
@@ -444,7 +444,7 @@ const formatScore = (score: number) => score.toFixed(2)
 
 .chunk-item {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   padding: var(--spacing-md);
 }
 
@@ -475,7 +475,7 @@ const formatScore = (score: number) => score.toFixed(2)
   font-size: var(--font-size-1);
   color: var(--color-primary);
   background: var(--color-primary-light);
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   padding: 2px 8px;
 }
 

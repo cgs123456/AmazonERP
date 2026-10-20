@@ -76,7 +76,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import { useRouter } from 'vue-router'
 import LoginModal from './LoginModal.vue'
 import { getUserInfo, type UserVo } from '../api/auth'
@@ -331,7 +331,7 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   background: var(--color-primary-light);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   color: var(--color-primary);
 }
 
@@ -353,7 +353,7 @@ onUnmounted(() => {
 /* nav-link: 统一样式，hover/active 状态 */
 .nav-link {
   padding: 0.5rem 0.75rem; /* 8px 12px */
-  border-radius: var(--radius-md); /* 12px */
+  border-radius: var(--amz-radius-md); /* 12px */
   font-size: 0.875rem; /* 14px */
   font-weight: 500;
   color: var(--color-on-surface);
@@ -390,7 +390,7 @@ onUnmounted(() => {
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
   background: var(--color-error);
   color: var(--color-on-primary);
   font-size: 0.625rem; /* 10px */
@@ -413,7 +413,7 @@ onUnmounted(() => {
 .shop-selector {
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   font-size: 0.875rem;
   background: var(--color-surface);
   color: var(--color-on-surface);
@@ -429,7 +429,7 @@ onUnmounted(() => {
 .action-btn {
   padding: 0.5rem 1rem;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -450,7 +450,7 @@ onUnmounted(() => {
 .user-avatar {
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
   object-fit: cover;
   cursor: pointer;
   border: 2px solid transparent;
@@ -468,7 +468,7 @@ onUnmounted(() => {
   right: 0;
   width: 200px;
   background: var(--color-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   box-shadow: var(--shadow-md);
   overflow: hidden;
   z-index: 100;
@@ -485,7 +485,7 @@ onUnmounted(() => {
 .dropdown-avatar {
   width: 32px;
   height: 32px;
-  border-radius: var(--radius-full);
+  border-radius: var(--amz-radius-full);
   object-fit: cover;
 }
 

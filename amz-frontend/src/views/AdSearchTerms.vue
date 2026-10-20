@@ -493,7 +493,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, onMounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -956,16 +956,16 @@ onMounted(() => {
 
 <style scoped>
 .st-page { background: var(--color-background); }
-.shop-tip { background: var(--color-warning-light); color: var(--color-warning-dark); padding: 0.625rem 0.875rem; border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.875rem; }
-.error-zone, .notice-zone { border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.shop-tip { background: var(--color-warning-light); color: var(--color-warning-dark); padding: 0.625rem 0.875rem; border-radius: var(--amz-radius-md); margin-bottom: 1rem; font-size: 0.875rem; }
+.error-zone, .notice-zone { border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 .error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); }
 .notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); line-height: 1.6; }
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
-.tab { background: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 0.4rem 0.875rem; font-size: 0.875rem; cursor: pointer; }
+.tab { background: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); padding: 0.4rem 0.875rem; font-size: 0.875rem; cursor: pointer; }
 .tab.active { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 .filter-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem 0; flex-wrap: wrap; }
 .filter { font-size: 0.8125rem; color: var(--color-muted); display: inline-flex; align-items: center; gap: 0.375rem; }
-.filter input, .filter select, .field input, .field select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.filter input, .filter select, .field input, .field select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
 .muted { color: var(--color-muted); font-size: 0.75rem; }
 .cell-clip { max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .table-card { margin-bottom: 1rem; }
@@ -977,26 +977,26 @@ onMounted(() => {
 .form-hint { margin: 0.625rem 0 0; line-height: 1.5; }
 .form-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; }
 .metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: 0.625rem; margin: 0.75rem 1rem; }
-.metric { background: var(--color-surface-variant); border-radius: var(--radius-md); padding: 0.5rem 0.625rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.metric { background: var(--color-surface-variant); border-radius: var(--amz-radius-md); padding: 0.5rem 0.625rem; display: flex; flex-direction: column; gap: 0.25rem; }
 .metric-label { font-size: 0.75rem; color: var(--color-muted); }
 .metric-value { font-size: 1.125rem; color: var(--color-on-surface); }
 .empty-inline { color: var(--color-muted); font-size: 0.8125rem; padding: 0 1rem 0.75rem; margin: 0; }
 .row-actions { white-space: nowrap; }
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; white-space: nowrap; }
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); font-size: 0.75rem; white-space: nowrap; }
 .status-tag.healthy { background: var(--color-primary-light); color: var(--color-success); }
 .status-tag.urgent { background: var(--color-light-red); color: var(--color-error); }
 .status-tag.unknown { background: var(--color-muted-light); color: var(--color-muted); }
-.action-btn { padding: 0.25rem 0.625rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; margin-right: 0.25rem; }
+.action-btn { padding: 0.25rem 0.625rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--amz-radius-sm); cursor: pointer; font-size: 0.75rem; margin-right: 0.25rem; }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .action-btn.danger { background: var(--color-light-red); color: var(--color-error); }
 .action-btn.primary { background: var(--color-primary); color: var(--color-on-primary); }
-.page-btn { padding: 0.3rem 0.7rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; font-size: 0.8125rem; }
+.page-btn { padding: 0.3rem 0.7rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; font-size: 0.8125rem; }
 .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.json-box { width: 100%; box-sizing: border-box; font-family: var(--font-mono, monospace); font-size: 0.75rem; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); }
+.json-box { width: 100%; box-sizing: border-box; font-family: var(--font-mono, monospace); font-size: 0.75rem; padding: 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); }
 .form-card-inner { border-top: 1px dashed var(--color-border); margin: 0 1rem 0.75rem; padding-top: 0.75rem; }
 .note-line { padding: 0.5rem 0 0; margin: 0; line-height: 1.5; }
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: var(--color-surface); border-radius: var(--radius-md); padding: 1.5rem; width: 90%; max-width: 560px; }
+.modal { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1.5rem; width: 90%; max-width: 560px; }
 .modal h3 { margin: 0 0 0.5rem; font-size: 1.125rem; color: var(--color-on-surface); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 .confirm-detail { font-size: 0.875rem; color: var(--color-on-surface); line-height: 1.5; }

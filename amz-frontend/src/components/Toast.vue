@@ -29,7 +29,7 @@ const { toastVisible, toastMessage, toastType } = useToast()
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   box-shadow: var(--shadow-md);
   z-index: 9999;
   font-size: 0.875rem;

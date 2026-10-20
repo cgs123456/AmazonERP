@@ -49,7 +49,7 @@ const props = defineProps<{
 .truncated-tip {
   margin-top: 0.75rem;
   padding: 0.625rem 0.875rem;
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   background: var(--color-warning-light);
   color: var(--color-warning-dark);
   font-size: 0.8125rem;

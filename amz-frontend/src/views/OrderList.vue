@@ -142,7 +142,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getOrderList, confirmShipment, allocateOrderStock } from '@/api/order'
@@ -420,7 +420,7 @@ const printSlip = (order: OrderItem) => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   padding: 0.625rem 0.875rem;
   margin-bottom: 1rem;
   font-size: 0.875rem;
@@ -436,10 +436,10 @@ const printSlip = (order: OrderItem) => {
 .sk-row-alt { width: 96%; }
 
 .filter-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
-.filter-select, .filter-date, .filter-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); transition: border-color 0.2s; }
+.filter-select, .filter-date, .filter-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); transition: border-color 0.2s; }
 .filter-select:hover, .filter-date:hover, .filter-input:hover { border-color: var(--color-primary); }
 .filter-input { flex: 1; max-width: 300px; }
-.filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+.filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--amz-radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
 .filter-btn:hover { background: var(--color-primary-dark); }
 .filter-btn.export { background: var(--color-surface); color: var(--color-primary); border: 1px solid var(--color-primary); }
 
@@ -450,7 +450,7 @@ const printSlip = (order: OrderItem) => {
 
 /* 行内操作按钮（发货单 / 确认发货） */
 .row-actions { display: flex; gap: 0.375rem; white-space: nowrap; }
-.row-btn { padding: 0.25rem 0.625rem; font-size: 0.8125rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+.row-btn { padding: 0.25rem 0.625rem; font-size: 0.8125rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; transition: border-color 0.2s, background 0.2s; }
 .row-btn:hover:not(:disabled) { border-color: var(--color-primary); }
 .row-btn.primary { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 .row-btn.primary:hover:not(:disabled) { background: var(--color-primary-dark); }
@@ -458,12 +458,12 @@ const printSlip = (order: OrderItem) => {
 
 /* 发货回传对话框 */
 .dialog-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.dialog { background: var(--color-surface); border-radius: var(--radius-lg); padding: 1.25rem; width: min(440px, 92vw); box-shadow: var(--shadow-lg); }
+.dialog { background: var(--color-surface); border-radius: var(--amz-radius-lg); padding: 1.25rem; width: min(440px, 92vw); box-shadow: var(--shadow-lg); }
 .dialog-title { margin: 0 0 0.375rem; font-size: 1.0625rem; }
 .dialog-sub { margin: 0 0 1rem; font-size: 0.8125rem; color: var(--color-on-surface-muted); line-height: 1.5; }
 .dialog-field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
 .dialog-field label { font-size: 0.8125rem; color: var(--color-on-surface-muted); }
-.dialog-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); }
+.dialog-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); }
 .dialog-error { margin: 0 0 0.75rem; font-size: 0.8125rem; color: var(--color-error); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 

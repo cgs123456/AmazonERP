@@ -282,7 +282,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import FinanceConfirmBox from '../components/FinanceConfirmBox.vue'
@@ -700,7 +700,7 @@ onUnmounted(() => {
 .kv-grid { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.75rem 0 0; font-size: 0.8125rem; }
 .kv-grid dt { color: var(--color-muted); }
 .kv-grid dd { margin: 0; color: var(--color-on-surface); word-break: break-all; }
-.vat-line { font-size: 0.8125rem; color: var(--color-on-surface); background: var(--color-background); border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; margin: 0.5rem 0 0; }
+.vat-line { font-size: 0.8125rem; color: var(--color-on-surface); background: var(--color-background); border-radius: var(--amz-radius-sm); padding: 0.5rem 0.75rem; margin: 0.5rem 0 0; }
 .muted { color: var(--color-muted); font-size: 0.75rem; }
 
 /* 页头/主区/表格等公共样式已收敛至全局 style.css */
@@ -715,13 +715,13 @@ onUnmounted(() => {
 .sk-table-card { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.625rem; }
 
 .dim-tabs { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
-.dim-tab { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.875rem; color: var(--color-muted); transition: all 0.2s; }
+.dim-tab { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.875rem; color: var(--color-muted); transition: all 0.2s; }
 .dim-tab.active { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 
 .filter-bar { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
-.filter-select, .filter-date { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); transition: border-color 0.2s; }
+.filter-select, .filter-date { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); transition: border-color 0.2s; }
 .filter-select:hover, .filter-date:hover { border-color: var(--color-primary); }
-.filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+.filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--amz-radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
 .filter-btn:hover { background: var(--color-primary-dark); }
 .range-sep { color: var(--color-muted); font-size: 0.875rem; margin: 0 0.5rem; }
 
@@ -738,12 +738,12 @@ onUnmounted(() => {
 .sync-mock { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .sync-failed { background: var(--color-light-red); color: var(--color-error); }
 
-.sync-btn { padding: 0.25rem 0.75rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; }
+.sync-btn { padding: 0.25rem 0.75rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--amz-radius-sm); cursor: pointer; font-size: 0.75rem; }
 .sync-btn:hover:not(:disabled) { background: var(--color-primary-dark); }
 .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem; }
-.summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
+.summary-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
 .summary-label { font-size: 0.8125rem; color: var(--color-muted); }
 .summary-value { font-size: 1.75rem; font-weight: 700; color: var(--color-on-surface); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
 .panel-title { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9375rem; font-weight: 600; color: var(--color-on-surface); margin-bottom: 0.5rem; }
@@ -753,9 +753,9 @@ onUnmounted(() => {
 .profit-negative { color: var(--color-error); font-weight: 600; }
 /* 零利润中性展示，避免误读为亏损 */
 .profit-flat { color: var(--color-muted); font-weight: 600; }
-.error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
-.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
-.profit-note { padding: 0.75rem 1rem; background: var(--color-surface); color: var(--color-muted); border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }
+.error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.truncated-tip { margin-top: 0.75rem; padding: 0.625rem 0.875rem; border-radius: var(--amz-radius-md); background: var(--color-warning-light); color: var(--color-warning-dark); font-size: 0.8125rem; line-height: 1.6; }
+.profit-note { padding: 0.75rem 1rem; background: var(--color-surface); color: var(--color-muted); border-radius: var(--amz-radius-md); font-size: 0.8125rem; line-height: 1.6; }
 
 @media (max-width: 1024px) { .main-content { margin-left: 80px; } .summary-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 768px) { .main-content { margin-left: 0; } .filter-bar { flex-wrap: wrap; } .summary-grid { grid-template-columns: 1fr; } }

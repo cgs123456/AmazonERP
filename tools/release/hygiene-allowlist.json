@@ -59,17 +59,17 @@
     {
       "path": "amz-frontend/src/components/AgentChat.vue",
       "rule": "secret-like-assignment",
-      "sha256": "e4f51f2515fe5a266bcac1158e2e684625c3c9252106fdc6eee4e212b64510b3"
+      "sha256": "61411a88e86572dca8f3b63e9e426fe265b4618a7f83bd6d5f588a0e9ab4ece5"
     },
     {
       "path": "amz-frontend/src/components/AppHeader.vue",
       "rule": "secret-like-assignment",
-      "sha256": "8e2fcd08d42be99b50162bfc7cb9608d2d1d9c355eb707bf027e86d71af3353b"
+      "sha256": "40e511a9b3b12bf2d2b27cb100b290b8d0f068aba919ad3d1dc0f2e89f7e5186"
     },
     {
       "path": "amz-frontend/src/components/LoginModal.vue",
       "rule": "secret-like-assignment",
-      "sha256": "2284e330187cd5f55a69fe38a92c4e7d2f00f3503cee6319564e440ae19b8d9a"
+      "sha256": "e3288052302a7bbf7ba493f4b18de0cb9cd9cb09c901c5e0a449ed09a0885674"
     },
     {
       "path": "amz-frontend/src/main.ts",
@@ -89,7 +89,7 @@
     {
       "path": "amz-frontend/src/views/ConnectorCenter.vue",
       "rule": "secret-like-assignment",
-      "sha256": "421d97409c1ff8ea5197719ba62982894cd3f1c2869aa0686b4a2629730add49"
+      "sha256": "0ab91f43fb8fbf5a515bd152393d3b9c50f31b1a8793ed1691175203c17b2e22"
     },
     {
       "path": "amz-gateway/src/main/java/com/amz/filter/MyGlobalFilter.java",

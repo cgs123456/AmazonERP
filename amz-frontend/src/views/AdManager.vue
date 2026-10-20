@@ -471,7 +471,7 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, watch } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { getAdReports, getAdTrend, syncAdReports, syncAllAdReports, AD_SYNC_MAX_DAYS } from '@/api/ad'
@@ -1182,7 +1182,7 @@ const submitTargeting = async () => {
 .sk-line-center { margin: 0.5rem auto 0; }
 
 .acos-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
-.acos-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; text-align: center; box-shadow: var(--shadow-sm); }
+.acos-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; text-align: center; box-shadow: var(--shadow-sm); }
 .acos-label { font-size: 0.8125rem; color: var(--color-muted); margin-bottom: 0.25rem; }
 .acos-value { font-size: 1.75rem; font-weight: 700; color: var(--color-on-surface); margin: 0.25rem 0; font-variant-numeric: tabular-nums; }
 .acos-value.good { color: var(--color-success); }
@@ -1190,9 +1190,9 @@ const submitTargeting = async () => {
 .acos-value.bad { color: var(--color-error); }
 .acos-desc { font-size: 0.75rem; color: var(--color-muted); }
 
-.chart-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow-sm); }
+.chart-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow-sm); }
 .chart-card h3 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem 0; color: var(--color-on-surface); }
-.demo-banner, .sync-empty { padding: 0.75rem 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.875rem; }
+.demo-banner, .sync-empty { padding: 0.75rem 1rem; border-radius: var(--amz-radius-md); margin-bottom: 1rem; font-size: 0.875rem; }
 .demo-banner { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .sync-empty { background: var(--color-muted-light); color: var(--color-muted); }
 .chart-empty { min-height: 10rem; display: flex; align-items: center; justify-content: center; color: var(--color-muted); font-size: 0.875rem; }
@@ -1220,7 +1220,7 @@ const submitTargeting = async () => {
   background: var(--color-primary);
   color: var(--color-on-primary);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--amz-radius-sm);
   cursor: pointer;
   font-size: 0.75rem;
 }
@@ -1245,19 +1245,19 @@ const submitTargeting = async () => {
 .ops-note code { font-family: var(--font-mono, monospace); }
 .ops-row { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
 .ops-filter { display: inline-flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--color-muted); }
-.ops-filter select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); }
+.ops-filter select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); }
 .ops-hint { font-size: 0.75rem; color: var(--color-muted); }
-.ops-error { margin-top: 0.625rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--color-light-red); color: var(--color-error); font-size: 0.8125rem; }
-.ops-result { margin-top: 0.625rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); background: var(--color-surface-variant); font-size: 0.8125rem; color: var(--color-on-surface); }
+.ops-error { margin-top: 0.625rem; padding: 0.5rem 0.75rem; border-radius: var(--amz-radius-sm); background: var(--color-light-red); color: var(--color-error); font-size: 0.8125rem; }
+.ops-result { margin-top: 0.625rem; padding: 0.5rem 0.75rem; border-radius: var(--amz-radius-sm); background: var(--color-surface-variant); font-size: 0.8125rem; color: var(--color-on-surface); }
 .ops-scope { font-weight: 600; margin-right: 0.25rem; }
 .ops-warn { color: var(--color-warning-dark); }
 .ops-sub { margin: 0.375rem 0 0; font-size: 0.75rem; color: var(--color-muted); }
 .ext-toolbar { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: center; }
-.ext-toolbar input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; flex: 1; max-width: 320px; }
+.ext-toolbar input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; flex: 1; max-width: 320px; }
 
 /* DSP 批量报表 */
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
-.summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
+.summary-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
 .summary-type { font-size: 1rem; font-weight: 700; color: var(--color-primary); margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--color-border); }
 .summary-row { display: flex; justify-content: space-between; padding: 0.25rem 0; font-size: 0.8125rem; }
 .summary-row span { color: var(--color-muted); }
@@ -1265,15 +1265,15 @@ const submitTargeting = async () => {
 
 /* 弹窗 */
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; width: 90%; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
+.modal { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; width: 90%; max-width: 90vw; max-height: 90vh; overflow-y: auto; }
 .modal h3 { margin: 0 0 0.5rem 0; font-size: 1.125rem; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 .form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--color-on-surface); }
-.form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; }
+.form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 .modal-note { font-size: 0.75rem; color: var(--color-muted); line-height: 1.6; margin: 0.625rem 0 0; }
 .modal-note code, .ops-note code { font-family: var(--font-mono, monospace); }
-.batch-box { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: var(--font-mono, monospace); font-size: 0.8125rem; resize: vertical; }
+.batch-box { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-family: var(--font-mono, monospace); font-size: 0.8125rem; resize: vertical; }
 .input-locked { background: var(--color-muted-light); color: var(--color-muted); cursor: not-allowed; }
 /* 勾选框列：收窄，别把活动名称挤走 */
 .data-table th:first-child:has(input[type="checkbox"]), .data-table td:first-child:has(input[type="checkbox"]) { width: 2.25rem; text-align: center; }

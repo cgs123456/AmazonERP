@@ -18,7 +18,7 @@
  * 交回页壳重拉。不做这步的症状是：点了按钮、toast 说成功、但数字一个没变。
  */
 import { computed, ref } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from './Icon.vue'
 import { expireOutdatedQuotes, type QuoteBoard } from '../api/logistics'
 import { useShopGuard } from '../composables/useShopGuard'
 import { useToast } from '../composables/useToast'

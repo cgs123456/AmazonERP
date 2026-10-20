@@ -109,7 +109,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import { useShopGuard } from '@/composables/useShopGuard'
@@ -316,10 +316,10 @@ onMounted(() => { void load() })
 .hero-section { margin-bottom: 1rem; }
 .hero-title { font-size: 1.5rem; font-weight: 700; margin: 0; }
 .hero-subtitle { font-size: 0.875rem; color: var(--color-muted); margin: 0.25rem 0 0; }
-.notice-zone, .error-zone { padding: 0.75rem 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; font-size: 0.8125rem; line-height: 1.6; }
+.notice-zone, .error-zone { padding: 0.75rem 1rem; border-radius: var(--amz-radius-md); margin-bottom: 1rem; font-size: 0.8125rem; line-height: 1.6; }
 .error-zone { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); display: flex; gap: 0.5rem; align-items: center; }
 .notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); }
-.table-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; }
+.table-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; }
 .filter-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
 .data-table th, .data-table td { padding: 0.5rem; border-bottom: 1px solid var(--color-border); text-align: left; }
@@ -330,17 +330,17 @@ onMounted(() => { void load() })
 .status-tag { padding: 0.125rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
 .status-tag.healthy { background: var(--color-primary-light, #e8f5e9); color: var(--color-primary); }
 .status-tag.unknown { background: var(--color-muted-light, #eee); color: var(--color-muted); }
-.action-btn { padding: 0.25rem 0.625rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); font-size: 0.75rem; cursor: pointer; }
+.action-btn { padding: 0.25rem 0.625rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); background: var(--color-surface); font-size: 0.75rem; cursor: pointer; }
 .action-btn.primary { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 .action-btn.cancel { color: var(--color-error, #c62828); }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .modal-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 50; }
-.modal { background: var(--color-surface); border-radius: var(--radius-md); padding: 1.5rem; width: 90%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+.modal { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1.5rem; width: 90%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
 .modal h3 { margin: 0 0 1rem; font-size: 1.125rem; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 .form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--color-muted); }
-.form-grid input, .form-grid select { padding: 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.8125rem; }
+.form-grid input, .form-grid select { padding: 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.8125rem; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 .confirm-detail { font-size: 0.8125rem; line-height: 1.6; color: var(--color-on-surface); }
-.toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: var(--color-primary); color: var(--color-on-primary); padding: 0.5rem 1rem; border-radius: var(--radius-md); font-size: 0.8125rem; }
+.toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: var(--color-primary); color: var(--color-on-primary); padding: 0.5rem 1rem; border-radius: var(--amz-radius-md); font-size: 0.8125rem; }
 </style>

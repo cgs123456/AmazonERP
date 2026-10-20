@@ -441,7 +441,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { Icon } from '@iconify/vue'
+import Icon from '../components/Icon.vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppSidebar from '../components/AppSidebar.vue'
 import MasterCsvImport from '../components/MasterCsvImport.vue'
@@ -779,7 +779,7 @@ const runFee = async () => {
 .health-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem; }
 .health-card {
   background: var(--color-surface);
-  border-radius: var(--radius-md);
+  border-radius: var(--amz-radius-md);
   padding: 1rem;
   text-align: center;
   box-shadow: var(--shadow-sm);
@@ -799,7 +799,7 @@ const runFee = async () => {
 
 /* Buybox 汇总：4 个指标 + 丢失清单，数字全部来自后端聚合 */
 .buybox-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; padding: 0.75rem 1rem 0.25rem; }
-.buybox-metric { background: var(--color-surface-variant, #f5f5f5); border-radius: var(--radius-md); padding: 0.625rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.buybox-metric { background: var(--color-surface-variant, #f5f5f5); border-radius: var(--amz-radius-md); padding: 0.625rem 0.75rem; display: flex; flex-direction: column; gap: 0.25rem; }
 .buybox-metric.is-lost { background: var(--color-light-red); }
 .buybox-metric-label { font-size: 0.75rem; color: var(--color-muted); }
 .buybox-metric-value { font-size: 1.25rem; font-weight: 700; color: var(--color-on-surface); font-variant-numeric: tabular-nums; }
@@ -810,27 +810,27 @@ const runFee = async () => {
 .error-zone {
   display: flex; align-items: center; gap: 0.5rem;
   background: var(--color-light-red); color: var(--color-error);
-  border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem;
+  border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem;
   font-size: 0.875rem;
 }
 
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
 .tab {
   background: var(--color-surface); color: var(--color-muted);
-  border: 1px solid var(--color-border); border-radius: var(--radius-md);
+  border: 1px solid var(--color-border); border-radius: var(--amz-radius-md);
   padding: 0.4rem 0.875rem; font-size: 0.875rem; cursor: pointer;
 }
 .tab.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 
 .filter-row { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1rem 0; flex-wrap: wrap; }
 .filter { font-size: 0.8125rem; color: var(--color-muted); display: inline-flex; align-items: center; gap: 0.375rem; }
-.filter select { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); }
+.filter select { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); }
 .muted { color: var(--color-muted); font-size: 0.75rem; }
 
 /* 写入口被角色门控隐藏时的说明：不解释「为什么没有按钮」用户只会以为功能坏了 */
 .write-locked { display: inline-block; padding: 0.25rem 0; }
 
-.health-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.health-tag { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .health-tag.ok, .health-tag.healthy { background: var(--color-primary-light); color: var(--color-success); }
 .health-tag.warning, .health-tag.risk { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .health-tag.critical, .health-tag.urgent { background: var(--color-light-red); color: var(--color-error); }
@@ -840,13 +840,13 @@ const runFee = async () => {
 .days-risk { color: var(--color-warning-dark); font-weight: 600; }
 .days-healthy { color: var(--color-success); font-weight: 600; }
 .cell-clip { max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.filter input { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; min-width: 12rem; }
+.filter input { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; min-width: 12rem; }
 .filter.wide { flex: 1 1 24rem; align-items: flex-start; }
 .filter.wide input, .filter.wide textarea { width: 100%; }
-.filter.wide textarea { padding: 0.3rem 0.5rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; font-family: inherit; min-width: 24rem; }
+.filter.wide textarea { padding: 0.3rem 0.5rem; border-radius: var(--amz-radius-sm); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; font-family: inherit; min-width: 24rem; }
 .card-title { font-size: 0.9375rem; color: var(--color-on-surface); margin: 0.875rem 1rem 0; }
 .form-hint { padding: 0.375rem 1rem 0.75rem; margin: 0; line-height: 1.5; }
-.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.8125rem; }
+.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--amz-radius-sm); cursor: pointer; font-size: 0.8125rem; }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .check-result { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 0.5rem 1rem 0.875rem; font-size: 0.8125rem; }
 .trend-block { padding: 0.25rem 1rem 0.5rem; }
@@ -854,17 +854,17 @@ const runFee = async () => {
 .compare-latest { padding-top: 0.25rem; }
 .table-pager { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; margin-top: 1rem; }
 
-.fee-card { background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 1rem; margin-top: 1rem; }
+.fee-card { background: var(--color-surface); border-radius: var(--amz-radius-md); box-shadow: var(--shadow-sm); padding: 1rem; margin-top: 1rem; }
 .fee-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .fee-title { font-weight: 600; color: var(--color-on-surface); }
 .fee-form { display: flex; gap: 0.5rem; }
-.fee-input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-background); color: var(--color-on-surface); }
+.fee-input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-background); color: var(--color-on-surface); }
 .fee-result { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.75rem 0 0 0; font-size: 0.8125rem; }
 .fee-result dt { color: var(--color-muted); }
 .fee-result dd { margin: 0; color: var(--color-on-surface); word-break: break-all; }
 .fee-error { color: var(--color-error); font-size: 0.8125rem; margin-top: 0.5rem; }
 
-.cell-input { width: 6.5rem; padding: 0.25rem 0.375rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.cell-input { width: 6.5rem; padding: 0.25rem 0.375rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
 .master-create { border-top: 1px solid var(--color-border); margin-top: 1rem; padding-top: 0.875rem; }
 .master-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; align-items: center; }
 @media (max-width: 1024px) { .master-grid { grid-template-columns: repeat(2, 1fr); } }
