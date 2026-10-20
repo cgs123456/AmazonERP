@@ -53,6 +53,7 @@ Why this exists (HANDOFF §S33.36 / §S33.41):
 """
 from __future__ import annotations
 
+import atexit
 import re
 import sys
 import unittest
@@ -402,6 +403,28 @@ class ShopScopePlacementTest(unittest.TestCase):
 
 
 _PROBE_DIR: list[Path] = []
+
+
+def _cleanup_probe_dir() -> None:
+    """进程退出时删除探针目录。
+
+    不清理的后果是实测过的：本门禁每跑一次就在系统临时目录留一个
+    `shoppointer-probe-*`（`mkdtemp` 不做回收），CI 与本地反复运行后
+    积到 79 个。虽然单个只有 1KB，但它们是**无主目录**——没人知道能删，
+    也没人敢删，属于典型的临时文件泄漏。
+
+    用 atexit 而不是逐用例清理：`_PROBE_DIR` 是模块级缓存，整个测试类
+    共用同一个目录（每次 `_write_probe` 都覆写同一个 `ProbeController.java`），
+    在 `tearDown` 里删会让后续用例找不到目录。进程结束时统一删最贴合它的生命周期。
+    """
+    import shutil
+
+    for d in _PROBE_DIR:
+        shutil.rmtree(d, ignore_errors=True)
+    _PROBE_DIR.clear()
+
+
+atexit.register(_cleanup_probe_dir)
 
 
 def _write_probe(source: str) -> Path:
