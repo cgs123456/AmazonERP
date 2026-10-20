@@ -64,7 +64,7 @@
     {
       "path": "amz-frontend/src/components/AppHeader.vue",
       "rule": "secret-like-assignment",
-      "sha256": "4f6a3414e36e5155566327f783d34ab2a6e397a066f274648b5dca78d7f6faea"
+      "sha256": "680ceb0b3dd5e6a4ce5965a0791556aa60cb1fcb6e1895c9c242c71197f3af1c"
     },
     {
       "path": "amz-frontend/src/components/LoginModal.vue",

@@ -83,7 +83,7 @@ import { getUserInfo, type UserVo } from '../api/auth'
 import { getUnreadCount } from '../api/notification'
 import { setUserRole, clearUserRole } from '../utils/identity'
 import { websocketManager } from '../utils/websocket'
-import { getShops, getCurrentShopId, setCurrentShopId, setShops, type ShopOption } from '../utils/shop'
+import { getShops, getCurrentShopId, setCurrentShopId, setShops, isShopsLoadTrusted, type ShopOption } from '../utils/shop'
 
 const router = useRouter()
 const showLoginModal = ref(false)
@@ -119,11 +119,6 @@ const onNotificationsChanged = () => {
 const shops = ref<ShopOption[]>([])
 const currentShopId = ref('')
 
-const refreshShops = () => {
-  shops.value = getShops()
-  currentShopId.value = getCurrentShopId()
-}
-
 /**
  * 用后端返回的店铺覆盖本地缓存（全站唯一写入口）。
  * <p>
@@ -134,8 +129,9 @@ const refreshShops = () => {
  */
 const syncShopsFromServer = (serverShops?: ShopOption[]) => {
   if (!Array.isArray(serverShops)) {
-    // 后端未返回该字段（老版本后端）：不动本地，交给 getMyShops 兜底
-    refreshShops()
+    // 后端未返回该字段（老版本后端）：不动本地，只把缓存读回响应式状态
+    shops.value = getShops()
+    currentShopId.value = getCurrentShopId()
     return
   }
   setShops(serverShops)
@@ -176,30 +172,22 @@ const loadUserInfo = async (retryOnShopSync = true) => {
     unreadCount.value = 0
     return
   }
-  // 本次请求**是否带了** shopId 头。必须在发请求前取：effectiveRole 是「当前店铺上的
-  // 角色」，没带店时后端只能回落全局角色。首次登录 localStorage 里还没有
-  // current_shop_id，正是这种情况——此时拿到的 effectiveRole 不可信，落完店铺要重取。
+  // 本次请求是否带了 shopId 头。必须发请求前取：没带店时后端只能回落全局角色，
+  // 首次登录正是这种情况——此时拿到的 effectiveRole 不可信，落完店铺要重取。
   const requestHadShop = !!getCurrentShopId()
   try {
     const response = await getUserInfo()
     if (response.code === 200 && response.data && response.data.user) {
       userInfo.value = response.data.user
-      // 店铺来自后端而不是本地占位：此前 main.ts 写死 Shop A/B/C，而 axios 拦截器
-      // 会把选中的 id 当 shopId 头发给网关——等于用编造的 ID 去撞店铺隔离边界。
-      //
+      // 店铺来自后端而不是本地占位。shopsLoaded=false 表示「这次没查到」，
+      // 与「查到但该账号没有店」是两件事——前者保留本地，理由见 isShopsLoadTrusted。
       // **顺序要紧**：先落店铺、再定角色，这样重取时请求才带得上新选的店。
-      //
-      // shopsLoaded=false 是「后端这次没查到」，与「查到但该账号没有店」是两件事。
-      // 前者不能动本地：把旧列表清空后，所有带 shopId 的请求都会带着一个
-      // 后端已不认可的 id 发出去，整站变成大片越权报错，比多转一圈 loading 难查得多。
-      // 老后端没有 shopsLoaded 字段（undefined）时按 true 处理，行为与改动前一致。
-      const shopsLoaded = response.data.shopsLoaded !== false
-      if (shopsLoaded) {
-        // 后端返回空数组 = 该账号确实没被分配店铺，此时清空而不是保留旧值。
+      if (isShopsLoadTrusted(response.data.shopsLoaded)) {
         syncShopsFromServer(response.data.shops)
       } else {
         console.warn('[AppHeader] 后端未返回店铺列表（shopsLoaded=false），保留本地缓存不清空')
-        refreshShops()
+        shops.value = getShops()
+        currentShopId.value = getCurrentShopId()
       }
       // 角色落到 localStorage：全站唯一的角色来源。
       // 读 effectiveRole（当前店铺上的有效角色）而不是 user.role（全局角色）——
