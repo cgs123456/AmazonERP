@@ -43,6 +43,13 @@ public class UserServiceImpl implements UserService {
      * <p>
      * ADMIN 走全量店铺（他可能还没被分配到某店，但必须能看见并管理它）；
      * 普通用户只返回 {@code amz_user_shop} 里已绑定的，顺序按店铺 id 稳定排列。
+     * <p>
+     * <b>本方法可能抛异常，调用方必须决定怎么暴露它。</b>
+     * 「查店铺」横跨 mybatis 映射、凭证列解密与用户-店铺绑定三处，任何一处异常
+     * 都会在这里冒出来。此前的写法是调用方 catch 后只打一句 warn 再继续返回，
+     * 于是 {@code shops=null}（没查到）与 {@code shops=[]}（确实没店）在响应里同形，
+     * 前端无法区分，最终表现为「登录后店铺选择器空白」——一个与根因无关、
+     * 极难回溯的症状。见 {@link UserVo#getShopsLoaded()} 的说明。
      */
     private java.util.List<ShopOptionVo> resolveShopOptions(Integer userId) {
         if (shopService == null || userId == null) {
@@ -76,11 +83,21 @@ public class UserServiceImpl implements UserService {
         userVo.setEffectiveRole(UserContext.resolveRole(UserContext.getShopId()));
         // 2b.附带授权店铺：前端店铺选择器此前没有任何真实来源（只能写死 Shop A/B/C），
         //     登录 → getInfo → 写 localStorage 这条链路补全后，店铺切换才建立在真数据上。
-        //     查询失败不阻断登录——拿不到店铺只影响选择器，不该让用户连系统都进不去。
+        //     查询失败不阻断登录——用户信息本身已查到，不该让用户连系统都进不去；
+        //     但失败必须留痕（shopsLoaded=false + error 日志），见 catch 内的说明。
         try {
             userVo.setShops(resolveShopOptions(userId));
+            userVo.setShopsLoaded(Boolean.TRUE);
         } catch (Exception e) {
-            log.warn("查询用户授权店铺失败 userId={}，本次不返回 shops。原因: {}", userId, e.getMessage());
+            // 不因店铺查询失败就否定整个登录态——用户信息本身是查到了的。
+            // 但必须让这次失败**可观测、可区分**：
+            //   · shops 留 null，不用空数组冒充「该账号没有店铺」；
+            //   · shopsLoaded=false，前端据此保留旧列表而不是清空后到处越权；
+            //   · 日志提到 error 并带完整异常——此前只有一句 warn，
+            //     凭证列解密失败这类问题在现场日志里几乎看不出来。
+            userVo.setShops(null);
+            userVo.setShopsLoaded(Boolean.FALSE);
+            log.error("查询用户授权店铺失败 userId={}，本次 shops 返回 null 且 shopsLoaded=false", userId, e);
         }
         // 3.根据生日生成年龄
         if (!StringUtils.isBlank(user.getBirthday())) {

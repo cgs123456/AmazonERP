@@ -27,6 +27,24 @@ public class UserVo {
     private List<ShopOptionVo> shops;
 
     /**
+     * {@link #shops} 是否为一次**可信**的查询结果。
+     * <p>
+     * 为什么需要它：查店铺可能失败（DB 抖动、凭证列解密异常等），而前面的 catch 只会
+     * 打一句 warn 后继续返回——此时 {@code shops} 是 null，与「该账号确实没有店铺」
+     * （空数组）在响应上**完全同形**。前端据此写 localStorage，这三种情况会被读成同一种：
+     * <ul>
+     *   <li>{@code true} + 空数组 —— 确实没店，应提示「无可用店铺」；</li>
+     *   <li>{@code false} + null —— 没查到，此时写空数组会把「查失败」误判成「没店」；
+     *       更糟的是用户上一次的旧列表会被清掉，接着所有带 shopId 的请求全部越权失败。</li>
+     * </ul>
+     * 实测过这个混淆的代价：{@code resolveShopOptions} 因凭证列解密异常被吞掉异常，
+     * 前端店铺选择器空白，排查时只能从「登录后没店铺」这个与根因无关的症状反推。
+     * <p>
+     * 老前端不读本字段，行为与改动前一致（把 null/空数组当没店）。
+     */
+    private Boolean shopsLoaded;
+
+    /**
      * 当前选中店铺上的**有效角色**（店铺级优先、全局兜底，口径见
      * {@code UserContext.resolveRole}）。
      * <p>

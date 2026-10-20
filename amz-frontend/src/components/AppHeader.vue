@@ -186,10 +186,21 @@ const loadUserInfo = async (retryOnShopSync = true) => {
       userInfo.value = response.data.user
       // 店铺来自后端而不是本地占位：此前 main.ts 写死 Shop A/B/C，而 axios 拦截器
       // 会把选中的 id 当 shopId 头发给网关——等于用编造的 ID 去撞店铺隔离边界。
-      // 后端返回空数组 = 该账号确实没被分配店铺，此时清空而不是保留旧值。
       //
       // **顺序要紧**：先落店铺、再定角色，这样重取时请求才带得上新选的店。
-      syncShopsFromServer(response.data.shops)
+      //
+      // shopsLoaded=false 是「后端这次没查到」，与「查到但该账号没有店」是两件事。
+      // 前者不能动本地：把旧列表清空后，所有带 shopId 的请求都会带着一个
+      // 后端已不认可的 id 发出去，整站变成大片越权报错，比多转一圈 loading 难查得多。
+      // 老后端没有 shopsLoaded 字段（undefined）时按 true 处理，行为与改动前一致。
+      const shopsLoaded = response.data.shopsLoaded !== false
+      if (shopsLoaded) {
+        // 后端返回空数组 = 该账号确实没被分配店铺，此时清空而不是保留旧值。
+        syncShopsFromServer(response.data.shops)
+      } else {
+        console.warn('[AppHeader] 后端未返回店铺列表（shopsLoaded=false），保留本地缓存不清空')
+        refreshShops()
+      }
       // 角色落到 localStorage：全站唯一的角色来源。
       // 读 effectiveRole（当前店铺上的有效角色）而不是 user.role（全局角色）——
       // 后者会让「店 A 是 OPERATOR、店 B 是 VIEWER」的用户在店 B 看到 OPERATOR 的界面。
