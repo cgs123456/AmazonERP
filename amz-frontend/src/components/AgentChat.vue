@@ -351,7 +351,7 @@ const scrollToBottom = async () => {
   max-width: 90vw;
   height: 520px;
   background: var(--color-surface);
-  border-radius: var(--amz-radius-lg);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
@@ -402,7 +402,7 @@ const scrollToBottom = async () => {
   color: var(--color-on-primary);
   cursor: pointer;
   padding: 0.25rem;
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
   transition: background 0.2s;
 }
 .close-btn:hover { background: color-mix(in srgb, currentColor 18%, transparent); }
@@ -425,7 +425,7 @@ const scrollToBottom = async () => {
 .message-content {
   max-width: 80%;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   font-size: 0.875rem;
   line-height: 1.5;
 }
@@ -433,13 +433,13 @@ const scrollToBottom = async () => {
 .message.user .message-content {
   background: var(--color-primary-light);
   color: var(--color-primary);
-  border-bottom-right-radius: var(--amz-radius-xs);
+  border-bottom-right-radius: var(--radius-xs);
 }
 
 .message.assistant .message-content {
   background: var(--color-muted-light);
   color: var(--color-on-surface);
-  border-bottom-left-radius: var(--amz-radius-xs);
+  border-bottom-left-radius: var(--radius-xs);
 }
 
 .message-content.typing { color: var(--color-muted); font-style: italic; }
@@ -451,7 +451,7 @@ const scrollToBottom = async () => {
   gap: 0.25rem;
   font-size: 0.75rem;
   padding: 0.125rem 0.5rem;
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
   background: var(--color-muted-light);
   color: var(--color-muted);
   white-space: nowrap;
@@ -470,7 +470,7 @@ const scrollToBottom = async () => {
   flex: 1;
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   font-size: 0.875rem;
   outline: none;
   transition: border-color 0.2s;
@@ -486,7 +486,7 @@ const scrollToBottom = async () => {
   background: var(--color-primary);
   color: var(--color-on-primary);
   border: none;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: flex;
   align-items: center;

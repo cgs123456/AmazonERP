@@ -301,7 +301,7 @@ const chart = computed(() => {
 .dot {
   width: 0.5rem;
   height: 0.5rem;
-  border-radius: var(--amz-radius-full);
+  border-radius: var(--radius-full);
   display: inline-block;
 }
 
@@ -337,7 +337,7 @@ const chart = computed(() => {
 .dist-bar {
   flex: 1;
   height: 0.5rem;
-  border-radius: var(--amz-radius-full);
+  border-radius: var(--radius-full);
   background: var(--color-muted-light);
   overflow: hidden;
 }
@@ -345,7 +345,7 @@ const chart = computed(() => {
 .dist-fill {
   height: 100%;
   background: var(--color-primary);
-  border-radius: var(--amz-radius-full);
+  border-radius: var(--radius-full);
 }
 
 .dist-value {
@@ -359,7 +359,7 @@ const chart = computed(() => {
 
 .source-chip {
   padding: 0.25rem 0.625rem;
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
   background: var(--color-muted-light);
   color: var(--color-muted);
   font-size: var(--font-size-1);

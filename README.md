@@ -226,9 +226,9 @@ design token 与各组件的 `<style scoped>`。
 结论是**视觉差异小于迁移风险**，已完整移除（含 Tailwind v4 及其 7 个传递依赖）。
 评估过程与数据见 HANDOFF §S33.129。
 
-> 圆角 token 保留 `--amz-radius-*` 前缀：这是那次评估的产物（Tailwind v4 的
-> `rounded-*` 会抢占 `--radius-*` 命名空间）。改回原名的收益为零，且若将来再引入
-> Tailwind 会重蹈覆辙，故维持现状。
+> 那次评估曾把圆角 token 临时加了 `--amz-` 前缀（Tailwind v4 的 `rounded-*`
+> 会抢占 `--radius-*` 命名空间），移除 Tailwind 后已全量还原为 `--radius-*`。
+> 若将来再引入 Tailwind，需重新评估这个命名空间冲突。
 
 ## 📊 可观测性三栈
 

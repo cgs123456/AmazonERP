@@ -275,7 +275,7 @@ const handleLogin = async () => {
 .modal-container {
   position: relative;
   background: var(--color-surface);
-  border-radius: var(--amz-radius-xl);
+  border-radius: var(--radius-xl);
   width: 100%;
   max-width: 440px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
@@ -305,7 +305,7 @@ const handleLogin = async () => {
   background: transparent;
   color: var(--color-muted);
   cursor: pointer;
-  border-radius: var(--amz-radius-full);
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -340,7 +340,7 @@ const handleLogin = async () => {
   gap: 0.25rem;
   margin-bottom: 1.5rem;
   background: var(--color-surface);
-  border-radius: var(--amz-radius-lg);
+  border-radius: var(--radius-lg);
   padding: 0.25rem;
 }
 
@@ -349,7 +349,7 @@ const handleLogin = async () => {
   padding: 0.5rem 0.75rem;
   border: none;
   background: transparent;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-muted);
@@ -370,7 +370,7 @@ const handleLogin = async () => {
   width: 180px;
   height: 180px;
   background: var(--color-primary-light);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -410,7 +410,7 @@ const handleLogin = async () => {
   display: flex;
   align-items: center;
   background: var(--color-primary-light);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   padding: 0.5rem 0.75rem;
   border: 2px solid transparent;
   transition: all 0.2s;
@@ -468,7 +468,7 @@ const handleLogin = async () => {
   background: var(--color-primary);
   color: var(--color-on-primary);
   border: none;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   font-size: 0.875rem;
   font-weight: 600;
   cursor: pointer;
@@ -544,7 +544,7 @@ const handleLogin = async () => {
   height: 44px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
-  border-radius: var(--amz-radius-full);
+  border-radius: var(--radius-full);
   display: flex;
   align-items: center;
   justify-content: center;

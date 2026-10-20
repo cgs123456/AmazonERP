@@ -134,28 +134,6 @@ DUPLICATED_BY_DESIGN: dict[str, list[str]] = {
 }
 
 
-# **全局 token 改名**的等价映射：比对前把基线里的旧名换成新名。
-#
-# 与 INTENTIONAL_ADDITIONS 的区别：那是"新写了一条规则"，这是"同一条规则里的
-# 变量名变了"。若逐条登记例外，判据就失去意义——真正的改值会混在例外里溜过去。
-# 归一化之后仍然逐字比对，改值照样会红。
-#
-# 登记标准：改名必须是全仓性的语义等价（同一个变量只换了名字），且改名原因
-# 写清楚。局部改值**不准**进这里。
-TOKEN_RENAMES: dict[str, str] = {
-    # Tailwind v4 的 `rounded-*` 工具类消费 `--radius-*` 命名空间，
-    # 项目原名会把 shadcn 组件的圆角一起改掉（Button 变胶囊、Card 24px）。
-    # 故项目 token 统一加 `--amz-` 前缀，值与语义均未变。
-    "--radius-": "--amz-radius-",
-}
-
-
-def normalize_token_renames(text: str) -> str:
-    for old, new in TOKEN_RENAMES.items():
-        text = text.replace(f"var({old}", f"var({new}")
-    return text
-
-
 def strip_comments(text: str) -> str:
     return re.sub(r"/\*.*?\*/", "", text, flags=re.S)
 
@@ -422,8 +400,7 @@ class CssScopeParityTest(unittest.TestCase):
                 self.skipTest(f"取不到 {base_ref}:{scoped_rel}，跳过基线比对")
             m = re.search(r"<style scoped>\n(.*?)\n</style>", before, re.S)
             self.assertIsNotNone(m, f"{base_ref} 的 {scoped_rel} 没有 scoped 块")
-            # 基线先过一遍 token 改名归一化：全局改名不是改值，不应报成漂移。
-            original = declarations(normalize_token_renames(strip_comments(m.group(1))))
+            original = declarations(strip_comments(m.group(1)))
             current = declarations(strip_comments(
                 (ROOT / shared_rel).read_text(encoding="utf-8")))
 
@@ -475,7 +452,7 @@ class CssScopeParityTest(unittest.TestCase):
             # 反向也必须做：共享表里删掉一条规则、子组件里恰好有同名的，
             # 顶层判据会放行（本班实测过的 `.link-btn:hover` 盲区）。
             # 所以按「条件 + 选择器」逐条核对。
-            original_media = media_blocks(normalize_token_renames(strip_comments(m.group(1))))
+            original_media = media_blocks(strip_comments(m.group(1)))
             surviving_media: dict[str, dict[str, str]] = {}
             for src in [
                 (ROOT / "amz-frontend/src/style.css").read_text(encoding="utf-8"),

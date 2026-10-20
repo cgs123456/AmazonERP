@@ -9975,11 +9975,20 @@ shadcn 是 Tailwind v4 的唯一使用方（业务代码**零工具类**，已�
 **运行时依赖回到 4 个**：`@lucide/vue` / `axios` / `vue` / `vue-router`。
 产物 CSS 从 52KB 降到 6.9KB。
 
-### 2.4 保留了一个副产品
+### 2.4 副产品：先保留，随后还原
 
-`--amz-radius-*` 前缀**保留**，不还原成 `--radius-*`。它是评估的产物
-（见 §3 的历史说明），但还原要动 369 处引用、收益为零，且若将来再引入
-Tailwind 会重蹈覆辙。
+`--amz-radius-*` 前缀是评估的产物（为避免 Tailwind 的 `rounded-*` 抢占
+`--radius-*` 命名空间）。移除 Tailwind 后我一度保留它，理由是「还原要动
+369 处引用、收益为零」。
+
+用户随后指出**「确认多余且不会影响项目就删掉，不必因为麻烦」**——
+这个判断是对的：既然 Tailwind 已不存在，命名空间抢占的威胁也消失了，
+前缀就成了纯粹的遗留物。已用 sed 全量还原为 `--radius-*`（364 处引用、
+55 个文件），并同步删除了 `test_css_scope_parity.py` 里为此加的
+`TOKEN_RENAMES` 归一化机制。真机复核圆角仍全部为 12px，零视觉变化。
+
+教训：**「改动成本高」不是保留冗余的理由**。批量改名这类机械操作，
+成本是分钟级，不是人天级；把它当成不删的理由，等于让一次临时决策永久固化。
 
 ## 3. 一个值得记住的一般性教训：CSS 命名空间抢占
 
@@ -9999,16 +10008,19 @@ Tailwind 会重蹈覆辙。
 
 ## 4. 仓库守卫的改动
 
-### 4.1 `test_css_scope_parity.py` 新增 `TOKEN_RENAMES`
+### 4.1 `test_css_scope_parity.py`：`TOKEN_RENAMES` 曾加过又删了
 
-该门禁拿「搬迁前的 git 基线」逐字比对共享样式表。radius 改名后
+该门禁拿「搬迁前的 git 基线」逐字比对共享样式表。radius 加 `--amz-` 前缀时，
 `.warn-banner` 的声明体从 `var(--radius-md)` 变成 `var(--amz-radius-md)`，
-被判为「改值」。
+被判为「改值」，于是加了 `TOKEN_RENAMES` 归一化映射（比对前把基线旧名换成新名）。
 
-新增 `TOKEN_RENAMES` 归一化映射（比对前把基线里的旧名换成新名）。
-**与 `INTENTIONAL_ADDITIONS` 的区别要守住**：那是「新写了一条规则」，
-这是「同一条规则里的变量名变了」。若逐条登记例外，判据就失去意义——
-真正的改值会混在例外里溜过去。归一化后仍然逐字比对，改值照样会红。
+**前缀后来还原为 `--radius-*`（见 §2.4），该机制也随之删除**——留着一个
+映射到不存在名字的表，只会让下一个人以为项目里还有 `--amz-` 前缀。
+
+保留这段记录是因为它示范了一个可复用的模式：**全局 token 改名不应该走
+`INTENTIONAL_ADDITIONS`（逐条登记例外），而应该做一次归一化然后仍然逐字比对**。
+前者会把「真改值」混在例外里放过去，后者不会。将来若再遇到同类全局改名，
+按这个形状重写即可。
 
 ### 4.2 hygiene-allowlist 更新 4 个前端文件哈希
 
@@ -10077,8 +10089,11 @@ const handleShopChange = (e: Event) => {
 | 生产构建 | 通过 |
 | `npm ci` 可复现 | 通过（lock 已同步） |
 | hygiene / css_scope / file_size | 0 / OK / 通过 |
+| 后端全量编译 | BUILD SUCCESS（914 个 main 源文件） |
+| 后端全量测试 | BUILD SUCCESS；失败集合**恰为已知的 3 个本机环境失败**（`PipeImpl` loopback），无新增 |
 | 真机 DOM 核验 | 33 个导航项全部渲染为真实 Lucide SVG（`viewBox 0 0 24 24`）；37 个图标 0 兜底 |
 | 移除 shadcn 后真机复核 | h1 30px/700、导航圆角 12px、body 背景 `#f5f6fa`、45 处圆角全部 12px、主色仍为 indigo `#4f46e5`、37 个 Lucide 图标 |
+| radius 前缀还原后复核 | `--radius-md` = 12px、`--amz-radius-md` 已不存在、圆角仍全部 12px |
 | 产物 CSS 体积 | 52KB → **6.9KB**（Tailwind preflight + 工具类层移除） |
 
 **最终依赖（4 个运行时）**：
@@ -10086,16 +10101,54 @@ const handleShopChange = (e: Event) => {
 
 （引入 shadcn 时曾到 10 个；移除后回到原状。）
 
-## 7. 下一班需要知道的
+## 7. 死代码清理
+
+用户要求「检查完整项目，删掉多余且不影响项目的代码」。扫描与判断：
+
+### 7.1 删掉的（4 个文件，共 150 行，零引用零测试）
+
+| 文件 | 是什么 | 为什么该删 |
+|---|---|---|
+| `amz-common/.../enums/LogType.java` | `SCAN`/`LIKE` 枚举 | 业务无对应功能 |
+| `amz-common/.../enums/ResponseEnum.java` | 通用响应码枚举 | 项目实际用别的响应封装，此枚举从未被引用 |
+| `amz-common/.../util/HttpUtil.java` | `static final HttpClient` + 静态方法 | **零引用，但留着是定时炸弹**——它是 §S33.126 修过的那类启动隔离缺陷（类初始化即建 HTTP 客户端），谁哪天用了它就会重蹈覆辙 |
+| `amz-common/.../util/NumberUtil.java` | 时间戳+随机数生成单号 | 已被 `BizNoGenerator`（12 处引用，处理了同毫秒碰撞）取代 |
+
+### 7.2 保留的（2 个，看起来像孤儿但不是）
+
+| 文件 | 为什么不是孤儿 |
+|---|---|
+| `amz-frontend/src/utils/viteProxy.ts` | 被 `vite.config.ts` 的代理配置与两个测试引用。它负责把 `/api/connectors` 等网关别名映射到 `/spapi/connectors`——这张表与 `amz-gateway` 的 `RewritePath` 必须成对存在，漂移会让前端 404 而 hermetic E2E 全绿 |
+| `amz-frontend/src/vite-env.d.ts` | TypeScript 三斜线引用，提供 `import.meta.env` 的类型 |
+
+### 7.3 用户决定保留的（1 个）
+
+`amz-service-multiplatform/.../PlatformAdapter.java`（50 行，零引用）。
+注释明确写着「本轮只做接口声明，不接线……作为接入第四家平台时的验收清单」——
+它不是遗忘的死代码，是有意固化的设计决策。删掉会丢失「新平台需要实现哪些能力」
+这份最难重建的清单。
+
+### 7.4 扫描方法与其局限（下一班别再走弯路）
+
+静态引用检测对 Spring 项目**天然产生大量误报**：Controller/Configuration/
+Consumer/Scheduler/WebSocket 都由注解或框架回调实例化，代码里不会有
+`new XxxController()`。首次扫描报出 44 个「孤儿」，其中 41 个是这类误报。
+
+**正确判据**：先排除带框架注解的类（本项目 914 个 main 源文件里有 508 个），
+再排除 `*Application` 启动类，剩下的才是候选。按此收敛后只剩 5 个，
+其中 4 个确认删除、1 个由用户决定保留。
+
+## 8. 下一班需要知道的
 
 1. **图标映射在 `src/components/Icon.vue` 的 `ICONS` 表**。新增图标必须登记；
    未登记的会走 `CircleHelp` 兜底并在控制台 warn。
-2. **圆角 token 是 `--amz-radius-*`，不要改回 `--radius-*`**。见 §2.4 / §3。
-3. **不要再引入 Tailwind 或 shadcn 而不先读 §3**。命名空间抢占是可复现的坑；
-   且本项目业务代码零工具类，引入 Tailwind 等于给它加一个没人用的构建步骤。
-4. 本次改动在分支 `feat/frontend-shadcn-lucide`：
-   `3a96947`（Lucide 本地化 + shadcn 接入，已被后续部分覆盖）→
-   `ac9f90a`（文档）→ 后续提交（移除 shadcn/Tailwind，修正文档）。
+2. **圆角 token 是 `--radius-*`**（已从 `--amz-radius-*` 还原）。
+   若将来再引入 Tailwind，**先读 §3**——它的 `rounded-*` 会抢占这个命名空间。
+3. **不要再引入 Tailwind 或 shadcn 而不先读 §2 / §3**。本项目业务代码零工具类，
+   引入 Tailwind 等于给它加一个没人用的构建步骤。
+4. 本次改动在分支 `feat/frontend-shadcn-lucide`，提交序列：
+   `3a96947`（Lucide 本地化 + shadcn 接入）→ `ac9f90a`（文档）→
+   `8b8c7b1`（移除 shadcn/Tailwind）→ 后续提交（radius 还原 + 死代码清理）。
    **合并时应看最终状态，不要按 `3a96947` 的描述理解现状。**
 5. 若将来确实需要组件库，先确认三件事：① `<select>` 的 194 处 `setValue`
    与 17 处 `selectOption` 怎么处理；② 主色是否接受从 indigo 改变；

@@ -744,7 +744,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   padding: 0.625rem 0.875rem;
   margin-bottom: 1rem;
   font-size: 0.875rem;
@@ -763,7 +763,7 @@ onUnmounted(() => {
   margin-bottom: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   color: var(--color-muted);
   font-size: var(--font-size-2);
 }
@@ -775,7 +775,7 @@ onUnmounted(() => {
   gap: 0.5rem;
   padding: 0.625rem 1rem;
   margin-bottom: 1rem;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-2);
 }
 .sync-bar.on {
@@ -794,7 +794,7 @@ onUnmounted(() => {
   gap: 0.25rem;
   padding: 0.375rem 0.75rem;
   border: 1px solid currentColor;
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: inherit;
   font-size: var(--font-size-2);
@@ -841,7 +841,7 @@ onUnmounted(() => {
 .tab-badge {
   min-width: 1.25rem;
   padding: 0 0.375rem;
-  border-radius: var(--amz-radius-full);
+  border-radius: var(--radius-full);
   font-size: var(--font-size-1);
   text-align: center;
   background: var(--color-muted-light);
@@ -870,7 +870,7 @@ onUnmounted(() => {
   left: 50%;
   transform: translateX(-50%);
   padding: 0.625rem 1.25rem;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   font-size: var(--font-size-2);
   color: #fff;
   z-index: 1100;

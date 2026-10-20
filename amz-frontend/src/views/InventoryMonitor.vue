@@ -462,30 +462,30 @@ onMounted(reloadData)
 
 <style scoped>
 /* 页面基础 */
-.plan-btn { margin-left: 0.5rem; padding: 0.2rem 0.5rem; border: none; border-radius: var(--amz-radius-sm); background: var(--color-primary-light); color: var(--color-primary); font-size: 0.75rem; cursor: pointer; }
+.plan-btn { margin-left: 0.5rem; padding: 0.2rem 0.5rem; border: none; border-radius: var(--radius-sm); background: var(--color-primary-light); color: var(--color-primary); font-size: 0.75rem; cursor: pointer; }
 .plan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .plan-btn.secondary { background: var(--color-surface); color: var(--color-on-surface-muted); border: 1px solid var(--color-border); }
 /* FBA 入库计划对话框 */
 .dialog-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.dialog { background: var(--color-surface); border-radius: var(--amz-radius-lg); padding: 1.25rem; width: min(480px, 92vw); max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+.dialog { background: var(--color-surface); border-radius: var(--radius-lg); padding: 1.25rem; width: min(480px, 92vw); max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
 .dialog-title { margin: 0 0 0.375rem; font-size: 1.0625rem; }
 .dialog-sub { margin: 0 0 1rem; font-size: 0.8125rem; color: var(--color-on-surface-muted); line-height: 1.5; }
 .dialog-field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.625rem; }
 .dialog-field label { font-size: 0.8125rem; color: var(--color-on-surface-muted); }
-.dialog-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); }
+.dialog-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); }
 .owner-row { display: flex; gap: 0.5rem; }
 .owner-row .dialog-input { flex: 1; }
 .dialog-error { margin: 0 0 0.75rem; font-size: 0.8125rem; color: var(--color-error); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .plan-msg { font-size: 0.8125rem; color: var(--color-success); margin: 0 0 0.75rem; }
 .recalc-row { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
-.recalc-btn { padding: 0.3rem 0.75rem; border: 1px solid var(--color-primary); border-radius: var(--amz-radius-md); background: var(--color-surface); color: var(--color-primary); font-size: 0.8125rem; cursor: pointer; }
+.recalc-btn { padding: 0.3rem 0.75rem; border: 1px solid var(--color-primary); border-radius: var(--radius-md); background: var(--color-surface); color: var(--color-primary); font-size: 0.8125rem; cursor: pointer; }
 .recalc-btn:hover:not(:disabled) { background: var(--color-primary-light); }
 .recalc-btn:disabled { opacity: 0.5; cursor: not-allowed; border-color: var(--color-border); color: var(--color-muted); }
 .recalc-msg { font-size: 0.8125rem; color: var(--color-success); }
 .recalc-hint { font-size: 0.75rem; color: var(--color-muted); }
 .sales-history-hint { font-size: 0.75rem; color: var(--color-muted); margin: 0.5rem 0 0; }
-.error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 
 .inventory-page { background: var(--color-background); }
 
@@ -505,7 +505,7 @@ onMounted(reloadData)
 
 .health-card {
   background: var(--color-surface);
-  border-radius: var(--amz-radius-md); /* 12px */
+  border-radius: var(--radius-md); /* 12px */
   padding: 1rem; /* 20px */
   text-align: center;
   box-shadow: var(--shadow-sm);
@@ -538,7 +538,7 @@ onMounted(reloadData)
 .days-risk { color: var(--color-warning-dark); font-weight: 600; }
 
 /* health-tag */
-.health-tag { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.health-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .health-tag.urgent { background: var(--color-light-red); color: var(--color-error); }
 .health-tag.risk { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .health-tag.healthy { background: var(--color-primary-light); color: var(--color-primary); }

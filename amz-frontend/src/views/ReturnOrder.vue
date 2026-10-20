@@ -347,14 +347,14 @@ onMounted(load)
 
 <style scoped>
 .return-page { background: var(--color-background); }
-.error-zone { display: flex; align-items: center; gap: 0.5rem; border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; background: var(--color-light-red); color: var(--color-error); }
+.error-zone { display: flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; background: var(--color-light-red); color: var(--color-error); }
 .filter-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; padding: 0.75rem 1rem; }
 .filter { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; color: var(--color-on-surface-muted); }
-.filter input, .filter select { padding: 0.375rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
-.action-btn { padding: 0.375rem 0.875rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--amz-radius-md); font-size: 0.8125rem; cursor: pointer; }
+.filter input, .filter select { padding: 0.375rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.action-btn { padding: 0.375rem 0.875rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.8125rem; cursor: pointer; }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .row-actions { display: flex; gap: 0.375rem; white-space: nowrap; }
-.row-btn { padding: 0.25rem 0.625rem; font-size: 0.8125rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; }
+.row-btn { padding: 0.25rem 0.625rem; font-size: 0.8125rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; }
 .row-btn.primary { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 .row-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .muted { color: var(--color-on-surface-muted); }
@@ -364,12 +364,12 @@ onMounted(load)
 .status-tag.shipped { background: var(--color-primary-light); color: var(--color-primary); }
 .status-tag.refunded { background: var(--color-light-red); color: var(--color-error); }
 .dialog-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.dialog { background: var(--color-surface); border-radius: var(--amz-radius-lg); padding: 1.25rem; width: min(440px, 92vw); box-shadow: var(--shadow-lg); }
+.dialog { background: var(--color-surface); border-radius: var(--radius-lg); padding: 1.25rem; width: min(440px, 92vw); box-shadow: var(--shadow-lg); }
 .dialog-title { margin: 0 0 0.375rem; font-size: 1.0625rem; }
 .dialog-sub { margin: 0 0 1rem; font-size: 0.8125rem; color: var(--color-on-surface-muted); line-height: 1.5; }
 .dialog-field { display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.75rem; }
 .dialog-field label { font-size: 0.8125rem; color: var(--color-on-surface-muted); }
-.dialog-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); }
+.dialog-input { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); }
 .dialog-error { margin: 0 0 0.75rem; font-size: 0.8125rem; color: var(--color-error); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
 </style>

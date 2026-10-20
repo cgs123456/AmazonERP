@@ -419,7 +419,7 @@ const fmtTime = (v?: string | null) => {
 .filter-inline select {
   padding: 0.25rem 0.5rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-on-surface);
   font-size: var(--font-size-2);

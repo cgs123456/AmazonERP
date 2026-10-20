@@ -233,18 +233,18 @@ defineExpose({ loadCollections, loadCollectionSummary, loadSettlements, rebuildC
    `.table-card` 只抄 margin-bottom：背景与圆角来自全局那条同名规则。 */
 .table-card { margin-bottom: 1rem; }
 .filter-bar { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
-.filter-select, .filter-date { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); transition: border-color 0.2s; }
+.filter-select, .filter-date { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; background: var(--color-surface); color: var(--color-on-surface); transition: border-color 0.2s; }
 .filter-select:hover, .filter-date:hover { border-color: var(--color-primary); }
-.filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--amz-radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
+.filter-btn { padding: 0.5rem 1rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; white-space: nowrap; transition: background 0.2s; }
 .filter-btn:hover { background: var(--color-primary-dark); }
 .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-bottom: 1rem; }
-.summary-card { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
+.summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem; box-shadow: var(--shadow-sm); }
 .summary-label { font-size: 0.8125rem; color: var(--color-muted); }
 .summary-value { font-size: 1.75rem; font-weight: 700; color: var(--color-on-surface); margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
 .summary-value.small { font-size: 1rem; font-weight: 600; }
 .profit-positive { color: var(--color-success); font-weight: 600; }
 .profit-negative { color: var(--color-error); font-weight: 600; }
-.profit-note { padding: 0.75rem 1rem; background: var(--color-surface); color: var(--color-muted); border-radius: var(--amz-radius-md); font-size: 0.8125rem; line-height: 1.6; }
+.profit-note { padding: 0.75rem 1rem; background: var(--color-surface); color: var(--color-muted); border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }
 
 @media (max-width: 768px) { .filter-bar { flex-wrap: wrap; } .summary-grid { grid-template-columns: 1fr; } }
 </style>

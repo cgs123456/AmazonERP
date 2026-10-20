@@ -169,12 +169,12 @@ onMounted(load)
 
 <style scoped>
 .users-page { background: var(--color-background); }
-.error-zone { display: flex; align-items: center; gap: 0.5rem; border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; background: var(--color-light-red); color: var(--color-error); }
+.error-zone { display: flex; align-items: center; gap: 0.5rem; border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; background: var(--color-light-red); color: var(--color-error); }
 .filter-row { display: flex; gap: 0.75rem; align-items: center; padding: 0.75rem 1rem; }
-.action-btn { padding: 0.375rem 0.875rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--amz-radius-md); font-size: 0.8125rem; cursor: pointer; }
+.action-btn { padding: 0.375rem 0.875rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.8125rem; cursor: pointer; }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.role-select { padding: 0.25rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
-.row-btn { padding: 0.25rem 0.625rem; font-size: 0.8125rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; }
+.role-select { padding: 0.25rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.row-btn { padding: 0.25rem 0.625rem; font-size: 0.8125rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); cursor: pointer; }
 .row-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .status-tag.completed { background: var(--color-success-light); color: var(--color-success); }
 .status-tag.refunded { background: var(--color-light-red); color: var(--color-error); }

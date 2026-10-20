@@ -35,7 +35,7 @@ const goHome = () => {
 .hero-section { padding-top: env(safe-area-inset-top); padding-bottom: 3rem; text-align: center; }
 .hero-title { font-size: var(--font-size-10); font-weight: 800; color: var(--color-primary); margin: 0 0 0.5rem 0; line-height: 1; }
 .hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0 0 1rem 0; line-height: var(--line-height-relaxed); }
-.hero-cta { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--amz-radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
+.hero-cta { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1.5rem; background: var(--color-primary); color: var(--color-on-primary); border: none; border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
 .hero-cta:hover { background: var(--color-primary-dark); }
 
 @media (max-width: 768px) { .hero-section { padding: 2rem 1rem; } }

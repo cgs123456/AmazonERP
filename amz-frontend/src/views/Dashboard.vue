@@ -286,7 +286,7 @@ onUnmounted(() => {
 /* KPI 卡片 */
 .kpi-card {
   background: var(--color-surface);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   padding: 1.25rem;
   display: flex;
   gap: 1rem;
@@ -297,7 +297,7 @@ onUnmounted(() => {
 .kpi-icon {
   width: 3rem; /* 48px */
   height: 3rem;
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -343,7 +343,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   padding: 0.625rem 0.875rem;
   margin-bottom: 1rem;
   font-size: 0.875rem;
@@ -359,7 +359,7 @@ onUnmounted(() => {
   margin-bottom: var(--spacing-lg);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   color: var(--color-muted);
   font-size: var(--font-size-2);
 }
@@ -375,7 +375,7 @@ onUnmounted(() => {
 /* chart-card */
 .chart-card {
   background: var(--color-surface);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   padding: 1.25rem;
   box-shadow: var(--shadow-sm);
 }
@@ -410,7 +410,7 @@ onUnmounted(() => {
 .bar {
   width: 100%;
   max-width: 4rem; /* 64px */
-  border-radius: var(--amz-radius-sm) var(--amz-radius-sm) 0 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   min-height: 0.25rem;
   background: var(--color-primary);
 }
@@ -445,7 +445,7 @@ onUnmounted(() => {
 .pie-color {
   width: 0.75rem; /* 12px */
   height: 0.75rem;
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
 /* 占比图例：单 accent 的同色系深浅阶梯（color-mix），避免多 accent */
@@ -474,7 +474,7 @@ onUnmounted(() => {
 
 .agent-card {
   background: var(--color-surface);
-  border-radius: var(--amz-radius-md);
+  border-radius: var(--radius-md);
   padding: 1.25rem;
   display: flex;
   align-items: center;

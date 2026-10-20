@@ -1953,7 +1953,7 @@ onMounted(loadTabData)
 
 .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 0.5rem; }
 .stat-card {
-  background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1rem;
+  background: var(--color-surface); border-radius: var(--radius-md); padding: 1rem;
   text-align: center; box-shadow: var(--shadow-sm); border-top: 4px solid var(--color-primary);
 }
 .stat-card.warn { border-top-color: var(--color-warning); }
@@ -1964,29 +1964,29 @@ onMounted(loadTabData)
 .error-zone {
   display: flex; align-items: center; gap: 0.5rem;
   background: var(--color-light-red); color: var(--color-error);
-  border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem;
+  border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem;
 }
 
 .tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
 .tab {
   background: var(--color-surface); color: var(--color-muted); border: 1px solid var(--color-border);
-  border-radius: var(--amz-radius-md); padding: 0.4rem 0.875rem; font-size: 0.875rem; cursor: pointer;
+  border-radius: var(--radius-md); padding: 0.4rem 0.875rem; font-size: 0.875rem; cursor: pointer;
 }
 .tab.active { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 
 .filter-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem 0; flex-wrap: wrap; }
 .filter { font-size: 0.8125rem; color: var(--color-muted); display: inline-flex; align-items: center; gap: 0.375rem; }
-.filter-input, .cell-input { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.filter-input, .cell-input { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
 .muted { color: var(--color-muted); font-size: 0.75rem; }
 .approver { font-size: 0.75rem; color: var(--color-muted); display: inline-flex; align-items: center; gap: 0.25rem; }
 
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 .status-tag.healthy { background: var(--color-primary-light); color: var(--color-success); }
 .status-tag.risk { background: var(--color-warning-light); color: var(--color-warning-dark); }
 .status-tag.urgent { background: var(--color-light-red); color: var(--color-error); }
 
 .row-actions { white-space: nowrap; }
-.action-btn { padding: 0.25rem 0.625rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--amz-radius-sm); cursor: pointer; font-size: 0.75rem; margin-right: 0.25rem; transition: all 0.2s; }
+.action-btn { padding: 0.25rem 0.625rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.75rem; margin-right: 0.25rem; transition: all 0.2s; }
 .action-btn:hover:not(:disabled) { background: var(--color-primary); color: var(--color-on-primary); }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .action-btn.cancel { background: var(--color-light-red); color: var(--color-error); }
@@ -1998,7 +1998,7 @@ onMounted(loadTabData)
 .action-btn.primary { background: var(--color-primary); color: var(--color-on-primary); border-color: var(--color-primary); }
 /* 三方核对结论：三态各自成色。MISSING_INVOICE 与 MISMATCH 都是 fail，
    绝不因为「还没核对」就显示成通过——那会让未开票的采购单直接进付款流程。 */
-.match-result { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--amz-radius-md); font-size: 0.8125rem; line-height: 1.6; }
+.match-result { margin-top: 0.5rem; padding: 0.5rem 0.75rem; border-radius: var(--radius-md); font-size: 0.8125rem; line-height: 1.6; }
 .match-result strong { margin-right: 0.5rem; }
 .match-result .match-detail { color: inherit; }
 .match-result.ok { background: var(--color-primary-light, #e8f5e9); color: var(--color-primary); }
@@ -2006,10 +2006,10 @@ onMounted(loadTabData)
 .match-result.fail { background: var(--color-error-light, #fdecea); color: var(--color-error, #c62828); }
 .sub-title { font-weight: 600; font-size: 0.9375rem; color: var(--color-on-surface); margin-bottom: 0.5rem; }
 .inline-row { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center; flex-wrap: wrap; }
-.inline-row input { flex: 1; min-width: 12rem; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.8125rem; background: var(--color-surface); color: var(--color-on-surface); }
+.inline-row input { flex: 1; min-width: 12rem; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.8125rem; background: var(--color-surface); color: var(--color-on-surface); }
 .cost-summary { gap: 1.5rem; font-size: 0.8125rem; color: var(--color-muted); }
 
-.panel { background: var(--color-surface); border-radius: var(--amz-radius-md); box-shadow: var(--shadow-sm); padding: 1rem; margin-top: 1rem; }
+.panel { background: var(--color-surface); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); padding: 1rem; margin-top: 1rem; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
 .panel-title { font-weight: 600; color: var(--color-on-surface); font-size: 0.9375rem; }
 .panel-note { font-size: 0.8125rem; color: var(--color-muted); }
@@ -2020,16 +2020,16 @@ onMounted(loadTabData)
 .diff-ok { color: var(--color-success); font-size: 0.8125rem; }
 
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 2000; }
-.modal { background: var(--color-surface); border-radius: var(--amz-radius-md); padding: 1.5rem; width: 90%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
+.modal { background: var(--color-surface); border-radius: var(--radius-md); padding: 1.5rem; width: 90%; max-width: 560px; max-height: 90vh; overflow-y: auto; }
 .modal h3 { margin: 0 0 1rem; font-size: 1.125rem; color: var(--color-on-surface); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
 .form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; color: var(--color-on-surface); }
-.form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); font-size: 0.875rem; }
+.form-grid input, .form-grid select { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); font-size: 0.875rem; }
 .modal-note { font-size: 0.75rem; color: var(--color-muted); margin: 0.75rem 0 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
 .confirm-detail { font-size: 0.875rem; color: var(--color-on-surface); line-height: 1.5; }
 
-.toast { position: fixed; right: 1.5rem; bottom: 1.5rem; background: var(--color-surface); color: var(--color-on-surface); border-left: 4px solid var(--color-primary); border-radius: var(--amz-radius-md); box-shadow: var(--shadow-md); padding: 0.625rem 0.875rem; font-size: 0.8125rem; z-index: 2100; }
+.toast { position: fixed; right: 1.5rem; bottom: 1.5rem; background: var(--color-surface); color: var(--color-on-surface); border-left: 4px solid var(--color-primary); border-radius: var(--radius-md); box-shadow: var(--shadow-md); padding: 0.625rem 0.875rem; font-size: 0.8125rem; z-index: 2100; }
 
 .skeleton { background: linear-gradient(90deg, var(--color-muted-light) 25%, var(--color-border) 37%, var(--color-muted-light) 63%); background-size: 400% 100%; animation: sk 1.4s ease infinite; }
 @keyframes sk { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }

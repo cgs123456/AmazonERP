@@ -281,7 +281,7 @@ onMounted(loadAll)
 .sk-line { height: 0.875rem; }
 .sk-line-sm { width: 40%; }
 .sk-line-lg { width: 85%; }
-.error-zone, .notice-zone { border-radius: var(--amz-radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
+.error-zone, .notice-zone { border-radius: var(--radius-md); padding: 0.625rem 0.875rem; margin-bottom: 1rem; font-size: 0.875rem; }
 .error-zone { display: flex; align-items: center; gap: 0.5rem; background: var(--color-light-red); color: var(--color-error); }
 .error-text { line-height: 1.5; }
 .notice-zone { background: var(--color-warning-light); color: var(--color-warning-dark); line-height: 1.6; }
@@ -294,16 +294,16 @@ onMounted(loadAll)
 .meta-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.625rem; }
 .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; color: var(--color-muted); }
-.field input, .field select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.field input, .field select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
 .form-actions, .lang-row { display: flex; align-items: center; gap: 0.625rem; margin-top: 0.75rem; flex-wrap: wrap; }
 .muted { color: var(--color-muted); font-size: 0.75rem; line-height: 1.5; }
-.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--amz-radius-sm); cursor: pointer; font-size: 0.8125rem; }
+.action-btn { padding: 0.3rem 0.7rem; background: var(--color-primary-light); color: var(--color-primary); border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 0.8125rem; }
 .action-btn.primary { background: var(--color-primary); color: var(--color-on-primary); }
 .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .filter-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.875rem 0 0.5rem; flex-wrap: wrap; }
 .filter { font-size: 0.8125rem; color: var(--color-muted); display: inline-flex; align-items: center; gap: 0.375rem; }
-.filter select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); font-size: 0.75rem; white-space: nowrap; }
+.filter select { padding: 0.3rem 0.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-on-surface); font-size: 0.8125rem; }
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; white-space: nowrap; }
 .status-tag.role-user { background: var(--color-primary-light); color: var(--color-primary); }
 .status-tag.role-assistant { background: var(--color-muted-light); color: var(--color-muted); }
 .content-cell { max-width: 46rem; white-space: pre-wrap; word-break: break-word; font-size: 0.8125rem; }

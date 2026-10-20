@@ -50,18 +50,13 @@
   /* 字体：数据/编号用等宽栈，禁用 Courier New */
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
 
-  /* 圆角：xs 4 / sm 8 / md 12 / lg 16 / xl 24
-   * 前缀 `--amz-` 是 2026-10-20 引入 Tailwind v4 时加的：它的 `rounded-*`
-   * 工具类直接消费 `--radius-*` 命名空间，沿用原名会让项目的 lg=16px 覆盖掉
-   * Tailwind 的圆角尺度。Tailwind 随后因未实际使用而移除（见 HANDOFF §S33.129），
-   * 但**前缀保留**——改回 `--radius-*` 要动 369 处引用，收益为零，
-   * 且若将来再引入 Tailwind 会重蹈覆辙。 */
-  --amz-radius-xs: 4px;
-  --amz-radius-sm: 8px;
-  --amz-radius-md: 12px;
-  --amz-radius-lg: 16px;
-  --amz-radius-xl: 24px;
-  --amz-radius-full: 9999px;
+  /* 圆角：xs 4 / sm 8 / md 12 / lg 16 / xl 24 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
 
   /* 字号：1:12 2:14 3:16 4:18 5:20 6:24 7:30 8:36 9:48 10:60 */
   --font-size-1: 0.75rem;
@@ -144,7 +139,7 @@ table {
   position: relative;
   overflow: hidden;
   background: var(--color-muted-light);
-  border-radius: var(--amz-radius-sm);
+  border-radius: var(--radius-sm);
 }
 
 .skeleton::after {
@@ -194,10 +189,10 @@ table {
 .hero-subtitle { font-size: var(--font-size-2); color: var(--color-muted); margin: 0; line-height: var(--line-height-snug); }
 
 /* 未选择店铺提示 */
-.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--amz-radius-md); font-size: var(--font-size-2); text-align: center; }
+.shop-tip { padding: 0.75rem 1rem; margin-bottom: 1rem; background: var(--color-warning-light); color: var(--color-warning-dark); border-radius: var(--radius-md); font-size: var(--font-size-2); text-align: center; }
 
 /* 数据表容器与表格 */
-.table-card { background: var(--color-surface); border-radius: var(--amz-radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
+.table-card { background: var(--color-surface); border-radius: var(--radius-md); overflow-x: auto; box-shadow: var(--shadow-sm); }
 .data-table { width: 100%; border-collapse: collapse; }
 .data-table th { background: var(--color-surface); padding: 0.75rem 1rem; text-align: left; font-size: 0.8125rem; color: var(--color-muted); font-weight: 600; border-bottom: 1px solid var(--color-border); }
 .data-table td { padding: 0.75rem 1rem; font-size: 0.875rem; color: var(--color-on-surface); border-bottom: 1px solid var(--color-border); }
@@ -206,17 +201,17 @@ table {
 .empty-row { text-align: center; color: var(--color-muted); padding: 2rem 0; }
 
 /* 状态标签基类（语义配色由各视图的修饰类定义） */
-.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--amz-radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
+.status-tag { padding: 0.25rem 0.5rem; border-radius: var(--radius-sm); font-size: 0.75rem; font-weight: 500; white-space: nowrap; }
 
 /* 降级 mock 示例标识（B4 收敛：AdManager / ProfitReport 的 scoped 副本已删除，统一走全局）。
    规则：展示降级 mock 数据时必须挂徽，不得冒充真实数据。 */
-.mock-badge { display: inline-block; vertical-align: middle; font-size: 0.6875rem; font-weight: 500; color: var(--color-muted); background: var(--color-muted-light); padding: 0.125rem 0.5rem; border-radius: var(--amz-radius-sm); margin-left: 0.5rem; }
+.mock-badge { display: inline-block; vertical-align: middle; font-size: 0.6875rem; font-weight: 500; color: var(--color-muted); background: var(--color-muted-light); padding: 0.125rem 0.5rem; border-radius: var(--radius-sm); margin-left: 0.5rem; }
 
 /* 分页 */
 .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 1rem; }
 .page-info { font-size: 0.8125rem; color: var(--color-muted); }
 .page-actions { display: flex; gap: 0.5rem; }
-.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--amz-radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
+.page-btn { padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); cursor: pointer; font-size: 0.8125rem; color: var(--color-on-surface); transition: all 0.2s; }
 .page-btn:hover:not(:disabled) { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary); }
 .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
