@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { isShopsLoadTrusted } from '../utils/shop'
 
 /**
  * shopsLoaded=false 时不得清空本地店铺列表。
@@ -9,53 +10,39 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
  * 后果是所有带 shopId 的请求带着后端已不认可的 id 发出去，整站变成大片越权报错。
  *
  * 后端已补 `shopsLoaded` 显式区分（false = 没查到，不是没店）。
- * 这里钉住前端必须按这个口径分流：false 时保留本地，true 时才同步。
+ * 这里直接测**真身** `isShopsLoadTrusted`，不复刻一份判定逻辑——那是自己喂自己。
  *
  * 实测过的故障链：amz_shop 凭证列解密异常 → selectList 整行抛错 →
  * 后端 shops=null → 前端清空 → 用户看到「登录后没有店铺」，
  * 而真正的报错藏在服务端一句 warn 里。
  */
-describe('shopsLoaded=false 时保留本地店铺，不清空', () => {
+describe('isShopsLoadTrusted：只有 false 代表「这次没查到」', () => {
   beforeEach(() => {
     localStorage.clear()
   })
   afterEach(() => {
     localStorage.clear()
-    vi.restoreAllMocks()
   })
 
-  const existing = [{ id: '5001', name: '既有店铺' }]
-
-  /** 复刻 AppHeader.loadUserInfo 里对 shopsLoaded 的分流判定 */
-  const applyShops = (data: { shops?: unknown; shopsLoaded?: unknown }) => {
-    if (data.shopsLoaded === false) return { synced: false, shops: existing }
-    return { synced: true, shops: data.shops ?? [] }
-  }
-
-  it('shopsLoaded=false → 不同步，保留既有列表', () => {
-    const result = applyShops({ shops: null, shopsLoaded: false })
-    expect(result.synced).toBe(false)
-    expect(result.shops).toEqual(existing)
+  it('false → 不可信（后端这次查失败，本地列表必须保留）', () => {
+    expect(isShopsLoadTrusted(false)).toBe(false)
   })
 
-  it('shopsLoaded=true → 同步（含空数组，代表确实没店）', () => {
-    expect(applyShops({ shops: [], shopsLoaded: true }).shops).toEqual([])
-    expect(
-      applyShops({ shops: [{ id: '6001', name: '新店' }], shopsLoaded: true }).shops
-    ).toEqual([{ id: '6001', name: '新店' }])
+  it('true → 可信（含空数组，代表确实没店）', () => {
+    expect(isShopsLoadTrusted(true)).toBe(true)
   })
 
-  it('老后端无 shopsLoaded 字段（undefined）→ 按 true 处理，不改变既有行为', () => {
+  it('undefined（老后端无该字段）→ 可信，不改变既有行为', () => {
     // 渐进发布：后端没上线该字段时前端不能把用户店铺全清空
-    expect(applyShops({ shops: [{ id: '7001', name: '老后端' }] }).synced).toBe(true)
-    expect(applyShops({ shops: [] }).shops).toEqual([])
+    expect(isShopsLoadTrusted(undefined)).toBe(true)
   })
 
-  it('shopsLoaded 是 false 之外的假值（如 null/0/"false"）不当成失败', () => {
-    // 后端类型是 Boolean，序列化只会是 true/false/缺失；这里的反向断言是
-    // 防止有人把判定写成 `!shopsLoaded` 或 `== 'false'` 而误伤正常响应。
-    ;[null, 0, ''].forEach((v) => {
-      expect(applyShops({ shops: [], shopsLoaded: v }).synced).toBe(true)
+  it('false 之外的假值（null / 0 / 空串 / "false" 字符串）都不当成失败', () => {
+    // 后端类型是 Boolean，JSON 序列化只会是 true/false/缺失。
+    // 这里的反向断言是防止有人把判定改成 `!shopsLoaded`——
+    // 那会把 null/undefined/0 也当失败，误清正常用户的店铺。
+    ;[null, 0, '', 'false', Number.NaN].forEach((v) => {
+      expect(isShopsLoadTrusted(v)).toBe(true)
     })
   })
 })
