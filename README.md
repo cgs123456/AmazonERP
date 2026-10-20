@@ -33,6 +33,9 @@
 | LangChain4j | 0.36.2 | AI Agent 编排 |
 | ONNX Runtime | 1.18.2 | LightGBM 模型推理 |
 | Vue 3 | 3.5.13 | 前端框架 |
+| Tailwind CSS | 4.3.3 | 原子化样式（`@tailwindcss/vite`） |
+| shadcn-vue (reka-nova) | 2.x | 组件库（`src/components/ui/`，当前零引用） |
+| Lucide | 1.59 | 图标（本地打包，离线可用） |
 
 ## 📊 微服务架构（15 业务服务 + 网关 + 公共模块）
 
@@ -204,6 +207,29 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 - **无障碍**：全局 `:where` 焦点环（WCAG 2.4.7）、`prefers-reduced-motion` 降级
 - **数据诚实**：聚合/趋势等后端无数据时用 mock 兜底并打“示例数据”标识
 
+### 图标：Lucide 本地化（离线可用）
+
+图标统一走 `src/components/Icon.vue`，102 个 mdi 名映射到随包打包的 Lucide。
+**不用 `@iconify/vue` 的运行时取图标**：它会在未预装图标集时请求
+`api.iconify.design`，内网/离线部署下图标全部渲染成空白方块（且无报错）。
+组件名保留 `Icon`，模板里的 `icon="mdi:xxx"` 字面量也保留——映射收在一处，
+调用方零改动；新增图标需在 `ICONS` 表中登记，未登记的走兜底并告警。
+
+### 组件：shadcn-vue（reka-nova）+ Tailwind v4
+
+`components.json` 配置 `style: reka-nova`、`iconLibrary: lucide`，
+`src/components/ui/` 下已就绪 button/card/input/dialog/dropdown-menu/select/tabs/badge。
+**当前零引用**（存量页面仍用手写组件），`vite build` 因 tree-shaking 不打包它们。
+
+两套 token 共存的三个要点（改样式前必读，详见 HANDOFF §S33.129）：
+
+1. `@theme inline` 不向 `:root` 发射变量，`--color-primary`(indigo) 与
+   `--primary`(shadcn) 互不覆盖
+2. **圆角 token 必须用 `--amz-radius-*` 前缀**：Tailwind v4 的 `rounded-*`
+   直接消费 `--radius-*` 命名空间，沿用原名会把 shadcn 组件的圆角一起改掉
+3. 跑完 `npx shadcn-vue add` 后必须复查 `style.css`——CLI 会重新注入
+   Google Fonts 外链与覆盖 body 背景的规则
+
 ## 📊 可观测性三栈
 
 | 组件 | 用途 | 配置 |
@@ -338,8 +364,8 @@ Amazon Advertising API 与 SP-API 使用不同的授权和凭证体系，不能�
 | 层级 | 用例 | 通过率 |
 |------|:----:|:-----:|
 | 后端 JUnit 5（2026-10-10 fresh；`mvn test`） | 2149（0 失败 / 0 错误 / 6 跳过） | 19/19 reactor `BUILD SUCCESS`（16 模块含测试） |
-| 前端 Vitest（2026-10-07 fresh；`npm run test:run`） | 481（0 失败） | 43/43 文件通过 |
-| 前端 Playwright 全交互 E2E（2026-10-05 串行复跑） | 40+（受影响套件） | 全过 |
+| 前端 Vitest（2026-10-20 fresh；`npm run test:run`） | 721（0 失败） | 54/54 文件通过 |
+| 前端 Playwright 全交互 E2E（2026-10-20 fresh；`npm run test:e2e`） | 185 | 全过（chromium，串行） |
 
 > 最新整仓数字以 HANDOFF.md 为准（2026-10-10 基线 2149 / 0F / 0E / 6S，16 上报模块 BUILD SUCCESS；早期 2041/17S 等为各阶段快照，历史段落按当时口径读）。
 
