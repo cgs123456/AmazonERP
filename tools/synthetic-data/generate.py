@@ -1075,6 +1075,23 @@ class Generator(object):
             return '+1-555-01%02d' % (idx % 100)
         if name.endswith('_ip') or name == 'ip':
             return '192.0.2.%d' % (idx % 254 + 1)
+        if name in CRYPTO_PLAINTEXT_COLUMNS:
+            # 这两列在实体上挂了 CryptoTypeHandler，读取时无条件解密。
+            # **不能填假密文**：假 base64 能过字符集校验，但 AES-256-GCM 解密必失败，
+            # 于是整行 SELECT 依然抛异常（实测从 "Illegal base64 character"
+            # 变成 "AES-256-GCM 解密失败"，症状换了个名字而已）。
+            #
+            # 也不能填"用当前密钥加密过的假明文"：那会让演示数据看起来像真实凭证，
+            # 而它理应一眼假。
+            #
+            # 正解是留 NULL——两列均为可空（见 Flyway DDL），且
+            # CryptoTypeHandler.getNullableResult 只对非 null 值解密。
+            # 「该店没有凭证」也是合法状态：ProductionProfileGuard 只在 prod 启动时
+            # 要求凭证存在，mock profile 不要求。
+            #
+            # 返回 MUST_BE_NULL 而非 None：None 在 value() 里表示"没有特殊规则"，
+            # 会被当成普通文本列继续生成假密钥（这个坑踩过，见 value() 里的注释）。
+            return MUST_BE_NULL
         if any(word in name for word in ('token', 'secret', 'password', 'access_key', 'private_key',
                                          'credential', 'signature')):
             return 'SYNTHETIC-NOT-A-REAL-SECRET-%06d' % (idx % 1000000)
@@ -1106,6 +1123,13 @@ class Generator(object):
     def value(self, col, ctx):
         name = col['name']
         special = self.special_value(name, col, ctx)
+        # MUST_BE_NULL 与 None 是两种语义，不能合并：
+        #   None          —— 没有特殊规则，继续按列类型生成
+        #   MUST_BE_NULL  —— 明确要求这一列必须是 NULL
+        # 曾用 None 兼作两者，结果被下面的 `is not None` 判成"无特殊规则"，
+        # 落到 text_value 填了假密钥，SELECT 时整行解密失败。
+        if special is MUST_BE_NULL:
+            return None
         if special is not None:
             return self.fit(special, col)
         typ = col['type']
@@ -1343,6 +1367,49 @@ def reset_directory(path: str) -> None:
 # uk_shop_market_order (shop_id, marketplace_id, amazon_order_id)。此处不再登记。
 # 由此带来的后续项：生成器现在可以（但尚未）产出跨店/跨站点同号订单来验证该约束，
 # 见 docs/superpowers/runbooks/reference-key-convergence-rollback.md 未闭环项。
+# 实体字段上声明了 `@TableField(value = "...", typeHandler = CryptoTypeHandler.class)`
+# 的列。读取时 TypeHandler 无条件解密（amz-common 的 CryptoTypeHandler）。
+#
+# 这是「填不得」的列：任何假密文都会让命中它的 **整行 SELECT** 抛异常——
+# 非 base64 文本报 Illegal base64 character，假 base64 报 AES-256-GCM 解密失败。
+# 实测连锁后果：`ShopMapper.selectList` 崩 → `UserServiceImpl.resolveShopOptions`
+# 被 try/catch 吞掉 → `/user/getInfo` 不返回 shops → 前端店铺选择器空白 →
+# 依赖 shopId 的接口（如 /report/dashboard/kpi）全部报错。
+#
+# 因此生成器对这两列产 NULL（均可空，且 TypeHandler 不解码 null）。
+#
+# 按**列名**而非「表名.列名」索引：special_value() 只拿得到列名（见其签名），
+# 而这两个列名在全仓具有唯一语义，不存在跨表歧义。
+# 新增带 CryptoTypeHandler 的列时**必须**同步登记；
+# test_generate_crypto_columns_cover_entities 会拿实体注解校验本清单，防漏。
+#
+# 已知未纳入的：`amz_spapi.amz_shop_credential` 的
+# `client_secret_encrypted` / `refresh_token_encrypted` / `secret_key_encrypted`。
+# 它们列名带 `_encrypted`，但**没有对应 Java 实体**，不经 TypeHandler，
+# 所以填明文假值当下不会崩，故不放进本清单。
+# 提醒：将来若给该表补实体并挂 CryptoTypeHandler，必须同时把它们加进来，
+# 否则同样会炸 SELECT。
+class _MustBeNull(object):
+    """special_value 的专用哨兵：明确要求该列产 NULL。
+
+    为什么需要它：`None` 已经被 value() 用来表示"没有特殊规则，请按列类型继续生成"。
+    若 special_value 也用 None 表达"必须是 NULL"，那个值会被当成普通文本，
+    一路走到 text_value 填上假密钥——正是本次要消灭的失败模式。
+    """
+
+    __slots__ = ()
+
+    def __repr__(self):
+        return 'MUST_BE_NULL'
+
+
+MUST_BE_NULL = _MustBeNull()
+
+CRYPTO_PLAINTEXT_COLUMNS = frozenset({
+    'spapi_refresh_token',
+    'spapi_client_secret',
+})
+
 KNOWN_SCHEMA_CONFLICTS = [
     {
         'id': 'P0-39',

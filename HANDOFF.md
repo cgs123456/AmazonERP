@@ -10355,3 +10355,119 @@ amz-light-report(8102) / amz-light-finance(8103)    # 轻量镜像，jar 直接�
 - `testuser`（id=1）已绑定 5 个合成店铺，手机号已改为合规格式以便登录。
 - 四个 `amz-light-*` 镜像与容器是**本机验证用的临时产物**，
   正式部署请用根 Dockerfile + compose/k8s，不要依赖它们。
+
+---
+
+# §S33.131 修正 §S33.130 的错误定性：不是契约缺口，是合成数据炸了加密列
+
+## 0. 先纠正上一节的一个错误结论
+
+§S33.130 第 3 节把「店铺选择器为空」写成了**前后端契约缺口**
+（「/user/verify 响应体不含 shops，但前端从响应体读」）。**这个结论是错的**，
+本轮实测推翻了三处：
+
+| §S33.130 的说法 | 实测 |
+|---|---|
+| 前端从 `/user/verify` 响应体读 shops | 前端读的是 **`GET /user/getInfo`**（`auth.ts:311`） |
+| 后端 verify 不返回 shops | `LoginServiceImpl` 的 shops 确实只进 **JWT claim**，响应体只有 token——但前端**不从这里拿** |
+| 需要补 shops 字段或新接口 | `UserVo` **本来就有** `shops` 字段，`getInfo` 也在调 `resolveShopOptions` |
+
+真实链路是完整的：**`getInfo` → `resolveShopOptions` → `ShopService.listMyShops()`
+→ `ShopMapper.selectList` → 读 `amz_shop` → `CryptoTypeHandler` 解密 → 抛异常
+→ 被 `UserServiceImpl` 的 try/catch 吞掉（只 warn）→ `shops` 不返回**。
+
+**教训**：上一轮我是从代码阅读推断的，没有跑通一次真实请求就下了结论。
+读代码看到的「前端期望 X、后端给 Y」很可能中间还有第三层——
+这次中间那层就是 MyBatis TypeHandler。
+
+## 1. 真正的缺陷：合成数据填了假密钥进加密列
+
+`amz_user.amz_shop` 的 `spapi_refresh_token` / `spapi_client_secret` 挂了
+`CryptoTypeHandler`（`Shop.java:36`，`@TableName(autoResultMap = true)`），
+读取时无条件解密。生成器却给它们填了
+`SYNTHETIC-NOT-A-REAL-SECRET-000000`。
+
+后果连锁（全部实测复现）：
+
+```
+ShopMapper.selectList 抛 IllegalArgumentException: Illegal base64 character 2d
+  → UserServiceImpl.resolveShopOptions 被 try/catch 吞掉
+    → GET /user/getInfo 返回 shops = null
+      → 前端店铺选择器空白
+        → 所有依赖 shopId 的接口报错（/report/dashboard/kpi 缺 shopId）
+```
+
+## 2. 修法与踩到的两个坑
+
+**修法**：生成器对这两列产 **NULL**（不产假密文）。
+
+试过但**错**的第一版：改成产合法 base64（`base64.b64encode(...)`）。
+它让报错从 `Illegal base64 character 2d` 变成
+`AES-256-GCM 解密失败`——**症状换了个名字，SELECT 照样整行失败**。
+假 base64 永远通不过真解密，这一层没有妥协空间。
+
+**坑 1：`None` 被当成「没有特殊规则」。**
+`Generator.value()` 的判据是 `if special is not None`。`special_value`
+返回 `None` 会被理解为「无特殊规则」，继续走到 `text_value` 填假密钥——
+我的第一版修复就这么被静默吞掉了，`generate.py` 跑完数据毫无变化。
+解法是引入显式哨兵 `MUST_BE_NULL`，让两种语义分开。
+
+**坑 2：测错层等于没测。**
+第一版断言写在 `special_value()` 上，通过了——但 `value()` 那一层
+仍把它转成假密钥。断言必须落在**最终产物**上（`value()` 的返回值），
+中间层只做辅助断言。
+
+## 3. load.ps1 的 -Password 失效（真缺陷，已修）
+
+`$env:MYSQL_PWD` 只活在当前 PowerShell 进程，`Start-Process` 拉起的子进程
+**不继承**它 → 容器模式报
+`Access denied for user 'root'@'127.0.0.1' (using password: NO)`。
+
+修法：容器模式改用 `docker exec -e MYSQL_PWD=<密码>` 注入**容器内**环境变量；
+本机模式保留 `$env:MYSQL_PWD`（那条路本来就工作）。
+
+**修复判据**：`load.ps1` 从「连第一张表都过不去（Access denied）」
+变成能跑完 101 张表并输出 `[load] done.`。
+
+## 4. 新增测试与变异验证
+
+`tools/synthetic-data/test_generate_crypto_columns.py`（3 个用例）：
+
+| 用例 | 守什么 |
+|---|---|
+| `test_whitelist_covers_every_entity_annotation` | 实体上每条 `CryptoTypeHandler` 注解都必须登记进白名单（防将来有人新增加密列忘同步） |
+| `test_whitelist_has_no_dead_entries` | 反向：白名单不许有实体上已不存在的列 |
+| `test_crypto_columns_emit_null_not_fake_ciphertext` | 落点是 `value()` 的返回值必须是 None |
+
+**六个变异全部变红、还原全绿**（不是空转的测试）：
+
+| 变异 | 结果 |
+|---|---|
+| 清空白名单 | ❌ 红 |
+| 特判分支永假 | ❌ 红 |
+| 去掉 base64 编码 | ❌ 红 |
+| 假 base64（我第一版错修法） | ❌ 红 |
+| 哨兵改回 None（坑 1） | ❌ 红 |
+| 删掉 value() 的哨兵分支（坑 2） | ❌ 红 |
+
+## 5. 端到端判据（全绿）
+
+```
+generate.py --tier demo --reset   → 101 表 / 224,858 行
+verify.py --tier demo             → PASS（markers/determinism/snapshot 全过）
+load.ps1 -Container amz-mysql     → [load] done.
+GET /user/getInfo                 → code=200，shops=9 个真实店铺
+```
+
+回归：synthetic-data 三个测试文件 12 用例 OK；
+`test_file_size_ratchet.py` OK；`test_operlog_coverage_audit.py` 6 用例 OK。
+
+## 6. 遗留（未修，属另一件事）
+
+`UserServiceImpl.resolveShopOptions` 的 `try/catch` 把异常降级成一句 warn，
+调用方拿不到任何信号。这次是「登录后店铺选择器空白」这种极难回溯的症状。
+**建议**：至少把 warn 提到 error 并带上异常栈，或让 `getInfo` 的 shops 为 null 时
+返回一个显式标记字段。但这会改 `/user/getInfo` 的对外契约，需单独评估，本轮未动。
+
+`amz_spapi.amz_shop_credential` 的三个 `*_encrypted` 列同理没纳入白名单
+（无 Java 实体、不经 TypeHandler，当下不崩），已在 `generate.py` 注释里写明提醒。
