@@ -5,10 +5,11 @@
 > 本文件的 H1 与下面这段自 2026-10-16 起未再更新，只是历史层的一部分。
 > §S33.114 是本轮交班，§S33.115 是租户审计 89 条候选全部读完（0 缺陷），
 > §S33.116 是 CI 连红 7 个提交的真因（本机验证链缺 checkstyle）与修复。
-> **最新一班（2026-10-20）见 §S33.129**：前端图标 Lucide 本地化（离线可用）+
-> shadcn-vue Nova 基础设施（当前零引用）；含 Tailwind v4 与存量 token 共存的
-> 三个坑（`--radius-*` 命名空间冲突是最隐蔽的一个）与「为什么没装
-> dnd-kit / resizable-panels / Pinia / Motion」的证据。
+> **最新一班（2026-10-20）见 §S33.129**：前端图标 Lucide 本地化（离线可用，
+> 这是唯一落地的改动）；shadcn-vue Nova 装好、做完对照样张后**按用户判断移除**，
+> 连同 Tailwind v4 与其 7 个传递依赖一起清掉（运行时依赖回到 4 个，产物 CSS
+> 52KB→6.9KB）。另记录了 CSS 命名空间抢占的一般性教训，以及
+> 「为什么没装 dnd-kit / resizable-panels / Pinia / Motion」的证据。
 > 最新（§S23/§S24，2026-10-16）：**P0 已收口**——`§S20.6` 第 1 条不再是悬而未决的产品决策。
 > 侦察时发现比「角色没锁」更严重的**跨租户写洞**（网关只看请求头、切面只看方法参数、
 > 请求体里的 shopId 两边都够不着 → 两层防线同时让开；本仓 32 个 @ShopScoped 写端点的
@@ -9890,11 +9891,14 @@ findings: 219 total, 27 at/above cutoff, 15 waived, 12 violations
 
 ---
 
-# §S33.129 前端：图标 Lucide 本地化 + shadcn-vue Nova 基础设施
+# §S33.129 前端：图标 Lucide 本地化；shadcn-vue 评估后移除
 
-本班处理用户提出的「前端开箱即用」优化：shadcn/ui Nova、Lucide、Motion、
-react-resizable-panels、dnd-kit、Zustand。**六项里只有两项在 Vue 仓有真实落点**，
-其余证据见 §5「未采纳项」。
+本班处理用户提出的「前端开箱即用」优化，点名六项：shadcn/ui Nova、Lucide、
+Motion、react-resizable-panels、dnd-kit、Zustand。
+
+**最终只有 Lucide 落地。** shadcn-vue 装好、做了对照样张、量了计算样式后
+按用户判断移除；其余四项经核验在 Vue 仓无真实落点（证据见 §5）。
+本节记录的是**决策依据**，不是操作步骤——否则下一班会误以为「还没做」。
 
 ## 1. 图标：Iconify → Lucide（唯一有实质收益的改动）
 
@@ -9924,82 +9928,74 @@ Lucide 随包走，tree-shaking 后只打进显式引用的图标。
 
 `@iconify/vue` 已卸载（零残留）。
 
-## 2. shadcn-vue Nova：装好了，但**目前零引用**
+## 2. shadcn-vue Nova：评估后**已完整移除**
 
-`components.json` 配 `style: "reka-nova"`、`iconLibrary: "lucide"`。
-已装 8 个组件（button/card/input/dialog/dropdown-menu/select/tabs/badge），
-共 59 个文件。
+用户原始需求点名了 shadcn/ui Nova、Lucide、Motion、react-resizable-panels、
+dnd-kit、Zustand 六项。Lucide 落地了（§1），其余五项的处理见 §5。
 
-**零引用是刻意的，不是遗漏**：改造 63 个存量组件（28,380 行）是高风险大重构，
-没有用户确认不做。因此这些组件当前是「基础设施就绪」，`vite build` 因
-tree-shaking 不会打包它们（已验证产物中无 `reka-ui`）。
+shadcn-vue 曾经装好（8 个组件、59 个文件、`components.json` 配 `reka-nova`），
+随后**用真实对照样张验证后决定移除**。过程如下，因为「为什么不做」比「做了什么」
+更容易在后续被误读成「没顾上做」：
 
-**下一班若要接入**：第一个页面的选型建议从**新页面**或**独立子组件**开始
-（如 `Logistics*Panel`），不要直接动 2000 行的 `Procurement.vue`。
+### 2.1 先做了对照样张，不是拍脑袋
 
-## 3. Tailwind v4 与存量 token 共存（本节是下次改样式前必读）
+用真实的 shadcn Button/Input 与项目现有类渲染同一批控件，量了计算样式：
 
-### 3.1 `@theme inline` 不发射 `:root` 变量
+| 控件 | 现状 | shadcn (Nova) | 差异 |
+|---|---|---|---|
+| 普通按钮 | 38px 高 / 12px 圆角 / 13px 字 | 28px / 6px / 12.8px | **高度 -10px** |
+| 主按钮 | 37px / 12px / indigo `#4f46e5` | 32px / 8px / near-black | **主色改变** |
+| 图标按钮 | 36×36 正圆（`50%`） | 28×28 圆角方块 | 形状改变 |
+| 输入框 | 39px / 12px 圆角 | 32px / 8px | 高度 -7px |
 
-实测（tailwindcss 4.3.3）：`@theme inline` **只在生成工具类时把 `var(--primary)`
-内联进去，不向 `:root` 写任何声明**。所以存量的 `--color-primary`（indigo
-`#4f46e5`）与 shadcn 的 `--primary`（near-black）各自独立，不会互相覆盖。
-只有 `bg-primary` 这类工具类取 shadcn 的值——而存量组件用的是
-`var(--color-primary)`，不受影响。
+用户看完样张的判断是「区别不大」，决定不动。**这个判断有数据支撑**：
+按钮高度 -10px 会改变表格行高、分页栏、工具栏的对齐节奏；主色从 indigo 变
+near-black 是整个系统的视觉基调变更。收益（组件统一）低于代价（57 个文件
+重排 + 视觉基调变更）。
 
-### 3.2 圆角命名空间冲突（实打实的坑，改了 369 处）
+### 2.2 技术上还有一条硬约束
+
+`<select>`（103 个）换成 shadcn 的非原生实现，会让 **194 处单测的 `setValue`**
+与 **17 处 E2E 的 `selectOption`** 全部失效——shadcn Select 是 div + 隐藏 input，
+没有原生 select 语义。这不是"改改测试"的量级，是把 select 相关的测试全部重写。
+
+### 2.3 一并移除的东西
+
+shadcn 是 Tailwind v4 的唯一使用方（业务代码**零工具类**，已核验），
+所以整条链一起清掉：
+
+- `src/components/ui/`（59 文件）、`src/lib/`、`components.json`
+- 依赖：`reka-ui`、`cn`、`class-variance-authority`、`clsx`、`@vueuse/core`、
+  `tw-animate-css`、`tailwindcss`、`@tailwindcss/vite`
+- `vite.config.ts` 的 tailwind 插件
+- `style.css` 的 `@import "tailwindcss"`、`@theme inline`、`@custom-variant dark`、
+  shadcn token 块、preflight 标题补丁（Tailwind 移除后 preflight 不再存在，
+  补丁也就没有了存在理由）
+
+**运行时依赖回到 4 个**：`@lucide/vue` / `axios` / `vue` / `vue-router`。
+产物 CSS 从 52KB 降到 6.9KB。
+
+### 2.4 保留了一个副产品
+
+`--amz-radius-*` 前缀**保留**，不还原成 `--radius-*`。它是评估的产物
+（见 §3 的历史说明），但还原要动 369 处引用、收益为零，且若将来再引入
+Tailwind 会重蹈覆辙。
+
+## 3. 一个值得记住的一般性教训：CSS 命名空间抢占
+
+这一段是评估过程中实测到的，**与是否用 shadcn 无关**，故保留。
 
 **Tailwind v4 的 `rounded-sm/md/lg/xl` 直接消费 `--radius-*` 命名空间。**
-本仓原名 `--radius-lg: 16px`，于是 shadcn 的 Button（`h-8`）被撑成 32px 高的
-胶囊、Card 圆角从 Nova 的 14px 变成 24px。实测截图确认后才发现的。
+项目原本定义 `--radius-lg: 16px`，于是任何 Tailwind 生成的 `rounded-lg`
+都会取到 16px 而非它的默认 10px。实测表现为 shadcn 的 Button（`h-8`）
+被撑成 32px 高的胶囊、Card 圆角从 14px 变成 24px。
 
-处置：项目 token 改名 `--amz-radius-*`（xs/sm/md/lg/xl/full），**值与语义未变**，
-369 处引用迁移。
+`--color-*` 之所以没有这个问题，是因为 Tailwind 把 `rounded-*`（读 `--radius-*`）
+与 `bg-*`（读 `--color-*`）分在不同命名空间；**圆角则直接与项目 token 同命名**。
 
-**改名时必须排除 `src/components/ui/**`**：shadcn 组件里的
-`rounded-[min(var(--radius-md),10px)]` 读的是**shadcn 自己派生的** `--radius-md`
-（由 `@theme` 的 `--radius-md: calc(var(--radius) - 2px)` 产生），
-不是项目的 `--radius-md`。批量 sed 时这 5 处被误改，已还原。
-
-`--color-*` 之所以安全，是因为 Tailwind 把 `rounded-*` 与 `bg-*` 分在不同
-命名空间；**圆角没有这层隔离**。
-
-### 3.3 preflight 补丁
-
-Tailwind 的 preflight 会把 `h1`–`h6`、`ul` 重置成「与正文同字号、无字重、无圆点」。
-本仓有 **144 处 `h1`–`h3` 完全依赖 UA 默认样式**（全仓 CSS 从未声明过它们），
-不补会整体掉成正文大小。
-
-`style.css` 末尾补了 h1–h6 / ul / ol 的层级。**只补字号与字重，不补 margin**：
-`App.vue` 的 `* { margin:0; padding:0 }` 已经清零边距，补了反而会把原本紧贴的
-布局撑开。
-
-不用 Tailwind 的 `preflight` 关闭开关替代：那会同时丢掉 `box-sizing` 等有用的
-重置，且让 `App.vue` 的 `*` reset 与 preflight 的分工变得难以推理。
-
-### 3.4 暗色主题
-
-存量组件用 `prefers-color-scheme`，shadcn 默认用 `.dark` 类。本仓不引入主题
-切换器，所以把 `dark:` 变体直接改绑到媒体查询：
-
-```css
-@custom-variant dark (@media (prefers-color-scheme: dark));
-```
-
-与存量 token 的策略一致。**不为「将来可能有的切换器」预留类名机制**——
-那属于第二个真实用例出现时再引入的抽象。
-
-### 3.5 CLI 每次 add 后会重写 style.css
-
-`npx shadcn-vue add ...` 会按模板重新注入两段，**不管上一轮是否删过**：
-
-1. `@import url('https://fonts.googleapis.com/...')` —— 内网部署阻塞首屏
-2. 文件末尾的 `* { @apply border-border outline-ring/50 }` 与
-   `body { @apply bg-background text-foreground }` —— 前者把边框色强加到所有
-   元素（覆盖各组件自己的 border 颜色），后者与 `App.vue` 的 body 背景争夺优先级
-
-**每次 add 后必须复查并删除**，然后跑一次 `vite build` 确认没有别的改动混进来。
-这条已写进 `style.css` 文件头注释（第 6 条）。
+推广开来：引入任何「约定式 CSS 框架」前，先核对该框架消费哪些自定义属性的
+命名空间，再决定项目 token 要不要加前缀。事后改名的成本与引用数成正比
+（本例 369 处）。
 
 ## 4. 仓库守卫的改动
 
@@ -10028,9 +10024,10 @@ Tailwind 的 preflight 会把 `h1`–`h6`、`ul` 重置成「与正文同字号�
 
 | 用户点名 | Vue 侧对应 | 结论 | 依据 |
 |---|---|---|---|
+| shadcn/ui Nova | `shadcn-vue` | **装后移除** | 见 §2：对照样张显示按钮 38→28px、圆角 12→6px、主色 indigo→near-black |
 | dnd-kit | `vue-draggable-plus` / `@dnd-kit/vue` | **不装** | 全仓 `grep draggable/sortable` **零命中**，无任何拖拽场景 |
 | react-resizable-panels | `splitpanes` | **不装** | 无多栏可调布局需求；现有响应式 CSS（`@media` 断点）已覆盖 |
-| Zustand | `pinia` | **不装** | 见下 |
+| Zustand | `pinia` | **装后删除** | 见下 |
 | Motion | `motion-v` | **装后删除** | 现有 52 处 CSS 过渡/动画已满足；`<motion>` 零使用 |
 
 ### 为什么删掉 Pinia（含一次错误判断的纠正）
@@ -10080,23 +10077,26 @@ const handleShopChange = (e: Event) => {
 | 生产构建 | 通过 |
 | `npm ci` 可复现 | 通过（lock 已同步） |
 | hygiene / css_scope / file_size | 0 / OK / 通过 |
-| 真机 DOM 核验 | 33 个导航项全部渲染为真实 Lucide SVG（`viewBox 0 0 24 24`）；37 个图标 0 兜底；存量页面 45 处圆角全部解析为 12px |
-| shadcn 组件计算样式 | Button 8px / Card 12px / Tabs 6px / Badge 32px，与 Nova 一致 |
+| 真机 DOM 核验 | 33 个导航项全部渲染为真实 Lucide SVG（`viewBox 0 0 24 24`）；37 个图标 0 兜底 |
+| 移除 shadcn 后真机复核 | h1 30px/700、导航圆角 12px、body 背景 `#f5f6fa`、45 处圆角全部 12px、主色仍为 indigo `#4f46e5`、37 个 Lucide 图标 |
+| 产物 CSS 体积 | 52KB → **6.9KB**（Tailwind preflight + 工具类层移除） |
 
-**最终依赖（10 个运行时）**：
-`@lucide/vue` `@vueuse/core` `axios` `class-variance-authority` `clsx` `cn`
-`reka-ui` `tw-animate-css` `vue` `vue-router`
+**最终依赖（4 个运行时）**：
+`@lucide/vue` `axios` `vue` `vue-router`
 
-保留 `clsx` 是因为 `class-variance-authority` 依赖它；保留 `tw-animate-css`
-是因为 shadcn 的 dialog/dropdown/select 用了 30 处动画类。
+（引入 shadcn 时曾到 10 个；移除后回到原状。）
 
 ## 7. 下一班需要知道的
 
-1. **`src/components/ui/` 零引用**。接入第一个真实页面时它才开始产生价值。
-   建议从新页面或独立子组件起步，不要直接动 2000 行的 `Procurement.vue`。
-2. **改任何圆角前先读 §3.2**。`--amz-radius-*` 与 `--radius-*` 是两个不同的
-   命名空间，混用会让 shadcn 组件或存量组件其中一边掉样式。
-3. **跑完 `shadcn-vue add` 必须复查 style.css**（§3.5）。
-4. **图标映射在 `src/components/Icon.vue` 的 `ICONS` 表**。新增图标必须登记；
+1. **图标映射在 `src/components/Icon.vue` 的 `ICONS` 表**。新增图标必须登记；
    未登记的会走 `CircleHelp` 兜底并在控制台 warn。
-5. 本次改动提交在分支 `feat/frontend-shadcn-lucide`，commit `3a96947`。
+2. **圆角 token 是 `--amz-radius-*`，不要改回 `--radius-*`**。见 §2.4 / §3。
+3. **不要再引入 Tailwind 或 shadcn 而不先读 §3**。命名空间抢占是可复现的坑；
+   且本项目业务代码零工具类，引入 Tailwind 等于给它加一个没人用的构建步骤。
+4. 本次改动在分支 `feat/frontend-shadcn-lucide`：
+   `3a96947`（Lucide 本地化 + shadcn 接入，已被后续部分覆盖）→
+   `ac9f90a`（文档）→ 后续提交（移除 shadcn/Tailwind，修正文档）。
+   **合并时应看最终状态，不要按 `3a96947` 的描述理解现状。**
+5. 若将来确实需要组件库，先确认三件事：① `<select>` 的 194 处 `setValue`
+   与 17 处 `selectOption` 怎么处理；② 主色是否接受从 indigo 改变；
+   ③ 控件高度变化（38→28px）会不会破坏表格/分页对齐。

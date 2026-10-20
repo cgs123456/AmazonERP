@@ -2,7 +2,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import { configDefaults } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
-import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { rewriteProxyPath } from './src/utils/viteProxy'
 
@@ -11,7 +10,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd())
 
   return {
-    plugins: [vue(), tailwindcss()],
+    plugins: [vue()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src')

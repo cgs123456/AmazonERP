@@ -33,8 +33,6 @@
 | LangChain4j | 0.36.2 | AI Agent 编排 |
 | ONNX Runtime | 1.18.2 | LightGBM 模型推理 |
 | Vue 3 | 3.5.13 | 前端框架 |
-| Tailwind CSS | 4.3.3 | 原子化样式（`@tailwindcss/vite`） |
-| shadcn-vue (reka-nova) | 2.x | 组件库（`src/components/ui/`，当前零引用） |
 | Lucide | 1.59 | 图标（本地打包，离线可用） |
 
 ## 📊 微服务架构（15 业务服务 + 网关 + 公共模块）
@@ -215,20 +213,22 @@ amz-common               —        — 公共（Result/UserContext/AOP/GlobalEx
 组件名保留 `Icon`，模板里的 `icon="mdi:xxx"` 字面量也保留——映射收在一处，
 调用方零改动；新增图标需在 `ICONS` 表中登记，未登记的走兜底并告警。
 
-### 组件：shadcn-vue（reka-nova）+ Tailwind v4
+### 组件：原生 HTML + 自建 CSS 体系
 
-`components.json` 配置 `style: reka-nova`、`iconLibrary: lucide`，
-`src/components/ui/` 下已就绪 button/card/input/dialog/dropdown-menu/select/tabs/badge。
-**当前零引用**（存量页面仍用手写组件），`vite build` 因 tree-shaking 不打包它们。
+**本项目刻意不引入第三方 UI 库。** 全部控件是原生 HTML 元素（约 486 个
+`<button>`、334 个 `<input>`、103 个 `<select>`、124 个 `<table>`）套项目自己的
+类（`.page-btn` / `.data-table` / `.nav-item` 等），样式来自 `style.css` 的
+design token 与各组件的 `<style scoped>`。
 
-两套 token 共存的三个要点（改样式前必读，详见 HANDOFF §S33.129）：
+2026-10-20 评估过 shadcn-vue（reka-nova）：装好后做了对照样张，实测其控件尺寸
+（按钮 38→28px、圆角 12→6px、主色 indigo→near-black）会改变表格行高与分页栏
+对齐，且 `<select>` 换成非原生实现会让 194 处单测的 `setValue` 失效。
+结论是**视觉差异小于迁移风险**，已完整移除（含 Tailwind v4 及其 7 个传递依赖）。
+评估过程与数据见 HANDOFF §S33.129。
 
-1. `@theme inline` 不向 `:root` 发射变量，`--color-primary`(indigo) 与
-   `--primary`(shadcn) 互不覆盖
-2. **圆角 token 必须用 `--amz-radius-*` 前缀**：Tailwind v4 的 `rounded-*`
-   直接消费 `--radius-*` 命名空间，沿用原名会把 shadcn 组件的圆角一起改掉
-3. 跑完 `npx shadcn-vue add` 后必须复查 `style.css`——CLI 会重新注入
-   Google Fonts 外链与覆盖 body 背景的规则
+> 圆角 token 保留 `--amz-radius-*` 前缀：这是那次评估的产物（Tailwind v4 的
+> `rounded-*` 会抢占 `--radius-*` 命名空间）。改回原名的收益为零，且若将来再引入
+> Tailwind 会重蹈覆辙，故维持现状。
 
 ## 📊 可观测性三栈
 
