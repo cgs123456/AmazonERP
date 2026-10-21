@@ -13,7 +13,7 @@
 <details>
 <summary>物流看板截图</summary>
 
-<img src="docs/screenshots/logistics.png" width="720" alt="物流看板：511 个在跟货件、平均头程时效 275 天、ETA 已过未标延误与取数过期告警、近 30 天建单/送达趋势、状态分布与取数来源。">
+<img src="docs/screenshots/logistics.png" width="720" alt="物流看板：444 个在跟货件、平均头程时效 275.17 天、ETA 已过未标延误与取数过期告警、近 30 天建单/送达趋势、状态分布与取数来源。">
 
 </details>
 
