@@ -47,9 +47,9 @@ export function useShopSelection() {
    * 表现为大片「不在授权范围」报错，比直接显示「无可用店铺」更难排查）。
    * 当前选中店铺若已不在新列表里，一并清掉并回退到第一家。
    */
-  const syncFromServer = (serverShops?: ShopOption[]) => {
+  const syncFromServer = (serverShops?: ShopOption[] | null) => {
     if (!Array.isArray(serverShops)) {
-      // 后端未返回该字段（老版本后端）：不动本地，只把缓存读回响应式状态
+      // 字段缺失或为 null：不动本地，只把缓存读回响应式状态
       reload()
       return
     }
@@ -74,17 +74,20 @@ export function useShopSelection() {
    * 清空后所有带 shopId 的请求都会带着后端已不认可的 id 发出去，
    * 整站变成大片越权报错，比显示一份可能过期的列表难查得多。
    *
+   * `shops` 允许 null：后端查失败时显式返回 null（不用空数组冒充「没店」），
+   * 那条路径上类型必须收得下，否则调用方要写 `as any` 才能表达真实响应。
+   *
    * @returns 本次是否为可信同步。false 时调用方应提示用户（列表可能是旧的）。
    */
   const applyFromUserInfo = (data: {
-    shops?: ShopOption[]
+    shops?: ShopOption[] | null
     shopsLoaded?: unknown
   }): boolean => {
     if (!isShopsLoadTrusted(data.shopsLoaded)) {
       reload()
       return false
     }
-    syncFromServer(data.shops)
+    syncFromServer(data.shops ?? undefined)
     return true
   }
 
