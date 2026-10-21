@@ -46,17 +46,29 @@ function Invoke-SqlFile {
 
     $args = @('--host', $Server, '--port', "$Port", '--user', $User,
               '--default-character-set=utf8mb4', '--database', $Database)
+    # 密码的两种传法，取决于 mysql 跑在哪一端：
+    #
+    # 容器模式：必须经 `docker exec -e MYSQL_PWD` 把密码注入**容器内**的环境变量。
+    #   原先这里和本机模式共用 `$env:MYSQL_PWD`，那是**错的**——`$env:` 只活在当前
+    #   PowerShell 进程里，而 Start-Process 拉起的是全新进程，不继承它。
+    #   实测症状：Access denied for user 'root'@'127.0.0.1' (using password: NO)，
+    #   即密码根本没送到，与密码对错无关。
+    # 本机模式：`$env:MYSQL_PWD` 可用，因为 mysql 就是被本进程环境直接拉起的子进程。
+    $dockerEnv = @()
     if ($Container) {
         $exe = 'docker'
-        $args = @('exec', '-i', $Container, 'mysql') + $args
+        if ($Password) {
+            $dockerEnv = @('-e', "MYSQL_PWD=$Password")
+        }
+        $args = @('exec', '-i') + $dockerEnv + @($Container, 'mysql') + $args
     } else {
         $exe = $MysqlPath
+        if ($Password) { $env:MYSQL_PWD = $Password }
     }
     if ($DryRun) {
         Write-Host "[dry-run] $exe $($args -join ' ') < $FilePath"
         return
     }
-    if ($Password) { $env:MYSQL_PWD = $Password }
     try {
         $proc = Start-Process -FilePath $exe -ArgumentList $args `
                               -RedirectStandardInput $FilePath `
