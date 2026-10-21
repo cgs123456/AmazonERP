@@ -29,7 +29,7 @@
             v-if="userInfo"
             class="shop-selector"
             :value="currentShopId"
-            @change="handleShopChange"
+            @change="changeShop(($event.target as HTMLSelectElement).value)"
             title="切换当前店铺"
           >
             <option value="" disabled>请选择店铺</option>
@@ -83,9 +83,11 @@ import { getUserInfo, type UserVo } from '../api/auth'
 import { getUnreadCount } from '../api/notification'
 import { setUserRole, clearUserRole } from '../utils/identity'
 import { websocketManager } from '../utils/websocket'
-import { getShops, getCurrentShopId, setCurrentShopId, setShops, isShopsLoadTrusted, type ShopOption } from '../utils/shop'
+import { useToast } from '../composables/useToast'
+import { useShopSelection } from '../composables/useShopSelection'
 
 const router = useRouter()
+const { showToast } = useToast()
 const showLoginModal = ref(false)
 const userInfo = ref<UserVo | null>(null)
 const showUserMenu = ref(false)
@@ -115,46 +117,9 @@ const onNotificationsChanged = () => {
   refreshUnreadCount()
 }
 
-// 当前选中店铺与授权店铺列表（来源：localStorage 'shops' 数组）
-const shops = ref<ShopOption[]>([])
-const currentShopId = ref('')
-
-/**
- * 用后端返回的店铺覆盖本地缓存（全站唯一写入口）。
- * <p>
- * 空数组也要写入：后端明确「该账号没有店铺」时，继续留着上一次的旧列表
- * 会让用户以为还能访问已被回收的店（而请求会被网关按 shopId 越权拒绝，
- * 表现为大片「不在授权范围」报错，比直接显示「无可用店铺」更难排查）。
- * 当前选中店铺若已不在新列表里，一并清掉并回退到第一家。
- */
-const syncShopsFromServer = (serverShops?: ShopOption[]) => {
-  if (!Array.isArray(serverShops)) {
-    // 后端未返回该字段（老版本后端）：不动本地，只把缓存读回响应式状态
-    shops.value = getShops()
-    currentShopId.value = getCurrentShopId()
-    return
-  }
-  setShops(serverShops)
-  shops.value = getShops()
-  const stillValid = shops.value.some((s) => String(s.id) === String(getCurrentShopId()))
-  if (!stillValid) {
-    if (shops.value.length > 0) {
-      setCurrentShopId(String(shops.value[0].id))
-    } else {
-      localStorage.removeItem('current_shop_id')
-    }
-  }
-  currentShopId.value = getCurrentShopId()
-}
-
-// 切换店铺：更新 localStorage 并刷新当前页面数据
-const handleShopChange = (e: Event) => {
-  const value = (e.target as HTMLSelectElement).value
-  setCurrentShopId(value)
-  currentShopId.value = value
-  // 切换店铺影响所有页面的数据视图，整页刷新以重新拉取
-  window.location.reload()
-}
+// 店铺选择器的状态与同步逻辑见 useShopSelection——从本组件拆出，
+// 因为 AppHeader 反复触到 500 行棘轮，根因是它同时管着用户/未读数/登录态/店铺四件事。
+const { shops, currentShopId, applyFromUserInfo, change: changeShop } = useShopSelection()
 
 // 本地 SVG 占位头像，避免依赖国外服务
 const defaultAvatar = 'data:image/svg+xml;utf8,' + encodeURIComponent(
@@ -174,20 +139,15 @@ const loadUserInfo = async (retryOnShopSync = true) => {
   }
   // 本次请求是否带了 shopId 头。必须发请求前取：没带店时后端只能回落全局角色，
   // 首次登录正是这种情况——此时拿到的 effectiveRole 不可信，落完店铺要重取。
-  const requestHadShop = !!getCurrentShopId()
+  const requestHadShop = !!currentShopId.value
   try {
     const response = await getUserInfo()
     if (response.code === 200 && response.data && response.data.user) {
       userInfo.value = response.data.user
-      // 店铺来自后端而不是本地占位。shopsLoaded=false 表示「这次没查到」，
-      // 与「查到但该账号没有店」是两件事——前者保留本地，理由见 isShopsLoadTrusted。
       // **顺序要紧**：先落店铺、再定角色，这样重取时请求才带得上新选的店。
-      if (isShopsLoadTrusted(response.data.shopsLoaded)) {
-        syncShopsFromServer(response.data.shops)
-      } else {
-        console.warn('[AppHeader] 后端未返回店铺列表（shopsLoaded=false），保留本地缓存不清空')
-        shops.value = getShops()
-        currentShopId.value = getCurrentShopId()
+      if (!applyFromUserInfo(response.data)) {
+        // 只 console.warn 不够：用户看到的是一个可能是旧数据的店铺列表，却没有任何提示。
+        showToast('店铺列表获取失败，正在显示上一次的结果', 'error')
       }
       // 角色落到 localStorage：全站唯一的角色来源。
       // 读 effectiveRole（当前店铺上的有效角色）而不是 user.role（全局角色）——
@@ -197,7 +157,7 @@ const loadUserInfo = async (retryOnShopSync = true) => {
       // 首次登录（或选中店铺被回收回退）时本次没带 shopId → 上面的角色是全局角色，
       // 不是这家店的。现在店铺已落好，重问一次后端拿该店的有效角色。
       // 只重试一次，避免后端始终不返回 shops 时无限递归。
-      if (!requestHadShop && getCurrentShopId() && retryOnShopSync) {
+      if (!requestHadShop && currentShopId.value && retryOnShopSync) {
         await loadUserInfo(false)
         return
       }
