@@ -1,5 +1,151 @@
-# HANDOFF — 2026-10-20：前端图标 Lucide 本地化 + shadcn 评估后移除 + 死代码清理 + 过期报价自动收口（§S33.129）
+# HANDOFF — 2026-10-21：无凭证端到端打通 + README 重写 + 4 个缺陷修复 + 仓库清理（交班见 §S33.134）
 
+---
+
+# §S33.134 交接：本班（2026-10-20 ~ 10-21）全部收口，master 可交付
+
+> **下一班请先读这一节。** 本班做了 5 个 PR，全部合并、CI 11/11 绿。
+> 这一节只讲「现在是什么状态、什么没做、为什么」，不复述已合并的细节
+> （那些在各 §S33.130–133）。
+
+## 1. 当前状态（截至 2026-10-21 会话结束）
+
+| 项 | 值 |
+|---|---|
+| master | `e89edc7`（`chore(repo): 删除过期 cosign 验签证据 + 修正截图 alt 数字`） |
+| master CI | **11/11 success**（含 docker，未 skip） |
+| 本地 ↔ 远程 | 完全同步，工作区干净 |
+| 远程分支 | 仅 `origin/master` |
+| 打开中的 PR | 0 |
+| 后端测试 | 2531 用例 / 19/19 模块 BUILD SUCCESS |
+| 前端测试 | 731 用例 / 55 文件全过 |
+| 仓库体积 | 414M（本班清掉 2.5G 构建产物） |
+
+本班合入的 5 个提交（新→旧）：
+
+```
+e89edc7  chore(repo): 删除过期 cosign 验签证据 + 修正截图 alt 数字   (#15)
+b537677  test(product): 修 ListingCopyServiceTest 的 CI flaky       (#13)
+448ad66  fix(user): getInfo 的「查失败」与「确实没店」不再同形        (#12)
+4475052  fix(synthetic-data): 假密钥炸加密列 + load.ps1 密码        (#11)
+dfcd54c  docs(readme): 按写作规范重写（480→108 行）+ 截图           (#10)
+```
+
+## 2. 已完成的内容
+
+**① 定位「代码能否运行」并端到端打通。**
+本机 Windows 起不来 Spring Boot，四步隔离变量后定位到 JDK 层：
+Tomcat 11 的 NIO selector 需要 `Pipe.open()` 自建唤醒管道，该 native 路径
+在本机被系统层拒绝。TCP 栈正常、Linux 容器内同版本 JDK 正常、
+无 JVM 开关可绕、WSL 无 Linux 发行版——**不是项目缺陷，同批代码 CI 全绿**。
+解法是容器化跑后端（项目本就有完整 Dockerfile）。
+打通链路：16 jar → 77 条 Flyway 迁移 → 101 表/224,858 行 → 短信验证码登录
+→ 页面渲染真实数据。详见 §S33.130。
+
+**② README 按《GitHub README 写作规范 v1.0》重写。**
+480 → 108 行（其中非空正文 73 行）；删掉 24 行轮次历史（归 HANDOFF）；安装压到 2 步；
+补两张真实渲染的截图（仪表盘 + 物流看板），均带 alt 与 width。
+命令逐条实测，并借此抓出两个失真的数字。详见 §S33.130 §4。
+
+**③ 修掉 4 个真缺陷**（其中 1 个是我自己前一班引入的回归）：
+
+| 缺陷 | 后果 | PR |
+|---|---|---|
+| 合成数据往 `CryptoTypeHandler` 列填假密钥 | `SELECT` 整行抛异常 → 店铺选择器空白 | #11 |
+| `load.ps1` 的 `-Password` 在容器模式静默失效 | `Access denied (using password: NO)` | #11 |
+| `getInfo` 把「查失败」与「确实没店」显示成同一形状 | 前端清空店铺列表 → 整站越权报错 | #12 |
+| `ListingCopyServiceTest` 共享 core=1 线程池 | CI 偶发超时（flaky） | #13 |
+
+外加：`AppHeader` 第 4 次触发行数棘轮 → 拆出 `useShopSelection`（530→485 行）；
+`shopsLoaded=false` 时补用户可见的 toast（原来只有 console.warn）。
+
+**④ 对抗性审查 + 消融实验。**
+对每个新机制做变异/消融，全部被测试抓住才收工。其中最有价值的发现：
+换成同步执行器后测试仍 15/15 全绿，但删掉生产代码的 `identity.bind()`
+**依然全绿**——那条「异步 worker 必须看到 userId=7」的断言已经不在测东西。
+据此把身份传播拆去独立测试类（独占线程池）。
+
+**⑤ 仓库清理。**
+删 8 个 Docker 容器 + vite/esbuild 进程；清 2.5G 构建产物（2.9G→414M）；
+删 18 个过期 cosign 验签证据；删 2 个多余远程分支。#15
+
+## 3. 卡住的问题
+
+**① 本机无法启动 Spring Boot（环境问题，非代码缺陷）。**
+JDK 的 `PipeImpl$LoopbackConnector` 在本机建不出唤醒管道。要本机 GUI 验证，
+只有三条路：换机器、装 Linux 发行版跑 WSL、或容器化（本班用的第三条）。
+这也导致本机 3 个 loopback 测试必红（`AdvertisingApiRealClientContractTest`、
+`OrderServiceFeignDecodeIT`、`DeepSeekAgentConfigurationContractTest`）——
+判定回归的方法是**看失败集合是否超出这三个**。
+
+**② 一次未能复现的前端偶发失败。**
+切分支后首次 `vitest run` 出现 1 个失败，随后连续 6 次全部 731/731 通过。
+最像 vite 预构建缓存与当前分支不匹配导致的首次编译竞态，**但没有证据**。
+没有当作「已修复」上报。若再现，先看是不是紧跟 `git checkout` 之后。
+
+**③ `resolveShopOptions` 的 catch 仍会吞异常（已缓解，未根治）。**
+现在会打 error 日志 + 返回 `shopsLoaded=false`，比原先一句 warn 好得多，
+但仍然是「失败可观测」而非「失败可恢复」。彻底解法要给前端加重试入口。
+
+## 4. 下一步计划（按优先级）
+
+**P0 — `resolveShopOptions` 失败后的用户重试。**
+`shopsLoaded=false` 时目前只 toast 提示「正在显示上一次的结果」，
+用户没有「重新加载」的入口。要做的话会动 `/user/getInfo` 的消费方
+（前端 toast 加重试动作，或加一个 `POST /user/shops/reload`）。
+**注意：改对外契约需单独评估。**
+
+**P1 — 真实 Amazon 账号联调（E4/E5）。**
+这是唯一还没被任何工程手段推进的事项。代码路径全部就位（90 条连接器能力），
+但需要 LWA client id/secret + refresh token、应用授权、角色权限、
+marketplace/region、官方端点版本与 usage plan 对账。
+Runbook 在 `docs/superpowers/runbooks/`。
+
+**P2 — 可选清理。**
+`amz-frontend/node_modules`（174M）与 `dist` 本班刻意保留（开发依赖，
+删了下次 `npm ci` 要重下几分钟）。要清可直接删。
+
+## 5. 踩过的坑（本班新增，都是实测踩出来的）
+
+**① 白名单是内容寻址的——动了文件本身就得同步哈希。**
+`hygiene-allowlist.json` 的 key 是文件内容 sha256（**CRLF 归一化后**）。
+本班一天内因此红了三次。必须用 `repository_hygiene._sha256_file()`
+算，不能用 `sha256sum`（后者哈希原始字节，本机是 CRLF，值不一样）。
+本地可复现：`python tools/release/repository_hygiene.py --root .`。
+
+**② 本机 `npm run build` 不做类型检查。**
+它走 esbuild；CI 的 frontend job 多一道 `npx vue-tsc --noEmit`。
+所以「本地 build 通过」≠ CI frontend 会绿。前端改完除了 `test:run`
+还要跑 `vue-tsc --noEmit`。
+
+**③ 用 `None` 表达两种语义会被静默吞掉。**
+`Generator.value()` 用 `if special is not None` 判「有无特殊规则」，
+我让 `special_value()` 返回 `None` 表达「这列必须是 NULL」，
+结果被当成普通文本继续生成假值——**修复被静默吞掉，数据毫无变化**。
+后来引入显式哨兵 `MUST_BE_NULL`。教训：哨兵值不要复用「空」的含义。
+
+**④ 断言打错层等于没测。**
+变异测试写在 `special_value()` 上通过了，但上层 `value()` 仍把它转成假值。
+断言必须落在**最终产物**上。
+
+**⑤ fixture 会让被测逻辑失效（最隐蔽的一类）。**
+同步执行器让「身份传播」变得不可测——传播本就是为跨线程设计的，
+同线程里 ThreadLocal 还在，`bind()` 沦为无操作。
+按语义分 fixture：需要真线程的单独建类独占线程池，其余用同步 fixture。
+
+**⑥ `git branch -f` 误伤。**
+我曾用 `git branch -f master <sha>` 把 master 挪到未合并的提交上，
+导致本地领先远程 2 个 PR 的内容。正确做法是先 `git checkout --detach`
+再 `branch -f`。（未造成后果，两个 PR 的远程引用始终正确。）
+
+**⑦ 三次差点被表面证据骗过去。**
+grep 把 SHA-256 片段（`2517`/`2536`）当成"与 README 冲突的旧测试计数"，
+差点去篡改历史设计文档里的哈希。教训：数字类结论先确认匹配到的到底是什么。
+
+
+> **以下为历史累积层（2026-10-20 及以前），按当时口径读。**
+> 最新交班在上方 **§S33.134**，当前入口是 **§S33.130–133**。
+> 
 > 更早的历史层（2026-10-16 及以前）：P0 收尾（请求体 shopId 跨租户写洞 + 两页写端点加锁）
 > + 决策①定案（amz_user_shop.role 不回填）+ CI 修（V6 schema 快照）+ Finance 拆分
 > + 店铺级角色接通 + 四页写入口分三类处理 + WMS 门控与业务拒绝修复 + ad 域 CRUD
@@ -2619,7 +2765,7 @@ CI（Ubuntu + JDK17）不出现。**排除这 3 类后整仓 0F / 0E**，故 204
 **P2**
 5. ~~仓库根垃圾日志~~ **已完成（本班）**：75 个根级 `*.log`（235.7MB，全部未跟踪 gitignored
    草稿）已清空为 0 字节；`docs/.../cosign-verify/` 下 17 个被跟踪 `.log` 证据文件**未动**。
-   <br>→ **2026-10-21 更新**：那 17 个 `.verify.log` 与 `summary.json` 已删（见 §S33.133）。
+   <br>→ **2026-10-21 更新**：那 17 个 `.verify.log` 与 `summary.json` 已删（见 §S33.134 第 2 节 ⑤）。
    当时保留的理由是"发布审计留痕"，后来核实发布链（`tools/release/`、`release.yml`）
    并不读取它们，内容又是 9-29 那批镜像 digest 的一次性验签结果，对排障无增量。
    `.zcodeignore` 核实为 ZCode 编辑器工具托管文件（从 .gitignore 同步生成）→ 已加入 `.gitignore`，
