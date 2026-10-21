@@ -83,7 +83,7 @@ python generate.py --tier demo --reset     # 生成 101 张表 / 224,858 行
 | 层级 | 用例数 | 说明 |
 |---|---|---|
 | 后端 JUnit 5 | 2531 | 19/19 模块 BUILD SUCCESS |
-| 前端 Vitest | 725 | 55/55 文件通过 |
+| 前端 Vitest | 731 | 55/55 文件通过 |
 | Playwright E2E | 185 | chromium 串行，全过 |
 
 本机 Windows 上有 3 个用例因 JDK 的 `UnixDomainSockets` 无法建立 loopback 而恒定失败（`AdvertisingApiRealClientContractTest`、`OrderServiceFeignDecodeIT`、`DeepSeekAgentConfigurationContractTest`），同一批代码在 CI（Linux）全绿。判定回归的方法是**看失败集合是否超出这三个**。
