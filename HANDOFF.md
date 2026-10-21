@@ -10471,3 +10471,83 @@ GET /user/getInfo                 → code=200，shops=9 个真实店铺
 
 `amz_spapi.amz_shop_credential` 的三个 `*_encrypted` 列同理没纳入白名单
 （无 Java 实体、不经 TypeHandler，当下不崩），已在 `generate.py` 注释里写明提醒。
+
+---
+
+# §S33.132 getInfo 的「查失败」与「确实没店」不再同形（shopsLoaded）
+
+## 1. 要解决的（§S33.131 第 6 条的遗留）
+
+`resolveShopOptions` 的 catch 把异常降级成一句 warn 后继续返回，于是响应里
+`shops=null`（没查到）与 `shops=[]`（确实没店）**完全同形**。前端据此写
+localStorage，三种情况被读成同一种。
+
+这个混淆的代价本轮已经付过一遍：§S33.131 排查「登录后店铺选择器空白」
+花了很长时间，因为现场唯一线索是一句 warn，而症状（没店铺）
+与根因（凭证列解密失败）之间没有任何可见关联。
+
+## 2. 改法与取舍
+
+`UserVo` 新增 `shopsLoaded`（Boolean）：
+
+| 情形 | shops | shopsLoaded | 语义 |
+|---|---|---|---|
+| 查到店铺 | `[{...}]` | `true` | 正常 |
+| 查到但一家店都没有 | `[]` | `true` | 可信的「没店」 |
+| 查询抛异常 | `null` | `false` | 没查到，**不是**没店 |
+| ShopService 未注入（老部署） | `[]` | `true` | 老行为不变 |
+
+**三个明确的取舍**：
+
+1. **失败时 shops 必须是 null，不能是空数组**。空数组会被前端读成「该账号没有店铺」，
+   进而清空本地列表，让后续请求带着后端已不认可的 shopId 到处越权——
+   那比多转一圈 loading 难查得多。
+2. **失败不否定登录态**（仍返回 200）。用户信息本身已查到，
+   一次 DB 抖动就把用户踢下线是更大的故障。
+3. **日志从 warn 提到 error 并带完整异常栈**。此前 `e.getMessage()` 只打一行，
+   解密失败这类问题在现场几乎看不出来。
+
+前端 `AppHeader`：`shopsLoaded === false` 时保留本地列表（`refreshShops()`），
+只 console.warn；只有 true 才走 `syncShopsFromServer`。
+判定用**严格 `=== false`** 而不是 `!shopsLoaded`——后者会把 `null`/`0` 也当失败
+（老后端没有该字段时字段值是 undefined，会被误伤）。这条有测试钉住。
+
+## 3. 测试与变异
+
+后端 `UserInfoShopsLoadedContractTest`（5 用例）：成功/空列表/抛异常/
+ShopService 缺失/店铺名缺失回落。前端 `shopsLoaded.test.ts`（4 用例）：
+false 不同步、true 同步、undefined 按 true、假值不当失败。
+
+**后端四个变异全红、还原全绿**：
+
+| 变异 | 结果 |
+|---|---|
+| 异常路径改用空数组冒充「没店」 | ❌ 1 failure |
+| 异常路径标 TRUE（回到吞异常的老行为） | ❌ 1 failure |
+| 成功路径不设 shopsLoaded | ❌ 3 failures |
+| 去掉 try/catch 让异常外抛（登录态被否定） | ❌ 1 error |
+
+**前端两个变异全红**：判定写成 `!shopsLoaded` → 2 失败；
+永不区分（等于没修）→ 1 失败。
+
+## 4. 实测判据（运行中的服务）
+
+正常路径：`code=200, shopsLoaded=true, shops=9 个店铺`。
+失败路径（手工把一家店 `spapi_refresh_token` 改成非 base64 明文）：
+
+```
+code=200            ← 登录态未被否定
+shopsLoaded=false   ← 可区分
+shops=None          ← 没用空数组冒充
+user 仍在           ← 用户信息未丢
+error 日志 1 条
+```
+
+回归：前端 54 文件 / 725 用例全过（含新增 4 例）；
+后端 amz-service-user 测试通过。
+
+## 5. 遗留
+
+`amz_spapi.amz_shop_credential` 的三个 `*_encrypted` 列仍填明文假值
+（无 Java 实体、不经 TypeHandler，当下不崩）。已在 generate.py 注释里写明：
+将来若给它补实体并挂 CryptoTypeHandler，必须同步登记到白名单。

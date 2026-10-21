@@ -66,7 +66,14 @@ function Invoke-SqlFile {
         if ($Password) { $env:MYSQL_PWD = $Password }
     }
     if ($DryRun) {
-        Write-Host "[dry-run] $exe $($args -join ' ') < $FilePath"
+        # 打印前先把密码换掉：容器模式的 -e MYSQL_PWD=<密码> 就在 $args 里，
+        # 原样 echo 等于把凭据写进终端与 CI 日志（CLAUDE.md：敏感信息不得进日志）。
+        # 只替 $args 这一份快照，不影响真正传入 docker 的值。
+        $shown = $args -join ' '
+        if ($Password) {
+            $shown = $shown.Replace($Password, '***')
+        }
+        Write-Host "[dry-run] $exe $shown < $FilePath"
         return
     }
     try {

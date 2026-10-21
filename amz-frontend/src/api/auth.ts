@@ -230,6 +230,16 @@ export interface UserInfoResponse {
      */
     shops?: ShopOption[]
     /**
+     * `shops` 是否为一次可信的查询结果。
+     *
+     * `false` = 后端这次没查到（DB/解密异常等），**不是**「该账号没有店铺」。
+     * 此时绝不能把本地店铺列表清空——带着后端已不认可的 shopId 发请求，
+     * 整站会变成大片越权报错。详见 AppHeader 里的处理。
+     *
+     * 老后端没有该字段（undefined）时按 `true` 处理，行为与改动前一致。
+     */
+    shopsLoaded?: boolean
+    /**
      * 当前选中店铺上的**有效角色**（店铺级优先、全局兜底）。
      *
      * 与 `user.role`（全局角色）是两件事：同一用户可以在店 A 是 OPERATOR、店 B 是 VIEWER。

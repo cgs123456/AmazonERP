@@ -63,6 +63,21 @@ export const setShops = (shops: ShopOption[]): void => {
 }
 
 /**
+ * 判断 `/user/getInfo` 返回的 `shopsLoaded` 是否代表「这一次查询可信」。
+ *
+ * 为什么需要这个函数而不是在调用处写 `if`：`false` 与「其它假值」是两种语义。
+ * `false` = 后端这次没查到（DB/解密异常等），此时**不能**清空本地店铺列表——
+ * 带着后端已不认可的 shopId 发请求，整站会变成大片越权报错。
+ * `undefined`（老后端没有该字段）、`null`、`0` 都应按「可信」处理，
+ * 否则一次判断写错就会把正常用户的店铺全清空。
+ *
+ * 之所以单独放一个导出函数：它必须被单测直接覆盖，而组件内的内联判定测不到。
+ *
+ * @param shopsLoaded 响应里的原值（类型是 Boolean，序列化后只可能是 true/false/缺失）
+ */
+export const isShopsLoadTrusted = (shopsLoaded: unknown): boolean => shopsLoaded !== false
+
+/**
  * 历史占位店铺的识别模式。
  * <p>
  * 在本仓库的某个阶段，{@code main.ts} 会把「Shop A (US) / Shop B (UK) / Shop C (DE)」
