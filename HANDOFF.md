@@ -2619,6 +2619,9 @@ CI（Ubuntu + JDK17）不出现。**排除这 3 类后整仓 0F / 0E**，故 204
 **P2**
 5. ~~仓库根垃圾日志~~ **已完成（本班）**：75 个根级 `*.log`（235.7MB，全部未跟踪 gitignored
    草稿）已清空为 0 字节；`docs/.../cosign-verify/` 下 17 个被跟踪 `.log` 证据文件**未动**。
+   <br>→ **2026-10-21 更新**：那 17 个 `.verify.log` 与 `summary.json` 已删（见 §S33.133）。
+   当时保留的理由是"发布审计留痕"，后来核实发布链（`tools/release/`、`release.yml`）
+   并不读取它们，内容又是 9-29 那批镜像 digest 的一次性验签结果，对排障无增量。
    `.zcodeignore` 核实为 ZCode 编辑器工具托管文件（从 .gitignore 同步生成）→ 已加入 `.gitignore`，
    不再污染未跟踪列表。
 6. ~~Mockito self-attach 告警~~ **已完成（本班）**：根 pom 经 `maven-dependency-plugin:properties`
