@@ -51,8 +51,10 @@ public class UserServiceImpl implements UserService {
      * 前端无法区分，最终表现为「登录后店铺选择器空白」——一个与根因无关、
      * 极难回溯的症状。见 {@link UserVo#getShopsLoaded()} 的说明。
      */
-    private java.util.List<ShopOptionVo> resolveShopOptions(Integer userId) {
-        if (shopService == null || userId == null) {
+    private java.util.List<ShopOptionVo> resolveShopOptions() {
+        // userId 不必判空：调用方 getInfo 已对 user == null 抛异常，走到这里 userId 必然有值。
+        // shopService 仍要判：它是 @Autowired(required = false)，未注入时是合法部署形态。
+        if (shopService == null) {
             return java.util.List.of();
         }
         java.util.List<ShopVo> shops = shopService.listMyShops();
@@ -86,7 +88,7 @@ public class UserServiceImpl implements UserService {
         //     查询失败不阻断登录——用户信息本身已查到，不该让用户连系统都进不去；
         //     但失败必须留痕（shopsLoaded=false + error 日志），见 catch 内的说明。
         try {
-            userVo.setShops(resolveShopOptions(userId));
+            userVo.setShops(resolveShopOptions());
             userVo.setShopsLoaded(Boolean.TRUE);
         } catch (Exception e) {
             // 不因店铺查询失败就否定整个登录态——用户信息本身是查到了的。
